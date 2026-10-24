@@ -20,18 +20,22 @@
  *       faceplates pinned, Approve is on screen at 1046 px (1920 × 1080 + chat) and at 1440 × 900 + chat (live)
  *   T4  a procedure tag (E-0 step 3, DG-A) opens the element it is measured on (EDG A), and its "Open in display
  *       window" brings the window forward
- *   T5  the four units' SG levels compared (deck › three times; a side-by-side view is R4)
+ *   T5  the four units' SG levels compared side by side: the Run's dashboard, its "Compare Process plants (4) ›" (R4)
  *   T6  why a grid line alarms: the grid overview in the deck, an alarmed element pressed (grid buttons are R3, W9.1)
  *   T7  "Anything to worry about?": every cited key resolves. Needs an Assistant answer: reported as R3 (paired eval)
  *   T8  an alert row selects its element (faceplate or detail), and "+N more" opens the full list (L4)
  *   T9  overview → SG A → AFW header with one click per hop, then Esc = Back twice
  *   T10 the same gesture elsewhere: alert rows (T8) and drawn items on the plant; grid elements (R3, W9.1)
+ *   T11 a press on the unit's map icon opens its overview display in the window, and no Plant card (R3, owner 23 Oct);
+ *       T11-1046 the same with the chat open
+ *   T17 the dashboard's run frame takes ≤ 30 % of the screen's height at 1920, 1440 and 1280 (R4 gate)
  *
  * Writes <out>/<label>-walks.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
 import { onScreen, type PressTarget, type Screen } from './display-dom.ts'
-import { goHome, homeOf, openOverview, pageDialogs, press, screenOf, sizeSpec, targetsOf, waitForContent, type Home, type Outcome, type SizeSpec } from './display-press.ts'
+import { goHome, homeOf, openOverview, press, windowOnTop, screenOf, sizeSpec, targetsOf, waitForContent, type Home, type Outcome, type SizeSpec } from './display-press.ts'
+import { colourBlobs } from './pixels.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
 type Verdict = '✔' | '◐' | '✖' | 'R3' | 'n/a'
@@ -65,6 +69,8 @@ interface Ctx {
   readonly out: string
   readonly label: string
   readonly runA: string
+  /** The CDP port, for a scratch tab that decodes screenshots (T11). */
+  readonly port: number
   /** One paused copy of Run A that the walks which only look share (made on first use). */
   shared?: string
 }
@@ -350,14 +356,17 @@ const t4 = async (ctx: Ctx): Promise<TaskResult> => {
   const shots = [await shotOf(ctx, 'T4-tag')]
   // "Open in display window": the window then shows it, in front (no dialog over it).
   const openIn = await ctx.page.find({ sel: 'button', text: 'Open in display window' }) ?? await ctx.page.find({ sel: 'button', text: 'Open in the display window' })
-  let forward = false, windowTitle: string | null = null
+  let forward = false, windowTitle: string | null = null, cover: string | null = null
   if (openIn !== null) {
     await ctx.page.click(openIn)
     steps.push({ press: openIn.label.slice(0, 40), kind: 'dialog', outcome: 'pressed' })
     await sleep(3_000)
     const screen = await screenOf(ctx.page)
     windowTitle = screen.window?.title ?? null
-    forward = (await pageDialogs(ctx.page)).length === 0
+    // In front: a press at the window's title lands on the window (a dialog shown behind it does not count).
+    const top = await windowOnTop(ctx.page)
+    forward = top?.onTop === true
+    cover = top === null ? 'no window title' : top.over
     shots.push(await shotOf(ctx, 'T4-window'))
   }
   const ok = shown !== undefined && element(shown.title)
@@ -365,32 +374,127 @@ const t4 = async (ctx: Ctx): Promise<TaskResult> => {
   const about = shown !== undefined && /Emergency Diesel Generator A|\bEDG A\b/.test(shown.title)
   return {
     id: 'T4', title: 'A procedure tag opens the element it is measured on', verdict: ok && forward ? '✔' : ok || about ? '◐' : '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0,
-    detail: `the tag shows "${shown?.title ?? '(no display)'}" (World's element default: "${expected}"); "Open in display window" ${openIn === null ? 'not offered' : `→ window "${windowTitle ?? '?'}", ${forward ? 'in front' : 'still behind a dialog'}`}`,
+    detail: `the tag shows "${shown?.title ?? '(no display)'}" (World's element default: "${expected}"); "Open in display window" ${openIn === null ? 'not offered' : `→ window "${windowTitle ?? '?'}", ${forward ? 'in front (a press at its title lands on it)' : `not in front: a press at its title lands on ${cover ?? '?'}`}`}`,
     shots,
   }
 }
 
+/** The dashboard the window shows now (R4, `main.dashboard` in the shown embed): its sections, each with its SG
+ * levels (a line naming "SG A" … with a %) and whether every one shows on screen, and its run frame's height. */
+const DASHBOARD = String.raw`(() => {
+  const docs = lb.documents().filter(d => d.frame && d.doc && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
+  const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
+  const shown = docs.sort((a, b) => area(b) - area(a))[0]
+  const main = shown && shown.doc.querySelector('main.dashboard')
+  if (!main) return null
+  const frameBox = lb.toTop(shown.frame)
+  const viewH = window.innerHeight, viewW = window.innerWidth
+  const onScreen = r => r.w > 0 && r.h > 0 && r.x >= Math.max(0, frameBox.x) - 1 && r.y >= Math.max(0, frameBox.y) - 1 && r.x + r.w <= Math.min(viewW, frameBox.x + frameBox.w) + 1 && r.y + r.h <= Math.min(viewH, frameBox.y + frameBox.h) + 1
+  // Where a scroller around a line hides it: inside .sections, which scrolls under the frame.
+  const visibleIn = el => { let r = lb.toTop(el); for (let a = el.parentElement; a && a !== shown.doc.documentElement; a = a.parentElement) { const st = shown.doc.defaultView.getComputedStyle(a); if (st.overflowY === 'visible' && st.overflowX === 'visible') continue; const q = lb.toTop(a); if (r.y < q.y - 1 || r.y + r.h > q.y + q.h + 1 || r.x < q.x - 1 || r.x + r.w > q.x + q.w + 1) return false } return onScreen(r) }
+  // A row's words as shown: its text and its readouts' shadow text, not the hidden sizers that reserve their width.
+  const deep = el => {
+    let out = ''
+    const visit = n => {
+      if (n.nodeType === 3) { out += n.textContent + ' '; return }
+      if (n.nodeType !== 1 && n.nodeType !== 11) return
+      if (n.nodeType === 1 && (n.classList.contains('sizer') || n.getAttribute('aria-hidden') === 'true' && n.classList.contains('full'))) return
+      if (n.shadowRoot) visit(n.shadowRoot)
+      for (const child of n.childNodes) visit(child)
+    }
+    visit(el)
+    return out.replace(/\s+/g, ' ').trim()
+  }
+  const sections = [...main.querySelectorAll('section.section')].map(section => {
+    const rows = [...section.querySelectorAll('tr, .row, li, .readout, [role=row]')].filter(el => lb.shown(el) && /^\s*SG [A-D]\b/.test(deep(el)))
+    const levels = ['A', 'B', 'C', 'D'].map(letter => {
+      const row = rows.find(el => new RegExp('^\\s*SG ' + letter + '\\b').test(deep(el)))
+      const text = row ? deep(row) : null
+      // Its level: the row's first number (the table writes "%" in its column head, a list beside the number).
+      return { sg: letter, text, level: text ? (text.replace(/^\s*SG [A-D]\s*/, '').match(/-?\d+(?:\.\d+)?/) || [])[0] ?? null : null, onScreen: row ? visibleIn(row) : false }
+    })
+    return { title: section.getAttribute('aria-label') || '', levels }
+  })
+  const frame = main.querySelector(':scope > .frame')
+  const frameTop = frame ? lb.toTop(frame) : null
+  return { title: main.getAttribute('aria-label') || '', sections, frameH: frameTop ? Math.round(frameTop.h) : null, viewH, compare: [...main.querySelectorAll('.bar button')].map(b => (b.innerText || '').trim()) }
+})()`
+interface DashboardRead {
+  readonly title: string
+  readonly sections: ReadonlyArray<{ readonly title: string; readonly levels: ReadonlyArray<{ readonly sg: string; readonly text: string | null; readonly level: string | null; readonly onScreen: boolean }> }>
+  readonly frameH: number | null
+  readonly viewH: number
+  readonly compare: ReadonlyArray<string>
+}
+const isDashboard = (screen: Screen) => /^Dashboard\b|· dashboard\b/i.test(screen.window?.title ?? '')
+/** From the unit overview, back through the deck to the Run's dashboard (its first entry): the presses it took. */
+const toDashboard = async (ctx: Ctx, steps: Step[]): Promise<boolean> => {
+  for (let i = 0; i < 8; i += 1) {
+    const screen = await screenOf(ctx.page)
+    if (isDashboard(screen)) return true
+    const previous = await ctx.page.find({ sel: 'button', text: 'Previous display' })
+    if (previous === null) return false
+    const result = await press(ctx.page, { x: previous.x + previous.w / 2, y: previous.y + previous.h / 2, name: 'Previous display' })
+    steps.push({ press: 'Previous display', kind: 'window', outcome: describe(result.outcome) })
+  }
+  return isDashboard(await screenOf(ctx.page))
+}
+/** Waits for the dashboard's sections to read (no "?" where a level goes); the dashboard read, or null. */
+const dashboardRead = async (ctx: Ctx, timeoutMs = 20_000): Promise<DashboardRead | null> => {
+  const started = Date.now()
+  let read: DashboardRead | null = null
+  while (Date.now() - started < timeoutMs) {
+    read = await ctx.page.eval<DashboardRead | null>(DASHBOARD)
+    if (read !== null && read.sections.length > 0 && read.sections.every(section => section.levels.every(level => level.level !== null))) return read
+    await sleep(500)
+  }
+  return read
+}
+
+/** T5 (R4): the four units' SG levels side by side on the collection dashboard ("Compare Process plants (4) ›"),
+ * every one on one screen at 1920, read without memory. */
 const t5 = async (ctx: Ctx): Promise<TaskResult> => {
   await session(ctx, 'T5', sizeSpec('1920'))
   const steps: Step[] = []
-  const levels: string[] = []
-  // Under load a unit's display takes seconds to draw after "Next display": wait for its content (≤ 20 s), and report
-  // each unit's time to content apart, as a performance observation.
-  const toContent: string[] = []
-  for (let unit = 1; unit <= 4; unit += 1) {
-    const waited = await waitForContent(ctx.page)
-    toContent.push(waited === null ? 'no content in 20 s' : `${(waited / 1000).toFixed(1)} s`)
-    const screen = await screenOf(ctx.page)
-    const sg = ['A', 'B', 'C', 'D'].map(letter => onScreen(screen, new RegExp(`^SG ${letter}\\b.*%`), ['drawing'])[0]?.text.match(/(\d+(\.\d+)?)\s*%/)?.[1] ?? '?')
-    levels.push(`${screen.window?.title?.split(' · ')[0] ?? `unit ${unit}`}: ${sg.join(' / ')} %`)
-    if (unit === 4) break
-    const next = await ctx.page.find({ sel: 'button', text: 'Next display' })
-    if (next === null) break
-    const pressed = await press(ctx.page, { x: next.x + next.w / 2, y: next.y + next.h / 2, name: 'Next display' })
-    steps.push({ press: 'Next display', kind: 'window', outcome: describe(pressed.outcome) })
+  const title = "Compare the four units' SG levels"
+  if (!await toDashboard(ctx, steps)) return { id: 'T5', title, verdict: '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: 'no dashboard in the deck before the unit overviews', shots: [await shotOf(ctx, 'T5')] }
+  const compare = (await targetsOf(ctx.page)).find(target => /^Compare .*\(\d+\)/.test(target.name) && /plant/i.test(target.name))
+    ?? await ctx.page.find({ sel: 'button', text: 'Compare Process plants' }).then(hit => hit === null ? undefined : { x: hit.x + hit.w / 2, y: hit.y + hit.h / 2, name: hit.label })
+  if (compare === undefined) return { id: 'T5', title, verdict: '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: 'the dashboard offers no "Compare Process plants (n) ›"', shots: [await shotOf(ctx, 'T5')] }
+  const opened = await press(ctx.page, compare)
+  steps.push({ press: compare.name.slice(0, 40), kind: 'dashboard', outcome: describe(opened.outcome) })
+  const read = await dashboardRead(ctx)
+  const shots = [await shotOf(ctx, 'T5')]
+  const sections = read?.sections ?? []
+  const levels = sections.flatMap(section => section.levels)
+  const readAll = sections.length >= 4 && levels.every(level => level.level !== null)
+  const allOn = readAll && levels.every(level => level.onScreen)
+  const per = sections.map(section => `${section.title}: ${section.levels.map(level => level.level ?? '?').join(' / ')} %${section.levels.every(level => level.onScreen) ? '' : ` (${section.levels.filter(level => !level.onScreen).length} off screen)`}`)
+  // From the overview: back to the Run's dashboard (the deck's first entry), then its "Compare …" once.
+  return {
+    id: 'T5', title, verdict: allOn ? '✔' : readAll ? '◐' : '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0,
+    detail: `"${read?.title ?? '?'}": ${sections.length} sections side by side; ${per.join('; ')}${allOn ? '; all 16 levels on one screen' : ''}`,
+    shots,
   }
-  const read = levels.filter(entry => !entry.includes('?')).length
-  return { id: 'T5', title: "Compare the four units' SG levels", verdict: read === 4 ? '◐' : '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: `read one unit at a time, from memory (a side-by-side view is R4): ${levels.join('; ')}; time to content after each deck step: ${toContent.join(', ')}`, shots: [await shotOf(ctx, 'T5')] }
+}
+
+/** T17 (R4 gate): the dashboard's run frame takes ≤ 30 % of the screen's height at desk sizes. */
+const t17 = async (ctx: Ctx): Promise<TaskResult> => {
+  const steps: Step[] = []
+  const measured: string[] = []
+  let worst = 0, read = 0
+  const shots: string[] = []
+  for (const name of ['1920', '1440', '1280']) {
+    await session(ctx, 'T17', sizeSpec(name))
+    if (!await toDashboard(ctx, steps)) { measured.push(`${name}: no dashboard`); continue }
+    const dashboard = await dashboardRead(ctx, 10_000)
+    if (dashboard?.frameH == null) { measured.push(`${name}: no frame`); continue }
+    const share = dashboard.frameH / dashboard.viewH
+    worst = Math.max(worst, share); read += 1
+    measured.push(`${name}: ${dashboard.frameH} of ${dashboard.viewH} px, ${(share * 100).toFixed(1)} %`)
+    shots.push(await shotOf(ctx, `T17-${name}`))
+  }
+  return { id: 'T17', title: "The dashboard's frame takes ≤ 30 % of the screen's height (1920, 1440, 1280)", verdict: read === 3 && worst <= 0.3005 ? '✔' : '✖', budget: null, clicks: null, path: [], deadEnds: 0, searched: 0, detail: measured.join('; '), shots }
 }
 
 const t6 = async (ctx: Ctx): Promise<TaskResult> => {
@@ -439,14 +543,22 @@ const t8 = async (ctx: Ctx): Promise<TaskResult> => {
     rowDetail = `row "${row.name.slice(0, 50)}" → ${describe(result.outcome)}`
     await goHome(ctx.page, home)
   }
-  const more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
-  let list = false, moreDetail = 'no "+N more" on screen'
+  let more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
+  let list = false, moreDetail = 'no "+N more" on screen', where = '1920'
+  // The window may hold every row at 1920 (no "+N more" then); look where the list is short: 1046 + chat.
+  if (more === undefined) {
+    const narrow = await session(ctx, 'T8', sizeSpec('1046'))
+    more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
+    where = '1046 + chat'
+    if (more === undefined) { await narrow.reopen(); moreDetail = 'no "+N more" on screen at 1920 (every row fits) or at 1046 + chat' }
+  }
   if (more !== undefined) {
     const result = await press(ctx.page, more)
     steps.push({ press: more.name, kind: 'more', outcome: describe(result.outcome) })
     list = result.outcome.kind === 'detail' && /alert/i.test(result.outcome.title ?? '')
-    const rows = result.after.lines.filter(line => line.region === 'alerts' && line.valueOn).length
-    moreDetail = `"${more.name}" → ${describe(result.outcome)}${list ? `, ${rows} rows on screen` : ''}`
+    // The list's rows: lines on screen with their time (the L4 list is the display's body, not its alerts block).
+    const rows = result.after.lines.filter(line => line.valueOn && /\b\d{1,2}:\d{2}\b/.test(line.text) && ['alerts', 'body'].includes(line.region)).length
+    moreDetail = `${where === '1920' ? '' : 'every row fits at 1920; at 1046 + chat '}"${more.name}" → ${describe(result.outcome)}${list ? `, ${rows} timed rows on screen` : ''}`
   }
   const shots = [await shotOf(ctx, 'T8')]
   const back = await goHome(ctx.page, home)
@@ -516,13 +628,69 @@ const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskRes
   }
 }
 
+/** The process plant's map disk (its fill on the day map), and the least of it a disk shows around its glyph. */
+const PLANT_DISK = { fill: 'rgb(15, 143, 94)', minPixels: 300 } as const
+const POPUP_LABEL = `(() => { for (const d of lb.documents()) { const strong = d.doc && d.doc.querySelector('.maplibregl-popup-content strong'); if (strong) return strong.textContent.trim() } return null })()`
+const CARD = `lb.documents().some(d => d.doc && d.doc.querySelector('.plant-card, [class*="plant-card"]'))`
+
+/** T11: from the map with no window open, a press on the unit's icon opens its overview display; no card opens. The
+ * icon is found where a person sees it (the map's Plant disks, by their fill) and named by the map's own hover card. */
+const t11 = async (ctx: Ctx, sizeName = '1920'): Promise<TaskResult> => {
+  const id = sizeName === '1920' ? 'T11' : `T11-${sizeName}`
+  const title = "A press on the unit's map icon opens its overview display; no Plant card"
+  const size = sizeSpec(sizeName)
+  const runId = ctx.shared ??= await ctx.api.copy(ctx.runA, `walks (look only) · ${new Date().toISOString().slice(0, 19)}`)
+  await ctx.api.load(runId)
+  const { page } = ctx
+  await page.size(size.width, size.height)
+  await page.goto(`${ctx.origin}/workspaces/${ctx.workspaceId}?world=${encodeURIComponent(runId)}`)
+  await page.waitFor({ sel: 'button', text: `Open process display for ${ctx.unit}` }, 120_000)
+  if (size.chat) {
+    await page.click({ sel: 'button', text: 'Open Leitbild Assistant' })
+    await page.until(`lb.documents().some(d => d.frame && /\\/agents/.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))`, 60_000)
+  }
+  await sleep(5_000)
+  const steps: Step[] = []
+  const fail = async (detail: string): Promise<TaskResult> => ({ id, title, verdict: '✖', budget: 1, clicks: null, path: steps, deadEnds: 0, searched: 0, detail, shots: [await shotOf(ctx, id)], size: sizeName })
+  if ((await screenOf(page)).window !== null) return fail('a display window is open before the press')
+  const scratch = await openPage(ctx.port, 400, 300)
+  const png = (await page.send('Page.captureScreenshot', { format: 'png' })).data as string
+  const disks = await colourBlobs(scratch, png, PLANT_DISK.fill, PLANT_DISK.minPixels).finally(() => scratch.close())
+  const named: string[] = []
+  let icon: { x: number; y: number } | null = null
+  for (const disk of disks.slice(0, 16)) {
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: disk.x, y: disk.y })
+    let label: string | null = null
+    for (let i = 0; i < 8 && label === null; i += 1) { await sleep(150); label = await page.eval<string | null>(POPUP_LABEL) }
+    named.push(`${label ?? '(no hover card)'} at ${disk.x},${disk.y}`)
+    if (label === ctx.unit) { icon = disk; break }
+  }
+  if (icon === null) return fail(`no map icon named "${ctx.unit}": ${disks.length} Plant disks found${named.length > 0 ? ` (${named.slice(0, 6).join('; ')})` : ''}`)
+  const pressed = Date.now()
+  for (const type of ['mousePressed', 'mouseReleased']) await page.send('Input.dispatchMouseEvent', { type, x: icon.x, y: icon.y, button: 'left', clickCount: 1 })
+  let opened: number | null = null
+  while (opened === null && Date.now() - pressed < 10_000) { if ((await screenOf(page)).window !== null) opened = Date.now() - pressed; else await sleep(150) }
+  const content = opened === null ? null : await waitForContent(page)
+  const screen = await screenOf(page)
+  const card = await page.eval<boolean>(CARD)
+  const windowTitle = (screen.window?.title ?? '').split(' · From ')[0]!
+  const overview = screen.window !== null && windowTitle.startsWith(ctx.unit) && (/overview/i.test(windowTitle) || !windowTitle.slice(ctx.unit.length).includes(' · '))
+  steps.push({ press: `map icon "${ctx.unit}" at ${icon.x},${icon.y}`, kind: 'map', outcome: screen.window === null ? (card ? 'a Plant card' : 'nothing') : `window "${windowTitle}" (${screen.window.position ?? ''})${card ? ' and a Plant card' : ''}` })
+  const shots = [await shotOf(ctx, id)]
+  return {
+    id, title, verdict: overview && !card ? '✔' : screen.window !== null ? '◐' : '✖', budget: 1, clicks: 1, path: steps, deadEnds: screen.window === null ? 1 : 0, searched: named.length,
+    detail: `${screen.window === null ? 'no display window opened' : `"${windowTitle}" opened${overview ? ' (its overview)' : ' (not its overview)'} ${opened} ms after the press, its content ${content === null ? 'not within 20 s' : `${content} ms later`}`}; ${card ? 'a Plant card opened' : 'no Plant card'}; the icon found among ${disks.length} Plant disks by its hover card`,
+    shots, size: sizeName,
+  }
+}
+
 const t7 = (): TaskResult => ({
   id: 'T7', title: '"Anything to worry about?": every cited key resolves', verdict: 'R3', budget: null, clicks: null, path: [], deadEnds: 0, searched: 0,
   detail: 'needs an Assistant answer with a vignette: chat-cards.ts judges T7 (every cited key resolves) on the paired AI eval\'s answers (R3, ≤ USD 4)',
   shots: [],
 })
 
-export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10'] as const
+export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T11-1046', 'T17'] as const
 
 if (import.meta.main) {
   const argv = options(Bun.argv.slice(2))
@@ -535,7 +703,7 @@ if (import.meta.main) {
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const api = createStackApi(origin, workspaceId)
   const page = await openPage(port, 1920, 1080)
-  const ctx: Ctx = { page, api, origin, workspaceId, unit: argv.get('unit') ?? 'Halden Unit 1', plantId: argv.get('plant') ?? 'plant:halden-1', out, label, runA }
+  const ctx: Ctx = { page, api, origin, workspaceId, unit: argv.get('unit') ?? 'Halden Unit 1', plantId: argv.get('plant') ?? 'plant:halden-1', out, label, runA, port }
   // A rerun of some tasks keeps the others' results in the same file.
   const file = join(out, `${label}-walks.json`)
   const earlier: ReadonlyArray<TaskResult> = await Bun.file(file).exists() ? (JSON.parse(await Bun.file(file).text()).results ?? []) : []
@@ -549,7 +717,8 @@ if (import.meta.main) {
         result = task === 'T1' ? await t1(ctx, false) : task === 'T1-live' ? await t1(ctx, true) : task === 'T2' ? await t2(ctx)
           : task.startsWith('T3-') ? await t3(ctx, task.slice(3)) : task === 'T4' ? await t4(ctx) : task === 'T5' ? await t5(ctx) : task === 'T6' ? await t6(ctx)
             : task === 'T7' ? t7() : task === 'T8' ? await t8(ctx) : task === 'T9' ? await t9(ctx)
-              : task === 'T10' ? await t10(ctx, results.find(r => r.id === 'T8'), results.find(r => r.id === 'T6')) : (() => { throw new Error(`unknown task ${task}`) })()
+              : task === 'T10' ? await t10(ctx, results.find(r => r.id === 'T8'), results.find(r => r.id === 'T6'))
+                : task === 'T17' ? await t17(ctx) : task === 'T11' ? await t11(ctx) : task.startsWith('T11-') ? await t11(ctx, task.slice(4)) : (() => { throw new Error(`unknown task ${task}`) })()
       } catch (error) {
         result = { id: task, title: '(walk failed to run)', verdict: '✖', budget: null, clicks: null, path: [], deadEnds: 0, searched: 0, detail: `the walk threw: ${String(error).slice(0, 300)}`, shots: [await shotOf(ctx, `${task}-failed`).catch(() => '')] }
       }

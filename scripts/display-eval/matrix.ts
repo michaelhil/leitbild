@@ -106,12 +106,14 @@ const LIST_STATE = String.raw`(() => {
   const docs = lb.documents().filter(d => d.frame && /\/world\/embed\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))
   const area = d => { const r = d.frame.getBoundingClientRect(); return r.width * r.height }
   const shown = docs.sort((a, b) => area(b) - area(a))[0]
-  if (!shown) return { rows: 0, marked: 0, pressed: 0 }
+  if (!shown) return { rows: 0, marked: 0, pressed: 0, texts: [] }
   const doc = shown.doc
-  const rows = [...doc.querySelectorAll('section.alerts .row, section.alerts li, .alerts .row')].filter(r => lb.shown(r) && !/\d+\s+expected/i.test(r.textContent || '')).length
+  // The list's rows, not the expected aggregate ("15 expected after RX TRIP").
+  const shownRows = [...doc.querySelectorAll('section.alerts .row, section.alerts li, .alerts .row')].filter(r => lb.shown(r) && !/\d+\s+expected after\b/i.test(r.textContent || ''))
   const marked = doc.querySelectorAll('.flow .activated').length + [...doc.querySelectorAll('.flow obc-automation-button')].filter(b => b.activated === true).length
   const pressed = doc.querySelectorAll('.tiles button.tile[aria-pressed="true"]').length
-  return { rows, marked, pressed }
+  const texts = shownRows.map(r => ((r.getAttribute('title') || '') + ' ' + (r.innerText || '')).replace(/\s+/g, ' ').trim())
+  return { rows: shownRows.length, marked, pressed, texts }
 })()`
 
 /** A point on the app's top bar (the Host page's own, 20 px down), outside the display window, on no control and no
@@ -205,21 +207,34 @@ export const presses = async (page: Page, config: { readonly api: StackApi; read
     const pressable = tiles.filter(tile => tile.button)
     const results: string[] = []
     let good = 0
+    // Each alert's category as World's sample names it: a pressed tile's list holds its category's rows only. (In the
+    // band, which shows three rows unfiltered, a tile's list may hold more rows than before: narrowing is by category.)
+    const fresh = await config.api.defaultView(config.runId, config.plantId).catch(() => null)
+    const sampled = fresh === null ? null : await config.api.sample(config.runId, fresh.state).catch(() => null)
+    const categories: ReadonlyArray<{ readonly words: string; readonly category: string }> = (sampled?.alerts ?? [])
+      .map((entry: any) => ({ words: String(entry.alert?.message ?? '').slice(0, 20), category: String(entry.category?.label ?? '') }))
+      .filter((entry: { words: string }) => entry.words.length >= 8)
+    const othersIn = (texts: ReadonlyArray<string>, category: string) => texts.filter(text => {
+      const of = categories.filter(entry => text.includes(entry.words))
+      return of.length > 0 && !of.some(entry => entry.category === category)
+    })
     for (const tile of pressable.slice(0, 6)) {
-      const before = await page.eval<{ rows: number; marked: number }>(LIST_STATE)
+      const before = await page.eval<{ rows: number; marked: number; texts: ReadonlyArray<string> }>(LIST_STATE)
       const at = await page.eval<{ x: number; y: number } | null>(TILE_POINT(tile.title))
       if (at === null) { results.push(`"${tile.title.split(':')[0]}" not on screen`); continue }
       for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
       await sleep(900)
-      const after = await page.eval<{ rows: number; marked: number; pressed: number }>(LIST_STATE)
-      const ok = after.pressed > 0 && after.rows > 0 && after.rows <= before.rows
+      const after = await page.eval<{ rows: number; marked: number; pressed: number; texts: ReadonlyArray<string> }>(LIST_STATE)
+      const category = tile.title.split(':')[0]!.trim()
+      const others = othersIn(after.texts, category)
+      const ok = after.pressed > 0 && after.rows > 0 && (categories.length > 0 ? others.length === 0 : after.rows <= before.rows)
       if (ok) good += 1
-      results.push(`"${tile.title.split(':')[0]}" → ${after.rows} rows (from ${before.rows}), ${after.marked} drawn items marked${after.pressed > 0 ? '' : ', not pressed'}`)
+      results.push(`"${category}" → ${after.rows} rows (from ${before.rows})${others.length > 0 ? `, ${others.length} of another category ("${others[0]!.slice(0, 40)}")` : ''}, ${after.marked} drawn items marked${after.pressed > 0 ? '' : ', not pressed'}`)
       for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
       await sleep(700)
     }
     // The band at a narrow width (W4.3: leads, counts, first rows) may leave the tiles to the full list: not judged there.
-    checks.push({ id: 'press-tiles', release: 'R3', pass: tiles.length === 0 ? (config.chatOpen ? null : false) : pressable.length > 0 && good === Math.min(6, pressable.length), detail: tiles.length === 0 ? `no alert tiles in the display${config.chatOpen ? ' (the band with the chat open: the full list holds them)' : ''}` : `${tiles.length} tiles, ${pressable.length} with alerts (buttons); ${good} of ${Math.min(6, pressable.length)} pressed narrow the list to rows: ${results.join('; ')}` })
+    checks.push({ id: 'press-tiles', release: 'R3', pass: tiles.length === 0 ? (config.chatOpen ? null : false) : pressable.length > 0 && good === Math.min(6, pressable.length), detail: tiles.length === 0 ? `no alert tiles in the display${config.chatOpen ? ' (the band with the chat open: the full list holds them)' : ''}` : `${tiles.length} tiles, ${pressable.length} with alerts (buttons); ${good} of ${Math.min(6, pressable.length)} pressed narrow the list to their category's rows: ${results.join('; ')}` })
     await restore()
   }
   // A refused default is no button: every drawn element whose default World refuses must draw no button.

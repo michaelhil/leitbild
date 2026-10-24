@@ -3,7 +3,8 @@ import type { Screen, ScreenLine } from './display-dom.ts'
 import { classify, sizeSpec } from './display-press.ts'
 import { E0_CHECKS } from './e0.ts'
 import { csfRow, viewport } from './matrix.ts'
-import type { DisplayState } from './display-dom.ts'
+import { expectedGathering, type DisplayState } from './display-dom.ts'
+import { networkFaults, networkWordsCut, type NetworkRead } from './render-checks.ts'
 
 const line = (text: string, region: string, y: number, extra: Partial<ScreenLine> = {}): ScreenLine => ({ text, region, on: true, valueOn: true, x: 20, y, w: 200, h: 16, ...extra })
 const screen = (lines: ReadonlyArray<ScreenLine>, window: Partial<NonNullable<Screen['window']>> = {}, dialogs: Screen['dialogs'] = []): Screen => ({
@@ -155,5 +156,36 @@ describe('the rendering matrix', () => {
     expect(viewport(state, r2, sizeSpec('1046')).pass).toBe(true)
     const off = screen(r2.lines.map(entry => entry.region === 'alerts' ? { ...entry, on: false, valueOn: false } : entry))
     expect(viewport(state, off, sizeSpec('1046')).pass).toBe(false)
+  })
+})
+
+describe('the network drawing (grid, R3 W9.3)', () => {
+  const line = (text: string, title: string, at: Partial<NetworkRead['texts'][number]> = {}): NetworkRead['texts'][number] =>
+    ({ text, title, kind: 'name', item: text, x: 0, y: 0, w: 120, h: 17, clipped: false, hidden: false, ...at })
+  test('words cut: an ellipsis inside a word, the 24-character stop cap, a clipped box; whole words pass', () => {
+    expect(networkWordsCut(line('Sylling trafostasjon 420/…', 'Sylling trafostasjon 420/300 kV · 8.5 %'))).toContain('inside a word')
+    expect(networkWordsCut(line('Sylling trafostasjon …', 'Sylling trafostasjon 420/300 kV'))).toBeNull()
+    expect(networkWordsCut(line('Follo - Tegneby / Syllin', 'Follo - Tegneby / Syllin'))).toContain('stop cap')
+    expect(networkWordsCut(line('Tegneby koblingsstasjon 420 kV', 'Tegneby koblingsstasjon 420 kV'))).toBeNull()
+    expect(networkWordsCut(line('Ringerike - Sylling', 'Ringerike - Sylling', { clipped: true }))).toBe('clipped by its box')
+  })
+  test('a name whose descenders sit on its bus bar is against it; one a row above is not', () => {
+    const read = (y: number): NetworkRead => ({ found: true, texts: [line('Tegneby koblingsstasjon 420 kV', 'Tegneby koblingsstasjon 420 kV', { x: 840, y, w: 179 })], bars: [{ label: '', x: 840, y: 44, w: 216, h: 16 }], width: 1344, height: 264, shown: { x: 0, y: 0, w: 1030, h: 264 } })
+    expect(networkFaults(read(29)).against).toHaveLength(1)
+    expect(networkFaults(read(26)).against).toHaveLength(0)
+  })
+})
+
+describe('the expected alerts, gathered (W2.3; the band drops its aggregate row, alarms2)', () => {
+  const head = line('ALERTS · 29 8 6 29 UNACK 15 expected', 'alerts', 300)
+  const rows = [line('UNACK 1st TURB TRIP: Turbine trip on loss of load 2:59', 'alerts', 320), line('UNACK 1st RX TRIP: Reactor trip on turbine trip 2:58', 'alerts', 340)]
+  test('the aggregate row, wherever the column is laid out; its place among the rows', () => {
+    const on = screen([head, ...rows, line('15 expected after RX TRIP 15 UNACK', 'alerts', 360)])
+    expect(expectedGathering(on)).toMatchObject({ how: 'aggregate', count: 15, index: 2 })
+  })
+  test("the head's count stands in for it in the band only", () => {
+    expect(expectedGathering(screen([head, ...rows]))).toBeNull()
+    expect(expectedGathering({ ...screen([head, ...rows]), band: true })).toMatchObject({ how: 'count', count: 15, index: -1 })
+    expect(expectedGathering({ ...screen([line('ALERTS · 29 8 6 29 UNACK', 'alerts', 300), ...rows]), band: true })).toBeNull()
   })
 })

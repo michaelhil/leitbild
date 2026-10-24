@@ -15,7 +15,7 @@
  * Writes <out>/<label>-e0.json and shots. Loopback only; reads only (the Run is not changed); no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
-import { behindAffordance, graphicsOnScreen, onScreen, type PressTarget, type Screen, type ScreenLine } from './display-dom.ts'
+import { behindAffordance, expectedGathering, graphicsOnScreen, onScreen, type PressTarget, type Screen, type ScreenLine } from './display-dom.ts'
 import { goHome, homeOf, openOverview, press, sizeSpec, targetsOf, type Outcome, type SizeSpec } from './display-press.ts'
 
 export interface Judged { readonly pass: boolean; readonly evidence: string }
@@ -115,8 +115,9 @@ export const E0_CHECKS: ReadonlyArray<E0Check> = [
       const rows = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\b\d{1,2}:\d{2}\b|\bago\b|\d+\s*(s|min)\b/.test(line.text))
       const firstOuts = screen.lines.filter(line => line.region === 'alerts' && line.valueOn && /\b1st\b|first out/i.test(line.text))
       const grouped = firstOuts.filter(line => /\b1st [A-Z]{2,}|first out [A-Z]{2,}\b.*:/.test(line.text))
-      const aggregate = lines(screen, /\d+\s+expected after\b/i)
-      return { pass: rows.length >= 3 && (firstOuts.length === 0 || grouped.length === firstOuts.length) && aggregate.length > 0, evidence: `${rows.length} rows on screen; first-outs ${firstOuts.length} (${grouped.length} named by group${firstOuts.length > grouped.length ? `, e.g. "${firstOuts.find(line => !grouped.includes(line))!.text.slice(0, 60)}"` : ''}); expected aggregate ${aggregate.length > 0 ? quote(aggregate) : 'none'}` }
+      // The aggregate row, or in the band (which drops it for a compact tile row) the head's "N expected" count.
+      const gathered = expectedGathering(screen, true)
+      return { pass: rows.length >= 3 && (firstOuts.length === 0 || grouped.length === firstOuts.length) && gathered !== null, evidence: `${rows.length} rows on screen; first-outs ${firstOuts.length} (${grouped.length} named by group${firstOuts.length > grouped.length ? `, e.g. "${firstOuts.find(line => !grouped.includes(line))!.text.slice(0, 60)}"` : ''}); expected ${gathered === null ? 'not gathered on screen' : `gathered by its ${gathered.how === 'aggregate' ? 'aggregate row' : "band's head count"} "${gathered.text.slice(0, 60)}"`}` }
     },
   },
   {

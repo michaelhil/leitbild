@@ -30,7 +30,7 @@ import { goHome, homeOf, openOverview, press, sizeSpec, targetsOf, waitForConten
 import { judgeDrawing, topologyOf, type GeometryResult } from './drawing-geometry.ts'
 import { csfRow, viewport, type MatrixCheck } from './matrix.ts'
 import { colourScan } from './pixels.ts'
-import { readColumn, readDrawing, readFonts, readTheme, readTrends, readWords, type ColumnRead, type FontsRead, type RenderedDrawing, type ThemeRead, type TrendsRead } from './render-checks.ts'
+import { readColumn, readDrawing, readFonts, networkFaults, readNetwork, readTheme, readTrends, readWords, type ColumnRead, type FontsRead, type NetworkRead, type RenderedDrawing, type ThemeRead, type TrendsRead } from './render-checks.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
 const WORKTREE = new URL('../../', import.meta.url).pathname
@@ -119,6 +119,16 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
       checks.push(check('vessel-gap', geometry.drawn.silhouettes === 0 ? null : geometry.vesselGaps.length === 0, geometry.drawn.silhouettes === 0 ? 'no vessel, tank or exchanger silhouette found in the drawing' : `${geometry.drawn.silhouettes} vessel silhouettes; ${geometry.vesselGaps.length} pipe ends stop more than 1 px short${listed(geometry.vesselGaps.map(gap => `${gap.silhouette} ${gap.gap} px at ${gap.at}`))}`))
     }
   } else if (view !== 'overview' || rendered.found) checks.push(check('overlap', null, rendered.found ? 'the view carries no topology section' : 'no flow drawing in this view'))
+
+  // The network drawing (the grid, W9.3): no text against text or a bus bar, no word cut, nothing past the window's room.
+  const network = await page.eval<NetworkRead>(readNetwork())
+  if (network.found) {
+    const faults = networkFaults(network)
+    const room = `drawing ${network.width} px wide, ${Math.round(network.shown.w)} px of it shown`
+    checks.push(check('network-overlap', faults.against.length === 0, `${network.texts.length} network text lines, ${network.bars.length} bus bars: ${faults.against.length} against text or a bar${listed([...faults.against])}`))
+    checks.push(check('network-cut', faults.cut.length === 0, `${faults.cut.length} network text lines with words cut${listed([...faults.cut])}`))
+    checks.push(check('network-fit', faults.hidden.length === 0, `${room}; ${faults.hidden.length} text lines past it with no visible affordance${listed([...faults.hidden])}`))
+  }
 
   // Colour at rest (Run B): no alert colour anywhere in the display frame.
   if (run === 'B' && themeRead.frame !== null) {

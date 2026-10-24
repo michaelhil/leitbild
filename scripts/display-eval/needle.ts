@@ -30,7 +30,7 @@
  * Writes <out>/<label>-needle.json and shots. Loopback only; no model is called. */
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep } from './browser.ts'
-import { readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
+import { expectedGathering, readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
 import { goHome, homeOf, openOverview, press, screenOf, sizeSpec, targetsOf } from './display-press.ts'
 import { TILES } from './matrix.ts'
 import { createStackApi } from './stack-api.ts'
@@ -46,8 +46,8 @@ const simOf = (state: DisplayState, day: string): number | null => {
 }
 /** The alert list's rows in order, as the display shows them (on screen or not), with the aggregate's place. */
 const listOf = (screen: Screen) => screen.lines.filter(line => line.region === 'alerts' && !/^alerts\b/i.test(line.text))
-const aggregateIndex = (rows: ReadonlyArray<{ text: string }>) => rows.findIndex(row => /\d+\s+expected after\b/i.test(row.text))
-const aggregateCount = (rows: ReadonlyArray<{ text: string }>) => { const row = rows.find(entry => /\d+\s+expected after\b/i.test(entry.text)); return row === undefined ? null : Number(row.text.match(/(\d+)\s+expected/i)![1]) }
+/** The expected alerts' count where the display gathers them: its aggregate row, or in the band the head's count. */
+const expectedCount = (screen: Screen) => expectedGathering(screen)?.count ?? null
 
 if (import.meta.main) {
   const argv = options(Bun.argv.slice(2))
@@ -96,8 +96,13 @@ if (import.meta.main) {
     const rowAbove = (poll: Poll) => {
       const rows = listOf(poll.screen)
       const own = rows.findIndex(row => needleAlert !== null && row.text.includes(needleAlert.message.slice(0, 30)))
-      const aggregate = aggregateIndex(rows)
-      return own >= 0 && (aggregate < 0 || own < aggregate) && aggregate >= 0
+      // Above the aggregate row; in the band (no aggregate row, the head counts the expected; lead ruling 23 Oct) above
+      // its "+N more".
+      const gathered = expectedGathering(poll.screen)
+      if (own < 0 || gathered === null) return false
+      if (gathered.how === 'aggregate') return own < gathered.index
+      const more = rows.findIndex(row => /^\+\s*\d+\s+more\b/i.test(row.text))
+      return more < 0 || own < more
     }
     // One press on the needle's alert row, as a person does: what it opens, and the needle's frame there at the first read.
     let detail: { readonly pressed: string; readonly outcome: string; readonly title: string | null; readonly tone: string | null; readonly readMs: number | null; readonly framedSimMs: number | null; readonly home: boolean } | null = null
@@ -197,9 +202,12 @@ if (import.meta.main) {
     // An SG low-low as its own row: its message ("Steam generator A low-low level", cut by whole words where room is
     // short: "Steam generator A…") or its tag ("LO-LO · AFW START"), outside the expected aggregate.
     const lowLowOwn = (poll: Poll) => listOf(poll.screen).some(row => /(steam generator|\bSG\b)[^|]*(low-low|\bLO-LO\b)/i.test(row.text) && !/expected after/i.test(row.text))
-    const countBefore = beforeExpiry === undefined ? null : aggregateCount(listOf(beforeExpiry.screen))
-    const expiryLag = firstWithin(poll => lowLowOwn(poll) && (countBefore === null || (aggregateCount(listOf(poll.screen)) ?? 0) < countBefore), expiryAt)
-    const sawAggregate = polls.some(poll => aggregateIndex(listOf(poll.screen)) >= 0)
+    const countBefore = beforeExpiry === undefined ? null : expectedCount(beforeExpiry.screen)
+    // In the band (three rows, no aggregate row) the SG low-low's own row need not show: its leaving the head's count is it.
+    const leftExpected = (poll: Poll) => countBefore !== null && (expectedCount(poll.screen) ?? 0) < countBefore
+    const expiryLag = firstWithin(poll => (poll.screen.band === true && expectedGathering(poll.screen)?.how !== 'aggregate' ? leftExpected(poll) : lowLowOwn(poll) && (countBefore === null || leftExpected(poll))), expiryAt)
+    const sawAggregate = polls.some(poll => expectedGathering(poll.screen) !== null)
+    const gatheredBy = [...new Set(polls.map(poll => expectedGathering(poll.screen)?.how).filter(how => how !== undefined))].join(' and ') || 'nothing'
     const checks = [
       { id: 'set-up', release: 'R2', pass: setUp.accepted, detail: `${setUp.how}: ${setUp.accepted ? 'accepted' : setUp.reply.slice(0, 240)}; ${element} at the end: ${JSON.stringify(elementState).slice(0, 200)}` },
       { id: 'needle-alert', release: 'R2', pass: needleAlert !== null, detail: needleAlert === null ? `no alert on ${element} in the Run (the Pack declares none for a pump that does not start)` : `"${needleAlert.message}" raised ${new Date(needleAlert.raisedMs).toISOString().slice(11, 19)}` },
@@ -210,20 +218,20 @@ if (import.meta.main) {
           : drawn ? (frameLag === null ? 'drawn on the overview, never framed' : `framed on the overview ${frameLag} s after its alert (${framedNeedle(after(needleAlert.raisedMs).find(poll => framedNeedle(poll))!)?.tone})`)
           : `${name} is not drawn on the overview (its tile there is R3, W2.2); one press on its row → ${detail === null ? 'never pressed' : `${detail.outcome}${detail.title === null ? ' (not its detail)' : ''}; ${detail.tone === null ? `${name} not framed there` : `framed ${detail.tone} at the first read${detail.framedSimMs === null ? '' : `, ${(detail.framedSimMs - needleAlert.raisedMs) / 1000} s of Run time after its alert`}`}; back home: ${detail.home}`}`,
       },
-      { id: 'needle-row', release: 'R2', pass: needleAlert === null ? false : rowLag !== null && rowLag <= ONE_SAMPLE_S, detail: needleAlert === null ? 'no alert, so no row' : rowLag === null ? `its row never stood above an expected aggregate (aggregate ${sawAggregate ? 'seen' : 'never shown'})` : `above the aggregate ${rowLag} s after its alert` },
+      { id: 'needle-row', release: 'R2', pass: needleAlert === null ? false : rowLag !== null && rowLag <= ONE_SAMPLE_S, detail: needleAlert === null ? 'no alert, so no row' : rowLag === null ? `its row never stood ${gatheredBy === 'count' ? 'among the band\'s rows above its "+N more"' : 'above an expected aggregate'} (expected gathered by ${gatheredBy})` : `${gatheredBy === 'count' ? 'in the band above its "+N more"' : 'above the expected aggregate'} ${rowLag} s after its alert` },
       {
         id: 'needle-tile', release: 'R3', pass: needleAlert === null ? false : tileLag !== null && tileLag <= ONE_SAMPLE_S,
         detail: needleAlert === null ? 'no alert, so no tile' : polls.every(poll => poll.tiles.length === 0) ? 'no alert tiles in the display (W2.2)'
           : `its category ${needleCategory === null ? '(none in the sample)' : `"${needleCategory}"`}: ${tileLag === null ? 'its tile never lit' : `tile lit ${tileLag} s after its alert ("${litTile(after(needleAlert.raisedMs).find(poll => litTile(poll) !== undefined)!)!.title}")`}`,
       },
-      { id: 'expiry', release: 'R2', pass: sawAggregate && expiryLag !== null && expiryLag <= ONE_SAMPLE_S, detail: !sawAggregate ? 'no expected aggregate was ever shown' : `window ends ${new Date(expiryAt).toISOString().slice(11, 19)}; aggregate ${countBefore ?? '?'} before; an SG low-low ${expiryLag === null ? 'never left it' : `left it ${expiryLag} s after`}` },
+      { id: 'expiry', release: 'R2', pass: sawAggregate && expiryLag !== null && expiryLag <= ONE_SAMPLE_S, detail: !sawAggregate ? 'no expected aggregate row or band count was ever shown' : `window ends ${new Date(expiryAt).toISOString().slice(11, 19)}; expected ${countBefore ?? '?'} before (gathered by ${gatheredBy}); an SG low-low ${expiryLag === null ? 'never left it' : `left it ${expiryLag} s after`}` },
       { id: 'coverage', release: 'R2', pass: null, detail: unitCoverage === null ? `coverage.ts failed: ${coverage.stderr.toString().slice(0, 200)}` : `${unitCoverage.alerts} alerts on ${plantId}: ${unitCoverage.expected.count} (${unitCoverage.expected.share} %) expected after a first-out by the Pack's rule, ${unitCoverage.noObservable.count} (${unitCoverage.noObservable.share} %) name no observable; the display's sample marks ${marked.length} of ${sampleRows.length} rows expected` },
     ]
     const result = {
       label, origin, from, copy, size, inject: inject ?? null, events: { playSim: new Date(playSim).toISOString(), upset: upsetMs && new Date(upsetMs).toISOString(), firstOut: firstOutMs && new Date(firstOutMs).toISOString(), needleAlert, expiryAt: new Date(expiryAt).toISOString() },
       checks, detail, coverage: unitCoverage === null ? null : { alerts: unitCoverage.alerts, expected: unitCoverage.expected, noObservable: unitCoverage.noObservable, systemResolves: unitCoverage.systemResolves, sampleMarked: marked.length, sampleRows: sampleRows.length },
       end: { alerts: last.state.alerts, framed: last.state.framed, rows: listOf(last.screen).map(row => row.text) },
-      timeline: polls.filter((_, index) => index % 5 === 0).map(poll => ({ sim: poll.state.sim, rows: listOf(poll.screen).length, aggregate: aggregateCount(listOf(poll.screen)), framed: poll.state.framed.length, needle: framedNeedle(poll)?.tone ?? null })),
+      timeline: polls.filter((_, index) => index % 5 === 0).map(poll => ({ sim: poll.state.sim, rows: listOf(poll.screen).length, aggregate: expectedCount(poll.screen), framed: poll.state.framed.length, needle: framedNeedle(poll)?.tone ?? null })),
       shots, console: page.console.slice(-20),
     }
     await Bun.write(join(out, `${label}-needle.json`), JSON.stringify(result, null, 2))

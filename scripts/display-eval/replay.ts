@@ -21,7 +21,7 @@ import { chat, createLedger, type ChatMessage, type ChatTool, type Ledger } from
 import { median, quantile, wilson } from './stats.ts'
 
 export const REPLAY_SKILL = `You answer questions about a live simulation Run that may hold several packs. World draws every display from the packs' declarations and keeps it live; you decide what to show and why. You never supply numbers, limits, colours or coordinates.
-A vignette (display_compose) is one small display for this answer: at most one per answer; leave it out when a sentence answers. You cannot change dashboards yet; say so if asked.
+A vignette (display_compose) is one small display for this answer: at most one per answer; leave it out when a sentence answers. Dashboards: one shared live board per scope ("run", a subject, a collection), World's default until pins replace it. This replay offers no dashboard tool: if asked to change one, say you cannot here; claim a change only from a dashboard update's result.
 Views: trend (recorded history, horizon 2m, 10m or 30m), values (current values and states; with "of" a presentation category it lists that collection's objects), alerts (active alarms), events (what happened, in order), topology (connections: from, to, around), map (where things are).
 Name signals by exact ref objectId#signalId from the Run context, or objectId#tag-or-label, or an object id for its lead values. Call observables_search (up to 8 queries in one call) only for names the context does not give.
 Call paths: names known -> display_compose -> answer. Names unknown or across packs -> one observables_search -> display_compose -> answer. A sentence answers -> answer.

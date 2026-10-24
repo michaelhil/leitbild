@@ -261,3 +261,90 @@ export const readWords = (): string => String.raw`((() => {${SHOWN}
   }
   return out
 })())`
+
+export interface NetworkRead {
+  readonly found: boolean
+  /** Each text line of the network drawing (a name, a reading): its glyph box in the drawing's coordinates, its block's
+   * full words (the block's title), whether its own block clips it, and whether it lies past what the window shows. */
+  readonly texts: ReadonlyArray<{ readonly text: string; readonly title: string; readonly kind: string; readonly item: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly clipped: boolean; readonly hidden: boolean }>
+  /** Each bus bar drawn (obc-bus), its box. */
+  readonly bars: ReadonlyArray<{ readonly label: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number }>
+  readonly width: number
+  readonly height: number
+  /** What shows of the drawing in the window (its box clipped by the scrollers around it), in drawing coordinates. */
+  readonly shown: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+}
+
+/** The network drawing (the grid, W9): its text lines and bus bars as rendered, for overlap, cut words and fit. */
+export const readNetwork = (): string => String.raw`((() => {${SHOWN}
+  const none = { found: false, texts: [], bars: [], width: 0, height: 0, shown: { x: 0, y: 0, w: 0, h: 0 } }
+  if (!shown) return none
+  const doc = shown.doc
+  const drawing = doc.querySelector('.network .drawing')
+  if (!drawing) return none
+  const dr = drawing.getBoundingClientRect()
+  const scale = drawing.offsetWidth > 0 ? dr.width / drawing.offsetWidth : 1
+  const toDrawing = r => ({ x: (r.l - dr.left) / scale, y: (r.t - dr.top) / scale, w: (r.r - r.l) / scale, h: (r.b - r.t) / scale })
+  // What shows of it: the drawing's box clipped by the boxes around it that hide or scroll (the window's room).
+  let vis = { l: dr.left, t: dr.top, r: dr.right, b: dr.bottom }
+  for (let a = drawing.parentElement; a && a !== doc.documentElement; a = a.parentElement) {
+    const st = doc.defaultView.getComputedStyle(a)
+    if (st.overflowX === 'visible' && st.overflowY === 'visible') continue
+    const q = a.getBoundingClientRect()
+    if (st.overflowX !== 'visible') vis = { ...vis, l: Math.max(vis.l, q.left), r: Math.min(vis.r, q.left + a.clientWidth) }
+    if (st.overflowY !== 'visible') vis = { ...vis, t: Math.max(vis.t, q.top), b: Math.min(vis.b, q.top + a.clientHeight) }
+  }
+  const shownBox = toDrawing(vis)
+  const texts = []
+  ;[...drawing.querySelectorAll('.text')].forEach((block, at) => {
+    const br = block.getBoundingClientRect()
+    const blockClips = doc.defaultView.getComputedStyle(block).overflowX !== 'visible'
+    for (const span of block.querySelectorAll(':scope > span')) {
+      const r = textRect(span)
+      if (!r) continue
+      const box = toDrawing(r)
+      texts.push({
+        text: textOf(span), title: block.getAttribute('title') || '', kind: [...span.classList].filter(c => !/^svelte-/.test(c)).join('.') || 'line', item: String(at), ...box,
+        clipped: blockClips && (r.l < br.left - 1 || r.r > br.left + block.clientWidth * scale + 1),
+        hidden: box.x < shownBox.x - 1 || box.x + box.w > shownBox.x + shownBox.w + 1 || box.y < shownBox.y - 1 || box.y + box.h > shownBox.y + shownBox.h + 1,
+      })
+    }
+  })
+  const bars = [...drawing.querySelectorAll('obc-bus')].map(bus => { const r = bus.getBoundingClientRect(); return { label: bus.getAttribute('label') || bus.label || '', ...toDrawing({ l: r.left, t: r.top, r: r.right, b: r.bottom }) } })
+  return { found: true, texts, bars, width: drawing.offsetWidth, height: drawing.offsetHeight, shown: shownBox }
+})())`
+
+type Box = { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+const overlapArea = (a: Box, b: Box): number => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))
+const inset = (b: Box, dx: number, dy: number): Box => ({ x: b.x + dx, y: b.y + dy, w: Math.max(0, b.w - 2 * dx), h: Math.max(0, b.h - 2 * dy) })
+/** The composer's cap on a stop's joined names (`compose/topology.ts` stopLabel), which cuts without an ellipsis. */
+export const STOP_CAP = 24
+
+/**
+ * How a network text line's words are cut, or null when they show whole (plan §2 rule 2: whole words give way before
+ * any ellipsis). An ellipsis inside a word (its block's title goes on with the same word); a line at the composer's
+ * stop cap with no ellipsis; a line its own block clips.
+ */
+export const networkWordsCut = (text: NetworkRead['texts'][number]): string | null => {
+  if (text.clipped) return 'clipped by its box'
+  if (text.text.endsWith('…')) {
+    const stem = text.text.slice(0, -1)
+    const next = text.title.startsWith(stem) ? text.title.charAt(stem.length) : ''
+    return next !== '' && !/\s/.test(next) && !/\s$/.test(stem) ? `ellipsis inside a word (of "${text.title.slice(0, 48)}")` : null
+  }
+  return text.kind === 'name' && text.text.length === STOP_CAP && text.title === text.text ? `${STOP_CAP} characters, the stop cap, no ellipsis` : null
+}
+
+/** The network drawing's faults: text against text or a bus bar, words cut, text past what the window shows. */
+export const networkFaults = (network: NetworkRead): { readonly against: ReadonlyArray<string>; readonly cut: ReadonlyArray<string>; readonly hidden: ReadonlyArray<string> } => {
+  const short = (words: string) => `"${words.slice(0, 32)}"`
+  const against: string[] = []
+  network.texts.forEach((a, i) => {
+    network.texts.slice(i + 1).forEach(b => { if (a.item !== b.item && overlapArea(inset(a, 1, 2), inset(b, 1, 2)) > 2) against.push(`${short(a.text)} × ${short(b.text)}`) })
+    // A line's box carries a little room under its descenders: 1 px of it may meet a bar, no more.
+    for (const bar of network.bars) if (overlapArea(inset(a, 1, 1), bar) > 4) against.push(`${short(a.text)} × bar "${bar.label.slice(0, 32) || '(unlabelled)'}"`)
+  })
+  const cut = network.texts.flatMap(text => { const how = networkWordsCut(text); return how === null ? [] : [`${short(text.text)}: ${how}`] })
+  const hidden = network.texts.filter(text => text.hidden).map(text => short(text.text))
+  return { against, cut, hidden }
+}
