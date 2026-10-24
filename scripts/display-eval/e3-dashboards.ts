@@ -13,10 +13,11 @@
 const UPDATE = 'world.simulation-run.dashboard.update'
 const unit = (n: number) => `plant:halden-${n}`
 /** One setup update on the Run scope: pins by value (a compose spec), at the revision the copy stands at. */
-const pinRun = (expectedRevision: number, ...specs: ReadonlyArray<{ readonly title: string; readonly subjects: ReadonlyArray<string>; readonly views?: ReadonlyArray<Record<string, unknown>> }>) =>
+const pinRun = (expectedRevision: number, ...specs: ReadonlyArray<{ readonly title: string; readonly question: string; readonly subjects: ReadonlyArray<string>; readonly views: ReadonlyArray<Record<string, unknown>> }>) =>
   ({ operationId: UPDATE, input: { scope: 'run', expectedRevision, pin: specs.map(spec => ({ spec })) } })
-const overview = (n: number) => ({ title: `Halden Unit ${n}`, subjects: [unit(n)] })
-const alarms = (n: number) => ({ title: `Halden Unit ${n} alarms`, subjects: [unit(n)], views: [{ kind: 'alerts' }] })
+// A compose spec as display.compose takes it: title, question, subjects and views.
+const overview = (n: number) => ({ title: `Halden Unit ${n}`, question: `Halden Unit ${n} at a glance`, subjects: [unit(n)], views: [{ kind: 'values' }] })
+const alarms = (n: number) => ({ title: `Halden Unit ${n} alarms`, question: `Halden Unit ${n}'s active alarms`, subjects: [unit(n)], views: [{ kind: 'alerts' }] })
 const run = (setup: ReadonlyArray<{ operationId: string; input: Record<string, unknown> }> = []) => ({ scenario: 'halden-power-complex', setup, advanceMinutes: 1 })
 const none = (scope: unknown = 'run') => ({ scope, change: 'none', evidence: [] })
 
