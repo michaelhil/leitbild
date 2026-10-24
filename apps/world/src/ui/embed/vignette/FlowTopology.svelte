@@ -3,7 +3,7 @@
   import type { SimulationRunId } from '../../../core/model/index.ts'
   import type { Observation } from '../../../core/observation/model.ts'
   import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
-  import type { VignetteSection } from '../../../features/displays/compose/model.ts'
+  import { drawingScale, type VignetteSection } from '../../../features/displays/compose/model.ts'
   import type { Palette } from '../../displays/severity.ts'
   import type { PackElementMarks } from '../../../core/packs/protocol.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
@@ -11,11 +11,12 @@
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayOpening, type DisplayPresentation } from '../view-host.ts'
   import Chooser from './Chooser.svelte'
   import Faceplate from './Faceplate.svelte'
+  import Continues from './Continues.svelte'
   import FlowLegend from './FlowLegend.svelte'
+  import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import { faceplateStates, readingsOf, type FaceplateReadings } from './faceplate.ts'
   import { FLOW_TEXT, FLOW_TRACE } from '../../../features/displays/topology/text.ts'
   import { FLOW_LINE_PX, flowDrawing } from './flow-symbols.ts'
-  import { drawingScale } from './network.ts'
   import { paintLines } from './lines.ts'
   import { magnifierAt, MAGNIFIER } from './magnifier.ts'
   import {
@@ -39,7 +40,9 @@
   // lanes' hub as the registered vessel; names and readings as text where the
   // layout kept room for them. At one grid unit a row, scrolled sideways where
   // it is wider than its frame, and scaled as the composer scaled it where its
-  // rows are fewer than its height (a chat column).
+  // rows are fewer than its height, down to its text floor, past which it
+  // scrolls down within its rows (drawingScale); where it scrolls it says it
+  // continues.
   // Option A (plan v5 §3): a press on an item's body, its symbol or its text
   // (Enter or Space), opens its detail, the element's World default as the
   // next display in the window (Back, and Esc, return here); in a chat answer
@@ -75,6 +78,10 @@
 
   const drawing = $derived(flowDrawing(section, observations, alerts, frozen))
   const scale = $derived(drawingScale(section) * fit)
+  // Taller than its rows hold at its text floor (all but its key's, as a chat scales them): it scrolls down within them.
+  const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)
+  const tall = $derived(drawing.height * scale > held + 0.5)
+  let more = $state<ScrollEnds>(NO_SCROLL_ENDS)
   let presentation = $state.raw<DisplayPresentation>(UNFRAMED_PRESENTATION)
   let opening = $state<DisplayOpening | null>(null)
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
@@ -514,7 +521,8 @@
     onfaceplate={(target, name) => { elementNames = { ...elementNames, [`#${target}`]: name }; openFaceplate(`#${target}`, cardPlace(key, overlay)) }} />
 {/snippet}
 
-<div class="flow">
+<div class="frame">
+<div class="flow" class:tall style:max-height={tall ? `${held}px` : undefined} use:scrollEnds={ends => { more = ends }}>
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
   <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--magnifier-glyph={`${MAGNIFIER.glyph}px`} style:--magnifier-hit={`${MAGNIFIER.hit}px`} style:--unscale={1 / scale} role="group" aria-label="Flow topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
@@ -595,11 +603,15 @@
       item={() => [buttons.get(id), textBlocks.get(id)].flatMap(node => node ?? [])} onchoose={choose} onclose={closeChooser} />
   {/if}
 </div>
+<Continues ends={more} />
+</div>
 <!-- The row the composer keeps under a drawing: its attribution where it carries one, else its key (W6.7). -->
 {#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{:else}<FlowLegend {drawing} {palette} {zoom} />{/if}
 
 <style>
+  .frame { position: relative; }
   .flow { overflow-x: auto; overflow-y: hidden; }
+  .flow.tall { overflow-y: auto; }
   .drawing { position: relative; transform-origin: 0 0; }
   canvas { position: absolute; left: 0; top: 0; }
   .placed { position: absolute; }

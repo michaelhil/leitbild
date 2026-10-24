@@ -21,6 +21,17 @@ import type { TopologyLayout } from '../topology/layout.ts'
 export const VIGNETTE_MAX_ROWS = 40
 export const FRAME_ROWS = 2
 
+/** The least a drawing is ever scaled to: its 12 px text at 11 px, the window's Fit floor (grid.ts, display-zoom.ts). */
+export const DRAWING_SCALE_FLOOR = 11 / 12
+
+/**
+ * The scale a drawing is shown at: whole where its rows hold it, else the share of its height its rows leave ("drawing
+ * scaled to n % to fit": its rows but the last, its attribution's, over the grid rows its layout reaches into), never
+ * below its text floor. Rows that do not hold it at the floor show it at the floor, scrolling within them.
+ */
+export const drawingScale = (section: { readonly rows: number; readonly layout: { readonly height: number } }): number =>
+  Math.min(1, Math.max(DRAWING_SCALE_FLOOR, (section.rows - 1) / Math.max(1, Math.ceil(section.layout.height))))
+
 const rows = z.number().int().min(1).max(VIGNETTE_MAX_ROWS)
 const nodeIds = z.array(z.string().min(1).max(200)).min(1).max(16).optional()
 const horizons = { '2m': 120_000, '10m': 600_000, '30m': 1_800_000 } as const

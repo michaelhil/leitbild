@@ -1,21 +1,21 @@
 <script lang="ts">
   import type { SimulationRunId } from '../../../core/model/index.ts'
-  import { MARGIN_LINES, zoneRows, type VignetteSection, type VignetteView } from '../../../features/displays/compose/model.ts'
+  import { drawingScale, MARGIN_LINES, zoneRows, type VignetteSection, type VignetteView } from '../../../features/displays/compose/model.ts'
   import type { Palette } from '../../displays/severity.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame } from '../view-host.ts'
   import { slotLook } from './collection.ts'
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
-  import { scrollEnds, type ScrollEnds } from './scroll-ends.ts'
+  import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { wholeParts, wholeWords } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
-  import { drawingScale } from './network.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import type { ReadingLook } from './readout.ts'
   import type { VignetteSnapshot } from './vignette-client.ts'
   import AlertsSection from './AlertsSection.svelte'
+  import Continues from './Continues.svelte'
   import ElementBlocks from './ElementBlocks.svelte'
   import EntityTable from './EntityTable.svelte'
   import FlowTopology from './FlowTopology.svelte'
@@ -81,7 +81,7 @@
   }
 
   /** Which ends of a scrolled drawing are out of sight, judged on every scroll and every change of its or its drawing's size. */
-  let more = $state<ScrollEnds>({ left: false, right: false })
+  let more = $state<ScrollEnds>(NO_SCROLL_ENDS)
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
@@ -148,10 +148,9 @@
       {/each}
     </div>
     {#if layout.drawing === 'scrolled'}
-      <div class="scroll-wrap" class:more-left={more.left} class:more-right={more.right}>
+      <div class="scroll-wrap">
         <div class="scroll" use:scrollEnds={ends => { more = ends }}>{@render one(view.sections[drawing]!, drawing)}</div>
-        {#if more.left}<span class="continues left" aria-hidden="true">‹ drawing continues</span>{/if}
-        {#if more.right}<span class="continues right" aria-hidden="true">drawing continues ›</span>{/if}
+        <Continues ends={more} />
       </div>
     {:else}
       {@render one(view.sections[drawing]!, drawing, layout.drawing === 'scaled' ? Math.ceil(view.sections[drawing]!.rows * layout.scale) : view.sections[drawing]!.rows, layout.drawing === 'scaled' ? layout.scale : 1)}
@@ -218,12 +217,6 @@
   .scroll { overflow-x: auto; overflow-y: hidden; }
   /* Its own section only, never a section nested inside the drawing. */
   .scroll > .section { width: max-content; }
-  .scroll-wrap.more-left::before, .scroll-wrap.more-right::after { content: ''; position: absolute; top: 0; bottom: 0; width: 32px; pointer-events: none; }
-  .scroll-wrap.more-left::before { left: 0; background: linear-gradient(to left, transparent, var(--container-background-color)); }
-  .scroll-wrap.more-right::after { right: 0; background: linear-gradient(to right, transparent, var(--container-background-color)); }
-  .continues { position: absolute; z-index: 1; top: 4px; padding: 0 8px; border: 1px solid var(--border-outline-color); border-radius: 12px; background: var(--container-background-color); color: var(--element-active-color); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
-  .continues.left { left: 4px; }
-  .continues.right { right: 4px; }
   /* A chat's drawing too small to read: a link to the window in its place, on the drawing's first row. */
   .view-drawing { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--element-neutral-color); }
   .view-drawing button { height: 32px; padding: 0 12px; border: 1px solid var(--border-outline-color); border-radius: 4px; background: var(--container-background-color); color: var(--element-active-color); font: inherit; font-weight: 600; cursor: pointer; }

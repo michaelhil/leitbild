@@ -12,7 +12,7 @@ import { alertItem, assembleCard, cardAlerts, entityItem, onSubjects, slotItems,
 import { blockRows, elementBlocks } from './element-groups.ts'
 import { declarationOf, declaredRefs, same, valueOf, visibleObject } from './declared.ts'
 import { defaultViews, elementRefs, LEAD_ROWS, leadNow, leadRefs, ownStates, planLead, readLeads, recordedOf, tableRows, type DraftView } from './defaults.ts'
-import { FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, zoneRows, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
+import { drawingScale, FRAME_ROWS, VIGNETTE_MAX_ROWS, vignetteStateSchema, zoneRows, type ComposeIssue, type ResolvedView, type VignetteState } from './model.ts'
 import { isIssue, resolveSubject, subjectObjects, type ComposeRun, type Subject } from './resolve.ts'
 import { TOPOLOGY_REACH } from '../topology/scope.ts'
 import { drawingOf, scopeWithin, topologyOf } from './topology.ts'
@@ -416,7 +416,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   }
   // Beside a drawing, a column too tall for the frame gives way first, whatever the drawing's size.
   if (beside) trendsGiveWay(() => frameRows + fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0) - VIGNETTE_MAX_ROWS)
-  // Then a drawing is scaled to the rows left, never below a third of its height or eight rows, and the card says so.
+  // Then a drawing takes the rows left, never fewer than a third of its height or eight rows. It is scaled to them only
+  // down to its text floor (drawingScale): rows that do not hold it there show it at the floor, scrolling within them.
+  // The card says which.
   for (const view of fitted) {
     if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
     const natural = view.rows
@@ -424,7 +426,11 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + frameRows > VIGNETTE_MAX_ROWS) continue
     if (rows >= natural) continue
     ;(view as { rows: number }).rows = rows
-    countAdjustment(adjusted, { kind: 'layout', text: `drawing scaled to ${Math.round(100 * (rows - 1) / (natural - 1))} % to fit` })
+    const scale = drawingScale({ rows, layout: { height: natural - 1 } })
+    const shown = (rows - 1) / ((natural - 1) * scale)
+    countAdjustment(adjusted, { kind: 'layout', text: shown < 1
+      ? `drawing scaled to ${Math.round(100 * scale)} %, its text floor, and scrolls: ${Math.floor(100 * shown)} % of its height in view`
+      : `drawing scaled to ${Math.round(100 * scale)} % to fit` })
   }
   // Stacked, a trend gives way only after the drawing is scaled.
   trendsGiveWay(() => total() - VIGNETTE_MAX_ROWS)

@@ -58,12 +58,6 @@ export interface NetworkText {
 }
 
 /**
- * The scale a drawing is shown at: whole where its rows hold it, else the share of its height the composer left it
- * ("drawing scaled to n % to fit"): its rows but the last over the grid rows its layout reaches into.
- */
-export const drawingScale = (section: Pick<Topology, 'rows' | 'layout'>): number => Math.min(1, (section.rows - 1) / Math.max(1, Math.ceil(section.layout.height)))
-
-/**
  * How much further a drawing `width` px wide at `scale` is scaled to fit a frame `available` px wide (W4.3): to the
  * frame's width while its 12 px text stays at TEXT_FLOOR_PX or more on screen at the window's `zoom` (the floor a
  * window frame keeps for a flow drawing, grid.ts frameLayout); else not at all, and it scrolls sideways.

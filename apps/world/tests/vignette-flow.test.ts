@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { decimalsFor, unitSymbol, type Observable, type Observation } from '../src/core/observation/model.ts'
 import type { TopologyGraph } from '../src/core/observation/topology.ts'
-import type { VignetteSection } from '../src/features/displays/compose/model.ts'
+import { drawingScale, type VignetteSection } from '../src/features/displays/compose/model.ts'
 import { FLOW_ROOM, overviewOf, topologySection } from '../src/features/displays/compose/topology.ts'
 import { flowLayout, IN_TURN_FIGURES, VALUE_FIGURES } from '../src/features/displays/topology/flow-sizing.ts'
 import { textWidth } from '../src/features/displays/topology/text.ts'
@@ -18,8 +18,7 @@ import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/run
 import { flowDrawing, glyphOf, symbolOf } from '../src/ui/embed/vignette/flow-symbols.ts'
 import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { vesselGeometry } from '../src/ui/embed/vignette/vessel-symbol.ts'
-import { VIGNETTE_ROW_PX } from '../src/ui/embed/vignette/grid.ts'
-import { drawingScale } from '../src/ui/embed/vignette/network.ts'
+import { DRAWING_TEXT_PX, TEXT_FLOOR_PX, VIGNETTE_ROW_PX } from '../src/ui/embed/vignette/grid.ts'
 import { overlaps } from './helpers/network-layout-measure.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -361,17 +360,37 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
 })
 
 describe('scaled drawings', () => {
-  test('a drawing the composer scaled to fit (a chat column) shows at the scale its card says, within its rows, its attribution under it', () => {
+  test('a drawing the composer scaled to fit shows at the scale its card says, within its rows, its attribution under it, never below its text floor', () => {
     const model = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:overview', loopCount: 4 }))
     const { layout } = flowLayout(overviewOf(servedPlantTopology('plant:overview' as never, model))!, ROOM, declaredBy('plant:overview', model))!
-    // The composer's rows (compose.ts): the grid rows the layout reaches into and its attribution, scaled to no less than a third or eight.
+    // The composer's rows (compose.ts): the grid rows the layout reaches into and its attribution.
     const natural = Math.ceil(layout.height) + 1
-    const rows = Math.max(8, Math.ceil((natural - 1) / 3) + 1)
     expect(drawingScale({ rows: natural, layout })).toBe(1)
+    // Rows that hold it at its text floor or more: scaled to them, its whole within them.
+    const rows = Math.ceil((natural - 1) * 0.95) + 1
     const scale = drawingScale({ rows, layout })
-    expect(Math.round(100 * scale)).toBe(Math.round(100 * (rows - 1) / (natural - 1)))
+    expect(scale).toBe((rows - 1) / (natural - 1))
     expect(layout.height * VIGNETTE_ROW_PX * scale).toBeLessThanOrEqual((rows - 1) * VIGNETTE_ROW_PX)
     expect(layout.width * VIGNETTE_ROW_PX * scale).toBeLessThan(layout.width * VIGNETTE_ROW_PX)
+    // Fewer (down to a third or eight, the composer's least): at its 12 px text's 11 px floor, taller than its rows, so it scrolls within them.
+    const fewest = Math.max(8, Math.ceil((natural - 1) / 3) + 1)
+    const floor = drawingScale({ rows: fewest, layout })
+    expect(floor).toBe(TEXT_FLOOR_PX / DRAWING_TEXT_PX)
+    expect(layout.height * VIGNETTE_ROW_PX * floor).toBeGreaterThan((fewest - 1) * VIGNETTE_ROW_PX)
+  })
+
+  test('the drawing scrolls down within its rows where they do not hold it at its floor, and says it continues, clear of its scrollbars', () => {
+    for (const file of ['FlowTopology.svelte', 'NetworkTopology.svelte']) {
+      const drawn = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette', file), 'utf8')
+      expect(drawn).toContain('const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)')
+      expect(drawn).toContain('const tall = $derived(drawing.height * scale > held + 0.5)')
+      expect(drawn).toMatch(/class:tall style:max-height=\{tall \? `\$\{held\}px` : undefined\}[^>]*use:scrollEnds=\{ends => \{ more = ends \}\}/)
+      expect(drawn).toMatch(/\.(flow|network)\.tall \{ overflow-y: auto; \}/)
+      expect(drawn).toContain('<Continues ends={more} />')
+    }
+    const continues = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Continues.svelte'), 'utf8')
+    expect(continues).toContain('{#if ends.bottom}<span class="fade bottom"></span><span class="mark bottom">drawing continues ↓</span>{/if}')
+    expect(continues).toContain('style:right={`${ends.bars.right}px`} style:bottom={`${ends.bars.bottom}px`}')
   })
 })
 
