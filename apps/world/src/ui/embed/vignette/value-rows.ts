@@ -15,6 +15,8 @@ export interface ValueRow {
   readonly ref: string
   /** What the row names it by: its short label, else its label under the vignette's title. */
   readonly label: string
+  /** Its label is a short label its Pack declares (never given way to less than whole, as a margin's name). */
+  readonly named: boolean
   /** Its whole label, for the title and assistive technology. */
   readonly full: string
   readonly look: ReadingLook
@@ -91,6 +93,7 @@ export const valueRows = (input: {
   return {
     ref: value.ref,
     label: ownLabel(value, input.title, input.subject),
+    named: value.shortLabel !== undefined,
     full: value.label,
     look,
     series,

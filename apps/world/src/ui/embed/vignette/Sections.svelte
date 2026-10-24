@@ -9,7 +9,7 @@
   import { underTitle } from './format.ts'
   import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import { drawnScale, frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
-  import { wholeParts, wholeWords } from './fit-words.ts'
+  import { nameAtLeast, nameFloor, wholeParts } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import type { ReadingLook } from './readout.ts'
@@ -105,7 +105,7 @@
           <!-- Their rows kept while none is near, so nothing under them moves when one comes near, in the band too. -->
           <div class="margins" style:min-height={`${MARGIN_LINES * VIGNETTE_ROW_PX}px`}>
             {#each lines as line (line.ref)}
-              <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who" aria-label={line.label} use:wholeWords={line.label}></span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
+              <p class="margin" class:past={line.margin.past} title={`${line.full}: ${line.margin.text}`}><span class="who" aria-label={line.label} use:nameAtLeast={{ text: line.label, floor: nameFloor(line.label, line.named) }}></span><span class="what" aria-label={line.margin.text} use:wholeParts={line.margin}></span></p>
             {/each}
           </div>
         {/if}
@@ -196,7 +196,7 @@
   /* A margin line: its row's short label, then how far from which limit, giving way by whole parts (wholeParts). */
   .margin { display: flex; gap: 6px; max-width: 480px; margin: 0; height: var(--row); line-height: var(--row); white-space: nowrap; color: var(--element-active-color); }
   .margin.past .what { font-weight: 600; }
-  /* The name gives way first, by whole words; then the margin by whole parts; a value or a limit is never cut. */
+  /* The name gives way first, by whole words, never below its short label or first word (nameAtLeast); then the margin by whole parts; a value or a limit is never cut. */
   .margin .who { flex: 0 1000 auto; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
   .margin .what { flex: 0 1 auto; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
   /* Alerts and tables of a frozen display: OpenBridge's low-integrity colours around what they last showed, a little outside it so no word moves. */

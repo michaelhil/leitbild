@@ -71,3 +71,45 @@ export const firstFitting = (node: HTMLElement, texts: ReadonlyArray<string>) =>
   resized.observe(node)
   return { update: (next: ReadonlyArray<string>) => { current = next; fit() }, destroy: () => resized.disconnect() }
 }
+
+/**
+ * A name's least: its whole short label where it has one ("NR level"), else its first word (with "…" where more
+ * follow). A margin line's name gives way by whole words down to it, never to nothing (marginName).
+ */
+export const nameFloor = (text: string, named: boolean): string => {
+  if (named) return text
+  const first = text.split(' ')[0]!
+  return first === text ? text : `${first}…`
+}
+
+/** A name in its room: as many whole words as fit (wholeWordsThatFit), never less than its floor (nameFloor). */
+export const nameThatFits = (text: string, floor: string, fits: (shown: string) => boolean): string => {
+  if (fits(text)) return text
+  const shown = wholeWordsThatFit(text, fits)
+  return shown.length > floor.length ? shown : floor
+}
+
+/**
+ * A Svelte action: the node shows its name (nameThatFits), and asks for at least its floor's width, so the parts
+ * beside it give way before the floor does; fitted again whenever its room or the name changes.
+ */
+export const nameAtLeast = (node: HTMLElement, name: { readonly text: string; readonly floor: string }) => {
+  let current = name
+  const fit = (): void => {
+    // The floor's own width: measured with the node at no width, so its overflow is the text's width alone.
+    node.style.minWidth = ''
+    node.style.width = '0px'
+    node.textContent = current.floor
+    const floor = node.scrollWidth
+    node.style.width = ''
+    node.style.minWidth = `${floor}px`
+    node.textContent = nameThatFits(current.text, current.floor, candidate => {
+      node.textContent = candidate
+      return node.scrollWidth <= node.clientWidth
+    })
+  }
+  fit()
+  const resized = new ResizeObserver(fit)
+  resized.observe(node)
+  return { update: (next: typeof name) => { current = next; fit() }, destroy: () => resized.disconnect() }
+}
