@@ -162,10 +162,11 @@ const READER = `(scope) => {
     const root = scope === 'popover' ? pop : article
     if (!root) return { ...empty, generation: 'vignette' }
     // A row's label as a person reads it: its visible (short, whole-word) label, else its full one (R3's readout-list
-    // rows keep the full label visually hidden beside the short one).
-    const labelOf = el => { const row = el.closest('.readout, .state, .values .row'); return text(row?.querySelector(':scope > .label, :scope > .name > .label')) || text(row?.querySelector(':scope > .full')) }
+    // rows keep the full label visually hidden beside the short one). The column's rows and the faceplate's readings
+    // (R3: .readings > obc-readout-list.rows) are both readout-list rows.
+    const labelOf = el => { const row = el.closest('obc-readout-list > .row') || el.closest('.readout, .state'); return text(row?.querySelector(':scope > .label, :scope > .name > .label, :scope > .criterion > .label')) || text(row?.querySelector(':scope > .full')) }
     const values = []
-    for (const el of root.querySelectorAll('.readout > .reading, .state > obc-status-indicator, .state > .unknown, .values .row > obc-readout-list-item')) {
+    for (const el of root.querySelectorAll('.readout > .reading, .state > obc-status-indicator, .state > .word > obc-status-indicator, .state > .unknown, obc-readout-list > .row > obc-readout-list-item')) {
       if (scope === 'window' && el.closest('.popover, [role=dialog]')) continue
       values.push(valueBox(el, whereOf(el), labelOf(el)))
     }
@@ -211,7 +212,7 @@ const READER = `(scope) => {
       framed, framedSymbols, outlined,
       values,
       text: text(article),
-      popover: pop ? { title: pop.getAttribute('aria-label') || '', ready: pop.querySelector('.section') !== null } : null,
+      popover: pop ? { title: pop.getAttribute('aria-label') || '', ready: pop.querySelector('.section, .readings, obc-readout-list') !== null } : null,
     }
   }
 
