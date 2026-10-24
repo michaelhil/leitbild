@@ -244,6 +244,8 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const flows = new Set<ResolvedView>()
   /** Each fitted alerts view's rows for the alerts it has now (its head, every alert up to eight, "+N more"). */
   const alertsNeed = new Map<ResolvedView, number>()
+  /** Each fitted drawing's height as its layout reaches, in grid rows (a half row too): what the renderer scrolls by. */
+  const heights = new Map<ResolvedView, number>()
   const declared = await declaredRefs(run, views.flatMap(view => view.kind === 'values' || view.kind === 'trend' ? view.refs ?? [] : []))
   const trim = (path: string, refs: ReadonlyArray<string>, cap: number, what: string): ReadonlyArray<string> => {
     const readable = refs.filter(ref => declared.has(ref))
@@ -365,6 +367,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       if (scoped.reach !== undefined) countAdjustment(adjusted, { kind: 'scope', text: `reach narrowed to ${scoped.reach} links to draw at most 60 nodes` })
       const drawn: ResolvedView = { ...view, request: { ...request, ...(scoped.reach === undefined ? {} : { reach: scoped.reach }) }, rows }
       if (graph!.family === 'flow') flows.add(drawn)
+      heights.set(drawn, drawing.layout.height)
       fitted.push(drawn)
     } else {
       // A map's objects beyond 48 are not framed: said, not counted as card items (a map shows none).
@@ -426,8 +429,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + frameRows > VIGNETTE_MAX_ROWS) continue
     if (rows >= natural) continue
     ;(view as { rows: number }).rows = rows
-    const scale = drawingScale({ rows, layout: { height: natural - 1 } })
-    const shown = (rows - 1) / ((natural - 1) * scale)
+    const height = heights.get(view)!
+    const scale = drawingScale({ rows, layout: { height } })
+    // In view as the renderer shows it: its rows but the attribution's, of its height at that scale.
+    const shown = (rows - 1) / (height * scale)
     countAdjustment(adjusted, { kind: 'layout', text: shown < 1
       ? `drawing scaled to ${Math.round(100 * scale)} %, its text floor, and scrolls: ${Math.floor(100 * shown)} % of its height in view`
       : `drawing scaled to ${Math.round(100 * scale)} % to fit` })

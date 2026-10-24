@@ -77,8 +77,8 @@ describe('a drawing taller than its frame (R3 eval)', () => {
       const { section, rows, layout } = await composed(`${GRID}#${element}`)
       expect(section).toBeDefined()
       expect({ element, scale: drawingScale(section!), ...standing(section!) }).toEqual({ element, scale: FLOOR, text: TEXT_FLOOR_PX, scrolls: true })
-      // In view: its rows but the attribution's, of its height at the floor.
-      const inView = Math.floor(100 * (section!.rows - 1) / ((Math.ceil(section!.layout.height)) * FLOOR))
+      // In view: its rows but the attribution's, of its height at the floor, as the renderer scrolls it.
+      const inView = Math.floor(100 * (section!.rows - 1) / (section!.layout.height * FLOOR))
       expect(layout).toContain(`drawing scaled to 92 %, its text floor, and scrolls: ${inView} % of its height in view`)
       expect(rows).toBeLessThanOrEqual(VIGNETTE_MAX_ROWS)
     }
