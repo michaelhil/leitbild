@@ -55,7 +55,7 @@ export interface VignetteSnapshot {
 
 export const SAMPLE_INTERVAL_MS = 1_000
 /**
- * A playing Run steps once a second too, and a four-unit plant's step holds World for about 100 ms: a request that comes
+ * A playing Run steps once a second too, and a large Run's step holds World for about 100 ms: a request that comes
  * in it waits it out. One a second from the request, the next would come in the next step as well, for a minute and
  * more (the two seconds differ by a millisecond or two). A request answered this much later than the quickest of the
  * last answers met a step; the next asks AFTER_STEP_MS after the following step ends, where World answers quickest and
