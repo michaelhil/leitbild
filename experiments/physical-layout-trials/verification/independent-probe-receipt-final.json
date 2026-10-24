@@ -1,0 +1,78 @@
+{
+  "observedAt": "2026-10-24T18:45:07.233Z",
+  "scope": "Independent in-memory source/admission counterchecks; no contender source or output modified",
+  "ifc": {
+    "commit": "91670729621fecaec85ff0e8a9d99b55b19afbb9",
+    "files": {
+      "ifc.ts": "86e1e56528e1c6d8be9b6c702027439513de3f7c0e26264c18f53e39f4d89130",
+      "edit.ts": "82c68f5f945a1c309c709d98ae890bd141458cc06368abfbdd5338352cc39d79",
+      "model.ts": "8c0b358ce5ae39fbd50ebf9f8ba9a17be0e8fdef6d838ba862464cac8260d27d"
+    },
+    "sourceSha256": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+    "sameTarget": {
+      "requestedEast": 2,
+      "acceptedEast": 102,
+      "before": [
+        17,
+        40.4,
+        0
+      ],
+      "after": [
+        119,
+        40.4,
+        0
+      ],
+      "intendedIds": [
+        "mfw-a"
+      ],
+      "actualIds": [
+        "mfw-a"
+      ],
+      "findingReproduced": true
+    },
+    "extraRepresentationItem": {
+      "accepted": true,
+      "baselineNativeTriangles": 30277,
+      "augmentedNativeTriangles": 30397,
+      "parsedModelUnchanged": true,
+      "parsedPumpBodyUnchanged": true,
+      "findingReproduced": true
+    }
+  },
+  "native": {
+    "commit": "8b15e74c2423967f7f90c3ddf76bc6e4349c9f26",
+    "files": {
+      "model.ts": "8654f56c96e9d30b29b211b9e8fcf99e9946275f0d340533f465f947f7c47e18",
+      "edit.ts": "c779f469d2661f6be58d22a3160614590042f05fee681e217a485fa499275624",
+      "compile.ts": "bb24acd41c14b6c6484bd8598afb85f1c5ef0527c422c1ed92a015b3ad2a9a96"
+    },
+    "sourceSha256": "ac5d2336c154a8a89531a664cb4ec40293004b58f5456873c4908d94d7bd3abb",
+    "mutations": [
+      {
+        "name": "same-target-extra100m",
+        "rejected": true,
+        "refusal": "Error: unrelated-collateral-change:/elements/mfw-a/pose/position,/elements/mfw-a/world/position"
+      },
+      {
+        "name": "weaken-independent-requirement",
+        "rejected": true,
+        "refusal": "Error: independent-requirement-edit"
+      },
+      {
+        "name": "change-process-model",
+        "rejected": true,
+        "refusal": "Error: stale-operational-model"
+      },
+      {
+        "name": "keep-study-current",
+        "rejected": true,
+        "refusal": "Error: unrelated-collateral-change:"
+      }
+    ]
+  },
+  "limits": [
+    "These probes are not a complete hostile-import audit or production qualification",
+    "IFC failures concern this contender, not intrinsic IFC capability",
+    "Native counterexamples being refused does not establish full schema or security coverage"
+  ]
+}

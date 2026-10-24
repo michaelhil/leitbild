@@ -1,5 +1,7 @@
 # IFC authoring contender
 
+**Post-review qualification: failed.** The frozen positive selfsuite below passes, but independent probes found TV01 (same-target unintended value changes admitted) and TV02 (extra native representation content accepted but omitted). The author acknowledged both. This contender is not selected or qualified for production admission/preservation. See the [coordinator outcome](../README.md), [actual probes](../verification/independent-probe-receipt-final.json) and [author response](../verification/ifc-review-response.md). Source code and original receipts remain frozen; these are implementation defects, not intrinsic IFC limitations.
+
 This is an executed, finite IFC4X3_ADD2 authoring experiment against the frozen [matched brief](../common/brief.md), not a World Pack or a generic CAD editor. The saved IFC is the physical source. Reusable TypeScript family code interprets its admitted profile; no second per-plant JSON recipe is used after the first authoring step. Blender is not used.
 
 ## Reproduce
@@ -59,7 +61,7 @@ Latest local full recheck: **26 passed, zero failed**. Six Bun tests add **21 as
 - Roof-only editing leaves deck, pump and fixed vessel datums unchanged. The separate deck edit changes exactly the named deck, landing, stair, riser and support dependency set.
 - Type-wide pump length changes both feedwater pumps, geometry, native nozzles and allowance envelopes. An A-only variant leaves B's body byte-equivalent. Moving the assembly moves its physical interfaces, without changing graph parameters.
 - Two unit copies have distinct qualified physical IDs/member/owner references, and the directly Site-contained yard/transformer/first support appear once. Two circuits share that support. Independent site-scope key strings differ. This is source identity proof; actual cross-Run status/cache behavior is not implemented or claimed.
-- Full intended/actual element semantic diffs and unchanged GlobalIds are checked after save/reopen. Stale base, unrelated collateral change, unsupported dependency, independent height limit, stale model/study and native parameter/body inconsistency are refused. Old source bytes remain readable.
+- The original selfsuite checks changed-element membership and unchanged GlobalIds after save/reopen. It refuses its tested unrelated-element changes, but TV01 shows that this does **not** validate exact intended values within an already changed target. TV02 also invalidates the broader preservation claim. Other tested stale-base/model/study, dependency, height and parameter/body refusals remain bounded observations. Old source bytes remain readable.
 
 ### F4 preservation evidence
 

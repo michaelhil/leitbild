@@ -1,0 +1,59 @@
+{
+  "decidedAt": "2026-10-24",
+  "authoring": {
+    "selected": "native typed declarative source",
+    "scope": "Executed finite family/architecture/source profile, not a production World schema",
+    "nativeSelfChecks": 65,
+    "independentGeometryPredicates": 13,
+    "ifcSelfChecks": 26,
+    "ifcQualification": "failed",
+    "ifcNecessaryFailures": [
+      "TV01 exact-intent admission",
+      "TV02 additional native geometry omission"
+    ],
+    "exchange": "Tested IFC subset and retained hash-bound read-only foreign sources; no arbitrary imported parametric edit or merged raw-import export"
+  },
+  "rendering": {
+    "selected": "native WebGL2",
+    "scope": "Opaque finite-geometry shared-MapLibre slice on one Apple M2 Chrome155 ANGLE Metal profile",
+    "bothBackendsPassExecutedEnvelope": true,
+    "nativeP95Ms": [
+      17.8,
+      18.4,
+      18.1
+    ],
+    "babylonP95Ms": [
+      17.9,
+      18.0,
+      18.1
+    ],
+    "babylonAddedJsRawBytes": 937491,
+    "babylonAddedJsGzipEstimatedBytes": 226870,
+    "gzipTransferMeasured": false,
+    "lifecycleEach": {
+      "mountDispose": 20,
+      "fullStyleReplace": 20,
+      "forcedContextRestore": 1
+    }
+  },
+  "productionIntegrationInstalled": false,
+  "unexecuted": [
+    "real Scenario/Run/layout source admission",
+    "current production model binding/coverage admission",
+    "live values and alarm semantics",
+    "constrained devices and cold WAN",
+    "full production map tile/deck/card/input stack",
+    "human usability/architectural acceptance",
+    "outage engineering qualification"
+  ],
+  "frozenContenderCommits": {
+    "ifc": "91670729621fecaec85ff0e8a9d99b55b19afbb9",
+    "native": "8b15e74c2423967f7f90c3ddf76bc6e4349c9f26",
+    "render": "060879dfb5bf064a19b04e91a5f6d549f8412f5f"
+  },
+  "landedEquivalentCommits": {
+    "ifc": "4fd65052c",
+    "native": "21b474dea",
+    "render": "43b108956"
+  }
+}
