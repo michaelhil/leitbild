@@ -1,6 +1,6 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
-import type { RunHistorian } from '../../features/historian/store.ts'
+import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/store.ts'
 import type { RunHistorianStatus } from '../../features/historian/policy.ts'
 import { recordingSeriesQuerySchema, type RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
@@ -99,6 +99,8 @@ export interface SimulationRunRuntime {
   readonly recordingStatus: () => RunHistorianStatus | null
   readonly recordingSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
   readonly recordedSamples: (query: RecordingSeriesQuery) => RecordingPage
+  /** A series' samples by id between two simulation times, newest first up to the limit, without a page's summaries: what a display draws. */
+  readonly recordedSeriesSamples: (query: SeriesSamplesQuery) => ReadonlyArray<RecordedSample>
   readonly close: () => Promise<void>
 }
 
@@ -1733,6 +1735,8 @@ export const createSimulationRunRuntime = async (config: {
     },
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
+    // No recording selection is legitimate: nothing recorded. An unavailable configured historian throws, as its query does.
+    recordedSeriesSamples: query => config.historian?.seriesSamples(query) ?? [],
     recordedSamples: (input) => {
       const query = recordingSeriesQuerySchema.parse(input)
       if (config.historian) return config.historian.query(query)

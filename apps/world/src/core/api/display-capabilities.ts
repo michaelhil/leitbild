@@ -55,15 +55,13 @@ export const displayRunOf = async (registry: SimulationRunRegistry, runtime: Sim
   return {
     objects: snapshot.objects, denied, packs: runtime.packs(), port: requestPort(runtime.observations(actor)), clock: snapshot.clock,
     connections: registry.loadedCompiledScenario(runtime.id).connections,
-    // The Historian's record, from one hold before `from`, so the value held into the window's start is drawn; with that hold.
-    series: (seriesId, from, to) => {
-      const page = runtime.recordedSamples({ mode: 'raw', seriesId, from: new Date(Date.parse(from) - recordedHoldMs).toISOString(), to, timeAxis: 'simulation', limit: 2_000 })
-      return {
-        holdMs: recordedHoldMs,
-        points: page.mode !== 'raw' ? [] : page.samples.flatMap(sample => typeof sample.value === 'number' || typeof sample.value === 'boolean'
-          ? [{ t: Date.parse(sample.simulationTime ?? sample.observedAt), v: Number(sample.value) }] : []).reverse(),
-      }
-    },
+    // The Historian's record, from one hold before `from`, so the value held into the window's start is drawn; with that
+    // hold. Its rows only: a raw page's summaries would reach every retained sample of the series again (§5.8).
+    series: (seriesId, from, to) => ({
+      holdMs: recordedHoldMs,
+      points: runtime.recordedSeriesSamples({ seriesId, from: new Date(Date.parse(from) - recordedHoldMs).toISOString(), to, limit: 2_000 })
+        .flatMap(sample => typeof sample.value === 'number' || typeof sample.value === 'boolean' ? [{ t: Date.parse(sample.simulationTime ?? sample.observedAt), v: Number(sample.value) }] : []).reverse(),
+    }),
   }
 }
 

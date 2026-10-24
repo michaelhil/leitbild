@@ -79,13 +79,13 @@ describe('T06: the view and the sample read only what the state names', () => {
     const at = (time: string) => ({ simulationTime: `2026-01-01T${time}.000Z`, observedAt: `2026-01-01T${time}.000Z` })
     const runtime = {
       id: 'run-stub', snapshot: () => ({ objects: [], clock: undefined }), packs: () => [], observations: () => run.port,
-      recordedSamples: (query: Record<string, unknown>) => { queries.push(query); return { mode: 'raw', samples: [{ ...at('00:11:00'), value: 2 }, { ...at('00:09:20'), value: 1 }] } },
+      recordedSeriesSamples: (query: Record<string, unknown>) => { queries.push(query); return [{ ...at('00:11:00'), value: 2 }, { ...at('00:09:20'), value: 1 }] },
     }
     const stubbed = await displayRunOf({ get: () => runtime, loadedCompiledScenario: () => ({ connections: [] }) } as never, runtime as never, person, new Set())
     expect(stubbed.series('series:x', '2026-01-01T00:10:00.000Z', '2026-01-01T00:20:00.000Z')).toEqual({
       holdMs: recordedHoldMs, points: [{ t: Date.parse('2026-01-01T00:09:20.000Z'), v: 1 }, { t: Date.parse('2026-01-01T00:11:00.000Z'), v: 2 }],
     })
-    expect(queries).toMatchObject([{ seriesId: 'series:x', from: '2026-01-01T00:08:30.000Z', to: '2026-01-01T00:20:00.000Z', timeAxis: 'simulation' }])
+    expect(queries).toEqual([{ seriesId: 'series:x', from: '2026-01-01T00:08:30.000Z', to: '2026-01-01T00:20:00.000Z', limit: 2_000 }])
   })
 
   test('a forged state naming what the caller may not inspect shows none of it and never asks for it', async () => {

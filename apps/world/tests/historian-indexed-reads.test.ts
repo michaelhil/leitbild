@@ -106,4 +106,19 @@ describe('Historian reads of named series', () => {
     expect(raw({ seriesId: 'missing' }).samples).toEqual([])
     expect(raw({ runtimeId: 'grid.sim' }).samples).toHaveLength(40)
   })
+
+  test('a display\'s read (seriesSamples) is the raw query\'s rows by series id on simulation time, in one statement on the series index', () => {
+    for (const limit of [3, 4_000]) {
+      const page = historian.query({ mode: 'raw', seriesId: 'shared', timeAxis: 'simulation', ...window, limit })
+      if (page.mode !== 'raw') throw new Error('expected a raw page')
+      let rows: ReturnType<RunHistorian['seriesSamples']> = []
+      const statements = statementsOf(() => { rows = historian.seriesSamples({ seriesId: 'shared', ...window, limit }) })
+      expect(rows).toEqual(page.samples)
+      expect(statements).toHaveLength(1)
+      const plan = planOf(statements[0]!)
+      expect(plan.filter(detail => /^SCAN recording_samples\b/.test(detail))).toEqual([])
+      expect(plan.some(detail => /^SEARCH recording_samples USING (COVERING )?INDEX recording_samples_series_time \(runtime_id=\? AND series_id=\?/.test(detail))).toBe(true)
+    }
+    expect(historian.seriesSamples({ seriesId: 'missing', ...window, limit: 10 })).toEqual([])
+  })
 })
