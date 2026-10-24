@@ -12,6 +12,7 @@ import { rateNow, rateText } from '../src/ui/embed/vignette/trend.ts'
 import { SPARK_WINDOW_MS, sparkline } from '../src/ui/sparkline.ts'
 import { marginLines, ownLabel, spanBar, valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { createVignetteSession, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
+import { encodeSample } from '../src/features/displays/compose/wire.ts'
 import { valueLook } from '../src/ui/embed/vignette/readout.ts'
 import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
@@ -218,10 +219,10 @@ describe('kept series (W8.5)', () => {
       routes: {
         presence: async () => ({ loaded: true, at: new Date(runMs).toISOString() }),
         view: async () => section(['u#a']),
-        sample: async (_run, _state, history) => {
+        sample: async (_run, _state, history, held) => {
           asked.push(history === undefined ? 'none' : history.refs === undefined ? `all ${runMs - history.fromMs}` : `refs ${history.refs.join(',')}`)
           const served = history === undefined ? undefined : Object.fromEntries(leads.filter(ref => history.refs === undefined || history.refs.includes(ref)).map(ref => [ref.replace('#', '.'), { holdMs: HOLD, points: [{ t: runMs - 60_000, v: 9 }] }]))
-          return sampleAt(runMs, Object.fromEntries(leads.map(ref => [ref, 1])), served, leads)
+          return encodeSample(sampleAt(runMs, Object.fromEntries(leads.map(ref => [ref, 1])), served, leads), new Set(held))
         },
       },
       onChange: snapshot => { snapshots.push(snapshot) },

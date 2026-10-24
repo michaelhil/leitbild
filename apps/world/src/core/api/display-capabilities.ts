@@ -17,6 +17,7 @@ import { composeDefault, composeVignette, type ComposeOutcome } from '../../feat
 import { vignetteStateSchema, type VignetteState } from '../../features/displays/compose/model.ts'
 import { isIssue } from '../../features/displays/compose/resolve.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../../features/displays/compose/view.ts'
+import { encodeSample } from '../../features/displays/compose/wire.ts'
 import { visibleObject } from '../../features/displays/compose/declared.ts'
 import { changeDashboard, readDashboard, scopeInputSchema, type DashboardSection } from '../../features/displays/dashboards/dashboards.ts'
 import { dashboardScopeSchema, DASHBOARD_MAX_PINS, pinIdSchema, type DashboardScope } from '../../features/displays/dashboards/store.ts'
@@ -27,6 +28,7 @@ import { VIGNETTE_ROW_PX } from '../../ui/embed/vignette/grid.ts'
 import { DASHBOARD_VIEW_TYPE } from '../../ui/process-display/display-window-messages.ts'
 import { observableRefSchema } from '../model/alerts.ts'
 import type { ObjectId } from '../model/index.ts'
+import { OBSERVATION_READ_REFS } from '../observation/capabilities.ts'
 import { displaySpecSchema, subjectSchema } from '../observation/spec.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
@@ -79,7 +81,11 @@ const stateSchema = z.string().min(2).max(EMBEDDED_VIEW_STATE_MAX_LENGTH).transf
 })
 export const displayRouteInputs = {
   view: z.object({ state: stateSchema }).strict(),
-  sample: z.object({ state: stateSchema, history: z.object({ fromMs: z.number().int().nonnegative(), refs: z.array(observableRefSchema).min(1).max(32).optional() }).strict().optional() }).strict(),
+  /** `held`: the lead values whose declarations the caller holds, which the sample then names by ref (compose/wire.ts). */
+  sample: z.object({
+    state: stateSchema, history: z.object({ fromMs: z.number().int().nonnegative(), refs: z.array(observableRefSchema).min(1).max(32).optional() }).strict().optional(),
+    held: z.array(observableRefSchema).max(OBSERVATION_READ_REFS).optional(),
+  }).strict(),
   default: z.object({ subject: subjectSchema }).strict(),
 } as const
 
@@ -88,7 +94,7 @@ export const handleDisplayRoute = async (kind: string, body: unknown, run: ViewR
   if (kind === 'view') return json({ view: await compileVignette(run, displayRouteInputs.view.parse(body).state) })
   if (kind === 'sample') {
     const input = displayRouteInputs.sample.parse(body)
-    return json({ sample: await sampleVignette(run, input.state, input.history) })
+    return json({ sample: encodeSample(await sampleVignette(run, input.state, input.history), new Set(input.held)) })
   }
   if (kind === 'default') return composedResponse(await composeDefault(run, displayRouteInputs.default.parse(body).subject))
   return null

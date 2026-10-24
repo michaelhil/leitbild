@@ -1,5 +1,7 @@
 /** The few Host and World routes the display acceptance and performance scripts call on a loopback stack, as a
  * person's page calls them: Workspace Capabilities, Run presence, the display routes. */
+import { decodeSample } from '../../apps/world/src/features/displays/compose/wire.ts'
+
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 const actor = { kind: 'human', id: 'display-eval', displayName: 'Display evaluation' }
 
@@ -68,7 +70,8 @@ export const createStackApi = (origin: string, workspaceId: string) => {
       return { state: result.view.state, view }
     },
     view: async (runId: string, state: string): Promise<any> => (await request(runPath(runId, '/displays/view'), { state })).view,
-    sample: async (runId: string, state: string): Promise<any> => (await request(runPath(runId, '/displays/sample'), { state })).sample,
+    /** The sample World composed, decoded from the wire as the vignette decodes it (compose/wire.ts; a sample before it decodes to itself). */
+    sample: async (runId: string, state: string): Promise<any> => decodeSample((await request(runPath(runId, '/displays/sample'), { state })).sample),
   }
 }
 export type StackApi = ReturnType<typeof createStackApi>

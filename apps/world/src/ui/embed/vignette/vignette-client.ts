@@ -14,7 +14,8 @@
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import { withActiveRoleSet } from '../../roles/role-session.ts'
 import { workspaceApiPath } from '../../workspace-context.ts'
-import { zoneRows, type VignetteSample, type VignetteView } from '../../../features/displays/compose/model.ts'
+import { zoneRows, type VignetteSample, type VignetteValue, type VignetteView } from '../../../features/displays/compose/model.ts'
+import { decodeSample, type WireSample } from '../../../features/displays/compose/wire.ts'
 import { keptAfter, shownSeries, unkept, widestWindow } from './kept-series.ts'
 import type { DrawnSeries } from './trend.ts'
 
@@ -28,8 +29,11 @@ export interface VignetteRoutes {
   /** null when the Run no longer exists. Never loads it. */
   readonly presence: (runId: SimulationRunId) => Promise<RunPresence | null>
   readonly view: (runId: SimulationRunId, state: string) => Promise<VignetteView>
-  /** `history`: each record it draws from `fromMs`, or only those of `refs`. */
-  readonly sample: (runId: SimulationRunId, state: string, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> }) => Promise<VignetteSample>
+  /**
+   * `history`: each record it draws from `fromMs`, or only those of `refs`. `held`: the lead values whose declarations
+   * the vignette holds, which the sample names by ref (compose/wire.ts).
+   */
+  readonly sample: (runId: SimulationRunId, state: string, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> }, held?: ReadonlyArray<string>) => Promise<WireSample>
 }
 
 export type VignettePhase = 'connecting' | 'live' | 'inactive' | 'missing' | 'failed'
@@ -87,6 +91,10 @@ export const viewWithLeads = (view: VignetteView, sample: VignetteSample): Vigne
   })
   return changed ? { ...view, sections } : view
 }
+
+/** The lead values a view draws, by ref: the vignette holds their declarations. */
+export const heldLeads = (view: VignetteView): ReadonlyMap<string, VignetteValue> =>
+  new Map(view.sections.flatMap(section => section.kind === 'values' && section.lead !== undefined ? section.values.map(value => [value.ref, value] as const) : []))
 
 export const createVignetteSession = (config: {
   readonly runId: SimulationRunId
@@ -165,7 +173,9 @@ export const createVignetteSession = (config: {
     const whole = due === 'records' && horizon > 0 && at !== undefined
     const missing = first || whole ? [] : unkept(shown, snapshot.series).filter(ref => !asked.has(ref))
     const history = whole ? { fromMs: Date.parse(at!) - horizon } : missing.length > 0 && at !== undefined ? { fromMs: Date.parse(at) - horizon, refs: missing } : undefined
-    const sample = await config.routes.sample(config.runId, config.state, history)
+    // The lead values it draws now: the sample names them by ref, and sends only the declarations of the others.
+    const held = heldLeads(snapshot.view ?? view)
+    const sample = decodeSample(await config.routes.sample(config.runId, config.state, history, [...held.keys()]), held)
     if (closed) return
     // The Run's time going back is a reset: what was drawn is no longer its history.
     const reset = snapshot.latest !== undefined && Date.parse(sample.at.at) < Date.parse(snapshot.latest.at.at)
@@ -250,5 +260,5 @@ export const vignetteRoutes: VignetteRoutes = {
     return { loaded: body.loaded, at: body.execution.currentSimulationTime }
   },
   view: async (runId, state) => (await post<{ readonly view: VignetteView }>(runId, '/displays/view', { state }, 'Drawing the display')).view,
-  sample: async (runId, state, history) => (await post<{ readonly sample: VignetteSample }>(runId, '/displays/sample', { state, ...(history === undefined ? {} : { history }) }, 'Reading the display')).sample,
+  sample: async (runId, state, history, held) => (await post<{ readonly sample: WireSample }>(runId, '/displays/sample', { state, ...(history === undefined ? {} : { history }), ...(held === undefined || held.length === 0 ? {} : { held }) }, 'Reading the display')).sample,
 }

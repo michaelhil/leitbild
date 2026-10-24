@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId } from '../src/core/model/ids.ts'
 import type { VignetteSample, VignetteView } from '../src/features/displays/compose/model.ts'
+import type { WireSample } from '../src/features/displays/compose/wire.ts'
 import { stripDrawing } from '../src/ui/embed/vignette/trend.ts'
 import { createVignetteSession, GAP_MS, INACTIVE_RETRY_MS, SAMPLE_BACKOFF_MS, SAMPLE_INTERVAL_MS, sampleStale, STALE_AFTER_MS, type RunPresence, type VignetteSnapshot } from '../src/ui/embed/vignette/vignette-client.ts'
 
@@ -26,7 +27,7 @@ const harness = (presence: (at: string) => RunPresence | null) => {
   const later = <T>(value: () => T): Promise<T> => latencyMs === 0 ? Promise.resolve(value())
     : new Promise(resolve => { timers.push({ at: wall + latencyMs, run: () => resolve(value()), cancelled: false }) })
   const snapshots: VignetteSnapshot[] = []
-  const sample = (history?: { readonly fromMs: number }): VignetteSample => ({
+  const sample = (history?: { readonly fromMs: number }): WireSample => ({
     at: { at: new Date(runMs).toISOString(), clock: 'simulation', paused: false },
     observations: [{ ref: 'unit-1#level', at: new Date(runMs).toISOString(), clock: 'simulation', value: 40 + (runMs % 10_000) / 1_000, quality, priority: 'none' }],
     alerts: [], entities: {}, slots: {}, maps: {},
