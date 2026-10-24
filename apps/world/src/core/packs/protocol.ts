@@ -1,11 +1,11 @@
 import { packDescriptorSchema,type PackDescriptor } from '@leitbild/contracts'
-import type { Component } from 'svelte'
+import type { Component, Snippet } from 'svelte'
 import { z } from 'zod'
 import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { MapView } from '../../ui/map-view.ts'
 import type { SurfacePanelProps } from '../../ui/surface-panel-interaction.ts'
-import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide,SimulationRunId } from '../model/index.ts'
+import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureId,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide,SimulationRunId } from '../model/index.ts'
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
 import type { PackMapAppearance,PackMapLegend,PackMapLegendSwatch,PackReferenceDatasetStyle } from './reference-style.ts'
@@ -68,10 +68,9 @@ export interface PackObjectPresentation {
    */
   readonly mapLabel?: string
   /**
-   * A few short lines that stand for an object that has a card of its own,
-   * such as its status and what it is doing now: the map's hover preview
-   * shows them beneath its label instead of every field, as a preview of the
-   * card's first lines. The rail row's tooltip keeps every field, with the
+   * A few short lines that stand for an object, such as its status and what
+   * it is doing now: the map's hover preview shows them beneath its label
+   * instead of every field. The rail row's tooltip keeps every field, with the
    * context other Packs add (the weather at the object). Without them the
    * hover lists the fields.
    */
@@ -720,9 +719,26 @@ export interface PackElementMarks {
 /** What a Pack's display-window tools are mounted with: the Run and the object whose display the window shows. */
 export interface PackWindowToolsProps {
   readonly runId: SimulationRunId
-  readonly objectId: ObjectId
+  /** The object whose display the window shows, as the page holds it now. */
+  readonly object: OperationalObject
   /** Opens a subject's World default (displays/default) after the window's current display; Back returns to it. */
   readonly openDisplay: (subject: string) => void
+  /** This screen plays the Run's controller (a controller-class role, or a Run that declares no roles): only then do tools that order the Run show. */
+  readonly controller: boolean
+  /** Opens the Run's Assistant room beside the page; null where the Host offers none on this page. */
+  readonly openAssistant: (() => void) | null
+  /** The procedures the object's active runs run. */
+  readonly runningProcedures: ReadonlyArray<ProcedureId>
+  /** Opens one of the object's procedures in the procedure window, in front of the display window. */
+  readonly openProcedure: (procedureId: ProcedureId) => void
+  /**
+   * The room the header gives the tools: all they need ('wide'); short of it ('short'), where their labels give way
+   * to their icons; or none ('folded', the window's narrow widths), where they keep their chips and give the rest to
+   * the window's More menu.
+   */
+  readonly room: 'wide' | 'short' | 'folded'
+  /** Gives the window the items its More menu lists while the tools are folded, null takes them back; each item calls `done` first, which closes the menu. */
+  readonly menu: (items: Snippet<[done: () => void]> | null) => void
 }
 
 /** What a Pack's settings editor is mounted with in the Scenario Builder: its Pack Selection's configuration. */
@@ -747,6 +763,8 @@ export interface PackUiContribution {
    * pending proposals, status): main-app components, so never OpenBridge (that is PackEmbedContribution's).
    */
   readonly windowTools?: () => Promise<{ readonly default: Component<PackWindowToolsProps> }>
+  /** A press on one of this Pack's objects (its map icon or rail row) that orders nothing opens its display in the display window, where the Run observes it. */
+  readonly displayOnPress?: true
 }
 
 /** Pack-owned inputs to shared procedure observation queries. The generic UI

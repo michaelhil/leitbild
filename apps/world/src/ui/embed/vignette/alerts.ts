@@ -151,7 +151,7 @@ export const ROW_ICON_PX = 20
 export const ROW_ACK_PX = 40
 export const ROW_GAP_PX = 6
 /** The fonts a row writes its parts in (AlertRowLine.svelte): its message, its marks (UNACK, 1st RX TRIP, a heading), its detail, an icon's word; a tile's label and a badge's number (AlertTiles.svelte). */
-export type RowFont = 'message' | 'mark' | 'detail' | 'word' | 'tile' | 'badge'
+export type RowFont = 'message' | 'mark' | 'detail' | 'word' | 'tile' | 'badge' | 'chip'
 
 /** How wide a row is on its one line with `message` shown (its whole message by default), given how wide each part is written (`measure`). */
 export const rowWidth = (parts: RowParts, measure: (text: string, font: RowFont) => number, message = parts.message): number => {

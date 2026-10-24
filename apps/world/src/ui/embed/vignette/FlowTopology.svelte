@@ -130,7 +130,7 @@
   const ordered = $derived([
     ...drawing.vessels.map(item => ({ kind: 'vessel' as const, id: item.id, item, x: item.x, y: item.y })),
     ...drawing.devices.map(item => ({ kind: 'device' as const, id: item.id, item, x: item.x - SYMBOL_PX / 2, y: item.y - SYMBOL_PX / 2 })),
-    ...drawing.texts.filter(text => opens(text.id) && !symbols.has(text.id)).map(item => ({ kind: 'area' as const, id: item.id, item, x: item.area.x, y: item.area.y })),
+    ...drawing.texts.filter(text => opens(text.id) && !symbols.has(text.id)).map(item => ({ kind: 'area' as const, id: item.id, item, x: item.press.x, y: item.press.y })),
   ].sort((left, right) => Math.round(left.y / VIGNETTE_ROW_PX) - Math.round(right.y / VIGNETTE_ROW_PX) || left.x - right.x))
   const nameOf = (id: string): string => texts.get(id)?.lines[0]?.text ?? texts.get(id)?.title ?? id
   /** What a press on an item opens: its element, a group's members, a stop's far ends, each by element and name. */
@@ -558,10 +558,11 @@
         </div>
       {:else}
         {@const text = entry.item}
-        <!-- A named item drawn as a line, a bar or a stop (a header, a bus, a junction, a stop's far ends): its box and
-             its text are its button, under the symbols drawn on it. -->
+        <!-- A named item drawn as a line, a bar or a stop (a header, a bus, a junction, a stop's far ends): its bar (or
+             its box) is its button, its words press themselves, under the symbols drawn on it; never over another
+             item's bar or words (FlowItem.press). -->
         <div class="placed area" class:hovered={hovered === text.id} class:activated={activated(text.id)} title={text.title} use:button={text.id}
-          style:left={`${text.area.x}px`} style:top={`${text.area.y}px`} style:width={`${text.area.width}px`} style:height={`${text.area.height}px`} {...body(text.id, text.title)}></div>
+          style:left={`${text.press.x}px`} style:top={`${text.press.y}px`} style:width={`${text.press.width}px`} style:height={`${text.press.height}px`} {...body(text.id, text.title)}></div>
       {/if}
       {@render magnifier(entry.id)}
     {/each}

@@ -34,11 +34,21 @@ describe('display-window tools', () => {
     const loaded = await view.ui?.windowTools?.()
     expect(loaded?.default).toBe(tools)
     const opened: string[] = []
-    ;(loaded!.default as unknown as (anchor: unknown, props: PackWindowToolsProps) => void)(null, { runId: 'run-1' as SimulationRunId, objectId: 'unit:one' as ObjectId, openDisplay: subject => opened.push(subject) })
-    expect(mounted.map(({ runId, objectId }) => ({ runId, objectId }))).toEqual([{ runId: 'run-1' as SimulationRunId, objectId: 'unit:one' as ObjectId }])
+    const object = { id: 'unit:one' as ObjectId } as OperationalObject
+    ;(loaded!.default as unknown as (anchor: unknown, props: PackWindowToolsProps) => void)(null, {
+      runId: 'run-1' as SimulationRunId, object, openDisplay: subject => opened.push(subject), controller: false, openAssistant: null,
+      runningProcedures: [], openProcedure: () => undefined, room: 'wide', menu: () => undefined,
+    })
+    expect(mounted.map(({ runId, object: shown }) => ({ runId, objectId: shown.id }))).toEqual([{ runId: 'run-1' as SimulationRunId, objectId: 'unit:one' as ObjectId }])
     mounted[0]!.openDisplay('unit:one#engine')
     expect(opened).toEqual(['unit:one#engine'])
     expect(viewOf('plain', { surfacePanels: [] }).ui?.windowTools).toBeUndefined()
+  })
+
+  test('among the built-in Packs only the process plant opens a display on a press of its map icon or rail row, and it gives the window its tools', async () => {
+    const views = await Promise.all(knownUiPackIds.map(loadUiPack))
+    expect(views.filter(view => view.ui?.displayOnPress === true).map(view => view.descriptor.id)).toEqual(['process-plant'])
+    expect((await loadUiPack('process-plant')).ui?.windowTools).toBeDefined()
   })
 })
 

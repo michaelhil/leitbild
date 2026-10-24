@@ -1,7 +1,7 @@
 import type { IsoTimestamp, ObjectId, Priority } from '../../../core/model/index.ts'
 import type { Observable, Observation } from '../../../core/observation/model.ts'
 import type { PackRuntimeRecordedHistory } from '../../../simulation/protocol.ts'
-import type { VariablePath } from '../graph/index.ts'
+import { energyEnds, type VariablePath } from '../graph/index.ts'
 import { annunciating, colours, expectedAfterGroup, pendingActions, plantAlarmPriority, priorityOrder } from '../ic/alarm-philosophy.ts'
 import { overviewCandidates, overviewKeyValues, plantNowOf, type PlantNow } from '../ic/key-values.ts'
 import { icThresholdsForSignal, type LimitGate } from '../ic/thresholds.ts'
@@ -153,10 +153,15 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
   })
 }
 
-/** The values the unit leads with in the mode it is in (ic/key-values.ts), first first: its overview's, then the rest it watches. */
+/**
+ * The values the unit leads with in the mode it is in (ic/key-values.ts), first first: its overview's, then the energy
+ * its sources put in and its sinks take out in every mode (each one's declared rate, a core's thermal power and a
+ * generator's output, as the unit's summary states them), then the rest it watches.
+ */
 export const leadPaths = (system: ProcessPlantRuntimeInstance, count: number): ReadonlyArray<VariablePath> => {
   const now = plantNowOf(system)
   const first = overviewKeyValues(system.plant, now)
   const { leads, ends } = overviewCandidates(system.plant, now)
-  return [...new Set([...first, ...leads, ...ends])].slice(0, count)
+  const energy = energyEnds(system.plant.graph).map(end => end.rate)
+  return [...new Set([...first, ...energy, ...leads, ...ends])].slice(0, count)
 }

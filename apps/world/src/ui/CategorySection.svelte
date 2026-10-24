@@ -18,8 +18,6 @@
     readonly fieldOptions: ReadonlyArray<FieldVisibilityOption>
     readonly presentedRows: ReadonlyArray<PresentedObjectRow>
     readonly selectedControllerId: string | null
-    /** The object whose card is open (`PlantCard.svelte`). */
-    readonly cardObjectId?: string | null
     readonly categoryMapVisible: boolean
     readonly isFieldVisible: (categoryId: string, field: string) => boolean
     readonly toggleField: (categoryId: string, field: string) => void
@@ -49,7 +47,6 @@
     fieldOptions,
     presentedRows,
     selectedControllerId,
-    cardObjectId = null,
     categoryMapVisible,
     isFieldVisible,
     toggleField,
@@ -127,7 +124,6 @@
         presentation={entry.presentation}
         statusPresentation={entry.status}
         selected={selectedControllerId === entry.object.id}
-        cardOpen={cardObjectId === entry.object.id}
         hasNewInfo={entry.hasNewInfo}
         visibleFields={entry.visibleFields}
         {markSeen}

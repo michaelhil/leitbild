@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { wholeWords } from './fit-words.ts'
   import type { AlertTone, ReadingLook } from './readout.ts'
 
   // A state on one row (architecture B; visual grammar channel D), in
@@ -15,7 +16,7 @@
 </script>
 
 <span class="state" class:cell={label === undefined} title={look.title}>
-  {#if label !== undefined}<span class="label">{label}</span>{/if}
+  {#if label !== undefined}<span class="label" aria-label={label} use:wholeWords={label}></span>{/if}
   {#if look.fill === 'unknown'}
     <span class="unknown">{look.text}</span>
   {:else}
@@ -26,7 +27,8 @@
 
 <style>
   .state { display: flex; align-items: center; gap: 6px; min-width: 0; height: var(--row); white-space: nowrap; }
-  .label { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--element-neutral-color); }
+  /* The label gives way by whole words (the whole in its accessible name and the row's title), never mid-word. */
+  .label { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
   .word { flex: none; display: block; border-radius: 3px; }
   .word.doubtful { outline: 1px solid var(--alert-low-integrity-border-color); background: var(--alert-low-integrity-background-color); }
   /* OpenBridge's indicator at a row's height, its label set as the row's text (as the faceplate sets it). */

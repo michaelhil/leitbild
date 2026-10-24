@@ -180,6 +180,7 @@ describe('a criterion\'s checks not yet met (W1.4)', () => {
     const row = source('CriterionRow.svelte')
     expect(row).toContain('<span class="detail" aria-hidden="true" use:wholeWords={look.detail ?? \'\'}></span>')
     expect(row).toContain('<span class="full">{look.detail}</span>')
-    expect(readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/fit-words.ts'), 'utf8')).toContain("node.textContent = shown === '…' ? '' : shown")
+    // A lone "…", or part of a first word, shows nothing (wholeWordsThatFit; vignette-column tests it at every width).
+    expect(readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/fit-words.ts'), 'utf8')).toContain('node.textContent = wholeWordsThatFit(full,')
   })
 })

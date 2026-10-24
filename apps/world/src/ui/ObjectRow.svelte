@@ -17,8 +17,6 @@
     readonly presentation: PackObjectPresentation
     readonly statusPresentation: PackObjectStatusPresentation
     readonly selected: boolean
-    /** Its card is open: the row reads as selected and its tooltip stays away from the card. */
-    readonly cardOpen?: boolean
     readonly hasNewInfo: boolean
     readonly visibleFields: ReadonlyArray<PackObjectField>
     readonly markSeen: (object: OperationalObject) => void
@@ -40,7 +38,6 @@
     presentation,
     statusPresentation,
     selected,
-    cardOpen = false,
     hasNewInfo,
     visibleFields,
     markSeen,
@@ -152,7 +149,7 @@
 </script>
 
 <div
-  class:selected={selected || cardOpen}
+  class:selected={selected}
   class:has-new-info={hasNewInfo}
   class:muted={presentation.muted === true}
   class="object-row"
@@ -180,12 +177,10 @@
           class="row-title-text"
         >
           <span class="row-label">{object.label}</span>
-          {#if !cardOpen}
-            <span class="row-tooltip">
-              <strong>{object.label}</strong>
-              {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
-            </span>
-          {/if}
+          <span class="row-tooltip">
+            <strong>{object.label}</strong>
+            {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
+          </span>
         </span>
         {#if hasNewInfo}
           <button

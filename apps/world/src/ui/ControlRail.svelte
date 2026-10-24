@@ -37,8 +37,6 @@
     readonly railConfig: StartingRailView
     readonly placementMode: PackCreateObjectType | null
     readonly selectedControllerId: string | null
-    /** The object whose card is open (`PlantCard.svelte`). */
-    readonly cardObjectId?: string | null
     readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
     readonly deferObjectRows?: boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -77,7 +75,6 @@
     railConfig,
     placementMode,
     selectedControllerId,
-    cardObjectId = null,
     categoryMapVisibility = {},
     deferObjectRows = false,
     presentationFor,
@@ -192,7 +189,6 @@
       fieldOptions={entry.fieldOptions}
       presentedRows={entry.presentedRows}
       {selectedControllerId}
-      {cardObjectId}
       categoryMapVisible={categoryMapVisibility[entry.row.category.id] ?? true}
       isFieldVisible={fieldVisible}
       {toggleField}

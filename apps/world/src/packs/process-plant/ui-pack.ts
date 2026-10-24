@@ -46,7 +46,11 @@ export const processPlantPackView = {
   },
   ui: {
     surfacePanels: [],
-    // The display window's header, for a Plant's display: pending proposals, the operations log, the Instructor's actions.
+    // The display window's header, for a Plant's display: its runtime not started, pending proposals, the procedure its
+    // worst safety function calls for, the operations log, the Run's Assistant, its engineering views and the Plant
+    // catalog, the Instructor's actions.
     windowTools: async () => await import('./ui/displays/WindowTools.svelte'),
+    // A press on a unit's map icon or rail row opens its overview display.
+    displayOnPress: true,
   },
 } satisfies WorldPackView

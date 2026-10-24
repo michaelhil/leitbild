@@ -3,7 +3,7 @@ import type { AlertState } from '../src/core/model/alerts.ts'
 import type { ObjectId } from '../src/core/model/ids.ts'
 import { alertCensus, alertTiles, filtered, sameFilter } from '../src/features/displays/alerts/census.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
-import { tileBadge, tileLayout, tilesHeight } from '../src/ui/embed/vignette/tile-fit.ts'
+import { tileBadge, tileLayout, tilesHeight, tileStrip, worstTiles } from '../src/ui/embed/vignette/tile-fit.ts'
 
 // An alert list's counts and tiles (plan v5 W2.1, W2.2), generic for every Pack: the counts are its census, each a
 // filter; the tiles are its Pack's declared categories, all of them, in their order, lit by the worst news only.
@@ -76,8 +76,13 @@ describe('the tiles (W2.2)', () => {
 
   test('without a declaration, the categories its rows name; several objects, a tile per object; one object in no category, none', () => {
     expect(alertTiles(rows).map(tile => tile.key)).toEqual(['category:rps', 'category:rcs', 'category:sg', 'category:elec', 'category:fw', 'group:unit'])
-    const grid = { ...row('line', 'alarm'), key: 'grid|line', objectId: 'grid' as ObjectId, objectLabel: 'Grid', group: { objectId: 'grid' as ObjectId, subjectGroup: 'Substation Nord' } }
-    expect(alertTiles([...rows, grid], SYSTEMS).map(tile => [tile.label, tile.rows.length])).toEqual([['Unit 1', rows.length], ['Substation Nord', 1]])
+    const grid = { ...row('line', 'alarm'), key: 'grid|line', objectId: 'grid' as ObjectId, objectLabel: 'Grid', group: { objectId: 'grid' as ObjectId, subjectGroup: 'island:bus:7@420', label: 'Island at Hasle 420 kV' } }
+    expect(alertTiles([...rows, grid], SYSTEMS).map(tile => [tile.label, tile.rows.length])).toEqual([['Unit 1', rows.length], ['Island at Hasle 420 kV', 1]])
+    // One object's alerts: a tile per named subject group, and the object's own for the rest; a group its Pack does not
+    // name stays with its object, so no tile shows an id (W9.3).
+    const unnamed = { ...grid, key: 'grid|lfdd', group: { objectId: 'grid' as ObjectId, subjectGroup: 'island:bus:9@420' } }
+    const branch = { ...grid, key: 'grid|branch', group: { objectId: 'grid' as ObjectId } }
+    expect(alertTiles([grid, unnamed, branch]).map(tile => [tile.label, tile.rows.map(entry => entry.key)])).toEqual([['Island at Hasle 420 kV', ['grid|line']], ['Grid', ['grid|branch', 'grid|lfdd']]])
     expect(alertTiles([row('a', 'alarm'), row('b', 'warning')])).toEqual([])
   })
 
@@ -95,5 +100,19 @@ describe('the tiles (W2.2)', () => {
     expect(tileLayout(tiles, 2000, measure)).toEqual({ columns: 7, labels: tiles.map(tile => tile.label) })
     for (const [at, label] of narrow.labels.entries()) expect([tiles[at]!.label, tiles[at]!.short]).toContain(label)
     expect(tilesHeight(tiles, 3)).toBe(3 * 42 + 2 * 4)
+  })
+
+  test('a narrow band shows its tiles as one compact row: those with alerts, the worst first, as many as stand whole, the rest counted', () => {
+    const measure = (text: string) => text.length * 8
+    const tiles = alertTiles(rows, SYSTEMS)
+    // Lit by alarm (ELEC 2, then RPS 1), by warning (RCS, FW, the object's own), then only expected (SG); SI has none.
+    expect(worstTiles(tiles).map(tile => tile.short ?? tile.label)).toEqual(['ELEC', 'RPS', 'RCS', 'FW', 'Unit 1', 'SG'])
+    // A chip: its short label, its badge (at least 16 px), 14 px of frame; 4 px between; "+n" kept room for.
+    const wide = tileStrip(tiles, 720, measure)
+    expect([wide.shown.map(entry => entry.label), wide.more.length]).toEqual([['ELEC', 'RPS', 'RCS', 'FW', 'Unit 1', 'SG'], 0])
+    const narrow = tileStrip(tiles, 160, measure)
+    expect([narrow.shown.map(entry => entry.label), narrow.more.map(tile => tile.short ?? tile.label)]).toEqual([['ELEC', 'RPS'], ['RCS', 'FW', 'Unit 1', 'SG']])
+    const used = narrow.shown.reduce((sum, entry) => sum + 14 + measure(entry.label) + Math.max(16, measure(String(tileBadge(entry.tile)!.count)) + 8), 0) + 4 * narrow.shown.length + measure(`+${narrow.more.length}`)
+    expect(used).toBeLessThanOrEqual(160)
   })
 })

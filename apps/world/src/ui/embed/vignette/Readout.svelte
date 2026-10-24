@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { wholeWords } from './fit-words.ts'
   import type { AlertTone, ReadingLook } from './readout.ts'
 
   // A number on one row (architecture B): its label, the chip of the limit it
@@ -16,7 +17,7 @@
 </script>
 
 <span class="readout" class:cell={label === undefined} title={label === undefined && look.chip !== null ? `${look.title} · ${look.chip.text}` : look.title}>
-  {#if label !== undefined}<span class="label">{label}</span>{/if}
+  {#if label !== undefined}<span class="label" aria-label={label} use:wholeWords={label}></span>{/if}
   {#if look.chip !== null}<span class={`chip ${look.chip.tone ?? 'neutral'}`}>{label === undefined ? look.chip.word : look.chip.text}</span>{/if}
   <span class="reading">
     <obc-readout-block
@@ -40,7 +41,7 @@
 
 <style>
   .readout { display: flex; align-items: center; gap: 6px; min-width: 0; height: var(--row); white-space: nowrap; }
-  .label { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--element-neutral-color); }
+  .label { flex: 1 1 0; min-width: 0; overflow: hidden; color: var(--element-neutral-color); }
   .reading { flex: none; display: inline-flex; align-items: baseline; gap: 3px; }
   .unit { color: var(--element-neutral-color); }
   .note { flex: none; color: var(--element-neutral-color); }

@@ -13,7 +13,7 @@
   import { rowMeasure } from './row-measure.ts'
   import { acknowledging } from './acknowledging.svelte.ts'
   import { drawsElement, markElements, onDrawingsChange, requestElement } from './selection.ts'
-  import { tileLayout, tilesHeight } from './tile-fit.ts'
+  import { tileLayout, tilesHeight, tileStrip } from './tile-fit.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import { alertRowTarget } from './row-target.ts'
 
@@ -24,7 +24,8 @@
   // returned ones, then "15 expected after RX TRIP ▸" and "2 standing ▸",
   // each opening in place. About whole objects, it heads with its counts
   // (AlertCounts) and, where they leave room for three rows, its tiles
-  // (AlertTiles): each narrows the list (never to no rows), a tile also
+  // (AlertTiles; else, where one row of them does, its worst tiles in one
+  // compact row): each narrows the list (never to no rows), a tile also
   // pointing its alerts' items out on the drawing (selection.ts). It fills the
   // room its frame gives it, a row to a line, each row's parts fitted to its
   // width (fitRow); what does not fit is counted on "+N more", which opens the
@@ -47,6 +48,8 @@
 
   /** The fewest lines the tiles leave the list: three rows, "+N more" and an aggregate (§5.5: counts and three rows on screen). */
   const LINES_BESIDE_TILES = 5
+  /** The fewest lines one compact row of tiles leaves the list: three rows and "+N more". */
+  const LINES_BESIDE_STRIP = 4
 
   const opening = vignetteOpening()
   /** Counts the display's drawings starting or stopping to listen (selection.ts): a row on its own element asks again. */
@@ -99,6 +102,10 @@
   /** Tiles stand where they leave the list its fewest lines. */
   const tiled = $derived(tiles.length > 0 && size !== null && layout !== null
     && size.height - size.head - tilesHeight(tiles, layout.columns) - 4 >= Math.min(listLines(own, open).length, LINES_BESIDE_TILES) * VIGNETTE_ROW_PX)
+  /** Else one compact row of the worst tiles, where it leaves the list three rows and "+N more" (a narrow display's band). */
+  const strip = $derived(size === null || tiled ? null : tileStrip(tiles, size.width, measure))
+  const stripped = $derived(strip !== null && strip.shown.length > 0 && size !== null
+    && size.height - size.head - VIGNETTE_ROW_PX >= Math.min(listLines(own, open).length, LINES_BESIDE_STRIP) * VIGNETTE_ROW_PX)
   /** Grid rows for lines: what its list measures, else its composed rows less its head. */
   const budget = $derived(Math.max(1, size === null ? room - 1 - (failure === null ? 0 : 1) : Math.floor(size.lines / VIGNETTE_ROW_PX)))
   // Where its counts head it, they say what its aggregates fold, which then give way before its third row.
@@ -149,7 +156,8 @@
         <h2>Alerts · {own.length === 0 ? 'none' : own.length}{#if census.unacknowledged > 0}{' · '}<span class="unack">{census.unacknowledged} {UNACK_WORD}</span>{/if}</h2>
       {/if}
     </div>
-    {#if tiled && layout !== null}<div class="tiles"><AlertTiles {tiles} {layout} {filter} onfilter={narrow} /></div>{/if}
+    {#if tiled && layout !== null}<div class="tiles"><AlertTiles {tiles} {layout} {filter} onfilter={narrow} /></div>
+    {:else if stripped && strip !== null}<div class="tiles strip"><AlertTiles {tiles} {strip} {filter} onfilter={narrow} /></div>{/if}
     {#if failure !== null}<p class="failure" role="status">{failure}</p>{/if}
     <ul bind:this={list}>
       {#each fit.shown as entry (entry.kind === 'row' ? `${entry.part}|${entry.row.key}` : entry.key)}{@render line(entry)}{/each}
@@ -173,6 +181,7 @@
   /* Its head: its name and count, then its counts, wrapping where they do not fit beside it. */
   .head { flex: none; display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; min-width: 0; }
   .tiles { flex: none; margin-bottom: 4px; }
+  .tiles.strip { margin-bottom: 0; }
   h2 { flex: none; margin: 0; height: var(--row); line-height: var(--row); font-size: 12px; font-weight: 600; color: var(--element-neutral-color); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; }
   /* The lines take what the head leaves: the room the list measures. */
   ul { flex: 1 1 0; min-height: 0; list-style: none; margin: 0; padding: 0; }

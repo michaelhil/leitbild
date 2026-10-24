@@ -1,7 +1,7 @@
 <script lang="ts">
   import { recordingSeriesIdFor } from '../../../../../core/model/index.ts'
   import type { PackElementActionsProps } from '../../../../../core/packs/protocol.ts'
-  import { appendPoint, HOLD_GAP_MS, readHistory, sparkline, sparklineText, type TrendPoint } from '../../plant-card-sparkline.ts'
+  import { appendPoint, HOLD_GAP_MS, readHistory, sparkline, sparklineText, type TrendPoint } from '../../recorded-sparkline.ts'
   import type { ProcessVariableValue, VariablePath } from '../../../graph/index.ts'
   import type { ProcessPlantProposal, ProposalReview } from '../../../operations/proposals.ts'
   import { runOnMount } from '../../../../../ui/svelte-lifecycle.svelte.ts'

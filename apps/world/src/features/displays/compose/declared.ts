@@ -81,9 +81,18 @@ const measuring = new WeakMap<ObservationDeclaration, boolean>()
 const measuredOf = (declaration: ObservationDeclaration): boolean => measuring.get(declaration)
   ?? measuring.set(declaration, declaration.observables.some(observable => observable.basis === 'instrument')).get(declaration)!
 
+/**
+ * An observable's label qualified with its object's ("<object> · <observable>", R25) where both fit the 80 characters
+ * a label holds; else its own label whole: a label is never cut mid-word ("· Frequenc").
+ */
+export const qualifiedLabel = (object: string, label: string): string => {
+  const both = `${object} · ${label}`
+  return both.length <= 80 ? both : label
+}
+
 /** A declared observable as a vignette names it (R25). */
 export const valueOf = ({ observable, object, element, measured }: Declared): VignetteValue => ({
-  ref: observable.ref, label: `${object.label} · ${observable.label}`.slice(0, 80), quantity: observable.quantity, unit: observable.unit,
+  ref: observable.ref, label: qualifiedLabel(object.label, observable.label), quantity: observable.quantity, unit: observable.unit,
   valueType: observable.valueType, thresholds: observable.thresholds, series: observable.series,
   ...(observable.states === undefined ? {} : { states: observable.states }), ...(observable.decades === true ? { decades: true } : {}),
   ...(observable.checks === undefined ? {} : { checks: observable.checks }),

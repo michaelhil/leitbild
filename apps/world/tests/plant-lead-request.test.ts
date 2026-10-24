@@ -108,16 +108,20 @@ describe('a display opened at power and left open through a trip (W0.5)', () => 
         drawn[subject] = next
       }
     }
-    // After the reactor trip: the unit leads with the heat sink and inventory, no longer with a power it does not make.
+    // After the reactor trip: the unit leads with the heat sink and inventory, no longer with a power it does not make;
+    // the energy in and out (the Plant card's readings, now the overview's) follows its six values in every mode.
     const post = valuesOf(drawn[plantId]!)
     expect(post.slice(0, 3)).toEqual(['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'auxFeedwaterHeader.outletFlowKgPerS'])
-    expect(post).not.toContain('turbine.electricMw')
+    expect(post.slice(0, 6)).not.toContain('turbine.electricMw')
+    expect(post.slice(6)).toEqual(['core.totalThermalPowerMw', 'turbine.electricMw'])
     // Each lead row named as crews say it, never cut (W4.2; OLD process-plant-overview's post-trip heat path, re-expressed):
     // at power reactor power and the pressurizer's pressure lead; after the trip the heat path.
     const named = (view: VignetteView) => { const section = view.sections.find(entry => entry.kind === 'values'); return section?.kind === 'values' ? section.values.map(value => value.shortLabel) : [] }
     expect(named(unit.view).slice(0, 3)).toEqual(['Reactor power', 'PZR pressure', 'Subcooling'])
     expect(named(drawn[plantId]!).slice(0, 3)).toEqual(['Subcooling', 'CET', 'AFW flow'])
     expect(named(drawn[plantId]!).every(label => label !== undefined && label.length <= 24)).toBe(true)
+    // The energy in and out by the words crews use, short enough to stand whole beside the widest limit tag (LO-LO-LO).
+    expect(named(drawn[plantId]!).slice(6)).toEqual(['Core MWt', 'Elec output'])
     // The core: the trip's checks (W1.4; natural circulation's apply only with no coolant pump running), rods on the
     // bottom, both trip breakers, rod steps, then its flux on the power and intermediate ranges.
     expect(valuesOf(drawn[`${plantId}#core`]!).slice(0, 8)).toEqual([
