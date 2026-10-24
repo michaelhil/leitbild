@@ -389,8 +389,14 @@ describe('scaled drawings', () => {
       expect(drawn).toContain('<Continues ends={more} />')
     }
     const continues = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Continues.svelte'), 'utf8')
-    expect(continues).toContain('{#if ends.bottom}<span class="fade bottom"></span><span class="mark bottom">drawing continues ↓</span>{/if}')
-    expect(continues).toContain('style:right={`${ends.bars.right}px`} style:bottom={`${ends.bars.bottom}px`}')
+    // Each mark a child of the frame that holds the scroller, naming its way, clear of the scrollbars.
+    expect(continues).toContain('<span class="continues middle" data-continues="down" aria-hidden="true" style:left={`calc(50% + ${middle}px)`} style:bottom={`${bottom + 4}px`}>drawing continues ↓</span>')
+    expect(continues).toContain('<span class="continues" data-continues="right" aria-hidden="true" style:right={`${right + 4}px`} style:top={`${hidden.top + 4}px`}>drawing continues ›</span>')
+    expect(continues).toContain('const right = $derived(Math.max(ends.bars.right, hidden.right))')
+    // They stand in the part of the scroller a person sees: inside every box that clips it, and inside the part of a
+    // taller vignette a window's body shows.
+    expect(continues).toContain("if (style.overflowX !== 'visible') { left = Math.max(left, clip.left); end = Math.min(end, clip.right) }")
+    expect(continues).toContain('const room = visibleRoom(presentation, { width: window.innerWidth, height: window.innerHeight })')
   })
 })
 
