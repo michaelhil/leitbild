@@ -167,6 +167,7 @@ describe('the network drawing (grid, R3 W9.3)', () => {
     expect(networkWordsCut(line('Sylling trafostasjon …', 'Sylling trafostasjon 420/300 kV'))).toBeNull()
     expect(networkWordsCut(line('Follo - Tegneby / Syllin', 'Follo - Tegneby / Syllin'))).toContain('stop cap')
     expect(networkWordsCut(line('Tegneby koblingsstasjon 420 kV', 'Tegneby koblingsstasjon 420 kV'))).toBeNull()
+    expect(networkWordsCut(line('Nore I - Sylling +1 more', 'Nore I - Sylling +1 more'))).toBeNull()
     expect(networkWordsCut(line('Ringerike - Sylling', 'Ringerike - Sylling', { clipped: true }))).toBe('clipped by its box')
   })
   test('a name whose descenders sit on its bus bar is against it; one a row above is not', () => {

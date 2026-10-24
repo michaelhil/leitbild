@@ -332,6 +332,8 @@ export const networkWordsCut = (text: NetworkRead['texts'][number]): string | nu
     const next = text.title.startsWith(stem) ? text.title.charAt(stem.length) : ''
     return next !== '' && !/\s/.test(next) && !/\s$/.test(stem) ? `ellipsis inside a word (of "${text.title.slice(0, 48)}")` : null
   }
+  // A stop that gives way by whole names counts the rest ("Nore I - Sylling +1 more"): whole words, no cut.
+  if (/\+\d+ more$|\(\d+\)$/.test(text.text)) return null
   return text.kind === 'name' && text.text.length === STOP_CAP && text.title === text.text ? `${STOP_CAP} characters, the stop cap, no ellipsis` : null
 }
 
