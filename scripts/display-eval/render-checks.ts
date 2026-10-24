@@ -266,13 +266,15 @@ export interface NetworkRead {
   readonly found: boolean
   /** Each text line of the network drawing (a name, a reading): its glyph box in the drawing's coordinates, its block's
    * full words (the block's title), whether its own block clips it, and whether it lies past what the window shows. */
-  readonly texts: ReadonlyArray<{ readonly text: string; readonly title: string; readonly kind: string; readonly item: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly clipped: boolean; readonly hidden: boolean }>
+  readonly texts: ReadonlyArray<{ readonly text: string; readonly title: string; readonly kind: string; readonly item: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly clipped: boolean; readonly hidden: boolean; readonly sides?: ReadonlyArray<string> }>
   /** Each bus bar drawn (obc-bus), its box. */
   readonly bars: ReadonlyArray<{ readonly label: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number }>
   readonly width: number
   readonly height: number
   /** What shows of the drawing in the window (its box clipped by the scrollers around it), in drawing coordinates. */
   readonly shown: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+  /** The ways a visible "drawing continues" mark points (W4.3, data-continues: left, right, up, down). */
+  readonly marks?: ReadonlyArray<string>
 }
 
 /** The network drawing (the grid, W9): its text lines and bus bars as rendered, for overlap, cut words and fit. */
@@ -307,11 +309,14 @@ export const readNetwork = (): string => String.raw`((() => {${SHOWN}
         text: textOf(span), title: block.getAttribute('title') || '', kind: [...span.classList].filter(c => !/^svelte-/.test(c)).join('.') || 'line', item: String(at), ...box,
         clipped: blockClips && (r.l < br.left - 1 || r.r > br.left + block.clientWidth * scale + 1),
         hidden: box.x < shownBox.x - 1 || box.x + box.w > shownBox.x + shownBox.w + 1 || box.y < shownBox.y - 1 || box.y + box.h > shownBox.y + shownBox.h + 1,
+        sides: [box.x < shownBox.x - 1 ? 'left' : null, box.x + box.w > shownBox.x + shownBox.w + 1 ? 'right' : null, box.y < shownBox.y - 1 ? 'up' : null, box.y + box.h > shownBox.y + shownBox.h + 1 ? 'down' : null].filter(Boolean),
       })
     }
   })
   const bars = [...drawing.querySelectorAll('obc-bus')].map(bus => { const r = bus.getBoundingClientRect(); return { label: bus.getAttribute('label') || bus.label || '', ...toDrawing({ l: r.left, t: r.top, r: r.right, b: r.bottom }) } })
-  return { found: true, texts, bars, width: drawing.offsetWidth, height: drawing.offsetHeight, shown: shownBox }
+  // The "drawing continues" marks a person sees (W4.3): shown, and inside the window.
+  const marks = [...doc.querySelectorAll('[data-continues]')].filter(mark => { const r = mark.getBoundingClientRect(); const st = doc.defaultView.getComputedStyle(mark); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none' && Number(st.opacity) > 0 && r.right > 0 && r.bottom > 0 && r.left < doc.defaultView.innerWidth && r.top < doc.defaultView.innerHeight }).map(mark => mark.getAttribute('data-continues'))
+  return { found: true, texts, bars, width: drawing.offsetWidth, height: drawing.offsetHeight, shown: shownBox, marks }
 })())`
 
 type Box = { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
@@ -332,6 +337,8 @@ export const networkWordsCut = (text: NetworkRead['texts'][number]): string | nu
     const next = text.title.startsWith(stem) ? text.title.charAt(stem.length) : ''
     return next !== '' && !/\s/.test(next) && !/\s$/.test(stem) ? `ellipsis inside a word (of "${text.title.slice(0, 48)}")` : null
   }
+  // A stop that gives way by whole names counts the rest ("Nore I - Sylling +1 more"): whole words, no cut.
+  if (/\+\d+ more$|\(\d+\)$/.test(text.text)) return null
   return text.kind === 'name' && text.text.length === STOP_CAP && text.title === text.text ? `${STOP_CAP} characters, the stop cap, no ellipsis` : null
 }
 
@@ -345,6 +352,7 @@ export const networkFaults = (network: NetworkRead): { readonly against: Readonl
     for (const bar of network.bars) if (overlapArea(inset(a, 1, 1), bar) > 4) against.push(`${short(a.text)} × bar "${bar.label.slice(0, 32) || '(unlabelled)'}"`)
   })
   const cut = network.texts.flatMap(text => { const how = networkWordsCut(text); return how === null ? [] : [`${short(text.text)}: ${how}`] })
-  const hidden = network.texts.filter(text => text.hidden).map(text => short(text.text))
+  // Past an edge is no fault where a visible mark says the drawing continues that way (W4.3).
+  const hidden = network.texts.filter(text => text.hidden && !(text.sides ?? []).every(side => (network.marks ?? []).includes(side))).map(text => short(text.text))
   return { against, cut, hidden }
 }

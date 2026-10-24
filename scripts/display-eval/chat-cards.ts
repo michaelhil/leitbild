@@ -59,16 +59,25 @@ const READ = String.raw`(() => {
   return out
 })()`
 
-/** Presses a cited key and reads whether its line shows. */
+/** Brings a cited key's chip into view and says where a press lands on it: its chip scrolled to the middle of the
+ * chat's own scroller (the chat keeps to its bottom while it settles, so this is read again before the press), and the
+ * element a press at that point reaches through the frames, so a chip under the room's header is never pressed blind. */
 const PRESS_KEY = (key: string, index: number) => String.raw`(() => {
   for (const { doc } of lb.documents()) {
     const chips = doc && doc.body ? [...doc.querySelectorAll('[data-cites="' + ${JSON.stringify(key)} + '"]')] : []
     const chip = chips[${index}] || chips[0]
     if (!chip) continue
     if (chip.tagName !== 'BUTTON') return { pressed: false, reason: 'not a button' }
-    chip.scrollIntoView({ block: 'center' })
+    // The chat's scroller: the nearest ancestor that scrolls.
+    let scroller = chip.parentElement
+    while (scroller && scroller !== doc.documentElement) { const st = doc.defaultView.getComputedStyle(scroller); if (/(auto|scroll)/.test(st.overflowY) && scroller.scrollHeight > scroller.clientHeight) break; scroller = scroller.parentElement }
+    if (scroller && scroller !== doc.documentElement) { const sr = scroller.getBoundingClientRect(), cr = chip.getBoundingClientRect(); scroller.scrollTop += (cr.top + cr.height / 2) - (sr.top + scroller.clientHeight / 2) } else chip.scrollIntoView({ block: 'center' })
     const r = lb.toTop(chip)
-    return { pressed: true, x: r.x + r.w / 2, y: r.y + r.h / 2 }
+    const x = r.x + r.w / 2, y = r.y + r.h / 2
+    let hitDoc = document, px = x, py = y, hit = hitDoc.elementFromPoint(px, py)
+    while (hit && hit.tagName === 'IFRAME' && hit.contentDocument) { const fr = hit.getBoundingClientRect(), fs = lb.scaleOf(hit); px = (px - fr.left) / fs - hit.clientLeft; py = (py - fr.top) / fs - hit.clientTop; hitDoc = hit.contentDocument; hit = hitDoc.elementFromPoint(px, py) }
+    const reaches = !!hit && (hit === chip || chip.contains(hit))
+    return { pressed: true, x, y, reaches, over: reaches || !hit ? null : hit.tagName.toLowerCase() + '.' + String(hit.className || '').split(' ')[0] }
   }
   return { pressed: false, reason: 'no chip' }
 })()`
@@ -78,7 +87,15 @@ const LINE_SHOWN = (key: string) => String.raw`(() => {
     const line = doc && doc.body ? doc.querySelector('[data-card-keys~="' + ${JSON.stringify(key)} + '"], [data-card-key="' + ${JSON.stringify(key)} + '"]') : null
     if (!line) continue
     const r = lb.toTop(line)
-    return { found: true, shown: !line.hidden && !line.closest('[hidden]') && r.h > 0 && r.y >= 0 && r.y + r.h <= innerHeight, marked: line.classList.contains('bg-surface-strong') }
+    // On screen: inside the window and every scroller around it (the chat's message list clips what it scrolls).
+    let clipped = false
+    for (let a = line.parentElement; a && a !== doc.documentElement; a = a.parentElement) {
+      const st = doc.defaultView.getComputedStyle(a)
+      if (st.overflowY === 'visible') continue
+      const q = lb.toTop(a)
+      if (r.y < q.y - 1 || r.y + r.h > q.y + q.h + 1) { clipped = true; break }
+    }
+    return { found: true, shown: !line.hidden && !line.closest('[hidden]') && r.h > 0 && r.y >= 0 && r.y + r.h <= innerHeight && !clipped, marked: line.classList.contains('bg-surface-strong') }
   }
   return { found: false, shown: false, marked: false }
 })()`
@@ -95,7 +112,8 @@ if (import.meta.main) {
   const workspaceId: string = seed.workspaceId ?? seed.workspace?.id
   const rows: any[] = []
   for (const name of readdirSync(runs).filter(file => file.endsWith('-rows.jsonl'))) for (const line of (await Bun.file(join(runs, name)).text()).split('\n')) if (line.trim()) rows.push({ ...JSON.parse(line), stage: name.replace(/-rows\.jsonl$/, '') })
-  const rooms = rows.filter(row => typeof row.roomId === 'string').slice(0, Number(argv.get('limit') ?? 1_000))
+  const only = argv.get('only')?.split(',') ?? null
+  const rooms = rows.filter(row => typeof row.roomId === 'string' && (only === null || only.includes(row.roomId))).slice(0, Number(argv.get('limit') ?? 1_000))
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const page = await openPage(port, width, height)
   const results: Array<Record<string, unknown>> = []
@@ -113,9 +131,18 @@ if (import.meta.main) {
         const n = seen.get(entry.key) ?? 0
         seen.set(entry.key, n + 1)
         if (!entry.button) { keys.push({ key: entry.key, resolves: false, why: entry.title || 'not a button' }); continue }
-        const at = await page.eval<{ pressed: boolean; x?: number; y?: number; reason?: string }>(PRESS_KEY(entry.key, n))
+        // Scroll it into the chat's view, let the chat settle, and press only where the press reaches the chip.
+        type At = { pressed: boolean; x?: number; y?: number; reaches?: boolean; over?: string | null; reason?: string }
+        let at: At = { pressed: false, reason: 'no chip' }
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          at = await page.eval<At>(PRESS_KEY(entry.key, n))
+          if (!at.pressed) break
+          await sleep(400)
+          at = await page.eval<At>(PRESS_KEY(entry.key, n))
+          if (at.reaches) break
+        }
         if (!at.pressed) { keys.push({ key: entry.key, resolves: false, why: at.reason ?? '?' }); continue }
-        await sleep(300)
+        if (!at.reaches) { keys.push({ key: entry.key, resolves: false, why: `chip covered by ${at.over ?? '?'} after scrolling it into the chat's view` }); continue }
         for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
         await sleep(600)
         const line = await page.eval<{ found: boolean; shown: boolean; marked: boolean }>(LINE_SHOWN(entry.key))
