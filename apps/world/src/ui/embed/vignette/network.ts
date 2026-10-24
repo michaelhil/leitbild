@@ -7,6 +7,8 @@
 // priorities; "on" only from a boolean or a state declared active (ruling Q8).
 import type { Segment } from '@oicl/connector-diagram'
 import type { Observation } from '../../../core/observation/model.ts'
+import { NETWORK, NETWORK_READING_ROLES, NETWORK_ROW } from '../../../features/displays/topology/network-room.ts'
+import { textWidth, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { endStraight, pipeSegments, stubEndSegment } from './pipe-segments.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
@@ -16,11 +18,9 @@ type Topology = Extract<VignetteSection, { kind: 'topology' }>
 type Point = readonly [number, number]
 type Box = { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
-/** About this many pixels a character of the drawing's 12 px text takes; a name longer than its room allows is shortened. */
-export const CHAR_PX = 7
 /** OpenBridge's device symbol is two grid cells square. */
-const SYMBOL_PX = 2 * VIGNETTE_ROW_PX
-const BUS_PX = 16
+const SYMBOL_PX = NETWORK.symbol
+const BUS_PX = NETWORK.bar
 
 /** The OpenBridge device each node class is drawn as; a class not listed is no device. */
 const DEVICES: Readonly<Partial<Record<Topology['nodes'][number]['class'], 'obc-switch' | 'obc-transformer' | 'obc-source'>>> = {
@@ -32,11 +32,29 @@ export interface NetworkDrawing {
   readonly height: number
   /** Lines, line elements, and the caps where the drawing stops: connector-diagram segments. */
   readonly segments: ReadonlyArray<Segment>
-  readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly label: string; readonly title: string }>
+  /** A bar with its name in it, or none where its name stands beside it; `tone`: an alert on it, marked under the bar (obc-bus has no alert state). */
+  readonly buses: ReadonlyArray<Box & { readonly id: string; readonly vertical: boolean; readonly label: string; readonly tone: AlertTone | null; readonly title: string }>
   /** Each at its symbol's centre (OpenBridge's `point` positioning). */
   readonly devices: ReadonlyArray<{ readonly id: string; readonly element: 'obc-switch' | 'obc-transformer' | 'obc-source'; readonly x: number; readonly y: number; readonly on: boolean; readonly tone: AlertTone | null; readonly title: string }>
-  /** Names, with the lead reading on the same row or on the row below the line through a line element. */
-  readonly texts: ReadonlyArray<{ readonly id: string; readonly x: number; readonly y: number; readonly width: number; readonly name: string; readonly reading: string | null; readonly below: boolean; readonly tone: AlertTone | null; readonly title: string }>
+  /**
+   * Each item's words in rows, each row a box the composer kept room for (topology/network-room.ts), whole: a device's
+   * name and its reading on the row under its symbol, a line element's name over its line and its reading under it, a
+   * name beside a bar that runs across its box, a stop's label beside its cap. `framed`: an OpenBridge alert frame marks
+   * the item, so its name is not underlined.
+   */
+  readonly texts: ReadonlyArray<NetworkText>
+}
+
+export interface NetworkRow extends Box {
+  readonly align: 'start' | 'end'
+  readonly parts: ReadonlyArray<{ readonly text: string; readonly kind: 'name' | 'reading'; readonly style: FlowTextStyle }>
+}
+export interface NetworkText {
+  readonly id: string
+  readonly rows: ReadonlyArray<NetworkRow>
+  readonly tone: AlertTone | null
+  readonly framed: boolean
+  readonly title: string
 }
 
 /**
@@ -44,12 +62,6 @@ export interface NetworkDrawing {
  * ("drawing scaled to n % to fit"): its rows but the last over the grid rows its layout reaches into.
  */
 export const drawingScale = (section: Pick<Topology, 'rows' | 'layout'>): number => Math.min(1, (section.rows - 1) / Math.max(1, Math.ceil(section.layout.height)))
-
-/** A name shortened to whole characters that fit its room, ending in "…". */
-export const fitName = (name: string, roomPx: number): string => {
-  const most = Math.max(1, Math.floor(roomPx / CHAR_PX))
-  return name.length <= most ? name : `${name.slice(0, Math.max(1, most - 1))}…`
-}
 
 /**
  * A bus's bar: along the one face its edge ends meet (feeders all on one
@@ -81,7 +93,6 @@ export const stub = (end: Point, to: Point, box: Box): ReadonlyArray<Point> => {
   return sideways ? [end, [to[0], end[1]], to] : [end, [end[0], to[1]], to]
 }
 
-const READING_ROLES: ReadonlyArray<TopologyBinding['role']> = ['loading', 'flow', 'level', 'value']
 
 /** A network drawing; `frozen`: the sample no longer follows the Run, so no alert colour and no reading shows (W8.1). */
 export const networkDrawing = (section: Topology, observations: ReadonlyArray<Observation>, frozen = false): NetworkDrawing => {
@@ -114,41 +125,66 @@ export const networkDrawing = (section: Topology, observations: ReadonlyArray<Ob
     const bound = node.bindings.map(binding => ({ binding, observation: read(binding) }))
     const tones = bound.map(entry => toneOf(entry.observation?.priority)).filter(tone => tone !== null)
     const tone = frozen ? null : (['critical', 'alarm', 'warning', 'caution'] as const).find(level => tones.includes(level)) ?? null
-    const lead = frozen ? undefined : READING_ROLES.flatMap(role => bound.filter(entry => entry.binding.role === role && typeof entry.observation?.value === 'number'))[0]
+    const lead = frozen ? undefined : NETWORK_READING_ROLES.flatMap(role => bound.filter(entry => entry.binding.role === role && typeof entry.observation?.value === 'number'))[0]
     const look = lead === undefined ? null : readingLook(node.label, 'number', undefined, { value: lead.observation!.value, unit: lead.binding.unit, thresholds: [] })
     const reading = look === null ? null : `${look.text}${look.unit === '' ? '' : ` ${look.unit}`}`
     const name = node.shortLabel ?? node.label
+    const title = `${node.label}${reading === null ? '' : ` · ${reading}`}`
     const here = ends.filter(at(box))
-    const text = (x: number, y: number, width: number, shown: 'name' | 'beside' | 'below') => drawing.texts.push({
-      id, x, y, width, name: fitName(name, shown === 'beside' && reading !== null ? width - (reading.length + 3) * CHAR_PX : width),
-      reading: shown === 'name' ? null : reading, below: shown === 'below', tone, title: `${node.label}${reading === null ? '' : ` · ${reading}`}`,
-    })
+    const words = (rows: ReadonlyArray<NetworkRow>, framed = false): void => { drawing.texts.push({ id, rows, tone, framed, title }) }
+    const named = { text: name, kind: 'name' as const, style: 'name' as const }
+    const readingPart = reading === null ? [] : [{ text: reading, kind: 'reading' as const, style: 'reading' as const }]
     const element = DEVICES[node.class]
     if (node.class === 'bus') {
       const line = barLine(box, here)
       const vertical = line.x1 === line.x2
       const length = vertical ? line.y2 - line.y1 : line.x2 - line.x1
-      // The bar carries its name where it fits and no alert does (obc-bus has no alert state); else the name is text beside it.
-      const inBar = tone === null && fitName(name, length - 8) === name
-      drawing.buses.push({ id, vertical, label: inBar ? name : '', title: node.label, x: vertical ? line.x1 - BUS_PX / 2 : line.x1, y: vertical ? line.y1 : line.y1 - BUS_PX / 2, width: vertical ? BUS_PX : length, height: vertical ? length : BUS_PX })
-      if (!inBar) text(box.x, box.y, box.width - (vertical ? BUS_PX : 0), 'name')
+      // Its name in its bar where the bar runs along the box (the composer sized the box for it); beside a bar that
+      // runs across it, on the side the bar leaves free, in a row at its middle.
+      const inBar = !vertical && textWidth(name, 'busLabel') + NETWORK.barPadding <= length
+      drawing.buses.push({ id, vertical, label: inBar ? name : '', tone, title: node.label, x: vertical ? line.x1 - BUS_PX / 2 : line.x1, y: vertical ? line.y1 : line.y1 - BUS_PX / 2, width: vertical ? BUS_PX : length, height: vertical ? length : BUS_PX })
+      if (!inBar) {
+        const rowY = vertical ? box.y + box.height / 2 - NETWORK_ROW / 2
+          : line.y1 - box.y >= box.y + box.height - line.y1 ? line.y1 - BUS_PX / 2 - NETWORK.gap - NETWORK_ROW : line.y1 + BUS_PX / 2 + NETWORK.gap
+        const left = vertical && line.x1 - box.x > box.x + box.width - line.x1
+        const row = vertical
+          ? (left ? { x: box.x, width: line.x1 - BUS_PX / 2 - NETWORK.gap - box.x, align: 'end' as const } : { x: line.x1 + BUS_PX / 2 + NETWORK.gap, width: box.x + box.width - line.x1 - BUS_PX / 2 - NETWORK.gap, align: 'start' as const })
+          : { x: box.x, width: box.width, align: 'start' as const }
+        words([{ ...row, y: rowY, height: NETWORK_ROW, parts: [named] }])
+      }
     } else if (element !== undefined) {
       const centre = [box.x + box.width / 2, box.y + SYMBOL_PX / 2] as const
       segments.push(...here.flatMap(end => pipeSegments(`${id}:${end.join(',')}`, stub(end, centre, box), [], lineValue([end, end]), 'small')))
-      drawing.devices.push({ id, element, x: centre[0], y: centre[1], on: conducting(id) === true, tone, title: `${node.label}${reading === null ? '' : ` · ${reading}`}` })
-      text(box.x, box.y + SYMBOL_PX, box.width, 'beside')
+      drawing.devices.push({ id, element, x: centre[0], y: centre[1], on: conducting(id) === true, tone, title })
+      // Its name, then its reading, on the row under its symbol; OpenBridge's alert frame marks it.
+      words([{ x: box.x, y: box.y + SYMBOL_PX, width: box.width, height: VIGNETTE_ROW_PX, align: 'start', parts: [named, ...readingPart] }], true)
     } else if (node.class === 'stop' || node.class === 'boundary') {
-      // Where the drawing stops, or meets another graph: OpenBridge's end cap on the line that arrives.
+      // Where the drawing stops, or meets another graph: OpenBridge's end cap on the line that arrives, its label beside the cap.
+      let capRight = false
       for (const edge of edges) {
         const into = at(box)(edge.points.at(-1)!) ? 'out' : at(box)(edge.points[0]!) ? 'in' : null
-        if (into !== null) segments.push(stubEndSegment(`${edge.id}:end`, edge.drawn, into, lineValue(edge.points), 'small'))
+        if (into === null) continue
+        segments.push(stubEndSegment(`${edge.id}:end`, edge.drawn, into, lineValue(edge.points), 'small'))
+        const end = into === 'out' ? edge.points.at(-1)! : edge.points[0]!
+        capRight = Math.abs(end[0] - (box.x + box.width)) < 1
       }
-      text(box.x + 6, box.y, box.width - 6, 'beside')
+      const room = NETWORK.cap + NETWORK.gap
+      words([{ x: capRight ? box.x : box.x + room, y: box.y, width: box.width - room, height: box.height, align: capRight ? 'end' : 'start', parts: [named] }])
     } else if (node.class !== 'junction') {
-      // A line element (a branch): one line through its box from end to end, its name above and its reading below.
+      // A line element (a branch): one line through its box from end to end, its name over it and its reading under it.
+      // Its ends on one face (the line turns back into the drawing) join along that face, clear of its words.
+      const faces = new Set(here.map(([x, y]) => (Math.abs(x - box.x) < 1 ? 'left' : Math.abs(x - (box.x + box.width)) < 1 ? 'right' : Math.abs(y - box.y) < 1 ? 'top' : 'bottom')))
       const centre = [box.x + box.width / 2, here.length > 0 ? here.reduce((sum, end) => sum + end[1], 0) / here.length : box.y + box.height / 2] as const
-      segments.push(...here.flatMap(end => pipeSegments(`${id}:${end.join(',')}`, stub(end, centre, box), [], conducting(id) === false ? 'empty' : 'open-generic', 'small')))
-      text(box.x, box.y, box.width, 'below')
+      const value = conducting(id) === false ? 'empty' : 'open-generic'
+      if (here.length === 2 && faces.size === 1 && (faces.has('left') || faces.has('right'))) {
+        const inside = faces.has('left') ? box.x + NETWORK.symbol / 4 : box.x + box.width - NETWORK.symbol / 4
+        const [a, b] = here as unknown as [Point, Point]
+        segments.push(...pipeSegments(`${id}:turn`, [a, [inside, a[1]], [inside, b[1]], b], [], value, 'small'))
+      } else segments.push(...here.flatMap(end => pipeSegments(`${id}:${end.join(',')}`, stub(end, centre, box), [], value, 'small')))
+      words([
+        { x: box.x, y: box.y, width: box.width, height: NETWORK_ROW, align: 'start', parts: [named] },
+        ...(readingPart.length === 0 ? [] : [{ x: box.x, y: box.y + box.height - NETWORK_ROW, width: box.width, height: NETWORK_ROW, align: 'start' as const, parts: readingPart }]),
+      ])
     }
   }
   return {

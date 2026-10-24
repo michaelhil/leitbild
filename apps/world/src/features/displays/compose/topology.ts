@@ -12,7 +12,8 @@ import { flowLayout, type DrawnStops } from '../topology/flow-sizing.ts'
 import type { TopologyLayout } from '../topology/layout.ts'
 import { networkLayout, type NetworkSizing } from '../topology/network.ts'
 import { drawingStops, scopeTopology, TOPOLOGY_REACH, withOtherMediaStopped, type ScopedTopology, type TopologyRequest } from '../topology/scope.ts'
-import { stopRefs, stopViews } from '../topology/stops.ts'
+import { NETWORK, networkRoom, stopRoom, type NetworkDeclaredOf } from '../topology/network-room.ts'
+import { stopLabel, stopRefs, stopViews } from '../topology/stops.ts'
 import type { SearchRun } from '../observation/search.ts'
 import { declaredRefs } from './declared.ts'
 import type { VignetteSection } from './model.ts'
@@ -32,17 +33,19 @@ const labelOf = (graph: TopologyGraph, id: string): string => {
   const node = graph.nodes.find(entry => entry.id === id)
   return node?.shortLabel ?? node?.label ?? id
 }
-/** A network stop's label: the names of what lies beyond, at most 24 characters (a flow drawing's, topology/stops.ts). */
-export const stopLabel = (names: ReadonlyArray<string>): string => names.join(', ').slice(0, 24)
-/** Boxes that keep every drawn name whole at the renderer's 12 text (about 7 a character, 6 of padding, 24 a grid unit); a symbol (two units) stands over its name. */
-const box = (text: string, height: number) => ({ width: Math.max(2, Math.ceil((text.length * 7 + 6) / 24)), height })
-const symbols: ReadonlySet<string> = new Set(['switch', 'converter', 'source'])
-const networkSizing = (graph: TopologyGraph): NetworkSizing => ({
-  key: 'vignette-network-3',
-  node: node => box(node.shortLabel ?? node.label, symbols.has(node.class) ? 3 : 2),
-  stop: stop => box(stopLabel(stop.others.map(other => labelOf(graph, other.node))), 1),
+/**
+ * A network drawing's sizing: each item's box wide enough for its name and its reading whole, a stop's for what lies
+ * beyond it (alike names once with how many, the rest counted, never cut: topology/stops.ts), measured in Noto Sans
+ * (topology/network-room.ts); `declaredOf` gives the units its readings write.
+ */
+export const networkSizing = (graph: TopologyGraph, declaredOf: NetworkDeclaredOf): NetworkSizing => ({
+  key: 'vignette-network-4',
+  node: node => networkRoom(node, declaredOf),
+  stop: stop => ({ width: Math.max(2, Math.ceil(stopRoom(networkStopLabel(graph, stop.others)) / NETWORK.grid)), height: 1 }),
   spacing: 1,
 })
+/** What a network stop names: what lies beyond it, whole. */
+export const networkStopLabel = (graph: TopologyGraph, others: ReadonlyArray<{ readonly node: string }>): string => stopLabel(null, others.map(other => labelOf(graph, other.node)))
 
 export type Scoped = { readonly ok: true; readonly scoped: ScopedTopology; readonly reach?: number } | { readonly ok: false; readonly reason: string }
 
@@ -119,16 +122,17 @@ const scopeByReach = (graph: TopologyGraph, request: TopologyRequest): Scoped =>
 
 export interface Drawing { readonly layout: TopologyLayout; readonly stops: DrawnStops }
 const drawings = drawingCache<Promise<Drawing | null>>(64)
-/** A scope's drawing, kept by its graph's revision; a flow drawing sizes its text by what its bindings declare (their words and units), static for a revision. */
+/** A scope's drawing, kept by its graph's revision; its text is sized by what its bindings declare (their words and units), static for a revision. */
 export const drawingOf = (run: SearchRun, scoped: ScopedTopology): Promise<Drawing | null> => drawings.get(drawingKey(scoped, scoped.graph.family), async () => {
   if (scoped.graph.family === 'flow') {
     const declared = await declaredRefs(run, bindingRefs(scoped))
     return flowLayout(scoped, FLOW_ROOM, ref => declared.get(ref)?.observable)
   }
-  const layout = await networkLayout(scoped, networkSizing(scoped.graph))
+  const declared = await declaredRefs(run, bindingRefs(scoped))
+  const layout = await networkLayout(scoped, networkSizing(scoped.graph, ref => declared.get(ref)?.observable))
   const mediumOf = (edge: string): string => scoped.graph.edges.find(entry => entry.id === edge)!.medium
   return { layout, stops: Object.fromEntries(scoped.stubs.map((stop, at) => {
-    const label = stopLabel(stop.others.map(other => labelOf(scoped.graph, other.node)))
+    const label = networkStopLabel(scoped.graph, stop.others)
     return [`s${at}`, { direction: stop.direction, label, lines: [label], far: [...new Set(stop.others.map(other => other.node))], edges: stop.edges, medium: mediumOf(stop.edges[0]!) }]
   })) }
 })

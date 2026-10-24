@@ -93,7 +93,7 @@ const catalogueOf = (grid: GridRuntimeInstance) => catalogues.get(grid.definitio
     ...hvdcLinks.map((link): Element => ({ id: link.id, class: 'hvdc-link', label: readable(link.label) })),
     ...externalSystems.map((system): Element => ({ id: system.id, class: 'external-system', label: readable(system.label) })),
   ]
-  const cut = (label: string, room: number): string => (label.length <= room ? label : `${label.slice(0, room - 1)}…`)
+  const cut = (label: string, room: number): string => wholeWordsWithin(label, room)
   const [counts, seen] = [new Map<string, number>(), new Map<string, number>()]
   for (const element of elements) counts.set(cut(element.label, 52), (counts.get(cut(element.label, 52)) ?? 0) + 1)
   const names = new Map(elements.map(element => {
@@ -107,6 +107,17 @@ const catalogueOf = (grid: GridRuntimeInstance) => catalogues.get(grid.definitio
   catalogues.set(grid.definition, catalogue)
   return catalogue
 })()
+
+/**
+ * A name within `room` characters: whole, or its whole words that fit before an ellipsis, a separator they end on
+ * dropped ("Hungeren - Charlottenlund / Hungeren…"); a first word longer than the room alone is cut (plan v5 §2 rule 2).
+ */
+export const wholeWordsWithin = (label: string, room: number): string => {
+  if (label.length <= room) return label
+  const words = label.slice(0, room - 1).split(' ')
+  const kept = (label[room - 1] === ' ' ? words : words.slice(0, -1)).join(' ').replace(/[\s,/–-]+$/, '')
+  return kept === '' ? `${label.slice(0, room - 1)}…` : `${kept}…`
+}
 
 /** The Grid's islands as elements, named by their current anchor bus as islands.list names them. */
 const islandElements = (grid: GridRuntimeInstance): ReadonlyArray<Element> => solvedGridIslands(grid).islands

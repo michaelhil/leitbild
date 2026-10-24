@@ -9,9 +9,10 @@
 // label, at its width; a word at its longest declared word; a reading's
 // value, read later, at so many figures (Noto Sans sets them tabular).
 // Nothing is measured in the browser.
+import { unitSymbol, type Observable } from '../../../core/observation/model.ts'
 
 /** The kinds of line a drawn item writes, each in its own size and weight. */
-export type FlowTextStyle = 'name' | 'word' | 'command' | 'reading' | 'vesselReading'
+export type FlowTextStyle = 'name' | 'word' | 'command' | 'reading' | 'vesselReading' | 'busLabel'
 
 /** Size, line height in px and weight of each kind of line; a name is reserved at its bold width, which it takes while an alert stands on its item. */
 export const FLOW_TEXT: Readonly<Record<FlowTextStyle, { readonly size: number; readonly line: number; readonly weight: 400 | 700 }>> = {
@@ -20,6 +21,8 @@ export const FLOW_TEXT: Readonly<Record<FlowTextStyle, { readonly size: number; 
   command: { size: 14, line: 16, weight: 700 },
   reading: { size: 14, line: 16, weight: 400 },
   vesselReading: { size: 16, line: 20, weight: 400 },
+  // A bus's name in its bar: OpenBridge's small bus sets it as an instrument label (11.5 px semibold), reserved at 12 px bold.
+  busLabel: { size: 12, line: 16, weight: 700 },
 }
 
 /** Every character the table measures, and the subset of Noto Sans the embed ships: printable ASCII and the signs readings write. */
@@ -71,3 +74,16 @@ const FIGURE = 572
 
 /** The room of `figures` in `style`: a value read when the drawing is drawn, reserved at so many figures. */
 export const textFigures = (figures: number, style: FlowTextStyle): number => Math.ceil((figures * FIGURE * FLOW_TEXT[style].size) / UNITS_PER_EM)
+
+/** A value read over decades at its longest. */
+export const DECADES_TEXT = '8.8×10⁻¹¹'
+
+/**
+ * The room a reading takes in `style`: its word ("LVL "), a value of so many figures (or, read over decades, a
+ * two-digit power of ten where that is wider) and its unit's symbol.
+ */
+export const readingRoom = (declared: Pick<Observable, 'unit' | 'decades'> | undefined, word: string | undefined, figures: number, style: FlowTextStyle): number => {
+  const unit = declared === undefined ? '' : unitSymbol(declared.unit)
+  const value = declared?.decades === true ? Math.max(textFigures(figures, style), textWidth(DECADES_TEXT, style)) : textFigures(figures, style)
+  return (word === undefined ? 0 : textWidth(`${word} `, style)) + value + (unit === '' ? 0 : textWidth(` ${unit}`, style))
+}
