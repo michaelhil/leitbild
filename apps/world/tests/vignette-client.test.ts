@@ -244,7 +244,7 @@ describe('vignette session', () => {
     session.close()
   })
 
-  test('a Run that steps once a second holds the display for one step, not one a second: it asks a second after each answer', async () => {
+  test('a Run that steps once a second holds the display for one step, not one a second: after one, it asks just after the next', async () => {
     const run = harness(loaded)
     // The Run's step: every 1,002 ms (its timer runs a little late each time) it holds World for 100 ms; a request that
     // comes during a step is answered 10 ms after it ends, any other in 10 ms. Its steps start where a test puts them.
@@ -271,12 +271,27 @@ describe('vignette session', () => {
       waits.push(wait)
       return wait + ANSWER_MS
     })
-    await run.advance(60_000)
+    await run.advance(50_000)
     run.session.close()
-    // It waited that step out, and asks just after the steps since. A second from each request, it met a step every
-    // second for fifteen seconds and more, waiting 70 ms, then 72, 74 … (each request 2 ms further from the step's end).
-    expect(waits.length - asked).toBeGreaterThan(55)
+    // It waited that step out, then asked 120 ms after the next step's end and a second after each request since. Asking
+    // a second after the request that met the step, it met one every second, waiting 70 ms, then 72, 74 … (each request
+    // 2 ms further from the step's end, its seconds 2 ms shorter than the Run's).
+    expect(waits.length - asked).toBeGreaterThan(45)
     expect(waits.slice(asked).filter(wait => wait > 0)).toEqual([70])
+  })
+
+  test('a quick Run is asked a second after each request, whatever its answers take', async () => {
+    const run = harness(loaded)
+    const asked: number[] = []
+    run.answerBy(wall => { asked.push(wall); return 7 + (asked.length % 3) * 4 })
+    run.session.start()
+    await run.settle()
+    await run.advance(10_000)
+    run.session.close()
+    // After the values and their records (asked at once), one request a second from the one before.
+    const gaps = asked.slice(1).map((at, index) => at - asked[index]!)
+    expect(gaps.length).toBeGreaterThan(8)
+    expect(gaps.slice(1)).toEqual(gaps.slice(1).map(() => 1_000))
   })
 
   test('a Run that is gone stops the vignette', async () => {

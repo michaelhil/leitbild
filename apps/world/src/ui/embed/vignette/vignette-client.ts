@@ -1,6 +1,5 @@
 // A vignette's link to its Run (architecture B): the view compiled once, then
-// one sample a second after each answer while the vignette can be seen, none
-// while it cannot.
+// one sample a second while the vignette can be seen, none while it cannot.
 // A values section that holds a lead request takes its values from each
 // sample, in the rows it reserved, so the lead follows its Pack's mode and
 // nothing else in the view moves.
@@ -54,13 +53,18 @@ export interface VignetteSnapshot {
   readonly lastSampleWallMs?: number
 }
 
-/**
- * The wait from one answer to the next request. Counted from the answer, not the request: a playing Run steps once a
- * second as well (a four-unit plant holds World's loop for about 100 ms a step), and a display that asked a second after
- * each request asked in step with it, a request that met a step meeting the next one too for a minute and more, each
- * waiting it out (§5.8). From the answer, one that waited for a step asks next just after the following one.
- */
 export const SAMPLE_INTERVAL_MS = 1_000
+/**
+ * A playing Run steps once a second too, and a four-unit plant's step holds World for about 100 ms: a request that comes
+ * in it waits it out. One a second from the request, the next would come in the next step as well, for a minute and
+ * more (the two seconds differ by a millisecond or two). A request answered this much later than the quickest of the
+ * last answers met a step; the next asks AFTER_STEP_MS after the following step ends, where World answers quickest and
+ * with the step's values (§5.8).
+ */
+export const STEP_WAIT_MS = 20
+export const AFTER_STEP_MS = 120
+/** The answers the quickest is taken from. */
+const QUICKEST_OF = 8
 /** After a slow or failed answer the next request waits longer: 2 s, then 3 s, which leaves an answer of up to 2 s before the vignette reads stale. */
 export const SAMPLE_BACKOFF_MS: ReadonlyArray<number> = [SAMPLE_INTERVAL_MS, 2_000, 3_000]
 /** A live vignette whose last sample is older than this, or failed, is stale: its footer says FROZEN. */
@@ -127,6 +131,8 @@ export const createVignetteSession = (config: {
    */
   let due: 'values' | 'records' | null = 'values'
   let lastSampleWall: number | null = null
+  /** The last answers' times, the newest last. */
+  let latencies: ReadonlyArray<number> = []
 
   const replace = (next: VignetteSnapshot): void => {
     if (closed) return
@@ -221,10 +227,13 @@ export const createVignetteSession = (config: {
     if (snapshot.phase === 'missing') return
     if (snapshot.phase === 'inactive') { due = 'values'; next(INACTIVE_RETRY_MS); return }
     const latency = wallNow() - started
+    latencies = [...latencies.slice(1 - QUICKEST_OF), latency]
     backoff = failed || latency > SAMPLE_INTERVAL_MS ? Math.min(backoff + 1, SAMPLE_BACKOFF_MS.length - 1) : 0
     // Its values drawn, its records are asked for at once.
     if (!failed && due === 'records') { next(0); return }
-    next(SAMPLE_BACKOFF_MS[backoff]!)
+    // Met a step: the next asks just after the following one, not a second after this request, which would meet it again.
+    const metStep = backoff === 0 && latency - Math.min(...latencies) > STEP_WAIT_MS
+    next(backoff !== 0 ? SAMPLE_BACKOFF_MS[backoff]! : metStep ? SAMPLE_INTERVAL_MS - Math.min(...latencies) + AFTER_STEP_MS : Math.max(0, SAMPLE_INTERVAL_MS - latency))
   }
 
   return {
