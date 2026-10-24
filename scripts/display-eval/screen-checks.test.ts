@@ -170,6 +170,13 @@ describe('the network drawing (grid, R3 W9.3)', () => {
     expect(networkWordsCut(line('Nore I - Sylling +1 more', 'Nore I - Sylling +1 more'))).toBeNull()
     expect(networkWordsCut(line('Ringerike - Sylling', 'Ringerike - Sylling', { clipped: true }))).toBe('clipped by its box')
   })
+  test('text past the shown edge is no fault where a visible mark says the drawing continues that way', () => {
+    const past = line('Ringerike - Sylling', 'Ringerike - Sylling', { x: 1100, hidden: true, sides: ['right'] })
+    const read = (marks: string[]): NetworkRead => ({ found: true, texts: [past], bars: [], width: 1320, height: 264, shown: { x: 0, y: 0, w: 1030, h: 264 }, marks })
+    expect(networkFaults(read(['right'])).hidden).toHaveLength(0)
+    expect(networkFaults(read([])).hidden).toHaveLength(1)
+    expect(networkFaults(read(['left'])).hidden).toHaveLength(1)
+  })
   test('a name whose descenders sit on its bus bar is against it; one a row above is not', () => {
     const read = (y: number): NetworkRead => ({ found: true, texts: [line('Tegneby koblingsstasjon 420 kV', 'Tegneby koblingsstasjon 420 kV', { x: 840, y, w: 179 })], bars: [{ label: '', x: 840, y: 44, w: 216, h: 16 }], width: 1344, height: 264, shown: { x: 0, y: 0, w: 1030, h: 264 } })
     expect(networkFaults(read(29)).against).toHaveLength(1)

@@ -127,7 +127,8 @@ const judgeView = async (ctx: { readonly page: Page; readonly scratch: Page; rea
     const room = `drawing ${network.width} px wide, ${Math.round(network.shown.w)} px of it shown`
     checks.push(check('network-overlap', faults.against.length === 0, `${network.texts.length} network text lines, ${network.bars.length} bus bars: ${faults.against.length} against text or a bar${listed([...faults.against])}`))
     checks.push(check('network-cut', faults.cut.length === 0, `${faults.cut.length} network text lines with words cut${listed([...faults.cut])}`))
-    checks.push(check('network-fit', faults.hidden.length === 0, `${room}; ${faults.hidden.length} text lines past it with no visible affordance${listed([...faults.hidden])}`))
+    const behind = network.texts.filter(text => text.hidden).length - faults.hidden.length
+    checks.push(check('network-fit', faults.hidden.length === 0, `${room}; ${behind} text lines past it behind a visible "drawing continues" mark (${(network.marks ?? []).join(', ') || 'none'}); ${faults.hidden.length} past it with none${listed([...faults.hidden])}`))
   }
 
   // Colour at rest (Run B): no alert colour anywhere in the display frame.

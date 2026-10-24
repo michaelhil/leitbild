@@ -106,7 +106,7 @@ const READER = `(scope) => {
   // The drawing's own scroller while it shows its affordance (R2 W4.3: an edge fade and "drawing continues ›" beside
   // it): a reading sideways in it is reachable by that scroll (lead ruling, 23 Oct). Column, band, trip line, alerts
   // and faceplates are never in it.
-  const affordanceShown = el => !!el.parentElement && el.querySelector('.flow') !== null && [...el.parentElement.querySelectorAll(':scope > .continues, :scope > [data-continues]')].some(cue => !hidden(cue) && cue.getBoundingClientRect().width > 0)
+  const affordanceShown = el => !!el.parentElement && el.querySelector('.flow, .network, .drawing') !== null && [...el.parentElement.querySelectorAll(':scope > .continues, :scope > [data-continues]')].some(cue => !hidden(cue) && cue.getBoundingClientRect().width > 0)
   const deepText = el => textNodes(el).map(node => node.textContent).join(' ').replace(/\\s+/g, ' ').trim()
   // Where a text box stands against each ancestor that does not let overflow show. An ancestor that hides overflow
   // clips it; a scrolling one only hides it until scrolled, so outer ancestors then judge it as scrolled into view.
@@ -382,7 +382,7 @@ const SCREEN_HELPERS = String.raw`
   const affordanceScroller = (node, win) => {
     for (let el = parentOf(node, win); el && el.nodeType === 1; el = parentOf(el, win)) {
       const s = win.getComputedStyle(el)
-      if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && el.querySelector('.flow') && el.parentElement
+      if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && el.querySelector('.flow, .network, .drawing') && el.parentElement
         && [...el.parentElement.querySelectorAll(':scope > .continues, :scope > [data-continues]')].some(cue => !hiddenEl(cue, win) && cue.getBoundingClientRect().width > 0)) return el
     }
     return null
