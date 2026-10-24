@@ -129,4 +129,23 @@ describe('a whole unit after a loss of offsite power, through the route', () => 
     const unheld = (JSON.parse(await (await handleDisplayRoute('sample', { state: JSON.stringify(state) }, await runNow()))!.text()) as { readonly sample: WireSample }).sample
     expect(decodeSample(unheld)).toEqual(composed)
   })
+
+  test('its history read lets the server\'s other work run between records', async () => {
+    const outcome = await composeDefault(await runNow(), 'plant:halden-1')
+    if (!outcome.ok) throw new Error(JSON.stringify(outcome.issues))
+    const base = await runNow()
+    const order: string[] = []
+    const viewRun: ViewRun = { ...base, series: (seriesId, from, to) => { order.push('record'); return base.series(seriesId, from, to) } }
+    // Another request's work, a turn at a time, for as long as the read lasts.
+    let reading = true
+    const other = (async () => { while (reading) { await new Promise(resolve => { setImmediate(resolve) }); order.push('other') } })()
+    const sample = await sampleVignette(viewRun, outcome.state, { fromMs: Date.parse(runtime.snapshot().clock!.currentTime) - 600_000 })
+    reading = false
+    await other
+    const records = order.flatMap((entry, at) => entry === 'record' ? [at] : [])
+    expect(records.length).toBe(Object.keys(sample.series!).length)
+    expect(records.length).toBeGreaterThan(8)
+    // Between any two records, the other work had a turn.
+    expect(records.slice(1).every((at, index) => order.slice(records[index]! + 1, at).includes('other'))).toBe(true)
+  })
 })
