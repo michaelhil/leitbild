@@ -14,6 +14,7 @@
  *
  * The hold-out set is private and lives outside this repository; probe.ts
  * loads it from a path at run time (loadScenarioModule). */
+import type { DashboardExpectation } from './dashboard-checks.ts'
 
 /** A pack-qualified invocation on the scenario's Run copy: a Capability of the Run and its input. */
 export interface SetupStep {
@@ -113,11 +114,13 @@ export interface Scenario {
   /** Whether a requested display should appear when the answer showed none; absent means either is fine. */
   readonly requested?: 'display' | 'none'
   readonly operation?: OperationExpectation
+  /** E3: the dashboard change the question asks for, or none (dashboard-checks.ts). */
+  readonly dashboard?: DashboardExpectation
 }
 
 /** A scenario as the harness runs and scores it. */
 export interface EvalScenario extends Scenario {
-  readonly set: 'dev' | 'near-duplicate' | 'holdout' | 'worry'
+  readonly set: 'dev' | 'near-duplicate' | 'holdout' | 'worry' | 'dashboard'
   readonly flaky: boolean
   readonly evidence: ReadonlyArray<EvidenceKey>
 }
@@ -416,6 +419,12 @@ const parseOperation = (where: string, value: unknown): OperationExpectation => 
   }
 }
 
+const parseDashboard = (where: string, value: Record<string, unknown>): DashboardExpectation => {
+  if (!('scope' in value)) fail(`${where}.scope`, 'must name the scope the question is about')
+  if (value.target !== undefined && typeof value.target !== 'string') fail(`${where}.target`, 'must be text')
+  return { scope: value.scope, change: oneOf(`${where}.change`, value.change, ['pin', 'unpin', 'none'] as const)!, ...(typeof value.target === 'string' ? { target: value.target } : {}) }
+}
+
 const parseRun = (where: string, value: unknown): ScenarioRun => {
   if (!isRecord(value)) return fail(where, 'must declare the Scenario and setup steps of its Run')
   if (typeof value.scenario !== 'string' || !/^(?:fixture:)?[a-z0-9-]+$/.test(value.scenario)) fail(`${where}.scenario`, 'must be a Scenario id or fixture:<name>')
@@ -436,9 +445,11 @@ const parseExternalScenario = (index: number, value: unknown): EvalScenario => {
   if (!isRecord(value)) return fail(where, 'must be an object')
   if (typeof value.id !== 'string' || !/^[a-z0-9-]+$/.test(value.id)) fail(`${where}.id`, 'must be a lower-case id')
   if (typeof value.prompt !== 'string' || value.prompt.length === 0) fail(`${where}.prompt`, 'must be text')
-  // A hold-out item carries its keys in the author's holdout block; a worry item (G1) in a worry block.
-  const set = isRecord(value.holdout) ? 'holdout' as const : isRecord(value.worry) ? 'worry' as const : fail(where, 'needs a holdout or a worry block with its evidence')
-  const block = (set === 'holdout' ? value.holdout : value.worry) as Record<string, unknown>
+  // A hold-out item carries its keys in the author's holdout block; a worry item (G1) in a worry block; an E3 item its
+  // dashboard expectation in a dashboard block.
+  const set = isRecord(value.holdout) ? 'holdout' as const : isRecord(value.worry) ? 'worry' as const : isRecord(value.dashboard) ? 'dashboard' as const
+    : fail(where, 'needs a holdout, a worry or a dashboard block with its evidence')
+  const block = (set === 'holdout' ? value.holdout : set === 'worry' ? value.worry : value.dashboard) as Record<string, unknown>
   for (const field of ['fault', 'setup', 'advanceMinutes'] as const) if (field in value) fail(`${where}.${field}`, 'belongs under run, which declares the Scenario it acts on')
   if ('followUp' in value) fail(where, 'carries a followUp turn, which this probe does not run')
   const keyPanel = oneOf(`${where}.keyPanel`, value.keyPanel, ['trend', 'comparison', 'readouts', 'alarms', 'mimic'] as const, true)
@@ -453,6 +464,7 @@ const parseExternalScenario = (index: number, value: unknown): EvalScenario => {
     ...(mimic === undefined ? {} : { mimic }),
     ...(requested === undefined ? {} : { requested }),
     ...(value.operation === undefined ? {} : { operation: parseOperation(`${where}.operation`, value.operation) }),
+    ...(set === 'dashboard' ? { dashboard: parseDashboard(`${where}.dashboard`, block) } : {}),
     set, flaky: false, evidence,
   }
 }

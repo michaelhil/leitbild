@@ -35,6 +35,7 @@ import { callsBetween, logOffset, summariseCalls, type ModelCall } from './billi
 import { referencePlantCatalog } from './plant-catalog.ts'
 import { operationChecks } from './operation-checks.ts'
 import { worryVerdict } from './worry.ts'
+import { DASHBOARD_READ, DASHBOARD_UPDATE, heldOf, judgeDashboard, type DashboardHeld } from './dashboard-checks.ts'
 
 const usage = 'Usage: LEITBILD_PROBE_ORIGIN=http://127.0.0.1:<port> bun scripts/display-eval/probe.ts <stage> <absolute-output-dir> --agents-log=<path> [--set=dev|smoke|near-duplicate|all] [--scenarios=<abs module>#<export>] [--model=<id>] [--upstream=<name>] [--request-display] [scenario-id ...]'
 const [stage, directory, ...rest] = Bun.argv.slice(2)
@@ -109,6 +110,11 @@ const seedOf = async (scenario: string): Promise<Record<string, string>> => {
   await save('seed', seeds)
   return resource
 }
+
+// E3: a scope's dashboard as a person reads it (the people route), before and after the answer.
+const heldDashboard = (resource: Record<string, string>, scope: unknown): Promise<DashboardHeld | null> =>
+  request(`/api/workspaces/${workspaceId}/world/simulation-runs/${encodeURIComponent(resource.id!)}/displays/dashboard/read`, { scope })
+    .then(body => heldOf(body.result ?? body), () => null)
 
 const presence = (runId: string) => request(`/api/workspaces/${workspaceId}/world/simulation-runs/${encodeURIComponent(runId)}/presence`)
 
@@ -412,6 +418,7 @@ for (const scenario of chosen) {
     continue
   }
   const prepareWallMs = Date.now() - prepareStarted
+  const dashboardBefore = scenario.dashboard === undefined ? null : await heldDashboard(resource, scenario.dashboard.scope)
   const opened = await invoke(workspaceId, 'agents.assistance.open', { scope: { kind: 'resource', resource }, title: `Display probe · ${scenario.id}`, focusedSubjects: [resource] })
   if (opened.result.reused) throw new Error('Probe requires a fresh Room per scenario')
   const roomId = opened.result.resource.id as string
@@ -443,6 +450,9 @@ for (const scenario of chosen) {
   const scoredSignals = decisive.filter(result => result.kind === 'signal' && result.use === 'P0')
   // Every scenario's Run is read for proposals, so one the agent made unasked is on record too.
   const proposals = await readProposals(resource)
+  const dashboard = scenario.dashboard === undefined ? null
+    : judgeDashboard(scenario.dashboard, answer.type === 'chat' ? answer.content : '', operations.filter(operation => operation.operationId === DASHBOARD_READ || operation.operationId === DASHBOARD_UPDATE),
+      dashboardBefore, await heldDashboard(resource, scenario.dashboard.scope))
   // A listing World refuses is recorded with its reason; the operation is still judged on the answer and the proposals.
   const controls = scenario.operation === undefined ? null : await readControls(resource, scenario.operation.plantId, scenario.operation.equipment)
     .then(listed => listed, (error: unknown) => ({ items: [], resets: [], error: String(error).slice(0, 400) }))
@@ -487,6 +497,7 @@ for (const scenario of chosen) {
     roomId,
     runId: resource.id,
     proposals: { count: proposals.count, controls: proposals.controls, values: proposals.values, status: proposals.status },
+    ...(dashboard === null ? {} : { dashboard, falseEditClaim: dashboard.falseEditClaim, unaskedChange: dashboard.unaskedChange, dashboardCorrect: dashboard.correct }),
     ...(operation === null ? {} : {
       operation: { ...operation, proposals: undefined },
       falseProposal: operation.falseProposal,
