@@ -82,6 +82,8 @@ const PRESS_KEY = (key: string, index: number) => String.raw`(() => {
   }
   return { pressed: false, reason: 'no chip' }
 })()`
+/** A dashboard's card: its board's title ("Whole Run · dashboard", "Halden Unit 3 · dashboard"), window-only. */
+const WINDOW_ONLY = /· dashboard$/
 /** A dashboard board the display window shows now, and the section it marks (aria-current or .focused), if any. */
 const BOARD_OPENED = String.raw`(() => {
   for (const { doc, frame } of lb.documents()) {
@@ -181,7 +183,8 @@ if (import.meta.main) {
       const result = {
         id: row.id, stage: row.stage, roomId: row.roomId, shot,
         cards: read.cards.length, lines: read.cards.reduce((n, card) => n + card.lines.filter(line => line.shown).length, 0),
-        card480: { pass: read.cards.length === 0 ? null : cut.length === 0 && toggles.length === 0 && read.cards.every(card => card.toggle !== null), cut, toggles, noToggle: read.cards.filter(card => card.toggle === null).map(card => card.title) },
+        // A dashboard's card (chat2) opens its board in the window only: no inline toggle by design, and none is wanted.
+        card480: { pass: read.cards.length === 0 ? null : cut.length === 0 && toggles.length === 0 && read.cards.every(card => card.toggle !== null || WINDOW_ONLY.test(card.title)), cut, toggles, noToggle: read.cards.filter(card => card.toggle === null && !WINDOW_ONLY.test(card.title)).map(card => card.title), windowOnly: read.cards.filter(card => WINDOW_ONLY.test(card.title)).map(card => card.title) },
         t7: { pass: keys.length === 0 ? null : keys.every(key => key.resolves), keys },
       }
       // The answer's display opened in the window at 1920 × 1080 (for the HMI rubric's AI displays and the gallery).
