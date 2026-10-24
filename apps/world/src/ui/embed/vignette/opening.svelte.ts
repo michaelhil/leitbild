@@ -4,6 +4,7 @@ import type { ObjectId, SimulationRunId } from '../../../core/model/index.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { VignetteState } from '../../../features/displays/compose/model.ts'
 import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
+import { VIGNETTE_VIEW_TYPE } from '../../process-display/display-window-messages.ts'
 import { invokeSimulationRunCapability } from '../../simulation-run-client.ts'
 import { activeWorkspaceId } from '../../workspace-context.ts'
 import { openedListing } from '../opened-display.ts'
@@ -41,7 +42,13 @@ export interface VignetteOpening {
   readonly acknowledges: boolean
   /** Acknowledges these alerts as the person, each through its Pack's command (AlertRow.acknowledge); resolves to why one was not, or null. */
   readonly acknowledge: (rows: ReadonlyArray<AlertRow>) => Promise<string | null>
+  /** The alert rows this vignette's trip line shows (W2.4), by key: a list short of room leaves them to it (list.ts fitLines). */
+  readonly carried: ReadonlySet<string>
+  /** The trip line says what it shows, read live while it stands; returns its stop. */
+  readonly carry: (shown: () => ReadonlySet<string>) => () => void
 }
+
+const NONE: ReadonlySet<string> = new Set()
 
 const KEY = Symbol('vignette-opening')
 
@@ -65,6 +72,7 @@ export const provideOpening = (config: {
   let where = $state<DisplayOpening | null>(null)
   const host = embeddedDisplayFrame()
   const stopOpening = host.subscribeOpening(next => { where = next })
+  let carrying = $state.raw<(() => ReadonlySet<string>) | null>(null)
   // The window asks for an element to be selected (an alarm strip's group row, W2.8): asked again until a drawing of
   // this display, drawn once its first sample is in, shows it, for at most SELECT_WAIT_MS.
   let selecting: ReturnType<typeof setInterval> | undefined
@@ -92,6 +100,11 @@ export const provideOpening = (config: {
     get now() { const at = config.at(); return at === undefined ? Number.NaN : Date.parse(at.at) },
     element: async (objectId, elementId, how = 'select') => requestElement({ objectId, elementId, how }) ? null : openDefault(`${objectId}#${elementId}`),
     subject: openDefault,
+    get carried() { return carrying?.() ?? NONE },
+    carry: shown => {
+      carrying = shown
+      return () => { if (carrying === shown) carrying = null }
+    },
     get acknowledges() { return where === 'window' },
     acknowledge: async rows => {
       if (where !== 'window') return 'alerts are acknowledged in the display window'
@@ -112,11 +125,11 @@ export const provideOpening = (config: {
       const at = sampled === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: sampled.at, clock: sampled.clock }
       const state: VignetteState = { title: title.slice(0, 80), at, views: [{ kind: 'alerts', objectIds: objectIds === 'run' ? 'run' : [...objectIds] as ObjectId[], rows: ALERTS_VIEW_ROWS, all: true }] }
       const text = JSON.stringify(state)
-      return host.openDisplay({ state: text, title: state.title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title }) })
+      return host.openDisplay({ state: text, title: state.title, viewType: VIGNETTE_VIEW_TYPE, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title, viewType: VIGNETTE_VIEW_TYPE }) })
     },
     self: () => {
       const { state, title } = config.envelope()
-      return host.openDisplay({ state, title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state, title }) })
+      return host.openDisplay({ state, title, viewType: VIGNETTE_VIEW_TYPE, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state, title, viewType: VIGNETTE_VIEW_TYPE }) })
     },
   }
   setContext(KEY, opening)

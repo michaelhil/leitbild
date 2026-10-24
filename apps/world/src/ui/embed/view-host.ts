@@ -13,6 +13,7 @@
 import { EMBEDDED_VIEW_MAX_HEIGHT, EMBEDDED_VIEW_MIN_HEIGHT, embeddedViewHostMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
 import { parseDisplayFramePresentation, parseDisplayFrameSelect, type DisplayFrameMap, type DisplayFrameMessage, type DisplayFrameRoom } from './display-frame-protocol.ts'
 import { EXTENT_SETTLE_MS, observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
+import type { WorldViewType } from '../process-display/display-window-messages.ts'
 
 export interface DisplayPresentation {
   readonly shown: boolean
@@ -161,9 +162,9 @@ export const createViewHost = (ports: ViewHostPorts) => {
      * Opens a display after this one: in its window, or through the chat page
      * as a listing of the Workspace's window. False where neither is there.
      */
-    openDisplay: (request: { readonly state: string; readonly title: string; readonly listing: () => EmbeddedViewListing }): boolean => {
+    openDisplay: (request: { readonly state: string; readonly title: string; readonly viewType: WorldViewType; readonly listing: () => EmbeddedViewListing }): boolean => {
       const where = opening()
-      if (where === 'window') post({ type: 'world:display-open', state: request.state, title: request.title })
+      if (where === 'window') post({ type: 'world:display-open', state: request.state, title: request.title, viewType: request.viewType })
       else if (where === 'relay') post({ type: 'leitbild:view-open', view: request.listing() })
       return where !== null
     },

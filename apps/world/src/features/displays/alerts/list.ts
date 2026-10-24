@@ -71,22 +71,39 @@ const rowsOf = (line: ListLine): ReadonlyArray<AlertRow> => line.kind === 'row' 
 /** The fewest rows a list shows before its aggregates where its counts already say what they fold (plan v5 §5.5: three). */
 export const ROWS_BEFORE_AGGREGATES = 3
 
+const NONE: ReadonlySet<string> = new Set()
+
 /**
  * The lines that fit `room` grid rows, one each. Where they do not all fit, a row says how many more there are ("+N
  * more"), and the aggregates that end the list keep their lines (`pinned`, shown after it), as they say what most of
  * the list is; an opened one keeps the rows it opened to as far as half the room, or what the rows before it leave.
  * Where the list's counts say what the aggregates fold (`counted`: "15 expected" heads it) and keeping them would leave
  * fewer than ROWS_BEFORE_AGGREGATES rows, they give way to rows, and "+N more" counts only the rows before them.
+ * Where the list is short of room, showing fewer rows than its first-outs and its new alarms, and its display already
+ * shows some first-outs elsewhere (`carried`, by row key: its trip line), those give their rows to the new alarms, in
+ * their order; they stay in "+N more" and the full list. With room for all, first-outs lead.
  * `hidden`: the alerts not shown, the counted ones aside.
  */
-export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, counted = false): {
+export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, counted = false, carried: ReadonlySet<string> = NONE): {
   readonly shown: ReadonlyArray<ListLine>; readonly pinned: ReadonlyArray<ListLine>; readonly hidden: ReadonlyArray<AlertRow>
 } => {
+  const fitted = fitInOrder(lines, room, counted)
+  const leading = lines.filter(line => line.kind === 'row' && (line.part === 'first-out' || line.part === 'new'))
+  const elsewhere = lines.filter(line => line.kind === 'row' && line.part === 'first-out' && carried.has(line.row.key))
+  if (elsewhere.length === 0 || leading.every(line => fitted.shown.includes(line))) return fitted
+  const rest = lines.filter(line => !elsewhere.includes(line))
+  const tail = rest.findIndex(line => line.kind === 'aggregate')
+  const at = tail < 0 ? rest.length : tail
+  return fitInOrder([...rest.slice(0, at), ...elsewhere, ...rest.slice(at)], room, counted)
+}
+
+const fitInOrder = (lines: ReadonlyArray<ListLine>, room: number, counted: boolean): ReturnType<typeof fitLines> => {
   if (lines.length <= room) return { shown: lines, pinned: [], hidden: [] }
   const tail = lines.findIndex(line => line.kind === 'aggregate')
   if (counted && tail > 0 && room - 1 - lines.slice(tail).filter(line => line.kind === 'aggregate').length < ROWS_BEFORE_AGGREGATES) {
     const head = lines.slice(0, tail)
-    const shown = head.length <= room ? head : head.slice(0, Math.max(1, room - 1))
+    // One line holds "+N more" alone: a row beside it would be cut (a dashboard's run frame under its tiles).
+    const shown = head.length <= room ? head : head.slice(0, room - 1)
     return { shown, pinned: [], hidden: head.slice(shown.length).flatMap(rowsOf) }
   }
   return fitWithAggregates(lines, room)

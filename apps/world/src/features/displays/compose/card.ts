@@ -31,12 +31,25 @@ const distance = (metres: number): Words => { const { value, unit } = distancePa
 const slotWords = (value: number, unit: string): Words => unit === 's' ? duration(value) : unit === 'm' ? distance(value) : { text: quantity(value, unit), number: shown(value, unit) }
 const atLeastCaution = (priority: string | null | undefined): boolean => priority != null && priorityLevels.indexOf(priority as never) >= priorityLevels.indexOf('caution')
 
+/** "<object> · <observable>" in 80 characters: the observable's name gives way by whole words, else it stands alone. */
+const cardLabel = (object: string, label: string): string => {
+  const both = qualifiedLabel(object, label)
+  if (both !== label || object.length + 3 >= 80) return both
+  const words = label.split(' ')
+  for (let count = words.length - 1; count > 0; count -= 1) {
+    const kept = words.slice(0, count).join(' ').replace(/\s*[·,→\-/]$/, '')
+    if (`${object} · ${kept}`.length <= 80) return `${object} · ${kept}`
+  }
+  return label
+}
+
 /** The object an item's label begins with, where its label holds it whole. */
 const objectOf = (label: string, object: string): { readonly object?: string } =>
   object.length <= 80 && (label === object || label.startsWith(`${object} · `)) ? { object } : {}
 
 export const valueItem = ({ observable, object }: Declared, observation: Observation | undefined): Item => {
-  const label = qualifiedLabel(object.label, observable.label)
+  // A card line names its object (W7.1): where both do not fit, the observable's name gives way by whole words.
+  const label = cardLabel(object.label, observable.label)
   const named = { label, ...objectOf(label, object.label) }
   // A criterion reads as a row writes it: how many of its checks that apply are met and those not yet met, or its comparison.
   if (observable.checks !== undefined) {

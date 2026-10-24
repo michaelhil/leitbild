@@ -286,7 +286,7 @@ describe('the See hook for Packs', () => {
       objects: [object],
       selectedControllerId: null,
       highlightedObjectIds: [],
-      hiddenObjectCategoryIds: [],
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
       hasNewInfo: () => false,

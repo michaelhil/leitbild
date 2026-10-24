@@ -331,6 +331,7 @@
       selectedControllerId,
       highlightedObjectIds,
       mutedObjectIds,
+      alertPalette: theme === 'dark' ? 'dusk' : 'day',
       hiddenObjectCategoryIds,
       placementPoints,
       packFeatures: cachedPackMapFeatures,
@@ -729,6 +730,7 @@
     highlightedObjectIds
     mutedObjectIds
     routeRevision
+    theme
     untrack(() => operationalRenderController.syncObjects())
   })
 

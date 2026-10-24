@@ -4,6 +4,7 @@
   import type { VignetteView } from '../../../features/displays/compose/model.ts'
   import { elementOf } from './alerts.ts'
   import { wholeWords } from './fit-words.ts'
+  import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import { tripFit, type TripWidths } from './trip-fit.ts'
 
@@ -45,6 +46,9 @@
   let widths = $state.raw<TripWidths | null>(null)
   const fit = $derived(widths === null || room === 0 ? { leads: line.leads.length, counted: false } : tripFit(widths, room))
   const kept = $derived(line.leads.slice(0, Math.max(1, fit.leads)))
+  /** The alerts it shows (its leads that stand, its actuations by label unless counted), which a short alert list leaves to it. */
+  const carried = $derived(new Set([...kept.map(lead => lead.row.key), ...(fit.counted ? [] : line.actuated.map(actuated => actuated.row.key))]))
+  runOnMount(() => opening?.carry(() => carried))
   const folded = $derived(line.leads.slice(kept.length))
   const leadWords = (lead: (typeof line.leads)[number]): string => [lead.label, lead.row.alert.message, ageText(nowMs, lead.row)].filter(part => part !== undefined && part !== null).join(' ')
   const actuatedWords = $derived(`ACTUATED: ${line.actuated.map(actuated => actuated.label).join(' · ')}`)

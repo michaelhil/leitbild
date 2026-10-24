@@ -5,6 +5,7 @@
 // gestures made inside it, and asks for a display to be opened after it.
 // Each end accepts a message only from the window it expects (the frame's
 // parent, or the frame's own contentWindow) on the same origin.
+import { DASHBOARD_VIEW_TYPE, VIGNETTE_VIEW_TYPE, type WorldViewType } from '../process-display/display-window-messages.ts'
 
 export const DISPLAY_ZOOM_MIN = 0.5
 export const DISPLAY_ZOOM_MAX = 2
@@ -57,15 +58,18 @@ export type DisplayFrameZoomRequest =
   | { readonly type: 'world:display-zoom'; readonly factor: number }
 
 /**
- * Frame -> window: show this display of the same Plant in the window, after
+ * Frame -> window: show this display of the same Run in the window, after
  * this one (equipment a safety function chip or a banner label names, opened
- * from an answer's display); Back returns here.
+ * from an answer's display; a dashboard of another scope, opened from a
+ * dashboard); Back returns here.
  */
 export interface DisplayFrameOpen {
   readonly type: 'world:display-open'
   /** The display's state, as its view publication carries it. */
   readonly state: string
   readonly title: string
+  /** What draws it: a vignette, or a dashboard (a dashboard's sections open vignettes, its scopes dashboards). */
+  readonly viewType: WorldViewType
 }
 
 /**
@@ -160,8 +164,9 @@ export const parseDisplayFrameMessage = (value: unknown): DisplayFrameMessage | 
     return null
   }
   if (value.type === 'world:display-open') {
-    if (!hasKeys(value, ['type', 'state', 'title']) || !text(value.state, OPEN_STATE_MAX) || !text(value.title, OPEN_TITLE_MAX)) return null
-    return { type: 'world:display-open', state: value.state, title: value.title }
+    if (!hasKeys(value, ['type', 'state', 'title', 'viewType']) || !text(value.state, OPEN_STATE_MAX) || !text(value.title, OPEN_TITLE_MAX)) return null
+    if (value.viewType !== VIGNETTE_VIEW_TYPE && value.viewType !== DASHBOARD_VIEW_TYPE) return null
+    return { type: 'world:display-open', state: value.state, title: value.title, viewType: value.viewType }
   }
   if (value.type === 'world:display-map') {
     const corner = (point: unknown): point is readonly [number, number] => Array.isArray(point) && point.length === 2

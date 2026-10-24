@@ -3,10 +3,11 @@
  * architecture A4): a header, up to 8 asset lines (objects that declare
  * observations, worst declared alert priority first, then Run order) with the
  * refs of their lead values, one line per presentation category for every
- * other object, one per record-only Pack, the dashboards line, each Pack's
- * fenced guidance, and how many objects the caller may not see. Words come
- * from presentation, alerts from the core slot, refs from the Pack's lead
- * read; never a presentation summary or field, so no number has two sources.
+ * other object, one per record-only Pack, the dashboards line (the scopes
+ * that hold pins), each Pack's fenced guidance, and how many objects the
+ * caller may not see. Words come from presentation, alerts from the core
+ * slot, refs from the Pack's lead read; never a presentation summary or
+ * field, so no number has two sources.
  */
 import { priorityLevels, type AlertState } from '../../../core/model/alerts.ts'
 import type { OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
@@ -47,6 +48,8 @@ export const assembleRunContext = async (run: {
   readonly clock: SimulationClockState | undefined
   readonly packs: ReadonlyArray<WorldPack>
   readonly port: ObservationPort
+  /** Each stored dashboard's scope that holds pins, and how many (dashboards.ts storedDashboards). */
+  readonly dashboards: ReadonlyArray<{ readonly scope: string; readonly pins: number }>
 }): Promise<{ readonly text: string; readonly at: string; readonly clock: 'simulation' | 'wall' }> => {
   const visible = run.objects.filter(object => !run.denied.has(object.id))
   const presented = presentObjects(run.packs, visible)
@@ -105,7 +108,8 @@ export const assembleRunContext = async (run: {
   const guidanceLines = run.packs.flatMap(pack => pack.knowledge?.guidance === undefined ? [] : [`\`\`\`guidance ${pack.descriptor.id}: ${pack.knowledge.guidance}\`\`\``])
   const hidden = run.objects.length - visible.length
   const tail = [
-    'Dashboards: none stored (cannot change dashboards yet)',
+    run.dashboards.length === 0 ? 'Dashboards: none stored (each scope shows World\'s default)'
+      : line(`Dashboards stored: ${run.dashboards.map(entry => `${entry.scope} (${entry.pins} ${entry.pins === 1 ? 'pin' : 'pins'})`).join(', ')}; other scopes show World's default`),
     ...guidanceLines,
     ...(hidden > 0 ? [`${hidden} objects hidden by this Run's AI restrictions`] : []),
   ]

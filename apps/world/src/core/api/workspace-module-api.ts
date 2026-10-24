@@ -24,6 +24,7 @@ import { mapSymbolsInput, mapSymbolsOutput, searchMapSymbols } from '../map-symb
 import { z } from 'zod'
 import { capabilityJsonSchema, isPublicCapability } from '../../simulation/capabilities.ts'
 import { assembleRunContext } from '../../features/displays/context/run-context.ts'
+import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
@@ -1328,9 +1329,11 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const simulationRunId = requireSimulationRunResource(invocation)
       const runtime = await registry.load(simulationRunId)
       const snapshot = runtime.snapshot()
+      const denied = deniedInspectionSubjects(runtime, invocation)
       const context = await assembleRunContext({
-        title: (await registry.summary(simulationRunId)).title, objects: snapshot.objects, denied: deniedInspectionSubjects(runtime, invocation),
+        title: (await registry.summary(simulationRunId)).title, objects: snapshot.objects, denied,
         clock: snapshot.clock, packs: runtime.packs(), port: runtime.observations(buildSimulationRunActorForAccess(invocation.access)),
+        dashboards: storedDashboards(await registry.dashboards(simulationRunId).read(), denied),
       })
       return json({ result: publishedContextSchema.parse({ context }) })
     },

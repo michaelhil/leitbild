@@ -19,6 +19,9 @@ import {
 
 /** World's vignettes, any object of any Pack (ui/embed/vignette): what the window shows. */
 export const VIGNETTE_VIEW_TYPE = 'display.vignette'
+/** A Run's shared dashboard of one scope (ui/embed/dashboard): the window shows it beside the assets' defaults (D-H). */
+export const DASHBOARD_VIEW_TYPE = 'display.dashboard'
+export type WorldViewType = typeof VIGNETTE_VIEW_TYPE | typeof DASHBOARD_VIEW_TYPE
 
 /** A listing the window leaves out, and why. */
 export interface RefusedListing {
@@ -48,11 +51,12 @@ interface ExpectedSender {
 
 /**
  * Why this window cannot show a view, or null where it can: a plain switch on
- * the view type. It shows World's vignettes about a Simulation Run.
+ * the view type. It shows World's vignettes and dashboards about a Simulation Run.
  */
 export const listingRefusal = (envelope: EmbeddedViewEnvelope): string | null => {
   switch (envelope.viewType) {
     case VIGNETTE_VIEW_TYPE:
+    case DASHBOARD_VIEW_TYPE:
       if (envelope.moduleId !== 'world') return `it is a ${envelope.viewType} view published by ${envelope.moduleId}, not by World`
       if (envelope.subject.type !== 'world.simulation-run') return `it is about a ${envelope.subject.type}, not a Simulation Run`
       return null

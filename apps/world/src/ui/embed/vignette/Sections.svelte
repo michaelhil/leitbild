@@ -35,7 +35,7 @@
   // its size, scaled to the width or scrolled sideways under an edge fade
   // that says it continues. Frozen, values, trends and alerts read in
   // OpenBridge's low-integrity style: they no longer follow the Run.
-  let { view, snapshot, palette, frozen, runId, from, fills }: {
+  let { view, snapshot, palette, frozen, runId, from, fills, frame }: {
     view: VignetteView
     snapshot: VignetteSnapshot
     palette: Palette
@@ -45,6 +45,8 @@
     from: OpenedFrom
     /** Alerts only in a display window (grid.ts fillsWindow): its list fills the frame, its composed rows the least it has. */
     fills: boolean
+    /** A dashboard's run frame: its alerts' counts and tiles always stand. */
+    frame: boolean
   } = $props()
 
   const latest = $derived(snapshot.latest)
@@ -113,7 +115,7 @@
         <!-- A pen's name drops the one object every part is on (W7.3). -->
         <TrendStrip {section} title={view.subject?.object ?? view.title} series={snapshot.series} {observations} {now} setPoints={view.by !== 'assistant'} {frozen} />
       {:else if section.kind === 'alerts'}
-        <AlertsSection rows={latest?.alerts ?? []} categories={latest?.categories} {section} room={rows ?? section.rows} />
+        <AlertsSection rows={latest?.alerts ?? []} categories={latest?.categories} {section} room={rows ?? section.rows} {frame} />
       {:else if section.kind === 'entity'}
         <EntityTable {section} rows={latest?.entities[index]?.rows ?? []} more={latest?.entities[index]?.more ?? 0} />
       {:else if section.kind === 'slots'}

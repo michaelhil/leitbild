@@ -63,13 +63,14 @@ describe('the part of a display a person sees', () => {
     expect(fillsWindow({ sections: [{ kind: 'alerts' }, { kind: 'values' }] })).toBe(false)
     expect(fillsWindow({ sections: [] })).toBe(false)
     const vignette = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Vignette.svelte'), 'utf8')
-    expect(vignette).toContain("const fills = $derived(opening.where === 'window' && view !== undefined && fillsWindow(view))")
+    // On a dashboard (R4 B4) a section neither fills nor asks: its dashboard hosts the page.
+    expect(vignette).toContain("const fills = $derived(board === undefined && opening.where === 'window' && view !== undefined && fillsWindow(view))")
     expect(vignette).toContain("embeddedDisplayFrame().reportFill('alerts', fillsWindow(next.view))")
-    expect(vignette).toContain('<Sections {view} {snapshot} {palette} {frozen} {runId} {from} {fills} />')
+    expect(vignette).toContain('<Sections {view} {snapshot} {palette} {frozen} {runId} {from} {fills} frame={board?.frame === true} />')
     // It fills the part of the frame a person sees, which follows the window's body: never its own height, which the
     // window's frame height (at least the content's) would feed back so the frame could never shrink. It is that tall,
     // no taller, so the full alerts view's list scrolls in it and the window does not zoom it out.
-    expect(vignette).toContain('const unroom = embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })')
+    expect(vignette).toContain('const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })')
     expect(vignette).toContain('style:height={fills && room !== null ? `${room}px` : undefined}')
     expect(vignette).toContain('.vignette.fill > :global(.sections) { grid-row: 4; min-height: 0; }')
     expect(vignette).not.toContain('100vh')
