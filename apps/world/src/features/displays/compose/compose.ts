@@ -240,10 +240,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // Fit: each view within its caps, rows allotted; what it cannot keep is named, never silently dropped.
   const issues: ComposeIssue[] = []
   const fitted: ResolvedView[] = []
-  /** The fitted views that draw a flow topology. */
-  const flows = new Set<ResolvedView>()
   /** Each fitted alerts view's rows for the alerts it has now (its head, every alert up to eight, "+N more"). */
   const alertsNeed = new Map<ResolvedView, number>()
+  /** Each fitted drawing's height as its layout reaches, in grid rows (a half row too): what the renderer scrolls by. */
+  const heights = new Map<ResolvedView, number>()
   const declared = await declaredRefs(run, views.flatMap(view => view.kind === 'values' || view.kind === 'trend' ? view.refs ?? [] : []))
   const trim = (path: string, refs: ReadonlyArray<string>, cap: number, what: string): ReadonlyArray<string> => {
     const readable = refs.filter(ref => declared.has(ref))
@@ -364,7 +364,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       }
       if (scoped.reach !== undefined) countAdjustment(adjusted, { kind: 'scope', text: `reach narrowed to ${scoped.reach} links to draw at most 60 nodes` })
       const drawn: ResolvedView = { ...view, request: { ...request, ...(scoped.reach === undefined ? {} : { reach: scoped.reach }) }, rows }
-      if (graph!.family === 'flow') flows.add(drawn)
+      heights.set(drawn, drawing.layout.height)
       fitted.push(drawn)
     } else {
       // A map's objects beyond 48 are not framed: said, not counted as card items (a map shows none).
@@ -384,8 +384,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // rest, so nothing moves when one trips), an answer's notice line (W8.2).
   const frameRows = FRAME_ROWS + (await keepsTripLine(run, fitted) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
-  // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
-  const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
+  // In a window, a drawing taller than the stack leaves, a flow's or a network's, stands beside a column of every other
+  // view (Q20): its rows are then the frame's less its own, not what the column leaves under it.
+  const left = fitted.find(view => view.kind === 'topology')
   const sideBySide = (): number => Math.max(left?.rows ?? 0, fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0))
   const beside = frame === 'window' && left !== undefined && frameRows + stacked() > VIGNETTE_MAX_ROWS
   const total = (): number => frameRows + (beside ? sideBySide() : stacked())
@@ -426,8 +427,10 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + frameRows > VIGNETTE_MAX_ROWS) continue
     if (rows >= natural) continue
     ;(view as { rows: number }).rows = rows
-    const scale = drawingScale({ rows, layout: { height: natural - 1 } })
-    const shown = (rows - 1) / ((natural - 1) * scale)
+    const height = heights.get(view)!
+    const scale = drawingScale({ rows, layout: { height } })
+    // In view as the renderer shows it: its rows but the attribution's, of its height at that scale.
+    const shown = (rows - 1) / (height * scale)
     countAdjustment(adjusted, { kind: 'layout', text: shown < 1
       ? `drawing scaled to ${Math.round(100 * scale)} %, its text floor, and scrolls: ${Math.floor(100 * shown)} % of its height in view`
       : `drawing scaled to ${Math.round(100 * scale)} % to fit` })

@@ -29,7 +29,8 @@
 
   // A vignette's sections, each within the rows the composer allotted: in its
   // frame (Vignette.svelte), stacked, or in a window frame (`beside`, Q20) its
-  // flow drawing beside a column of the others where both fit its width, else
+  // drawing beside a column of the others where both fit its width (a network
+  // drawing scaled to the room left there, down to its text floor), else
   // (grid.ts frameLayout) the column first, as a band over the drawing: its
   // values in columns, then its alerts' head and first rows, the drawing at
   // its size, scaled to the width or scrolled sideways under an edge fade
@@ -52,8 +53,10 @@
   const latest = $derived(snapshot.latest)
   const observations = $derived(latest?.observations ?? [])
   const now = $derived(latest === undefined ? Number.NaN : Date.parse(latest.at.at))
-  /** The flow drawing a window frame stands beside its column; -1 without one. */
-  const drawing = $derived(view.sections.findIndex(section => section.kind === 'topology' && section.family === 'flow'))
+  /** The drawing a window frame stands beside its column; -1 without one. */
+  const drawing = $derived(view.sections.findIndex(section => section.kind === 'topology'))
+  /** Whether it scales itself to the width it is given: a network drawing does (network.ts widthFit). */
+  const toRoom = $derived(view.sections.find((section): section is Extract<VignetteSection, { kind: 'topology' }> => section.kind === 'topology')?.family === 'network')
   /** A frozen display's readings are doubtful: they are the last it had. */
   const shown = (look: ReadingLook): ReadingLook => (frozen ? { ...look, doubtful: true } : look)
 
@@ -63,8 +66,9 @@
   runOnMount(() => embeddedDisplayFrame().subscribe(presentation => { zoom = presentation.zoom }))
   const layout = $derived.by(() => {
     if (!standsBeside(view)) return null
-    const flow = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
-    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawnScale(flow, zoom), drawn: drawnScale(flow, zoom), zoom })
+    const drawn = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
+    const scale = drawnScale(drawn, zoom)
+    return frameLayout({ width, drawingWidth: drawn.layout.width * VIGNETTE_ROW_PX * scale, drawn: scale, zoom, ...(toRoom ? { toRoom: true as const } : {}) })
   })
   /** The band's alerts: their head, three rows, the count of the rest and the expected aggregate (§5.5 viewport: 3 alert rows). */
   const BAND_ALERT_ROWS = 6
@@ -159,9 +163,9 @@
       {#if index !== drawing && section.kind !== 'values' && section.kind !== 'alerts'}{@render one(section, index)}{/if}
     {/each}
   {:else if layout?.kind === 'beside'}
-    <!-- A window frame (Q20): the drawing at its own width, every other view in a column beside it. -->
+    <!-- A window frame (Q20): the drawing at its own width (a network drawing at most the room the column leaves), every other view in a column beside it. -->
     <div class="beside">
-      <div class="drawing">{@render one(view.sections[drawing]!, drawing)}</div>
+      <div class="drawing" class:to-room={toRoom}>{@render one(view.sections[drawing]!, drawing)}</div>
       <div class="column">
         {#each view.sections as section, index (index)}{#if index !== drawing}{@render one(section, index)}{/if}{/each}
       </div>
@@ -203,6 +207,8 @@
   .section.frozen { background: var(--alert-low-integrity-background-color); box-shadow: 0 0 0 4px var(--alert-low-integrity-background-color), 0 0 0 5px var(--alert-low-integrity-border-color); }
   .beside { display: flex; gap: 16px; align-items: flex-start; }
   .drawing { flex: none; }
+  /* A network drawing takes the room the column leaves, and scales itself to it (network.ts widthFit). */
+  .drawing.to-room { flex: 0 1 auto; min-width: 0; }
   .column { flex: 0 0 360px; min-width: 0; }
   /* The band: values in columns of 340 px or more, read down each, the alerts beside them where the width holds both, else under them. */
   .band { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 24px; margin-bottom: 8px; }

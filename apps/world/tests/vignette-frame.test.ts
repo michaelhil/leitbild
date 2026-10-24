@@ -5,7 +5,7 @@ import type { Observation } from '../src/core/observation/model.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { safetyFunctionReading } from '../src/packs/process-plant/observation/safety-function-reading.ts'
 import type { SafetyFunctionEvaluation } from '../src/packs/process-plant/safety-functions.ts'
-import { DRAWING_TEXT_PX, drawnScale, frameLayout, TEXT_FLOOR_PX } from '../src/ui/embed/vignette/grid.ts'
+import { DRAWING_TEXT_PX, drawnScale, frameLayout, standsBeside, TEXT_FLOOR_PX } from '../src/ui/embed/vignette/grid.ts'
 import { tripFit, tripWidth } from '../src/ui/embed/vignette/trip-fit.ts'
 import { chipOrder, stateChipLook } from '../src/ui/embed/vignette/state-chip.ts'
 
@@ -122,6 +122,32 @@ describe('the window frame by its width (W4.3)', () => {
     // A drawing its rows already show at 95 % (1488 px wide at it) has that much less to give: 94 % more would take its text to 10.7 px.
     expect(frameLayout({ width: 1400, drawingWidth: 1488, drawn: 0.95, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scrolled' })
     expect(frameLayout({ width: 1460, drawingWidth: 1488, drawn: 0.95, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scaled', scale: 1460 / 1488 })
+  })
+
+  // A network drawing scales itself to the width it is given (network.ts widthFit): in a 1880 px frame it has the 1504
+  // px the column leaves, and stands beside it wherever its text stays at 11 px or more there.
+  test('a drawing that scales itself to its room stands beside the column wherever it fits that room at its text floor (Q20)', () => {
+    expect(frameLayout({ width: 1880, drawingWidth: 1386, drawn: 11 / 12, zoom: 1, toRoom: true })).toEqual({ kind: 'beside' })
+    // 1560 px at its own size: 1504 / 1560 takes its 12 px text to 11.6 px.
+    expect(frameLayout({ width: 1880, drawingWidth: 1560, drawn: 1, zoom: 1, toRoom: true })).toEqual({ kind: 'beside' })
+    expect(frameLayout({ width: 1880, drawingWidth: 1560, drawn: 1, zoom: 1 })).toEqual({ kind: 'band', drawing: 'whole' })
+    // 1640 px is the widest whose text 1504 px holds at 11 px; wider, the column goes first as a band, as for any drawing.
+    expect(frameLayout({ width: 1880, drawingWidth: 1640, drawn: 1, zoom: 1, toRoom: true })).toEqual({ kind: 'beside' })
+    expect(frameLayout({ width: 1880, drawingWidth: 1642, drawn: 1, zoom: 1, toRoom: true })).toEqual({ kind: 'band', drawing: 'whole' })
+    // Already at its floor by its rows, it has nothing to give.
+    expect(frameLayout({ width: 1880, drawingWidth: 1738, drawn: 11 / 12, zoom: 1, toRoom: true })).toEqual({ kind: 'band', drawing: 'whole' })
+    // A 1280 px window at its 92 %: 978 px beside the column, too few for any of these.
+    expect(frameLayout({ width: 1354, drawingWidth: 1439, drawn: 1, zoom: 0.917, toRoom: true })).toEqual({ kind: 'band', drawing: 'scrolled' })
+    expect(frameLayout({ width: 0, drawingWidth: 1738, drawn: 11 / 12, zoom: 1, toRoom: true })).toEqual({ kind: 'beside' })
+  })
+
+  test('a window view composed beside stands its drawing beside the column, a flow\'s or a network\'s; else its views stack', () => {
+    for (const family of ['flow', 'network']) {
+      const sections = [{ kind: 'values' }, { kind: 'alerts' }, { kind: 'topology', family }]
+      expect(standsBeside({ beside: true, sections })).toBe(true)
+      expect(standsBeside({ sections })).toBe(false)
+    }
+    expect(standsBeside({ beside: true, sections: [{ kind: 'values' }, { kind: 'alerts' }] })).toBe(false)
   })
 })
 
