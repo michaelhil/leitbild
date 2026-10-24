@@ -62,11 +62,12 @@ describe('a sample on the wire', () => {
     const wire = encodeSample(sample)
     expect(decodeSample(JSON.parse(JSON.stringify(wire)) as WireSample)).toEqual(sample)
     const [one, two, three, five, four, other] = wire.alerts
-    expect(one).toEqual({ objectId: 'plant:a', alert: sample.alerts[0]!.alert, state: 'active-unack', tag: 'LO-LO · ALM', category: 'electrical', acknowledge: true })
+    const plantA = 'plant:a' as ObjectId
+    expect(one).toEqual({ objectId: plantA, alert: sample.alerts[0]!.alert, state: 'active-unack', tag: 'LO-LO · ALM', category: 'electrical', acknowledge: true })
     expect([two!.category, two!.acknowledge, two!.expected, two!.action]).toEqual(['reactor', true, { after: 'RX TRIP' }, { label: 'RX TRIP', ends: ['core'] }])
-    expect([three!.group, three!.raised, three!.priority, three!.acknowledge]).toEqual([{ objectId: 'plant:a', subjectGroup: 'loop-a', label: 'Loop A' }, null, null, undefined])
+    expect([three!.group, three!.raised, three!.priority, three!.acknowledge]).toEqual([{ objectId: plantA, subjectGroup: 'loop-a', label: 'Loop A' }, null, null, undefined])
     expect(four!.acknowledge).toEqual({ capabilityId: 'another.capability', input: { lifecycleId: 'alarm:four' } })
-    expect(five).toEqual({ objectId: 'plant:a', alert: sample.alerts[3]!.alert, state: 'active-unack', acknowledge: true })
+    expect(five).toEqual({ objectId: plantA, alert: sample.alerts[3]!.alert, state: 'active-unack', acknowledge: true })
     expect([other!.category, other!.objectLabel]).toEqual(['electrical', undefined])
     expect(wire.objects).toEqual({
       'plant:a': { label: 'plant:a label', packId: 'process-plant', categoryId: 'process-plants', acknowledge: { capabilityId: 'world.process-plant.ic.lifecycle', input: { action: 'acknowledge', plantId: 'plant:a' }, alertField: 'lifecycleId' } },
@@ -79,7 +80,8 @@ describe('a sample on the wire', () => {
     const sample = sampleOf([], { leads: { 0: [a!, b!], 2: [c!, a!] } })
     const held = new Map([[a!.ref, a!]])
     const wire = encodeSample(sample, new Set(held.keys()))
-    expect([wire.leads, wire.declared]).toEqual([{ 0: ['u#a', 'u#b'], 2: ['u#c', 'u#a'] }, [b, c]])
+    expect(wire.leads).toEqual({ 0: ['u#a', 'u#b'], 2: ['u#c', 'u#a'] })
+    expect(wire.declared).toEqual([b!, c!])
     expect(decodeSample(JSON.parse(JSON.stringify(wire)) as WireSample, held)).toEqual(sample)
     expect(decodeSample(encodeSample(sample))).toEqual(sample)
     expect(() => decodeSample(wire)).toThrow('u#a has no declaration')
