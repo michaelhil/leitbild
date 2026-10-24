@@ -9,10 +9,8 @@ import assistantRoom from './leitbild-assistant.room.json'
 // The display skill's budget is 700 tokens as injected ("[name] description"
 // line and body); 2,780 characters are about 665 tokens at the measured 4.18
 // characters per token (lead, 21 Oct). R4 (23 Oct) spent 420 of the headroom on
-// the dashboard rule that replaced "You cannot change dashboards yet". The
-// element-default rule (24 Oct: the paired eval's porv-open answers trended the
-// pressure and never showed the level) takes it to 2,920, about 699 tokens.
-const OPERATOR_DISPLAYS_INJECTED_MAX_CHARS = 2_920
+// the dashboard rule that replaced "You cannot change dashboards yet".
+const OPERATOR_DISPLAYS_INJECTED_MAX_CHARS = 2_780
 const CITATION_FORMAT_LINE = 'Put each key right after the number it supports (91.3 % ⟦k2⟧); one key per number; no keys in table headers; no key ranges.'
 // The assistance skill's body as v0.5.0 shipped it: a new rule tightens
 // existing wording rather than growing every prompt.
