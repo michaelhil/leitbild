@@ -13,7 +13,7 @@ import { entityCell, mapCaption, slotLook } from '../src/ui/embed/vignette/colle
 import { distanceText } from '../src/ui/embed/vignette/format.ts'
 import { VIGNETTE_ROW_PX } from '../src/ui/embed/vignette/grid.ts'
 import type { EntityRow, VignetteSection } from '../src/features/displays/compose/model.ts'
-import { barLine, networkDrawing, stub } from '../src/ui/embed/vignette/network.ts'
+import { barLine, networkDrawing, stub, widthFit } from '../src/ui/embed/vignette/network.ts'
 
 // The vignette's objects and networks (architecture B2): entity cells, the map
 // section's words, and the network drawing over the server's ELK layout on the
@@ -55,6 +55,15 @@ describe('network drawing', () => {
     expect(stub([0, 24], [48, 24], box)).toEqual([[0, 24], [48, 24]])
     expect(stub([96, 40], [48, 24], box)).toEqual([[96, 40], [48, 40], [48, 24]])
     expect(stub([30, 0], [48, 24], box)).toEqual([[30, 0], [30, 24], [48, 24]])
+  })
+
+  test('a drawing wider than its frame is scaled to the frame\'s width while its text stays readable, else it scrolls (W4.3)', () => {
+    // 1100 px in a 1030 px frame: 0.94 of its size, its 12 px text at 11.2 px.
+    expect(widthFit(1100, 1, 1030, 1)).toBeCloseTo(1030 / 1100, 6)
+    // 1344 px in 1030: 0.77 would set its text at 9.2 px, under the 11 px floor: it stands at its size and scrolls.
+    expect(widthFit(1344, 1, 1030, 1)).toBe(1)
+    // Within its frame, nothing; a frame not measured yet, nothing; a chat's own scale counts toward the floor.
+    expect([widthFit(900, 1, 1030, 1), widthFit(1344, 1, 0, 1), widthFit(1100, 0.9, 960, 1)]).toEqual([1, 1, 1])
   })
 
   test('a bus is a bar along the face its feeders meet, across between opposite faces, across its middle otherwise', () => {

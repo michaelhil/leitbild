@@ -7,6 +7,7 @@
   import { slotLook } from './collection.ts'
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
+  import { scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { wholeParts } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
@@ -78,16 +79,7 @@
   }
 
   /** Which ends of a scrolled drawing are out of sight, judged on every scroll and every change of its or its drawing's size. */
-  let more = $state({ left: false, right: false })
-  const sensed = (scroller: HTMLElement) => {
-    const sense = (): void => { more = { left: scroller.scrollLeft > 1, right: scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1 } }
-    const resized = new ResizeObserver(sense)
-    resized.observe(scroller)
-    if (scroller.firstElementChild !== null) resized.observe(scroller.firstElementChild)
-    scroller.addEventListener('scroll', sense, { passive: true })
-    sense()
-    return { destroy: () => { resized.disconnect(); scroller.removeEventListener('scroll', sense) } }
-  }
+  let more = $state<ScrollEnds>({ left: false, right: false })
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
@@ -155,7 +147,7 @@
     </div>
     {#if layout.drawing === 'scrolled'}
       <div class="scroll-wrap" class:more-left={more.left} class:more-right={more.right}>
-        <div class="scroll" use:sensed>{@render one(view.sections[drawing]!, drawing)}</div>
+        <div class="scroll" use:scrollEnds={ends => { more = ends }}>{@render one(view.sections[drawing]!, drawing)}</div>
         {#if more.left}<span class="continues left" aria-hidden="true">‹ drawing continues</span>{/if}
         {#if more.right}<span class="continues right" aria-hidden="true">drawing continues ›</span>{/if}
       </div>

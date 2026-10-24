@@ -6,9 +6,10 @@
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayPresentation } from '../view-host.ts'
   import Chooser from './Chooser.svelte'
   import { VIGNETTE_ROW_PX } from './grid.ts'
+  import { scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import { paintLines } from './lines.ts'
   import type { VignetteSection } from '../../../features/displays/compose/model.ts'
-  import { drawingScale, networkDrawing } from './network.ts'
+  import { drawingScale, networkDrawing, widthFit } from './network.ts'
   import { NETWORK_SEPARATOR } from '../../../features/displays/topology/network-room.ts'
   import { FLOW_TEXT } from '../../../features/displays/topology/text.ts'
   import { vignetteOpening } from './opening.svelte.ts'
@@ -20,9 +21,10 @@
   // end caps through connector-diagram on a canvas; obc-bus, obc-switch,
   // obc-transformer and obc-source over it; names and readings as text, each
   // whole in the room the composer measured for it (network.ts). At one grid
-  // unit a row, scrolled sideways where it is wider than its frame, and scaled
-  // as the composer scaled it where its rows are fewer than its height (a chat
-  // column), and further to a chat's width (`fit`, W7.3). Its attribution closes it.
+  // unit a row, scaled as the composer scaled it where its rows are fewer than
+  // its height (a chat column), further to a chat's width (`fit`, W7.3), and
+  // to its frame's width down to the text floor, past which it scrolls
+  // sideways and says it continues (W4.3). Its attribution closes it.
   // Each named item (a bus, a line, a transformer, a connection point) whose
   // element is bound to what it measures is a button over its box (W9.1): a
   // press, Enter or Space opens the element's default after this display
@@ -35,7 +37,13 @@
   let presentation = $state.raw<DisplayPresentation>(UNFRAMED_PRESENTATION)
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
   const zoom = $derived(presentation.zoom)
-  const scale = $derived(drawingScale(section) * fit)
+  // Wider than its frame (W4.3): scaled to the frame's width while its text stays at TEXT_FLOOR_PX or more on screen,
+  // as a window frame scales a flow drawing (grid.ts frameLayout); past that it scrolls sideways, an edge fading and
+  // "drawing continues" showing where there is more.
+  let available = $state(0)
+  const scaledTo = $derived(drawingScale(section) * fit)
+  const scale = $derived(scaledTo * widthFit(drawing.width, scaledTo, available, zoom))
+  let more = $state<ScrollEnds>({ left: false, right: false })
   runOnMount(() => {
     const resized = (): void => { viewport = { width: window.innerWidth, height: window.innerHeight } }
     window.addEventListener('resize', resized)
@@ -96,7 +104,8 @@
   }
 </script>
 
-<div class="network">
+<div class="frame" class:more-left={more.left} class:more-right={more.right}>
+<div class="network" bind:clientWidth={available} use:scrollEnds={ends => { more = ends }}>
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
   <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--unscale={1 / scale} role="group" aria-label="Network topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
@@ -138,10 +147,21 @@
       onchoose={entry => { chooser = null; open(entry.element, entry.name) }} onclose={closeChooser} />
   {/if}
 </div>
+{#if more.left}<span class="continues left" aria-hidden="true">‹ drawing continues</span>{/if}
+{#if more.right}<span class="continues right" aria-hidden="true">drawing continues ›</span>{/if}
+</div>
 {#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{/if}
 
 <style>
+  .frame { position: relative; }
   .network { overflow-x: auto; overflow-y: hidden; }
+  /* Where it scrolls: the edge with more fades, and a mark says the drawing continues (as Sections marks a flow drawing's). */
+  .frame.more-left::before, .frame.more-right::after { content: ''; position: absolute; z-index: 1; top: 0; bottom: 0; width: 32px; pointer-events: none; }
+  .frame.more-left::before { left: 0; background: linear-gradient(to left, transparent, var(--container-background-color)); }
+  .frame.more-right::after { right: 0; background: linear-gradient(to right, transparent, var(--container-background-color)); }
+  .continues { position: absolute; z-index: 2; top: 4px; padding: 0 8px; border: 1px solid var(--border-outline-color); border-radius: 12px; background: var(--container-background-color); color: var(--element-active-color); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
+  .continues.left { left: 4px; }
+  .continues.right { right: 4px; }
   .drawing { position: relative; transform-origin: 0 0; }
   canvas { position: absolute; left: 0; top: 0; }
   .placed { position: absolute; }

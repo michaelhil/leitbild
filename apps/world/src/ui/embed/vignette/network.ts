@@ -10,7 +10,7 @@ import type { Observation } from '../../../core/observation/model.ts'
 import { NETWORK, NETWORK_READING_ROLES, NETWORK_ROW } from '../../../features/displays/topology/network-room.ts'
 import { textWidth, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { endStraight, pipeSegments, stubEndSegment } from './pipe-segments.ts'
-import { VIGNETTE_ROW_PX } from './grid.ts'
+import { DRAWING_TEXT_PX, TEXT_FLOOR_PX, VIGNETTE_ROW_PX } from './grid.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { activeState, readingLook, toneOf, type AlertTone } from './readout.ts'
 
@@ -62,6 +62,18 @@ export interface NetworkText {
  * ("drawing scaled to n % to fit"): its rows but the last over the grid rows its layout reaches into.
  */
 export const drawingScale = (section: Pick<Topology, 'rows' | 'layout'>): number => Math.min(1, (section.rows - 1) / Math.max(1, Math.ceil(section.layout.height)))
+
+/**
+ * How much further a drawing `width` px wide at `scale` is scaled to fit a frame `available` px wide (W4.3): to the
+ * frame's width while its 12 px text stays at TEXT_FLOOR_PX or more on screen at the window's `zoom` (the floor a
+ * window frame keeps for a flow drawing, grid.ts frameLayout); else not at all, and it scrolls sideways.
+ */
+export const widthFit = (width: number, scale: number, available: number, zoom: number): number => {
+  const natural = width * scale
+  if (available <= 0 || natural <= available) return 1
+  const fit = available / natural
+  return DRAWING_TEXT_PX * zoom * scale * fit >= TEXT_FLOOR_PX ? fit : 1
+}
 
 /**
  * A bus's bar: along the one face its edge ends meet (feeders all on one
