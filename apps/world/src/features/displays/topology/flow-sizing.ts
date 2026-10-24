@@ -15,13 +15,13 @@
 // three bends an edge, a fourth only where three draw nothing. The layout
 // comes back in grid units.
 import { layoutDiagram, type DiagramProfile } from '../diagram/index.ts'
-import { unitSymbol, type Observable } from '../../../core/observation/model.ts'
+import type { Observable } from '../../../core/observation/model.ts'
 import type { TopologyGraph, TopologyNode } from '../../../core/observation/topology.ts'
 import { flowPlan, type FlowSizing } from './flow.ts'
 import { groupName, itemText, type TopologyLayout } from './layout.ts'
 import type { ScopedTopology } from './scope.ts'
 import { farState, stopLabel, stopLines, stopStated, type DrawnStop, type StopWords } from './stops.ts'
-import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, textFigures, textWidth, type FlowTextStyle } from './text.ts'
+import { FLOW_TEXT, FLOW_TRACE, readingRoom, TEXT_INSET, textWidth, type FlowTextStyle } from './text.ts'
 
 /**
  * The renderer's grid pitch and its text lines, each as high and as wide as Noto Sans sets it (text.ts) at its
@@ -35,8 +35,6 @@ import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, textFigures, textWidth, type FlowTex
 const GRID = 24
 export const VALUE_FIGURES = 5
 export const IN_TURN_FIGURES = 7
-/** A value read over decades at its longest. */
-export const DECADES_TEXT = '8.8×10⁻¹¹'
 /** What a word reads while its reading is not known, or outside its declared validity. */
 const UNKNOWN_WORDS = ['?', '—']
 /** The vessel's head and flange above its first nozzle, and its bottom below its last. */
@@ -94,13 +92,8 @@ export const flowSizing = (graph: TopologyGraph, declaredOf: DeclaredOf, words: 
   }
   const command = (bindings: ReadonlyArray<Binding>, positioned: boolean) =>
     line(widest([...bindings.flatMap(ends).map(word => `CMD ${word}`), ...(positioned ? ['CMD 100 %'] : []), ...UNKNOWN_WORDS], 'command'), true)
-  const reading = (chain: ReadonlyArray<Binding>, style: FlowTextStyle): number => Math.max(...chain.map(binding => {
-    const declared = declaredOf(binding.ref)
-    const unit = declared === undefined ? '' : unitSymbol(declared.unit)
-    const figures = textFigures(chain.length > 1 ? IN_TURN_FIGURES : VALUE_FIGURES, style)
-    const value = declared?.decades === true ? Math.max(figures, textWidth(DECADES_TEXT, style)) : figures
-    return (binding.word === undefined ? 0 : textWidth(`${binding.word} `, style)) + value + (unit === '' ? 0 : textWidth(` ${unit}`, style))
-  }))
+  const reading = (chain: ReadonlyArray<Binding>, style: FlowTextStyle): number =>
+    Math.max(...chain.map(binding => readingRoom(declaredOf(binding.ref), binding.word, chain.length > 1 ? IN_TURN_FIGURES : VALUE_FIGURES, style)))
   return {
     key: 'vignette-flow-13',
     visible: () => true,

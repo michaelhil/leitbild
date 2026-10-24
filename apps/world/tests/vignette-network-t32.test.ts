@@ -71,7 +71,7 @@ describe('T32 on the real compose path', () => {
       const overlapping = boxes.flatMap((a, i) => boxes.slice(i + 1).filter(b => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).map(b => `${a.id} × ${b.id}`))
       expect(overlapping).toEqual([])
       const named = new Map(section.nodes.map(node => [node.id, node.shortLabel ?? node.label]))
-      expect(drawing.texts.filter(text => text.reading === null && text.name !== named.get(text.id)).map(text => text.id)).toEqual([])
+      expect(drawing.texts.filter(text => !text.rows.some(row => row.parts.some(part => part.kind === 'name' && part.text === named.get(text.id)))).map(text => text.id)).toEqual([])
       expect(drawing.height).toBe(layout.height * VIGNETTE_ROW_PX)
       expect(report.warmP95Ms).toBeLessThanOrEqual(30)
     })

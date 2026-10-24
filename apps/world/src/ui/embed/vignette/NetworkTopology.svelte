@@ -6,9 +6,12 @@
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayPresentation } from '../view-host.ts'
   import Chooser from './Chooser.svelte'
   import { VIGNETTE_ROW_PX } from './grid.ts'
+  import { scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import { paintLines } from './lines.ts'
   import type { VignetteSection } from '../../../features/displays/compose/model.ts'
-  import { drawingScale, networkDrawing } from './network.ts'
+  import { drawingScale, networkDrawing, widthFit } from './network.ts'
+  import { NETWORK_SEPARATOR } from '../../../features/displays/topology/network-room.ts'
+  import { FLOW_TEXT } from '../../../features/displays/topology/text.ts'
   import { vignetteOpening } from './opening.svelte.ts'
   import type { Box } from './popover.ts'
   import type { AlertTone } from './readout.ts'
@@ -16,10 +19,12 @@
 
   // A network topology (architecture B2) in OpenBridge: lines, crossings and
   // end caps through connector-diagram on a canvas; obc-bus, obc-switch,
-  // obc-transformer and obc-source over it; names and readings as text. At
-  // one grid unit a row, scrolled sideways where it is wider than its frame,
-  // and scaled as the composer scaled it where its rows are fewer than its
-  // height (a chat column), and further to a chat's width (`fit`, W7.3). Its attribution closes it.
+  // obc-transformer and obc-source over it; names and readings as text, each
+  // whole in the room the composer measured for it (network.ts). At one grid
+  // unit a row, scaled as the composer scaled it where its rows are fewer than
+  // its height (a chat column), further to a chat's width (`fit`, W7.3), and
+  // to its frame's width down to the text floor, past which it scrolls
+  // sideways and says it continues (W4.3). Its attribution closes it.
   // Each named item (a bus, a line, a transformer, a connection point) whose
   // element is bound to what it measures is a button over its box (W9.1): a
   // press, Enter or Space opens the element's default after this display
@@ -29,10 +34,16 @@
   let { section, observations, palette, frozen = false, fit = 1 }: { section: Extract<VignetteSection, { kind: 'topology' }>; observations: ReadonlyArray<Observation>; palette: Palette; frozen?: boolean; fit?: number } = $props()
 
   const drawing = $derived(networkDrawing(section, observations, frozen))
-  const scale = $derived(drawingScale(section) * fit)
   let presentation = $state.raw<DisplayPresentation>(UNFRAMED_PRESENTATION)
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
   const zoom = $derived(presentation.zoom)
+  // Wider than its frame (W4.3): scaled to the frame's width while its text stays at TEXT_FLOOR_PX or more on screen,
+  // as a window frame scales a flow drawing (grid.ts frameLayout); past that it scrolls sideways, an edge fading and
+  // "drawing continues" showing where there is more.
+  let available = $state(0)
+  const scaledTo = $derived(drawingScale(section) * fit)
+  const scale = $derived(scaledTo * widthFit(drawing.width, scaledTo, available, zoom))
+  let more = $state<ScrollEnds>({ left: false, right: false })
   runOnMount(() => {
     const resized = (): void => { viewport = { width: window.innerWidth, height: window.innerHeight } }
     window.addEventListener('resize', resized)
@@ -49,7 +60,7 @@
     if (node?.stop !== undefined) return node.stop.far.flatMap(end => end.element === undefined ? [] : [{ element: end.element, name: end.label }])
     return node?.element === undefined || node.bindings.length === 0 ? [] : [{ element: node.element, name: node.label }]
   }
-  const named = $derived(new Map([...drawing.texts.map(text => [text.id, text.title] as const), ...drawing.buses.map(bus => [bus.id, bus.title] as const)]))
+  const named = $derived(new Map([...drawing.buses.map(bus => [bus.id, bus.title] as const), ...drawing.texts.map(text => [text.id, text.title] as const)]))
   /** The items a press opens, each over its laid-out box (its symbol or bar and its words), in reading order for Tab (W8.3). */
   const items = $derived(opening === undefined || opening.where === null ? [] : section.layout.nodes.flatMap(node => {
     const title = named.get(node.id)
@@ -93,12 +104,15 @@
   }
 </script>
 
-<div class="network">
+<div class="frame" class:more-left={more.left} class:more-right={more.right}>
+<div class="network" bind:clientWidth={available} use:scrollEnds={ends => { more = ends }}>
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
   <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--unscale={1 / scale} role="group" aria-label="Network topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
     {#each drawing.buses as bus (bus.id)}
       <obc-bus class="placed" size="small" vertical={bus.vertical} label={bus.label} title={bus.title} style:left={`${bus.x}px`} style:top={`${bus.y}px`} style:width={`${bus.width}px`} style:height={`${bus.height}px`}></obc-bus>
+      <!-- An alert on a bus whose name is in its bar: marked under the bar, as an unframed name is underlined. -->
+      {#if bus.tone !== null && bus.label !== ''}<div class={`placed bar-mark ${bus.tone}`} aria-hidden="true" style:left={`${bus.x}px`} style:top={`${bus.y + bus.height + 2}px`} style:width={`${bus.width}px`}></div>{/if}
     {/each}
     {#each drawing.devices as device (device.id)}
       <!-- Inert: OpenBridge's symbol draws a <button> of its own; the item's area is its button (W8.3). -->
@@ -113,9 +127,11 @@
       </div>
     {/each}
     {#each drawing.texts as text (text.id)}
-      <div class={`text ${text.tone ?? ''}`} class:below={text.below} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} title={text.title}>
-        <span class="name">{text.name}</span>{#if text.reading !== null}<span class="reading">{text.below ? '' : ' · '}{text.reading}</span>{/if}
-      </div>
+      {#each text.rows as row, at (at)}
+        <div class={`text ${text.tone ?? ''}`} class:framed={text.framed} class:end={row.align === 'end'} style:left={`${row.x}px`} style:top={`${row.y}px`} style:width={`${row.width}px`} style:height={`${row.height}px`} title={text.title}>
+          {#each row.parts as part, index (index)}{#if index > 0}<span class="name">{NETWORK_SEPARATOR}</span>{/if}<span class={part.kind} style:font-size={`${FLOW_TEXT[part.style].size}px`}>{part.text}</span>{/each}
+        </div>
+      {/each}
     {/each}
     {#each items as item (item.id)}
       {@const several = targetsOf(item.id).length > 1}
@@ -131,10 +147,21 @@
       onchoose={entry => { chooser = null; open(entry.element, entry.name) }} onclose={closeChooser} />
   {/if}
 </div>
+{#if more.left}<span class="continues left" aria-hidden="true">‹ drawing continues</span>{/if}
+{#if more.right}<span class="continues right" aria-hidden="true">drawing continues ›</span>{/if}
+</div>
 {#if section.attribution !== undefined}<p class="attribution">{section.attribution}</p>{/if}
 
 <style>
+  .frame { position: relative; }
   .network { overflow-x: auto; overflow-y: hidden; }
+  /* Where it scrolls: the edge with more fades, and a mark says the drawing continues (as Sections marks a flow drawing's). */
+  .frame.more-left::before, .frame.more-right::after { content: ''; position: absolute; z-index: 1; top: 0; bottom: 0; width: 32px; pointer-events: none; }
+  .frame.more-left::before { left: 0; background: linear-gradient(to left, transparent, var(--container-background-color)); }
+  .frame.more-right::after { right: 0; background: linear-gradient(to right, transparent, var(--container-background-color)); }
+  .continues { position: absolute; z-index: 2; top: 4px; padding: 0 8px; border: 1px solid var(--border-outline-color); border-radius: 12px; background: var(--container-background-color); color: var(--element-active-color); font-size: 12px; line-height: 20px; white-space: nowrap; pointer-events: none; }
+  .continues.left { left: 4px; }
+  .continues.right { right: 4px; }
   .drawing { position: relative; transform-origin: 0 0; }
   canvas { position: absolute; left: 0; top: 0; }
   .placed { position: absolute; }
@@ -147,13 +174,19 @@
     .area::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(40px * var(--unscale))); height: max(100%, calc(40px * var(--unscale))); transform: translate(-50%, -50%); }
   }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
-  .text { position: absolute; height: var(--row); line-height: 20px; font-size: 12px; white-space: nowrap; overflow: hidden; }
-  .text.below { height: calc(2 * var(--row)); display: flex; flex-direction: column; justify-content: space-between; line-height: 18px; }
-  .reading { color: var(--element-neutral-color); font-variant-numeric: tabular-nums; }
-  .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; text-decoration: underline 2px; text-underline-offset: 2px; }
-  .text.caution .name { text-decoration-color: var(--display-caution-mark); }
-  .text.warning .name { text-decoration-color: var(--display-warning-mark); }
-  .text.alarm .name { text-decoration-color: var(--display-alarm-mark); }
-  .text.critical .name { text-decoration-color: var(--display-critical-mark); }
+  /* Each row in the room the composer kept for it (topology/network-room.ts), whole, in Noto Sans: names 12 px neutral, readings 14 px in the active colour. */
+  .text { position: absolute; display: flex; align-items: center; white-space: pre; pointer-events: none; }
+  .text.end { justify-content: flex-end; }
+  .text .name { font-size: 12px; color: var(--element-neutral-color); }
+  .reading { color: var(--element-active-color); font-variant-numeric: tabular-nums; }
+  /* An alert on the item: its name bold in the active colour; underlined in its colour only where no frame marks it (U-27). */
+  .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; color: var(--element-active-color); }
+  .text:not(.framed):is(.caution, .warning, .alarm, .critical) .name { text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+  .text.caution .name, .bar-mark.caution { text-decoration-color: var(--display-caution-mark); background-color: var(--display-caution-mark); }
+  .text.warning .name, .bar-mark.warning { text-decoration-color: var(--display-warning-mark); background-color: var(--display-warning-mark); }
+  .text.alarm .name, .bar-mark.alarm { text-decoration-color: var(--display-alarm-mark); background-color: var(--display-alarm-mark); }
+  .text.critical .name, .bar-mark.critical { text-decoration-color: var(--display-critical-mark); background-color: var(--display-critical-mark); }
+  .text .name { background-color: transparent; }
+  .bar-mark { height: 2px; border-radius: 1px; }
   .attribution { margin: 0; height: var(--row); line-height: var(--row); font-size: 12px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
