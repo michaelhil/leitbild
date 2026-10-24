@@ -86,7 +86,8 @@ export const fitLines = (lines: ReadonlyArray<ListLine>, room: number, counted =
   const tail = lines.findIndex(line => line.kind === 'aggregate')
   if (counted && tail > 0 && room - 1 - lines.slice(tail).filter(line => line.kind === 'aggregate').length < ROWS_BEFORE_AGGREGATES) {
     const head = lines.slice(0, tail)
-    const shown = head.length <= room ? head : head.slice(0, Math.max(1, room - 1))
+    // One line holds "+N more" alone: a row beside it would be cut (a dashboard's run frame under its tiles).
+    const shown = head.length <= room ? head : head.slice(0, room - 1)
     return { shown, pinned: [], hidden: head.slice(shown.length).flatMap(rowsOf) }
   }
   return fitWithAggregates(lines, room)

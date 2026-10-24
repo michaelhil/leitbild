@@ -1112,6 +1112,12 @@
     return observedAssetsOf(categoryRows.flatMap(row => row.objects), objects, object => packObserves(pack.packForObject(object).descriptor))
   })
 
+  // The rail's categories holding several observed assets: the Run's dashboard offers to compare each side by side (R4 B4).
+  const dashboardCollections = $derived(categoryRows.flatMap(row => {
+    const count = row.objects.filter(object => observedAssetObjects.includes(object)).length
+    return count >= 2 ? [{ category: row.category.id, label: row.category.label, count }] : []
+  }))
+
   const droneControlWindowModels = $derived<ReadonlyArray<DroneWindowModel>>(
     droneControlWindows.flatMap((entry, index) => {
       const object = objectById.get(entry.objectId)
@@ -2347,6 +2353,7 @@
     simulationRunId={displayWindowRunId}
     runJoin={displayRunJoin}
     assetObjects={observedAssetObjects}
+    collections={dashboardCollections}
     statusOf={statusPresentationFor}
     listings={conversationDisplays}
     request={displayWindowRequest}

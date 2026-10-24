@@ -35,7 +35,7 @@
   // that (row-target.ts). In the display window a person acknowledges what an
   // aggregate folds ("ACK 15") and, in an element's own alerts (its
   // faceplate), each row. The full view itself is AlertsView.
-  let { rows, categories, section, room }: {
+  let { rows, categories, section, room, frame = false }: {
     rows: ReadonlyArray<AlertRow>
     /** By object: the categories its Pack declares (the sample's), its tiles. */
     categories?: Readonly<Record<string, ReadonlyArray<DeclaredCategory>>> | undefined
@@ -43,6 +43,8 @@
     section: Pick<Extract<VignetteSection, { kind: 'alerts' }>, 'objectIds' | 'elements' | 'refs' | 'all'>
     /** The section's rows: one for its head, the rest for lines, until it has measured its room. */
     room: number
+    /** A dashboard's run frame (R4 B4): its tiles stand while they leave the list a line ("+N more"), not five. */
+    frame?: boolean
   } = $props()
 
   /** The fewest lines the tiles leave the list: three rows, "+N more" and an aggregate (§5.5: counts and three rows on screen). */
@@ -60,14 +62,14 @@
   let head: HTMLElement | undefined = $state()
   let list: HTMLElement | undefined = $state()
   /** The section's width and height, its head's, and the height its lines have: what its head and tiles leave them. */
-  let size = $state<{ width: number; height: number; head: number; lines: number } | null>(null)
+  let size = $state<{ width: number; height: number; head: number; lines: number; rows: number } | null>(null)
   let open = $state<ReadonlySet<string>>(new Set())
   let chosen = $state<AlertFilter | null>(null)
   let failure = $state<string | null>(null)
   runOnMount(() => {
     if (root === undefined || list === undefined) return
     const observer = new ResizeObserver(() => {
-      if (root !== undefined && list !== undefined) size = { width: root.clientWidth, height: root.clientHeight, head: head?.offsetHeight ?? 0, lines: list.clientHeight }
+      if (root !== undefined && list !== undefined) size = { width: root.clientWidth, height: root.clientHeight, head: head?.offsetHeight ?? 0, lines: list.clientHeight, rows: list.clientWidth }
     })
     for (const node of [root, list, head]) if (node !== undefined) observer.observe(node)
     return () => { observer.disconnect(); markElements(null) }
@@ -90,15 +92,15 @@
   /** What of a row stands on its one line in the section's width. */
   const fitted = (row: AlertRow): RowParts => {
     const parts = rowParts(row, nowMs, several ? row.objectLabel : undefined, acks && !whole && row.acknowledge !== undefined)
-    return size === null ? parts : fitRow(parts, size.width, measure)
+    return size === null ? parts : fitRow(parts, size.rows, measure)
   }
   const { acking, ack } = acknowledging(() => opening, reason => { failure = reason })
   const layout = $derived(size === null ? null : tileLayout(tiles, size.width, measure))
   // Narrowed, every aggregate stands open: the rows it was narrowed to are what it shows.
   const lines = $derived(listLines(listed, filter === null ? open : 'all'))
-  /** Tiles stand where they leave the list its fewest lines. */
+  /** Tiles stand where they leave the list its fewest lines: in a dashboard's run frame, one. */
   const tiled = $derived(tiles.length > 0 && size !== null && layout !== null
-    && size.height - size.head - tilesHeight(tiles, layout.columns) - 4 >= Math.min(listLines(own, open).length, LINES_BESIDE_TILES) * VIGNETTE_ROW_PX)
+    && size.height - size.head - tilesHeight(tiles, layout.columns) - 4 >= Math.min(listLines(own, open).length, frame ? 1 : LINES_BESIDE_TILES) * VIGNETTE_ROW_PX)
   /** Grid rows for lines: what its list measures, else its composed rows less its head. */
   const budget = $derived(Math.max(1, size === null ? room - 1 - (failure === null ? 0 : 1) : Math.floor(size.lines / VIGNETTE_ROW_PX)))
   // Where its counts head it, they say what its aggregates fold, which then give way before its third row.
@@ -140,7 +142,7 @@
 {#if section.all === true}
   <AlertsView rows={own} {categories} {nowMs} {several} {press} />
 {:else}
-  <section class="alerts" aria-label="Alerts" bind:this={root}>
+  <section class="alerts" class:frame aria-label="Alerts" bind:this={root}>
     <div class="head" bind:this={head}>
       {#if whole}
         <h2>{section.objectIds === 'run' ? 'Alerts in the Run' : 'Alerts'} · {own.length === 0 ? 'none' : own.length}</h2>
@@ -170,6 +172,9 @@
 <style>
   /* Its words stay near their row: a wide frame does not part a message from its tag and age (U-06). */
   .alerts { display: flex; flex-direction: column; height: 100%; max-width: 760px; overflow: hidden; }
+  /* A dashboard's run frame: its counts and tiles take the frame's width, its rows keep to theirs. */
+  .alerts.frame { max-width: none; }
+  .alerts.frame > ul { max-width: 760px; }
   /* Its head: its name and count, then its counts, wrapping where they do not fit beside it. */
   .head { flex: none; display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; min-width: 0; }
   .tiles { flex: none; margin-bottom: 4px; }

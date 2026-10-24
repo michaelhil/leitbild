@@ -144,7 +144,7 @@ describe('a view framed by the display window', () => {
     const page = framedPage()
     const opened: Array<string | null> = []
     page.host.subscribeOpening(where => { opened.push(where) })
-    const request = { state: '{"detail":{"plantId":"unit-1","components":["core"]}}', title: 'Reactor Core', listing: () => { throw new Error('a window needs no listing') } }
+    const request = { state: '{"detail":{"plantId":"unit-1","components":["core"]}}', title: 'Reactor Core', viewType: 'display.vignette' as const, listing: () => { throw new Error('a window needs no listing') } }
     page.host.listen()
     expect(page.host.openDisplay(request)).toBe(false)
     page.fromWindow({ type: 'world:display-frame', shown: true, zoom: 1, back: 'SG B low-low and feedwater response' })
@@ -154,7 +154,7 @@ describe('a view framed by the display window', () => {
     expect(page.host.openDisplay(request)).toBe(true)
     page.host.back()
     expect(page.posted.map(post => post.message)).toEqual([
-      { type: 'world:display-open', state: request.state, title: 'Reactor Core' },
+      { type: 'world:display-open', state: request.state, title: 'Reactor Core', viewType: 'display.vignette' },
       { type: 'world:display-back' },
     ])
     for (const { message } of page.posted) expect(parseDisplayFrameMessage(JSON.parse(JSON.stringify(message)))).toEqual(message as DisplayFrameMessage)
@@ -188,7 +188,7 @@ describe('a view framed by the display window', () => {
     page.host.subscribeOpening(where => { opened.push(where) })
     page.host.listen()
     const listing = { key: 'opened:1', caption: 'From SG B low-low', envelope: { moduleId: 'world', subject: { workspaceId: 'ws', moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }, viewType: 'display.vignette', title: 'Reactor Core', height: 600, state: '{}' } } as unknown as EmbeddedViewListing
-    const request = { state: '{}', title: 'Reactor Core', listing: () => listing }
+    const request = { state: '{}', title: 'Reactor Core', viewType: 'display.vignette' as const, listing: () => listing }
     expect(page.host.openDisplay(request)).toBe(false)
     page.fromWindow({ type: 'leitbild:view-host' })
     expect(opened).toEqual([null, 'relay'])

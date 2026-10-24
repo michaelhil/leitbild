@@ -1,7 +1,9 @@
 import { embeddedViewListingSchema, type EmbeddedViewEnvelope, type EmbeddedViewListing } from '@leitbild/contracts'
+import type { WorldViewType } from '../process-display/display-window-messages.ts'
 
 // A display opened after another (the equipment a critical safety function
-// chip or a first-out banner label names, opened from an answer's display):
+// chip or a first-out banner label names, opened from an answer's display; a
+// dashboard of another scope, opened from a dashboard):
 // a self-contained listing on the same Run, so the Workspace's one display
 // window shows it as it shows any display, with a caption saying where it
 // came from. Its key is stable for the same display opened from the same one.
@@ -20,12 +22,12 @@ export const digest = (text: string): string => {
 
 export const openedListing = (
   from: { readonly key: string; readonly title: string; readonly envelope: EmbeddedViewEnvelope },
-  opened: { readonly state: string; readonly title: string },
+  opened: { readonly state: string; readonly title: string; readonly viewType: WorldViewType },
 ): EmbeddedViewListing => {
   const caption = `From ${from.title}`
   return embeddedViewListingSchema.parse({
     key: `opened:${digest(`${from.key}\n${opened.state}`)}`,
     caption: caption.length <= CAPTION_MAX ? caption : 'From another display',
-    envelope: { ...from.envelope, title: opened.title, state: opened.state },
+    envelope: { ...from.envelope, viewType: opened.viewType, title: opened.title, state: opened.state },
   })
 }
