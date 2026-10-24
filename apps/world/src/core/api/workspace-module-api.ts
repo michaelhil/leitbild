@@ -69,7 +69,7 @@ import { executionAdvanceInputSchema,executionSetInputSchema,runCopyInputSchema,
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import { aiRoleRunRefusal, hiddenInRoleRun, isRoleGateRefusal, roleRequiredRefusal, roleRunOpenCapabilityIds } from '../simulation-runs/role-gates.ts'
 import type { WorldWorkspaceActivity, WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
-import { apiError,json,readJson } from './responses.ts'
+import { apiError,json,readJson,zodReason } from './responses.ts'
 import {
   buildSimulationRunActorForAccess,
 } from './simulation-run-routes.ts'
@@ -1920,7 +1920,7 @@ export const handleWorldModuleApi = async (
       return apiError(409, 'simulation_run_name_changed', error.message)
     }
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
-    if (error instanceof z.ZodError) return apiError(400, zodErrorCode(error), error.message)
+    if (error instanceof z.ZodError) return apiError(400, zodErrorCode(error), zodReason(error))
     if (error instanceof CommandIdempotencyConflictError) return apiError(error.status, error.code, error.message)
     if (error instanceof Error && error.message.startsWith('World Module not provisioned:')) {
       return apiError(404, 'workspace_not_found', 'World is not enabled in this Workspace')

@@ -7,7 +7,7 @@ import { sideViewOfCompiledScenario, sideViewOfSnapshot } from '../simulation-ru
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
-import { apiError,json,readJson } from './responses.ts'
+import { apiError,json,readJson,zodReason } from './responses.ts'
 import { runCopyInputSchema } from '../simulation-runs/execution.ts'
 import { recordingSeriesQuerySchema } from '../model/recording.ts'
 import { displayRunOf, handleDashboard, handleDisplayRoute } from './display-capabilities.ts'
@@ -362,7 +362,7 @@ const handleSimulationRunApiInner = async (
       })
       return json(outcome)
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = error instanceof z.ZodError ? zodReason(error) : error instanceof Error ? error.message : String(error)
       if (isRoleGateRefusal(error)) return apiError(error.status, error.code, reason, error.details)
       if (error instanceof CommandIdempotencyConflictError) {
         return apiError(error.status, error.code, reason)
@@ -462,7 +462,7 @@ export const handleSimulationRunApi = async (
       && ['simulation_run_commit_uncertain', 'simulation_run_observer_failed', 'simulation_run_recovery_required', 'simulation_run_closed'].includes(err.code)) return apiError(409, err.code, err.message)
     if (err instanceof Error && 'code' in err && err.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
-    if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)
+    if (err instanceof z.ZodError) return apiError(400, 'invalid_request', zodReason(err))
     throw err
   } finally { release?.() }
 }

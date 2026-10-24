@@ -29,7 +29,7 @@ import { displaySpecSchema, subjectSchema } from '../observation/spec.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
-import { apiError, json } from './responses.ts'
+import { apiError, issuesReason, json } from './responses.ts'
 
 export const VIGNETTE_VIEW_TYPE = 'display.vignette'
 const MODULE_ID = moduleIdSchema.parse('world')
@@ -65,7 +65,7 @@ export const displayRunOf = async (registry: SimulationRunRegistry, runtime: Sim
 
 /** A composed vignette as an embedded view and its card, or the composer's refusal with every issue. */
 export const composedResponse = (outcome: ComposeOutcome): Response => {
-  if (!outcome.ok) return apiError(422, outcome.issues[0]!.code, outcome.issues.map(issue => `${issue.path}: ${issue.message}`).join('; '), { issues: outcome.issues })
+  if (!outcome.ok) return apiError(422, outcome.issues[0]!.code, issuesReason(outcome.issues), { issues: outcome.issues })
   const state = JSON.stringify(outcome.state)
   return json({ result: composedSchema.parse({ view: { viewType: VIGNETTE_VIEW_TYPE, title: outcome.state.title, height: vignetteHeight(outcome.rows), state }, card: outcome.card }) })
 }
@@ -144,11 +144,11 @@ export const handleDashboard = async (kind: 'read' | 'update', body: unknown, ca
   const file = call.registry.dashboards(call.runtime.id)
   if (kind === 'read') {
     const reading = await readDashboard(call.run, file, dashboardInputs.read.parse(body).scope)
-    if (isIssue(reading)) return apiError(422, reading.code, `${reading.path}: ${reading.message}`, { issues: [reading] })
+    if (isIssue(reading)) return apiError(422, reading.code, issuesReason([reading]), { issues: [reading] })
     return json({ result: dashboardReadingSchema.parse({ ...reading, sections: reading.sections.map(section => sectionOut(section, call.by === 'person')) }) })
   }
   const outcome = await changeDashboard(call.run, file, call.by, dashboardInputs.update.parse(body))
-  if (!outcome.ok) return apiError(outcome.status, outcome.code, outcome.message, outcome.details)
+  if (!outcome.ok) return apiError(outcome.status, outcome.code, typeof outcome.reason === 'string' ? outcome.reason : issuesReason(outcome.reason), outcome.details)
   return json({ result: dashboardChangedSchema.parse({ scope: outcome.scope, revision: outcome.revision, pins: outcome.pins }) })
 }
 

@@ -1,4 +1,4 @@
-import { accessContextSchema, moduleCapabilityCollectionSchema, newRequestId, newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
+import { accessContextSchema, moduleCapabilityCollectionSchema, moduleFailureSchema, newRequestId, newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createWorldApplicationAssembly } from '../src/app-assembly.ts'
 import { dashboardInputs, displayRunOf, handleDashboard } from '../src/core/api/display-capabilities.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
+import { ERROR_MESSAGE_MAX, issuesReason } from '../src/core/api/responses.ts'
 import { handleWorldModuleApi } from '../src/core/api/workspace-module-api.ts'
 import { objectIdSchema, type ActorId, type IsoTimestamp, type SimulationRunId } from '../src/core/model/index.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
@@ -193,6 +194,41 @@ describe('dashboards (A4)', () => {
     expect((await board(unsided.id, 'update', { scope: 'run', expectedRevision: 0, pin: [{ spec: { title: 'Red speed', question: 'How fast?', subjects: [`${unit}#speed`], views: [] } }] }, 'red-lead')).body.result.revision).toBe(1)
     // The Assistant is refused in every role Run, as the platform refuses it.
     expect((await assistant(unsided.id, 'read', { scope: 'run' })).body.error.code).toBe('ai_role_run_unsupported')
+  })
+
+  test('a refusal reaches the caller as a short reason by path, which the Host\'s failure envelope admits', async () => {
+    const run = await openRun()
+    /** What the Host does with a World refusal: its Module failure envelope (message ≤ 2,048) must take it. */
+    const admitted = (response: { status: number; body: any }) =>
+      moduleFailureSchema.safeParse({ code: response.body.error.code, message: response.body.error.message, retryable: false, status: response.status }).success
+    // The eval's case: a pin spec without its question, which matched neither pin form.
+    const units = Array.from({ length: 2 }, (_, index) => `unit:${['one', 'two'][index]}#speed`)
+    const unasked = await assistant(run.id, 'update', { scope: 'run', expectedRevision: 0, pin: [{ spec: { title: 'Speeds side by side', subjects: units, views: [{ kind: 'values', signals: units }] } }] })
+    expect(unasked).toMatchObject({ status: 400, body: { error: { code: 'invalid_request', message: 'pin.0.spec.question: Invalid input: expected string, received undefined' } } })
+    expect(admitted(unasked)).toBe(true)
+    // A compose input wrong in many ways (its zod message ran past 3,000 characters): the first five by path, then the count.
+    const wrong = await call(`/internal/workspaces/${workspaceId}/capabilities/world.simulation-run.display.compose/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId, capabilityId: 'world.simulation-run.display.compose', resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, access: access('ai'),
+        input: { title: 'x', question: 'y', subjects: [{ of: { category: 1 } }, 2, 3], views: [{ kind: 'gauge' }, { kind: 'values', limits: 3 }, { kind: 'trend' }, { kind: 'map', within: 'far' }, { kind: 'alerts', scope: 'all' }] } }),
+    })
+    expect(wrong.status).toBe(400)
+    expect(wrong.body.error.message.length).toBeLessThanOrEqual(ERROR_MESSAGE_MAX)
+    expect(wrong.body.error.message).toStartWith('subjects.0.of.category: ')
+    expect(wrong.body.error.message).toMatch(/; \+\d+ more issues$/)
+    expect(wrong.body.error.message).not.toContain('"code"')
+    expect(admitted(wrong)).toBe(true)
+    // A valid input the composer refuses on six long names: each by path, the sixth counted; every issue in details.
+    const names = Array.from({ length: 6 }, (_, index) => `unknown ${index} ${'x'.repeat(150)}`)
+    const refused = await assistant(run.id, 'update', { scope: 'run', expectedRevision: 0, pin: [{ spec: { title: 'Six', question: 'Which?', subjects: names, views: [] } }] })
+    expect([refused.status, refused.body.error.code]).toEqual([422, 'unknown_name'])
+    expect(refused.body.error.message).toMatch(/^pin\.0\.spec\.subjects\.0: Nothing in this Run is named .*; \+1 more issues$/)
+    expect(refused.body.error.details.issues).toHaveLength(6)
+    expect(admitted(refused)).toBe(true)
+    // Within the envelope by construction, however many and however long the issues.
+    const reason = issuesReason(Array.from({ length: 40 }, (_, index) => ({ path: `views.${index}.${'p'.repeat(300)}`, message: 'word '.repeat(400) })))
+    expect(reason.length).toBeLessThanOrEqual(ERROR_MESSAGE_MAX)
+    expect(reason).toEndWith('; +35 more issues')
   })
 
   test('the Capabilities\' schemas: a scope, a revision, at most 2 pins and 8 unpins; the Assistant reads and changes, publishing nothing', async () => {

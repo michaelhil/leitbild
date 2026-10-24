@@ -181,10 +181,11 @@ export type PinInput = { readonly spec: DisplaySpec } | { readonly state: Vignet
 export interface DashboardChange { readonly scope: ScopeInput; readonly expectedRevision: number; readonly pin: ReadonlyArray<PinInput>; readonly unpin: ReadonlyArray<string> }
 export type ChangeOutcome =
   | { readonly ok: true; readonly scope: DashboardScope; readonly revision: number; readonly pins: ReadonlyArray<{ readonly id: string; readonly by: DashboardPin['by']; readonly title: string }> }
-  | { readonly ok: false; readonly status: 404 | 409 | 422; readonly code: string; readonly message: string; readonly details?: Readonly<Record<string, unknown>> }
+  /** `reason`: its words, or the issues the API words (short, by path). */
+  | { readonly ok: false; readonly status: 404 | 409 | 422; readonly code: string; readonly reason: string | ReadonlyArray<ComposeIssue>; readonly details?: Readonly<Record<string, unknown>> }
 
-const refusal = (status: 404 | 409 | 422, code: string, message: string, details?: Readonly<Record<string, unknown>>): ChangeOutcome =>
-  ({ ok: false, status, code, message, ...(details === undefined ? {} : { details }) })
+const refusal = (status: 404 | 409 | 422, code: string, reason: string | ReadonlyArray<ComposeIssue>, details?: Readonly<Record<string, unknown>>): ChangeOutcome =>
+  ({ ok: false, status, code, reason, ...(details === undefined ? {} : { details }) })
 
 /**
  * Pins and unpins on one scope's dashboard, as the caller: each pin composed or checked now, then the change written
@@ -192,19 +193,19 @@ const refusal = (status: 404 | 409 | 422, code: string, message: string, details
  */
 export const changeDashboard = async (run: ComposeRun, file: DashboardFile, by: DashboardPin['by'], change: DashboardChange): Promise<ChangeOutcome> => {
   const scope = await resolveScope(run, change.scope)
-  if (isIssue(scope)) return refusal(422, scope.code, `${scope.path}: ${scope.message}`, { issues: [scope] })
+  if (isIssue(scope)) return refusal(422, scope.code, [scope], { issues: [scope] })
   const pinned: DashboardPin[] = []
   for (const [index, pin] of change.pin.entries()) {
     if ('spec' in pin) {
       const outcome = await composeVignette(run, pin.spec, true)
-      if (!outcome.ok) return refusal(422, outcome.issues[0]!.code, outcome.issues.map(issue => `pin.${index}.spec.${issue.path}: ${issue.message}`).join('; '), { issues: outcome.issues })
+      if (!outcome.ok) return refusal(422, outcome.issues[0]!.code, outcome.issues.map(issue => ({ ...issue, path: `pin.${index}.spec.${issue.path}` })), { issues: outcome.issues })
       // The composer marks what it composes as the Assistant's; a spec a person pins is not.
       const { by: _composer, ...state } = outcome.state
       pinned.push({ id: `pin-${randomUUID().slice(0, 8)}`, by, spec: by === 'agent' ? outcome.state : state })
       continue
     }
     const issue = await unresolved(run, pin.state)
-    if (issue !== null) return refusal(422, issue.code, `pin.${index}.state: ${issue.message}`, { issues: [issue] })
+    if (issue !== null) return refusal(422, issue.code, [{ ...issue, path: `pin.${index}.state` }], { issues: [issue] })
     pinned.push({ id: `pin-${randomUUID().slice(0, 8)}`, by, spec: pin.state })
   }
   return file.change(current => {
