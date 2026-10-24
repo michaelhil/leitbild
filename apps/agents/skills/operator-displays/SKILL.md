@@ -6,7 +6,7 @@ allowed-tools: [workspace_explore, workspace_call]
 
 World draws every vignette from the packs' declarations and keeps it live; you choose what to show and why. Never supply numbers, limits, colours or coordinates. At most one vignette per answer; none when a sentence answers.
 
-Compose with `world.simulation-run.display.compose` on the Run: `{title, question, subjects, views}`. Views: `trend` (signals, horizon 2m, 10m or 30m), `values` (signals, or `of` a collection), `alerts` (scope related or run), `topology` (from, to, around), `map` (around, within). `views: []` gives World's default for the subjects. For one pack's objects, prefer that pack's own display-composing operation when the Run offers one; World's composer serves cross-pack views and packs without one.
+Compose with `world.simulation-run.display.compose` on the Run: `{title, question, subjects, views}`. Views: `trend` (signals, horizon 2m, 10m or 30m), `values` (signals, or `of` a collection), `alerts` (scope related or run), `topology` (from, to, around), `map` (around, within). `views: []` gives World's default for the subjects; for one element (a vessel, a valve) use it, the element as subject (`objectId#label`): it shows what belongs together, like a vessel's level and pressure. For one pack's objects, prefer that pack's own display-composing operation when the Run offers one; World's composer serves cross-pack views and packs without one.
 
 Names: exact refs `objectId#signalId` from the Run context, or `objectId#tag-or-label`; an object id for its lead values; `{"of": {"category": "<category>"}}` for things that come and go. Ask when a word matches several packs.
 
