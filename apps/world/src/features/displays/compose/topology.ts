@@ -81,6 +81,18 @@ const endsOutside = (graph: TopologyGraph, drawn: ReadonlySet<string>, others: R
  * whole where it is small enough; else none.
  */
 export const overviewOf = (graph: TopologyGraph): ScopedTopology | null => {
+  if (overviews.has(graph)) return overviews.get(graph)!
+  const overview = overviewOfGraph(graph)
+  overviews.set(graph, overview)
+  return overview
+}
+/**
+ * Each graph's overview, worked out once: a graph does not change within its revision, and the observation port serves
+ * the one it holds until the revision changes, so a sample (which scopes its drawing's bindings on every read) and the
+ * views of an object reuse it (§5.8: the stops' flow walk was a tenth of a whole unit's sample).
+ */
+const overviews = new WeakMap<TopologyGraph, ScopedTopology | null>()
+const overviewOfGraph = (graph: TopologyGraph): ScopedTopology | null => {
   if (graph.overview === undefined) {
     return graph.nodes.length > TOPOLOGY_MAX_NODES ? null
       : { graph, nodes: graph.nodes.map(node => node.id), edges: graph.edges.map(edge => edge.id), stubs: [], media: [...new Set(graph.edges.map(edge => edge.medium))].sort(), roots: [], anchors: [] }

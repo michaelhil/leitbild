@@ -52,6 +52,16 @@ const started = () => {
   return { run, act, sampled, read: (path: string) => runtime.readVariableSnapshot(path as never).value }
 }
 
+describe('an overview, worked out once a graph (§5.8)', () => {
+  test('the same graph gives the same overview; another graph, even an equal copy, its own, equal', () => {
+    const first = overviewOf(graph)
+    expect(overviewOf(graph)).toBe(first)
+    const copy = structuredClone(graph)
+    expect(overviewOf(copy)).not.toBe(first)
+    expect(overviewOf(copy)).toEqual({ ...first!, graph: copy })
+  })
+})
+
 describe('what a stop writes', () => {
   test('"to" or "from" and what lies beyond; alike names once with how many; what its room does not hold counted, never cut', () => {
     expect(stopLabel('in', ['AFW valve A'])).toBe('from AFW valve A')
