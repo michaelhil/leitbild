@@ -42,7 +42,13 @@ export interface VignetteOpening {
   readonly acknowledges: boolean
   /** Acknowledges these alerts as the person, each through its Pack's command (AlertRow.acknowledge); resolves to why one was not, or null. */
   readonly acknowledge: (rows: ReadonlyArray<AlertRow>) => Promise<string | null>
+  /** The alert rows this vignette's trip line shows (W2.4), by key: a list short of room leaves them to it (list.ts fitLines). */
+  readonly carried: ReadonlySet<string>
+  /** The trip line says what it shows, read live while it stands; returns its stop. */
+  readonly carry: (shown: () => ReadonlySet<string>) => () => void
 }
+
+const NONE: ReadonlySet<string> = new Set()
 
 const KEY = Symbol('vignette-opening')
 
@@ -66,6 +72,7 @@ export const provideOpening = (config: {
   let where = $state<DisplayOpening | null>(null)
   const host = embeddedDisplayFrame()
   const stopOpening = host.subscribeOpening(next => { where = next })
+  let carrying = $state.raw<(() => ReadonlySet<string>) | null>(null)
   // The window asks for an element to be selected (an alarm strip's group row, W2.8): asked again until a drawing of
   // this display, drawn once its first sample is in, shows it, for at most SELECT_WAIT_MS.
   let selecting: ReturnType<typeof setInterval> | undefined
@@ -93,6 +100,11 @@ export const provideOpening = (config: {
     get now() { const at = config.at(); return at === undefined ? Number.NaN : Date.parse(at.at) },
     element: async (objectId, elementId, how = 'select') => requestElement({ objectId, elementId, how }) ? null : openDefault(`${objectId}#${elementId}`),
     subject: openDefault,
+    get carried() { return carrying?.() ?? NONE },
+    carry: shown => {
+      carrying = shown
+      return () => { if (carrying === shown) carrying = null }
+    },
     get acknowledges() { return where === 'window' },
     acknowledge: async rows => {
       if (where !== 'window') return 'alerts are acknowledged in the display window'

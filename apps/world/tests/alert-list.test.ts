@@ -88,6 +88,35 @@ describe('the trip line (W2.4)', () => {
     // A Pack that names no groups: its first-outs lead as they came in.
     expect(tripLine([row('b', 5, { firstOut: { group: 'g2', rank: 1 } }), row('a', 4, { firstOut: { group: 'g1', rank: 1 } }), row('c', 3)], 'unit').leads.map(lead => lead.row.alert.id)).toEqual(['a', 'b'])
   })
+
+  test('a list short of room leaves the first-outs its trip line shows to it: the needle\'s row stands above "+N more"; with room, first-outs lead', () => {
+    // The needle (plan v5 §5.2): a LOOP trips the turbine and the reactor, AFW starts and feedwater isolates, and a pump
+    // that should have started did not, an alarm of its own, newer than the LOOP's.
+    const act = (id: string, seconds: number, label: string, ends?: ReadonlyArray<string>) =>
+      row(id, seconds, { latched: true, kind: 'trip', firstOut: { group: label, rank: 1 } }, { action: { label, ...(ends === undefined ? {} : { ends }) } })
+    const rows = [
+      act('turb-trip', 1, 'TURB TRIP', ['turbine']), act('rx-trip', 2, 'RX TRIP', ['core']), act('afw', 3, 'AFW START'), act('fwi', 12, 'FWI'),
+      row('loop', 1), row('rx-trip-rcp', 2), row('pump-fails', 25, { priority: 'warning', severity: 'warning' }), row('rcp-a', 3, { priority: 'warning', severity: 'warning' }),
+      row('sg-a-low', 20, { priority: 'warning', severity: 'warning' }, { expected: { after: 'RX TRIP' } }),
+    ]
+    const shown = (lines: ReadonlyArray<ListLine>) => lines.map(entry => entry.kind === 'row' ? entry.row.alert.id : `[${entry.label}]`)
+    const line = tripLine(rows, 'unit')
+    const carried = new Set([...line.leads.map(lead => lead.row.key), ...line.actuated.map(entry => entry.row.key)])
+    const lines = listLines(rows, new Set())
+    // The band at 1046 px: four lines under the counts and its row of tiles.
+    const band = fitLines(lines, 4, true, carried)
+    expect([shown(band.shown), band.pinned, band.hidden.map(entry => entry.alert.id)]).toEqual([['rx-trip-rcp', 'loop', 'pump-fails'], [], ['rcp-a', 'turb-trip', 'rx-trip', 'afw', 'fwi']])
+    // The trip line still shows every first-out it did.
+    expect(tripLine(rows, 'unit').leads.map(lead => lead.row.alert.id)).toEqual(['turb-trip', 'rx-trip'])
+    // Without a trip line carrying them, the first-outs keep their rows and the needle's row is under "+N more".
+    expect(shown(fitLines(lines, 4, true).shown)).toEqual(['turb-trip', 'rx-trip', 'afw'])
+    // The 1920 column, with room for every first-out and new alarm: first-outs lead.
+    expect(shown(fitLines(lines, 12, true, carried).shown).slice(0, 5)).toEqual(['turb-trip', 'rx-trip', 'afw', 'fwi', 'rx-trip-rcp'])
+    // A count's filter changes what "+N more" counts: the alarms alone leave the first-outs and the pump's warning out.
+    const alarms = listLines(rows.filter(entry => entry.priority === 'alarm' && entry.expected === undefined), 'all')
+    const filtered = fitLines(alarms, 4, true, carried)
+    expect([shown(filtered.shown), filtered.hidden.length]).toEqual([['rx-trip-rcp', 'loop', 'turb-trip'], 3])
+  })
 })
 
 describe('the full alerts view (W2.6)', () => {

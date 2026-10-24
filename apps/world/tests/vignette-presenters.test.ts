@@ -450,6 +450,13 @@ describe('alerts', () => {
     expect(source('AlertsSection.svelte')).toContain('acks && !whole && row.acknowledge !== undefined')
   })
 
+  test('a short list leaves to the trip line above it the first-outs it shows: the trip line says which, the list reads them', () => {
+    const source = (file: string): string => readFileSync(join(import.meta.dir, `../src/ui/embed/vignette/${file}`), 'utf8')
+    expect(source('TripLine.svelte')).toContain('const carried = $derived(new Set([...kept.map(lead => lead.row.key), ...(fit.counted ? [] : line.actuated.map(actuated => actuated.row.key))]))')
+    expect(source('TripLine.svelte')).toContain('runOnMount(() => opening?.carry(() => carried))')
+    expect(source('AlertsSection.svelte')).toContain('const fit = $derived(fitLines(lines, budget, whole, opening?.carried))')
+  })
+
   test('a section narrowed to elements or observables shows only the alerts on them', () => {
     const rows = [
       row('on-pump', 'one', 'warning', { subject: { element: 'pump-a' } }), row('on-level', 'one', 'alarm', { observable: 'one#level' }),
