@@ -71,13 +71,16 @@ describe('the drawing\'s text widths, measured against Noto Sans (W6.5)', () => 
 describe('the font the embed ships (the old mimic-font test)', () => {
   test('is OpenBridge\'s Noto Sans cut to the characters the composer measures, a small WOFF2 with its licence names', async () => {
     const plugin = notoSansSubset()
-    const load = plugin.load as (this: { resolve: (id: string) => Promise<{ id: string }> }, id: string) => Promise<string>
-    const module = await load.call({ resolve: async () => ({ id: FONT }) }, `\0${NOTO_SANS_MODULE}`)
+    type Emitted = { readonly type: string; readonly name: string; readonly source: Uint8Array }
+    const emitted: Emitted[] = []
+    const load = plugin.load as (this: { resolve: (id: string) => Promise<{ id: string }>; emitFile: (file: Emitted) => string }, id: string) => Promise<string>
+    const module = await load.call({ resolve: async () => ({ id: FONT }), emitFile: file => { emitted.push(file); return 'font-ref' } }, `\0${NOTO_SANS_MODULE}`)
     const [first, second] = module.split('\n')
-    const url = JSON.parse(first!.replace(/^export default /, '')) as string
+    // A font file of its own, its URL the module's default (§5.8: never base64 inside the embed's JavaScript).
+    expect(first).toBe('export default import.meta.ROLLUP_FILE_URL_font-ref')
     expect(JSON.parse(second!.replace(/^export const characters = /, ''))).toBe(FLOW_TEXT_CHARACTERS)
-    expect(url).toStartWith('data:font/woff2;base64,')
-    const bytes = Buffer.from(url.slice(url.indexOf(',') + 1), 'base64')
+    expect(emitted.map(file => [file.type, file.name])).toEqual([['asset', 'noto-sans-subset.woff2']])
+    const bytes = Buffer.from(emitted[0]!.source)
     expect(bytes.subarray(0, 4).toString('latin1')).toBe('wOF2')
     expect(bytes.length).toBeLessThan(30_000)
   })
