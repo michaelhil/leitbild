@@ -15,6 +15,7 @@
 import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep } from './browser.ts'
+import { waitForContent } from './display-press.ts'
 
 interface CardRead {
   readonly cards: ReadonlyArray<{
@@ -178,7 +179,10 @@ if (import.meta.main) {
         const open = await page.find({ sel: 'button', text: 'Open live display in the display window' })
         if (open !== null) {
           await page.click(open)
-          await sleep(6_000)
+          // Its Run may be unloaded (a fresh stack): wait for the window's display to draw, not for a fixed time.
+          await sleep(2_000)
+          await waitForContent(page, 60_000)
+          await sleep(1_500)
           await page.shot(join(out, `${label}-answer-${String(index).padStart(2, '0')}-window.png`))
         }
         await page.size(width, height)
