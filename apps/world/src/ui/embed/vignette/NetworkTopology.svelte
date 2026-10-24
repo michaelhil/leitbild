@@ -181,11 +181,15 @@
   /* An alert on the item: its name bold in the active colour; underlined in its colour only where no frame marks it (U-27). */
   .text.caution .name, .text.warning .name, .text.alarm .name, .text.critical .name { font-weight: 700; color: var(--element-active-color); }
   .text:not(.framed):is(.caution, .warning, .alarm, .critical) .name { text-decoration-line: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
-  .text.caution .name, .bar-mark.caution { text-decoration-color: var(--display-caution-mark); background-color: var(--display-caution-mark); }
-  .text.warning .name, .bar-mark.warning { text-decoration-color: var(--display-warning-mark); background-color: var(--display-warning-mark); }
-  .text.alarm .name, .bar-mark.alarm { text-decoration-color: var(--display-alarm-mark); background-color: var(--display-alarm-mark); }
-  .text.critical .name, .bar-mark.critical { text-decoration-color: var(--display-critical-mark); background-color: var(--display-critical-mark); }
-  .text .name { background-color: transparent; }
+  /* A name is marked by its underline, a bus by its mark under the bar: only the mark is filled. */
+  .text.caution .name { text-decoration-color: var(--display-caution-mark); }
+  .text.warning .name { text-decoration-color: var(--display-warning-mark); }
+  .text.alarm .name { text-decoration-color: var(--display-alarm-mark); }
+  .text.critical .name { text-decoration-color: var(--display-critical-mark); }
+  .bar-mark.caution { background-color: var(--display-caution-mark); }
+  .bar-mark.warning { background-color: var(--display-warning-mark); }
+  .bar-mark.alarm { background-color: var(--display-alarm-mark); }
+  .bar-mark.critical { background-color: var(--display-critical-mark); }
   .bar-mark { height: 2px; border-radius: 1px; }
   .attribution { margin: 0; height: var(--row); line-height: var(--row); font-size: 12px; color: var(--element-neutral-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

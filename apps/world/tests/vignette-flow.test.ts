@@ -379,6 +379,16 @@ describe('scaled drawings', () => {
     expect(layout.height * VIGNETTE_ROW_PX * floor).toBeGreaterThan((fewest - 1) * VIGNETTE_ROW_PX)
   })
 
+  test('an alerted name on a network drawing is underlined in its priority colour, never filled; only a bus mark is filled', () => {
+    const drawn = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/NetworkTopology.svelte'), 'utf8')
+    const style = drawn.slice(drawn.indexOf('<style>'))
+    for (const tone of ['caution', 'warning', 'alarm', 'critical']) {
+      expect(style).toContain(`.text.${tone} .name { text-decoration-color: var(--display-${tone}-mark); }`)
+      expect(style).toContain(`.bar-mark.${tone} { background-color: var(--display-${tone}-mark); }`)
+    }
+    expect(style).not.toMatch(/\.text\.[a-z]+ \.name[^{]*\{[^}]*background-color/)
+  })
+
   test('the drawing scrolls down within its rows where they do not hold it at its floor, and says it continues, clear of its scrollbars', () => {
     for (const file of ['FlowTopology.svelte', 'NetworkTopology.svelte']) {
       const drawn = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette', file), 'utf8')
