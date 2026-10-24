@@ -189,8 +189,8 @@ export type VignetteSection =
   | { readonly kind: 'map'; readonly rows: number }
 
 /**
- * `chips`: the object's own states, one row under the title. `beside` (window vignettes only): the first flow topology
- * section stands on the left at its own width, every other section in a column to its right; rows count as the taller.
+ * `chips`: the object's own states, one row under the title. `beside` (window vignettes only): the first topology
+ * section stands on the left, every other section in a column to its right; rows count as the taller.
  */
 export interface VignetteView {
   readonly title: string; readonly by?: 'assistant'; readonly chips?: ReadonlyArray<VignetteValue>; readonly beside?: true; readonly sections: ReadonlyArray<VignetteSection>

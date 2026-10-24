@@ -240,8 +240,6 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // Fit: each view within its caps, rows allotted; what it cannot keep is named, never silently dropped.
   const issues: ComposeIssue[] = []
   const fitted: ResolvedView[] = []
-  /** The fitted views that draw a flow topology. */
-  const flows = new Set<ResolvedView>()
   /** Each fitted alerts view's rows for the alerts it has now (its head, every alert up to eight, "+N more"). */
   const alertsNeed = new Map<ResolvedView, number>()
   /** Each fitted drawing's height as its layout reaches, in grid rows (a half row too): what the renderer scrolls by. */
@@ -366,7 +364,6 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       }
       if (scoped.reach !== undefined) countAdjustment(adjusted, { kind: 'scope', text: `reach narrowed to ${scoped.reach} links to draw at most 60 nodes` })
       const drawn: ResolvedView = { ...view, request: { ...request, ...(scoped.reach === undefined ? {} : { reach: scoped.reach }) }, rows }
-      if (graph!.family === 'flow') flows.add(drawn)
       heights.set(drawn, drawing.layout.height)
       fitted.push(drawn)
     } else {
@@ -387,8 +384,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // rest, so nothing moves when one trips), an answer's notice line (W8.2).
   const frameRows = FRAME_ROWS + (await keepsTripLine(run, fitted) ? 1 : 0) + (by === 'assistant' ? 1 : 0)
   const stacked = (): number => fitted.reduce((sum, view) => sum + view.rows, 0)
-  // In a window, a flow drawing taller than the stack leaves stands beside a column of every other view (Q20).
-  const left = fitted.find(view => view.kind === 'topology' && flows.has(view))
+  // In a window, a drawing taller than the stack leaves, a flow's or a network's, stands beside a column of every other
+  // view (Q20): its rows are then the frame's less its own, not what the column leaves under it.
+  const left = fitted.find(view => view.kind === 'topology')
   const sideBySide = (): number => Math.max(left?.rows ?? 0, fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0))
   const beside = frame === 'window' && left !== undefined && frameRows + stacked() > VIGNETTE_MAX_ROWS
   const total = (): number => frameRows + (beside ? sideBySide() : stacked())

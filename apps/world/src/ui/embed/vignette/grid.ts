@@ -3,9 +3,9 @@ import { drawingScale } from '../../../features/displays/compose/model.ts'
 // One vignette row in px: the OpenBridge grid. The composer counts rows; the display Capability sizes a frame from them.
 export const VIGNETTE_ROW_PX = 24
 
-/** Whether a view's sections stand beside its flow drawing: a window frame's view (`beside`) that draws one. */
-export const standsBeside = (view: { readonly beside?: true; readonly sections: ReadonlyArray<{ readonly kind: string; readonly family?: string }> }): boolean =>
-  view.beside === true && view.sections.some(section => section.kind === 'topology' && section.family === 'flow')
+/** Whether a view's sections stand beside its drawing: a window frame's view (`beside`) that draws one. */
+export const standsBeside = (view: { readonly beside?: true; readonly sections: ReadonlyArray<{ readonly kind: string }> }): boolean =>
+  view.beside === true && view.sections.some(section => section.kind === 'topology')
 
 /** A window frame's column beside its drawing, and the gap between them, in px. */
 export const COLUMN_PX = 360
@@ -27,19 +27,23 @@ export const drawnScale = (section: Parameters<typeof drawingScale>[0], zoom: nu
  * fit its width; else the column first, as a band over the drawing. The drawing then stands at its own size where it
  * fits, scaled to the width where its whole fits with its text at TEXT_FLOOR_PX or more on screen (`zoom`: the
  * window's; `drawn`: the scale it stands at, drawnScale, `drawingWidth` already at it), and otherwise scrolls
- * sideways: never both scaled and scrolled.
+ * sideways: never both scaled and scrolled. A drawing that scales itself to the width it is given (`toRoom`: a network
+ * drawing, network.ts widthFit) stands beside its column wherever it fits the room left there at that floor.
  */
 export type FrameLayout =
   | { readonly kind: 'beside' }
   | { readonly kind: 'band'; readonly drawing: 'whole' | 'scrolled' }
   | { readonly kind: 'band'; readonly drawing: 'scaled'; readonly scale: number }
 
-export const frameLayout = (frame: { readonly width: number; readonly drawingWidth: number; readonly drawn: number; readonly zoom: number }): FrameLayout => {
+export const frameLayout = (frame: { readonly width: number; readonly drawingWidth: number; readonly drawn: number; readonly zoom: number; readonly toRoom?: true }): FrameLayout => {
   const { width, drawingWidth, drawn, zoom } = frame
-  if (width <= 0 || width >= drawingWidth + BESIDE_GAP_PX + COLUMN_PX) return { kind: 'beside' }
+  /** Whether the drawing scaled by `scale` keeps its text at TEXT_FLOOR_PX or more on screen. */
+  const readable = (scale: number): boolean => DRAWING_TEXT_PX * zoom * drawn * scale >= TEXT_FLOOR_PX
+  const room = width - BESIDE_GAP_PX - COLUMN_PX
+  if (width <= 0 || room >= drawingWidth || (frame.toRoom === true && room > 0 && readable(room / drawingWidth))) return { kind: 'beside' }
   if (width >= drawingWidth) return { kind: 'band', drawing: 'whole' }
   const scale = width / drawingWidth
-  return DRAWING_TEXT_PX * zoom * drawn * scale >= TEXT_FLOOR_PX ? { kind: 'band', drawing: 'scaled', scale } : { kind: 'band', drawing: 'scrolled' }
+  return readable(scale) ? { kind: 'band', drawing: 'scaled', scale } : { kind: 'band', drawing: 'scrolled' }
 }
 
 /**
