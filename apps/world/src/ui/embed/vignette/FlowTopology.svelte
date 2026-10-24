@@ -3,7 +3,7 @@
   import type { SimulationRunId } from '../../../core/model/index.ts'
   import type { Observation } from '../../../core/observation/model.ts'
   import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
-  import { drawingScale, type VignetteSection } from '../../../features/displays/compose/model.ts'
+  import type { VignetteSection } from '../../../features/displays/compose/model.ts'
   import type { Palette } from '../../displays/severity.ts'
   import type { PackElementMarks } from '../../../core/packs/protocol.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
@@ -24,7 +24,7 @@
     type Box, type FaceplateState, type OpenedFrom, type OverlayChange, type PinnedOverlay,
   } from './popover.ts'
   import type { AlertTone } from './readout.ts'
-  import { VIGNETTE_ROW_PX } from './grid.ts'
+  import { drawnScale, VIGNETTE_ROW_PX } from './grid.ts'
   import { onElementMarks, onElementRequest } from './selection.ts'
   import { createVignetteSession, vignetteRoutes, type VignetteSession } from './vignette-client.ts'
   import Vessel from './Vessel.svelte'
@@ -40,9 +40,9 @@
   // lanes' hub as the registered vessel; names and readings as text where the
   // layout kept room for them. At one grid unit a row, scrolled sideways where
   // it is wider than its frame, and scaled as the composer scaled it where its
-  // rows are fewer than its height, down to its text floor, past which it
-  // scrolls down within its rows (drawingScale); where it scrolls it says it
-  // continues.
+  // rows are fewer than its height, down to its text floor on screen at the
+  // window's zoom, past which it scrolls down within its rows (grid.ts
+  // drawnScale); where it scrolls it says it continues.
   // Option A (plan v5 §3): a press on an item's body, its symbol or its text
   // (Enter or Space), opens its detail, the element's World default as the
   // next display in the window (Back, and Esc, return here); in a chat answer
@@ -77,15 +77,15 @@
   } = $props()
 
   const drawing = $derived(flowDrawing(section, observations, alerts, frozen))
-  const scale = $derived(drawingScale(section) * fit)
-  // Taller than its rows hold at its text floor (all but its key's, as a chat scales them): it scrolls down within them.
-  const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)
-  const tall = $derived(drawing.height * scale > held + 0.5)
-  let more = $state<ScrollEnds>(NO_SCROLL_ENDS)
   let presentation = $state.raw<DisplayPresentation>(UNFRAMED_PRESENTATION)
   let opening = $state<DisplayOpening | null>(null)
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
   const zoom = $derived(presentation.zoom)
+  const scale = $derived(drawnScale(section, zoom) * fit)
+  // Taller than its rows hold at its text floor (all but its key's, as a chat scales them): it scrolls down within them.
+  const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)
+  const tall = $derived(drawing.height * scale > held + 0.5)
+  let more = $state<ScrollEnds>(NO_SCROLL_ENDS)
   /** Where a faceplate may stand: the part of the frame the window shows, else the page. */
   const room = $derived(visibleRoom(presentation, viewport))
 

@@ -5,7 +5,7 @@ import type { Observation } from '../src/core/observation/model.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { safetyFunctionReading } from '../src/packs/process-plant/observation/safety-function-reading.ts'
 import type { SafetyFunctionEvaluation } from '../src/packs/process-plant/safety-functions.ts'
-import { frameLayout } from '../src/ui/embed/vignette/grid.ts'
+import { DRAWING_TEXT_PX, drawnScale, frameLayout, TEXT_FLOOR_PX } from '../src/ui/embed/vignette/grid.ts'
 import { tripFit, tripWidth } from '../src/ui/embed/vignette/trip-fit.ts'
 import { chipOrder, stateChipLook } from '../src/ui/embed/vignette/state-chip.ts'
 
@@ -122,6 +122,29 @@ describe('the window frame by its width (W4.3)', () => {
     // A drawing its rows already show at 95 % (1488 px wide at it) has that much less to give: 94 % more would take its text to 10.7 px.
     expect(frameLayout({ width: 1400, drawingWidth: 1488, drawn: 0.95, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scrolled' })
     expect(frameLayout({ width: 1460, drawingWidth: 1488, drawn: 0.95, zoom: 1 })).toEqual({ kind: 'band', drawing: 'scaled', scale: 1460 / 1488 })
+  })
+})
+
+describe('a drawing at the window\'s zoom (R3: never below the text floor)', () => {
+  // A drawing 36 grid rows tall: whole in 37 rows, at 95 % in 35, at its floor (11/12) in 34 or fewer.
+  const layout = { height: 36 }
+  test('at 100 % it stands as its rows show it, never below its floor', () => {
+    expect(drawnScale({ rows: 37, layout }, 1)).toBe(1)
+    expect(drawnScale({ rows: 35, layout }, 1)).toBe(34 / 36)
+    expect(drawnScale({ rows: 25, layout }, 1)).toBe(11 / 12)
+  })
+
+  test('where the window\'s zoom would take its text below 11 px on screen, raised to keep it there, never past its own size', () => {
+    // The window's Fit floor, 91.7 %: 12 px x 0.917 is 11 px, so a drawing its rows scaled stands at its own size, near enough.
+    for (const rows of [35, 25]) {
+      const scale = drawnScale({ rows, layout }, 0.917)
+      expect(DRAWING_TEXT_PX * 0.917 * scale).toBeCloseTo(TEXT_FLOOR_PX, 9)
+      expect(scale).toBeLessThanOrEqual(1)
+    }
+    // The operator's own 50 %: at its own size, never magnified past it.
+    expect(drawnScale({ rows: 25, layout }, 0.5)).toBe(1)
+    // Zoomed in, the rows' scale stands.
+    expect(drawnScale({ rows: 35, layout }, 1.25)).toBe(34 / 36)
   })
 })
 

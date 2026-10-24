@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SimulationRunId } from '../../../core/model/index.ts'
-  import { drawingScale, MARGIN_LINES, zoneRows, type VignetteSection, type VignetteView } from '../../../features/displays/compose/model.ts'
+  import { MARGIN_LINES, zoneRows, type VignetteSection, type VignetteView } from '../../../features/displays/compose/model.ts'
   import type { Palette } from '../../displays/severity.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame } from '../view-host.ts'
@@ -8,7 +8,7 @@
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
   import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
-  import { frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
+  import { drawnScale, frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { wholeParts, wholeWords } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
   import { vignetteOpening } from './opening.svelte.ts'
@@ -64,7 +64,7 @@
   const layout = $derived.by(() => {
     if (!standsBeside(view)) return null
     const flow = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
-    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawingScale(flow), drawn: drawingScale(flow), zoom })
+    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawnScale(flow, zoom), drawn: drawnScale(flow, zoom), zoom })
   })
   /** The band's alerts: their head, three rows, the count of the rest and the expected aggregate (§5.5 viewport: 3 alert rows). */
   const BAND_ALERT_ROWS = 6
@@ -76,7 +76,7 @@
   const inChat = $derived(opening !== undefined && opening.where !== 'window')
   /** A topology's further scale to the frame's width in a chat: 1 elsewhere, and where it fits. */
   const chatFit = (section: Extract<VignetteSection, { kind: 'topology' }>): number => {
-    const natural = (section.layout.width + 1) * VIGNETTE_ROW_PX * drawingScale(section)
+    const natural = (section.layout.width + 1) * VIGNETTE_ROW_PX * drawnScale(section, zoom)
     return !inChat || width <= 0 ? 1 : Math.min(1, width / natural)
   }
 
@@ -169,14 +169,14 @@
   {:else}
     {#each view.sections as section, index (index)}
       {@const fit = section.kind === 'topology' ? chatFit(section) : 1}
-      {#if section.kind === 'topology' && fit * drawingScale(section) < CHAT_DRAWING_FLOOR && opening?.where === 'relay'}
+      {#if section.kind === 'topology' && fit * drawnScale(section, zoom) < CHAT_DRAWING_FLOOR && opening?.where === 'relay'}
         <!-- Too small to read here: the window shows it whole. -->
         <div class="section view-drawing" style:height={`${2 * VIGNETTE_ROW_PX}px`}>
           <button type="button" onclick={() => opening.self()}>View drawing ›</button>
           <span>too wide to read in this chat</span>
         </div>
       {:else if section.kind === 'topology' && fit < 1}
-        {@const scaled = Math.max(fit, CHAT_DRAWING_FLOOR / drawingScale(section))}
+        {@const scaled = Math.max(fit, CHAT_DRAWING_FLOOR / drawnScale(section, zoom))}
         <div class="scroll">{@render one(section, index, Math.ceil(section.rows * scaled), scaled)}</div>
       {:else}{@render one(section, index)}{/if}
     {/each}

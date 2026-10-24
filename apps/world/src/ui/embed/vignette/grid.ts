@@ -1,3 +1,5 @@
+import { drawingScale } from '../../../features/displays/compose/model.ts'
+
 // One vignette row in px: the OpenBridge grid. The composer counts rows; the display Capability sizes a frame from them.
 export const VIGNETTE_ROW_PX = 24
 
@@ -13,10 +15,18 @@ export const DRAWING_TEXT_PX = 12
 export const TEXT_FLOOR_PX = 11
 
 /**
+ * The scale a drawing stands at in its frame at the window's `zoom`: the scale its rows show it at (drawingScale),
+ * raised where the window's zoom would take its 12 px text below TEXT_FLOOR_PX on screen, never past its own size.
+ * Taller than its rows there, it scrolls down within them.
+ */
+export const drawnScale = (section: Parameters<typeof drawingScale>[0], zoom: number): number =>
+  Math.max(drawingScale(section), Math.min(1, TEXT_FLOOR_PX / (DRAWING_TEXT_PX * zoom)))
+
+/**
  * How a window frame lays out a drawing and its column (plan v5 W4.3; UX audit U-02, F31): side by side where both
  * fit its width; else the column first, as a band over the drawing. The drawing then stands at its own size where it
  * fits, scaled to the width where its whole fits with its text at TEXT_FLOOR_PX or more on screen (`zoom`: the
- * window's; `drawn`: the scale its rows show it at, drawingScale, `drawingWidth` already at it), and otherwise scrolls
+ * window's; `drawn`: the scale it stands at, drawnScale, `drawingWidth` already at it), and otherwise scrolls
  * sideways: never both scaled and scrolled.
  */
 export type FrameLayout =

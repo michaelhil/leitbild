@@ -5,11 +5,11 @@
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame, UNFRAMED_PRESENTATION, visibleRoom, type DisplayPresentation } from '../view-host.ts'
   import Chooser from './Chooser.svelte'
-  import { VIGNETTE_ROW_PX } from './grid.ts'
+  import { drawnScale, VIGNETTE_ROW_PX } from './grid.ts'
   import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
   import Continues from './Continues.svelte'
   import { paintLines } from './lines.ts'
-  import { drawingScale, type VignetteSection } from '../../../features/displays/compose/model.ts'
+  import type { VignetteSection } from '../../../features/displays/compose/model.ts'
   import { networkDrawing, widthFit } from './network.ts'
   import { NETWORK_SEPARATOR } from '../../../features/displays/topology/network-room.ts'
   import { FLOW_TEXT } from '../../../features/displays/topology/text.ts'
@@ -23,10 +23,11 @@
   // obc-transformer and obc-source over it; names and readings as text, each
   // whole in the room the composer measured for it (network.ts). At one grid
   // unit a row, scaled as the composer scaled it where its rows are fewer than
-  // its height, down to its text floor, past which it scrolls down within its
-  // rows (drawingScale); further to a chat's width (`fit`, W7.3); and to its
-  // frame's width down to the text floor, past which it scrolls sideways
-  // (W4.3). Where it scrolls it says it continues. Its attribution closes it.
+  // its height, down to its text floor on screen at the window's zoom, past
+  // which it scrolls down within its rows (grid.ts drawnScale); further to a
+  // chat's width (`fit`, W7.3); and to its frame's width down to the text
+  // floor, past which it scrolls sideways (W4.3). Where it scrolls it says it
+  // continues. Its attribution closes it.
   // Each named item (a bus, a line, a transformer, a connection point) whose
   // element is bound to what it measures is a button over its box (W9.1): a
   // press, Enter or Space opens the element's default after this display
@@ -43,7 +44,7 @@
   // as a window frame scales a flow drawing (grid.ts frameLayout); past that it scrolls sideways, an edge fading and
   // "drawing continues" showing where there is more.
   let available = $state(0)
-  const scaledTo = $derived(drawingScale(section) * fit)
+  const scaledTo = $derived(drawnScale(section, zoom) * fit)
   const scale = $derived(scaledTo * widthFit(drawing.width, scaledTo, available, zoom))
   // Taller than its rows hold at its text floor (all but its attribution's, as a chat scales them): it scrolls down within them.
   const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)
