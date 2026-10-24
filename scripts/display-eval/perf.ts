@@ -26,6 +26,8 @@ import { gzipSync } from 'node:zlib'
 import { cpus, loadavg } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
+import { targetsOf } from './display-press.ts'
+import type { PressTarget } from './display-dom.ts'
 import { createStackApi } from './stack-api.ts'
 
 const MATURE_SHARE = 0.97
@@ -176,6 +178,8 @@ const mainThread = (events: ReadonlyArray<any>, origin: string) => {
 
 // ---------- the measurement ----------
 
+/** R3's drawing names an item's magnifier by its short name. */
+const SHORT_NAMES: Readonly<Record<string, string>> = { 'Steam Generator A': 'SG A', Pressurizer: 'PZR', 'Reactor Core': 'Core', 'Reactor Coolant Pump A': 'RCP A' }
 const VIGNETTE_ITEMS = ['Steam Generator A', 'Pressurizer', 'Reactor Core', 'Reactor Coolant Pump A']
 const OLD_ITEMS = ['Quick look: SG A', 'Control · Quick look: PZR', 'Control · Quick look: Core', 'Control · Quick look: RCP A']
 
@@ -301,14 +305,26 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
       // An item scrolled out of the frame (the narrow window) is scrolled into view first, as a person would.
       await page.eval(`(() => { const shown = ${SHOWN_EMBED}; const el = shown && shown.doc.querySelector(${JSON.stringify(target.sel)}); if (el) el.scrollIntoView({ block: 'center', inline: 'center' }); return el !== null })()`)
       await sleep(300)
-      const hit = await page.find(target)
+      // R3 opens an item's faceplate from its magnifier (a press on its body opens its detail); before R3, the body.
+      // Its magnifier: the one on the same drawn item as the body that names it, or the one under the item's short
+      // name on the drawing (a symbol's body carries no item of its own); scrolled into view first.
+      const magnifierOf = (targets: ReadonlyArray<PressTarget>, bodyItem: string | null | undefined) => targets.find(entry => entry.kind === 'magnifier' && ((bodyItem != null && entry.item === bodyItem) || entry.name === SHORT_NAMES[item]))
+      const body = generation === 'vignette' ? (await targetsOf(page)).find(entry => entry.kind === 'item' && entry.name.startsWith(item)) : undefined
+      const first = generation === 'vignette' ? magnifierOf(await targetsOf(page), body?.item) : undefined
+      if (first !== undefined) {
+        await page.eval(`(() => { const shown = ${SHOWN_EMBED}; const el = shown && [...shown.doc.querySelectorAll('[data-magnifier]')].find(m => m.getAttribute('data-magnifier') === ${JSON.stringify(first.item ?? '')} || ((m.getAttribute('aria-label') || m.getAttribute('title') || '').replace(/^(Open|Faceplate:|Quick look:?)\\s+/i, '').startsWith(${JSON.stringify(SHORT_NAMES[item] ?? item)}))); if (el) el.scrollIntoView({ block: 'center', inline: 'center' }); return !!el })()`)
+        await sleep(300)
+      }
+      const magnifier = first === undefined ? undefined : magnifierOf(await targetsOf(page), body?.item)
+      // A press target carries its press point (the middle of what shows of it); page.click presses a hit's middle.
+      const hit = magnifier !== undefined ? { x: magnifier.x - magnifier.w / 2, y: magnifier.y - magnifier.h / 2, w: magnifier.w, h: magnifier.h, label: magnifier.name } : await page.find(target)
       if (hit === null) { popoverMs.push({ item, shownMs: -1, paintedMs: null }); continue }
       const at = Date.now()
-      await page.click(hit)
+      await page.click(hit as Parameters<typeof page.click>[0])
       // Its card first, then its content: the element's default drawn, or the words it shows instead.
-      const card = `(() => { const shown = ${SHOWN_EMBED}; return shown && shown.doc.querySelector('.popover[role=dialog], .popover[aria-label]') })()`
+      const card = `(() => { const shown = ${SHOWN_EMBED}; return shown && shown.doc.querySelector('.faceplate[role=dialog], .popover[role=dialog], .popover[aria-label]') })()`
       const shownMs = await page.until(`${card} !== null`, 30_000, 20).catch(() => -1)
-      const contentMs = shownMs < 0 ? -1 : await page.until(`(() => { const pop = ${card}; return pop !== null && pop.querySelector('.section, section, table, .status:not(:empty)') !== null && !/Reading the element/.test(pop.innerText) })()`, 30_000, 20).then(ms => ms + shownMs, () => -1)
+      const contentMs = shownMs < 0 ? -1 : await page.until(`(() => { const pop = ${card}; return pop !== null && pop.querySelector('.section, section, table, .status:not(:empty), .readings, obc-readout-list') !== null && !/Reading the element|Reading [^\\n]{1,40}…/.test(pop.innerText) })()`, 30_000, 20).then(ms => ms + shownMs, () => -1)
       const words = shownMs < 0 ? null : await page.eval<string | null>(`(() => { const pop = ${card}; const status = pop && pop.querySelector('.status'); return status ? status.textContent.trim().slice(0, 160) : null })()`)
       // Its first own sample painted: the pop-over's view, not the window's.
       const paintedMs = generation === 'vignette' && contentMs >= 0 ? await paintedAfter(page, at, undefined, 10_000, true).then(Math.round, () => null) : null
