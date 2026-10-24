@@ -96,9 +96,13 @@ if (import.meta.main) {
     const rowAbove = (poll: Poll) => {
       const rows = listOf(poll.screen)
       const own = rows.findIndex(row => needleAlert !== null && row.text.includes(needleAlert.message.slice(0, 30)))
-      // Above the aggregate row; in the band (no aggregate row, the head counts the expected) its row shows at all.
+      // Above the aggregate row; in the band (no aggregate row, the head counts the expected; lead ruling 23 Oct) above
+      // its "+N more".
       const gathered = expectedGathering(poll.screen)
-      return own >= 0 && gathered !== null && (gathered.how === 'count' || own < gathered.index)
+      if (own < 0 || gathered === null) return false
+      if (gathered.how === 'aggregate') return own < gathered.index
+      const more = rows.findIndex(row => /^\+\s*\d+\s+more\b/i.test(row.text))
+      return more < 0 || own < more
     }
     // One press on the needle's alert row, as a person does: what it opens, and the needle's frame there at the first read.
     let detail: { readonly pressed: string; readonly outcome: string; readonly title: string | null; readonly tone: string | null; readonly readMs: number | null; readonly framedSimMs: number | null; readonly home: boolean } | null = null
@@ -214,7 +218,7 @@ if (import.meta.main) {
           : drawn ? (frameLag === null ? 'drawn on the overview, never framed' : `framed on the overview ${frameLag} s after its alert (${framedNeedle(after(needleAlert.raisedMs).find(poll => framedNeedle(poll))!)?.tone})`)
           : `${name} is not drawn on the overview (its tile there is R3, W2.2); one press on its row → ${detail === null ? 'never pressed' : `${detail.outcome}${detail.title === null ? ' (not its detail)' : ''}; ${detail.tone === null ? `${name} not framed there` : `framed ${detail.tone} at the first read${detail.framedSimMs === null ? '' : `, ${(detail.framedSimMs - needleAlert.raisedMs) / 1000} s of Run time after its alert`}`}; back home: ${detail.home}`}`,
       },
-      { id: 'needle-row', release: 'R2', pass: needleAlert === null ? false : rowLag !== null && rowLag <= ONE_SAMPLE_S, detail: needleAlert === null ? 'no alert, so no row' : rowLag === null ? `its row never stood above an expected aggregate (expected gathered by ${gatheredBy})` : `above the expected (gathered by ${gatheredBy}) ${rowLag} s after its alert` },
+      { id: 'needle-row', release: 'R2', pass: needleAlert === null ? false : rowLag !== null && rowLag <= ONE_SAMPLE_S, detail: needleAlert === null ? 'no alert, so no row' : rowLag === null ? `its row never stood ${gatheredBy === 'count' ? 'among the band\'s rows above its "+N more"' : 'above an expected aggregate'} (expected gathered by ${gatheredBy})` : `${gatheredBy === 'count' ? 'in the band above its "+N more"' : 'above the expected aggregate'} ${rowLag} s after its alert` },
       {
         id: 'needle-tile', release: 'R3', pass: needleAlert === null ? false : tileLag !== null && tileLag <= ONE_SAMPLE_S,
         detail: needleAlert === null ? 'no alert, so no tile' : polls.every(poll => poll.tiles.length === 0) ? 'no alert tiles in the display (W2.2)'
