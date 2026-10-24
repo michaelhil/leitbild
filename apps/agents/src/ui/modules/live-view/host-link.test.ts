@@ -3,6 +3,7 @@ import { embeddedViewOpenMessageSchema, embeddedViewSubjectOpenMessageSchema, em
 import {
   createViewListPublisher,
   createViewListSync,
+  focusedListing,
   inlineHeightRequest,
   inlineHostAnnouncement,
   inlineOpenRequest,
@@ -66,6 +67,14 @@ describe('messages Agents builds for the Host', () => {
     expect(inlineHeightRequest({ ...said, origin: 'https://evil.example' }, page)).toBeNull()
     expect(inlineHeightRequest({ ...said, data: { type: 'leitbild:view-height', height: 412.5 } }, page)).toBeNull()
     expect(inlineHeightRequest({ ...said, data: { type: 'leitbild:view-height', height: 20_000 } }, page)).toBeNull()
+  })
+
+  test('a dashboard a cited line names opens at that line\'s section: its own key and the section as focus, as the contract words it (R4 §2.6)', () => {
+    const board = { ...listing('room-1/tr_1/call_1_0/dashboard'), envelope: { ...listing('x').envelope, viewType: 'display.dashboard', title: 'Whole Run · dashboard', state: '{"scope":"run"}' } } as EmbeddedViewListing
+    const opened = focusedListing(board, 'Halden Unit 1')
+    expect(opened).toMatchObject({ key: 'room-1/tr_1/call_1_0/dashboard#Halden%20Unit%201', focus: 'Halden Unit 1', envelope: board.envelope })
+    expect(embeddedViewOpenMessageSchema.parse(viewOpenMessage(opened)).view.focus).toBe('Halden Unit 1')
+    expect(focusedListing(board, undefined)).toBe(board)
   })
 
   test('an open request carries the whole listing and passes the contract', () => {

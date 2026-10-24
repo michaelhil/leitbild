@@ -32,6 +32,8 @@ export const createTurnCardsReader = (fetchJson: FetchJson): ((roomId: string, t
 export const FROZEN_LINES = 3
 /** What an answer's vignette is, as its live footer says it (World's provenanceMark for an Assistant's view): never an operating display. */
 export const PROVENANCE_MARK = 'AI-composed, not an operating display'
+/** What a card of a view only the window shows is (a dashboard's board, of World's default and anyone's pins): never an operating display. */
+export const WINDOW_ONLY_MARK = 'not an operating display'
 
 /** One line of a frozen card: label | value, with the keys it stands for (several where items differ only by their object). */
 export interface CardLine {
@@ -73,7 +75,7 @@ export const objectsText = (names: ReadonlyArray<string>): string => {
  * card is about several); items alike but for their object as one line naming them all; the lines the answer cites
  * first, in the order it cites them; at most three before "N more lines". Every line is there, so every key resolves.
  */
-export const frozenCard = (card: DisplayCard, cited: ReadonlyArray<string> = []): FrozenCard => {
+export const frozenCard = (card: DisplayCard, cited: ReadonlyArray<string> = [], provenance: string = PROVENANCE_MARK): FrozenCard => {
   const objects = new Set(card.items.map(item => item.object))
   const oneObject = objects.size === 1 && !objects.has(undefined)
   const rest = (item: DisplayCardItem): string => item.object === undefined ? item.label : item.label === item.object ? '' : item.label.slice(item.object.length + 3)
@@ -91,7 +93,7 @@ export const frozenCard = (card: DisplayCard, cited: ReadonlyArray<string> = [])
   const firstCited = (line: CardLine): number => Math.min(...line.keys.map(key => cited.indexOf(key)).filter(at => at >= 0))
   const ordered = [...lines.filter(line => line.cited).sort((left, right) => firstCited(left) - firstCited(right)), ...lines.filter(line => !line.cited)]
   return {
-    meta: `Frozen at ${card.at.clock === 'simulation' ? 'sim ' : ''}${card.at.at.slice(11, 19)} · ${PROVENANCE_MARK}`,
+    meta: `Frozen at ${card.at.clock === 'simulation' ? 'sim ' : ''}${card.at.at.slice(11, 19)} · ${provenance}`,
     lines: ordered,
     shown: Math.min(FROZEN_LINES, ordered.length),
     elsewhere: card.more,

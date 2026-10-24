@@ -159,19 +159,19 @@ const lineRow = (line: CardLine): HTMLElement => {
  * A vignette's frozen card: its title with the inline toggle, one meta line, its lines (the cited first, three before
  * "N more lines"), what only the live display shows, and its actions; the lines fold while the display is inline.
  */
-const frozenElement = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, frozen: FrozenCard, open: HTMLElement): HTMLElement => {
+const frozenElement = (host: HTMLElement, listing: EmbeddedViewListing, actions: ChipActions, frozen: FrozenCard, open: HTMLElement, inline: boolean): HTMLElement => {
   const title = listing.envelope.title
   const card = element('div', CARD)
   card.dataset.liveCard = ''
   card.setAttribute('role', 'group')
-  card.setAttribute('aria-label', `AI-composed display: ${title}`)
+  card.setAttribute('aria-label', `${inline ? 'AI-composed display' : 'Display'}: ${title}`)
   // Kept across a re-render of the chip (the Host announcing itself): a card the reader opened stays open.
   const view = { expanded: cardViews.get(host)?.expanded ?? false, paint: (): void => {} }
   cardViews.set(host, view)
   const heading = element('span', 'flex-1 min-w-0 truncate text-[13px] font-semibold text-text-strong', title)
   heading.title = title
   const head = element('div', 'flex items-center gap-2 min-w-0')
-  head.append(leadingIcon('monitor-cog', 'text-accent'), heading, inlineToggle(host, listing, actions, () => paint()))
+  head.append(leadingIcon('monitor-cog', 'text-accent'), heading, ...(inline ? [inlineToggle(host, listing, actions, () => paint())] : []))
   const list = element('div', 'flex flex-col gap-0.5')
   cardSequence += 1
   list.id = `live-view-card-${cardSequence}`
@@ -193,7 +193,7 @@ const frozenElement = (host: HTMLElement, listing: EmbeddedViewListing, actions:
   footer.append(open)
   const paint = (): void => {
     // Shown inline, the live display holds every line: the card keeps its title, meta and actions, unless a key opened it.
-    const folded = actions.inlineShown(listing.key) && !view.expanded
+    const folded = inline && actions.inlineShown(listing.key) && !view.expanded
     list.hidden = folded
     rows.forEach((row, index) => { row.hidden = index >= frozen.shown && !view.expanded })
     more.hidden = folded || hidden === 0
@@ -221,9 +221,9 @@ const revealLine = (container: HTMLElement, key: string): boolean => {
   return true
 }
 
-const offerRow = (host: HTMLElement, listing: EmbeddedViewListing, main: HTMLElement, actions: ChipActions): HTMLElement => {
+const offerRow = (host: HTMLElement, listing: EmbeddedViewListing, main: HTMLElement, actions: ChipActions, inline: boolean): HTMLElement => {
   const row = element('div', ROW)
-  row.append(main, inlineToggle(host, listing, actions, () => {}))
+  row.append(main, ...(inline ? [inlineToggle(host, listing, actions, () => {})] : []))
   return row
 }
 
@@ -234,10 +234,12 @@ const offer = (host: HTMLElement, state: 'available' | 'unhosted', listing: Embe
   chipContexts.set(host, context)
   if (card !== undefined) chipCards.set(host, card)
   const frozen = card !== undefined && !('refused' in card) ? card : undefined
-  const shown = frozen === undefined ? offerRow(host, listing, open.chip(), actions) : frozenElement(host, listing, actions, frozen, open.frozen)
+  // A window-only view (a dashboard's board, which a cited line opens) is never shown inline (R4 §2.6).
+  const inline = listing.envelope.windowOnly !== true
+  const shown = frozen === undefined ? offerRow(host, listing, open.chip(), actions, inline) : frozenElement(host, listing, actions, frozen, open.frozen, inline)
   show(host, state, shown)
   // An answer rendered again shows inline what the reader showed inline before.
-  if (actions.inlineShown(listing.key) && inlineSlots.get(host)?.parentElement !== host) applyInline(host, listing, true)
+  if (inline && actions.inlineShown(listing.key) && inlineSlots.get(host)?.parentElement !== host) applyInline(host, listing, true)
 }
 
 /** The element that replaces the fence's `<pre>`; it keeps its place while the chip changes state. */
@@ -329,14 +331,20 @@ export const fenceNotice = (text: string): HTMLElement => element('div', 'my-2 p
 
 const KEY_TOKEN = /⟦(k\d+)⟧/g
 
+/** Opens the view of a card the answer shows no display for (a dashboard's) in the window, at a line's part (`at`). */
+export type CardViewOpener = (at: string | undefined) => void
+
 /**
  * A chip for one cited key: its line's words, and a press that opens the frozen card at its line. A key on a card this
- * answer shows is a button; a key on no card, or on a card whose display the answer does not show, says so.
+ * answer shows is a button; so is one on a card whose view the answer shows no display for but can open (`boards`: a
+ * dashboard's card, whose press also opens the board in the window at the line's section). A key on no card, or on a
+ * card with no view, says so.
  */
-const keyChip = (container: HTMLElement, key: string, read: TurnCardsRead, presented: ReadonlySet<string>): HTMLElement => {
+const keyChip = (container: HTMLElement, key: string, read: TurnCardsRead, presented: ReadonlySet<string>, boards: ReadonlyMap<string, CardViewOpener>): HTMLElement => {
   const found = read.kind === 'cards' ? read.cards.find(({ card }) => card.items.some(item => item.key === key)) : undefined
   const item = read.kind === 'cards' ? itemOf(read.cards, key) : undefined
-  const shown = found !== undefined && presented.has(found.viewRef)
+  const board = found === undefined ? undefined : boards.get(found.viewRef)
+  const shown = found !== undefined && (presented.has(found.viewRef) || board !== undefined)
   const chip = element(shown ? 'button' : 'span',
     `inline-flex items-center px-1 mx-0.5 rounded border text-[11px] font-mono leading-tight ${item === undefined ? 'border-dashed border-border-strong text-text-subtle' : shown ? 'border-border text-text-muted interactive cursor-pointer hover:border-accent hover:text-accent' : 'border-border text-text-subtle'}`)
   chip.dataset.cites = key
@@ -348,6 +356,7 @@ const keyChip = (container: HTMLElement, key: string, read: TurnCardsRead, prese
     chip.onclick = event => {
       event.stopPropagation()
       revealLine(container, key)
+      board?.(item?.at)
     }
   }
   return chip
@@ -355,9 +364,10 @@ const keyChip = (container: HTMLElement, key: string, read: TurnCardsRead, prese
 
 /**
  * Replaces each ⟦k⟧ in an answer's prose (never in code or a display chip) with its key chip; `presented` holds the
- * viewRefs of the displays the answer shows, whose cards hold their lines.
+ * viewRefs of the displays the answer shows, whose cards hold their lines; `boards` the cards it cites with a view it
+ * shows no display for, each with what opens that view.
  */
-export const citeKeys = (container: HTMLElement, read: TurnCardsRead, presented: ReadonlySet<string>): void => {
+export const citeKeys = (container: HTMLElement, read: TurnCardsRead, presented: ReadonlySet<string>, boards: ReadonlyMap<string, CardViewOpener> = new Map()): void => {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
   const texts: Text[] = []
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
@@ -367,7 +377,7 @@ export const citeKeys = (container: HTMLElement, read: TurnCardsRead, presented:
     const parts: Array<string | HTMLElement> = []
     let last = 0
     for (const match of text.data.matchAll(KEY_TOKEN)) {
-      parts.push(text.data.slice(last, match.index), keyChip(container, match[1]!, read, presented))
+      parts.push(text.data.slice(last, match.index), keyChip(container, match[1]!, read, presented, boards))
       last = match.index! + match[0].length
     }
     text.replaceWith(...parts, text.data.slice(last))

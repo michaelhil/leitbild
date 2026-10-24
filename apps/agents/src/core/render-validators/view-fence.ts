@@ -61,12 +61,15 @@ const DOTTED_TYPE = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
 const MODULE_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 const WORKSPACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const ENVELOPE_KEYS = ['height', 'moduleId', 'state', 'subject', 'title', 'viewType']
+/** A view only the window shows (a dashboard's board a cited line opens) says so; the key is optional, its value true. */
+const WINDOW_ONLY = 'windowOnly'
 const SUBJECT_KEYS = ['id', 'moduleId', 'type', 'workspaceId']
 
 const structuralProblem = (value: unknown): string | null => {
   if (typeof value !== 'object' || value === null) return 'not an object'
   const envelope = value as Record<string, unknown>
-  if (Object.keys(envelope).sort().join() !== ENVELOPE_KEYS.join()) return 'unexpected or missing fields'
+  if (Object.keys(envelope).filter(key => key !== WINDOW_ONLY).sort().join() !== ENVELOPE_KEYS.join()) return 'unexpected or missing fields'
+  if (Object.hasOwn(envelope, WINDOW_ONLY) && envelope[WINDOW_ONLY] !== true) return 'invalid windowOnly'
   const subject = envelope.subject as Record<string, unknown> | null
   if (typeof subject !== 'object' || subject === null || Object.keys(subject).sort().join() !== SUBJECT_KEYS.join()) return 'invalid subject'
   if (typeof envelope.moduleId !== 'string' || !MODULE_ID.test(envelope.moduleId) || envelope.moduleId.length > 64) return 'invalid moduleId'

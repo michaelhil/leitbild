@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { citedKeys, createTurnCardsReader, frozenCard, frozenCardText, itemOf, objectsText } from './cards.ts'
+import { citedKeys, createTurnCardsReader, frozenCard, frozenCardText, itemOf, objectsText, WINDOW_ONLY_MARK } from './cards.ts'
 
 const at = { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' as const }
 const card = (count: number, more = 0) => ({
@@ -32,6 +32,8 @@ describe('answer cards in the chat', () => {
     const shown = frozenCard(card(8, 3))
     expect(shown.meta).toBe('Frozen at sim 10:16:00 · AI-composed, not an operating display')
     expect(frozenCard({ ...card(1), at: { at: at.at, clock: 'wall' } }).meta).toBe('Frozen at 10:16:00 · AI-composed, not an operating display')
+    // A dashboard's card (a view only the window shows) is World's default and anyone's pins: not called AI-composed.
+    expect(frozenCard(card(1), [], WINDOW_ONLY_MARK).meta).toBe('Frozen at sim 10:16:00 · not an operating display')
     // No object named: each label whole, the reading whole beside it.
     expect(shown.lines.map(line => [line.label, line.value])).toEqual(Array.from({ length: 8 }, (_, index) => [`Line ${index + 1} · loading`, `${90 + index}.0 %`]))
     expect(shown.shown).toBe(3)

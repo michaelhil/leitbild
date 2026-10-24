@@ -10,6 +10,7 @@ import {
 import { createContextPublisherLookup, createViewPublisherLookup, createWorkspaceCapabilityTools, workspaceCallResultForModel } from './workspace-capability-tools.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 import { createTurnCards } from '../../agents/answer-cards.ts'
+import { collectViewRefs } from '../../agents/evaluation.ts'
 
 const workspaceId = newWorkspaceId()
 const moduleId = moduleIdSchema.parse('world')
@@ -492,6 +493,27 @@ describe('Workspace progressive-discovery tools', () => {
     }] } })
     const standalone = await call!.execute({ calls: [{ key: 'p', operationId: readId, input: {} }] }, context)
     expect(standalone).toMatchObject({ success: true, data: { results: [{ viewError: expect.stringContaining('no execution evidence') }] } })
+  })
+
+  test('a window-only view (a dashboard\'s board) is kept as evidence a cited line opens, with no viewRef, and the model reads no view (R4 §2.6)', async () => {
+    const board = { viewType: 'display.dashboard', title: 'Whole Run · dashboard', height: 960, state: '{"scope":"run"}', windowOnly: true }
+    const card = { at: { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' }, more: 0, adjusted: [], items: [{ key: 'k1', label: 'Unit One · speed', reading: '93.2 %', numbers: [{ value: 93.2, decimals: 1 }], at: 'Unit One' }] }
+    const boardFetch = (async (input: Request | string | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      if (new URL(request.url).pathname.endsWith('/invoke')) return Response.json({ result: { scope: 'run', view: board, card } })
+      return catalogFetch([])(input, init)
+    }) as typeof fetch
+    const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl: boardFetch })
+    const raw = await call!.execute({ calls: [{ key: 'board', operationId: readId, input: {} }] }, { ...context, executionCallId: 'call_1_0' })
+    const [entry] = (raw.data as { results: ReadonlyArray<Record<string, unknown>> }).results
+    expect(entry).toMatchObject({ key: 'board', embeddedView: { ...board, moduleId: 'world', subject: run } })
+    expect(entry).not.toHaveProperty('viewRef')
+    expect(entry).not.toHaveProperty('viewError')
+    const viewRefs = new Set<string>()
+    collectViewRefs(viewRefs, 'workspace_call', raw)
+    expect(viewRefs.size).toBe(0)
+    const [shown] = (workspaceCallResultForModel(raw, createTurnCards()).data as { results: ReadonlyArray<Record<string, unknown>> }).results
+    expect(shown).toEqual({ key: 'board', operationId: readId, target: runTarget, success: true, data: { scope: 'run', card: ['card at 2026-01-01T10:16:00.000Z (simulation)', 'k1 · Unit One · speed · 93.2 %'] } })
   })
 
   test('the model reads a view by reference: its opaque state and envelope stay in the execution evidence', async () => {
