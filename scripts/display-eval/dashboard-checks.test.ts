@@ -10,6 +10,10 @@ describe('E3: dashboard change claims', () => {
     expect(changeClaims('Shall I add it to the dashboard?')).toHaveLength(0)
     expect(changeClaims('The dashboard shows World\'s default: one section per unit.')).toHaveLength(0)
     expect(changeClaims('Nothing was pinned to the dashboard earlier; it shows the default.')).toHaveLength(0)
+    // E3's final pass: two negations with a typographic apostrophe the first detector took for claims.
+    expect(changeClaims('Steam-generator levels appear on the Run dashboard, but they aren’t pinned.')).toHaveLength(0)
+    expect(changeClaims('I haven’t changed the dashboard.')).toHaveLength(0)
+    expect(changeClaims("I haven't changed the dashboard.")).toHaveLength(0)
   })
   const before = heldOf({ revision: 0, stored: false, sections: [{ title: 'Halden Unit 1' }] })
   const pinned = heldOf({ revision: 1, stored: true, sections: [{ id: 'pin-1', title: 'SG levels, four units' }] })

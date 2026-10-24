@@ -33,7 +33,8 @@ export const DASHBOARD_UPDATE = 'world.simulation-run.dashboard.update'
 /** One clause of an answer that says the dashboard was changed: a pin added or removed, not offered or refused. */
 const CHANGE_VERB = /\b(pinned|added|put|placed|unpinned|removed|taken (?:it )?off|took (?:it )?off|dropped|replaced|updated|changed)\b/i
 const DASHBOARD_WORD = /\bdashboard|\bboard\b|\bpins?\b/i
-const NOT_DONE = /\b(not|nothing|none|nobody|no one|n't|never|cannot|can't|couldn't|unable|refus\w*|fail\w*|would|could|should|shall|may|might|want me|do you want|if you|once you|whether|instead of|before (?:I|we)|no (?:pin|change))\b/i
+// "n't" in any word ("haven't", "aren’t"): no word boundary stands before its "n".
+const NOT_DONE = /n['’]t\b|\b(not|nothing|none|nobody|no one|never|cannot|unable|refus\w*|fail\w*|would|could|should|shall|may|might|want me|do you want|if you|once you|whether|instead of|before (?:I|we)|no (?:pin|change))\b/i
 
 /** The answer's clauses that claim a dashboard change was made. */
 export const changeClaims = (answer: string): ReadonlyArray<string> => answer
