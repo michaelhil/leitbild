@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { SimulationRunId } from '../src/core/model/ids.ts'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
 import type { SeriesPoint, VignetteSample, VignetteValue, VignetteView } from '../src/features/displays/compose/model.ts'
-import { partsThatFit, wholeWordsThatFit } from '../src/ui/embed/vignette/fit-words.ts'
+import { nameFloor, nameThatFits, partsThatFit, wholeWordsThatFit } from '../src/ui/embed/vignette/fit-words.ts'
 import { qualifiedLabel } from '../src/features/displays/compose/declared.ts'
 import { keptAfter, shownSeries, unkept } from '../src/ui/embed/vignette/kept-series.ts'
 import { marginOf, slopePerMinute, tendencyOf } from '../src/ui/embed/vignette/margin.ts'
@@ -406,5 +406,20 @@ describe('a qualified label is never cut mid-word', () => {
     expect(qualifiedLabel('Halden Unit 1', 'Pressurizer pressure')).toBe('Halden Unit 1 · Pressurizer pressure')
     // 81 characters qualified: it read "… · Frequenc" in the grid's margin line.
     expect(qualifiedLabel('Norway grid · Halden connection', 'Island at Hasle trafostasjon 420 kV · Frequency')).toBe('Island at Hasle trafostasjon 420 kV · Frequency')
+  })
+})
+
+describe('a margin line\'s name never gives way to nothing', () => {
+  test('a short label stands whole; a long label keeps its first word; the margin\'s parts give way after it', () => {
+    expect(nameFloor('NR level', true)).toBe('NR level')
+    expect(nameFloor('Island at Hasle trafostasjon 420 kV · Frequency', false)).toBe('Island…')
+    expect(nameFloor('Frequency', false)).toBe('Frequency')
+    // However short its room, the short label stands (it read "3.0 below LO 30.0 % · …" with no name on SG A's detail).
+    for (const room of [0, 3, 8, 20]) expect(nameThatFits('NR level', 'NR level', candidate => candidate.length <= room)).toBe('NR level')
+    expect(nameThatFits('Island at Hasle trafostasjon 420 kV · Frequency', 'Island…', candidate => candidate.length <= 18)).toBe('Island at Hasle…')
+    expect(nameThatFits('Island at Hasle trafostasjon 420 kV · Frequency', 'Island…', candidate => candidate.length <= 2)).toBe('Island…')
+    // The margin line wires its name to that floor, the label's short label where it is one.
+    const sections = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Sections.svelte'), 'utf8')
+    expect(sections).toContain('use:nameAtLeast={{ text: line.label, floor: nameFloor(line.label, line.named) }}')
   })
 })
