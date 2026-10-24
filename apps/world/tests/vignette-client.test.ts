@@ -24,8 +24,12 @@ const harness = (presence: (at: string) => RunPresence | null) => {
   let latencyMs = 0
   /** The quality the level reads with. */
   let quality: VignetteSample['observations'][number]['quality'] = 'good'
-  const later = <T>(value: () => T): Promise<T> => latencyMs === 0 ? Promise.resolve(value())
-    : new Promise(resolve => { timers.push({ at: wall + latencyMs, run: () => resolve(value()), cancelled: false }) })
+  /** How long the Run takes to answer a sample asked at this wall time: `latencyMs`, unless a test says otherwise. */
+  let answering = (_wall: number): number => latencyMs
+  const later = <T>(value: () => T): Promise<T> => {
+    const ms = answering(wall)
+    return ms === 0 ? Promise.resolve(value()) : new Promise(resolve => { timers.push({ at: wall + ms, run: () => resolve(value()), cancelled: false }) })
+  }
   const snapshots: VignetteSnapshot[] = []
   const sample = (history?: { readonly fromMs: number }): WireSample => ({
     at: { at: new Date(runMs).toISOString(), clock: 'simulation', paused: false },
@@ -67,7 +71,7 @@ const harness = (presence: (at: string) => RunPresence | null) => {
   }
   return {
     session, calls, snapshots, settle, advance, pending: () => timers.filter(timer => !timer.cancelled).length, last: () => snapshots.at(-1)!,
-    wall: () => wall, answerIn: (ms: number) => { latencyMs = ms }, readsAs: (next: typeof quality) => { quality = next },
+    wall: () => wall, answerIn: (ms: number) => { latencyMs = ms }, answerBy: (answer: (wall: number) => number) => { answering = answer }, readsAs: (next: typeof quality) => { quality = next },
   }
 }
 
@@ -238,6 +242,41 @@ describe('vignette session', () => {
     for (let turn = 0; turn < 20; turn += 1) await Promise.resolve()
     expect([...snapshots.at(-1)!.series.keys()]).toEqual(['unit-1#level'])
     session.close()
+  })
+
+  test('a Run that steps once a second holds the display for one step, not one a second: it asks a second after each answer', async () => {
+    const run = harness(loaded)
+    // The Run's step: every 1,002 ms (its timer runs a little late each time) it holds World for 100 ms; a request that
+    // comes during a step is answered 10 ms after it ends, any other in 10 ms. Its steps start where a test puts them.
+    const STEP_MS = 1_002, HOLD_MS = 100, ANSWER_MS = 10
+    let stepsFrom = 500
+    const waits: number[] = []
+    run.answerBy(wall => {
+      const into = (((wall - stepsFrom) % STEP_MS) + STEP_MS) % STEP_MS
+      const wait = into < HOLD_MS ? HOLD_MS - into : 0
+      waits.push(wait)
+      return wait + ANSWER_MS
+    })
+    run.session.start()
+    await run.settle()
+    await run.advance(5_000)
+    expect(waits.length).toBeGreaterThan(4)
+    expect(waits.every(wait => wait === 0)).toBe(true)
+    // The next request comes 30 ms into a step.
+    const asked = waits.length
+    run.answerBy(wall => {
+      if (waits.length === asked) stepsFrom = wall - 30
+      const into = (((wall - stepsFrom) % STEP_MS) + STEP_MS) % STEP_MS
+      const wait = into < HOLD_MS ? HOLD_MS - into : 0
+      waits.push(wait)
+      return wait + ANSWER_MS
+    })
+    await run.advance(60_000)
+    run.session.close()
+    // It waited that step out, and asks just after the steps since. A second from each request, it met a step every
+    // second for fifteen seconds and more, waiting 70 ms, then 72, 74 … (each request 2 ms further from the step's end).
+    expect(waits.length - asked).toBeGreaterThan(55)
+    expect(waits.slice(asked).filter(wait => wait > 0)).toEqual([70])
   })
 
   test('a Run that is gone stops the vignette', async () => {
