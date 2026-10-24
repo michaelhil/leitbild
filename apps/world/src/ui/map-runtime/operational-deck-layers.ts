@@ -2,7 +2,7 @@ import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { CatalogueSymbolAtlasState } from './catalogue-symbol-atlas.ts'
-import { darkStroke, rgba, white } from './colors.ts'
+import { colorWithAlpha, darkStroke, rgba, white } from './colors.ts'
 import { ObjectLabelLayer } from './object-label-layer.ts'
 import { declutterPoints, type PointLeader } from './point-declutter.ts'
 import {
@@ -116,14 +116,14 @@ const pointFill = (point: OperationalPointFeature): ColorRgba => {
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
   if (point.highlighted) return rgba(193, 122, 19, 58)
-  if (point.statusTone === 'error') return rgba(199, 53, 43, 52)
+  if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
 }
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
   if (point.highlighted) return rgba(193, 122, 19, 230)
-  if (point.statusTone === 'error') return rgba(199, 53, 43, 220)
+  if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
 }
 
@@ -429,10 +429,10 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
       stroked: true,
       filled: true,
       getPosition: point => point.position,
-      getRadius: point => point.selected || point.highlighted || point.statusTone === 'error' ? 18 : 0,
+      getRadius: point => point.selected || point.highlighted || point.alert !== null ? 18 : 0,
       getFillColor: haloFill,
       getLineColor: haloStroke,
-      getLineWidth: point => point.selected || point.highlighted ? 2.5 : point.statusTone === 'error' ? 2 : 0,
+      getLineWidth: point => point.selected || point.highlighted ? 2.5 : point.alert !== null ? 2 : 0,
       updateTriggers: {
         getPosition: snapshot.revisions.points,
         getRadius: snapshot.revisions.points,

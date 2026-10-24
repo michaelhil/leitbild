@@ -38,11 +38,11 @@ beforeAll(async () => {
 })
 afterAll(async () => { await registry.shutdown() })
 
-const contextFor = async (change: { objects?: (objects: ReadonlyArray<OperationalObject>) => ReadonlyArray<OperationalObject>; denied?: ReadonlyArray<string>; packs?: ReadonlyArray<WorldPack> } = {}) => {
+const contextFor = async (change: { objects?: (objects: ReadonlyArray<OperationalObject>) => ReadonlyArray<OperationalObject>; denied?: ReadonlyArray<string>; packs?: ReadonlyArray<WorldPack>; dashboards?: ReadonlyArray<{ scope: string; pins: number }> } = {}) => {
   const objects = run.snapshot().objects
   return await assembleRunContext({
     title: 'Context drill', objects: change.objects?.(objects) ?? objects, denied: new Set(change.denied ?? []),
-    clock: run.snapshot().clock, packs: change.packs ?? run.packs(), port: run.observations(person),
+    clock: run.snapshot().clock, packs: change.packs ?? run.packs(), port: run.observations(person), dashboards: change.dashboards ?? [],
   })
 }
 
@@ -68,7 +68,10 @@ describe('Run context', () => {
     expect(lines).toContain('- Units (fixture): 3 · available 3')
     expect(lines).toContain('- Tasks (fixture): 2 · open 2')
     expect(lines).toContain('- Sites (fixture): 1 · open 1')
-    expect(lines.at(-1)).toBe('Dashboards: none stored (cannot change dashboards yet)')
+    expect(lines.at(-1)).toBe('Dashboards: none stored (each scope shows World\'s default)')
+    // A4: the scopes that hold pins, as dashboards.ts names them.
+    expect((await contextFor({ dashboards: [{ scope: 'run', pins: 3 }, { scope: 'unit:u7', pins: 1 }] })).text.split('\n').at(-1))
+      .toBe('Dashboards stored: run (3 pins), unit:u7 (1 pin); other scopes show World\'s default')
   })
 
   test('takes no number from a presentation summary or field', async () => {
@@ -103,7 +106,7 @@ describe('Run context', () => {
       },
     }
     const objects = Array.from({ length: 60 }, (_, index) => ({ ...createFixtureObject({ type: 'site', id: `site:${index}` as never, label: `Site ${index}`, position: [10, 59] }, { at, objectById: () => undefined }), packId: 'many' as never }))
-    const { text } = await assembleRunContext({ title: 'Many', objects, denied: new Set(), clock: run.snapshot().clock, packs: [many], port: run.observations(person) })
+    const { text } = await assembleRunContext({ title: 'Many', objects, denied: new Set(), clock: run.snapshot().clock, packs: [many], port: run.observations(person), dashboards: [] })
     const lines = text.split('\n')
     expect(lines.length).toBeLessThanOrEqual(40)
     expect(text.length).toBeLessThanOrEqual(8_000)
@@ -119,7 +122,7 @@ describe('Run context', () => {
     expect(advisories.map(alert => [alert.advisory, alert.acknowledged, alert.priority])).toEqual([[true, false, 'warning'], [true, false, 'caution']])
     const calm = { ...probe, id: 'weather-probe:calm' as never, label: 'Calm probe' }
     const port = { declarations: async () => [], read: async () => ({ observations: [], unknown: [], refused: [], leads: [[]] }), topology: async () => { throw new Error('unused') } }
-    const { text } = await assembleRunContext({ title: 'Fog', objects: [calm, { ...probe, alerts: advisories }], denied: new Set(), clock: run.snapshot().clock, packs: [weatherPack], port: port as never })
+    const { text } = await assembleRunContext({ title: 'Fog', objects: [calm, { ...probe, alerts: advisories }], denied: new Set(), clock: run.snapshot().clock, packs: [weatherPack], port: port as never, dashboards: [] })
     const assets = text.split('\n').filter(line => line.startsWith('- weather-probe:'))
     expect(assets[0]).toStartWith('- weather-probe:halden · Halden probe · ')
     expect(assets[0]).toContain(`· 2 advisories in force (worst warning): ${advisories[0]!.message} ·`)

@@ -1,5 +1,6 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import type { PackMapFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { Palette } from '../displays/severity.ts'
 import {
   createDisplayMotionState,
   displayObjectsFor,
@@ -27,6 +28,8 @@ export interface OperationalRenderControllerState {
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlyArray<string>
   readonly mutedObjectIds: ReadonlyArray<string>
+  /** The severity table's palette the alert badges take: the screen's theme (D9). */
+  readonly alertPalette: Palette
   readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
   readonly packFeatures: ReadonlyArray<PackMapFeature>
@@ -236,6 +239,7 @@ export const createOperationalRenderController = (
           selectedControllerId: state.selectedControllerId,
           highlightedObjectIds: state.highlightedObjectIds,
           mutedObjectIds: state.mutedObjectIds,
+          alertPalette: state.alertPalette,
           hiddenObjectCategoryIds: state.hiddenObjectCategoryIds,
           placementPoints: state.placementPoints,
           packFeatures: state.packFeatures,

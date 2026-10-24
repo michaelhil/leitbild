@@ -1,6 +1,7 @@
 import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
+import { VIGNETTE_VIEW_TYPE } from '../../process-display/display-window-messages.ts'
 import { activeWorkspaceId } from '../../workspace-context.ts'
 import { digest, openedListing } from '../opened-display.ts'
 import type { DisplayOpening, ViewHost } from '../view-host.ts'
@@ -238,7 +239,7 @@ export interface OpenedFrom {
  * opened from. False where nothing opens it.
  */
 export const openElementDefault = (host: Pick<ViewHost, 'openDisplay'>, from: OpenedFrom, envelope: EmbeddedViewEnvelope): boolean =>
-  host.openDisplay({ state: envelope.state, title: envelope.title, listing: () => openedListing({ ...from, envelope }, { state: envelope.state, title: envelope.title }) })
+  host.openDisplay({ state: envelope.state, title: envelope.title, viewType: VIGNETTE_VIEW_TYPE, listing: () => openedListing({ ...from, envelope }, { state: envelope.state, title: envelope.title, viewType: VIGNETTE_VIEW_TYPE }) })
 
 /**
  * An element's detail (L3): World composes its default (`<objectId>#<elementId>`) and the display it is opened from

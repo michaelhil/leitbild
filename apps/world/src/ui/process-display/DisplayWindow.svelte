@@ -10,6 +10,7 @@
     Maximize2,
     Minimize2,
     Minus,
+    Pin,
     Plus,
     X,
   } from 'lucide-svelte'
@@ -19,6 +20,7 @@
   import StatusIndicator from '../components/StatusIndicator.svelte'
   import type { MapFocusTarget } from '../map-view.ts'
   import { DISPLAY_ZOOM_MAX, DISPLAY_ZOOM_MIN, type DisplayFrameOpen, type DisplayFrameZoomRequest } from '../embed/display-frame-protocol.ts'
+  import { dashboardEnvelope, pinToRunDashboard, type DashboardCollection } from '../embed/dashboard/dashboard.ts'
   import { openedListing } from '../embed/opened-display.ts'
   import { zoomStepOfKey } from '../embed/view-host.ts'
   import { loadUiPack } from '../pack-loader.ts'
@@ -36,7 +38,9 @@
   import {
     acknowledgeShown,
     backFrom,
-    buildDisplayDeck,
+    buildWindowDeck,
+    DASHBOARD_TITLE,
+    dashboardDeckEntry,
     deckEntryAsset,
     mountedDeckEntries,
     newDisplayAnnouncement,
@@ -79,7 +83,7 @@
     type DisplayZoomState,
     type StoredDisplayZoom,
   } from './display-zoom.ts'
-  import { displayWindowMaximiseMessage } from './display-window-messages.ts'
+  import { displayWindowMaximiseMessage, VIGNETTE_VIEW_TYPE } from './display-window-messages.ts'
   import {
     readProcessDisplayWindowBounds,
     storeProcessDisplayWindowBounds,
@@ -102,6 +106,8 @@
     readonly runJoin: DeckRunJoin
     /** The assets the Run observes, in rail order: the window opens each one's World default. */
     readonly assetObjects: ReadonlyArray<OperationalObject>
+    /** The rail's categories holding several of them: the Run's dashboard offers to compare each. */
+    readonly collections: ReadonlyArray<DashboardCollection>
     /** An asset's status as its rail row shows it: the window's status dot follows the rail's colour rule. */
     readonly statusOf: (object: OperationalObject) => PackObjectStatusPresentation
     /** The conversation's displays, oldest first, as the Host relays them. */
@@ -125,6 +131,7 @@
     simulationRunId,
     runJoin,
     assetObjects,
+    collections,
     statusOf,
     listings,
     request,
@@ -235,7 +242,10 @@
   let zoomWriteTimer: ReturnType<typeof setTimeout> | null = null
 
   const assets = $derived<ReadonlyArray<DeckAsset>>(assetObjects.map(object => ({ objectId: object.id, packId: object.packId, label: object.label })))
-  const deck = $derived(buildDisplayDeck({ simulationRunId: runId, assets, listings, shown }))
+  // The Run's dashboard, beside the defaults (D-H); its view changes only when the collections it offers do.
+  const collectionsKey = $derived(JSON.stringify(collections))
+  const dashboard = $derived(dashboardDeckEntry(runId, dashboardEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: runId, title: DASHBOARD_TITLE, state: collectionsKey === '[]' ? { scope: 'run' } : { scope: 'run', collections: JSON.parse(collectionsKey) as DashboardCollection[] } })))
+  const deck = $derived(buildWindowDeck({ simulationRunId: runId, assets, listings, shown, dashboard }))
   const current = $derived(shown === null ? null : deck.find(entry => entry.key === shown!.entry.key) ?? null)
   const position = $derived(current === null ? 0 : deck.findIndex(entry => entry.key === current!.key) + 1)
   const hasPrevious = $derived(position > 1)
@@ -277,6 +287,7 @@
     ? 'wide'
     : effectiveBounds.width >= 700 ? 'medium' : effectiveBounds.width >= 520 ? 'narrow' : 'tiny')
   const groups = $derived([
+    { id: 'dashboard', label: 'Dashboard', entries: deck.filter(entry => entry.source === 'dashboard') },
     { id: 'assets', label: 'Overviews', entries: deck.filter(entry => entry.source === 'asset') },
     { id: 'answers', label: 'From answers', entries: deck.filter(entry => entry.source === 'answer') },
   ].filter(group => group.entries.length > 0))
@@ -287,6 +298,7 @@
   }))
 
   function envelopeFor(entry: DeckEntry): EmbeddedViewEnvelope | null {
+    if (entry.source === 'dashboard') return entry.envelope
     if (entry.source === 'answer') return entry.refusal === null ? entry.listing.envelope : null
     const view = defaultViews.get(entry.key)
     return view?.state === 'ready' ? view.envelope : null
@@ -313,10 +325,10 @@
     }
   }
 
-  const zoomStoreFor = (entry: DeckEntry) => entry.source === 'asset' ? overviewZooms : answerZooms
+  const zoomStoreFor = (entry: DeckEntry) => entry.source === 'answer' ? answerZooms : overviewZooms
 
   const zoomStorageKey = (entry: DeckEntry): string =>
-    entry.source === 'asset' ? overviewZoomKey(runId, entry.asset.objectId) : entry.listing.key
+    entry.source === 'asset' ? overviewZoomKey(runId, entry.asset.objectId) : entry.source === 'dashboard' ? entry.key : entry.listing.key
 
   const flushZoomWrites = (): void => {
     zoomWriteTimer = null
@@ -456,7 +468,7 @@
     let listing: EmbeddedViewListing
     try {
       const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: on.runId as SimulationRunId, view: await readDefaultDisplay(on.runId as SimulationRunId, subject) })
-      const opened = { state: envelope.state, title: on.title ?? envelope.title }
+      const opened = { state: envelope.state, title: on.title ?? envelope.title, viewType: VIGNETTE_VIEW_TYPE } as const
       listing = openedListing({ key: from?.key ?? `subject:${on.runId}`, title: from?.title ?? opened.title, envelope }, opened)
     } catch (err) {
       if (!disposed) notice = `${on.title ?? subject} cannot be opened: ${errorText(err)}`
@@ -503,8 +515,9 @@
   // --- Deck -----------------------------------------------------------------
 
   const showEntry = (entry: DeckEntry): void => {
+    if (notice !== null && notice === pinSaid) notice = null
     const nextShown = shownDeckEntry(deck, entry, listings)
-    const nextDeck = buildDisplayDeck({ simulationRunId: runId, assets, listings, shown: nextShown })
+    const nextDeck = buildWindowDeck({ simulationRunId: runId, assets, listings, shown: nextShown, dashboard })
     showSequence += 1
     shown = nextShown
     const kept = mountedFrames.filter(frame => nextDeck.some(candidate => candidate.key === frame.key))
@@ -733,6 +746,21 @@
   const toolsRoom = $derived<PackWindowToolsProps['room']>(tier === 'wide' ? 'wide' : tier === 'medium' ? 'short' : 'folded')
   let toolsMenu = $state.raw<Snippet<[done: () => void]> | null>(null)
 
+  // A person pins what they see (R4 B4): the shown vignette of this Run, by its state, on the whole Run's dashboard.
+  const pinnable = $derived(currentEnvelope?.viewType === VIGNETTE_VIEW_TYPE && currentEnvelope.subject.id === String(runId) ? currentEnvelope : null)
+  const pinTitle = $derived(pinnable !== null ? 'Pin this display to the whole Run\'s dashboard'
+    : current?.source === 'dashboard' || currentEnvelope?.viewType !== VIGNETTE_VIEW_TYPE ? 'Pin to dashboard: a dashboard\'s sections pin one by one' : 'Pin to dashboard: this display is of another Run')
+  let pinning = $state(false)
+  /** What the last pin said: it goes once the person steps to another display, not to stand over that one. */
+  let pinSaid: string | null = null
+  const pinShown = async (): Promise<void> => {
+    const view = pinnable
+    if (view === null || pinning) return
+    pinning = true
+    const title = current?.title ?? view.title
+    try { notice = pinSaid = await pinToRunDashboard(runId, { state: view.state, title }) } catch (err) { notice = `${title} was not pinned: ${errorText(err)}` } finally { pinning = false }
+  }
+
   const openProcedures = (procedureId?: ProcedureId): void => {
     popover = null
     // The procedure window opens in front of this one.
@@ -943,6 +971,11 @@
         {/if}
       </div>
 
+      {#if tier === 'wide' || tier === 'medium'}
+        <button type="button" class="display-window-button" aria-label={pinTitle} title={pinTitle} aria-disabled={pinnable === null || pinning} onclick={() => { void pinShown() }}>
+          <Pin size={16} aria-hidden="true" />
+        </button>
+      {/if}
       {#if (tier === 'wide' || tier === 'medium') && proceduresShown}
         <div class="display-window-procedures" role="group" aria-label="Procedures">
           <ProcedureRunBadges summaries={procedureSummaries} onOpen={summary => openProcedures(summary.procedureId)} />
@@ -988,7 +1021,7 @@
           bind:this={moreButton}
           type="button"
           class="display-window-button display-window-more"
-          aria-label={`More: ${[...(proceduresShown ? ['procedures'] : []), ...(toolsMenu !== null ? ['tools'] : []), 'maximise'].join(', ')}`}
+          aria-label={`More: ${[...(proceduresShown ? ['procedures'] : []), 'pin to dashboard', ...(toolsMenu !== null ? ['tools'] : []), 'maximise'].join(', ')}`}
           title="More"
           aria-haspopup="true"
           aria-expanded={popover === 'more'}
@@ -1147,6 +1180,10 @@
             <span>{assetObject !== null ? `Procedures for ${assetObject.label}` : `Procedures: ${assetUnavailable ?? ''}`}</span>
           </button>
         {/if}
+        <button type="button" class="display-window-menu-item" title={pinTitle} aria-disabled={pinnable === null || pinning} onclick={() => { popover = null; void pinShown() }}>
+          <Pin size={16} aria-hidden="true" />
+          <span>Pin to dashboard</span>
+        </button>
         {#if toolsMenu !== null}
           {@render toolsMenu(() => closePopover(true))}
         {/if}

@@ -10,7 +10,7 @@ import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError,json,readJson } from './responses.ts'
 import { runCopyInputSchema } from '../simulation-runs/execution.ts'
 import { recordingSeriesQuerySchema } from '../model/recording.ts'
-import { displayRunOf, handleDisplayRoute } from './display-capabilities.ts'
+import { displayRunOf, handleDashboard, handleDisplayRoute } from './display-capabilities.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -371,15 +371,19 @@ const handleSimulationRunApiInner = async (
     }
   }
 
-  // Vignettes for people (architecture A6): open, sample or default one, read as this screen's perspective; never the AI's.
-  const displayMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/displays\/(view|sample|default)$/)
+  // Vignettes for people (architecture A6): open, sample or default one, read or change a dashboard (A4), read as this
+  // screen's perspective; never the AI's.
+  const displayMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/displays\/(view|sample|default|dashboard\/read|dashboard\/update)$/)
   if (displayMatch && req.method === 'POST') {
-    if (config.accessContext.actor.kind === 'ai') return apiError(403, 'display_route_for_people', 'The display routes serve people; the Assistant composes through world.simulation-run.display.compose')
+    if (config.accessContext.actor.kind === 'ai') return apiError(403, 'display_route_for_people', 'The display routes serve people; the Assistant composes through world.simulation-run.display.compose and reads and changes a dashboard through world.simulation-run.dashboard.read and .update')
     // A display never loads a Run: one not loaded is reported, and the display waits for someone to open it.
     const runtime = config.registry.get(simulationRunIdSchema.parse(decodeURIComponent(displayMatch[1] ?? '')))
     if (runtime === undefined) return apiError(409, 'simulation_run_not_loaded', 'The Run is not loaded; a display shows it once someone opens it')
     const actor = actorForPerspective(buildSimulationRunActorForAccess(config.accessContext), perspective)
-    return (await handleDisplayRoute(displayMatch[2]!, await readJson(req), await displayRunOf(config.registry, runtime, actor, new Set())))!
+    const run = await displayRunOf(config.registry, runtime, actor, new Set())
+    const dashboard = displayMatch[2] === 'dashboard/read' ? 'read' : displayMatch[2] === 'dashboard/update' ? 'update' : null
+    if (dashboard !== null) return await handleDashboard(dashboard, await readJson(req), { registry: config.registry, runtime, run, by: 'person' })
+    return (await handleDisplayRoute(displayMatch[2]!, await readJson(req), run))!
   }
 
   const procedureCatalogMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedures$/)

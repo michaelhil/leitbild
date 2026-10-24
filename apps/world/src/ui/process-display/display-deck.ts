@@ -1,10 +1,11 @@
-import type { EmbeddedViewListing } from '@leitbild/contracts'
+import type { EmbeddedViewEnvelope, EmbeddedViewListing } from '@leitbild/contracts'
 import type { ObjectId } from '../../core/model/index.ts'
 import type { WorldPackDescriptor } from '../../core/packs/protocol.ts'
-import { listingRefusal } from './display-window-messages.ts'
+import { DASHBOARD_VIEW_TYPE, listingRefusal } from './display-window-messages.ts'
 import type { DisplayKind } from './display-zoom.ts'
 
-// The displays the one display window steps through: World's default display
+// The displays the one display window steps through: the Run's dashboard
+// (R4, D-H: beside the defaults, not in their place), World's default display
 // of each asset the Run observes, in rail order, then the displays the
 // conversation's answers composed, oldest first. New answers append, but
 // positions do shift: the conversation lists only its 30 most recent displays,
@@ -59,7 +60,13 @@ export interface AnswerDeckEntry extends DeckEntryBase {
   readonly refusal: string | null
 }
 
-export type DeckEntry = AssetDeckEntry | AnswerDeckEntry
+/** The whole Run's dashboard (ui/embed/dashboard): first in the deck, beside the assets' defaults. */
+export interface DashboardDeckEntry extends DeckEntryBase {
+  readonly source: 'dashboard'
+  readonly envelope: EmbeddedViewEnvelope
+}
+
+export type DeckEntry = AssetDeckEntry | AnswerDeckEntry | DashboardDeckEntry
 
 /** What the window shows, with where it sat in its group so it can stay there when it leaves the list. */
 export interface ShownDeckEntry {
@@ -78,6 +85,13 @@ export const assetDeckKey = (simulationRunId: string, objectId: string): string 
 
 // Agents' keys are its own; a prefix keeps them apart from asset keys.
 export const answerDeckKey = (listingKey: string): string => `answer:${listingKey}`
+
+export const DASHBOARD_TITLE = 'Dashboard'
+export const DASHBOARD_CAPTION = 'Whole Run'
+
+/** The whole Run's dashboard as the deck lists it; `envelope` is its view (ui/embed/dashboard/dashboard.ts dashboardEnvelope). */
+export const dashboardDeckEntry = (simulationRunId: string, envelope: EmbeddedViewEnvelope): DashboardDeckEntry =>
+  ({ source: 'dashboard', key: `dashboard:${simulationRunId}`, title: DASHBOARD_TITLE, caption: DASHBOARD_CAPTION, kind: 'generated', envelope })
 
 // Listings keep their identity until the next list replaces them, so each
 // state is read once however often the Run's objects change.
@@ -121,7 +135,8 @@ export const answerDeckEntry = (simulationRunId: string, listing: EmbeddedViewLi
     key: answerDeckKey(listing.key),
     title: listing.envelope.title,
     caption: `${listing.caption}${otherRun ? OTHER_RUN_SUFFIX : ''}`,
-    kind: 'advice',
+    // A dashboard (another scope's, opened from the Run's) is drawn for its frame; a vignette is advice.
+    kind: listing.envelope.viewType === DASHBOARD_VIEW_TYPE ? 'generated' : 'advice',
     listing,
     otherRun,
     listed: true,
@@ -158,6 +173,10 @@ export const buildDisplayDeck = (input: {
   }
   return [...defaults, ...answers]
 }
+
+/** The window's deck: the whole Run's dashboard first, then the display deck (buildDisplayDeck). */
+export const buildWindowDeck = (input: Parameters<typeof buildDisplayDeck>[0] & { readonly dashboard: DashboardDeckEntry }): ReadonlyArray<DeckEntry> =>
+  [input.dashboard, ...buildDisplayDeck(input)]
 
 /** Where an entry sits within its group (assets or answers). */
 export const deckGroupIndex = (deck: ReadonlyArray<DeckEntry>, key: string): number => {
@@ -347,6 +366,7 @@ const runJoinReason = (join: DeckRunJoin): string | null =>
   join.state === 'joined' ? null : join.state === 'joining' ? 'This Run is still opening' : `This Run could not be opened: ${join.reason}`
 
 export const deckEntryAsset = (entry: DeckEntry, assets: ReadonlyArray<DeckAsset>, join: DeckRunJoin): DeckAssetTarget => {
+  if (entry.source === 'dashboard') return { ok: false, reason: 'The dashboard is about the whole Run' }
   if (entry.source === 'answer' && entry.refusal !== null) return { ok: false, reason: `Not a display this window shows: ${entry.refusal}` }
   if (entry.source === 'answer' && entry.otherRun) return { ok: false, reason: 'Belongs to another Run' }
   const waiting = runJoinReason(join)

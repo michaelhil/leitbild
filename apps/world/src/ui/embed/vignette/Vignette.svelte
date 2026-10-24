@@ -30,8 +30,14 @@
   // time, and what it is: generated from the model or AI-composed, never an
   // operating display (provenanceMark), in the window, inline in chat and in
   // a procedure tag's dialog alike. Frozen, its values, trends and alerts read
-  // in the low-integrity style and assistive technology is told.
-  let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
+  // in the low-integrity style and assistive technology is told. On a
+  // dashboard (`board`) the dashboard hosts the page and says when the
+  // vignette can be seen; the dashboard's run frame keeps its alerts' counts
+  // and tiles standing.
+  let { envelope, board }: {
+    envelope: EmbeddedViewEnvelope
+    board?: { readonly visible: (listener: (visible: boolean) => void) => () => void; readonly frame: boolean }
+  } = $props()
 
   let snapshot = $state.raw<VignetteSnapshot>({ phase: 'connecting', series: new Map(), sampleError: null })
   const readPalette = (): Palette => (document.documentElement.dataset.obcTheme as Palette | undefined) ?? 'day'
@@ -53,9 +59,9 @@
       state: envelope.state,
       routes: vignetteRoutes,
       // An alerts-only display asks a window presenting it for the body's whole height, so its list fills it (W2.5).
-      onChange: next => { snapshot = next; if (next.view !== undefined) embeddedDisplayFrame().reportFill('alerts', fillsWindow(next.view)) },
+      onChange: next => { snapshot = next; if (board === undefined && next.view !== undefined) embeddedDisplayFrame().reportFill('alerts', fillsWindow(next.view)) },
     })
-    const unhost = hostDisplayFrame({
+    const unhost = board !== undefined ? board.visible(visible => session.setVisible(visible)) : hostDisplayFrame({
       kind: 'advice',
       card: document.querySelector<HTMLElement>('article.vignette'),
       drawing: () => (snapshot.phase === 'connecting' ? undefined : snapshot.view ?? snapshot),
@@ -63,7 +69,7 @@
       presented: () => {},
     })
     // The room it fills follows the window's body, never its own height: the window gives the frame no less (W2.5).
-    const unroom = embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })
+    const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })
     session.start()
     // Staleness is judged on the wall clock, so it shows even while no sample arrives: a quarter-second tick freezes
     // the display within 5.25 s of its last sample (W8.1), not up to a second later.
@@ -91,7 +97,7 @@
   const frozen = $derived(footer.word === 'FROZEN')
   const chips = $derived(chipOrder(view?.chips ?? []))
   /** Alerts only in a display window: as tall as the part of its frame a person sees; in chat or a dialog, its composed rows. */
-  const fills = $derived(opening.where === 'window' && view !== undefined && fillsWindow(view))
+  const fills = $derived(board === undefined && opening.where === 'window' && view !== undefined && fillsWindow(view))
 
   /**
    * A chip's press opens the detail of what decides its state (opening.svelte.ts): through a drawing of this display
@@ -141,7 +147,7 @@
       {:else}Connecting to the Run…{/if}
     </p>
   {:else}
-    <Sections {view} {snapshot} {palette} {frozen} {runId} {from} {fills} />
+    <Sections {view} {snapshot} {palette} {frozen} {runId} {from} {fills} frame={board?.frame === true} />
   {/if}
 
   <footer title={footer.why}>

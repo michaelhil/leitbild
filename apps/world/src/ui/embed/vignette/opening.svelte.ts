@@ -4,6 +4,7 @@ import type { ObjectId, SimulationRunId } from '../../../core/model/index.ts'
 import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { VignetteState } from '../../../features/displays/compose/model.ts'
 import { defaultDisplayEnvelope, readDefaultDisplay } from '../../process-display/default-display.ts'
+import { VIGNETTE_VIEW_TYPE } from '../../process-display/display-window-messages.ts'
 import { invokeSimulationRunCapability } from '../../simulation-run-client.ts'
 import { activeWorkspaceId } from '../../workspace-context.ts'
 import { openedListing } from '../opened-display.ts'
@@ -112,11 +113,11 @@ export const provideOpening = (config: {
       const at = sampled === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: sampled.at, clock: sampled.clock }
       const state: VignetteState = { title: title.slice(0, 80), at, views: [{ kind: 'alerts', objectIds: objectIds === 'run' ? 'run' : [...objectIds] as ObjectId[], rows: ALERTS_VIEW_ROWS, all: true }] }
       const text = JSON.stringify(state)
-      return host.openDisplay({ state: text, title: state.title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title }) })
+      return host.openDisplay({ state: text, title: state.title, viewType: VIGNETTE_VIEW_TYPE, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state: text, title: state.title, viewType: VIGNETTE_VIEW_TYPE }) })
     },
     self: () => {
       const { state, title } = config.envelope()
-      return host.openDisplay({ state, title, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state, title }) })
+      return host.openDisplay({ state, title, viewType: VIGNETTE_VIEW_TYPE, listing: () => openedListing({ ...from(), envelope: config.envelope() }, { state, title, viewType: VIGNETTE_VIEW_TYPE }) })
     },
   }
   setContext(KEY, opening)

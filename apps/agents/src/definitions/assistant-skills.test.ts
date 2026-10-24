@@ -7,9 +7,10 @@ import assistantRoom from './leitbild-assistant.room.json'
 // Skills are injected in full into every prompt of the agents that select
 // them, so their size is an attention budget, not just a storage detail.
 // The display skill's budget is 700 tokens as injected ("[name] description"
-// line and body); 2,340 characters are about 560 tokens at the measured 4.18
-// characters per token (lead, 21 Oct).
-const OPERATOR_DISPLAYS_INJECTED_MAX_CHARS = 2_340
+// line and body); 2,780 characters are about 665 tokens at the measured 4.18
+// characters per token (lead, 21 Oct). R4 (23 Oct) spent 420 of the headroom on
+// the dashboard rule that replaced "You cannot change dashboards yet".
+const OPERATOR_DISPLAYS_INJECTED_MAX_CHARS = 2_780
 const CITATION_FORMAT_LINE = 'Put each key right after the number it supports (91.3 % ⟦k2⟧); one key per number; no keys in table headers; no key ranges.'
 // The assistance skill's body as v0.5.0 shipped it: a new rule tightens
 // existing wording rather than growing every prompt.
@@ -41,6 +42,12 @@ describe('Leitbild Assistant skills', () => {
     // A proposed operation is approved from the element's faceplate in the display window (plan v5 §3).
     expect(displays.body).toContain("After proposing an operation, show the element's display, whose faceplate holds it.")
     expect(displays.body).not.toMatch(/pop-?over/i)
+    // A4: dashboards are read and changed through World's two Capabilities, a change only when asked and claimed only from its result.
+    expect(displays.body).not.toContain('cannot change dashboards')
+    expect(displays.body).toContain('`world.simulation-run.dashboard.read` {scope}')
+    expect(displays.body).toContain('one `world.simulation-run.dashboard.update` {scope, expectedRevision, pin: [{spec}] (as compose takes), unpin: [pin id]}')
+    expect(displays.body).toContain('Change one only when asked: read, then')
+    expect(displays.body).toContain('pin only what is missing; never re-send; claim a change only from its result.')
     // The skill names no pack.
     expect(`${displays.description}\n${displays.body}`).not.toMatch(/plant|grid|weather|einsatz|ambulance|drone|reactor|halden/i)
     // Plant equipment is operated by proposing it for a person's decision (plan C1 §4.4).

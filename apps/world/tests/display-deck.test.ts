@@ -318,11 +318,11 @@ describe('a display opened from another', () => {
 
   test('is a self-contained listing on the same Run, with a stable key and a caption saying where it came from', () => {
     const from = listing('advice')
-    const opened = openedListing({ key: answerDeckKey('advice'), title: from.envelope.title, envelope: from.envelope }, { state: detail, title: 'Heat sink: deciding equipment' })
+    const opened = openedListing({ key: answerDeckKey('advice'), title: from.envelope.title, envelope: from.envelope }, { state: detail, title: 'Heat sink: deciding equipment', viewType: 'display.vignette' })
     expect(opened.envelope).toEqual({ ...from.envelope, title: 'Heat sink: deciding equipment', state: detail })
     expect(opened.caption).toBe('From Display advice')
-    expect(openedListing({ key: answerDeckKey('advice'), title: from.envelope.title, envelope: from.envelope }, { state: detail, title: 'Other' }).key).toBe(opened.key)
-    expect(openedListing({ key: answerDeckKey('other'), title: from.envelope.title, envelope: from.envelope }, { state: detail, title: 'Other' }).key).not.toBe(opened.key)
+    expect(openedListing({ key: answerDeckKey('advice'), title: from.envelope.title, envelope: from.envelope }, { state: detail, title: 'Other', viewType: 'display.vignette' }).key).toBe(opened.key)
+    expect(openedListing({ key: answerDeckKey('other'), title: from.envelope.title, envelope: from.envelope }, { state: detail, title: 'Other', viewType: 'display.vignette' }).key).not.toBe(opened.key)
     // The window shows it though the conversation does not list it.
     const deck = buildDisplayDeck({ simulationRunId: runId, assets, listings: [from], shown: null })
     const entry = requestedDeckEntry(deck, runId, { kind: 'listing', listing: opened })!
@@ -332,10 +332,12 @@ describe('a display opened from another', () => {
   })
 
   test('a frame asks for it, and for Back, only in the protocol\'s exact words', () => {
-    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, title: 'Reactor Core' })).toEqual({ type: 'world:display-open', state: detail, title: 'Reactor Core' })
-    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail })).toBeNull()
-    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: '', title: 'Reactor Core' })).toBeNull()
-    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, title: 'x'.repeat(121) })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, title: 'Reactor Core', viewType: 'display.vignette' })).toEqual({ type: 'world:display-open', state: detail, title: 'Reactor Core', viewType: 'display.vignette' })
+    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, title: 'Reactor Core' })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, title: 'Reactor Core', viewType: 'electric-grid.display' })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, viewType: 'display.vignette' })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: '', title: 'Reactor Core', viewType: 'display.vignette' })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-open', state: detail, title: 'x'.repeat(121), viewType: 'display.vignette' })).toBeNull()
     expect(parseDisplayFrameMessage({ type: 'world:display-back' })).toEqual({ type: 'world:display-back' })
     expect(parseDisplayFrameMessage({ type: 'world:display-back', to: 'x' })).toBeNull()
     expect(parseDisplayFramePresentation({ type: 'world:display-frame', shown: true, zoom: 1, back: 'Display advice' })).toEqual({ type: 'world:display-frame', shown: true, zoom: 1, back: 'Display advice' })
