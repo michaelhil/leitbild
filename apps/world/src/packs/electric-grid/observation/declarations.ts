@@ -109,11 +109,17 @@ const catalogueOf = (grid: GridRuntimeInstance) => catalogues.get(grid.definitio
 })()
 
 /**
- * A name within `room` characters: whole, or its whole words that fit before an ellipsis, a separator they end on
- * dropped ("Hungeren - Charlottenlund / Hungeren…"); a first word longer than the room alone is cut (plan v5 §2 rule 2).
+ * A name within `room` characters: whole; else, where it lists several names ("A - B / C - D"), the whole names that
+ * fit and how many more ("Hungeren - Charlottenlund +1"), never part of a name; else its whole words that fit before
+ * an ellipsis, a separator they end on dropped; a first word longer than the room alone is cut (plan v5 §2 rule 2).
  */
 export const wholeWordsWithin = (label: string, room: number): string => {
   if (label.length <= room) return label
+  const names = label.split(' / ')
+  for (let kept = names.length - 1; kept >= 1 && names.length > 1; kept -= 1) {
+    const shown = `${names.slice(0, kept).join(' / ')} +${names.length - kept}`
+    if (shown.length <= room) return shown
+  }
   const words = label.slice(0, room - 1).split(' ')
   const kept = (label[room - 1] === ' ' ? words : words.slice(0, -1)).join(' ').replace(/[\s,/–-]+$/, '')
   return kept === '' ? `${label.slice(0, room - 1)}…` : `${kept}…`

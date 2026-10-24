@@ -12,7 +12,8 @@ import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
-import { CARD_ALERTS } from '../src/features/displays/compose/card.ts'
+import { alertItem, CARD_ALERTS, withinWords } from '../src/features/displays/compose/card.ts'
+import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 import { composeVignette } from '../src/features/displays/compose/compose.ts'
 import { blockRows, elementBlocks } from '../src/features/displays/compose/element-groups.ts'
 import { FRAME_ROWS, type VignetteElement, type VignetteSection, type VignetteValue } from '../src/features/displays/compose/model.ts'
@@ -65,6 +66,18 @@ const compose = async (spec: unknown) => {
 }
 const isAlert = (item: DisplayCardItem): boolean => item.subject !== undefined && 'alertId' in item.subject
 const refOf = (item: DisplayCardItem): string | undefined => item.subject !== undefined && 'ref' in item.subject ? String(item.subject.ref) : undefined
+
+describe('an answer\'s card line holds its words (§2 rule 2, R3 final pass)', () => {
+  test('a line past its room gives way by whole words, never inside one', () => {
+    expect(withinWords('caution · Branch loading (high): Mjøndalen - Langum', 120)).toBe('caution · Branch loading (high): Mjøndalen - Langum')
+    expect(withinWords('caution · Branch loading (high): Mjøndalen - Langum / Sundhaugen - Mjøndalen', 60)).toBe('caution · Branch loading (high): Mjøndalen - Langum…')
+    expect(withinWords('Supercalifragilistic', 8)).toBe('Superca…')
+    const row = { objectLabel: 'Norway grid · Halden connection', priority: 'caution', alert: { id: 'a1', message: `Branch loading (high): ${'Mjøndalen - Langum / '.repeat(6)}Sundhaugen`, acknowledged: false } } as unknown as AlertRow
+    const reading = alertItem(row).reading
+    expect(reading.length).toBeLessThanOrEqual(120)
+    expect(reading).toMatch(/(Langum|Mjøndalen)…$/)
+  })
+})
 
 describe('an answer\'s card (W7.2)', () => {
   test('the subjects\' readings first, then their own alerts and at most three in all, the rest counted; each line names its object', async () => {

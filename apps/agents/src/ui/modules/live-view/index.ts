@@ -8,15 +8,16 @@
 import { addPostRenderProcessor } from '../extensions/post-render-registry.ts'
 import { apiFetch, currentWorkspaceId } from '../api-client.ts'
 import { $roomMessages, $selectedRoomId } from '../stores.ts'
-import { VIEW_FENCE_LANGUAGE, viewRefFor } from '../../../core/render-validators/view-fence.ts'
+import { parseViewFenceBody, VIEW_FENCE_LANGUAGE, viewRefFor } from '../../../core/render-validators/view-fence.ts'
 import { proposedInTurn } from '../proposal-card/model.ts'
-import { citedKeys, createTurnCardsReader, frozenCard } from './cards.ts'
-import { answerMessage, postedAnswerOf, presentedViewRefs, roomViewFences, viewFenceOf, viewListingOf, type ViewFence } from './listing.ts'
+import { citedKeys, createTurnCardsReader, frozenCard, WINDOW_ONLY_MARK, type TurnCardList } from './cards.ts'
+import { answerMessage, postedAnswerOf, presentedViewRefs, roomViewFences, viewFenceKey, viewFenceOf, viewListingOf, type PostedAnswer, type ViewFence } from './listing.ts'
 import { createViewResolutionCache, resolveViewReference } from './resolve.ts'
 import { openView } from './open.ts'
 import {
   createViewListPublisher,
   createViewListSync,
+  focusedListing,
   inlineHeightRequest,
   inlineHostAnnouncement,
   inlineOpenRequest,
@@ -25,7 +26,7 @@ import {
   type ViewHostMessage,
 } from './host-link.ts'
 import { fitInline, inlineFrameWindows, relayInlineOpens } from './inline.ts'
-import { citeKeys, createChipHost, fenceNotice, promoteUnhostedChips, showAvailable, showPreparing, showRefused, showUnhosted, type ChipActions, type ChipCard } from './chip.ts'
+import { citeKeys, createChipHost, fenceNotice, promoteUnhostedChips, showAvailable, showPreparing, showRefused, showUnhosted, type CardViewOpener, type ChipActions, type ChipCard } from './chip.ts'
 
 // Long enough for a burst of re-renders and resolutions to settle into one
 // list, short enough that a new answer's display reaches the window at once.
@@ -118,7 +119,38 @@ const renderCitedKeys = async (container: HTMLElement): Promise<void> => {
   const turnId = container.dataset.viewTurn
   if (roomId === undefined || turnId === undefined || container.textContent?.includes('⟦k') !== true) return
   const message = answerMessage($roomMessages.get()[roomId] ?? [], turnId)
-  citeKeys(container, await turnCards(roomId, turnId), presentedViewRefs(message?.content ?? ''))
+  const answer = message === null ? null : postedAnswerOf(message)
+  const read = await turnCards(roomId, turnId)
+  const presented = presentedViewRefs(message?.content ?? '')
+  const boards = message === null || answer === null || read.kind !== 'cards' ? new Map<string, CardViewOpener>()
+    : await citedBoards(container, read.cards, presented, answer, citedKeys(message.content))
+  citeKeys(container, read, presented, boards)
+}
+
+/**
+ * The cards an answer cites whose view only the window shows (a dashboard's board, R4 §2.6: receipts link to the
+ * board, nothing embeds it): each stands under the answer as its frozen card, the cited lines first, its Open opening
+ * the board in the window, never inline; a key on it opens the board there at the cited line's section (its `at`).
+ */
+const citedBoards = async (container: HTMLElement, cards: TurnCardList, presented: ReadonlySet<string>, answer: PostedAnswer, cited: ReadonlyArray<string>): Promise<ReadonlyMap<string, CardViewOpener>> => {
+  const boards = new Map<string, CardViewOpener>()
+  for (const { viewRef, card } of cards) {
+    if (presented.has(viewRef) || !card.items.some(item => cited.includes(item.key))) continue
+    const parsed = parseViewFenceBody(`view ${viewRef}`)
+    if (parsed.kind !== 'reference') continue
+    const fence = { key: viewFenceKey(answer, parsed.ref), answer, ref: parsed.ref }
+    const resolution = await resolutions.resolve(fence)
+    if (resolution.kind !== 'view' || resolution.envelope.windowOnly !== true) continue
+    const listing = viewListingOf(fence, resolution.envelope)
+    const host = createChipHost()
+    container.append(host)
+    const frozen = frozenCard(card, cited, WINDOW_ONLY_MARK)
+    if (hosted) showAvailable(host, listing, chipActions, frozen, { proposal: false })
+    else showUnhosted(host, listing, workspaceRoomHref(currentWorkspaceId(), answer.roomId), chipActions, frozen, { proposal: false })
+    // Where a window shows displays, the cited line's part opens there; outside the Host the line alone shows.
+    boards.set(viewRef, at => { if (hosted) openView(focusedListing(listing, at)) })
+  }
+  return boards
 }
 
 const renderViewBlocks = async (container: HTMLElement): Promise<void> => {

@@ -67,6 +67,13 @@ describe('embedded view publication', () => {
     expect(embeddedViewPublicationSchema.safeParse(publication).success).toBe(true)
     expect(embeddedViewEnvelopeSchema.parse({ ...publication, moduleId: subject.moduleId, subject })).toEqual(embeddedViewEnvelopeSchema.parse(envelope))
   })
+
+  test('a view only the window shows (a dashboard a cited line opens) says so, and the envelope keeps it (R4 §2.6)', () => {
+    const { moduleId: _moduleId, subject, ...publication } = envelope
+    const board = { ...publication, viewType: 'display.dashboard', state: '{"scope":"run"}', windowOnly: true }
+    expect(embeddedViewEnvelopeSchema.parse({ ...embeddedViewPublicationSchema.parse(board), moduleId: subject.moduleId, subject }).windowOnly).toBe(true)
+    expect(embeddedViewPublicationSchema.safeParse({ ...board, windowOnly: false }).success).toBe(false)
+  })
 })
 
 describe('embedded view window messages', () => {
@@ -77,6 +84,11 @@ describe('embedded view window messages', () => {
     expect(embeddedViewsMessageSchema.safeParse({ type: 'leitbild:views', views: [listing, listing] }).success).toBe(false)
     const many = Array.from({ length: EMBEDDED_VIEW_LISTING_MAX + 1 }, (_, index) => ({ ...listing, key: `k${index}` }))
     expect(embeddedViewsMessageSchema.safeParse({ type: 'leitbild:views', views: many }).success).toBe(false)
+  })
+
+  test('open a view at a part of it: a cited line\'s section of a dashboard, by its pin id or title', () => {
+    expect(embeddedViewOpenMessageSchema.parse({ type: 'leitbild:view-open', view: { ...listing, focus: 'Halden Unit 1' } }).view.focus).toBe('Halden Unit 1')
+    for (const focus of ['', 'x'.repeat(81)]) expect(embeddedViewOpenMessageSchema.safeParse({ type: 'leitbild:view-open', view: { ...listing, focus } }).success).toBe(false)
   })
 
   test('open a view from a self-contained listing whose envelope is checked', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { embeddedViewListingSchema } from '@leitbild/contracts'
 import { answerDeckEntry } from '../src/ui/process-display/display-deck.ts'
 import {
   listingRefusal,
@@ -27,6 +28,18 @@ const view = (overrides: Record<string, unknown> = {}, key = 'room/turn/call/key
 const fromHost = (data: unknown) => ({ origin: expected.origin, source: parent, data })
 
 describe('display window messages from the Host', () => {
+  test('a dashboard opened at a cited line\'s section shows and marks that section first; any other view opens as given (R4 §2.6)', () => {
+    const board = { ...view({ viewType: 'display.dashboard', title: 'Whole Run · dashboard', height: 960, state: '{"scope":"run"}' }, 'room/turn/call_1_0/dashboard#Halden%20Unit%201'), focus: 'Halden Unit 1' }
+    const opened = readDisplayWindowHostMessage(fromHost({ type: 'leitbild:view-open', view: board }), expected)
+    expect(opened).toMatchObject({ kind: 'open', view: { key: board.key, focus: 'Halden Unit 1' } })
+    expect(JSON.parse((opened as { view: { envelope: { state: string } } }).view.envelope.state)).toEqual({ scope: 'run', focus: 'Halden Unit 1' })
+    const vignette = { ...view(), focus: 'Halden Unit 1' }
+    expect(readDisplayWindowHostMessage(fromHost({ type: 'leitbild:view-open', view: vignette }), expected)).toEqual({ kind: 'open', view: embeddedViewListingSchema.parse(vignette) })
+    // A board state that is no object opens as given; the board's page refuses it with its own reason.
+    const broken = { ...board, envelope: { ...board.envelope, state: '["run"]' } }
+    expect(readDisplayWindowHostMessage(fromHost({ type: 'leitbild:view-open', view: broken }), expected)).toEqual({ kind: 'open', view: embeddedViewListingSchema.parse(broken) })
+  })
+
   test('accepts the conversation list and open requests from the Host only', () => {
     expect(readDisplayWindowHostMessage(fromHost({ type: 'leitbild:views', views: [view()] }), expected)).toMatchObject({ kind: 'views', views: [{ key: 'room/turn/call/key' }], refused: [] })
     expect(readDisplayWindowHostMessage(fromHost({ type: 'leitbild:view-open', view: view() }), expected)).toMatchObject({ kind: 'open', view: { caption: 'Answer 14:02:31' } })

@@ -52,9 +52,29 @@
   const entries = $derived((reading?.sections ?? []).map(section => ({ key: sectionKey(section), section, view: section.view === undefined ? null : sectionEnvelope(envelope, section.view), lead: leadObjectOf(section) })))
   const shown = $derived(sectionsShown(entries, phone, chosen))
 
+  /** The section a cited line names (the state's `focus`: a pin's id or a title), shown and marked first (R4 §2.6). */
+  const focusOf = (section: DashboardSection): boolean => held.focus !== undefined && (section.id ?? section.title).slice(0, 80) === held.focus
+  /**
+   * A focused section comes into view and stays there while the sections settle (each grows as its vignette first
+   * reads), until the reader scrolls, presses or types in the board.
+   */
+  const focusFirst = (node: HTMLElement, focused: boolean) => {
+    const scroller = node.parentElement
+    if (!focused || scroller === null) return {}
+    const observer = new ResizeObserver(() => node.scrollIntoView({ block: 'nearest' }))
+    for (const section of scroller.children) observer.observe(section)
+    const kinds = ['wheel', 'pointerdown', 'keydown', 'touchstart'] as const
+    const stop = () => { observer.disconnect(); for (const kind of kinds) scroller.removeEventListener(kind, stop) }
+    for (const kind of kinds) scroller.addEventListener(kind, stop, { passive: true })
+    return { destroy: stop }
+  }
+  let focusShown = false
+
   const read = async (): Promise<void> => {
     const answer = await readDashboard(runId, held.scope)
     if (answer.ok) { reading = answer.result; failure = null } else failure = answer.message
+    // On a phone the focused section is the one shown, once.
+    if (answer.ok && !focusShown) { focusShown = true; const at = answer.result.sections.findIndex(focusOf); if (at >= 0) chosen = at }
   }
 
   /** Another scope's dashboard, after this one in the window, with Back. */
@@ -136,7 +156,7 @@
     <div class="sections" class:phone style:zoom={phone ? scale : undefined}>
       {#each shown as entry (entry.key)}
         {@const section = entry.section}
-        <section class="section" use:watched={entry.key} aria-label={section.title}>
+        <section class="section" class:focused={focusOf(section)} use:watched={entry.key} use:focusFirst={focusOf(section)} aria-label={section.title} aria-current={focusOf(section) ? 'true' : undefined}>
           <div class="caption">
             {#if section.id !== undefined}<span class="by">Pinned by {section.by === 'agent' ? 'the Assistant' : 'a person'}</span>{/if}
             {#if entry.lead !== null && held.scope === 'run' && opening === 'window'}
@@ -172,6 +192,8 @@
   .sections { flex: 1 1 0; min-height: 0; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); align-content: start; gap: 12px; padding: 4px 8px 12px; }
   .sections.phone { grid-template-columns: minmax(0, 1fr); }
   .section { min-width: 0; border: 1px solid var(--border-divider-color); border-radius: 6px; }
+  /* The section a cited line names: marked as the focus is, so the eye finds it. */
+  .section.focused { border-color: var(--border-focus-color); box-shadow: 0 0 0 1px var(--border-focus-color); }
   .caption { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0 12px; min-height: 24px; padding: 0 8px; font-size: 12px; color: var(--element-neutral-color); }
   .caption .by { margin-right: auto; }
   .link { height: 24px; padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--element-active-color); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer; }

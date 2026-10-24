@@ -43,6 +43,17 @@ const cardLabel = (object: string, label: string): string => {
   return label
 }
 
+/**
+ * Text within `room` characters: whole, or the whole words that fit before an ellipsis, a separator they end on
+ * dropped; a card line never ends inside a word (plan v5 §2 rule 2).
+ */
+export const withinWords = (text: string, room: number): string => {
+  if (text.length <= room) return text
+  const words = text.slice(0, room - 1).split(' ')
+  const kept = (text[room - 1] === ' ' ? words : words.slice(0, -1)).join(' ').replace(/[\s,·/–-]+$/u, '')
+  return kept === '' ? `${text.slice(0, room - 1)}…` : `${kept}…`
+}
+
 /** The object an item's label begins with, where its label holds it whole. */
 const objectOf = (label: string, object: string): { readonly object?: string } =>
   object.length <= 80 && (label === object || label.startsWith(`${object} · `)) ? { object } : {}
@@ -55,7 +66,7 @@ export const valueItem = ({ observable, object }: Declared, observation: Observa
   if (observable.checks !== undefined) {
     const words = criterionWords(observable.checks, observation)
     return {
-      ...named, reading: [words.text, ...(words.detail === null ? [] : [words.detail])].join(' · ').slice(0, 120), ...(words.unit === undefined ? {} : { unit: words.unit }),
+      ...named, reading: withinWords([words.text, ...(words.detail === null ? [] : [words.detail])].join(' · '), 120), ...(words.unit === undefined ? {} : { unit: words.unit }),
       numbers: [...words.numbers], ...(observation === undefined ? {} : { priority: observation.priority }), subject: { ref: observable.ref },
     }
   }
@@ -82,7 +93,7 @@ export const valueItem = ({ observable, object }: Declared, observation: Observa
   const limits = [...observable.thresholds].sort((left, right) => Number(right.id === observation?.past) - Number(left.id === observation?.past) || near(left.value) - near(right.value))
     .slice(0, 4).map(entry => shown(entry.value, observable.unit, observable.quantity, decades))
   return {
-    ...named, reading: parts.join(' · ').slice(0, 120), ...(observable.unit === '' ? {} : { unit: observable.unit }), numbers,
+    ...named, reading: withinWords(parts.join(' · '), 120), ...(observable.unit === '' ? {} : { unit: observable.unit }), numbers,
     ...(limits.length === 0 ? {} : { limits }), ...(observation === undefined ? {} : { priority: observation.priority }), subject: { ref: observable.ref },
   }
 }
@@ -90,9 +101,9 @@ export const valueItem = ({ observable, object }: Declared, observation: Observa
 export const alertItem = (row: AlertRow): Item => {
   const marks = [...(row.alert.firstOut !== undefined ? ['first out'] : []), ...(row.alert.advisory === true ? ['advisory'] : []),
     ...(row.alert.acknowledged ? ['acknowledged'] : []), ...(row.alert.returned === true ? ['returned'] : [])]
-  const label = row.objectLabel.slice(0, 80)
+  const label = withinWords(row.objectLabel, 80)
   return {
-    label, ...objectOf(label, row.objectLabel), reading: [row.priority ?? 'priority not declared', row.alert.message, ...marks].join(' · ').slice(0, 120), numbers: [],
+    label, ...objectOf(label, row.objectLabel), reading: withinWords([row.priority ?? 'priority not declared', row.alert.message, ...marks].join(' · '), 120), numbers: [],
     ...(row.priority === null ? {} : { priority: row.priority }), subject: { objectId: row.objectId, alertId: row.alert.id },
   }
 }
@@ -107,9 +118,9 @@ export const entityItem = (row: EntityRow): Item => {
     ...(row.ageS === undefined ? [] : [(words => ({ text: `fix ${words.text} old`, number: words.number }))(duration(row.ageS))]),
     ...(row.closed === true ? [{ text: 'closed' }] : []),
   ]
-  const label = row.label.slice(0, 80)
+  const label = withinWords(row.label, 80)
   return {
-    label, ...objectOf(label, row.label), reading: (parts.map(part => part.text).join(' · ') || 'no slots').slice(0, 120),
+    label, ...objectOf(label, row.label), reading: withinWords(parts.map(part => part.text).join(' · ') || 'no slots', 120),
     numbers: parts.flatMap(part => part.number === undefined ? [] : [part.number]).slice(0, 8), subject: { objectId: row.objectId },
   }
 }
@@ -120,9 +131,9 @@ export const slotItems = (objectId: string, label: string, slots: ReadonlyArray<
   if (value === undefined) return []
   const words = typeof value === 'number' ? slotWords(value, slot.unit) : null
   const since = values[slot.key]?.since
-  const named = `${label} · ${slot.label}`.slice(0, 80)
+  const named = withinWords(`${label} · ${slot.label}`, 80)
   return [{
-    label: named, ...objectOf(named, label), reading: `${words?.text ?? (value === null ? 'no reading' : String(value))}${since === undefined ? '' : ` · since ${clock(since.at)}`}`.slice(0, 120),
+    label: named, ...objectOf(named, label), reading: withinWords(`${words?.text ?? (value === null ? 'no reading' : String(value))}${since === undefined ? '' : ` · since ${clock(since.at)}`}`, 120),
     ...(slot.unit === '' || words === null ? {} : { unit: slot.unit }), numbers: words === null ? [] : [words.number], subject: { objectId },
   }]
 })

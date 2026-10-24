@@ -361,7 +361,8 @@ const catalogPath = (workspacePath: string, kind: 'capabilities' | 'definitions'
  * is opaque to every embedder (contracts embedded-views.ts), and its completed
  * envelope is execution evidence the display window resolves by viewRef: the
  * model presents a view by reference only, so neither is repeated in its
- * context (a composed display carried its state twice, about 8 KB). A card
+ * context (a composed display carried its state twice, about 8 KB); a view
+ * only the window shows (a dashboard's board) is not shown to it at all. A card
  * reads as its lines, re-keyed into the turn's keys (answer-cards.ts), so
  * call this once per result. The rest of the result stays. Every check reads
  * the raw result, the turn's cards or the execution store, never this text:
@@ -377,7 +378,8 @@ export const workspaceCallResultForModel = (result: ToolResult, cards: TurnCards
     const { embeddedView: _evidence, data, ...rest } = entry
     // An envelope is completed only from a valid publication in data.view (embeddedViewFor).
     const { view, card: _card, ...fields } = data as { readonly view?: EmbeddedViewPublication; readonly card?: unknown } & Readonly<Record<string, unknown>>
-    const shown = view === undefined ? {} : { view: Object.hasOwn(entry, 'embeddedView') ? withoutState(view) : view }
+    // A window-only view is none the model presents: a line it cites opens it (R4 §2.6), so it reads no view at all.
+    const shown = view === undefined || view.windowOnly === true ? {} : { view: Object.hasOwn(entry, 'embeddedView') ? withoutState(view) : view }
     return { ...rest, data: { ...fields, ...shown, ...(carried === undefined ? {} : { card: cardLines(cards.add(carried.card)) }) } }
   }) } }
 }
@@ -758,9 +760,10 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
               success: true,
               data: body.result,
               ...(view.kind === 'invalid' ? { viewError: view.error } : {}),
+              // A window-only view (a dashboard's board) is kept as evidence a cited line opens, never offered to present.
               ...(view.kind === 'view' ? {
                 embeddedView: view.envelope,
-                ...(context.executionCallId === undefined
+                ...(view.envelope.windowOnly === true ? {} : context.executionCallId === undefined
                   ? { viewError: 'this executor keeps no execution evidence, so the view cannot be shown' }
                   : { viewRef: viewRefFor(context.executionCallId, entry.key) }),
               } : {}),

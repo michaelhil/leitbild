@@ -147,11 +147,11 @@ const pinnedOf = async (run: ComposeRun, pin: DashboardPin): Promise<Built> => {
 /**
  * The sections' cards as one, read now, re-keyed and capped: each section's first item, then each one's second, so the
  * cap leaves every section its leading items and side-by-side sections read as a comparison; each adjustment says its
- * section.
+ * section. Each line says which section draws it (`at`), so a key an answer cites opens the board there (R4 §2.6).
  */
 const cardOf = (run: ComposeRun, sections: ReadonlyArray<Built>): DisplayCard => {
-  const cards = sections.flatMap(section => section.card === undefined ? [] : [{ title: section.title, card: section.card }])
-  const lists = cards.map(({ card }) => card.items.map(({ key: _key, ...item }) => item))
+  const cards = sections.flatMap(section => section.card === undefined ? [] : [{ title: section.title, at: (section.id ?? section.title).slice(0, 80), card: section.card }])
+  const lists = cards.map(({ at, card }) => card.items.map(({ key: _key, ...item }) => ({ ...item, at })))
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: run.clock.currentTime, clock: 'simulation' as const }
   return assembleCard(at,
     Array.from({ length: Math.max(0, ...lists.map(list => list.length)) }, (_, index) => lists.flatMap(list => (index < list.length ? [list[index]!] : []))).flat(),

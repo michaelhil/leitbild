@@ -81,6 +81,13 @@ export const inlineHeightRequest = (
   return parsed.success ? parsed.data.height : null
 }
 
+/**
+ * A view opened at one of its parts (a dashboard at the section a cited line is drawn in, the line's `at`): its own key
+ * for that part, so the window opens it there, and the part as the listing's focus. Without a part, the view as listed.
+ */
+export const focusedListing = (listing: EmbeddedViewListing, at: string | undefined): EmbeddedViewListing =>
+  at === undefined ? listing : { ...listing, key: `${listing.key}#${encodeURIComponent(at)}`.slice(0, 512), focus: at }
+
 /** What this page tells an inline display once the Host relays for it: what it opens reaches the window. */
 export const inlineHostAnnouncement = (): EmbeddedViewHostMessage => ({ type: 'leitbild:view-host' })
 
