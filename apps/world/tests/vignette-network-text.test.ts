@@ -83,9 +83,12 @@ const inked = (row: NetworkDrawing['texts'][number]['rows'][number]): Rect => {
 const meets = (a: Rect, b: Rect): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 
 describe('the Grid\'s names (§2 rule 2)', () => {
-  test('a name past its room keeps the whole words that fit before an ellipsis, never part of a word', () => {
+  test('a name past its room keeps its whole names and counts the rest, else the whole words that fit before an ellipsis, never part of a word', () => {
     const long = 'Hungeren - Charlottenlund / Hungeren - Charlottenlund - Kvaløya'
-    expect(wholeWordsWithin(long, 52)).toBe('Hungeren - Charlottenlund / Hungeren…')
+    expect(wholeWordsWithin(long, 52)).toBe('Hungeren - Charlottenlund +1')
+    // R3 final pass: a branch of several circuits never ends inside a circuit's name.
+    expect(wholeWordsWithin('Mjøndalen - Langum / Mjøndalen - Langum / Sundhaug - Mjøndalen / Langum - Sundhaug', 52)).toBe('Mjøndalen - Langum / Mjøndalen - Langum +2')
+    expect(wholeWordsWithin('Hungeren - Charlottenlund - Kvaløya - Tromsø - Skaidi - Hammerfest', 52)).toBe('Hungeren - Charlottenlund - Kvaløya - Tromsø…')
     expect(wholeWordsWithin('Sylling trafostasjon 420/300 kV', 52)).toBe('Sylling trafostasjon 420/300 kV')
     expect(wholeWordsWithin('Supercalifragilistic', 8)).toBe('Superca…')
     // Every name the drawings write that the Pack shortened ends on a whole word of what it names.
