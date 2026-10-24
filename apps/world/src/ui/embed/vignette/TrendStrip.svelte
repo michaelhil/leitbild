@@ -18,8 +18,10 @@
   // words giving way first), its value now, the chip of the limit it is past
   // and its rate. States read as bands under the strips, filled while on. The
   // time axis is under the last. Frozen, plots and values read in
-  // OpenBridge's low-integrity colours: they no longer follow the Run.
-  let { section, title, series, observations, now, setPoints, frozen }: {
+  // OpenBridge's low-integrity colours: they no longer follow the Run. While
+  // its records are being read (the display's values drawn first), a plot
+  // without one yet stands empty rather than saying there is none.
+  let { section, title, series, observations, now, setPoints, frozen, pending = false }: {
     section: Extract<VignetteSection, { kind: 'trend' }>
     /** The vignette's title: a pen's name drops the object or element it names. */
     title: string
@@ -29,6 +31,8 @@
     /** An element's own trend marks its control set points ("CTL"). */
     setPoints: boolean
     frozen: boolean
+    /** Its records are being read (vignette-client.ts `recordsDue`). */
+    pending?: boolean
   } = $props()
 
   const id = $props.id()
@@ -154,7 +158,7 @@
       {@const drawing = drawings[index] ?? null}
       <div class="plot" style:height={`${PLOT_HEIGHT}px`}>
         {#if drawing === null}
-          <p class="empty" style:width={`${plotWidth}px`}>No recorded values in this window yet</p>
+          <p class="empty" style:width={`${plotWidth}px`}>{pending ? '' : 'No recorded values in this window yet'}</p>
         {:else}
           <svg width={width} height={PLOT_HEIGHT} role="img" aria-label={pens.map(pen => `${pen.label}: ${valueLook(pen, observations, pen.ref).text}`).join(', ')}>
             <rect class="frame" x="0.5" y="0.5" width={plotWidth - 1} height={PLOT_HEIGHT - 1} rx="3" />

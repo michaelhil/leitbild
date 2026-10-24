@@ -113,7 +113,7 @@
         <GroupedValues {section} {observations} {frozen} />
       {:else if section.kind === 'trend'}
         <!-- A pen's name drops the one object every part is on (W7.3). -->
-        <TrendStrip {section} title={view.subject?.object ?? view.title} series={snapshot.series} {observations} {now} setPoints={view.by !== 'assistant'} {frozen} />
+        <TrendStrip {section} title={view.subject?.object ?? view.title} series={snapshot.series} {observations} {now} setPoints={view.by !== 'assistant'} {frozen} pending={snapshot.recordsDue === true} />
       {:else if section.kind === 'alerts'}
         <AlertsSection rows={latest?.alerts ?? []} categories={latest?.categories} {section} room={rows ?? section.rows} {frame} />
       {:else if section.kind === 'entity'}

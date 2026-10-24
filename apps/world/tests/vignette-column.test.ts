@@ -211,7 +211,7 @@ describe('kept series (W8.5)', () => {
     let leads: ReadonlyArray<string> = ['u#a']
     const asked: Array<string> = []
     const snapshots: VignetteSnapshot[] = []
-    const timers: Array<() => void> = []
+    const timers: Array<{ readonly run: () => void; readonly delayMs: number }> = []
     const session = createVignetteSession({
       runId: 'run-1' as SimulationRunId,
       state: '{}',
@@ -226,12 +226,14 @@ describe('kept series (W8.5)', () => {
       },
       onChange: snapshot => { snapshots.push(snapshot) },
       wallNow: () => runMs,
-      schedule: (run) => { timers.push(run); return () => {} },
+      schedule: (run, delayMs) => { timers.push({ run, delayMs }); return () => {} },
     })
     const settle = async (): Promise<void> => { for (let turn = 0; turn < 20; turn += 1) await Promise.resolve() }
-    const tick = async (): Promise<void> => { runMs += 1_000; timers.shift()?.(); await settle() }
+    const tick = async (): Promise<void> => { const timer = timers.shift(); runMs += timer?.delayMs ?? 0; timer?.run(); await settle() }
     session.start()
     await settle()
+    // Its values first, its records with the sample asked at once, then a sample a second.
+    await tick()
     await tick()
     // The trip: the Pack now leads with another value too.
     leads = ['u#a', 'u#b']
@@ -239,7 +241,7 @@ describe('kept series (W8.5)', () => {
     await tick()
     await tick()
     session.close()
-    expect(asked).toEqual([`all ${SPARK_WINDOW_MS}`, 'none', 'none', 'refs u#b', 'none'])
+    expect(asked).toEqual(['none', `all ${SPARK_WINDOW_MS}`, 'none', 'none', 'refs u#b', 'none'])
     const last = snapshots.at(-1)!
     expect(last.series.get('u#b')!.points[0]).toEqual({ t: now + 3_000 - 60_000, v: 9 })
   })
