@@ -199,7 +199,9 @@ if (import.meta.main) {
     // short: "Steam generator A…") or its tag ("LO-LO · AFW START"), outside the expected aggregate.
     const lowLowOwn = (poll: Poll) => listOf(poll.screen).some(row => /(steam generator|\bSG\b)[^|]*(low-low|\bLO-LO\b)/i.test(row.text) && !/expected after/i.test(row.text))
     const countBefore = beforeExpiry === undefined ? null : expectedCount(beforeExpiry.screen)
-    const expiryLag = firstWithin(poll => lowLowOwn(poll) && (countBefore === null || (expectedCount(poll.screen) ?? 0) < countBefore), expiryAt)
+    // In the band (three rows, no aggregate row) the SG low-low's own row need not show: its leaving the head's count is it.
+    const leftExpected = (poll: Poll) => countBefore !== null && (expectedCount(poll.screen) ?? 0) < countBefore
+    const expiryLag = firstWithin(poll => (poll.screen.band === true && expectedGathering(poll.screen)?.how !== 'aggregate' ? leftExpected(poll) : lowLowOwn(poll) && (countBefore === null || leftExpected(poll))), expiryAt)
     const sawAggregate = polls.some(poll => expectedGathering(poll.screen) !== null)
     const gatheredBy = [...new Set(polls.map(poll => expectedGathering(poll.screen)?.how).filter(how => how !== undefined))].join(' and ') || 'nothing'
     const checks = [
