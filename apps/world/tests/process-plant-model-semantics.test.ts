@@ -75,7 +75,7 @@ describe('model semantics declared per component kind', () => {
       }
     }
     // A pump runs while its motor is commanded to run and has power, whatever its run command alone says; a valve sits where it actually is.
-    expect(componentById(graph, 'rcpA').semantics.aspects).toEqual([{ aspect: 'running', state: { path: 'rcpA.runningState' as never, reading: 'true' }, command: 'rcpA.running' as never }])
+    expect(componentById(graph, 'rcpA').semantics.aspects).toEqual([{ aspect: 'running', state: { path: 'rcpA.runningState' as never, reading: 'true' }, command: 'rcpA.running' as never, travel: { onS: 0, offS: 0 } }])
     expect(componentById(graph, 'feedwaterControlValveB').semantics.aspects[0]!.state!.path).toBe('feedwaterControlValveB.effectivePositionFraction' as never)
   })
 
@@ -84,7 +84,7 @@ describe('model semantics declared per component kind', () => {
     // Its motor-operated block valve sits before it on the same line, read from its own position feedback.
     expect(block).toMatchObject({ id: 'blockValve', function: 'isolating', port: 'reliefOutlet' })
     expect(block!.aspects).toEqual([
-      { aspect: 'position', state: { path: 'pressurizer.blockValveEffectivePositionFraction' as never, reading: 'value' }, command: 'pressurizer.blockValvePositionFraction' as never },
+      { aspect: 'position', state: { path: 'pressurizer.blockValveEffectivePositionFraction' as never, reading: 'value' }, command: 'pressurizer.blockValvePositionFraction' as never, travel: { onS: 10, offS: 10 } },
     ])
     expect(porv).toMatchObject({ id: 'reliefValve', function: 'relieving', port: 'reliefOutlet' })
     // The spring-loaded code safety valves relieve on their own outlet, with no command: their lift is all they report.
@@ -95,7 +95,7 @@ describe('model semantics declared per component kind', () => {
       { aspect: 'throughput', state: { path: 'pressurizer.safetyValveFlowKgPerS' as never, reading: 'flow' } },
     ])
     expect(porv!.aspects).toEqual([
-      { aspect: 'position', state: { path: 'pressurizer.reliefValveEffectivePositionFraction' as never, reading: 'value' }, command: 'pressurizer.reliefValvePositionFraction' as never },
+      { aspect: 'position', state: { path: 'pressurizer.reliefValveEffectivePositionFraction' as never, reading: 'value' }, command: 'pressurizer.reliefValvePositionFraction' as never, travel: { onS: 0, offS: 0 } },
       { aspect: 'throughput', state: { path: 'pressurizer.reliefFlowKgPerS' as never, reading: 'flow' } },
     ])
   })
@@ -103,7 +103,7 @@ describe('model semantics declared per component kind', () => {
   test('a breaker position is its contacts, closed while its solved state reads true', () => {
     expect(componentById(graph, 'offsiteBreakerA').semantics.aspects).toEqual([
       { aspect: 'energized', state: { path: 'offsiteBreakerA.energized' as never, reading: 'true' } },
-      { aspect: 'position', state: { path: 'offsiteBreakerA.closedState' as never, reading: 'closedWhileTrue' }, command: 'offsiteBreakerA.closed' as never },
+      { aspect: 'position', state: { path: 'offsiteBreakerA.closedState' as never, reading: 'closedWhileTrue' }, command: 'offsiteBreakerA.closed' as never, travel: { onS: 0, offS: 0 } },
     ])
   })
 
@@ -112,7 +112,7 @@ describe('model semantics declared per component kind', () => {
     // The behaviour treats a valve without a mode (a feed regulating valve) as a control valve, and so do its semantics.
     expect(functionOf('feedwaterControlValveB')).toBe('modulating')
     expect(functionOf('rhrIsolationValve')).toBe('isolating')
-    expect(functionOf('mainSteamSafetyValve')).toBe('relieving')
+    expect(functionOf('mainSteamSafetyValveA')).toBe('relieving')
     // The main steam isolation valves are trip valves, read open or shut.
     expect(functionOf('mainSteamIsolationValveA')).toBe('isolating')
   })
@@ -203,7 +203,7 @@ describe('model semantics declared per component kind', () => {
         id: 'semantics.port-flow',
         title: 'Port flow',
         fixedStepMs: 100,
-        components: [component('drum', 'steamGenerator', 'Drum', { nominalPressureMPa: 6, nominalLevelPercent: 0.5, heatTransferCoefficientMwPerK: 2 })],
+        components: [component('drum', 'steamGenerator', 'Drum', { nominalPressureMPa: 6, designFeedwaterTemperatureC: 220, nominalLevelPercent: 0.5, heatTransferCoefficientMwPerK: 2 })],
         connections: [],
       }), registry)
     }
@@ -282,6 +282,16 @@ describe('operator names', () => {
     expect(() => compilePlantGraph(worded({ powerMw: { on: 'at power', off: 'shut down' } }), processPlantComponentRegistry)).toThrow('not one of its on/off signals')
   })
 
+  test('operator names name a reading of their own component, as its presentation declares them (R37)', () => {
+    const spec = assemblePwrReferencePlantGraph({ loopCount: 4 })
+    const core = (names: Record<string, string>): PlantGraphSpec => ({
+      ...spec,
+      components: spec.components.map(entry => String(entry.id) === 'core' ? { ...entry, metadata: { ...entry.metadata, presentation: { ...entry.metadata?.presentation, names } } } : entry),
+    })
+    expect(compilePlantGraph(spec, processPlantComponentRegistry).components.find(entry => String(entry.id) === 'core')!.metadata?.presentation?.names).toEqual({ coreExitTemperatureC: 'CET', powerRangePercent: 'reactor power' })
+    expect(() => compilePlantGraph(core({ noSuchReading: 'CET' }), processPlantComponentRegistry)).toThrow('names a reading noSuchReading, which is not one of its variables')
+  })
+
   test('renaming equipment never changes the Plant identity that persisted Runs are bound to', () => {
     const spec = assemblePwrReferencePlantGraph({ loopCount: 4 })
     const renamed: PlantGraphSpec = {
@@ -325,9 +335,12 @@ describe('link flow', () => {
 
   test('a link is rated by its own nominal flow or by the equipment that drives it', () => {
     expect(ratedFlowForLink(graph, linkById('rcs-hot-leg-a'))).toBe(4250)
-    // Through the MFW header and FCV B, back to one MFW pump: half the steam
-    // the core's 3,400 MW and the reactor coolant pumps' 18 MW raise.
-    expect(ratedFlowForLink(graph, linkById('feedwater-control-valve-b-to-sg-b'))).toBeCloseTo(756, 0)
+    // Through the MFW header and FCV B, back to one MFW pump: half the feed
+    // the pumps pass with the regulating valves wide open, the full-power
+    // feed (the steam the core's 3,400 MW and the reactor coolant pumps'
+    // 18 MW raise from 227 °C feedwater at 6.9 MPa, 1.80 MJ/kg) over the
+    // valves' 75 % full-power opening.
+    expect(ratedFlowForLink(graph, linkById('feedwater-control-valve-b-to-sg-b'))).toBeCloseTo(1268, 0)
     expect(ratedFlowForLink(graph, linkById('pressurizer-relief-to-tank'))).toBe(componentById(graph, 'pressurizer').semantics.ratedOutflow[0]!.flowKgPerS)
     // The letdown line carries the vessel's rated letdown, about 75 gpm.
     expect(ratedFlowForLink(graph, linkById('letdown-to-vct'))).toBe(5)

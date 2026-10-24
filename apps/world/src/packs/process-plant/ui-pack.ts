@@ -12,7 +12,7 @@ export const processPlantPackView = {
     version: '1.0.0',
     name: 'Process Plant',
     description: 'Configurable component-graph process plants with transient dynamics, procedures, controls, and engineering views.',
-    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation'],
+    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation', 'observation'],
   }),
   runtime: {
     runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local', clock: 'simulation' }],
@@ -43,5 +43,14 @@ export const processPlantPackView = {
     assessmentsQuery: (plantId, assessmentIds) => ({
       capabilityId: 'world.process-plant.assessments.evaluate', input: { plantId, assessmentIds },
     }),
+  },
+  ui: {
+    surfacePanels: [],
+    // The display window's header, for a Plant's display: its runtime not started, pending proposals, the procedure its
+    // worst safety function calls for, the operations log, the Run's Assistant, its engineering views and the Plant
+    // catalog, the Instructor's actions.
+    windowTools: async () => await import('./ui/displays/WindowTools.svelte'),
+    // A press on a unit's map icon or rail row opens its overview display.
+    displayOnPress: true,
   },
 } satisfies WorldPackView

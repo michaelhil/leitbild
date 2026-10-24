@@ -260,6 +260,12 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       // verifies the trip by, in the order a faceplate reads them.
       shutdownReadings: ['rodsOnBottom', 'rodStepsWithdrawn', 'powerRangePercent', 'intermediateRangeCurrentAmps', 'intermediateRangeStartupRateDpm'],
       energy: [{ role: 'source', circuit: 'coolant', rate: 'totalThermalPowerMw' }],
+      // The rods' average steps, bank by bank: the shutdown banks, then the control banks, each in at no steps withdrawn.
+      insertion: {
+        reading: 'rodStepsWithdrawn',
+        insertedAt: 'min',
+        groups: [shutdownRodBanks.map(bank => `shutdownBank${bank}StepsWithdrawn`), controlRodBanks.map(bank => `controlBank${bank}StepsWithdrawn`)],
+      },
     }),
     variables: [
       // Fission power is what the power-range channels read: calibrated so that
@@ -374,8 +380,8 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'safetyInjectionFlowKgPerS', label: 'Primary safety injection flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'letdownFlowKgPerS', label: 'Primary letdown flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'reliefOutflowKgPerS', label: 'Primary relief outflow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true }),
-      variable({ path: 'primaryLeakFlowKgPerS', label: 'Primary coolant boundary leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true }),
-      variable({ path: 'tubeLeakFlowKgPerS', label: 'Primary-to-secondary tube leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true }),
+      variable({ path: 'primaryLeakFlowKgPerS', label: 'Primary coolant boundary leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true, faultTruth: true }),
+      variable({ path: 'tubeLeakFlowKgPerS', label: 'Primary-to-secondary tube leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true, faultTruth: true }),
       variable({ path: 'netInventoryFlowKgPerS', label: 'Primary inventory net flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s', simulatorOnly: true }),
       variable({ path: 'primaryInventoryBalanceResidualKg', label: 'Primary inventory balance residual', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg', simulatorOnly: true }),
       variable({ path: 'boronConcentrationPpm', label: 'Primary coolant boron concentration', kind: 'state', discipline: 'chemical', writable: false, publish: 'telemetry', quantity: 'concentration', unit: 'ppm' }),

@@ -3,7 +3,6 @@
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
-  import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
   import FieldVisibilityMenu from './FieldVisibilityMenu.svelte'
   import ObjectRow from './ObjectRow.svelte'
@@ -29,17 +28,14 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     /** Absent where this screen may not delete: a role Run's operator-class role sets. */
-    readonly deleteObject?: (object: OperationalObject) => Promise<void>
-    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>
-    readonly openProcessDisplay?: (object: OperationalObject) => void
-    readonly openProcedureSystem?: (object: OperationalObject) => void
-    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
-    readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
-    readonly openProcessPlantCatalog?: (object: OperationalObject) => void
-    readonly openProcessPlantCredibility?: (object: OperationalObject) => void
-    readonly openDroneControl?: (object: OperationalObject) => void
-    readonly openDroneProfileEditor?: (object: OperationalObject) => void
-    readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
+    readonly deleteObject?: ((object: OperationalObject) => Promise<void>) | undefined
+    readonly detailPresentationFor?: ((object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>) | undefined
+    readonly openProcessDisplay?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystem?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystemAt?: ((object: OperationalObject, summary?: ProcedureRunSummary) => void) | undefined
+    readonly openDroneControl?: ((object: OperationalObject) => void) | undefined
+    readonly openDroneProfileEditor?: ((object: OperationalObject) => void) | undefined
+    readonly procedureSummariesForObject?: ((object: OperationalObject) => ProcedureRunSummaryGroup) | undefined
     readonly proceduresVisible: boolean
   }
 
@@ -65,9 +61,6 @@
     openProcessDisplay,
     openProcedureSystem,
     openProcedureSystemAt,
-    openProcessPlantArtifact,
-    openProcessPlantCatalog,
-    openProcessPlantCredibility,
     openDroneControl,
     openDroneProfileEditor,
     procedureSummariesForObject,
@@ -140,9 +133,6 @@
         {openProcessDisplay}
         {openProcedureSystem}
         {openProcedureSystemAt}
-        {openProcessPlantArtifact}
-        {openProcessPlantCatalog}
-        {openProcessPlantCredibility}
         {openDroneControl}
         {openDroneProfileEditor}
         procedureSummaries={procedureSummariesForObject?.(entry.object)}

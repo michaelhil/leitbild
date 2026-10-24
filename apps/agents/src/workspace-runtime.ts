@@ -60,6 +60,8 @@ import {
   createPostToRoomTool, createGetRoomHistoryTool, createConversationReadTool,
   createRecallTool,
   createQueryDocumentsTool,
+  createContextPublisherLookup,
+  createViewPublisherLookup,
   createWorkspaceCapabilityTools,
 } from './tools/built-in/index.ts'
 import { createBiometricsTools, BIOMETRICS_PACK_NAMESPACE } from './tools/built-in/biometric-tools.ts'
@@ -72,7 +74,10 @@ import { createDocumentManager, type DocumentManager } from './documents/manager
 import type { DocumentMetadata } from './documents/types.ts'
 import { dirname, join } from 'node:path'
 import { createComparisons } from './agents/comparisons.ts'
-import { requestDisplay } from './agents/display-requests.ts'
+import { createRunContextFetcher } from './agents/run-context.ts'
+import { displayRequestOffered, requestDisplay, type DisplayRequestDeps } from './agents/display-requests.ts'
+import { createProposalCardReader, proposedOperationsOf, type ProposalCard } from './agents/proposal-cards.ts'
+import { createProposalResumes, type ProposalResumes } from './agents/proposal-resumes.ts'
 import type { DisplayRequestAccepted } from './core/display-request.ts'
 // Native-only tool calling — no capability probing needed
 import { type SkillStore } from './skills/loader.ts'
@@ -183,8 +188,16 @@ export interface AgentsWorkspaceRuntime {
   // Manual-mode activation: catch the agent up and force one eval.
   readonly activateAgentInRoom: (agentId: string, roomId: string) => { ok: boolean; queued: boolean; reason?: string }
   // Asks the author of an answer to show it as a live display (see
-  // core/display-request.ts). Throws DisplayRequestRefusal naming the rule.
-  readonly requestDisplay: (roomId: string, messageId: string, requesterId: string) => DisplayRequestAccepted
+  // core/display-request.ts). Rejects with DisplayRequestRefusal naming the rule.
+  readonly requestDisplay: (roomId: string, messageId: string, requesterId: string) => Promise<DisplayRequestAccepted>
+  // Whether an Agent's answers in a Room offer that request: its Scope reaches an operation that publishes a display.
+  readonly displayRequestOffered: (roomId: string, agentId: string) => Promise<boolean>
+  // The operations a turn proposed and where World says each stands now (agents/proposal-cards.ts).
+  // Throws with a code where the Room, the turn or the Workspace Host is missing.
+  readonly readProposalCards: (roomId: string, turnId: string) => Promise<ReadonlyArray<ProposalCard>>
+  // Watches the proposals of procedure turns and resumes their agent once one is approved
+  // (agents/proposal-resumes.ts). Absent without a Workspace Host; disposed with the runtime.
+  readonly proposalResumes?: ProposalResumes
   readonly setOnMessagePosted: (callback: OnMessagePosted) => void
   readonly setOnTurnChanged: (callback: OnTurnChanged) => void
   readonly setOnDeliveryModeChanged: (callback: OnDeliveryModeChanged) => void
@@ -609,6 +622,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     const removeAgent = (id: string): boolean => {
       const agent = team.getAgent(id)
       if (!agent) return false
+      // A removed Agent leaves the team, so no later drain sees it: stop its
+      // turns now, dropping a queued one and cancelling a running one.
+      const ai = asAIAgent(agent)
+      if (ai) { ai.close(); ai.cancelGeneration() } // Human Agents take no turns.
       for (const profile of rooms.listAllRooms()) {
         const room = rooms.getRoom(profile.id)
         if (room?.hasMember(id)) {
@@ -815,14 +832,54 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       return { model: preferred, fallback: false, reason: 'preferred_available' }
     }
 
+    // Proposal cards read World's status through the same Host the agents' workspace calls go to.
+    const proposalCards = options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+      ? createProposalCardReader({ workspaceId: options.workspaceId, hostBaseUrl: options.workspaceHostUrl })
+      : undefined
+    // An approved proposal of a procedure turn resumes its agent (agents/proposal-resumes.ts).
+    // Without a Workspace Host there is no World to read: nothing is watched,
+    // and the person continues the procedure as before.
+    const proposalResumes = proposalCards === undefined
+      ? undefined
+      : createProposalResumes({ rooms, team, executions: executionStore, readStatus: proposalCards.read })
+
+    // "Show display" is offered where a Room's Scope reaches an operation whose
+    // Module declares that it publishes a display, asked of the same Host.
+    const displayRequestDeps: DisplayRequestDeps = {
+      rooms,
+      team,
+      isScriptRunning: roomId => scriptRunnerRef?.getRun(roomId) !== undefined,
+      viewPublishers: options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+        ? createViewPublisherLookup({
+            workspaceId: options.workspaceId,
+            hostBaseUrl: options.workspaceHostUrl,
+            getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
+          })
+        : undefined,
+    }
+
+    // Each turn reads its Room Scope's Run context through the same Host (agents/run-context.ts).
+    const fetchRunContext = options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+      ? createRunContextFetcher(createContextPublisherLookup({
+          workspaceId: options.workspaceId,
+          hostBaseUrl: options.workspaceHostUrl,
+          getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
+        }))
+      : undefined
+
     const runToolOperation = options.runWorkspaceOperation
     const boundSpawnAIAgent = (config: AIAgentConfig, options?: SpawnOptions) =>
       spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
         ...options,
         executionStore,
         executionGrowth,
+        ...(fetchRunContext ? { fetchRunContext } : {}),
         onTurnStart: comparisons.capture,
-        onTurnMessageLinked: comparisons.link,
+        onTurnMessageLinked: input => {
+          // Absent without a Workspace Host (see proposalResumes above).
+          proposalResumes?.answered(input)
+          comparisons.link(input)
+        },
         onTurnFinished: comparisons.discard,
         ...(runToolOperation ? { runToolOperation } : {}),
         getSkills: getSkillsForRoom,
@@ -1002,9 +1059,20 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       spawnAIAgent: boundSpawnAIAgent,
       spawnHumanAgent: boundSpawnHumanAgent,
       activateAgentInRoom,
-      requestDisplay: (roomId, messageId, requesterId) => requestDisplay({
-        rooms, team, isScriptRunning: roomId => scriptRunnerRef?.getRun(roomId) !== undefined,
-      }, roomId, messageId, requesterId),
+      readProposalCards: async (roomId, turnId) => {
+        const room = rooms.getRoom(roomId)
+        if (!room) throw Object.assign(new Error('Room not found'), { code: 'room_not_found' })
+        const turn = executionStore.getTurn(room.profile.id, turnId)
+        if (!turn) throw Object.assign(new Error('Execution turn not found'), { code: 'turn_not_found' })
+        const operations = proposedOperationsOf(executionStore.listCalls(room.profile.id, turn.id).map(call => executionStore.getCall(room.profile.id, turn.id, call.id)!))
+        if (operations.length === 0) return []
+        if (proposalCards === undefined) throw Object.assign(new Error('This Agents runtime has no Workspace Host to read proposals from'), { code: 'workspace_host_unavailable' })
+        // An agent removed from the Workspace since is named by its id.
+        return await proposalCards.read(operations, { id: turn.agentId, name: team.getAgent(turn.agentId)?.name ?? turn.agentId })
+      },
+      ...(proposalResumes === undefined ? {} : { proposalResumes }),
+      requestDisplay: (roomId, messageId, requesterId) => requestDisplay(displayRequestDeps, roomId, messageId, requesterId),
+      displayRequestOffered: (roomId, agentId) => displayRequestOffered(displayRequestDeps, roomId, agentId),
       setOnMessagePosted: messagePosted.set,
       setOnMessagesRemoved: messagesRemoved.set,
       setOnTurnChanged: turnChanged.set,

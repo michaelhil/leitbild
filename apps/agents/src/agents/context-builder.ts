@@ -115,7 +115,13 @@ export const flushIncoming = (
   if (flushed.length > 0) {
     const ctx = history.rooms.get(info.triggerRoomId)
     if (ctx) {
-      const next = [...ctx.history, ...flushed]
+      // The progress lines a turn posts reach history while it runs (an
+      // Agent's own messages skip incoming), before the messages it answered
+      // are flushed here: keep those lines after them, as the Room has them.
+      const newest = Math.max(...flushed.map(m => m.timestamp))
+      let at = ctx.history.length
+      while (at > 0 && ctx.history[at - 1]!.progress === true && ctx.history[at - 1]!.timestamp >= newest) at--
+      const next = [...ctx.history.slice(0, at), ...flushed, ...ctx.history.slice(at)]
       ctx.history = retainedMessages === undefined ? next : next.slice(-retainedMessages)
       ctx.lastActiveAt = Date.now()
     }
@@ -169,6 +175,9 @@ export interface BuildContextDeps {
   // Returns the per-room wikis catalog text (index.md + scope.md per bound
   // wiki), or '' when nothing is bound. Section gated by IncludePrompts.wikis.
   readonly getWikisCatalog?: (roomId: string) => string
+  // The Workspace operations this Agent used earlier in the Room's
+  // conversation, read from its execution record (discovery-memo.ts); '' for none.
+  readonly getDiscoveryMemo?: (roomId: string) => string
   // Script-mode bypass. When this returns a value (cast member in an
   // active run), the agent's context is built ENTIRELY from these
   // pieces — Workspace prompt, room context, message history are suppressed.
@@ -213,6 +222,9 @@ export interface BuildContextDeps {
   // One requested turn's instruction (core/types/agent.ts RequestedTurn).
   // Ends the context as a transient user message; never enters history.
   readonly turnInstruction?: string
+  // The Room Scope's Run context read for this turn, or the note saying why
+  // none was (run-context.ts); absent where the Scope publishes none.
+  readonly runContext?: string
 }
 
 const resolveIncludes = (inc: IncludePrompts | undefined): Required<IncludePrompts> => ({
@@ -278,6 +290,8 @@ export type SystemSectionKey =
   | 'workspace' | 'room' | 'persona' | 'responseFormat' | 'skills' | 'wikis'
   | 'ctx_intro'           // "You are in room X" — always emitted
   | 'ctx_flow'
+  | 'ctx_discovery'       // Workspace operations this Agent used earlier in the conversation
+  | 'ctx_run'             // The Room Scope's Run context, read for this turn (run-context.ts)
   | 'ctx_participants'
   | 'ctx_activity'
   | 'ctx_knownAgents'
@@ -390,6 +404,26 @@ export const buildSystemSections = (
     optional: true,
   })
 
+  // Conversation evidence (discovery-memo.ts): what the Agent already found
+  // and used here, so a later turn does not explore it again.
+  const discoveryText = deps.getDiscoveryMemo ? deps.getDiscoveryMemo(triggerRoomId) : ''
+  out.push({
+    key: 'ctx_discovery',
+    label: 'Discovered operations',
+    text: discoveryText,
+    enabled: !!discoveryText,
+    optional: false,
+  })
+
+  // Read fresh each turn, so it is the last context child: every stable section keeps the cache prefix.
+  out.push({
+    key: 'ctx_run',
+    label: 'Run context',
+    text: deps.runContext ?? '',
+    enabled: !!deps.runContext,
+    optional: false,
+  })
+
   out.push({
     key: 'responseFormat',
     label: 'RESPONSE FORMAT',
@@ -413,7 +447,7 @@ const CTX_STABLE_KEYS: ReadonlyArray<SystemSectionKey> = [
   'ctx_intro',
 ]
 const CTX_VARIABLE_KEYS: ReadonlyArray<SystemSectionKey> = [
-  'ctx_knownAgents', 'ctx_participants', 'ctx_activity', 'ctx_flow',
+  'ctx_knownAgents', 'ctx_participants', 'ctx_activity', 'ctx_flow', 'ctx_discovery', 'ctx_run',
 ]
 
 // Map a SystemSection to the XML tag used to fence it. Tag names are

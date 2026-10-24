@@ -12,6 +12,7 @@ import {
   hiddenOnceHeld,
   openRoleDialog,
   roleDialogChange,
+  roleDialogInitialFocus,
   roleDialogModel,
   roleDialogResult,
   seenRoleIdsFor,
@@ -126,6 +127,8 @@ describe('the role dialog', () => {
     expect(model(sided, draft).presets.find(row => row.id === 'north-solo')?.ticked).toBe(true)
     draft = togglePreset(sided, draft, 'north-solo')
     expect(draft.control).toEqual(['control'])
+    // See goes with Control: an unticked preset leaves none of its roles seen.
+    expect(draft.hidden).toEqual(['north-desk', 'group:n-haul', 'group:n-guard'])
     // A role without a category is a row of its own.
     expect(togglePreset(sided, draft, 'north-desk').control).toEqual(['north-desk', 'control'])
     expect(togglePreset(sided, togglePreset(sided, draft, 'north-desk'), 'north-desk').control).toEqual(['control'])
@@ -196,6 +199,17 @@ describe('the role dialog', () => {
     expect([bar.more, bar.moreLabels]).toEqual([4, ['North haulers', 'North guards', 'North haulers 2', 'South haulers']])
     expect(roleBarModel(sided, many.slice(0, roleBarChipLimit))).toMatchObject({ more: 0, moreLabels: [] })
     expect(roleBarModel(sided, many.slice(0, roleBarChipLimit)).chips).toHaveLength(roleBarChipLimit)
+  })
+
+  test('joining opens on a clear page with focus in the dialog, and each preset or role row is named by its label', () => {
+    const draft = openRoleDialog(sided, [], [])
+    expect(roleDialogInitialFocus('join', model(sided, draft))).toBe('first-choice')
+    expect(roleDialogInitialFocus('join', model(sided, togglePreset(sided, draft, 'north-solo')))).toBe('apply')
+    expect(roleDialogInitialFocus('switch', model(sided, openRoleDialog(sided, ['group:n-haul'], [])))).toBeNull()
+    const dialog = readFileSync(join(import.meta.dir, '..', 'src', 'ui', 'roles', 'RoleDialog.svelte'), 'utf8')
+    expect(dialog).toContain(`backdrop={mode === 'join' ? 'clear' : 'dim'}`)
+    expect(dialog).toMatch(/<input type="checkbox" aria-label=\{row\.label\} aria-describedby="role-dialog-\{row\.kind\}-\{row\.id\}"/)
+    expect(dialog).toContain('<small id="role-dialog-{row.kind}-{row.id}">')
   })
 
   test('the route offers the dialog when joining and from the role bar, and the role bar no longer has an add menu', () => {
@@ -272,7 +286,7 @@ describe('the See hook for Packs', () => {
       objects: [object],
       selectedControllerId: null,
       highlightedObjectIds: [],
-      hiddenObjectCategoryIds: [],
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
       hasNewInfo: () => false,

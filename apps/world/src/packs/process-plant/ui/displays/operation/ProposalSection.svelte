@@ -1,0 +1,159 @@
+<script lang="ts">
+  import '@oicl/openbridge-webcomponents/dist/components/button/button.js'
+  import '@oicl/openbridge-webcomponents/dist/components/slide-button/slide-button.js'
+  import '@oicl/openbridge-webcomponents/dist/components/text-input-field/text-input-field.js'
+  import { listen } from './listen.ts'
+  import type { CitedReading } from './cited-reading.ts'
+  import { STALE_CONTROLS, type ProposalCard } from './operation-presenter.ts'
+
+  // A proposal's approval card, first in its item's popover while pending
+  // (plan §4.4, QA-9): the exact command World stored, from → to, who
+  // proposed it and why in their own quoted words, what the I&C says of it
+  // now (neutral, no tick), each cited reading then → now with its margin to
+  // its limits and its last minutes, the expected response and whether it
+  // can be undone, and the fixed expiry with one explicit extension. Approve and
+  // Reject carry equal weight and neither takes focus; Approve names verb, tag
+  // and label, and is a slide where the command sets a trip going.
+
+  type Outcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
+
+  let { card, cited = new Map(), spark, stale = false, approve, reject, extend, useAsDraft }: {
+    card: ProposalCard
+    /** Each cited reading's margin to its limits and its recent line, by tag. */
+    cited?: ReadonlyMap<string, CitedReading>
+    /** The size each cited reading's line is drawn at. */
+    spark?: { readonly width: number; readonly height: number }
+    /** The page's samples are stale: no decision is offered on old values (STALE_CONTROLS). */
+    stale?: boolean
+    approve: () => Promise<Outcome>
+    reject: (reason: string | null) => Promise<Outcome>
+    extend: () => Promise<Outcome>
+    /** Copies the command into CONTROL as this person's own selection. */
+    useAsDraft: () => void
+  } = $props()
+
+  let reason = $state('')
+  let busy = $state(false)
+  let outcome = $state<string | null>(null)
+
+  const decide = async (what: string, act: () => Promise<Outcome>): Promise<void> => {
+    if (busy || stale) return
+    busy = true
+    outcome = null
+    try {
+      const result = await act()
+      outcome = result.ok ? null : `${what} refused: ${result.reason}`
+    } catch (error) {
+      outcome = `${what} could not be sent: ${error instanceof Error ? error.message : String(error)}`
+    } finally {
+      busy = false
+    }
+  }
+
+  const open = $derived(card.status === 'pending' || card.status === 'blocked')
+  const left = $derived(card.expires === null ? '' : `${Math.floor(card.expires.inMs / 60_000)}:${String(Math.floor((card.expires.inMs % 60_000) / 1_000)).padStart(2, '0')}`)
+</script>
+
+<section class="proposal" class:closed={!open} aria-label={`Proposal: ${card.action}`}>
+  <header>
+    <span class="who">{card.proposer}</span>
+    {#if card.expires !== null}<span class="expires">expires {card.expires.at} ({left} left)</span>{/if}
+  </header>
+  <p class="action">{card.action}</p>
+  {#if open && card.already !== null}<p class="change">{card.already}</p>
+  {:else if open && (card.from !== null || card.to !== null)}<p class="change">{card.from ?? '—'} → {card.to ?? '—'}</p>{/if}
+  <blockquote>
+    <span class="label">Why ({card.proposerOrigin === 'ai' ? 'AI' : 'operator'}):</span> “{card.reason}”
+    {#if card.procedureStep !== undefined}<span class="step">{card.procedureStep}</span>{/if}
+  </blockquote>
+  {#if open}<p class="checked" class:refused={!card.checked.permitted}>{card.checked.text}</p>{/if}
+  {#if card.changed}<p class="changed">Plant changed since proposed</p>{/if}
+  <ul class="evidence" aria-label="Cited readings">
+    {#each card.evidence as entry (entry.tagId)}
+      {@const reading = cited.get(entry.tagId)}
+      <li>
+        <span class="tag">{entry.tagId}</span>
+        <span class="values" class:changed={entry.changed}>{entry.then}{#if entry.changed} → {entry.now}{/if}</span>
+        {#if reading?.line && spark}
+          <svg class="spark" width={spark.width} height={spark.height} role="img" aria-label="{entry.tagId}, {reading.line.text}">
+            <title>{reading.line.text}</title>
+            <path d={reading.line.path} />
+            {#if reading.line.end}<circle cx={reading.line.end.x} cy={reading.line.end.y} r="2" />{/if}
+          </svg>
+        {/if}
+        {#if reading?.margin}<span class="margin">{reading.margin.text}</span>{/if}
+      </li>
+    {/each}
+  </ul>
+  {#if card.consequence !== null}<p class="consequence-line">{card.consequence.text}{#if card.consequence.mayActuate !== null}<strong class="may-actuate">{card.consequence.mayActuate}</strong>{/if}</p>{/if}
+  <p class="expected">Expected: {card.expected}</p>
+  {#each card.consequences as line (line)}<p class="consequence">{line}</p>{/each}
+  {#each card.opposing as line (line)}<p class="opposing">{line}</p>{/each}
+  <p class="reversibility">{card.reversibility}</p>
+  {#if open && card.approve !== null}
+    <!-- What Approve executes, in full (QA-7): verb, tag and label, and whether the plant changed since it was proposed. -->
+    <p class="approve-what">{card.approve.label}</p>
+    {#if stale}<p class="refused" role="status">{STALE_CONTROLS}</p>{/if}
+    <div class="decisions">
+      {#if card.approve.confirm === 'slide'}
+        <!-- The slide's handle says Approve, so it has the track's length to travel; its name says what it approves. -->
+        <obc-slide-button aria-label={card.approve.label} disabled={busy || stale || !card.approve.enabled} onslide={() => { if (card.approve?.enabled) void decide('Approval', approve) }}>
+          <span slot="label">Approve</span>
+        </obc-slide-button>
+      {:else}
+        <!-- An obc-button is a button: the native button inside it takes Enter and Space. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <obc-button variant="normal" aria-label={card.approve.label} disabled={busy || stale || !card.approve.enabled} onclick={() => { if (card.approve?.enabled) void decide('Approval', approve) }}>Approve</obc-button>
+      {/if}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <obc-button variant="normal" disabled={busy || stale} onclick={() => { void decide('Rejection', () => reject(reason.trim() === '' ? null : reason.trim())) }}>Reject</obc-button>
+    </div>
+    <!-- Read as typed and as committed: the field's change does not bubble, so it is listened to on the field itself. -->
+    <obc-text-input-field label="Reason to reject (optional)" maxlength={300} value={reason} disabled={stale} use:listen={{
+      input: event => { const field = event.composedPath()[0]; if (field instanceof HTMLInputElement) reason = field.value },
+      change: event => { const detail = (event as CustomEvent<{ value?: string } | null>).detail; if (typeof detail?.value === 'string') reason = detail.value },
+    }}></obc-text-input-field>
+    <div class="secondary">
+      {#if card.extendable}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <obc-button variant="flat" disabled={busy || stale} onclick={() => { void decide('Extension', extend) }}>Extend once</obc-button>
+      {/if}
+      {#if card.draftable}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <obc-button variant="flat" disabled={busy || stale} onclick={() => { if (!stale) useAsDraft() }}>Use as draft</obc-button>
+      {/if}
+    </div>
+  {/if}
+  {#if card.closed !== null}<p class="closed-text">{card.closed}</p>{/if}
+  {#if outcome !== null}<p class="refused" role="status">{outcome}</p>{/if}
+</section>
+
+<style>
+  .proposal { display: flex; flex-direction: column; gap: 4px; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border-divider-color); }
+  header { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; color: var(--element-neutral-color); }
+  .approve-what { font-weight: 600; color: var(--element-active-color); }
+  p { margin: 0; }
+  .action { font-weight: 700; color: var(--element-active-color); }
+  .change, .margin, .expected, .consequence, .opposing, .reversibility, .closed-text { color: var(--element-neutral-color); }
+  /* World's consequence line: what approving it stops or isolates now, read before Approve. */
+  .consequence-line { color: var(--element-active-color); }
+  /* What it may set going stands out, on its own line (C2a). */
+  .may-actuate { display: block; font-weight: 700; }
+  blockquote { margin: 0; padding-left: 6px; border-left: 2px solid var(--border-outline-color); }
+  .label, .step { color: var(--element-neutral-color); }
+  .step { display: block; }
+  /* What the I&C says, in plain words: allowed reads as plainly as refused (QA-9). */
+  .checked { color: var(--element-active-color); }
+  .refused, .changed { font-weight: 600; color: var(--element-active-color); }
+  .evidence { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .evidence li { display: flex; align-items: center; gap: 8px; }
+  .tag { font-weight: 600; min-width: 96px; }
+  .values { font-variant-numeric: tabular-nums; }
+  .values.changed { font-weight: 600; }
+  .spark path { fill: none; stroke: var(--element-active-color); stroke-width: 1.5; }
+  .spark circle { fill: var(--element-active-color); }
+  /* Equal weight: the same variant and width, neither focused first (QA-9). */
+  .decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .secondary { display: flex; gap: 6px; }
+  .closed .action { color: var(--element-neutral-color); }
+</style>

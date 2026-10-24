@@ -66,8 +66,9 @@ const series = (config: {
   value: config.value,
 })
 
-const operations = [{
-  signalId: 'grid.frequency', title: 'Frequency (largest-load energised island)', quantity: 'frequency', unit: 'Hz', key: 'frequencyHz',
+/** The grid-wide signals the Historian records; `lead` ranks what an operator weighs first (1 first) among them. */
+export const gridOperationsSignals = [{
+  signalId: 'grid.frequency', title: 'Frequency (largest-load energised island)', quantity: 'frequency', unit: 'Hz', key: 'frequencyHz', lead: 1,
 }, {
   signalId: 'grid.frequency.min', title: 'Lowest island frequency', quantity: 'frequency', unit: 'Hz', key: 'frequencyMinHz',
 }, {
@@ -79,13 +80,13 @@ const operations = [{
 }, {
   signalId: 'grid.served-load', title: 'Served load', quantity: 'active-power', unit: 'MW', key: 'servedLoadMw',
 }, {
-  signalId: 'grid.unserved-load', title: 'Unserved load', quantity: 'active-power', unit: 'MW', key: 'unservedLoadMw',
+  signalId: 'grid.unserved-load', title: 'Unserved load', quantity: 'active-power', unit: 'MW', key: 'unservedLoadMw', lead: 3,
 }, {
   signalId: 'grid.losses', title: 'Network losses', quantity: 'active-power', unit: 'MW', key: 'lossesMw',
 }, {
-  signalId: 'grid.reserve', title: 'Reserve margin', quantity: 'active-power', unit: 'MW', key: 'reserveMarginMw',
+  signalId: 'grid.reserve', title: 'Reserve margin', quantity: 'active-power', unit: 'MW', key: 'reserveMarginMw', lead: 4,
 }, {
-  signalId: 'grid.maximum-branch-loading', title: 'Maximum branch loading', quantity: 'ratio', unit: '%', key: 'highestBranchLoadingPercent',
+  signalId: 'grid.maximum-branch-loading', title: 'Maximum branch loading', quantity: 'ratio', unit: '%', key: 'highestBranchLoadingPercent', lead: 2,
 }, {
   signalId: 'grid.voltage.min', title: 'Lowest bus voltage (converged islands)', quantity: 'voltage', unit: 'pu', key: 'voltageMinPu',
 }, {
@@ -93,11 +94,11 @@ const operations = [{
 }, {
   signalId: 'grid.dc-flow-islands', title: 'Energised islands on DC flows (AC load flow not converged)', quantity: 'count', unit: '1', key: 'notConvergedIslandCount',
 }, {
-  signalId: 'grid.island-count', title: 'Energised islands', quantity: 'count', unit: '1', key: 'activeIslandCount',
+  signalId: 'grid.island-count', title: 'Energised islands', quantity: 'count', unit: '1', key: 'activeIslandCount', lead: 5,
 }, {
-  signalId: 'grid.active-alarms', title: 'Active alarms', quantity: 'count', unit: '1', key: 'activeAlarmCount',
+  signalId: 'grid.active-alarms', title: 'Active alarms', quantity: 'count', unit: '1', key: 'activeAlarmCount', lead: 6,
 }] as const
-const operationsSeries = (grid: GridRuntimeInstance): ReadonlyArray<GridRecordingSeries> => operations.map(({ key, ...item }) => series({ grid, ...item, value: () => grid.projection[key] }))
+const operationsSeries = (grid: GridRuntimeInstance): ReadonlyArray<GridRecordingSeries> => gridOperationsSignals.map(({ key, ...item }) => series({ grid, ...item, value: () => grid.projection[key] }))
 
 /** Frequency and energisation series of one island, keyed by its stable id. */
 const islandSeries = (grid: GridRuntimeInstance, islandId: string): ReadonlyArray<GridRecordingSeries> => {
@@ -121,7 +122,7 @@ const estimatedIslandSeriesCount = 3
 
 /** The series a Grid records from its start (one island), as createGridRecordingPlan describes them; an HVDC terminal has no bus series. */
 export const gridRecordingSeriesCount = (counts: GridModelAssetCounts, profileId: string): number =>
-  operations.length + estimatedIslandSeriesCount + (profileId === 'engineering'
+  gridOperationsSignals.length + estimatedIslandSeriesCount + (profileId === 'engineering'
     ? (counts.bus - counts.hvdcTerminal) * 2 + counts.branch * 3 + counts.generator + counts.load + counts.storage : 0)
 
 // Per-asset values read the Grid's arrays by model index; bus values exist once the network has been

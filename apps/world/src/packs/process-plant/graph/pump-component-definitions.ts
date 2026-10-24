@@ -3,6 +3,9 @@ import { type ComponentDefinition, type ComponentKind, variablePathSchema } from
 import { defineComponent, variable } from './component-definition-helpers.ts'
 import { aspect, fixedSemantics } from './semantics.ts'
 
+/** The ports by which a pump its own steam turbine drives takes the turbine's steam and exhausts it. */
+export const pumpDriveSteamPorts = { inlet: 'driveSteamInlet', exhaust: 'driveSteamExhaust' } as const
+
 export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'centrifugalPump' as ComponentKind,
@@ -12,6 +15,10 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       outlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
       speedDemand: { kind: 'controlSignal', direction: 'in' },
       power: { kind: 'electricalAc', direction: 'in', demand: 'demandMw' },
+      // A pump its own steam turbine drives takes the turbine's steam here and
+      // exhausts it by its exhaust, to the atmosphere.
+      [pumpDriveSteamPorts.inlet]: { kind: 'steam', direction: 'in', circuit: 'drive' },
+      [pumpDriveSteamPorts.exhaust]: { kind: 'steam', direction: 'out', circuit: 'drive' },
     },
     parametersSchema: z.object({
       nominalFlowKgPerS: z.number().finite().positive(),
@@ -36,6 +43,13 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
        * other pump is at its speed as it starts.
        */
       runUpTimeS: z.number().finite().positive().optional(),
+      /**
+       * For a pump its own turbine drives with steam brought to its drive
+       * steam inlet: the least steam flow on which the turbine holds the
+       * pump's speed. Below it the pump does not run, whatever its command:
+       * no steam, no pump.
+       */
+      minimumDriveSteamFlowKgPerS: z.number().finite().positive().optional(),
       loopResistanceCoefficient: z.number().finite().nonnegative().optional(),
       /**
        * The head it develops at rated speed with no flow. Its head falls along
@@ -68,11 +82,13 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
        */
       flowDemandPath: variablePathSchema.optional(),
     }),
-    // A pump runs while it is commanded to run and its motor has power.
-    semantics: fixedSemantics({ aspects: [aspect('running', { variable: 'runningState', reading: 'true' }, 'running')], ratedOutflow: [{ port: 'outlet', parameter: 'nominalFlowKgPerS' }] }),
+    // A pump runs while it is commanded to run and its motor has power, from the step it is commanded, unless the
+    // instructor has failed it to start (startFailureActive, a fault the scenario injects): stopped, it stays stopped.
+    semantics: fixedSemantics({ aspects: [aspect('running', { variable: 'runningState', reading: 'true' }, 'running', undefined, { onS: 0, offS: 0 })], ratedOutflow: [{ port: 'outlet', parameter: 'nominalFlowKgPerS' }] }),
     variables: [
       variable({ path: 'running', label: 'Run command', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'runningState', label: 'Running', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'startFailureActive', label: 'Fails to start', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'speedFraction', label: 'Speed', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'speed', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'speedRpm', label: 'Rotational speed', kind: 'derived', discipline: 'control', writable: false, publish: 'telemetry', quantity: 'rotationalSpeed', unit: 'rpm' }),
       variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),

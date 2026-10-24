@@ -1,0 +1,263 @@
+import type { ObjectId } from '../../../core/model/index.ts'
+import type { Observable, Observation } from '../../../core/observation/model.ts'
+import { NO_FLOW_FRACTION } from '../equipment/link-flow.ts'
+import type { CompiledStateAspect, VariablePath } from '../graph/index.ts'
+import { stopCommands } from '../ic/key-values.ts'
+import { aspectStateWords, followAllowanceMs, plantControlsFor } from '../operations/controls.ts'
+import type { CompiledProcessPlant } from '../plant-compiler.ts'
+import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { processPlantOperatingMode } from '../runtime/index.ts'
+import { safetyFunctionStatusWords, type SafetyFunctionEvaluation } from '../safety-functions.ts'
+import { safetyFunctionReading } from './safety-function-reading.ts'
+
+// What a Plant declares beside its signals (plan v4 D1): each item of its
+// equipment that runs, is live, or opens and shuts, its state as one word, in
+// the words its controls use ("RUN", "SHUT", "ON LINE", "LIVE"), with the
+// command it does not follow where it does not; what says equipment a trip
+// stops has stopped, in its declared words ("Rods on bottom"), with the trip's
+// command while it stands unmet; each critical safety function's status, the
+// procedure its colour sends operators to and what its tree's path ends in;
+// and the unit's operating mode, the first declared mode that holds. None is a
+// signal of its own: `<item>.state`, `<component>.stopped`, `csf.<function>`
+// and `mode` are read here from the signals they rest on.
+
+interface ItemState {
+  /** The item: its component, or the device it bundles, an element of its own. */
+  readonly element: string
+  readonly label: string
+  readonly aspect: CompiledStateAspect
+  readonly words: { readonly on: string; readonly off: string }
+  /** Whether it is a valve whose position is a number, which may stand between its two ends. */
+  readonly numeric: boolean
+  /** Whether the model solves its state; where it does not (an accumulator's discharge isolation valve follows its command at once), it reads "position not measured". */
+  readonly measured: boolean
+  readonly noFlowBelow: number
+}
+
+/** A valve reads SHUT below 5 % of its travel and OPEN above 95 %, as its symbol draws it; between, part open. */
+const SHUT_BELOW = 0.05
+const OPEN_ABOVE = 0.95
+
+const itemStatesByPlant = new WeakMap<CompiledProcessPlant, ReadonlyMap<string, ItemState>>()
+
+/** The aspects whose state is one word: it runs, it is live, it is open or shut. */
+const SWITCHING: ReadonlySet<string> = new Set(['running', 'energized', 'position'])
+
+/**
+ * Each item's state, by the path its state observable reads at: the aspect a control of its own commands; else, for
+ * an item no control of its own commands (the turbine, offered only its trip; a code safety valve; a bus), its first
+ * switching aspect the model solves, else one it is commanded on.
+ */
+const itemStates = (plant: CompiledProcessPlant): ReadonlyMap<string, ItemState> => itemStatesByPlant.get(plant) ?? (() => {
+  const graph = plant.graph
+  const states = new Map(plantControlsFor(plant).items.flatMap(item => {
+    const control = item.offered.find(entry => entry.aspect !== undefined && entry.state !== undefined) ?? item.offered.find(entry => entry.aspect !== undefined)
+    const component = graph.components[item.item.component]!
+    const device = item.item.kind === 'device' ? component.semantics.embedded.find(candidate => item.item.kind === 'device' && candidate.id === item.item.device) : undefined
+    const own = device?.aspects ?? component.semantics.aspects
+    const aspect = control === undefined
+      ? own.find(candidate => SWITCHING.has(candidate.aspect) && candidate.state !== undefined) ?? own.find(candidate => SWITCHING.has(candidate.aspect) && candidate.command !== undefined)
+      : own.find(candidate => candidate.aspect === control.aspect && candidate.state?.path === control.state)
+    const words = aspect === undefined ? null : aspectStateWords(graph, aspect, device?.function ?? component.semantics.function)
+    if (aspect === undefined || words === null) return []
+    const path = `${item.id}.state`
+    if (graph.signalBindingByPath.has(path as VariablePath)) throw new Error(`${path} is a signal of the Plant and the state of an item of its equipment`)
+    const rated = Math.max(0, ...component.semantics.ratedOutflow.map(rating => rating.flowKgPerS))
+    const measured = aspect.state !== undefined
+    const numeric = measured && aspect.aspect === 'position' && graph.signalBindingByPath.get(aspect.state!.path)?.quantity !== 'boolean'
+    return [[path, { element: item.id, label: `State · ${item.label}`, aspect, words, numeric, measured, noFlowBelow: rated * NO_FLOW_FRACTION }] as const]
+  }))
+  itemStatesByPlant.set(plant, states)
+  return states
+})()
+
+/**
+ * What each item's state drives on a drawing, by element: it runs, or it conducts (contacts closed, a supply live, a
+ * valve not shut); and whether it takes a command it may not follow. The state observable is the binding, so a drawing
+ * writes its word and the command it does not follow.
+ */
+export const itemStateRoles = (plant: CompiledProcessPlant): ReadonlyMap<string, { readonly role: 'running' | 'conducting'; readonly path: string; readonly commanded: boolean }> =>
+  new Map([...itemStates(plant)].map(([path, state]) => [state.element, {
+    role: state.aspect.aspect === 'running' ? 'running' as const : 'conducting' as const, path,
+    // A command it may not follow (unfollowed): one is issued to it, and it travels.
+    commanded: state.aspect.command !== undefined && state.aspect.travel !== undefined,
+  }] as const))
+
+/**
+ * How far a part is in: its reading over its declared range, from the end it is out at to the end its insertion
+ * declares it fully in at (`insertedAt`; rods are in at zero steps withdrawn), 0 out to 1 fully in; null where it
+ * reads nothing.
+ */
+export const insertedShare = (value: unknown, range: { readonly min: number; readonly max: number }, insertedAt: 'min' | 'max'): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const share = insertedAt === 'min' ? (range.max - value) / (range.max - range.min) : (value - range.min) / (range.max - range.min)
+  return Math.min(1, Math.max(0, share))
+}
+
+/**
+ * Each part an item inserts (a rod bank), as the share of its declared range it stands inserted (insertedShare): what a
+ * drawing's `position` binding draws a part at, as the binding role declares it (a part's insertion, 1 fully in).
+ */
+const insertionParts = (plant: CompiledProcessPlant): ReadonlyMap<string, { readonly element: string; readonly source: VariablePath; readonly range: { readonly min: number; readonly max: number }; readonly insertedAt: 'min' | 'max'; readonly label: string }> =>
+  new Map(plant.graph.components.flatMap(component => (component.semantics.insertion?.groups.flat() ?? []).map(part => {
+    const path = `${part.path}.inserted`
+    if (plant.graph.signalBindingByPath.has(path as VariablePath)) throw new Error(`${path} is a signal of the Plant and the inserted share of a part it inserts`)
+    return [path, { element: String(component.id), source: part.path, range: part.range, insertedAt: component.semantics.insertion!.insertedAt, label: `${plant.graph.signalBindingByPath.get(part.path)!.label} · share inserted` }] as const
+  })))
+
+/** The positions a drawing draws an element's parts at, by element, in its groups (a core's shutdown banks, then its control banks): its parts' inserted shares. */
+export const insertionPositions = (plant: CompiledProcessPlant): ReadonlyMap<string, ReadonlyArray<ReadonlyArray<string>>> =>
+  new Map(plant.graph.components.flatMap(component => (component.semantics.insertion === undefined ? []
+    : [[String(component.id), component.semantics.insertion.groups.map(group => group.map(part => `${part.path}.inserted`))] as const])))
+
+interface StopState {
+  readonly element: string
+  readonly label: string
+  /** The flag that says it has stopped, and its declared words for holding and not. */
+  readonly flag: VariablePath
+  readonly words: { readonly on: string; readonly off: string }
+  /** The commands of each trip that stops it (ic/key-values.ts stopCommands), one set per trip. */
+  readonly commands: ReadonlyArray<ReadonlyArray<{ readonly path: VariablePath; readonly value: unknown }>>
+}
+
+const stopStatesByPlant = new WeakMap<CompiledProcessPlant, ReadonlyMap<string, StopState>>()
+
+/**
+ * What says a component has stopped, by the path its observable reads at: the first of its shutdown readings that is
+ * a flag with declared words (a core's rods on the bottom), true once it has, where a trip stops it; never the state
+ * one of its aspects reads (a turbine's output breaker, ON LINE, is its state word already).
+ */
+const stopStates = (plant: CompiledProcessPlant): ReadonlyMap<string, StopState> => stopStatesByPlant.get(plant) ?? (() => {
+  const graph = plant.graph
+  const states = new Map(graph.components.flatMap(component => {
+    const local = (path: VariablePath): string => String(path).slice(String(component.id).length + 1)
+    const states = new Set(component.semantics.aspects.flatMap(aspect => aspect.state?.path ?? []))
+    const flag = component.semantics.shutdownReadings.find(path => !states.has(path) && graph.signalBindingByPath.get(path)?.quantity === 'boolean' && component.metadata?.presentation?.states?.[local(path)] !== undefined)
+    const commands = stopCommands(plant, component.index)
+    if (flag === undefined || commands.length === 0) return []
+    const path = `${component.id}.stopped`
+    if (graph.signalBindingByPath.has(path as VariablePath)) throw new Error(`${path} is a signal of the Plant and what says its equipment stopped`)
+    return [[path, { element: String(component.id), label: `Shutdown · ${component.metadata?.presentation?.shortLabel ?? component.label}`, flag, words: component.metadata!.presentation!.states![local(flag)]!, commands }] as const]
+  }))
+  stopStatesByPlant.set(plant, states)
+  return states
+})()
+
+/** What says each component a trip stops has stopped, by element: the path its observable reads at. */
+export const stoppedPaths = (plant: CompiledProcessPlant): ReadonlyMap<string, string> =>
+  new Map([...stopStates(plant)].map(([path, state]) => [state.element, path] as const))
+
+/** The path a critical safety function's status observable reads at. */
+export const safetyFunctionRef = (id: string): string => `csf.${id}`
+const statuses = ['green', 'yellow', 'orange', 'red', 'unknown', 'not-monitored'] as const
+/** The path the unit's operating mode reads at, and its value while no declared mode holds. */
+const MODE = 'mode'
+const NO_MODE = 'none'
+
+/** The state and safety-function observables of a Plant. */
+export const derivedObservables = (objectId: ObjectId, plant: CompiledProcessPlant): ReadonlyArray<Observable> => [
+  ...[...itemStates(plant)].map(([path, state]): Observable => ({
+    ref: `${objectId}#${path}`, label: state.label, quantity: 'state', unit: '', valueType: 'enum', thresholds: [], series: null, element: state.element,
+    // The states a running or conducting binding reads as on (Q8): on, and a valve part open, which passes flow.
+    states: [{ value: 'on', label: state.words.on, active: true }, { value: 'off', label: state.words.off }, ...(state.numeric ? [{ value: 'between', label: 'part open', active: true as const }] : [])],
+  })),
+  // Active (stopped) while its flag holds: a drawing writes the word then, and the other word only with a trip's unmet command.
+  ...[...stopStates(plant)].map(([path, state]): Observable => ({
+    ref: `${objectId}#${path}`, label: state.label, quantity: 'state', unit: '', valueType: 'enum', thresholds: [], series: null, element: state.element,
+    states: [{ value: 'on', label: state.words.on, active: true }, { value: 'off', label: state.words.off }],
+  })),
+  ...plant.automation.safetyFunctions.map((safetyFunction): Observable => {
+    if (plant.graph.signalBindingByPath.has(safetyFunctionRef(safetyFunction.id) as VariablePath)) throw new Error(`${safetyFunctionRef(safetyFunction.id)} is a signal of the Plant and a safety function`)
+    return {
+      ref: `${objectId}#${safetyFunctionRef(safetyFunction.id)}`, label: `${safetyFunction.label} (CSF)`, shortLabel: safetyFunction.shortLabel, quantity: 'state', unit: '', valueType: 'enum',
+      states: statuses.map(value => ({ value, label: safetyFunctionStatusWords(value) })), thresholds: [], series: null,
+    }
+  }),
+  ...[...insertionParts(plant)].map(([path, part]): Observable => ({
+    ref: `${objectId}#${path}`, label: part.label, quantity: 'fraction', unit: '1', valueType: 'number', thresholds: [], series: null, element: part.element,
+  })),
+  ...(plant.automation.operatingModes.length === 0 ? [] : [((): Observable => {
+    if (plant.automation.operatingModes.some(mode => mode.id === NO_MODE)) throw new Error(`a Plant mode is named ${NO_MODE}, the value that says no declared mode holds`)
+    return {
+      ref: `${objectId}#${MODE}`, label: 'Operating mode', quantity: 'state', unit: '', valueType: 'enum', thresholds: [], series: null,
+      states: [...plant.automation.operatingModes.map(mode => ({ value: mode.id, label: mode.label })), { value: NO_MODE, label: 'No declared mode holds' }],
+    }
+  })()]),
+]
+
+/** A position as the share of its travel, 0 to 1. */
+const travelOf = (value: number, unit: string | undefined): number => (unit === 'percent' ? value / 100 : value)
+
+/** Where a state signal or a command to it stands: at its on or off end, or between. */
+const endOf = (state: ItemState, value: unknown, unit: string | undefined): 'on' | 'off' | 'between' | null => {
+  if (typeof value === 'boolean') return value ? 'on' : 'off'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  if (state.aspect.aspect === 'position') {
+    const travel = travelOf(value, unit)
+    return travel < SHUT_BELOW ? 'off' : travel > OPEN_ABOVE ? 'on' : 'between'
+  }
+  // A flow runs equipment only above its no-flow band (a turbine while steam drives it); a speed as it reads.
+  return (state.aspect.state?.reading === 'flow' ? value !== 0 && Math.abs(value) >= state.noFlowBelow : value > 0) ? 'on' : 'off'
+}
+
+/**
+ * How a command an item does not follow is written: "CMD RUN", as the Plant's control panel writes a demand, and for a
+ * valve commanded to part of its travel the opening it was commanded to ("CMD 40 %"), in the room a drawing keeps for
+ * it under the state word ("CMD part open" would not fit it): "STOP", then "CMD RUN".
+ */
+export const commandNotFollowed = (word: string): string => `CMD ${word}`
+
+/**
+ * The command an item does not follow: it demands the other end, and has
+ * stood longer than the equipment's declared travel and its margin since a
+ * person or an AI agent issued it (or since an unknown time, as the I&C or a
+ * scenario moved it); never where the model declares no travel time.
+ */
+const unfollowed = (system: ProcessPlantRuntimeInstance, state: ItemState, now: 'on' | 'off' | 'between'): string | undefined => {
+  const { command, travel } = state.aspect
+  if (command === undefined || travel === undefined) return undefined
+  const read = system.runtime.readVariableSnapshot(command)
+  const wanted = endOf(state, read.value, read.unit)
+  if (wanted === null || wanted === now) return undefined
+  const issued = system.operations?.log().filter(record => record.path === command && record.value === read.value).at(-1)
+  const heldMs = issued === undefined ? undefined : system.runtime.elapsedMs() - issued.elapsedMs
+  const allowance = followAllowanceMs(1_000 * (wanted === 'off' ? travel.offS : travel.onS))
+  if (heldMs !== undefined && heldMs <= allowance) return undefined
+  return commandNotFollowed(wanted === 'between' ? `${Math.round(100 * travelOf(Number(read.value), read.unit))} %` : state.words[wanted])
+}
+
+/** A derived observable's reading now, by the path it is declared at (never a signal's). */
+export const readDerived = (
+  system: ProcessPlantRuntimeInstance,
+  path: string,
+  safetyFunctions: () => ReadonlyArray<SafetyFunctionEvaluation>,
+): Pick<Observation, 'value' | 'quality' | 'priority' | 'note' | 'why'> => {
+  const state = itemStates(system.plant).get(path)
+  if (state !== undefined && !state.measured) return { value: null, quality: 'not-applicable', priority: 'none', why: 'position not measured' }
+  if (state !== undefined) {
+    const read = system.runtime.readVariableSnapshot(state.aspect.state!.path)
+    const now = endOf(state, read.value, read.unit)
+    const why = now === null ? undefined : unfollowed(system, state, now)
+    return { value: now, quality: now === null ? 'bad' : 'good', priority: 'none', ...(why === undefined ? {} : { why }) }
+  }
+  const stop = stopStates(system.plant).get(path)
+  if (stop !== undefined) {
+    const flag = system.runtime.readVariableSnapshot(stop.flag).value
+    if (typeof flag !== 'boolean') return { value: null, quality: 'bad', priority: 'none' }
+    // A trip commanding it has acted (every command of one of its trips reads as written) and the flag does not hold.
+    const commanded = !flag && stop.commands.some(set => set.every(write => system.runtime.readVariableSnapshot(write.path).value === write.value))
+    return { value: flag ? 'on' : 'off', quality: 'good', priority: 'none', ...(commanded ? { why: commandNotFollowed('trip') } : {}) }
+  }
+  const part = insertionParts(system.plant).get(path)
+  if (part !== undefined) {
+    const value = insertedShare(system.runtime.readVariableSnapshot(part.source).value, part.range, part.insertedAt)
+    return { value, quality: value === null ? 'bad' : 'good', priority: 'none' }
+  }
+  if (path === MODE) {
+    const mode = processPlantOperatingMode({ system: system.plant, runtime: system.runtime, modes: system.plant.automation.operatingModes })
+    return { value: mode?.id ?? NO_MODE, quality: 'good', priority: 'none' }
+  }
+  const evaluation = safetyFunctions().find(candidate => safetyFunctionRef(candidate.id) === path)
+  if (evaluation === undefined) throw new Error(`${path} is neither an item's state, what says equipment stopped, a safety function nor the mode of the Plant`)
+  return safetyFunctionReading(evaluation)
+}

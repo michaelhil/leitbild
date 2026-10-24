@@ -193,9 +193,44 @@ export const evaluateSafetyFunction = (config: {
   return finish({ status: node.status, meaning: node.meaning, ...(node.procedure === undefined ? {} : { procedure: node.procedure }) })
 }
 
+/**
+ * A function's status in words that hold while it stands where it is, with no
+ * live value: its name, the restoration procedure its colour sends operators
+ * to, and what its tree's path ends in; for one that cannot be judged, the
+ * question its path stopped at.
+ */
+export const safetyFunctionText = (evaluation: SafetyFunctionEvaluation): string =>
+  evaluation.status === 'unknown' ? `${evaluation.label}: ${evaluation.path.at(-1)?.question ?? 'whether it is judged now'} cannot be answered`
+    : `${evaluation.label}${evaluation.procedure === undefined ? '' : ` (${evaluation.procedure})`}: ${evaluation.meaning}`
+
+/** A status as a status board says it: "GREEN", "NOT JUDGED". */
+export const safetyFunctionStatusWords = (status: SafetyFunctionStatus): string =>
+  status === 'not-monitored' ? 'NOT JUDGED' : status.toUpperCase()
+
 /** Every critical safety function the Plant declares, judged now, in declaration order. */
 export const evaluateSafetyFunctions = (system: CompiledProcessPlant, runtime: ProcessPlantRuntime): ReadonlyArray<SafetyFunctionEvaluation> =>
   system.automation.safetyFunctions.map(safetyFunction => evaluateSafetyFunction({ system, runtime, safetyFunction }))
+
+// How far each status stands from a satisfied function. Red and orange call
+// for their restoration procedure; a function that cannot be judged comes
+// next, since it may be either; yellow is an off-normal condition whose
+// procedure is the operators' choice; a function not judged in this state
+// says nothing.
+const challenge: Readonly<Record<SafetyFunctionStatus, number>> = {
+  red: 5,
+  orange: 4,
+  unknown: 3,
+  yellow: 2,
+  green: 1,
+  'not-monitored': 0,
+}
+
+/** The most challenged of the functions judged, the first declared among equals; undefined where none is declared. */
+export const worstSafetyFunction = (evaluations: ReadonlyArray<SafetyFunctionEvaluation>): SafetyFunctionEvaluation | undefined =>
+  evaluations.reduce<SafetyFunctionEvaluation | undefined>(
+    (worst, evaluation) => worst === undefined || challenge[evaluation.status] > challenge[worst.status] ? evaluation : worst,
+    undefined,
+  )
 
 /**
  * The signals the Plant's critical safety functions judge: those their status

@@ -1,6 +1,7 @@
 import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
 import {
   inspectionViewSchema,
+  moduleActivitySchema,
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionCollectionSchema,
@@ -13,12 +14,19 @@ import {
   workspaceModuleManifestSchema,
   workspaceDefinitionRevisionReferenceSchema,
   type ModuleCapabilityDescriptor,
-  type ModuleResourceDescriptor
+  type ModuleFeaturedDefinitionCollection,
+  type ModuleWorkspaceActivity,
+  type ModuleResourceDescriptor,
+  publishedContextSchema,
 } from '@leitbild/contracts'
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { mapSymbolsInput, mapSymbolsOutput, searchMapSymbols } from '../map-symbols/catalog.ts'
 import { z } from 'zod'
-import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
+import { capabilityJsonSchema, isPublicCapability } from '../../simulation/capabilities.ts'
+import { assembleRunContext } from '../../features/displays/context/run-context.ts'
+import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
+import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
+import { displayCapabilities } from './display-capabilities.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
 import {
   isoTimestampSchema,
@@ -30,12 +38,17 @@ import {
   procedureControlStateSchema,
   procedureDocumentSchema,
   procedureIdSchema,
+  procedureRunIdSchema,
+  procedureRunStartCommandKind,
+  procedureRunStartPayloadSchema,
+  procedureRunTransitionCommandKind,
+  procedureRunTransitionPayloadSchema,
   procedureSourceIdSchema,
   procedureStepIdSchema,
   recordingSampleSchema,
   recordingSeriesDescriptorSchema,
   recordingSeriesQuerySchema,
-  scenarioGuidanceSchema,
+  sameProcedureScope,
   simulationClockStateSchema,
   simulationRunEventSchema,
   simulationRunIdSchema,
@@ -45,14 +58,29 @@ import { describeScenarioAuthoring, scenarioAuthoringCatalogSchema, scenarioAuth
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
+import { drivenRunsOf, runWaitInputSchema, runWaitMaxMs, runWaitResultSchema, waitForRunChange } from '../simulation-runs/run-wait.ts'
+
+/** A wait naming a procedure Run also answers with that run's current step. */
+const runWaitAnswerSchema = runWaitResultSchema.extend({
+  next: procedureStepViewSchema.optional(),
+  nextUnavailable: z.string().optional(),
+})
 import { executionAdvanceInputSchema,executionSetInputSchema,runCopyInputSchema,runCopyOriginSchema,runExecutionStateSchema } from '../simulation-runs/execution.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import { aiRoleRunRefusal, hiddenInRoleRun, isRoleGateRefusal, roleRequiredRefusal, roleRunOpenCapabilityIds } from '../simulation-runs/role-gates.ts'
-import type { WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
-import { apiError,json,readJson } from './responses.ts'
+import type { WorldWorkspaceActivity, WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
+import { apiError,json,readJson,zodReason } from './responses.ts'
 import {
   buildSimulationRunActorForAccess,
 } from './simulation-run-routes.ts'
+import {
+  composeProcedureRunView,
+  composeProcedureStepView,
+  procedureStepNotFoundCode,
+  procedureStepViewSchema,
+  type ProcedureStepView,
+  type ProcedureStepViewPorts,
+} from '../../features/procedures/step-view.ts'
 
 const WORLD_MODULE_ID = moduleIdSchema.parse('world')
 
@@ -77,11 +105,60 @@ export const worldModuleManifest = workspaceModuleManifestSchema.parse({
     resources: '/internal/workspaces/{workspaceId}/resources',
     capabilities: '/internal/workspaces/{workspaceId}/capabilities',
     invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
+    featuredDefinitions: '/internal/featured-definitions',
+    activity: '/internal/activity',
   },
   ui: {
     workspace: '/workspaces/{workspaceId}/world',
   },
 })
+
+/**
+ * Serves World's featured and listed Scenarios from bundled memory. It takes no Workspace
+ * registry, so a landing page reading it never loads a Workspace runtime.
+ */
+export const handleWorldFeaturedDefinitions = (
+  request: Request,
+  url: URL,
+  featured: ModuleFeaturedDefinitionCollection,
+): Response | null =>
+  url.pathname === worldModuleManifest.endpoints.featuredDefinitions && request.method === 'GET' ? json(featured) : null
+
+const simulationsLabel = (count: number): string => `${count} ${count === 1 ? 'simulation' : 'simulations'}`
+
+/** A Workspace's Simulation Run facts for people; a Workspace with none is left out. */
+const workspaceActivityOf = (activity: WorldWorkspaceActivity): ReadonlyArray<ModuleWorkspaceActivity> => {
+  const items = [
+    ...(activity.advancingRuns === 0 ? [] : [{
+      key: 'simulations-running', label: `${simulationsLabel(activity.advancingRuns)} running`, count: activity.advancingRuns, active: true,
+    }]),
+    ...(activity.storedRuns === 0 ? [] : [{
+      key: 'simulations', label: simulationsLabel(activity.storedRuns), count: activity.storedRuns, active: false,
+    }]),
+  ]
+  return items.length === 0 ? [] : [{ workspaceId: activity.workspaceId, items }]
+}
+
+/**
+ * Serves, per provisioned Workspace, how many Simulation Runs advance now and
+ * how many are stored. It reads memory and one Run directory listing per
+ * Workspace, so polling it never loads a Workspace runtime or a Run.
+ */
+export const handleWorldActivity = async (
+  request: Request,
+  url: URL,
+  workspaces: WorldWorkspaceRuntimeRegistry,
+): Promise<Response | null> => {
+  if (url.pathname !== worldModuleManifest.endpoints.activity || request.method !== 'GET') return null
+  try {
+    const activity = await workspaces.activity()
+    return json(moduleActivitySchema.parse({ workspaces: activity.flatMap(workspaceActivityOf) }))
+  } catch (error) {
+    // One unreadable Workspace fails the whole answer visibly, as World's own error, never as Bun's error page.
+    console.error('World activity could not be read', error)
+    return apiError(500, 'activity_unavailable', `World activity could not be read: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 const lifecycleInputSchema = z.object({ workspaceId: workspaceIdSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
@@ -110,6 +187,10 @@ const readChangesInputSchema = z.object({
 const procedureCatalogInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   refresh: z.boolean().default(false),
+}).strict()
+const procedureStepReadInputSchema = z.object({
+  runId: procedureRunIdSchema.optional().describe('A procedure Run, as world.procedure.runs.list lists it; omit for the one active Run you drive.'),
+  stepId: procedureStepIdSchema.optional().describe('A step of the run\'s procedure; omit for its current step.'),
 }).strict()
 const procedureEvidenceInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
@@ -202,18 +283,6 @@ const simulationRunSummarySchema = z.object({
   loadError: z.string().min(1).optional(),
 }).strict()
 
-const runtimeHealthSchema = z.object({
-  runtimeId: z.string().min(1),
-  state: z.enum(['ready', 'degraded', 'failed']),
-  failureCount: z.number().int().nonnegative(),
-  lastSuccessfulInteractionAt: isoTimestampSchema,
-  lastFailure: z.object({
-    at: isoTimestampSchema,
-    operation: z.string().min(1),
-    message: z.string().min(1),
-  }).strict().optional(),
-}).strict()
-
 const operationalObjectSummarySchema = z.object({
   id: z.string().min(1),
   kind: z.string().min(1),
@@ -234,66 +303,12 @@ const objectSearchResultSchema = z.object({
   objects: z.array(operationalObjectSummarySchema),
 }).strict()
 
-const simulationRunContextSchema = z.object({
-  subject: z.object({
-    workspaceId: workspaceIdSchema,
-    simulationRunId: simulationRunIdSchema,
-    scenarioId: z.string().min(1),
-    scenarioRevisionId: z.string().min(1),
-  }).strict(),
-  briefing: z.object({
-    title: z.string().min(1),
-    summary: z.string().min(1).optional(),
-    objectives: z.array(z.string().min(1)),
-  }).strict(),
-  situation: z.object({
-    observedAt: isoTimestampSchema,
-    sequence: z.number().int().nonnegative(),
-    runtimeHealth: z.array(runtimeHealthSchema),
-    historian: runHistorianStatusSchema.nullable(),
-    clock: simulationClockStateSchema.optional(),
-    guidance: scenarioGuidanceSchema.optional(),
-    procedures: procedureControlStateSchema,
-    execution: z.object({
-      origin: runCopyOriginSchema.nullable(),
-      state: runExecutionStateSchema,
-    }).strict(),
-  }).strict(),
-  objects: z.object({
-    total: z.number().int().nonnegative(),
-    returned: z.number().int().nonnegative(),
-    selection: z.literal('one-per-pack-kind'),
-    byPack: z.record(z.string(), z.number().int().nonnegative()),
-    byKind: z.record(z.string(), z.number().int().nonnegative()),
-    byStatus: z.record(z.string(), z.number().int().nonnegative()),
-    items: z.array(operationalObjectSummarySchema),
-  }).strict(),
-  affordances: z.object({
-    workspaceId: workspaceIdSchema.nullable(),
-    simulationRunId: simulationRunIdSchema,
-    scenarioId: z.string().min(1).nullable(),
-    scenarioRevisionId: z.string().min(1).nullable(),
-    activePackIds: z.array(z.string().min(1)),
-    runtimes: z.array(z.object({
-      id: z.string().min(1),
-      packId: z.string().min(1),
-      clock: z.enum(['simulation', 'live', 'none']),
-    }).strict()),
-    wikiRefs: z.array(z.object({
-      label: z.string().min(1),
-      path: z.string().min(1),
-    }).passthrough()),
-    recording: z.object({
-      selections: z.array(z.record(z.string(), z.unknown())),
-      profiles: z.array(z.record(z.string(), z.unknown())),
-    }).strict(),
-  }).strict(),
-}).strict()
-
 const simulationChangesSchema = z.object({
   afterSequence: z.number().int().nonnegative(),
   currentSequence: z.number().int().nonnegative(),
   events: z.array(simulationRunEventSchema),
+  /** Events of the page an AI caller does not learn of (an injected fault's command and its result), counted only. */
+  withheld: z.number().int().positive().optional(),
   hasMore: z.boolean(),
   nextSequence: z.number().int().nonnegative(),
 }).strict()
@@ -519,27 +534,6 @@ const summarizeOperationalObject = (object: OperationalObject) => ({
   updatedAt: object.timestamps.updatedAt,
 })
 
-const representativeOperationalObjects = (objects: ReadonlyArray<OperationalObject>) => {
-  const priorityRank = { low: 0, normal: 1, high: 2, critical: 3 } as const
-  const selected = new Map<string, OperationalObject>()
-  for (const object of objects) {
-    const key = `${object.packId}\u0000${object.kind}`
-    const previous = selected.get(key)
-    if (!previous) {
-      selected.set(key, object)
-      continue
-    }
-    const rank = priorityRank[object.operational.priority ?? 'normal']
-    const previousRank = priorityRank[previous.operational.priority ?? 'normal']
-    if (rank > previousRank || (rank === previousRank && object.timestamps.updatedAt > previous.timestamps.updatedAt)) {
-      selected.set(key, object)
-    }
-  }
-  return [...selected.values()]
-    .map(summarizeOperationalObject)
-    .sort((left, right) => left.packId.localeCompare(right.packId) || left.kind.localeCompare(right.kind) || left.id.localeCompare(right.id))
-}
-
 const serializableInspection = (value: unknown) =>
   inspectionViewSchema.parse(JSON.parse(JSON.stringify(value)) as unknown)
 
@@ -550,7 +544,7 @@ const runtimeCapabilityDescriptorsFor = (
   registry: SimulationRunRegistry,
 ): ReadonlyArray<ModuleCapabilityDescriptor> => {
   const byId = new Map<string, ModuleCapabilityDescriptor>()
-  for (const { capability } of registry.installedCapabilities) {
+  for (const { capability } of registry.installedCapabilities.filter(entry => isPublicCapability(entry.capability))) {
     const descriptor = runtimeDescriptorCache.get(capability) ?? moduleCapabilityCollectionSchema.parse({ capabilities: [{
       id: capability.id,
       moduleId: WORLD_MODULE_ID,
@@ -563,6 +557,7 @@ const runtimeCapabilityDescriptorsFor = (
       idempotent: capability.idempotent,
       ...(capability.kind === 'command' ? { acceptsIdempotencyKey: true as const } : {}),
       ...(capability.schedulable === undefined ? {} : { schedulable: capability.schedulable }),
+      ...(capability.publishes === undefined ? {} : { publishes: [...capability.publishes] }),
       inputSchema: capabilityJsonSchema(capability.input),
       outputSchema: capabilityJsonSchema(capability.output),
     }] }).capabilities[0]!
@@ -652,6 +647,117 @@ const visibleProcedureState = (runtime: ApiRunRuntime, invocation: ApiInvocation
   const procedures = runtime.snapshot().procedures ?? { runs: [] }
   const denied = deniedInspectionSubjects(runtime, invocation)
   return denied.size === 0 ? procedures : { runs: procedures.runs.filter(run => !denied.has(run.scope.plantId)) }
+}
+
+const procedureStepViewError = (status: number, code: string, message: string): Error =>
+  Object.assign(new Error(message), { status, code })
+
+// "Continue" names no Run: the one active Run its caller drives, if exactly one.
+const drivenActiveRun = (runtime: ApiRunRuntime, invocation: ApiInvocation) => {
+  const caller = buildSimulationRunActorForAccess(invocation.access).id
+  const runs = visibleProcedureState(runtime, invocation).runs
+  const driven = runs.filter(run => run.status === 'active' && run.driver?.actorId === caller)
+  if (driven.length === 1) return driven[0]!
+  const name = (run: typeof runs[number]) => `${run.procedureId} on ${run.scope.label ?? run.scope.plantId} (${run.runId})`
+  if (driven.length > 1) throw procedureStepViewError(409, 'procedure_run_ambiguous', `You drive ${driven.length} active procedure runs: ${driven.map(name).join('; ')}. Name runId.`)
+  const active = runs.filter(run => run.status === 'active')
+  throw procedureStepViewError(404, 'procedure_run_not_found', active.length === 0
+    ? 'You drive no active procedure run, and none is active; start one with world.procedure.run.start.'
+    : `You drive no active procedure run. Active: ${active.map(run => `${name(run)}${run.driver === undefined ? ', nobody drives' : run.driver.kind === 'person' ? ', a person drives' : ', another AI agent drives'}`).join('; ')}. Name runId, and claim it first to work it.`)
+}
+
+/**
+ * A procedure Run's step as its caller may read it: one shared builder for
+ * step.read and for the step an AI agent's accepted transition leads to.
+ */
+const procedureStepViewFor = async (
+  runtime: ApiRunRuntime, invocation: ApiInvocation,
+  input: { readonly runId?: string | undefined; readonly stepId?: string | undefined },
+  mode: 'step' | 'next',
+): Promise<ProcedureStepView> => {
+  const run = input.runId === undefined ? drivenActiveRun(runtime, invocation) : runtime.snapshot().procedures?.runs.find(candidate => candidate.runId === input.runId)
+  if (!run) throw procedureStepViewError(404, 'procedure_run_not_found', `No procedure run ${input.runId} in this Simulation Run; world.procedure.runs.list lists them.`)
+  if (deniedInspectionSubjects(runtime, invocation).has(run.scope.plantId)) {
+    throw procedureStepViewError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${run.scope.plantId}`)
+  }
+  const document = await runtime.procedureDocument({
+    sourceId: run.sourceId, procedureId: run.procedureId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath,
+  })
+  const actor = buildSimulationRunActorForAccess(invocation.access)
+  const ports: ProcedureStepViewPorts = {
+    sequence: () => runtime.snapshot().seq,
+    clock: () => {
+      const clock = runtime.snapshot().clock
+      if (!clock) throw new Error('Simulation Run clock is not initialized')
+      return clock
+    },
+    observations: () => runtime.procedureObservations(actor, run.scope.plantId),
+  }
+  // A transfer or END leaves no step of this run to work.
+  if (mode === 'next' && run.status !== 'active') return composeProcedureRunView({ run, document, ports })
+  try {
+    return await composeProcedureStepView({ run, document, ports, ...(input.stepId === undefined ? {} : { stepId: input.stepId }) })
+  } catch (error) {
+    if (error instanceof Error && (error as Error & { code?: string }).code === procedureStepNotFoundCode) throw procedureStepViewError(404, procedureStepNotFoundCode, error.message)
+    throw error
+  }
+}
+
+// A transfer hands the work on with its driver: the destination Run its
+// caller now drives, where the transferred step's branch led; else the Run.
+const procedureRunWorkedAfter = (runtime: ApiRunRuntime, invocation: ApiInvocation, runId: string): string => {
+  const runs = visibleProcedureState(runtime, invocation).runs
+  const run = runs.find(candidate => candidate.runId === runId)
+  if (run?.status !== 'transferred') return runId
+  const decision = run.stepStates.find(state => state.stepId === run.currentStepId)?.decision
+  if (decision?.targetKind !== 'procedure') return runId
+  const caller = buildSimulationRunActorForAccess(invocation.access).id
+  const destination = runs.find(candidate => candidate.status === 'active' && candidate.sourceId === run.sourceId
+    && candidate.procedureId === decision.target && sameProcedureScope(candidate.scope, run.scope) && candidate.driver?.actorId === caller)
+  return destination?.runId ?? runId
+}
+
+// An AI agent's accepted transition answers with the step it leads to, so the
+// agent decides that step without another read; after a transfer, the
+// destination's current step. The command stands whatever this read finds.
+const nextProcedureStep = async (runtime: ApiRunRuntime, invocation: ApiInvocation, runId: string, after: string): Promise<{ readonly next: ProcedureStepView } | { readonly nextUnavailable: string }> => {
+  try {
+    return { next: await procedureStepViewFor(runtime, invocation, { runId: procedureRunWorkedAfter(runtime, invocation, runId) }, 'next') }
+  } catch (error) {
+    return { nextUnavailable: `${after}; reading the run's current step failed: ${error instanceof Error ? error.message : String(error)}. Read it with world.procedure.run.step.read.` }
+  }
+}
+
+// A start names its pin: the run, and the source revision it was started (or resumed) at.
+const startedProcedureRun = async (runtime: ApiRunRuntime, invocation: ApiInvocation) => {
+  const input = procedureRunStartPayloadSchema.parse(invocation.input)
+  const run = runtime.snapshot().procedures?.runs.find(candidate => candidate.status === 'active' && candidate.procedureId === input.procedureId
+    && candidate.scope.plantId === input.scope.plantId && (input.sourceId === undefined || candidate.sourceId === input.sourceId))
+  if (!run) return { nextUnavailable: 'The start was accepted; its run is no longer active. world.procedure.runs.list lists runs.' }
+  return {
+    pinned: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath },
+    ...(invocation.access.actor.kind === 'ai' ? await nextProcedureStep(runtime, invocation, run.runId, 'The start was accepted') : {}),
+  }
+}
+
+/**
+ * The commands an AI caller does not learn of (D-88, D13): those a Capability withholds from agents (an injected
+ * fault, as its Pack judges the payload), by command id over the whole journal. None for people.
+ */
+const withheldCommands = (registry: SimulationRunRegistry, runtime: ApiRunRuntime, invocation: ApiInvocation): ReadonlySet<string> => {
+  if (invocation.access.actor.kind !== 'ai') return new Set()
+  const withheld = new Map(registry.installedCapabilities.flatMap(({ capability }) => capability.withheldFromAgents === undefined ? [] : [[capability.id, capability.withheldFromAgents] as const]))
+  return new Set(runtime.events().flatMap(event => event.type === 'command.issued' && withheld.get(event.command.kind)?.(event.command.payload) === true ? [event.command.id] : []))
+}
+
+/** A page of the journal as the caller may read it, and how many events it withholds from an AI caller (counted, never shown). */
+const readableChangeEvents = (
+  registry: SimulationRunRegistry, runtime: ApiRunRuntime, invocation: ApiInvocation,
+  page: ReturnType<ApiRunRuntime['events']>,
+): { readonly events: ReturnType<ApiRunRuntime['events']>; readonly withheld: number } => {
+  const withheld = withheldCommands(registry, runtime, invocation)
+  const kept = withheld.size === 0 ? page : page.filter(event => !(event.type === 'command.issued' && withheld.has(event.command.id)) && !(event.type === 'command.result' && withheld.has(event.result.commandId)))
+  return { events: visibleChangeEvents(runtime, invocation, kept), withheld: page.length - kept.length }
 }
 
 const visibleChangeEvents = (
@@ -898,7 +1004,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'command',
       scope: { kind: 'definition', definitionType: SCENARIO_DEFINITION_TYPE },
       title: 'Start Scenario',
-      description: 'Creates a Simulation Run from the requested immutable Scenario Revision.',
+      description: 'Creates a Simulation Run from the requested immutable Scenario Revision. A Run whose Definition declares roles starts paused and plays in realtime when the first screen holding roles joins, unless world.simulation-run.execution.set or world.simulation-run.execution.advance is used first.',
       risk: 'write',
       idempotent: false,
       inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
@@ -1022,7 +1128,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     descriptor: {
       id: 'world.simulation-run.scenario-source',
       moduleId: WORLD_MODULE_ID, kind: 'query', scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Read pinned Scenario source', description: 'Read the exact editable Scenario Definition pinned by this Run, including authoring-only scenario instructions. Does not reconstruct source from physical state or merge runtime edits. Not part of the default assistant grants.',
+      title: 'Read pinned Scenario source', description: 'Read the exact editable Scenario Definition pinned by this Run, including authoring-only scenario instructions and its timeline. Does not reconstruct source from physical state or merge runtime edits. Refused to AI callers, from whom a Scenario\'s timeline is hidden.',
       risk: 'read', idempotent: true, inputSchema: capabilityJsonSchema(emptyInputSchema), outputSchema: capabilityJsonSchema(runScenarioSourceSchema),
     },
     invoke: async (registry, invocation) => {
@@ -1210,60 +1316,26 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
-      title: 'Read Simulation Context',
-      description: 'Returns an agent-safe briefing, current situation, operational-object summaries, and available Capabilities without exposing private Scenario Timeline content.',
+      title: 'Read Run Context',
+      description: 'The Run as the Assistant sees it: title, simulation time and whether it plays; up to 8 assets with their alerts and the refs of their lead values; each presentation category\'s objects counted by status word with the worst three; record-only Packs; dashboards; each Pack\'s guidance; and how many objects AI restrictions hide. Agents pre-fetch it each turn.',
       risk: 'read',
       idempotent: true,
+      publishes: ['context'],
       inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
-      outputSchema: capabilityJsonSchema(simulationRunContextSchema),
+      outputSchema: capabilityJsonSchema(publishedContextSchema),
     },
     invoke: async (registry, invocation) => {
       emptyInputSchema.parse(invocation.input)
       const simulationRunId = requireSimulationRunResource(invocation)
       const runtime = await registry.load(simulationRunId)
-      const [definition, summary, execution] = await Promise.all([
-        registry.compiledScenarioForRun(simulationRunId),
-        registry.summary(simulationRunId),
-        registry.executionStatus(simulationRunId),
-      ])
       const snapshot = runtime.snapshot()
-      const { capabilities: _capabilityDescriptors, ...affordances } = runtime.capabilities()
       const denied = deniedInspectionSubjects(runtime, invocation)
-      const visibleObjects = snapshot.objects.filter(object => !denied.has(object.id))
-      const contextObjects = representativeOperationalObjects(visibleObjects)
-      return json({ result: {
-        subject: {
-          workspaceId: registry.workspaceId,
-          simulationRunId,
-          scenarioId: summary.scenarioId,
-          scenarioRevisionId: summary.scenarioRevisionId,
-        },
-        briefing: {
-          title: summary.title,
-          ...(definition.description === undefined ? {} : { summary: definition.description }),
-          objectives: definition.objectives ?? [],
-        },
-        situation: {
-          observedAt: new Date().toISOString(),
-          sequence: snapshot.seq,
-          runtimeHealth: runtime.health(),
-          historian: runtime.recordingStatus(),
-          ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
-          ...(snapshot.scenario?.guidance === undefined ? {} : { guidance: snapshot.scenario.guidance }),
-          procedures: visibleProcedureState(runtime, invocation),
-          execution: { origin: summary.origin, state: execution },
-        },
-        objects: {
-          total: visibleObjects.length,
-          returned: contextObjects.length,
-          selection: 'one-per-pack-kind',
-          byPack: countBy(visibleObjects.map(object => object.packId)),
-          byKind: countBy(visibleObjects.map(object => object.kind)),
-          byStatus: countBy(visibleObjects.map(object => object.operational.status)),
-          items: contextObjects,
-        },
-        affordances,
-      } })
+      const context = await assembleRunContext({
+        title: (await registry.summary(simulationRunId)).title, objects: snapshot.objects, denied,
+        clock: snapshot.clock, packs: runtime.packs(), port: runtime.observations(buildSimulationRunActorForAccess(invocation.access)),
+        dashboards: storedDashboards(await registry.dashboards(simulationRunId).read(), denied),
+      })
+      return json({ result: publishedContextSchema.parse({ context }) })
     },
   },
   {
@@ -1301,6 +1373,31 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       } })
     },
   },
+  {
+    descriptor: {
+      id: 'world.simulation-run.observables.search',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Search Observables',
+      description: 'Finds measured values (observables), equipment elements and objects of every Pack in this Run by name, tag or ref; up to 8 queries, 8 matches each. Folds æ, ø and å. Each match gives its exact ref (objectId#signalId), tag, element and objectId. A bare object id lists its lead values first; objectId#tag-or-label resolves a qualified name. When nothing matches fully, each Pack suggests its nearest names. Filter by pack, presentation category or objectId; a Pack id is not an objectId.',
+      searchTerms: ['find signal', 'find tag', 'find value', 'which observable', 'search measurements'],
+      risk: 'read',
+      idempotent: true,
+      inputSchema: capabilityJsonSchema(observablesSearchInputSchema),
+      outputSchema: capabilityJsonSchema(observablesSearchOutputSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const input = observablesSearchInputSchema.parse(invocation.input)
+      const results = await searchObservables({
+        objects: runtime.snapshot().objects, denied: deniedInspectionSubjects(runtime, invocation), packs: runtime.packs(),
+        port: runtime.observations(buildSimulationRunActorForAccess(invocation.access)),
+      }, input.queries)
+      return json({ result: observablesSearchOutputSchema.parse({ results }) })
+    },
+  },
+  ...displayCapabilities({ runOf: async (registry, invocation) => { const runtime = await registry.load(requireSimulationRunResource(invocation)); return { runtime, actor: buildSimulationRunActorForAccess(invocation.access), denied: deniedInspectionSubjects(runtime, invocation) } } }),
   {
     descriptor: {
       id: 'world.simulation-run.read-object',
@@ -1431,12 +1528,84 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
   {
     descriptor: {
+      id: 'world.procedure.run.step.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read procedure run step',
+      description: 'Run, continue or step through a live procedure: reads one step of a procedure Run to work through it. Input {runId?, stepId?}: omit runId for the one active Run you drive (refused, with the active runs named, unless there is exactly one), and stepId for its current step. Returns the run (driver, current step, step n of total); the step\'s checks, actions and cautions; its branches with index, outcome, target and the target step\'s label (targetLabel); each tag the step cites with its binding and its reading (formatted, quality) at the view\'s simulationTime, or why it is unavailable; World\'s observation and the step\'s decision so far; the CSF colours the procedure monitors; and sequence, to pass to world.simulation-run.wait. Select with world.procedure.run.transition; an AI agent\'s accepted transition returns this view of the next step. Readings are model values, not instrument validation.',
+      searchTerms: ['continue procedure', 'run procedure', 'step through procedure', 'work through procedure', 'next procedure step', 'procedure placekeeping'],
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(procedureStepReadInputSchema, { io: 'input' }),
+      outputSchema: capabilityJsonSchema(procedureStepViewSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = procedureStepReadInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      try {
+        return json({ result: await procedureStepViewFor(runtime, invocation, input, 'step') })
+      } catch (error) {
+        const failure = error as Error & { status?: number; code?: string }
+        if (typeof failure.status === 'number' && typeof failure.code === 'string') return apiError(failure.status, failure.code, failure.message)
+        throw error
+      }
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.simulation-run.wait',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Wait for a Run change',
+      description: `Waits in your turn, at most ${runWaitMaxMs / 1_000} s of wall time, for the plant to respond or a person to act. Input {afterSequence?, maxWaitMs? (1000-${runWaitMaxMs}), simulationSeconds? (1-600), events? [{type, procedureRunId?, signalType?}] (up to 8), procedureRunId?}; name simulationSeconds, events or both. With procedureRunId the result also carries next: that run's current step as world.procedure.run.step.read returns it, so decide from it without another read. Returns at the first of: a durable event after afterSequence (a step read's sequence; omitted: from now) matching events, e.g. {"type":"interaction.signal.received","signalType":"process-plant.proposal.approved"}; simulationSeconds of plant time from now; someone else taking over, releasing, closing or resetting a procedure Run you drive (reason driver-changed: stop and report); or maxWaitMs (timeout). Waiting for plant time on a paused clock returns clock-paused at once: it never plays or advances time. If the Run is deleted, its Workspace removed or World stops, the wait fails at once with simulation_run_closed: stop. Returns reason, fromSequence, sequence, simulationTime, waitedMs, the matching events and driverChanged. Call it alone.`,
+      searchTerms: ['wait for plant response', 'wait plant time', 'wait for approval', 'simulation seconds', 'procedure wait'],
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(runWaitInputSchema, { io: 'input' }),
+      outputSchema: capabilityJsonSchema(runWaitAnswerSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = runWaitInputSchema.parse(invocation.input)
+      const simulationRunId = requireSimulationRunResource(invocation)
+      const runtime = await registry.load(simulationRunId)
+      const caller = buildSimulationRunActorForAccess(invocation.access).id
+      const clock = () => {
+        const current = runtime.snapshot().clock
+        if (!current) throw new Error('Simulation Run clock is not initialized')
+        return current
+      }
+      const result = await waitForRunChange({
+        input,
+        caller,
+        driven: drivenRunsOf(caller, runtime.snapshot().procedures?.runs ?? [], runtime.events()),
+        ports: {
+          events: afterSequence => readableChangeEvents(registry, runtime, invocation, runtime.events({ afterSeq: afterSequence })).events,
+          sequence: () => runtime.snapshot().seq,
+          clock,
+          subscribe: wake => runtime.subscribe(() => wake()),
+          now: () => performance.now(),
+          schedule: (callback, delayMs) => {
+            const timer = setTimeout(callback, delayMs)
+            return () => clearTimeout(timer)
+          },
+          // Deleting the Run unloads it; removing its Workspace or stopping World closes the registry.
+          closed: () => registry.get(simulationRunId) !== runtime || registry.closing(),
+        },
+      })
+      return json({ result: input.procedureRunId === undefined ? result
+        : { ...result, ...(await nextProcedureStep(runtime, invocation, input.procedureRunId, `The wait ended (${result.reason})`)) } })
+    },
+  },
+  {
+    descriptor: {
       id: 'world.simulation-run.changes',
       moduleId: WORLD_MODULE_ID,
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read Simulation Changes',
-      description: 'Reads a bounded page of committed changes after a known simulation sequence so an Agent can stay current without re-reading the whole World.',
+      description: 'Reads a bounded page of committed changes after a known simulation sequence so an Agent can stay current without re-reading the whole World. An AI caller does not read a command that injects a fault, nor its result: withheld counts them.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(readChangesInputSchema, { io: 'input' }),
@@ -1447,12 +1616,13 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const input = readChangesInputSchema.parse(invocation.input)
       const available = runtime.events({ afterSeq: input.afterSequence })
       const page = available.slice(0, input.limit)
-      const events = visibleChangeEvents(runtime, invocation, page)
+      const { events, withheld } = readableChangeEvents(registry, runtime, invocation, page)
       const currentSequence = runtime.snapshot().seq
       return json({ result: {
         afterSequence: input.afterSequence,
         currentSequence,
         events,
+        ...(withheld === 0 ? {} : { withheld }),
         hasMore: available.length > page.length,
         nextSequence: page.at(-1)?.seq ?? input.afterSequence,
       } })
@@ -1546,6 +1716,41 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
   },
 ])
 
+/**
+ * D13 "hide the script": an AI caller is never given a Scenario's timeline, its scripted cues (a fault a script injects
+ * among them). A Run's pinned source is refused; a definition's source and an inspection come without it; an update
+ * it sends keeps the timeline people wrote and may not replace one it cannot read. People keep every view.
+ */
+const scriptRefused: ReadonlySet<string> = new Set(['world.simulation-run.scenario-source'])
+const scriptRedacted: ReadonlySet<string> = new Set(['world.scenario.read', 'world.scenario.inspect', 'world.simulation-run.inspect'])
+const scriptHidden = (message: string): Response => apiError(403, 'scenario_script_hidden', message)
+
+const withoutTimeline = (value: unknown): unknown => {
+  if (typeof value !== 'object' || value === null || !('timeline' in value)) return value
+  const { timeline: _timeline, ...rest } = value as Record<string, unknown>
+  return rest
+}
+/** A script-bearing result as an AI caller reads it: a source without its timeline; an inspection without its timeline section or the timeline in the source it shows. */
+const withoutScript = async (response: Response): Promise<Response> => {
+  if (!response.ok) return response
+  const body = await response.json() as { readonly result: Record<string, unknown> }
+  const sections = body.result.sections as ReadonlyArray<{ readonly id: string; readonly data?: unknown }> | undefined
+  const result = sections === undefined ? { ...body.result, source: withoutTimeline(body.result.source) }
+    : { ...body.result, sections: sections.filter(section => section.id !== 'timeline').map(section => ({ ...section, ...(section.data === undefined ? {} : { data: withoutTimeline(section.data) }) })) }
+  return json({ ...body, result }, { status: response.status })
+}
+/** An AI caller's Scenario update: the stored timeline kept where it sends none; refused where it would replace one. */
+const scriptKept = async (registry: SimulationRunRegistry, invocation: ApiInvocation): Promise<ApiInvocation | Response> => {
+  const input = createScenarioInputSchema.parse(invocation.input)
+  const stored = (await registry.currentScenario(requireScenarioDefinitionId(invocation)))?.document.timeline
+  if (stored === undefined) return invocation
+  // One it sends unchanged (a source it wrote whole) it already knows.
+  if (input.source.timeline !== undefined && JSON.stringify(input.source.timeline) !== JSON.stringify(stored)) {
+    return scriptHidden('This Scenario\'s timeline is hidden from AI callers; an update from one keeps it as people wrote it and may not replace it')
+  }
+  return { ...invocation, input: { ...input, source: { ...input.source, timeline: stored } } }
+}
+
 const invokeCapability = async (
   registry: SimulationRunRegistry,
   capabilityId: string,
@@ -1593,8 +1798,12 @@ const invokeCapability = async (
       }
     }
 
-    const response = await worldCapabilities.invoke(capabilityId, registry, invocation)
-    if (response) return response
+    const ai = invocation.access.actor.kind === 'ai'
+    if (ai && scriptRefused.has(capabilityId)) return scriptHidden('A Run\'s pinned Scenario source carries its timeline, which is hidden from AI callers; world.simulation-run.inspect describes the Run without it')
+    const granted = ai && capabilityId === 'world.scenario.update' ? await scriptKept(registry, invocation) : invocation
+    if (granted instanceof Response) return granted
+    const response = await worldCapabilities.invoke(capabilityId, registry, granted)
+    if (response) return ai && scriptRedacted.has(capabilityId) ? await withoutScript(response) : response
 
     const workspaceCapability = registry.workspaceCapabilities.find(capability => capability.id === capabilityId)
     if (workspaceCapability) {
@@ -1628,6 +1837,13 @@ const invokeCapability = async (
     }
     if (outcome.kind === 'command' && !outcome.result.ok) {
       return apiError(409, 'simulation_command_rejected', outcome.result.reason)
+    }
+    if (outcome.kind === 'command' && capabilityId === procedureRunTransitionCommandKind && invocation.access.actor.kind === 'ai') {
+      const { runId } = procedureRunTransitionPayloadSchema.parse(invocation.input)
+      return json({ result: { ...outcome.result, ...(await nextProcedureStep(runtime, invocation, runId, 'The transition was accepted')) } })
+    }
+    if (outcome.kind === 'command' && capabilityId === procedureRunStartCommandKind) {
+      return json({ result: { ...outcome.result, ...(await startedProcedureRun(runtime, invocation)) } })
     }
     return json({
       result: outcome.result,
@@ -1697,14 +1913,14 @@ export const handleWorldModuleApi = async (
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', error.message)
     if (error instanceof Error && 'code' in error && typeof error.code === 'string'
-      && ['simulation_run_commit_uncertain', 'simulation_run_observer_failed', 'simulation_run_recovery_required'].includes(error.code)) return apiError(409, error.code, error.message)
+      && ['simulation_run_commit_uncertain', 'simulation_run_observer_failed', 'simulation_run_recovery_required', 'simulation_run_closed'].includes(error.code)) return apiError(409, error.code, error.message)
     if (error instanceof Error && 'code' in error && error.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof Error && 'code' in error && error.code === 'simulation_run_name_changed') {
       return apiError(409, 'simulation_run_name_changed', error.message)
     }
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
-    if (error instanceof z.ZodError) return apiError(400, zodErrorCode(error), error.message)
+    if (error instanceof z.ZodError) return apiError(400, zodErrorCode(error), zodReason(error))
     if (error instanceof CommandIdempotencyConflictError) return apiError(error.status, error.code, error.message)
     if (error instanceof Error && error.message.startsWith('World Module not provisioned:')) {
       return apiError(404, 'workspace_not_found', 'World is not enabled in this Workspace')

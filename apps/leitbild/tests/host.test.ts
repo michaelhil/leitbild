@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   accessContextSchema,
   capabilityIdSchema,
@@ -6,6 +6,7 @@ import {
   moduleIdSchema,
   moduleRegistrationSchema,
   newRequestId,
+  newWorkspaceId,
   type ModuleId,
 } from '@leitbild/contracts'
 import { createWorkspaceHost } from '../src/host.ts'
@@ -22,8 +23,11 @@ const createModule = (moduleId: ModuleId) => {
     manifestRequests: number
     invokeFailure?: { readonly status: number; readonly code: string; readonly message: string }
     invokeDelayMs?: number
+    featured: unknown
+    activity: unknown
+    activityStatus: number | undefined
     workspaces: Set<string>
-  } = { available: true, failLeave: false, manifestRequests: 0, workspaces: new Set<string>() }
+  } = { available: true, failLeave: false, manifestRequests: 0, featured: { definitions: [], listed: [] }, activity: { workspaces: [] }, activityStatus: undefined, workspaces: new Set<string>() }
   const server = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
@@ -40,9 +44,15 @@ const createModule = (moduleId: ModuleId) => {
             resources: `/internal/${moduleId}/workspaces/{workspaceId}/resources`,
             capabilities: `/internal/${moduleId}/workspaces/{workspaceId}/capabilities`,
             invoke: `/internal/${moduleId}/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke`,
+            featuredDefinitions: `/internal/${moduleId}/featured-definitions`,
+            activity: `/internal/${moduleId}/activity`,
           },
           ui: { workspace: `/workspaces/{workspaceId}/${moduleId}` },
         })
+      }
+      if (url.pathname === `/internal/${moduleId}/featured-definitions`) return Response.json(state.featured)
+      if (url.pathname === `/internal/${moduleId}/activity`) {
+        return state.activityStatus === undefined ? Response.json(state.activity) : new Response('unavailable', { status: state.activityStatus })
       }
       if (url.pathname.endsWith('/invoke') && state.invokeDelayMs) await Bun.sleep(state.invokeDelayMs)
       const root = url.pathname.match(new RegExp(`^/internal/${moduleId}/workspaces/([^/]+)$`))
@@ -92,7 +102,12 @@ const createModule = (moduleId: ModuleId) => {
           id: 'world.simulation-run.read', moduleId, kind: 'query',
           scope: { kind: 'resource', resourceType: 'world.simulation-run' },
           title: 'Read Simulation Run', description: 'Reads the selected Simulation Run.',
-          risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+          risk: 'read', idempotent: true, publishes: ['embedded-view'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+        }, {
+          id: 'world.simulation-run.context', moduleId, kind: 'query',
+          scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+          title: 'Read Run Context', description: 'The Run as the Assistant sees it.',
+          risk: 'read', idempotent: true, publishes: ['context'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
         }] : [])] })
       }
       if (new RegExp(`^/internal/${moduleId}/workspaces/[^/]+/capabilities/[^/]+/invoke$`).test(url.pathname)) {
@@ -115,6 +130,26 @@ const createModule = (moduleId: ModuleId) => {
     registration: moduleRegistrationSchema.parse({ moduleId, internalBaseUrl: `http://127.0.0.1:${server.port}`, manifestPath: '/manifest' }),
   }
 }
+
+const featuredScenario = (overrides: Record<string, unknown> = {}) => ({
+  definition: { moduleId: 'world', type: 'world.scenario', id: 'test-scenario' },
+  revisionId: 'revision-0123456789abcdef0123456789abcdef',
+  title: 'Test Scenario',
+  summary: 'A short test scenario.',
+  about: 'A short test scenario that shows the featured catalogue.',
+  tags: ['Test'],
+  previews: [{ alt: 'Test map', width: 1600, height: 1000, sources: [{ path: '/assets/world/scenario-previews/test.webp', width: 1600 }] }],
+  ...overrides,
+})
+
+const listedScenario = (overrides: Record<string, unknown> = {}) => ({
+  definition: { moduleId: 'world', type: 'world.scenario', id: 'quiet-scenario' },
+  revisionId: 'revision-fedcba9876543210fedcba9876543210',
+  title: 'Quiet Scenario',
+  summary: 'A test scenario where nothing is scripted.',
+  tags: ['Test'],
+  ...overrides,
+})
 
 const createFixture = () => {
   const modules = coreModuleIds.map(createModule)
@@ -141,6 +176,17 @@ describe('Leitbild Workspace Host', () => {
       })
       expect(result).toMatchObject({ ok: false, failure: { code: 'module_outcome_unknown', status: 504, retryable: false } })
     } finally { store.close() }
+  })
+  test('a lost Module connection is reported in words, with the transport text kept only for diagnosis', async () => {
+    const raw = 'The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()'
+    const gateway = createModuleGateway({
+      registrations: [moduleRegistrationSchema.parse({ moduleId: 'world', internalBaseUrl: 'http://127.0.0.1:9', manifestPath: '/manifest' })],
+      fetch: (async () => { throw new Error(raw) }) as unknown as typeof fetch,
+    })
+    const result = await gateway.resources(moduleIdSchema.parse('world'), newWorkspaceId())
+    expect(result).toMatchObject({ ok: false, failure: {
+      code: 'module_unavailable', message: 'Lost the connection to the simulation. Reload to reconnect.', details: { cause: raw },
+    } })
   })
   test('provisions every core Module and owns the complete lifecycle', async () => {
     const { modules, host, store } = createFixture()
@@ -171,9 +217,13 @@ describe('Leitbild Workspace Host', () => {
     const workspace = await host.create({ name: null })
     const resources = await host.resources(workspace.id)
     expect(resources.resources.map(resource => String(resource.ref.id))).toEqual(['run-01'])
-    expect((await host.capabilities(workspace.id)).capabilities.map(item => String(item.id))).toEqual([
-      'agents.room-definition.start', 'world.scenario.start', 'world.simulation-run.read',
+    const catalog = await host.capabilities(workspace.id)
+    expect(catalog.capabilities.map(item => String(item.id))).toEqual([
+      'agents.room-definition.start', 'world.scenario.start', 'world.simulation-run.read', 'world.simulation-run.context',
     ])
+    // What a Module declares its results publish passes through unchanged.
+    expect(catalog.capabilities.find(item => item.id === 'world.simulation-run.read')?.publishes).toEqual(['embedded-view'])
+    expect(catalog.capabilities.find(item => item.id === 'world.simulation-run.context')?.publishes).toEqual(['context'])
     const result = await host.invoke(
       workspace.id,
       capabilityIdSchema.parse('world.simulation-run.read'),
@@ -219,6 +269,137 @@ describe('Leitbild Workspace Host', () => {
     store.close()
   })
 
+
+  test('aggregates every Module\'s featured Definitions without any Workspace', async () => {
+    const { modules, host, store } = createFixture()
+    try {
+      modules.find(item => item.registration.moduleId === 'world')!.state.featured = { definitions: [featuredScenario()], listed: [listedScenario()] }
+      const catalog = await host.featuredDefinitions()
+      expect(catalog.modules).toEqual(coreModuleIds.map(moduleId => ({ moduleId, status: 'ready' })))
+      expect(catalog.definitions.map(item => `${item.definition.moduleId}:${item.definition.id}@${item.revisionId}`))
+        .toEqual(['world:test-scenario@revision-0123456789abcdef0123456789abcdef'])
+      expect(catalog.listed.map(item => `${item.definition.moduleId}:${item.definition.id}@${item.revisionId}`))
+        .toEqual(['world:quiet-scenario@revision-fedcba9876543210fedcba9876543210'])
+      expect(host.list()).toEqual([])
+      expect(modules.every(item => item.state.workspaces.size === 0)).toBe(true)
+    } finally { store.close() }
+  })
+
+  test('reports each Module\'s featured outcome instead of dropping a failed Module', async () => {
+    const { modules, host, store } = createFixture()
+    try {
+      const world = modules.find(item => item.registration.moduleId === 'world')!
+      const agents = modules.find(item => item.registration.moduleId === 'agents')!
+      world.state.featured = { definitions: [featuredScenario()], listed: [listedScenario()] }
+      agents.state.available = false
+      const offline = await host.featuredDefinitions()
+      expect(offline.modules.find(item => item.moduleId === 'agents')).toMatchObject({ status: 'failed', failure: { code: 'module_discovery_failed' } })
+      expect(offline.definitions).toHaveLength(1)
+      expect(offline.listed).toHaveLength(1)
+
+      agents.state.available = true
+      agents.state.featured = { definitions: [featuredScenario()], listed: [] }
+      const foreign = await host.featuredDefinitions()
+      expect(foreign.modules.find(item => item.moduleId === 'agents')).toMatchObject({
+        status: 'failed', failure: { code: 'module_contract_invalid', message: 'Module agents featured a Definition owned by world' },
+      })
+      expect(foreign.definitions.map(item => String(item.definition.moduleId))).toEqual(['world'])
+
+      agents.state.featured = { definitions: [], listed: [listedScenario({ definition: { moduleId: 'world', type: 'world.scenario', id: 'other' } })] }
+      const foreignListed = await host.featuredDefinitions()
+      expect(foreignListed.modules.find(item => item.moduleId === 'agents')).toMatchObject({
+        status: 'failed', failure: { code: 'module_contract_invalid', message: 'Module agents listed a Definition owned by world' },
+      })
+      expect(foreignListed.listed.map(item => String(item.definition.id))).toEqual(['quiet-scenario'])
+
+      agents.state.featured = { definitions: [], listed: [] }
+      world.state.featured = { definitions: [featuredScenario()] }
+      const unlisted = await host.featuredDefinitions()
+      expect(unlisted.modules.find(item => item.moduleId === 'world')).toMatchObject({ status: 'failed', failure: { code: 'module_contract_invalid' } })
+      expect([unlisted.definitions, unlisted.listed]).toEqual([[], []])
+
+      world.state.featured = { definitions: [featuredScenario({
+        previews: [{ alt: 'Test map', width: 1600, height: 1000, sources: [{ path: '/assets/host/test.webp', width: 1600 }] }],
+      })], listed: [] }
+      const outside = await host.featuredDefinitions()
+      expect(outside.modules.find(item => item.moduleId === 'world')).toMatchObject({ status: 'failed', failure: { code: 'module_contract_invalid' } })
+      expect(outside.definitions).toEqual([])
+    } finally { store.close() }
+  })
+
+  test('reads a Module\'s activity through its manifest and refuses an answer outside the contract', async () => {
+    const world = createModule(moduleIdSchema.parse('world'))
+    const gateway = createModuleGateway({ registrations: [world.registration] })
+    const workspaceId = newWorkspaceId()
+    world.state.activity = { workspaces: [{ workspaceId, items: [
+      { key: 'simulations-running', label: '2 simulations running', count: 2, active: true },
+      { key: 'simulations', label: '5 simulations', count: 5, active: false },
+    ] }] }
+    const read = await gateway.activity(world.registration.moduleId)
+    expect(read).toEqual({ ok: true, value: world.state.activity as never })
+
+    world.state.activity = { workspaces: [{ workspaceId, items: [
+      { key: 'simulations', label: '5 simulations', count: 5, active: false },
+      { key: 'simulations', label: '5 simulations', count: 5, active: false },
+    ] }] }
+    expect(await gateway.activity(world.registration.moduleId)).toMatchObject({ ok: false, failure: { code: 'module_contract_invalid', retryable: false } })
+
+    world.state.activityStatus = 500
+    expect(await gateway.activity(world.registration.moduleId)).toMatchObject({
+      ok: false, failure: { code: 'module_query_failed', message: 'Module activity query returned HTTP 500', status: 500, retryable: true },
+    })
+    expect(await gateway.activity(moduleIdSchema.parse('elsewhere'))).toMatchObject({ ok: false, failure: { code: 'module_not_installed' } })
+  })
+
+  test('merges every Module\'s activity per known Workspace, in installed-Module order, with one outcome per Module', async () => {
+    const { modules, host, store } = createFixture()
+    try {
+      const first = await host.create({ name: 'First' })
+      const second = await host.create({ name: 'Second' })
+      const world = modules.find(item => item.registration.moduleId === 'world')!
+      const agents = modules.find(item => item.registration.moduleId === 'agents')!
+      const running = { key: 'simulations-running', label: '2 simulations running', count: 2, active: true }
+      const total = { key: 'simulations', label: '5 simulations', count: 5, active: false }
+      const answering = { key: 'assistant-answering', label: 'Assistant answering', count: 1, active: true }
+      agents.state.activity = { workspaces: [{ workspaceId: first.id, items: [answering] }] }
+      const orphan = newWorkspaceId()
+      world.state.activity = { workspaces: [
+        { workspaceId: second.id, items: [running, total] },
+        { workspaceId: orphan, items: [running] },
+        { workspaceId: first.id, items: [total] },
+      ] }
+      const warn = spyOn(console, 'warn').mockImplementation(() => {})
+      const catalog = await host.activity()
+      await host.activity()
+      expect(warn.mock.calls).toEqual([[`Module world reports activity for a Workspace the Host does not know: ${orphan}`]])
+      warn.mockRestore()
+      expect(catalog).toEqual({
+        modules: coreModuleIds.map(moduleId => ({ moduleId, status: 'ready' })),
+        workspaces: [
+          { workspaceId: first.id, items: [{ moduleId: 'world', ...total }, { moduleId: 'agents', ...answering }] },
+          { workspaceId: second.id, items: [{ moduleId: 'world', ...running }, { moduleId: 'world', ...total }] },
+        ],
+      } as never)
+
+      agents.state.activityStatus = 503
+      const partial = await host.activity()
+      expect(partial.modules).toEqual([
+        { moduleId: 'world', status: 'ready' },
+        { moduleId: 'agents', status: 'failed', failure: { code: 'module_query_failed', message: 'Module activity query returned HTTP 503', status: 503, retryable: true } },
+      ] as never)
+      expect(partial.workspaces.map(workspace => [workspace.workspaceId, workspace.items.map(item => `${item.moduleId}:${item.key}`)])).toEqual([
+        [first.id, ['world:simulations']],
+        [second.id, ['world:simulations-running', 'world:simulations']],
+      ])
+
+      await host.delete(second.id)
+      world.state.activity = { workspaces: [] }
+      agents.state.activityStatus = undefined
+      expect(await host.activity()).toEqual({ modules: coreModuleIds.map(moduleId => ({ moduleId, status: 'ready' })), workspaces: [
+        { workspaceId: first.id, items: [{ moduleId: 'agents', ...answering }] },
+      ] } as never)
+    } finally { store.close() }
+  })
 
   test('keeps a Workspace visible when any Module cleanup fails', async () => {
     const { modules, host, store } = createFixture()

@@ -43,13 +43,15 @@ export const postedAnswerOf = (message: UIMessage): PostedAnswer | null =>
     ? { roomId: message.roomId, turnId: message.generationTraceId, caption: answerCaption(message.timestamp) }
     : null
 
-export const findPostedAnswer = (messages: ReadonlyArray<UIMessage>, turnId: string): PostedAnswer | null => {
-  for (const message of messages) {
-    const answer = postedAnswerOf(message)
-    if (answer !== null && answer.turnId === turnId) return answer
-  }
-  return null
-}
+/** The posted answer message of a turn, as the room's store holds it (its words and its tool trace). */
+export const answerMessage = (messages: ReadonlyArray<UIMessage>, turnId: string): UIMessage | null =>
+  messages.find(message => postedAnswerOf(message)?.turnId === turnId) ?? null
+
+/** The viewRefs of the displays an answer's text presents, each once: the cards whose lines its chips show. */
+export const presentedViewRefs = (content: string): ReadonlySet<string> => new Set(viewFenceBodies(content).flatMap(body => {
+  const parsed = parseViewFenceBody(body)
+  return parsed.kind === 'reference' ? [viewRefFor(parsed.ref.callId, parsed.ref.key)] : []
+}))
 
 export const viewFenceKey = (answer: PostedAnswer, ref: ViewReference): string =>
   `${answer.roomId}/${answer.turnId}/${viewRefFor(ref.callId, ref.key)}`

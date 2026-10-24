@@ -275,6 +275,8 @@
       "metadata": {
         "presentation": {
           "shortLabel": "Core",
+          "names": { "coreExitTemperatureC": "CET", "powerRangePercent": "reactor power" },
+          "shortNames": { "totalThermalPowerMw": "Core MWt", "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" , "sourceRangeEnergized": "SR HV", "aboveP6": "P-6", "aboveP10": "P-10", "averageTemperatureDeviationC": "Tavg − Tref", "referenceAverageTemperatureC": "Tref", "coolantInletTemperatureC": "Core inlet temp", "coolantOutletTemperatureC": "Core outlet temp", "averageHotLegFlowKgPerS": "Hot-leg flow", "shutdownBankAStepsWithdrawn": "Bank SA steps", "shutdownBankBStepsWithdrawn": "Bank SB steps", "shutdownBankCStepsWithdrawn": "Bank SC steps", "shutdownBankDStepsWithdrawn": "Bank SD steps" },
           "states": {
             "sourceRangeEnergized": { "on": "Source-range HV on", "off": "Source-range HV off" },
             "aboveP6": { "on": "Above P-6", "off": "Below P-6" },
@@ -369,7 +371,9 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RV"
+          "shortLabel": "RV",
+          "names": { "meanPrimaryCoolantTemperatureC": "Tavg" },
+          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" , "safetyInjectionFlowKgPerS": "RCS SI flow", "boronConcentrationPpm": "RCS boron" }
         }
       }
     },
@@ -516,6 +520,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "levelDeviationPercent": "PZR level deviation", "backupHeaterDemandMw": "Backup heater demand", "reliefValveFlowing": "PORV flow monitor", "safetyValvesOpen": "Safety valves open", "heatersCutOff": "Heater cut-off", "reliefValveEffectivePositionFraction": "PORV position", "blockValveEffectivePositionFraction": "PORV block position", "safetyValvesLiftFraction": "Safety valve lift" },
           "shortLabel": "PZR",
           "embedded": {
             "reliefValve": "PORV",
@@ -601,6 +606,7 @@
       "label": "Steam Generator A",
       "parameters": {
         "nominalPressureMPa": 6.9,
+        "designFeedwaterTemperatureC": 227,
         "nominalLevelPercent": 0.55,
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
@@ -612,8 +618,8 @@
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "steamQualityTimeConstantS": 8,
-        "steamPressureGainMPaPerKgS": 0.006,
-        "steamMassPressureGainFraction": 0.2,
+        "steamPressureGainMPaPerKgS": 0.0048,
+        "steamMassPressureGainFraction": 0.16,
         "tubeMetalThermalCapacityMjPerK": 50,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
@@ -621,7 +627,7 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 105,
+        "swellLevelGainPercent": 20,
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.551,
         "narrowRangeUpperFraction": 0.731,
@@ -674,7 +680,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG A"
+          "shortLabel": "SG A",
+          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" , "collapsedLevelPercent": "SG A collapsed level", "primaryInletTemperatureC": "SG A primary inlet", "primaryOutletTemperatureC": "SG A primary outlet" }
         }
       }
     },
@@ -684,6 +691,7 @@
       "label": "Steam Generator B",
       "parameters": {
         "nominalPressureMPa": 6.9,
+        "designFeedwaterTemperatureC": 227,
         "nominalLevelPercent": 0.55,
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
@@ -695,8 +703,8 @@
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "steamQualityTimeConstantS": 8,
-        "steamPressureGainMPaPerKgS": 0.006,
-        "steamMassPressureGainFraction": 0.2,
+        "steamPressureGainMPaPerKgS": 0.0048,
+        "steamMassPressureGainFraction": 0.16,
         "tubeMetalThermalCapacityMjPerK": 50,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
@@ -704,7 +712,7 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 105,
+        "swellLevelGainPercent": 20,
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.551,
         "narrowRangeUpperFraction": 0.731,
@@ -757,7 +765,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG B"
+          "shortLabel": "SG B",
+          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" , "collapsedLevelPercent": "SG B collapsed level", "primaryInletTemperatureC": "SG B primary inlet", "primaryOutletTemperatureC": "SG B primary outlet" }
         }
       }
     },
@@ -767,6 +776,7 @@
       "label": "Steam Generator C",
       "parameters": {
         "nominalPressureMPa": 6.9,
+        "designFeedwaterTemperatureC": 227,
         "nominalLevelPercent": 0.55,
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
@@ -778,8 +788,8 @@
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "steamQualityTimeConstantS": 8,
-        "steamPressureGainMPaPerKgS": 0.006,
-        "steamMassPressureGainFraction": 0.2,
+        "steamPressureGainMPaPerKgS": 0.0048,
+        "steamMassPressureGainFraction": 0.16,
         "tubeMetalThermalCapacityMjPerK": 50,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
@@ -787,7 +797,7 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 105,
+        "swellLevelGainPercent": 20,
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.551,
         "narrowRangeUpperFraction": 0.731,
@@ -840,7 +850,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG C"
+          "shortLabel": "SG C",
+          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" , "collapsedLevelPercent": "SG C collapsed level", "primaryInletTemperatureC": "SG C primary inlet", "primaryOutletTemperatureC": "SG C primary outlet" }
         }
       }
     },
@@ -850,6 +861,7 @@
       "label": "Steam Generator D",
       "parameters": {
         "nominalPressureMPa": 6.9,
+        "designFeedwaterTemperatureC": 227,
         "nominalLevelPercent": 0.55,
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
@@ -861,8 +873,8 @@
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "steamQualityTimeConstantS": 8,
-        "steamPressureGainMPaPerKgS": 0.006,
-        "steamMassPressureGainFraction": 0.2,
+        "steamPressureGainMPaPerKgS": 0.0048,
+        "steamMassPressureGainFraction": 0.16,
         "tubeMetalThermalCapacityMjPerK": 50,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
@@ -870,7 +882,7 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 105,
+        "swellLevelGainPercent": 20,
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.551,
         "narrowRangeUpperFraction": 0.731,
@@ -923,7 +935,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG D"
+          "shortLabel": "SG D",
+          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" , "collapsedLevelPercent": "SG D collapsed level", "primaryInletTemperatureC": "SG D primary inlet", "primaryOutletTemperatureC": "SG D primary outlet" }
         }
       }
     },
@@ -933,6 +946,7 @@
       "label": "Steam Generator E",
       "parameters": {
         "nominalPressureMPa": 6.9,
+        "designFeedwaterTemperatureC": 227,
         "nominalLevelPercent": 0.55,
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
@@ -944,8 +958,8 @@
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "steamQualityTimeConstantS": 8,
-        "steamPressureGainMPaPerKgS": 0.006,
-        "steamMassPressureGainFraction": 0.2,
+        "steamPressureGainMPaPerKgS": 0.0048,
+        "steamMassPressureGainFraction": 0.16,
         "tubeMetalThermalCapacityMjPerK": 50,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
@@ -953,7 +967,7 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 105,
+        "swellLevelGainPercent": 20,
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.551,
         "narrowRangeUpperFraction": 0.731,
@@ -1006,7 +1020,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG E"
+          "shortLabel": "SG E",
+          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" , "collapsedLevelPercent": "SG E collapsed level", "primaryInletTemperatureC": "SG E primary inlet", "primaryOutletTemperatureC": "SG E primary outlet" }
         }
       }
     },
@@ -1016,6 +1031,7 @@
       "label": "Steam Generator F",
       "parameters": {
         "nominalPressureMPa": 6.9,
+        "designFeedwaterTemperatureC": 227,
         "nominalLevelPercent": 0.55,
         "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
@@ -1027,8 +1043,8 @@
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "steamQualityTimeConstantS": 8,
-        "steamPressureGainMPaPerKgS": 0.006,
-        "steamMassPressureGainFraction": 0.2,
+        "steamPressureGainMPaPerKgS": 0.0048,
+        "steamMassPressureGainFraction": 0.16,
         "tubeMetalThermalCapacityMjPerK": 50,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
@@ -1036,7 +1052,7 @@
         "nominalSteamMassKg": 15500,
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
-        "swellLevelGainPercent": 105,
+        "swellLevelGainPercent": 20,
         "pressureInventoryGainMPaPerFraction": 0.6,
         "narrowRangeLowerFraction": 0.551,
         "narrowRangeUpperFraction": 0.731,
@@ -1089,7 +1105,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "SG F"
+          "shortLabel": "SG F",
+          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" , "collapsedLevelPercent": "SG F collapsed level", "primaryInletTemperatureC": "SG F primary inlet", "primaryOutletTemperatureC": "SG F primary outlet" }
         }
       }
     },
@@ -1139,7 +1156,15 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RCP A"
+          "shortLabel": "RCP A",
+          "notOffered": {
+            "running": {
+              "text": "An RCP start needs seal injection and oil lift, which the model does not have: not started from the display",
+              "values": [
+                true
+              ]
+            }
+          }
         }
       }
     },
@@ -1189,7 +1214,15 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RCP B"
+          "shortLabel": "RCP B",
+          "notOffered": {
+            "running": {
+              "text": "An RCP start needs seal injection and oil lift, which the model does not have: not started from the display",
+              "values": [
+                true
+              ]
+            }
+          }
         }
       }
     },
@@ -1239,7 +1272,15 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RCP C"
+          "shortLabel": "RCP C",
+          "notOffered": {
+            "running": {
+              "text": "An RCP start needs seal injection and oil lift, which the model does not have: not started from the display",
+              "values": [
+                true
+              ]
+            }
+          }
         }
       }
     },
@@ -1289,7 +1330,15 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RCP D"
+          "shortLabel": "RCP D",
+          "notOffered": {
+            "running": {
+              "text": "An RCP start needs seal injection and oil lift, which the model does not have: not started from the display",
+              "values": [
+                true
+              ]
+            }
+          }
         }
       }
     },
@@ -1339,7 +1388,15 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RCP E"
+          "shortLabel": "RCP E",
+          "notOffered": {
+            "running": {
+              "text": "An RCP start needs seal injection and oil lift, which the model does not have: not started from the display",
+              "values": [
+                true
+              ]
+            }
+          }
         }
       }
     },
@@ -1389,7 +1446,15 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RCP F"
+          "shortLabel": "RCP F",
+          "notOffered": {
+            "running": {
+              "text": "An RCP start needs seal injection and oil lift, which the model does not have: not started from the display",
+              "values": [
+                true
+              ]
+            }
+          }
         }
       }
     },
@@ -1473,6 +1538,7 @@
       },
       "metadata": {
         "presentation": {
+          "shortNames": { "inletControlFraction": "FW tank inlet valve" },
           "shortLabel": "FW tank"
         }
       },
@@ -1498,6 +1564,7 @@
       "parameters": {},
       "metadata": {
         "presentation": {
+          "shortNames": { "mixedPressureMPa": "MFW header pressure", "mixedTemperatureC": "MFW header temp" },
           "shortLabel": "MFW header"
         }
       }
@@ -1507,12 +1574,12 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve A",
       "parameters": {
-        "initialPositionFraction": 0.82,
+        "initialPositionFraction": 0.75,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgA.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.82,
+          "biasPositionFraction": 0.75,
           "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
@@ -1549,12 +1616,12 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve B",
       "parameters": {
-        "initialPositionFraction": 0.82,
+        "initialPositionFraction": 0.75,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgB.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.82,
+          "biasPositionFraction": 0.75,
           "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
@@ -1588,12 +1655,12 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve C",
       "parameters": {
-        "initialPositionFraction": 0.82,
+        "initialPositionFraction": 0.75,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgC.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.82,
+          "biasPositionFraction": 0.75,
           "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
@@ -1627,12 +1694,12 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve D",
       "parameters": {
-        "initialPositionFraction": 0.82,
+        "initialPositionFraction": 0.75,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgD.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.82,
+          "biasPositionFraction": 0.75,
           "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
@@ -1666,12 +1733,12 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve E",
       "parameters": {
-        "initialPositionFraction": 0.82,
+        "initialPositionFraction": 0.75,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgE.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.82,
+          "biasPositionFraction": 0.75,
           "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
@@ -1705,12 +1772,12 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve F",
       "parameters": {
-        "initialPositionFraction": 0.82,
+        "initialPositionFraction": 0.75,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgF.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.82,
+          "biasPositionFraction": 0.75,
           "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
@@ -1849,6 +1916,7 @@
         "nominalHeadPa": 9000000,
         "shutoffHeadPa": 11000000,
         "runUpTimeS": 30,
+        "minimumDriveSteamFlowKgPerS": 1,
         "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
@@ -1905,7 +1973,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW header"
+          "shortLabel": "AFW header",
+          "shortNames": { "outletFlowKgPerS": "AFW flow" , "mixedPressureMPa": "AFW header pressure", "mixedTemperatureC": "AFW header temp" }
         }
       }
     },
@@ -2563,6 +2632,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "mixedPressureMPa": "Steam header pressure", "mixedTemperatureC": "Steam header temp" },
           "shortLabel": "Steam header"
         }
       }
@@ -2577,7 +2647,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine stop valves"
+          "shortLabel": "Turbine stop valves",
+          "shortNames": { "effectivePositionFraction": "Stop valves position" , "autoOpenActive": "Stop valves auto-open", "isolationSignal": "Stop valves isolation" }
         }
       },
       "variables": [
@@ -2637,7 +2708,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Turbine bypass"
+          "shortLabel": "Turbine bypass",
+          "shortNames": { "effectivePositionFraction": "Bypass position" }
         }
       }
     },
@@ -2694,6 +2766,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "electricMw": "Elec output", "impulseLoadPercent": "Turbine load", "speedRpm": "Turbine speed", "steamAvailabilityFraction": "Steam availability", "outputBreakerClosed": "Output breaker" },
           "shortLabel": "Turbine",
           "states": {
             "outputBreakerClosed": {
@@ -2738,7 +2811,8 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Condenser"
+          "shortLabel": "Condenser",
+          "shortNames": { "condensateLevelPercent": "Hotwell level" , "coolingWaterFlowKgPerS": "CW flow", "coolingWaterInletTemperatureC": "CW inlet temp", "coolingWaterOutletTemperatureC": "CW outlet temp", "coolingWaterAvailabilityFraction": "CW availability", "coolingWaterHeatCapacityMw": "CW heat capacity", "availableCondensateOutletFlowKgPerS": "Condensate available" }
         }
       }
     },
@@ -3169,7 +3243,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "SI header"
+          "shortLabel": "SI header",
+          "shortNames": { "outletFlowKgPerS": "SI flow" }
         }
       }
     },
@@ -3253,7 +3328,8 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "CS header"
+          "shortLabel": "CS header",
+          "shortNames": { "outletFlowKgPerS": "CS flow" }
         }
       }
     },
@@ -3451,6 +3527,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "radiationSourceTermMSvPerH": "CTMT radiation" },
           "shortLabel": "CTMT"
         }
       }
@@ -3483,6 +3560,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC A injection head" },
           "shortLabel": "ACC A",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3518,6 +3596,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC B injection head" },
           "shortLabel": "ACC B",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3553,6 +3632,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC C injection head" },
           "shortLabel": "ACC C",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3588,6 +3668,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC D injection head" },
           "shortLabel": "ACC D",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3623,6 +3704,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC E injection head" },
           "shortLabel": "ACC E",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
@@ -3658,30 +3740,11 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "availableInjectionHeadMPa": "ACC F injection head" },
           "shortLabel": "ACC F",
           "states": {
             "dischargeIsolationOpen": { "on": "Isolation CMD OPEN", "off": "Isolation CMD SHUT" }
           }
-        }
-      }
-    },
-    {
-      "id": "mainSteamSafetyValve",
-      "kind": "steamValve",
-      "label": "Main Steam Safety Valve",
-      "parameters": {
-        "initialPositionFraction": 0,
-        "valveMode": "safety",
-        "setpointMPa": 8.27,
-        "reseatMPa": 7.86,
-        "cvKgPerSPerSqrtMPa": 900,
-        "strokeOpenTimeS": 0.25,
-        "strokeCloseTimeS": 1.5,
-        "reverseFlowAllowed": false
-      },
-      "metadata": {
-        "presentation": {
-          "shortLabel": "MSSV"
         }
       }
     },
@@ -3694,6 +3757,7 @@
       },
       "metadata": {
         "presentation": {
+          "shortNames": { "releaseFlowKgPerS": "Release flow", "releasedMassKg": "Mass released" },
           "shortLabel": "ATM"
         }
       }
@@ -4356,6 +4420,7 @@
       "variables": [],
       "metadata": {
         "presentation": {
+          "shortNames": { "energized": "Inverter A energized" },
           "shortLabel": "Inverter A"
         }
       }
@@ -4371,6 +4436,7 @@
       "variables": [],
       "metadata": {
         "presentation": {
+          "shortNames": { "energized": "Inverter B energized" },
           "shortLabel": "Inverter B"
         }
       }
@@ -4442,6 +4508,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "armed": "SEQ A armed" },
           "shortLabel": "SEQ A"
         }
       }
@@ -4577,6 +4644,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "armed": "SEQ B armed" },
           "shortLabel": "SEQ B"
         }
       }
@@ -4714,7 +4782,12 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RTB A"
+          "shortLabel": "RTB A",
+          "notOffered": {
+            "closed": {
+              "text": "Reactor trip breakers open on the manual reactor trip and close only in a startup after the trip is reset: not operated from the display"
+            }
+          }
         }
       }
     },
@@ -4745,7 +4818,12 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RTB B"
+          "shortLabel": "RTB B",
+          "notOffered": {
+            "closed": {
+              "text": "Reactor trip breakers open on the manual reactor trip and close only in a startup after the trip is reset: not operated from the display"
+            }
+          }
         }
       }
     },
@@ -4824,7 +4902,9 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin A", "overtemperatureSetpointC": "OTΔT setpoint A", "overpowerSetpointC": "OPΔT setpoint A" },
           "shortLabel": "dT channel A",
+          "names": { "averageTemperatureC": "Tavg" },
           "states": {
             "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
           }
@@ -4906,7 +4986,9 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin B", "overtemperatureSetpointC": "OTΔT setpoint B", "overpowerSetpointC": "OPΔT setpoint B" },
           "shortLabel": "dT channel B",
+          "names": { "averageTemperatureC": "Tavg" },
           "states": {
             "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
           }
@@ -4988,7 +5070,9 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin C", "overtemperatureSetpointC": "OTΔT setpoint C", "overpowerSetpointC": "OPΔT setpoint C" },
           "shortLabel": "dT channel C",
+          "names": { "averageTemperatureC": "Tavg" },
           "states": {
             "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
           }
@@ -5070,7 +5154,9 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin D", "overtemperatureSetpointC": "OTΔT setpoint D", "overpowerSetpointC": "OPΔT setpoint D" },
           "shortLabel": "dT channel D",
+          "names": { "averageTemperatureC": "Tavg" },
           "states": {
             "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
           }
@@ -5152,7 +5238,9 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin E", "overtemperatureSetpointC": "OTΔT setpoint E", "overpowerSetpointC": "OPΔT setpoint E" },
           "shortLabel": "dT channel E",
+          "names": { "averageTemperatureC": "Tavg" },
           "states": {
             "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
           }
@@ -5234,7 +5322,9 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin F", "overtemperatureSetpointC": "OTΔT setpoint F", "overpowerSetpointC": "OPΔT setpoint F" },
           "shortLabel": "dT channel F",
+          "names": { "averageTemperatureC": "Tavg" },
           "states": {
             "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
           }
@@ -5277,7 +5367,17 @@
       },
       "metadata": {
         "presentation": {
-          "shortLabel": "Relief header"
+          "shortLabel": "Relief header",
+          "names": {
+            "pressureNodeMPa": "Relief header pressure",
+            "mixedPressureMPa": "Relief header mixing pressure",
+            "mixedTemperatureC": "Relief header temperature",
+            "inventoryKg": "Relief header inventory",
+            "inletFlowKgPerS": "Relief header inlet flow",
+            "outletFlowKgPerS": "Relief header outlet flow",
+            "flowBalanceResidualKgPerS": "Relief header flow balance residual",
+            "unmetDemandKgPerS": "Relief header unmet demand"
+          }
         }
       }
     },
@@ -5314,6 +5414,7 @@
       ],
       "metadata": {
         "presentation": {
+          "shortNames": { "blocked": "SI blocked", "belowP11": "P-11", "blockPushbutton": "SI block" },
           "shortLabel": "SI block logic",
           "states": {
             "blockPushbutton": { "on": "BLOCK SI", "off": "SI block released" },
@@ -5432,6 +5533,268 @@
           "momentary": ["pushbutton"]
         }
       }
+    },
+    {
+      "id": "auxFeedwaterTurbineSteamValveB",
+      "kind": "steamValve",
+      "label": "TD AFW Pump Steam Supply Valve B",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "cvKgPerSPerSqrtMPa": 0.9,
+        "strokeOpenTimeS": 3,
+        "strokeCloseTimeS": 3,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "TDAFW-STM-B",
+          "equipmentId": "auxFeedwaterTurbineSteamValveB",
+          "description": "Turbine-driven auxiliary feedwater pump steam supply valve B position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "TDAFW-STM-B-POS",
+          "equipmentId": "auxFeedwaterTurbineSteamValveB",
+          "description": "Turbine-driven auxiliary feedwater pump steam supply valve B position feedback"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "TD AFW steam B"
+        }
+      }
+    },
+    {
+      "id": "auxFeedwaterTurbineSteamValveC",
+      "kind": "steamValve",
+      "label": "TD AFW Pump Steam Supply Valve C",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "cvKgPerSPerSqrtMPa": 0.9,
+        "strokeOpenTimeS": 3,
+        "strokeCloseTimeS": 3,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "TDAFW-STM-C",
+          "equipmentId": "auxFeedwaterTurbineSteamValveC",
+          "description": "Turbine-driven auxiliary feedwater pump steam supply valve C position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "TDAFW-STM-C-POS",
+          "equipmentId": "auxFeedwaterTurbineSteamValveC",
+          "description": "Turbine-driven auxiliary feedwater pump steam supply valve C position feedback"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "TD AFW steam C"
+        }
+      }
+    },
+    {
+      "id": "mainSteamSafetyValveA",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valves A",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 8.27,
+        "fullLiftMPa": 8.62,
+        "cvKgPerSPerSqrtMPa": 170,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSSV-A-POS",
+          "equipmentId": "mainSteamSafetyValveA",
+          "description": "Steam line A main steam safety valves lift, the bank's opening"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV A",
+          "notOffered": {
+            "positionFraction": {
+              "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "mainSteamSafetyValveB",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valves B",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 8.27,
+        "fullLiftMPa": 8.62,
+        "cvKgPerSPerSqrtMPa": 170,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSSV-B-POS",
+          "equipmentId": "mainSteamSafetyValveB",
+          "description": "Steam line B main steam safety valves lift, the bank's opening"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV B",
+          "notOffered": {
+            "positionFraction": {
+              "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "mainSteamSafetyValveC",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valves C",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 8.27,
+        "fullLiftMPa": 8.62,
+        "cvKgPerSPerSqrtMPa": 170,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSSV-C-POS",
+          "equipmentId": "mainSteamSafetyValveC",
+          "description": "Steam line C main steam safety valves lift, the bank's opening"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV C",
+          "notOffered": {
+            "positionFraction": {
+              "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "mainSteamSafetyValveD",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valves D",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 8.27,
+        "fullLiftMPa": 8.62,
+        "cvKgPerSPerSqrtMPa": 170,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSSV-D-POS",
+          "equipmentId": "mainSteamSafetyValveD",
+          "description": "Steam line D main steam safety valves lift, the bank's opening"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV D",
+          "notOffered": {
+            "positionFraction": {
+              "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "mainSteamSafetyValveE",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valves E",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 8.27,
+        "fullLiftMPa": 8.62,
+        "cvKgPerSPerSqrtMPa": 170,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSSV-E-POS",
+          "equipmentId": "mainSteamSafetyValveE",
+          "description": "Steam line E main steam safety valves lift, the bank's opening"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV E",
+          "notOffered": {
+            "positionFraction": {
+              "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "mainSteamSafetyValveF",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valves F",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 8.27,
+        "fullLiftMPa": 8.62,
+        "cvKgPerSPerSqrtMPa": 170,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
+      },
+      "variables": [
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "MSSV-F-POS",
+          "equipmentId": "mainSteamSafetyValveF",
+          "description": "Steam line F main steam safety valves lift, the bank's opening"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "MSSV F",
+          "notOffered": {
+            "positionFraction": {
+              "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
+            }
+          }
+        }
+      }
     }
   ],
   "connections": [
@@ -5523,6 +5886,7 @@
     },
     {
       "id": "pressurizer-relief-to-tank",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "PORV tailpipe temp" } } },
       "from": "pressurizer.reliefOutlet",
       "to": "pressurizerReliefHeader.inletA",
       "connectionKind": "fluidFlow",
@@ -5561,6 +5925,7 @@
     },
     {
       "id": "pressurizer-safety-valves-to-tank",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "Safety tailpipe temp" } } },
       "from": "pressurizer.safetyOutlet",
       "to": "pressurizerReliefHeader.inletA",
       "connectionKind": "fluidFlow",
@@ -5599,6 +5964,7 @@
     },
     {
       "id": "pressurizer-relief-header-to-tank",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "Relief header temp" } } },
       "from": "pressurizerReliefHeader.outletA",
       "to": "pressurizerReliefTank.inlet",
       "connectionKind": "fluidFlow",
@@ -7477,6 +7843,7 @@
     },
     {
       "id": "msiv-a-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV A outlet pressure" } } },
       "from": "mainSteamIsolationValveA.outlet",
       "to": "mainSteamHeader.inletA",
       "connectionKind": "fluidFlow",
@@ -7699,6 +8066,7 @@
     },
     {
       "id": "msiv-b-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV B outlet pressure" } } },
       "from": "mainSteamIsolationValveB.outlet",
       "to": "mainSteamHeader.inletB",
       "connectionKind": "fluidFlow",
@@ -7921,6 +8289,7 @@
     },
     {
       "id": "msiv-c-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV C outlet pressure" } } },
       "from": "mainSteamIsolationValveC.outlet",
       "to": "mainSteamHeader.inletC",
       "connectionKind": "fluidFlow",
@@ -8497,6 +8866,7 @@
     },
     {
       "id": "msiv-d-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV D outlet pressure" } } },
       "from": "mainSteamIsolationValveD.outlet",
       "to": "mainSteamHeader.inletD",
       "connectionKind": "fluidFlow",
@@ -8542,6 +8912,7 @@
     },
     {
       "id": "msiv-e-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV E outlet pressure" } } },
       "from": "mainSteamIsolationValveE.outlet",
       "to": "mainSteamHeader.inletE",
       "connectionKind": "fluidFlow",
@@ -8587,6 +8958,7 @@
     },
     {
       "id": "msiv-f-to-main-steam-header",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "MSIV F outlet pressure" } } },
       "from": "mainSteamIsolationValveF.outlet",
       "to": "mainSteamHeader.inletF",
       "connectionKind": "fluidFlow",
@@ -8632,6 +9004,7 @@
     },
     {
       "id": "main-steam-header-to-turbine-stop-valve",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Stop valves inlet press." } } },
       "from": "mainSteamHeader.outletA",
       "to": "turbineStopValve.inlet",
       "connectionKind": "fluidFlow",
@@ -8677,6 +9050,7 @@
     },
     {
       "id": "main-steam-header-to-turbine-bypass-valve",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Bypass inlet pressure" } } },
       "from": "mainSteamHeader.outletC",
       "to": "turbineBypassValve.inlet",
       "connectionKind": "fluidFlow",
@@ -8722,6 +9096,7 @@
     },
     {
       "id": "turbine-bypass-valve-to-condenser",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Bypass outlet pressure" } } },
       "from": "turbineBypassValve.outlet",
       "to": "condenser.steamInlet",
       "connectionKind": "fluidFlow",
@@ -8767,6 +9142,7 @@
     },
     {
       "id": "turbine-stop-valve-to-turbine",
+      "metadata": { "presentation": { "shortNames": { "pressureMPa": "Turbine inlet pressure" } } },
       "from": "turbineStopValve.outlet",
       "to": "turbine.steamInlet",
       "connectionKind": "fluidFlow",
@@ -9707,6 +10083,7 @@
     },
     {
       "id": "boric-acid-injection-to-charging-pump",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Boration boron" } } },
       "from": "boricAcidInjectionValve.outlet",
       "to": "chargingPump.inlet",
       "connectionKind": "fluidFlow",
@@ -9758,6 +10135,7 @@
     },
     {
       "id": "charging-pump-to-cold-leg-a",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Charging A boron" } } },
       "from": "chargingPump.outlet",
       "to": "core.coldLegA",
       "connectionKind": "fluidFlow",
@@ -9846,6 +10224,7 @@
     },
     {
       "id": "letdown-to-vct",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Letdown boron" } } },
       "from": "letdownValve.outlet",
       "to": "volumeControlTank.inlet",
       "connectionKind": "fluidFlow",
@@ -10002,6 +10381,7 @@
     },
     {
       "id": "charging-pump-b-to-cold-leg-b",
+      "metadata": { "presentation": { "shortNames": { "soluteConcentrationPpm": "Charging B boron" } } },
       "from": "chargingPumpB.outlet",
       "to": "core.coldLegB",
       "connectionKind": "fluidFlow",
@@ -11245,184 +11625,6 @@
       ]
     },
     {
-      "id": "main-steam-header-to-safety-valve",
-      "from": "mainSteamHeader.outletB",
-      "to": "mainSteamSafetyValve.inlet",
-      "connectionKind": "fluidFlow",
-      "service": "mainSteam",
-      "nominalFluid": "steam",
-      "designPhase": "steam",
-      "solverModel": "compressibleSteam",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "Main steam safety valve inlet flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "Main steam safety valve inlet temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 285
-        },
-        {
-          "path": "pressureMPa",
-          "label": "Main steam safety valve inlet pressure",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "pressure",
-          "unit": "MPa",
-          "initialValue": 6.9
-        },
-        {
-          "path": "qualityFraction",
-          "label": "Main steam safety valve inlet quality",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0.995
-        },
-        {
-          "path": "voidFraction",
-          "label": "Main steam safety valve inlet void fraction",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0.98
-        },
-        {
-          "path": "enthalpyKJPerKg",
-          "label": "Main steam safety valve inlet enthalpy",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "energyPerMass",
-          "unit": "kJ/kg",
-          "initialValue": 2770
-        },
-        {
-          "path": "radiationMSvPerH",
-          "label": "Main steam safety valve inlet radiation",
-          "kind": "derived",
-          "discipline": "radiological",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "radiationDoseRate",
-          "unit": "mSv/h",
-          "initialValue": 0.02
-        }
-      ]
-    },
-    {
-      "id": "main-steam-safety-valve-to-atmosphere",
-      "from": "mainSteamSafetyValve.outlet",
-      "to": "atmosphere.releaseIn",
-      "connectionKind": "fluidFlow",
-      "service": "mainSteam",
-      "nominalFluid": "steam",
-      "designPhase": "steam",
-      "solverModel": "compressibleSteam",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "Main steam safety release to atmosphere flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "Main steam safety release temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 285
-        },
-        {
-          "path": "pressureMPa",
-          "label": "Main steam safety release downstream pressure",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "pressure",
-          "unit": "MPa",
-          "initialValue": 0.101325
-        },
-        {
-          "path": "qualityFraction",
-          "label": "Main steam safety release quality",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0.995
-        },
-        {
-          "path": "voidFraction",
-          "label": "Main steam safety release void fraction",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0.98
-        },
-        {
-          "path": "enthalpyKJPerKg",
-          "label": "Main steam safety release enthalpy",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "energyPerMass",
-          "unit": "kJ/kg",
-          "initialValue": 2770
-        },
-        {
-          "path": "radiationMSvPerH",
-          "label": "Main steam safety release radiation",
-          "kind": "derived",
-          "discipline": "radiological",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "radiationDoseRate",
-          "unit": "mSv/h",
-          "initialValue": 0.02
-        }
-      ]
-    },
-    {
       "id": "sg-a-steam-to-relief-valve-a",
       "from": "sgA.steamReliefOutlet",
       "to": "steamGeneratorReliefValveA.inlet",
@@ -11486,7 +11688,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 0
+          "initialValue": 0,
+          "tagId": "SG-A-ARV-FLOW",
+          "equipmentId": "steamGeneratorReliefValveA",
+          "description": "Steam generator A atmospheric relief valve flow to atmosphere"
         },
         {
           "path": "temperatureC",
@@ -11587,7 +11792,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 0
+          "initialValue": 0,
+          "tagId": "SG-B-ARV-FLOW",
+          "equipmentId": "steamGeneratorReliefValveB",
+          "description": "Steam generator B atmospheric relief valve flow to atmosphere"
         },
         {
           "path": "temperatureC",
@@ -11688,7 +11896,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 0
+          "initialValue": 0,
+          "tagId": "SG-C-ARV-FLOW",
+          "equipmentId": "steamGeneratorReliefValveC",
+          "description": "Steam generator C atmospheric relief valve flow to atmosphere"
         },
         {
           "path": "temperatureC",
@@ -11789,7 +12000,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 0
+          "initialValue": 0,
+          "tagId": "SG-D-ARV-FLOW",
+          "equipmentId": "steamGeneratorReliefValveD",
+          "description": "Steam generator D atmospheric relief valve flow to atmosphere"
         },
         {
           "path": "temperatureC",
@@ -11890,7 +12104,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 0
+          "initialValue": 0,
+          "tagId": "SG-E-ARV-FLOW",
+          "equipmentId": "steamGeneratorReliefValveE",
+          "description": "Steam generator E atmospheric relief valve flow to atmosphere"
         },
         {
           "path": "temperatureC",
@@ -11991,7 +12208,10 @@
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 0
+          "initialValue": 0,
+          "tagId": "SG-F-ARV-FLOW",
+          "equipmentId": "steamGeneratorReliefValveF",
+          "description": "Steam generator F atmospheric relief valve flow to atmosphere"
         },
         {
           "path": "temperatureC",
@@ -12064,6 +12284,7 @@
     },
     {
       "id": "circulating-water-pump-to-condenser",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "CW inlet temp" } } },
       "from": "circulatingWaterPump.outlet",
       "to": "condenser.coolingWater",
       "connectionKind": "fluidFlow",
@@ -12109,6 +12330,7 @@
     },
     {
       "id": "condenser-to-cooling-water-discharge",
+      "metadata": { "presentation": { "shortNames": { "temperatureC": "CW outlet temp" } } },
       "from": "condenser.coolingWaterOutlet",
       "to": "coolingWaterDischarge.inlet",
       "connectionKind": "fluidFlow",
@@ -12457,6 +12679,861 @@
       "from": "safetyBusB.outlet",
       "to": "containmentFanCoolersB.power",
       "connectionKind": "electricalPower"
+    },
+    {
+      "id": "sg-b-steam-to-turbine-afw-steam-valve-b",
+      "from": "sgB.driveSteamOutlet",
+      "to": "auxFeedwaterTurbineSteamValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator B steam to the TD AFW pump turbine flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "TDAFW-STM-B-FLOW",
+          "equipmentId": "auxFeedwaterTurbineSteamValveB",
+          "description": "Steam flow from steam generator B to the turbine-driven auxiliary feedwater pump turbine"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator B steam to the TD AFW pump turbine temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "TD AFW pump steam supply valve B inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "turbine-afw-steam-valve-b-to-pump-turbine",
+      "from": "auxFeedwaterTurbineSteamValveB.outlet",
+      "to": "auxFeedwaterPumpTurbine.driveSteamInlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW pump steam supply valve B to pump turbine flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW pump steam supply valve B to pump turbine temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "TD AFW pump turbine steam inlet pressure from valve B",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "sg-c-steam-to-turbine-afw-steam-valve-c",
+      "from": "sgC.driveSteamOutlet",
+      "to": "auxFeedwaterTurbineSteamValveC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator C steam to the TD AFW pump turbine flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "TDAFW-STM-C-FLOW",
+          "equipmentId": "auxFeedwaterTurbineSteamValveC",
+          "description": "Steam flow from steam generator C to the turbine-driven auxiliary feedwater pump turbine"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator C steam to the TD AFW pump turbine temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "TD AFW pump steam supply valve C inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "turbine-afw-steam-valve-c-to-pump-turbine",
+      "from": "auxFeedwaterTurbineSteamValveC.outlet",
+      "to": "auxFeedwaterPumpTurbine.driveSteamInlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW pump steam supply valve C to pump turbine flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW pump steam supply valve C to pump turbine temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "TD AFW pump turbine steam inlet pressure from valve C",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "turbine-afw-pump-turbine-exhaust-to-atmosphere",
+      "from": "auxFeedwaterPumpTurbine.driveSteamExhaust",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "exhaustSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "TD AFW pump turbine exhaust to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "TD AFW pump turbine exhaust temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 100
+        },
+        {
+          "path": "pressureMPa",
+          "label": "TD AFW pump turbine exhaust pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        }
+      ]
+    },
+    {
+      "id": "sg-a-steam-to-safety-valves-a",
+      "from": "sgA.steamReliefOutlet",
+      "to": "mainSteamSafetyValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator A main steam safety valves inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator A main steam safety valves inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator A main steam safety valves inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valves-a-to-atmosphere",
+      "from": "mainSteamSafetyValveA.outlet",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator A main steam safety valves to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "MSSV-A-FLOW",
+          "equipmentId": "mainSteamSafetyValveA",
+          "description": "Steam line A main steam safety valves flow to atmosphere"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator A main steam safety release temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator A main steam safety release downstream pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Steam generator A main steam safety release radiation",
+          "kind": "derived",
+          "discipline": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "sg-b-steam-to-safety-valves-b",
+      "from": "sgB.steamReliefOutlet",
+      "to": "mainSteamSafetyValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator B main steam safety valves inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator B main steam safety valves inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator B main steam safety valves inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valves-b-to-atmosphere",
+      "from": "mainSteamSafetyValveB.outlet",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator B main steam safety valves to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "MSSV-B-FLOW",
+          "equipmentId": "mainSteamSafetyValveB",
+          "description": "Steam line B main steam safety valves flow to atmosphere"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator B main steam safety release temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator B main steam safety release downstream pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Steam generator B main steam safety release radiation",
+          "kind": "derived",
+          "discipline": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "sg-c-steam-to-safety-valves-c",
+      "from": "sgC.steamReliefOutlet",
+      "to": "mainSteamSafetyValveC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator C main steam safety valves inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator C main steam safety valves inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator C main steam safety valves inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valves-c-to-atmosphere",
+      "from": "mainSteamSafetyValveC.outlet",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator C main steam safety valves to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "MSSV-C-FLOW",
+          "equipmentId": "mainSteamSafetyValveC",
+          "description": "Steam line C main steam safety valves flow to atmosphere"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator C main steam safety release temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator C main steam safety release downstream pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Steam generator C main steam safety release radiation",
+          "kind": "derived",
+          "discipline": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "sg-d-steam-to-safety-valves-d",
+      "from": "sgD.steamReliefOutlet",
+      "to": "mainSteamSafetyValveD.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator D main steam safety valves inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator D main steam safety valves inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator D main steam safety valves inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valves-d-to-atmosphere",
+      "from": "mainSteamSafetyValveD.outlet",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator D main steam safety valves to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "MSSV-D-FLOW",
+          "equipmentId": "mainSteamSafetyValveD",
+          "description": "Steam line D main steam safety valves flow to atmosphere"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator D main steam safety release temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator D main steam safety release downstream pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Steam generator D main steam safety release radiation",
+          "kind": "derived",
+          "discipline": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "sg-e-steam-to-safety-valves-e",
+      "from": "sgE.steamReliefOutlet",
+      "to": "mainSteamSafetyValveE.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator E main steam safety valves inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator E main steam safety valves inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator E main steam safety valves inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valves-e-to-atmosphere",
+      "from": "mainSteamSafetyValveE.outlet",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator E main steam safety valves to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "MSSV-E-FLOW",
+          "equipmentId": "mainSteamSafetyValveE",
+          "description": "Steam line E main steam safety valves flow to atmosphere"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator E main steam safety release temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator E main steam safety release downstream pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Steam generator E main steam safety release radiation",
+          "kind": "derived",
+          "discipline": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "sg-f-steam-to-safety-valves-f",
+      "from": "sgF.steamReliefOutlet",
+      "to": "mainSteamSafetyValveF.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator F main steam safety valves inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator F main steam safety valves inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator F main steam safety valves inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valves-f-to-atmosphere",
+      "from": "mainSteamSafetyValveF.outlet",
+      "to": "atmosphere.releaseIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Steam generator F main steam safety valves to atmosphere flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "MSSV-F-FLOW",
+          "equipmentId": "mainSteamSafetyValveF",
+          "description": "Steam line F main steam safety valves flow to atmosphere"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Steam generator F main steam safety release temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Steam generator F main steam safety release downstream pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Steam generator F main steam safety release radiation",
+          "kind": "derived",
+          "discipline": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
     }
   ],
   "publishedVariables": [
@@ -12997,18 +14074,6 @@
     "safetyAccumulatorD.dischargeIsolationOpen",
     "safety-accumulator-d-to-cold-leg-d.flowKgPerS",
     "safety-accumulator-d-to-cold-leg-d.pressureMPa",
-    "mainSteamSafetyValve.positionFraction",
-    "mainSteamSafetyValve.effectivePositionFraction",
-    "mainSteamSafetyValve.autoOpenActive",
-    "mainSteamSafetyValve.inletFlowKgPerS",
-    "mainSteamSafetyValve.outletFlowKgPerS",
-    "mainSteamSafetyValve.availablePressureDropMPa",
-    "mainSteamSafetyValve.flowBalanceResidualKgPerS",
-    "main-steam-header-to-safety-valve.flowKgPerS",
-    "main-steam-header-to-safety-valve.pressureMPa",
-    "main-steam-safety-valve-to-atmosphere.flowKgPerS",
-    "main-steam-safety-valve-to-atmosphere.pressureMPa",
-    "main-steam-safety-valve-to-atmosphere.radiationMSvPerH",
     "atmosphere.releaseFlowKgPerS",
     "atmosphere.releasedMassKg",
     "msiv-a-to-main-steam-header.pressureMPa",
@@ -13320,6 +14385,36 @@
     "core.controlBankAStepsWithdrawn",
     "core.controlBankBStepsWithdrawn",
     "core.controlBankCStepsWithdrawn",
-    "core.controlBankDStepsWithdrawn"
+    "core.controlBankDStepsWithdrawn",
+    "steamGeneratorReliefValveA.effectivePositionFraction",
+    "steam-generator-relief-valve-a-to-atmosphere.flowKgPerS",
+    "steamGeneratorReliefValveB.effectivePositionFraction",
+    "steam-generator-relief-valve-b-to-atmosphere.flowKgPerS",
+    "steamGeneratorReliefValveC.effectivePositionFraction",
+    "steam-generator-relief-valve-c-to-atmosphere.flowKgPerS",
+    "steamGeneratorReliefValveD.effectivePositionFraction",
+    "steam-generator-relief-valve-d-to-atmosphere.flowKgPerS",
+    "steamGeneratorReliefValveE.effectivePositionFraction",
+    "steam-generator-relief-valve-e-to-atmosphere.flowKgPerS",
+    "steamGeneratorReliefValveF.effectivePositionFraction",
+    "steam-generator-relief-valve-f-to-atmosphere.flowKgPerS",
+    "auxFeedwaterTurbineSteamValveB.positionFraction",
+    "auxFeedwaterTurbineSteamValveB.effectivePositionFraction",
+    "sg-b-steam-to-turbine-afw-steam-valve-b.flowKgPerS",
+    "auxFeedwaterTurbineSteamValveC.positionFraction",
+    "auxFeedwaterTurbineSteamValveC.effectivePositionFraction",
+    "sg-c-steam-to-turbine-afw-steam-valve-c.flowKgPerS",
+    "mainSteamSafetyValveA.effectivePositionFraction",
+    "main-steam-safety-valves-a-to-atmosphere.flowKgPerS",
+    "mainSteamSafetyValveB.effectivePositionFraction",
+    "main-steam-safety-valves-b-to-atmosphere.flowKgPerS",
+    "mainSteamSafetyValveC.effectivePositionFraction",
+    "main-steam-safety-valves-c-to-atmosphere.flowKgPerS",
+    "mainSteamSafetyValveD.effectivePositionFraction",
+    "main-steam-safety-valves-d-to-atmosphere.flowKgPerS",
+    "mainSteamSafetyValveE.effectivePositionFraction",
+    "main-steam-safety-valves-e-to-atmosphere.flowKgPerS",
+    "mainSteamSafetyValveF.effectivePositionFraction",
+    "main-steam-safety-valves-f-to-atmosphere.flowKgPerS"
   ]
 }

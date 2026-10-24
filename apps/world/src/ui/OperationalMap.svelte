@@ -37,10 +37,11 @@
   import type { Map as MapLibreMap } from 'maplibre-gl'
   import { startingZoomFor, type CameraInteraction } from './map/map-camera.ts'
   import { mapClickOutcome } from './map-target-routing.ts'
-  import { noMapCover, type MapCover, type MapPrompt } from './surface-panel-interaction.ts'
+  import { noMapCover, type MapPrompt } from './surface-panel-interaction.ts'
+  import type { MapCover } from './surface-panel-contract.ts'
   import { createMapPromptController } from './map/map-prompt.ts'
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
-  import { objectsUnder } from './map/map-stack.ts'
+  import { objectsUnder, stackPick } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, longPressObject, pickingRadiusFor } from './map/map-pointer.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
@@ -59,12 +60,16 @@
   interface Props {
     readonly objects: ReadonlyArray<OperationalObject>
     readonly selectedControllerId: string | null
+    /** Whether the selected object is a controller, highlighted for an order: a tap on a stack then names a target. */
+    readonly controllerHighlighted?: boolean
+    /** Whether an object is one the screen orders: a stack holding exactly one, tapped while none is highlighted, picks it without the chooser. */
+    readonly isController?: (object: OperationalObject) => boolean
     readonly placementMode: PackCreateObjectType | null
     readonly placementCursor: { readonly icon: string; readonly color: string } | null
     readonly placementPoints: ReadonlyArray<GeoJsonPoint>
     readonly theme: ThemeMode
     readonly mapConfig: StartingMapView
-    readonly clock?: SimulationClockState
+    readonly clock?: SimulationClockState | undefined
     readonly routeRevision: number
     readonly debugMapInput?: boolean
     readonly highlightedObjectIds?: ReadonlyArray<string>
@@ -132,14 +137,23 @@
      */
     readonly targetPicking?: boolean
     /** Reported only when given: a click on open ground, neither an object nor a Pack feature. */
-    readonly onGroundSelected?: (point: GeoJsonPoint) => void
+    readonly onGroundSelected?: ((point: GeoJsonPoint) => void) | undefined
     /** The order preview a hovered object's card shows, when the selected controller's Pack describes targets. */
-    readonly targetPreviewFor?: (object: OperationalObject) => PackTargetPreview | null
+    readonly targetPreviewFor?: ((object: OperationalObject) => PackTargetPreview | null) | undefined
+    /**
+     * Objects a click opens a display for: a mouse click or hover anywhere on
+     * their coloured disk is theirs on every surface, not only while the
+     * surface picks targets. Every other object's disk picks as before. It
+     * answers by the object alone, so the icons are not drawn again for it.
+     */
+    readonly takesDiskClicks?: (object: OperationalObject) => boolean
   }
 
   const {
     objects,
     selectedControllerId,
+    controllerHighlighted = false,
+    isController = () => false,
     placementMode,
     placementCursor,
     placementPoints,
@@ -189,6 +203,7 @@
     targetPicking = false,
     onGroundSelected,
     targetPreviewFor,
+    takesDiskClicks = () => false,
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -196,7 +211,7 @@
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let cachedPackMapFeatures = $state<ReadonlyArray<PackMapFeature>>([])
-  const packFeatureLayer = createPackFeatureLayer(selection => { clickHandled = true; if (!placementMode) onPackFeatureSelected(selection) }, message => onMapError(message))
+  const packFeatureLayer = createPackFeatureLayer(selection => { clickHandled = true; featureSelection = selection }, message => onMapError(message))
   const syncPackFeatures = () => { if (runtime) packFeatureLayer.update(runtime.map, cachedPackMapFeatures, visibleFamilies()) }
   let appliedTheme: ThemeMode | null = null
   let appliedCameraKey: string | null = null
@@ -216,6 +231,9 @@
   let longPressConsumedUntil = 0
   // Set while one map click is handled by an object, a Pack feature or a handle, so it is not also a ground click.
   let clickHandled = false
+  // One click selects one thing: a Pack feature beneath an object's icon (a grid line under a Plant) is selected only when no object took the click.
+  let objectTookClick = false
+  let featureSelection: NonNullable<PackMapFeature['selection']> | null = null
 
   const assignmentInteraction = (): MapAssignmentInteraction => ({
     revision: interactionRevision,
@@ -291,6 +309,10 @@
     presentationFor: (object) => presentationFor(object),
     hasNewInfo: (object) => hasNewInfo(object),
     targetPreviewFor: (object) => targetPreviewFor?.(object) ?? null,
+    drawnAt: (object) => {
+      const point = operationalRenderController.points().find(candidate => candidate.id === object.id)
+      return point ? [point.position[0], point.position[1]] : null
+    },
   })
 
   // Catalogue icons beyond the compiled atlas: artwork loads only when an object or Pack feature uses one.
@@ -309,6 +331,7 @@
       selectedControllerId,
       highlightedObjectIds,
       mutedObjectIds,
+      alertPalette: theme === 'dark' ? 'dusk' : 'day',
       hiddenObjectCategoryIds,
       placementPoints,
       packFeatures: cachedPackMapFeatures,
@@ -316,15 +339,22 @@
       placementCursorActive: placementCursor !== null,
       assignmentInteraction: assignmentInteraction(),
       disksPick: disksPickFor(targetPicking, pickingRadius),
+      diskClicks: pickingRadius === 0 ? takesDiskClicks : null,
       presentationKey,
     }),
     hasNewInfo: object => hasNewInfo(object),
     presentationFor: object => presentationFor(object),
     onObjectSelected: object => {
       clickHandled = true
+      objectTookClick = true
       if (performance.now() < longPressConsumedUntil) return
       const stack = stackUnderPointer()
-      if (stack.length > 1) return showStackChooser(stack)
+      if (stack.length > 1) {
+        const picked = stackPick(stack, controllerHighlighted, isController)
+        if (picked === null) return showStackChooser(stack)
+        onObjectSeen(picked)
+        return pickObject(picked)
+      }
       pickObject(object)
     },
     onObjectSeen: object => onObjectSeen(object),
@@ -360,7 +390,7 @@
     query: (request, signal) => queryLiveMapLayer(request, signal),
     rasterize: rasterizeSymbol,
     documentHidden: () => document.hidden,
-    onSelect: selection => { clickHandled = true; if (!placementMode) onPackFeatureSelected(selection) },
+    onSelect: selection => { clickHandled = true; featureSelection = selection },
     onHover: hover => { if (hover && hoverCardsFor(lastPointerType)) popupController.showCard(hover); else popupController.hide() },
     onError: message => onMapError(`Live map layer: ${message}`),
   })
@@ -499,7 +529,7 @@
     const padding = { top: cameraPadding.top, right: cameraPadding.right, bottom: cameraPadding.bottom, left: cameraPadding.left }
     const container = current.getContainer()
     current.jumpTo({
-      center: mapConfig.center.coordinates,
+      center: [mapConfig.center.coordinates[0], mapConfig.center.coordinates[1]],
       zoom: startingZoomFor(mapConfig.zoom, { width: container.clientWidth, height: container.clientHeight }, padding),
       padding,
     })
@@ -545,11 +575,17 @@
           // synchronously, because the deck overlay picks with pickAsync 'sync' (map-runtime.ts).
           // A double-click's extra object click leaves no mark on the next click.
           clickHandled = false
+          objectTookClick = false
+          featureSelection = null
           // Any click lets a stack's chooser go; an object click on a stack shows a new one.
           stackChooser.hide()
           queueMicrotask(() => {
             const outcome = mapClickOutcome({ suppressed: suppressBackgroundClick, assignmentActive, handled: clickHandled })
+            const feature = objectTookClick ? null : featureSelection
             clickHandled = false
+            objectTookClick = false
+            featureSelection = null
+            if (feature !== null && !placementMode) onPackFeatureSelected(feature)
             if (outcome === 'suppressed') suppressBackgroundClick = false
             else if (outcome === 'assignment-cancel') onAssignmentCancelled()
             else if (outcome === 'ground') onGroundSelected?.(point)
@@ -577,6 +613,8 @@
         return
       }
       runtime = nextRuntime
+      // Icons that would overlap fan out anew at each zoom step (point-declutter.ts).
+      nextRuntime.map.on('zoom', () => operationalRenderController.syncZoom())
       const canvas = nextRuntime.map.getCanvas()
       let holdTimer: ReturnType<typeof setTimeout> | null = null
       let holdStart: { x: number; y: number } | null = null
@@ -692,6 +730,7 @@
     highlightedObjectIds
     mutedObjectIds
     routeRevision
+    theme
     untrack(() => operationalRenderController.syncObjects())
   })
 

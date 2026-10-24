@@ -1,0 +1,228 @@
+// The custom-shape register of the OpenBridge policy (owner, 21 Oct 2026;
+// apps/world/AGENTS.md "OpenBridge Rules"): every shape an operator display
+// draws itself where an OpenBridge component could carry the meaning, with
+// its reason, evidence, decision and the phase it ends in. The wiki's
+// design-system page mirrors it. A new entry needs the owner's approval, as
+// D-19 did; a shape goes once OpenBridge carries its meaning. Deviations are
+// listed too: an OpenBridge component drawn in a state other than the
+// record's, until the plan item that ends it.
+//
+// openbridge-register.test.ts holds every SVG and drawing canvas in
+// src/ui/embed and src/ui/displays to an entry or a surface here, every entry
+// to a shape still drawn, and every shadow root, CSS part and OpenBridge
+// custom property the embed uses to an internal listed here.
+// openbridge-tokens.test.ts checks that each listed internal still exists in
+// the installed package.
+
+/** A: no component carries the meaning. B: a licence twin for an OpenBridge-free host. C: a measured defect in the component. D: measured density or speed, with figures. */
+export type Reason = 'A' | 'B' | 'C' | 'D'
+
+/**
+ * Where a shape stops being drawn: removed by the P0 fix (claude/fix-mimic-vessels);
+ * replaced by OpenBridge components before the M1 deploy; deleted with the old
+ * renderer (ui/embed/composed-display) at the swap; or kept until OpenBridge
+ * carries its meaning.
+ */
+export type Ends = 'P0 fix' | 'M1' | 'swap' | 'kept'
+
+/** A file under apps/world/src and a text that marks the drawing in it (comments do not count). */
+export interface Site {
+  readonly file: string
+  readonly mark: string
+}
+
+/** A shape's site: an svg or canvas mark must sit in an SVG or canvas the test finds; an html or code mark need only be present. */
+export interface ShapeSite extends Site {
+  readonly drawn: 'svg' | 'canvas' | 'html' | 'code'
+}
+
+export type OpenBridgeTag = `obc-${string}` | `obi-${string}`
+
+export interface CustomShape {
+  readonly id: string
+  readonly draws: string
+  readonly sites: ReadonlyArray<ShapeSite>
+  /** The OpenBridge elements whose meaning it carries instead, or none. */
+  readonly standsInFor: ReadonlyArray<OpenBridgeTag> | 'none'
+  /** Null where no reason is on record; such a shape is not kept. */
+  readonly reason: Reason | null
+  readonly evidence: string
+  readonly decision: 'pending owner approval' | { readonly owner: 'approved' | 'removed'; readonly ref: string }
+  readonly ends: Ends
+}
+
+/** The owner's ruling Q11 (21 Oct 2026): every recommendation in the register approved as listed. */
+const APPROVED = { owner: 'approved', ref: 'Q11 (21 Oct): approved as recommended' } as const
+
+export const customShapes: ReadonlyArray<CustomShape> = [
+  // Shapes the old renderer drew that the vignette draws too (the old renderer went at the swap, P2 architecture §D).
+  {
+    id: 'reactor-vessel',
+    draws: 'The reactor core as its vessel: head, flange, body, bottom, nozzle collars, the level as its fill and the rod banks by inserted length.',
+    sites: [
+      { file: 'ui/embed/vignette/vessel-symbol.ts', mark: 'export const vesselGeometry', drawn: 'code' },
+      { file: 'ui/embed/vignette/Vessel.svelte', mark: 'class="vessel"', drawn: 'svg' },
+    ],
+    standsInFor: 'none',
+    reason: 'A',
+    evidence: 'OpenBridge 2.0.0 has no reactor symbol. Filled and framed in the tokens of obc-automation-tank\'s regular scheme; geometry is a tested pure function (vignette-vessel-symbol).',
+    decision: { owner: 'approved', ref: 'D-19 (12 Oct): the one exception to OpenBridge components' },
+    ends: 'kept',
+  },
+  {
+    id: 'bus-and-header-straights',
+    draws: 'Process and steam headers and electrical buses as connector-diagram\'s large straight segments.',
+    sites: [
+      { file: 'ui/embed/vignette/flow-symbols.ts', mark: "kind: 'straight', connectionId: node.id", drawn: 'code' },
+    ],
+    standsInFor: ['obc-bus'],
+    reason: 'A',
+    evidence: 'Drawn by OpenBridge\'s own pipe renderer, but OpenBridge 2.0.0 has obc-bus for an electrical bus; no component for a process header (A). The old renderer drew its buses so too, with no reason on record; the vignette draws only its headers so, its buses as obc-bus.',
+    decision: APPROVED,
+    ends: 'kept',
+  },
+  // The Plant's operating panel (embed only).
+  {
+    id: 'sparkline',
+    draws: 'A reading\'s recent trend as a hand-drawn sparkline, standing in for OpenBridge\'s mini graph: the last ten minutes of each values row\'s reading in a vignette (W4.2, D-C), of the readings a flow drawing traces (W6.6: a tank\'s level and the core-exit temperature under their readings, D-C; an exchanger\'s level in its tile, D-D) and of a proposal\'s cited reading beside its margin to its limit; one geometry (ui/sparkline.ts).',
+    sites: [
+      { file: 'packs/process-plant/ui/displays/operation/ProposalSection.svelte', mark: '<svg class="spark"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/Sparkline.svelte', mark: "<svg class={['spark'", drawn: 'svg' },
+    ],
+    standsInFor: ['obc-graph-mini'],
+    reason: 'A',
+    evidence: 'obc-graph-mini cannot break its line where nothing was recorded (wiki design-system page). Approved in Q11 for the old renderer\'s lead sparkline (ui/embed/composed-display/Sparkline.svelte, deleted at the swap); the proposal card\'s cited reading, the lead\'s D3 ruling 1 for its evidence, is the same shape for the same reason. D-C (owner, 22 Oct) brings it back at the lead rows (R3 W4.2), in OpenBridge\'s mini graph frame tokens.',
+    decision: APPROVED,
+    ends: 'kept',
+  },
+  // The vignette renderer (P2).
+  {
+    id: 'vignette-state-word',
+    draws: 'An unknown state\'s word: a dashed box with "?". A known state is OpenBridge\'s obc-status-indicator.',
+    sites: [{ file: 'ui/embed/vignette/StateWord.svelte', mark: '<span class="unknown">', drawn: 'html' }],
+    standsInFor: ['obc-status-indicator'],
+    reason: 'A',
+    evidence: 'obc-status-indicator 2.0.0\'s statuses are active, inactive, caution, warning, alarm and running: none says unknown, which channel D draws dashed with "?" (plan §2.7). It extends the indicator rather than replace it.',
+    decision: APPROVED,
+    ends: 'kept',
+  },
+  {
+    id: 'vignette-trend-strip',
+    draws: 'A vignette\'s trend: one quantity on each strip, step-and-hold pens told apart by dash, each value held for the Historian\'s hold served with its record, the time before the record starts hatched quietly, the alarm and trip limits all its pens share as neutral dashes (coloured only while a value is past one that acts, faint where one does not act now) named outside the plot in value order, ▲ ▼ for limits beyond the scale, faint control set point ticks in an element\'s own trend, the legend\'s pen swatches, and states as 6 px bands.',
+    sites: [
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: 'aria-label={pens.map', drawn: 'svg' },
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg class="swatch"', drawn: 'svg' },
+      { file: 'ui/embed/vignette/TrendStrip.svelte', mark: '<svg class="band-track"', drawn: 'svg' },
+    ],
+    standsInFor: ['obc-line-graph', 'obc-graph-mini'],
+    reason: 'A',
+    evidence: 'As trend-panel: no OpenBridge graph draws named limits, off-span marks, a break where nothing was recorded or the time before the record starts.',
+    decision: APPROVED,
+    ends: 'kept',
+  },
+  // The main app (OpenBridge-free by licence).
+  {
+    id: 'alert-priority-glyphs',
+    draws: 'The main app\'s alarm strip priority glyphs and colours: hexagon, triangle, circle and square, from the severity table. The embed draws OpenBridge\'s obc-alert-icon instead.',
+    sites: [{ file: 'ui/displays/AlertList.svelte', mark: 'viewBox="0 0 12 12"', drawn: 'svg' }],
+    standsInFor: ['obi-critical-badge', 'obi-alarm-badge', 'obi-warning-badge', 'obi-caution-badge'],
+    reason: 'B',
+    evidence: 'The main app loads no OpenBridge (D-03, D-41; T28). Drawn independently, copying no OpenBridge path data; equal to OpenBridge\'s badge shape class and alert colour per palette (T04a). Since 0fdf1122d the vignette\'s alerts section draws obc-alert-icon (Q11).',
+    decision: APPROVED,
+    ends: 'kept',
+  },
+]
+
+/**
+ * An OpenBridge component drawn, through its manifest, in a state other than the one the record says, for a stated
+ * time: what it does and where, the reason and evidence, the decision, and the plan item it ends with.
+ */
+export interface Deviation {
+  readonly id: string
+  readonly does: string
+  /** Where it is done (code marks; comments do not count). */
+  readonly sites: ReadonlyArray<Site>
+  readonly component: OpenBridgeTag
+  readonly reason: string
+  readonly evidence: string
+  readonly decision: { readonly owner: 'approved'; readonly ref: string }
+  /** The plan item that ends it. */
+  readonly until: string
+}
+
+export const deviations: ReadonlyArray<Deviation> = [
+  {
+    id: 'own-state-emergency-as-alarm',
+    does: 'Draws a state at emergency priority as alarm, OpenBridge\'s worst status, not in D9\'s emergency magenta: a state word in obc-status-indicator, and an object\'s own state as a chip on the title row (its safety functions, its mode).',
+    sites: [
+      { file: 'ui/embed/vignette/StateWord.svelte', mark: "critical: 'alarm' }" },
+      { file: 'ui/embed/vignette/state-chip.ts', mark: "tone: tone === 'critical' ? 'alarm' : tone" },
+    ],
+    component: 'obc-status-indicator',
+    reason: 'D9 asks for magenta at emergency; obc-status-indicator 2.0.0 has no emergency status, so a state is drawn at most as alarm, and its chip follows the indicator\'s statuses (red team, review of plan v5: the emergency gap).',
+    evidence: 'obc-status-indicator 2.0.0 (dist/components/status-indicator/status-indicator.d.ts): statuses active, inactive, caution, warning, alarm and running. The Plant\'s safety functions reach alarm at most (red, ic/alarm-philosophy.ts challengePriority), so no Plant state draws emergency today.',
+    decision: { owner: 'approved', ref: 'Plan v5 W4.1 and D-K (D9), approved 22 Oct: emergency draws as alarm, the gap recorded' },
+    until: 'an OpenBridge status indicator with an emergency status',
+  },
+]
+
+/** An SVG or canvas that draws no custom shape: OpenBridge's own pipe renderer paints it, or it only measures text. */
+export interface Surface extends Site {
+  readonly paints: 'connector-diagram' | 'nothing: measures text'
+}
+
+export const surfaces: ReadonlyArray<Surface> = [
+  { file: 'ui/embed/vignette/NetworkTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/FlowTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/FlowLegend.svelte', mark: 'use:lines', paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/lines.ts', mark: "canvas.getContext('2d')", paints: 'connector-diagram' },
+  { file: 'ui/embed/vignette/row-measure.ts', mark: "document.createElement('canvas').getContext('2d')", paints: 'nothing: measures text' },
+]
+
+/** An OpenBridge internal the embed relies on outside the manifest (policy §5): where it is used, and where the installed package defines it. */
+export interface Internal {
+  readonly kind: 'part' | 'shadow root' | 'property'
+  /** The CSS part, the selector reached in the shadow root, or the custom property. */
+  readonly name: string
+  readonly element: OpenBridgeTag | 'every element'
+  readonly used: Site
+  /** A file of the installed @oicl/openbridge-webcomponents (relative to its root) and the text there that defines it. */
+  readonly defined: { readonly file: string; readonly mark: string }
+  readonly why: string
+}
+
+const part = (name: string): Internal => ({
+  kind: 'part', name, element: 'obc-button',
+  used: { file: 'packs/process-plant/ui/displays/operation/ControlSection.svelte', mark: `.execute::part(${name})` },
+  defined: { file: 'dist/components/button/button.js', mark: `part="${name}"` },
+  why: 'An execute button\'s label wraps onto a second line instead of being cut.',
+})
+
+const property = (name: string, element: Internal['element'], used: Site, defined: string, why: string): Internal => ({
+  kind: 'property', name, element, used, defined: { file: defined, mark: `var(${name})` }, why,
+})
+
+const indicatorType = ['--global-typography-ui-button-font-size', '--global-typography-ui-button-line-height', '--global-typography-ui-body-font-size', '--global-typography-ui-body-line-height']
+
+export const internals: ReadonlyArray<Internal> = [
+  part('wrapper'),
+  part('visible-wrapper'),
+  part('label'),
+  ...indicatorType.map(name =>
+    property(name, 'obc-status-indicator', { file: 'ui/embed/vignette/StateWord.svelte', mark: `${name}:` }, 'dist/components/status-indicator/status-indicator.css.js', 'The indicator\'s word at a vignette row\'s 13/16 px.')),
+  // A values section's rows in OpenBridge's readout list (W4.2): one row a 24 px grid row, and down columns in the band.
+  {
+    kind: 'property', name: '--obc-readout-list-row-gap', element: 'obc-readout-list', used: { file: 'ui/embed/vignette/ValueRows.svelte', mark: '--obc-readout-list-row-gap:' },
+    defined: { file: 'dist/navigation-instruments/readout-list/readout-list.css.js', mark: 'var(--obc-readout-list-row-gap, 8px)' },
+    why: 'The list\'s documented row gap set to 0, so each row is one 24 px row of the vignette\'s grid (its 8 px default would make it 28 px).',
+  },
+  {
+    kind: 'part', name: 'list', element: 'obc-readout-list', used: { file: 'ui/embed/vignette/Sections.svelte', mark: '.rows::part(list)' },
+    defined: { file: 'dist/navigation-instruments/readout-list/readout-list.js', mark: 'part="list"' },
+    why: 'The list\'s documented stack set in columns of 340 px in the band (W4.3), its rows read down each column.',
+  },
+  property('--font-family-main', 'every element', { file: 'ui/embed/embed.css', mark: '--font-family-main:' },
+    'dist/openbridge.css', 'Noto Sans, the subset the embed ships (vignette/noto-sans.ts), then system faces for what it does not carry: OpenBridge declares it without a fallback.'),
+  property('--global-typography-font-family', 'every element', { file: 'ui/embed/embed.css', mark: '--global-typography-font-family:' },
+    'dist/components/status-indicator/status-indicator.css.js', 'Components read the family in their shadow roots through this token; re-derived per element so they take the same system faces.'),
+]

@@ -4,8 +4,11 @@
   import {
     parseDisplayFrameMessage,
     type DisplayFrameExtent,
+    type DisplayFrameMap,
     type DisplayFrameOpen,
     type DisplayFramePresentation,
+    type DisplayFrameRoom,
+    type DisplayFrameSelect,
     type DisplayFrameZoomRequest,
   } from '../embed/display-frame-protocol.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -36,6 +39,16 @@
     readonly extent: DisplayExtent | null
     /** For a display the window opened from another: that one's title, which the display's Back returns to. */
     readonly back: string | null
+    /** A request (a new number each time, 0 for none) that the frame take the keys once shown and listening. */
+    readonly focus: number
+    /** A request (a new number each time) that the display select an element once shown and listening (W2.8); null for none. */
+    readonly select: { readonly sequence: number; readonly objectId: string; readonly elementId: string } | null
+    /** How far the window's resize handles reach over the body's left, right and bottom edges (0 maximised). */
+    readonly handles: number
+    /** The display asks for the body's whole height: the frame is given it meanwhile. */
+    readonly fill: boolean
+    /** The display says whether it asks for the body's whole height (a standing faceplate, an alerts-only display). */
+    readonly onFill: (key: string, fill: boolean) => void
     /** The frame's page listens (or loaded): it can be shown without leaving a blank. */
     readonly onUp: (key: string) => void
     /** The frame went away; its extent and readiness go with it. */
@@ -47,9 +60,11 @@
     readonly onOpen: (key: string, request: DisplayFrameOpen) => void
     /** The display's Back, to the one it was opened from. */
     readonly onBack: (key: string) => void
+    /** The display asks for the live map to be framed on these bounds. */
+    readonly onMap: (bounds: DisplayFrameMap['bounds']) => void
   }
 
-  let { entryKey, envelope, title, shown, zoom, kind, extent, back, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack }: Props = $props()
+  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, select, handles, fill, onFill, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
 
   // A frame's page is fixed for its life; a new envelope is a new entry.
   const source = untrack(() => `${embeddedViewPath(envelope)}${embeddedViewFragment(envelope)}`)
@@ -67,6 +82,7 @@
     body: { width: layerWidth, height: layerHeight },
     extent,
     envelopeHeight: envelope.height,
+    fill,
   }))
   // The geometry last given to the frame; a hidden frame keeps it until it is shown again.
   let presented: DisplayFrameGeometry | null = null
@@ -75,19 +91,59 @@
     return presented
   })
 
+  // The part of the frame a person sees, in its own px: the layer's scrolled view of the scaled frame, clear of the
+  // window's resize handles over the body's left, right and bottom edges.
+  const visibleRoom = (): DisplayFrameRoom | null => {
+    if (layer === null) return null
+    const left = layer.scrollLeft + handles
+    const top = layer.scrollTop
+    const right = Math.min(layer.scrollLeft + layer.clientWidth - handles, geometry.boxWidth)
+    const bottom = Math.min(layer.scrollTop + layer.clientHeight - handles, geometry.boxHeight)
+    return { x: left / zoom, y: top / zoom, width: Math.max(0, right - left) / zoom, height: Math.max(0, bottom - top) / zoom }
+  }
+
   const present = (): void => {
     const target = frame?.contentWindow
     if (!target) return
-    const presentation: DisplayFramePresentation = { type: 'world:display-frame', shown, zoom, ...(back === null ? {} : { back }) }
+    const visible = visibleRoom()
+    const presentation: DisplayFramePresentation = { type: 'world:display-frame', shown, zoom, ...(back === null ? {} : { back }), ...(visible === null ? {} : { visible }) }
     target.postMessage(presentation, location.origin)
   }
 
-  // The frame hears every change of what it is shown at, once it listens.
+  // The frame hears every change of what it is shown at, and of the part a person sees, once it listens.
   $effect(() => {
     void shown
     void zoom
     void back
+    void handles
+    void geometry.boxWidth
+    void geometry.boxHeight
+    void layerWidth
+    void layerHeight
     if (ready) untrack(present)
+  })
+  // A scroll of the window's body moves what a person sees: told once a frame.
+  let scrolled = 0
+  const scroll = (): void => {
+    if (scrolled !== 0) return
+    scrolled = requestAnimationFrame(() => { scrolled = 0; if (ready) present() })
+  }
+
+  // The keys move into the frame once per request, when it is shown and its page listens.
+  let focused = 0
+  $effect(() => {
+    if (focus === 0 || focus === focused || !shown || !ready || frame === null) return
+    focused = focus
+    frame.focus()
+  })
+
+  // The display selects an element once per request, when it is shown and its page listens.
+  let selected = 0
+  $effect(() => {
+    if (select === null || select.sequence === selected || !shown || !ready || !frame?.contentWindow) return
+    selected = select.sequence
+    const message: DisplayFrameSelect = { type: 'world:display-select', objectId: select.objectId, elementId: select.elementId }
+    frame.contentWindow.postMessage(message, location.origin)
   })
 
   const toExtent = (message: DisplayFrameExtent): DisplayExtent => ({
@@ -125,6 +181,14 @@
         onBack(key)
         return
       }
+      if (message.type === 'world:display-map') {
+        onMap(message.bounds)
+        return
+      }
+      if (message.type === 'world:display-fill') {
+        onFill(key, message.fill)
+        return
+      }
       onZoomRequest(key, message)
     }
     // The content box: an advice layer that starts to scroll loses its scrollbar's width.
@@ -135,10 +199,14 @@
       layerHeight = box.height
     })
     if (layer) observer.observe(layer)
+    layer?.addEventListener('scroll', scroll, { passive: true })
     window.addEventListener('message', receive)
     return () => {
       observer.disconnect()
+      layer?.removeEventListener('scroll', scroll)
+      cancelAnimationFrame(scrolled)
       window.removeEventListener('message', receive)
+      onFill(key, false)
       onDown(key)
     }
   })

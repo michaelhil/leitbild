@@ -1,6 +1,6 @@
 <script lang="ts">
   import { packDataChangedSchema } from '../../core/packs/protocol.ts'
-  import type { MapView } from '../map-view.ts'
+  import type { MapFocusTarget, MapView } from '../map-view.ts'
   import type { EmbeddedViewListing } from '@leitbild/contracts'
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
@@ -12,6 +12,7 @@
     ObjectId,
     ProcedureDocument,
     ProcedureId,
+    ProcedureRunId,
     ProcedureRunScope,
     ProcedureRunState,
     CompiledScenario,
@@ -56,9 +57,10 @@
   import { startupScenarioSource } from '../app/startup-scenario.ts'
   import { loadActivePackViews } from '../pack-loader.ts'
   import { groundClicksWanted, previewObjectTarget, routeGroundClick, routeObjectClick, targetPickingWanted, targetPreviewsWanted, type MapClickContext, type MapClickRoute, type MapTargetPanel } from '../map-target-routing.ts'
-  import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId, type MapCover, type MapPrompt, type SurfacePanelInteraction } from '../surface-panel-interaction.ts'
+  import { assertMapCover, assertPanelInteraction, cameraPaddingFor, mapCameraInteractionFor, openPanelDeclaring, railStartsCollapsed, startingControllerId, surfacePanelPackId, type MapPrompt, type SurfacePanelInteraction, type SurfacePanelProps } from '../surface-panel-interaction.ts'
+  import type { MapCover } from '../surface-panel-contract.ts'
   import PanelKeyRouter from '../keys/PanelKeyRouter.svelte'
-  import type { PanelKey } from '../keys/panel-key-router.ts'
+  import type { PanelKey } from '../keys/panel-key.ts'
   import {
     categoryRowsFor,
     placementCursorFor,
@@ -72,11 +74,18 @@
   import ControlRail from '../ControlRail.svelte'
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
   import WorldStatusLine from '../WorldStatusLine.svelte'
+  import AlertStrip from '../displays/AlertStrip.svelte'
   import StartupModal from '../StartupModal.svelte'
-  import { processPlantIdForObject, type ProcessPlantArtifactKind } from '../process-display/process-display-client.ts'
-  import type { DeckRunJoin, DisplayWindowRequest, DisplayWindowTarget } from '../process-display/display-deck.ts'
+  import { observedAssetsOf, packObserves, type DeckRunJoin, type DisplayWindowRequest, type DisplayWindowTarget } from '../process-display/display-deck.ts'
   import { displayWindowReadyMessage, readDisplayWindowHostMessage } from '../process-display/display-window-messages.ts'
+  import { readRunAssistantOffer, requestRunAssistant } from '../run-assistant-messages.ts'
   import { createProcedureSession, type ProcedureSession } from '../procedures/procedure-session.ts'
+  import {
+    procedureAiStartedRunIds,
+    procedureAiStartsRead,
+    procedureWindowsShowingAiStart,
+    type ProcedureSystemWindowEntry,
+  } from '../procedures/procedure-follow.ts'
   import {
     procedureRunSummariesForScope,
     type ProcedureRunSummary,
@@ -102,7 +111,7 @@
   } from '../startup.ts'
   import { runtimeDiagnosticDetails } from '../map-runtime/map-diagnostics.ts'
   import { mapPerformanceDiagnostics } from '../map-runtime/map-performance-diagnostics.ts'
-  import type { MapFocusRequest, MapFocusTarget, MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
+  import type { MapFocusRequest, MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
   import {
     browserDiagnostics,
     clearCapabilityQueryDiagnostics,
@@ -133,12 +142,6 @@
 
   type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
 
-  interface ProcedureSystemWindowEntry {
-    readonly id: string
-    readonly objectId: ObjectId
-    readonly initialProcedureId?: ProcedureId
-  }
-
   interface DroneWindowModel extends DroneWindowEntry {
     readonly object: OperationalObject
     readonly index: number
@@ -167,7 +170,7 @@
   // Clocks the Run publishes always apply; an execution read's only if none arrived since it was asked for.
   const clockOrder = createWorldClockOrder()
   let scenarioDefinition = $state<CompiledScenario | null>(null)
-  let selectedControllerId = $state<string | null>(null)
+  let selectedControllerId = $state<ObjectId | null>(null)
   let status = $state('Starting')
   let mapWarnings = $state('')
   let commandFeedback = $state.raw<CommandFeedback>(emptyCommandFeedback)
@@ -200,17 +203,22 @@
   let startupStatusModalOpen = $state(false)
   let settingsModalOpen = $state(false)
   let executionState = $state<RunExecutionState | null>(null)
-  let OperationalMap = $state<Component | null>(null)
-  let CreateObjectModal = $state<Component | null>(null)
-  let SettingsModal = $state<Component | null>(null)
-  let DisplayWindow = $state<Component | null>(null)
-  let surfacePanelComponents = $state<Record<string, Component>>({})
-  let ProcedureSystemModal = $state<Component | null>(null)
-  let ProcessPlantArtifactModal = $state<Component | null>(null)
-  let ProcessPlantCatalogModal = $state<Component | null>(null)
-  let ProcessPlantCredibilityModal = $state<Component | null>(null)
-  let DroneControlModal = $state<Component | null>(null)
-  let DroneProfileEditorModal = $state<Component | null>(null)
+  // The types of the components loaded on demand: a type query loads nothing.
+  type OperationalMapComponent = typeof import('../OperationalMap.svelte').default
+  type CreateObjectModalComponent = typeof import('../CreateObjectModal.svelte').default
+  type SettingsModalComponent = typeof import('../SettingsModal.svelte').default
+  type DisplayWindowComponent = typeof import('../process-display/DisplayWindow.svelte').default
+  type ProcedureSystemModalComponent = typeof import('../procedures/ProcedureSystemModal.svelte').default
+  type DroneControlModalComponent = typeof import('../drone/DroneControlModal.svelte').default
+  type DroneProfileEditorModalComponent = typeof import('../drone/DroneProfileEditorModal.svelte').default
+  let OperationalMap = $state<OperationalMapComponent | null>(null)
+  let CreateObjectModal = $state<CreateObjectModalComponent | null>(null)
+  let SettingsModal = $state<SettingsModalComponent | null>(null)
+  let DisplayWindow = $state<DisplayWindowComponent | null>(null)
+  let surfacePanelComponents = $state<Record<string, Component<SurfacePanelProps>>>({})
+  let ProcedureSystemModal = $state<ProcedureSystemModalComponent | null>(null)
+  let DroneControlModal = $state<DroneControlModalComponent | null>(null)
+  let DroneProfileEditorModal = $state<DroneProfileEditorModalComponent | null>(null)
   // The one process display window. The Host relays the conversation's
   // displays and requests to open one; both are kept here from the start, so
   // nothing is lost while the window's code or the Run is still loading. The
@@ -220,6 +228,8 @@
   // another Run needs nothing from this one.
   let displayWindowRunId = $state<SimulationRunId | null>(null)
   let displayWindowOpen = $state(false)
+  // Whether the Host offers the Run's Assistant room on this page (`run-assistant-messages.ts`).
+  let runAssistantOffered = $state(false)
   let displayWindowRequest = $state.raw<DisplayWindowRequest | null>(null)
   let conversationDisplays = $state.raw<ReadonlyArray<EmbeddedViewListing>>([])
   let displayWindowRequestSequence = 0
@@ -231,26 +241,19 @@
   let procedureSession = $state<ProcedureSession | null>(null)
   let procedureRuns = $state<ReadonlyArray<ProcedureRunState>>([])
   let procedureRunDocuments = $state<ReadonlyMap<string, ProcedureDocument>>(new Map())
-  let processPlantArtifactModal = $state<{
-    readonly object: OperationalObject
-    readonly artifact: ProcessPlantArtifactKind
-  } | null>(null)
-  let processPlantCatalogModal = $state<OperationalObject | null>(null)
-  let processPlantCredibilityModal = $state<OperationalObject | null>(null)
+  /** Runs AI agents started or resumed live, awaiting the Run read that holds them. */
+  const aiStartedProcedureRunIds = new Set<ProcedureRunId>()
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let surfaceLoadGeneration = 0
-  let operationalMapLoadPromise: Promise<Component> | null = null
-  let displayWindowLoadPromise: Promise<Component> | null = null
-  const surfacePanelLoadPromises = new Map<string, Promise<Component>>()
+  let operationalMapLoadPromise: Promise<OperationalMapComponent> | null = null
+  let displayWindowLoadPromise: Promise<DisplayWindowComponent> | null = null
+  const surfacePanelLoadPromises = new Map<string, Promise<Component<SurfacePanelProps>>>()
   let surfacePanelOpen = $state<Record<string, boolean>>({})
   let appliedSurfacePanelKey = ''
-  let procedureSystemModalLoadPromise: Promise<Component> | null = null
-  let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
-  let processPlantCatalogModalLoadPromise: Promise<Component> | null = null
-  let processPlantCredibilityModalLoadPromise: Promise<Component> | null = null
-  let droneControlModalLoadPromise: Promise<Component> | null = null
-  let droneProfileEditorModalLoadPromise: Promise<Component> | null = null
+  let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
+  let droneControlModalLoadPromise: Promise<DroneControlModalComponent> | null = null
+  let droneProfileEditorModalLoadPromise: Promise<DroneProfileEditorModalComponent> | null = null
   let pendingRealtimeSimulationRunId = $state<SimulationRunId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
@@ -302,9 +305,13 @@
           : mapConfig.layers.filter(layer => layer !== 'weather'),
       })
   const mapVisible = $derived(mapConfig !== null)
+  /** A press on an object's map icon or rail row that orders nothing opens its display where its Pack asks so (`map-target-routing.ts`). */
+  const opensDisplay = (object: OperationalObject): boolean => activePack?.packForObject(object).ui?.displayOnPress === true
   const railVisible = $derived(railConfig !== null)
   const footerVisible = true
   const guidanceOverlayVisible = true
+  // The briefing card's bottom edge, as it last measured itself: the alarm strip starts below it while it shows.
+  let guidanceBottom = $state(0)
   let categoryMapVisibility = $state<Record<string, boolean>>({})
   const surfacePanels = $derived(activePack?.surfacePanels ?? [])
   const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? panel.defaultOpen })))
@@ -335,7 +342,7 @@
     return mutedOnMap ? objects.filter(object => mutedOnMap(object, targetContext)).map(object => object.id) : emptyStringArray
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
-  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel })
+  const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, opensDisplay })
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
     if (simulationRunId !== null) return { state: 'joined' }
@@ -343,7 +350,10 @@
     return step?.status === 'failed' ? { state: 'failed', reason: step.error ?? `${step.label} failed` } : { state: 'joining' }
   })
   const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
-  const mapAssignmentController = $derived(mapAssignment ? objects.find(object => object.id === mapAssignment.controllerId) ?? null : null)
+  const mapAssignmentController = $derived.by(() => {
+    const controllerId = mapAssignment?.controllerId
+    return controllerId === undefined ? null : objects.find(object => object.id === controllerId) ?? null
+  })
   const mapAssignmentContribution = $derived(mapAssignmentController && activePack ? activePack.packForObject(mapAssignmentController).mapAssignment ?? null : null)
   const mapAssignmentAnchor = $derived(mapAssignmentController && mapAssignmentContribution && mapAssignment
     ? mapAssignmentContribution.anchorFor(mapAssignmentController, mapAssignment.mode, targetContext)
@@ -353,6 +363,7 @@
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
   const objectById = $derived(new Map(objects.map(object => [object.id, object])))
+  const mapHighlightedObjectIds = $derived(scenarioState?.highlightedObjectIds ?? emptyStringArray)
   $effect(() => {
     const rows = categoryRows
     untrack(() => {
@@ -486,12 +497,15 @@
   }
 
   const presentationComposer = createPackPresentationComposer({
-    getContext: () => ({
-      pack: activePack,
-      objects,
-      currentTime: currentPackTime(),
-      ...(seenRoleIds === null ? {} : { seenRoleIds }),
-    }),
+    getContext: () => {
+      const currentTime = currentPackTime()
+      return {
+        pack: activePack,
+        objects,
+        ...(currentTime === undefined ? {} : { currentTime }),
+        ...(seenRoleIds === null ? {} : { seenRoleIds }),
+      }
+    },
   })
 
   const presentationFor = (
@@ -660,9 +674,9 @@
     })
   }
 
-  const loadOperationalMap = async (): Promise<Component> => {
+  const loadOperationalMap = async (): Promise<OperationalMapComponent> => {
     if (OperationalMap) return OperationalMap
-    operationalMapLoadPromise ??= (async (): Promise<Component> => {
+    operationalMapLoadPromise ??= (async (): Promise<OperationalMapComponent> => {
       const module = await import('../OperationalMap.svelte')
       return module.default
     })()
@@ -703,7 +717,7 @@
 
   const loadDisplayWindow = async (): Promise<void> => {
     if (DisplayWindow) return
-    displayWindowLoadPromise ??= (async (): Promise<Component> => {
+    displayWindowLoadPromise ??= (async (): Promise<DisplayWindowComponent> => {
       const module = await import('../process-display/DisplayWindow.svelte')
       return module.default
     })()
@@ -735,7 +749,7 @@
 
   const loadProcedureSystemModal = async (): Promise<void> => {
     if (ProcedureSystemModal) return
-    procedureSystemModalLoadPromise ??= (async (): Promise<Component> => {
+    procedureSystemModalLoadPromise ??= (async (): Promise<ProcedureSystemModalComponent> => {
       const module = await import('../procedures/ProcedureSystemModal.svelte')
       return module.default
     })()
@@ -747,51 +761,9 @@
     }
   }
 
-  const loadProcessPlantArtifactModal = async (): Promise<void> => {
-    if (ProcessPlantArtifactModal) return
-    processPlantArtifactModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-display/ProcessPlantArtifactModal.svelte')
-      return module.default
-    })()
-    try {
-      ProcessPlantArtifactModal = await processPlantArtifactModalLoadPromise
-    } catch (err) {
-      processPlantArtifactModalLoadPromise = null
-      throw err
-    }
-  }
-
-  const loadProcessPlantCatalogModal = async (): Promise<void> => {
-    if (ProcessPlantCatalogModal) return
-    processPlantCatalogModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-display/ProcessPlantCatalogModal.svelte')
-      return module.default
-    })()
-    try {
-      ProcessPlantCatalogModal = await processPlantCatalogModalLoadPromise
-    } catch (err) {
-      processPlantCatalogModalLoadPromise = null
-      throw err
-    }
-  }
-
-  const loadProcessPlantCredibilityModal = async (): Promise<void> => {
-    if (ProcessPlantCredibilityModal) return
-    processPlantCredibilityModalLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../process-display/ProcessPlantCredibilityModal.svelte')
-      return module.default
-    })()
-    try {
-      ProcessPlantCredibilityModal = await processPlantCredibilityModalLoadPromise
-    } catch (err) {
-      processPlantCredibilityModalLoadPromise = null
-      throw err
-    }
-  }
-
   const loadDroneControlModal = async (): Promise<void> => {
     if (DroneControlModal) return
-    droneControlModalLoadPromise ??= (async (): Promise<Component> => {
+    droneControlModalLoadPromise ??= (async (): Promise<DroneControlModalComponent> => {
       const module = await import('../drone/DroneControlModal.svelte')
       return module.default
     })()
@@ -805,7 +777,7 @@
 
   const loadDroneProfileEditorModal = async (): Promise<void> => {
     if (DroneProfileEditorModal) return
-    droneProfileEditorModalLoadPromise ??= (async (): Promise<Component> => {
+    droneProfileEditorModalLoadPromise ??= (async (): Promise<DroneProfileEditorModalComponent> => {
       const module = await import('../drone/DroneProfileEditorModal.svelte')
       return module.default
     })()
@@ -977,9 +949,21 @@
   }
 
   const openProcessDisplay = (object: OperationalObject): void => {
-    if (processPlantIdForObject(object) === null) return
-    requestDisplayWindow({ kind: 'overview', objectId: object.id }, true)
+    if (!observedAssetObjects.some(asset => asset.id === object.id)) return
+    requestDisplayWindow({ kind: 'asset', objectId: object.id }, true)
   }
+
+  // The Run's Assistant room, which the display window's Pack tools offer where the Host offers it on this page.
+  const openRunAssistant = (): void => {
+    if (simulationRunId === null) throw new Error('the Run\'s Assistant was offered before the Run was joined')
+    requestRunAssistant({ workspaceId: activeWorkspaceId(), simulationRunId }, { parent: window.parent, origin: location.origin })
+  }
+
+  /** An alarm strip group's unit display, its first-out selected (W2.8); undefined where the object has none. */
+  const openStripDisplay = (objectId: string): ((elementId: string | undefined) => void) | undefined =>
+    observedAssetObjects.some(asset => asset.id === objectId)
+      ? elementId => requestDisplayWindow({ kind: 'asset', objectId, ...(elementId === undefined ? {} : { select: elementId }) }, true)
+      : undefined
 
   const openDroneControl = (object: OperationalObject): void => {
     if (object.packId !== 'drone') return
@@ -1013,40 +997,10 @@
     droneProfileEditorWindows = droneProfileEditorWindows.filter(entry => entry.id !== windowId)
   }
 
-  const openProcessPlantArtifact = (object: OperationalObject, artifact: ProcessPlantArtifactKind): void => {
-    if (processPlantIdForObject(object) === null) return
-    processPlantArtifactModal = { object, artifact }
-    void loadProcessPlantArtifactModal()
-  }
-
-  const closeProcessPlantArtifact = (): void => {
-    processPlantArtifactModal = null
-  }
-
-  const openProcessPlantCatalog = (object: OperationalObject): void => {
-    if (object.packId !== 'process-plant') return
-    processPlantCatalogModal = object
-    void loadProcessPlantCatalogModal()
-  }
-
-  const closeProcessPlantCatalog = (): void => {
-    processPlantCatalogModal = null
-  }
-
-  const openProcessPlantCredibility = (object: OperationalObject): void => {
-    if (processPlantIdForObject(object) === null) return
-    processPlantCredibilityModal = object
-    void loadProcessPlantCredibilityModal()
-  }
-
-  const closeProcessPlantCredibility = (): void => {
-    processPlantCredibilityModal = null
-  }
-
   const procedureUnitContexts = $derived(objects.flatMap(object => {
     const provider = activePack?.packForObject(object).procedures
     const plantId = provider?.scopeIdForObject(object) ?? null
-    return plantId === null
+    return provider === undefined || plantId === null
       ? []
       : [{
           plantId,
@@ -1057,12 +1011,19 @@
         }]
   }))
 
-  // The window steps through the Plants' overviews in rail order; Plants the rail does not list follow.
-  const processPlantObjects = $derived.by<ReadonlyArray<OperationalObject>>(() => {
-    const inRail = categoryRows.flatMap(row => row.objects).filter(object => processPlantIdForObject(object) !== null)
-    const railIds = new Set(inRail.map(object => object.id))
-    return [...inRail, ...objects.filter(object => processPlantIdForObject(object) !== null && !railIds.has(object.id))]
+  // The window steps through the defaults of the assets the Run observes (their Pack declares observations), in
+  // rail order; those the rail does not list follow.
+  const observedAssetObjects = $derived.by<ReadonlyArray<OperationalObject>>(() => {
+    const pack = activePack
+    if (pack === null) return []
+    return observedAssetsOf(categoryRows.flatMap(row => row.objects), objects, object => packObserves(pack.packForObject(object).descriptor))
   })
+
+  // The rail's categories holding several observed assets: the Run's dashboard offers to compare each side by side (R4 B4).
+  const dashboardCollections = $derived(categoryRows.flatMap(row => {
+    const count = row.objects.filter(object => observedAssetObjects.includes(object)).length
+    return count >= 2 ? [{ category: row.category.id, label: row.category.label, count }] : []
+  }))
 
   const droneControlWindowModels = $derived<ReadonlyArray<DroneWindowModel>>(
     droneControlWindows.flatMap((entry, index) => {
@@ -1103,12 +1064,6 @@
       if (nextProcedureSystemWindows.length !== procedureSystemWindows.length) {
         procedureSystemWindows = nextProcedureSystemWindows
       }
-      if (processPlantArtifactModal && !liveObjectIds.has(processPlantArtifactModal.object.id)) {
-        processPlantArtifactModal = null
-      }
-      if (processPlantCredibilityModal && !liveObjectIds.has(processPlantCredibilityModal.id)) {
-        processPlantCredibilityModal = null
-      }
     })
   })
 
@@ -1126,18 +1081,31 @@
       : emptyProcedureRunSummaries
   }
 
-  const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void => {
+  const openProcedureWindowAt = (object: OperationalObject, procedureId?: ProcedureId): void => {
     if (procedureScopeForObject(object) === null) return
+    // One procedure window per unit: opening it again raises and focuses the open one.
+    const open = procedureSystemWindows.find(entry => entry.objectId === object.id)
+    if (open) {
+      procedureSystemWindows = [...procedureSystemWindows.filter(entry => entry.id !== open.id), {
+        ...open,
+        ...(procedureId === undefined ? {} : { initialProcedureId: procedureId }),
+        focusRequest: (open.focusRequest ?? 0) + 1,
+      }]
+      return
+    }
     procedureSystemWindows = [
       ...procedureSystemWindows,
       {
         id: nextFloatingWindowId('procedure-system', object.id),
         objectId: object.id,
-        ...(summary?.procedureId === undefined ? {} : { initialProcedureId: summary.procedureId }),
+        ...(procedureId === undefined ? {} : { initialProcedureId: procedureId }),
       },
     ]
     void loadProcedureSystemModal()
   }
+
+  const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void =>
+    openProcedureWindowAt(object, summary?.procedureId)
 
   const openProcedureSystem = (object: OperationalObject): void => {
     openProcedureSystemAt(object)
@@ -1145,6 +1113,18 @@
 
   const closeProcedureSystem = (windowId: string): void => {
     procedureSystemWindows = procedureSystemWindows.filter(entry => entry.id !== windowId)
+  }
+
+  // An AI agent's Run shows in its unit's procedure window, opened if need be, never focused.
+  const showAiProcedureRun = (run: ProcedureRunState): void => {
+    const object = objects.find(candidate => procedureScopeForObject(candidate)?.plantId === run.scope.plantId)
+    if (object === undefined) return
+    procedureSystemWindows = procedureWindowsShowingAiStart(procedureSystemWindows, {
+      objectId: object.id,
+      run,
+      newWindowId: () => nextFloatingWindowId('procedure-system', object.id),
+    })
+    void loadProcedureSystemModal()
   }
 
   const retargetProcedureSystem = (windowId: string, objectId: ObjectId): void => {
@@ -1347,6 +1327,11 @@
 
   /** One path for map clicks: a map-target panel takes every target click; otherwise the Pack's targeting sends. */
   const followMapClick = (route: MapClickRoute): void => {
+    if (route.kind === 'display') {
+      // A placement or an assignment takes the map over; a unit chosen or an open map-target panel never routes a display.
+      if (placementMode === null && mapAssignment === null) openDisplayFromPress(route.objectId)
+      return
+    }
     if (route.kind === 'none') return
     if (route.kind === 'select') {
       selectedControllerId = route.objectId
@@ -1364,6 +1349,18 @@
       return
     }
     void sendCommand(route.command.kind, route.command.payload, route.subject)
+  }
+
+  // A press opens the object's display; on close the window gives focus back to where the press came from: the rail
+  // row, else the map.
+  const openDisplayFromPress = (objectId: ObjectId): void => {
+    const object = objectById.get(objectId)
+    if (object === undefined) return
+    const active = document.activeElement
+    if (!(active instanceof HTMLElement && active.closest('.control-rail') !== null)) {
+      document.querySelector<HTMLElement>('.surface-main .maplibregl-canvas')?.focus({ preventScroll: true })
+    }
+    openProcessDisplay(object)
   }
 
   const selectObject = (object: OperationalObject): void => {
@@ -1474,6 +1471,8 @@
           routeRevision += 1
         }
         if (parsed.events.some(event => event.type.startsWith('procedure.') || event.type === 'object.deleted')) {
+          // Only a live batch opens a window: the snapshot and Run reads never do.
+          for (const runId of procedureAiStartedRunIds(parsed.events)) aiStartedProcedureRunIds.add(runId)
           procedureRevision += 1
         }
       },
@@ -1854,11 +1853,28 @@
       }
       if (message.kind === 'views') {
         conversationDisplays = message.views
+        // Each refused listing is left out on its own and said; the rest of the list is shown.
+        if (message.refused.length > 0) status = `Process display window: ${message.refused.map(refused => refused.reason).join('; ')}`
+        return
+      }
+      if (message.kind === 'subject-open') {
+        requestDisplayWindow({ kind: 'subject', runId: message.runId, subject: message.subject, title: message.title }, false)
         return
       }
       requestDisplayWindow({ kind: 'listing', listing: message.view }, false)
     }
+    // The Host answers the ready message below with whether the Run offers its Assistant room.
+    const receiveRunAssistantOffer = (event: MessageEvent): void => {
+      const offer = readRunAssistantOffer(event, { origin: location.origin, parent: window.parent })
+      if (offer === null) return
+      if (offer.kind === 'rejected') {
+        status = `Run Assistant: ${offer.reason}`
+        return
+      }
+      runAssistantOffered = offer.available
+    }
     window.addEventListener('message', receiveDisplayWindowMessage)
+    window.addEventListener('message', receiveRunAssistantOffer)
     window.parent.postMessage(displayWindowReadyMessage(), location.origin)
     completeStep('route')
     completeStep('interface')
@@ -1867,6 +1883,7 @@
     const executionPoll = window.setInterval(() => { void refreshExecution() }, 1_000)
     return () => {
       window.removeEventListener('message', receiveDisplayWindowMessage)
+      window.removeEventListener('message', receiveRunAssistantOffer)
       cleanupInternalDiagnosticsGlobal()
       longTaskMonitor?.stop()
       longTaskMonitor = null
@@ -1926,10 +1943,23 @@
       onError: error => { console.warn('Background procedure document load failed; selecting it will retry.', error) },
     })
     untrack(() => {
+      aiStartedProcedureRunIds.clear()
       procedureSession = next
       next.subscribe(state => { procedureRuns = state.runs; procedureRunDocuments = state.documents })
     })
     return () => { next.dispose() }
+  })
+
+  // An AI agent's live start shows once its Run is read: once per start, so a
+  // window the person closes stays closed until an AI agent starts again.
+  $effect(() => {
+    const runs = procedureRuns
+    untrack(() => {
+      if (aiStartedProcedureRunIds.size === 0) return
+      const read = procedureAiStartsRead(runs, aiStartedProcedureRunIds)
+      for (const runId of read.settled) aiStartedProcedureRunIds.delete(runId)
+      for (const run of read.show) showAiProcedureRun(run)
+    })
   })
 
   $effect(() => {
@@ -1979,9 +2009,6 @@
         {openProcessDisplay}
         {openProcedureSystem}
         {openProcedureSystemAt}
-        {openProcessPlantArtifact}
-        {openProcessPlantCatalog}
-        {openProcessPlantCredibility}
         {openDroneControl}
         {openDroneProfileEditor}
         {procedureSummariesForObject}
@@ -2008,10 +2035,12 @@
     {/if}
 
     <main class="surface-main" class:map-region={mapVisible}>
-      {#if mapVisible && OperationalMap}
+      {#if effectiveMapConfig && OperationalMap}
         <OperationalMap
           {objects}
           {selectedControllerId}
+          controllerHighlighted={selectedControllerObject !== null}
+          isController={object => activePack?.targeting?.isController(object, targetContext) === true}
           {placementMode}
           {placementCursor}
           {placementPoints}
@@ -2020,7 +2049,7 @@
           {clock}
           {routeRevision}
           {debugMapInput}
-          highlightedObjectIds={scenarioState?.highlightedObjectIds ?? emptyStringArray}
+          highlightedObjectIds={mapHighlightedObjectIds}
           mutedObjectIds={mapMutedObjectIds}
           prompt={mapPrompt}
           {hiddenObjectCategoryIds}
@@ -2061,6 +2090,7 @@
           targetPicking={targetPickingWanted(mapClickContext)}
           onGroundSelected={groundClicksWanted(mapClickContext) ? selectGround : undefined}
           targetPreviewFor={targetPreviewsWanted(mapClickContext) ? previewTarget : undefined}
+          takesDiskClicks={opensDisplay}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>
@@ -2094,6 +2124,9 @@
           </div>
         </section>
       {/if}
+      {#if activePack}
+        <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+      {/if}
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
@@ -2117,6 +2150,7 @@
 
     {#if guidanceOverlayVisible && scenarioState?.guidance}
     <ScenarioGuidance
+      bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
       close={() => {
         if (!scenarioState) return
@@ -2158,11 +2192,17 @@
   <DisplayWindow
     simulationRunId={displayWindowRunId}
     runJoin={displayRunJoin}
-    plantObjects={processPlantObjects}
+    assetObjects={observedAssetObjects}
+    collections={dashboardCollections}
+    statusOf={statusPresentationFor}
     listings={conversationDisplays}
     request={displayWindowRequest}
+    runsProcedures={object => procedureScopeForObject(object) !== null}
     procedureSummariesFor={procedureSummariesForObject}
-    {openProcedureSystemAt}
+    {openProcedureWindowAt}
+    controller={controllerControls}
+    openAssistant={runAssistantOffered && simulationRunId !== null ? openRunAssistant : null}
+    focusMap={focusMapTarget}
     close={closeDisplayWindow}
   />
 {/if}
@@ -2179,40 +2219,13 @@
       session={procedureSession}
       initialProcedureId={windowEntry.initialProcedureId}
       windowOffsetIndex={windowEntry.index}
+      focusRequest={windowEntry.focusRequest ?? 0}
+      aiStart={windowEntry.aiStart}
       selectUnit={(objectId: ObjectId) => retargetProcedureSystem(windowEntry.id, objectId)}
+      openDisplay={(listing) => requestDisplayWindow({ kind: 'listing', listing }, true)}
       close={() => closeProcedureSystem(windowEntry.id)}
     />
   {/each}
-{/if}
-
-{#if processPlantArtifactModal && ProcessPlantArtifactModal && simulationRunId}
-  {@const artifactSystemId = processPlantIdForObject(processPlantArtifactModal.object)}
-  {#if artifactSystemId}
-    <ProcessPlantArtifactModal
-      {simulationRunId}
-      plantId={artifactSystemId}
-      artifact={processPlantArtifactModal.artifact}
-      close={closeProcessPlantArtifact}
-    />
-  {/if}
-{/if}
-
-{#if processPlantCatalogModal && ProcessPlantCatalogModal && simulationRunId}
-  <ProcessPlantCatalogModal
-    {simulationRunId}
-    close={closeProcessPlantCatalog}
-  />
-{/if}
-
-{#if processPlantCredibilityModal && ProcessPlantCredibilityModal && simulationRunId}
-  {@const credibilitySystemId = processPlantIdForObject(processPlantCredibilityModal)}
-  {#if credibilitySystemId}
-    <ProcessPlantCredibilityModal
-      {simulationRunId}
-      plantId={credibilitySystemId}
-      close={closeProcessPlantCredibility}
-    />
-  {/if}
 {/if}
 
 {#if rolePicker}

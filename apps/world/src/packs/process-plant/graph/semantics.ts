@@ -85,7 +85,29 @@ export interface StateAspectDeclaration {
    * equipment as one that writes its command does.
    */
   readonly isolation?: LocalVariablePath
+  /**
+   * How long the equipment takes to follow its command across its whole
+   * travel, as its behaviour moves it: toward its on state (running, open,
+   * closed in) and toward its off state. Zero where it follows within the
+   * step it is commanded (a breaker, a motor-driven pump's run state).
+   * Absent where the model declares no time: a reader then awaits the state
+   * and never judges the command not followed.
+   */
+  readonly travel?: AspectTravel
 }
+
+/** Seconds an aspect's state takes to follow its command, by direction (StateAspectDeclaration.travel). */
+export interface AspectTravel {
+  readonly onS: number
+  readonly offS: number
+}
+
+/**
+ * The travel of a state that follows its command as a first-order lag of
+ * this time constant: it comes within 5 % of the command after ln 20 time
+ * constants, the band in which a display reads it as followed.
+ */
+export const firstOrderLagTravelS = (timeConstantS: number): number => timeConstantS * Math.log(20)
 
 /** Equipment the model bundles inside a component; it sits on the link that leaves one of the component's ports. */
 export interface EmbeddedDeviceDeclaration {
@@ -166,6 +188,24 @@ export interface ComponentSemantics {
   readonly shutdownReadings: ReadonlyArray<string>
   /** What the equipment does with energy, by port circuit. */
   readonly energy: ReadonlyArray<EnergyRole>
+  /**
+   * How far what the equipment inserts is in, part by part: a core's rod
+   * banks, each read in steps withdrawn. A drawing shows each part's
+   * inserted length, in its groups (shutdown banks, then control banks).
+   */
+  readonly insertion?: InsertionDeclaration
+}
+
+/**
+ * Parts read one by one (`groups`, each a list of the equipment's own
+ * readings) of what one reading reads on average (`reading`): all in the
+ * reading's quantity and unit, each over its hard range, fully inserted at
+ * that range's `insertedAt` end (rods are in at zero steps withdrawn).
+ */
+export interface InsertionDeclaration {
+  readonly reading: string
+  readonly insertedAt: 'min' | 'max'
+  readonly groups: ReadonlyArray<ReadonlyArray<string>>
 }
 
 export interface ProgramDeclaration {
@@ -205,19 +245,21 @@ export const fixedSemantics = (semantics: Partial<ComponentSemantics>): ((parame
 
 /**
  * A state aspect read from a solved variable (of the component on a port's
- * one link, `via` that port), with the command that demands it and the
- * isolation input that overrides it.
+ * one link, `via` that port), with the command that demands it, the
+ * isolation input that overrides it and the time it takes to follow.
  */
 export const aspect = (
   name: StateAspect,
   state: { readonly variable: string; readonly reading: AspectReading; readonly via?: string } | undefined,
   command?: string,
   isolation?: string,
+  travel?: AspectTravel,
 ): StateAspectDeclaration => ({
   aspect: name,
   ...(state === undefined ? {} : { state: { variable: state.variable as LocalVariablePath, reading: state.reading, ...(state.via === undefined ? {} : { via: state.via }) } }),
   ...(command === undefined ? {} : { command: command as LocalVariablePath }),
   ...(isolation === undefined ? {} : { isolation: isolation as LocalVariablePath }),
+  ...(travel === undefined ? {} : { travel }),
 })
 
 export interface CompiledStateAspect {
@@ -225,6 +267,7 @@ export interface CompiledStateAspect {
   readonly state?: { readonly path: VariablePath; readonly reading: AspectReading }
   readonly command?: VariablePath
   readonly isolation?: VariablePath
+  readonly travel?: AspectTravel
 }
 
 export interface CompiledEmbeddedDevice {
@@ -249,6 +292,14 @@ export interface CompiledComponentSemantics {
   readonly programs: ReadonlyArray<{ readonly reading: VariablePath; readonly program: VariablePath; readonly deviation?: VariablePath }>
   readonly shutdownReadings: ReadonlyArray<VariablePath>
   readonly energy: ReadonlyArray<CompiledEnergyRole>
+  readonly insertion?: CompiledInsertion
+}
+
+/** An insertion with its parts as full variable paths, each with the hard range it moves over. */
+export interface CompiledInsertion {
+  readonly reading: VariablePath
+  readonly insertedAt: 'min' | 'max'
+  readonly groups: ReadonlyArray<ReadonlyArray<{ readonly path: VariablePath; readonly range: { readonly min: number; readonly max: number } }>>
 }
 
 /** An energy role with its rate as the full variable path. */

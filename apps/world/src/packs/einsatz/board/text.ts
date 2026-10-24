@@ -15,6 +15,9 @@ const inline = (word: string): string => word.charAt(0).toLowerCase() + word.sli
 /** A configuration word for a lexicon key, as a heading. */
 export const word = (rules: BoardRules, key: LexiconKey): string => wordFor(rules.config.lexicon, key)
 
+/** A configuration word for a lexicon key, inside a sentence: "Tap one of your units first". */
+export const inlineWord = (rules: BoardRules, key: LexiconKey): string => inline(word(rules, key))
+
 /** A unit's own word for a lexicon key, inside a sentence. */
 export const unitWord = (rules: BoardRules, unit: BoardUnit, key: LexiconKey): string =>
   inline(wordFor(rules.config.lexicon, key, rules.typeOf(unit).lexicon))
@@ -55,6 +58,14 @@ export const boardWords = {
   next: 'next',
   mapPoint: 'a map point',
   undo: 'Undo',
+  /** A call units hold as their next job, which they would serve: "Covered next by U1". */
+  coveredNext: 'Covered next by',
+  /** After it, where alternatives can still be sent at once. */
+  orSendNow: 'or send another now',
+  /** Inside a line, before what a call held next still needs beside the units that hold it: "U1 next · still needs 1 more server". */
+  stillNeeds: 'still needs',
+  /** The Calls list's marker for waiting rows scrolled out of view above, after their count: "↑ 2 waiting". */
+  waitingAbove: 'waiting',
   confirmFirst: 'Confirm or cancel first',
   preparing: 'Preparing…',
   nothingToSend: 'Nothing to send',

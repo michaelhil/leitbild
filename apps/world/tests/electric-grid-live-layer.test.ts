@@ -11,6 +11,7 @@ import { gridTripHvdcCommandKind } from '../src/packs/electric-grid/commands/hvd
 import { gridDefinitionSchema } from '../src/packs/electric-grid/config.ts'
 import { norwayGridModelRef, nordicFrequencyAutomationRef } from '../src/packs/electric-grid/definition-refs.ts'
 import { compileGridDefinition } from '../src/packs/electric-grid/definitions.ts'
+import { gridLoadingBands } from '../src/packs/electric-grid/loading-bands.ts'
 import { answerElectricGridQuery, electricGridQueryCapabilities } from '../src/packs/electric-grid/queries/index.ts'
 import { createGridMapGeometry, createGridMapGeometryQuery } from '../src/packs/electric-grid/queries/map-geometry.ts'
 import { createGridMapStateQuery } from '../src/packs/electric-grid/queries/map-state.ts'
@@ -113,17 +114,23 @@ describe('Grid live layer: MapLibre layers', () => {
   })
 
   test('colour branches by loading band, switching and energisation', () => {
-    expect([0, 69.9, 70, 89.9, 90, 99.9, 100, 140].map(gridLoadingBand)).toEqual([0, 0, 1, 1, 2, 2, 3, 3])
+    // The alarm bands are the Automation's continuous-rating loading alarms (high 90 %, overload 100 %), never a copy in code.
+    const bands = gridLoadingBands(norway.automation.alarms)
+    expect(bands).toEqual({ attentionPercent: 70, highPercent: 90, overloadPercent: 100 })
+    const band = (loading: number) => gridLoadingBand(bands, loading)
+    expect([0, 69.9, 70, 89.9, 90, 99.9, 100, 140].map(band)).toEqual([0, 0, 1, 1, 2, 2, 3, 3])
+    const raised = gridLoadingBands({ ...norway.automation.alarms, branchLoading: norway.automation.alarms.branchLoading.map(entry => entry.id === 'high' ? { ...entry, raisePercent: 85, clearPercent: 83 } : entry) })
+    expect([84.9, 85].map(loading => gridLoadingBand(raised, loading))).toEqual([1, 2])
     for (const theme of themes) {
       const line = spec('branch-line', theme)
       const color = (state: PackLiveFeatureState) => paintAt(line, 'line-color', 8, { kind: 'branch', kv: 420 }, state)
       const expected = theme === 'light'
         ? { normal: '#0f8b8d', watch: '#d99a00', high: '#ea580c', overload: '#d62828', open: '#6b7280', deenergized: '#c3c8cf' }
         : { normal: '#2dd4bf', watch: '#facc15', high: '#fb923c', overload: '#f87171', open: '#9ca3af', deenergized: '#4b5563' }
-      expect(isColor(color(branchState({ loadingBand: gridLoadingBand(69.9) })), expected.normal)).toBe(true)
-      expect(isColor(color(branchState({ loadingBand: gridLoadingBand(70) })), expected.watch)).toBe(true)
-      expect(isColor(color(branchState({ loadingBand: gridLoadingBand(90) })), expected.high)).toBe(true)
-      expect(isColor(color(branchState({ loadingBand: gridLoadingBand(100) })), expected.overload)).toBe(true)
+      expect(isColor(color(branchState({ loadingBand: band(69.9) })), expected.normal)).toBe(true)
+      expect(isColor(color(branchState({ loadingBand: band(70) })), expected.watch)).toBe(true)
+      expect(isColor(color(branchState({ loadingBand: band(90) })), expected.high)).toBe(true)
+      expect(isColor(color(branchState({ loadingBand: band(100) })), expected.overload)).toBe(true)
       expect(isColor(color(branchState({ closed: false, loadingBand: 3 })), expected.open)).toBe(true)
       expect(isColor(color(branchState({ energized: false })), expected.deenergized)).toBe(true)
       // Only an overloaded branch draws wider.
@@ -207,7 +214,7 @@ describe('Grid live layer: MapLibre layers', () => {
     const group = electricGridPackView.presentation.mapLayerGroups!.find(candidate => candidate.id === gridLiveLayerGroupId)!
     expect(gridLiveMapLayer.layerGroupId).toBe(gridLiveLayerGroupId)
     expect(layerIdsMatching(ids, group.layerIdPattern)).toEqual(ids)
-    expect(specs('light').filter(layer => layer.interactive).map(layer => layer.id)).toEqual(['branch-casing', 'branch-line', 'equivalent-line', 'hvdc-casing', 'hvdc-line', 'buses', 'loads', 'generators'])
+    expect(specs('light').filter(layer => layer.interactive).map(layer => layer.id)).toEqual(['branch-casing', 'branch-line', 'hvdc-casing', 'hvdc-line', 'buses', 'loads', 'generators'])
     expect(electricGridPackView.presentation.liveMapLayers).toEqual([gridLiveMapLayer])
     expect(electricGridPackView.presentation.mapLegends).toContain(gridLiveStateLegend)
   })
@@ -297,7 +304,7 @@ describe('Grid live layer: geometry and state from the map queries', () => {
     // The first branch in id order is the curated Follo – Lambertseter equivalent; lines follow their mapped routes.
     expect(norway.model.branches[0]!.id).toBe('branch:curated-follo-lambertseter-47kv-equivalent')
     expect(drawnAs(norway.model.branches.find(branch => branch.kind === 'ac_line' && branch.id.startsWith('branch:osm-'))!.id)).toBe('Mapped route')
-    expect(drawnAs('branch:curated-follo-lambertseter-47kv-equivalent')).toBe('Network equivalent (not a mapped line)')
+    expect(drawnAs('branch:curated-follo-lambertseter-47kv-equivalent')).toBe('Network equivalent (not a physical line)')
     expect(drawnAs(norway.model.branches.find(branch => branch.id.startsWith('branch:transformer-'))!.id)).toBe('Transformer, drawn between its buses')
     expect(state.hoverCard(0)!.fields.find(field => field.key === 'voltage')!.value).toBe('420 kV – 132 kV, equivalent of the sub-transmission between them')
   })
@@ -306,13 +313,15 @@ describe('Grid live layer: geometry and state from the map queries', () => {
     const grid = createGridRuntimeInstance({ definition: norway, at })
     advanceGrid(grid, 0, at)
     const geometry = gridLiveMapLayer.loadGeometry(wire(grid, 'world.electric-grid.map.geometry'))
-    const raw = wire(grid, 'world.electric-grid.map.state') as { branches: { loadingPercent: number[] } }
+    const raw = wire(grid, 'world.electric-grid.map.state') as { branches: { loadingPercent: number[] }; loadingBands: ReturnType<typeof gridLoadingBands> }
+    expect(raw.loadingBands).toEqual(gridLoadingBands(norway.automation.alarms))
+    const bandOf = (loading: number) => gridLoadingBand(raw.loadingBands, loading)
     const before = geometry.presentState(raw)
-    raw.branches.loadingPercent.forEach((loading, fid) => expect(before.featureStates.get(fid)).toMatchObject({ loadingBand: gridLoadingBand(loading) }))
+    raw.branches.loadingPercent.forEach((loading, fid) => expect(before.featureStates.get(fid)).toMatchObject({ loadingBand: bandOf(loading) }))
     expect([...before.featureStates.values()].some(state => 'loading' in state)).toBe(false)
     // Every branch whose band allows it carries 0.4 points more loading.
     const shifted = structuredClone(raw)
-    shifted.branches.loadingPercent = raw.branches.loadingPercent.map(loading => gridLoadingBand(loading + 0.4) === gridLoadingBand(loading) ? loading + 0.4 : loading)
+    shifted.branches.loadingPercent = raw.branches.loadingPercent.map(loading => bandOf(loading + 0.4) === bandOf(loading) ? loading + 0.4 : loading)
     const moved = shifted.branches.loadingPercent.flatMap((loading, fid) => loading === raw.branches.loadingPercent[fid] ? [] : [fid])
     expect(moved.length).toBeGreaterThan(raw.branches.loadingPercent.length / 2)
     const after = geometry.presentState(shifted)
@@ -361,7 +370,8 @@ describe('Grid live layer: geometry and state from the map queries', () => {
     for (const busId of ['bus:boundary-DE', 'bus:boundary-DK1', 'bus:boundary-GB', 'bus:boundary-NL']) {
       expect(before.featureStates.get(busFid(busId))).toMatchObject({ external: true, alarm: false, island: -1 })
       const links = norway.model.hvdcLinks.flatMap((link, position) => link.toBusId === busId ? [`link-${position}`] : [])
-      expect(before.hoverCard(busFid(busId))!.fields.map(field => field.key)).toEqual(['external', 'role', ...links])
+      // Drawn at the converter abroad its links' mapped routes reach.
+      expect(before.hoverCard(busFid(busId))!.fields.map(field => field.key)).toEqual(['external', 'drawn', 'role', ...links])
     }
     expect(before.featureStates.get(busFid('bus:boundary-SE3@420'))).toMatchObject({ external: false, energized: true })
 
@@ -405,7 +415,7 @@ describe('Grid live layer: geometry and state from the map queries', () => {
     run.advanceTo(12_000)
     expect(run.grid.branches.get('branch:g-a')!.state).toBe('tripped')
     // A hand-built model has no geometry artifact: it draws bus to bus.
-    const geometryFor = createGridMapGeometry({ artifactFor: () => null, readArtifact: file => { throw new Error(`no artifact ${file}`) } })
+    const geometryFor = createGridMapGeometry({ artifactsFor: () => [], readArtifact: file => { throw new Error(`no artifact ${file}`) } })
     const answer = (query: ReturnType<typeof createGridMapStateQuery>): unknown => JSON.parse(JSON.stringify(query.capability.output.parse(
       query.answer({ gridId: run.grid.definition.gridId }, new Map([[run.grid.definition.gridId, run.grid]])))))
     const geometry = gridLiveMapLayer.loadGeometry(answer(createGridMapGeometryQuery(geometryFor)))

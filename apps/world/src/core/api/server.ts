@@ -29,16 +29,21 @@ import {
 import { createSimulationRunRealtimeManager, emptyRealtimeStatus, type ClientPerspective, type RealtimeStatus, type SimulationRunRealtimeManager } from './realtime.ts'
 import { actorForPerspective, assertHoldsRole, isRoleGateRefusal, parseRoleSetParameter, resolveRunPerspective, roleSetParameter } from '../simulation-runs/role-gates.ts'
 import { apiError, json } from './responses.ts'
-import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
+import { workspaceIdSchema, type ModuleFeaturedDefinitionCollection, type WorkspaceId } from '@leitbild/contracts'
 import { createOpenAccessContext } from '../workspaces/request-context.ts'
 import type { WorldWorkspaceRuntime, WorldWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
-import { handleWorldModuleApi } from './workspace-module-api.ts'
+import { handleWorldActivity, handleWorldFeaturedDefinitions, handleWorldModuleApi } from './workspace-module-api.ts'
 
 const frameAncestorsHeader = "frame-ancestors 'self'"
+const capabilityInvokePath = /\/capabilities\/[^/]+\/invoke$/
+const workspaceLifecyclePath = /^\/internal\/workspaces\/[^/]+$/
+const capabilityInvokeIdleSeconds = 35
 const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 
 interface ServerConfig {
   readonly workspaces: WorldWorkspaceRuntimeRegistry
+  /** The bundled featured and listed Scenarios, served without any Workspace. */
+  readonly featuredDefinitions: ModuleFeaturedDefinitionCollection
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
@@ -155,6 +160,19 @@ export const staticContentTypeForPath = (filePath: string): string => {
   return extension ? staticContentTypes[extension]! : 'application/octet-stream'
 }
 
+/**
+ * Everything the UI build puts under assets/world is content-addressed: Vite
+ * names each chunk and asset by its hash (vite.config.ts assetsDir), and each
+ * public file there carries its own (built-ui-scan.test.ts), so a browser keeps
+ * them for good. The HTML pages name the current bundles; they revalidate so
+ * an open chat view never starts an older bundle after a deploy.
+ */
+const contentAddressedDirectory = '/assets/world/'
+const staticCacheControl = (servedPath: string): Readonly<Record<string, string>> => {
+  if (servedPath.endsWith('.html')) return { 'Cache-Control': 'no-cache' }
+  return servedPath.startsWith(contentAddressedDirectory) ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {}
+}
+
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
   const normalizedPath = /^\/workspaces\/[^/]+\/world\/embed\//.test(pathname)
     ? '/embed.html'
@@ -163,10 +181,7 @@ const serveStatic = async (pathname: string, uiDistPath: string): Promise<Respon
   if (!filePath.startsWith(uiDistPath)) return new Response('Forbidden', { status: 403 })
   const file = Bun.file(filePath)
   if (!await file.exists()) return null
-  // HTML pages name the current hashed bundles; revalidate them so an open
-  // chat view never starts an older bundle after a deploy.
-  const revalidate = filePath.endsWith('.html') ? { 'Cache-Control': 'no-cache' } : {}
-  return new Response(file, { headers: { 'Content-Type': staticContentTypeForPath(filePath), ...revalidate } })
+  return new Response(file, { headers: { 'Content-Type': staticContentTypeForPath(filePath), ...staticCacheControl(filePath.slice(uiDistPath.length)) } })
 }
 
 const withSecurityHeaders = (response: Response): Response => {
@@ -396,6 +411,17 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
           })),
         }))
       }
+      // Bun drops a request idle for 10 s. A Capability may answer later than
+      // that (world.simulation-run.wait holds up to 20 s); the Host's gateway
+      // waits 30 s, so an invocation may stay open a little longer.
+      if (req.method === 'POST' && capabilityInvokePath.test(url.pathname)) serverApi.timeout(req, capabilityInvokeIdleSeconds)
+      // The gateway waits as long for a Workspace lifecycle answer: a removal
+      // still stopping Runs must not be cut off and read as a lost connection.
+      if ((req.method === 'PUT' || req.method === 'DELETE') && workspaceLifecyclePath.test(url.pathname)) serverApi.timeout(req, capabilityInvokeIdleSeconds)
+      const featuredResponse = handleWorldFeaturedDefinitions(req, url, config.featuredDefinitions)
+      if (featuredResponse) return secure(featuredResponse)
+      const activityResponse = await handleWorldActivity(req, url, config.workspaces)
+      if (activityResponse) return secure(activityResponse)
       const workspaceModuleResponse = await handleWorldModuleApi(req, url, config.workspaces)
       if (workspaceModuleResponse) return secure(workspaceModuleResponse)
       if ((url.pathname === '/' || url.pathname === '/index.html') && req.method === 'GET') {

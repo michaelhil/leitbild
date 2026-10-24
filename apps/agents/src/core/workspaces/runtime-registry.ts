@@ -20,6 +20,7 @@ import { createOperationScope } from '@leitbild/module-runtime'
 //
 // Public surface:
 //   getOrLoad(id)           — single source of truth; touches lastTouchedAt
+//   peopleFor(id)           — the Workspace's People directory; never loads the runtime
 //   evictOne(id)            — graceful: drain → flush → drop. Idempotent.
 //   evictIdle(now, idleMs)  — periodic sweep
 //   exists(id)              — disk OR memory
@@ -65,6 +66,10 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { seedWorkspaceIdentity } from './seed-workspace.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { AgentsModuleState } from './module-state.ts'
+import { createPeopleDirectory, type PeopleDirectory } from '../people/people-directory.ts'
+import { createPeopleMetrics, type PeopleMetrics, type PeopleMetricsSnapshot } from '../people/people-metrics.ts'
+import { createWaiterBudget } from '../people/presence.ts'
+import { agentsStorageBudget } from '../storage/admission.ts'
 
 // --- Defaults & env ---
 
@@ -96,6 +101,13 @@ export interface WorkspaceRuntimeMeta {
   readonly id: WorkspaceId
   readonly lastTouchedAt: number
   readonly state: 'active' | 'evicting' | 'save-failed'
+}
+
+/** Aggregate People counters plus live gauges, for operator diagnostics. */
+export interface PeopleStatus extends PeopleMetricsSnapshot {
+  readonly openDirectories: number
+  readonly waiters: number
+  readonly liveScreens: number
 }
 
 export interface WorkspaceModuleOnDisk {
@@ -147,6 +159,11 @@ export interface WorkspaceRuntimeRegistryOptions {
 export interface WorkspaceRuntimeRegistry {
   readonly withWorkspace: <T>(id: WorkspaceId, work: () => Promise<T>) => Promise<T>
   readonly definitionsFor: (id: WorkspaceId) => RoomDefinitionLibrary
+  // The People of a Workspace, independent of its Agents runtime: opening it
+  // checks the Module marker once and never calls getOrLoad.
+  readonly peopleFor: (id: WorkspaceId) => Promise<PeopleDirectory>
+  readonly peopleMetrics: PeopleMetrics
+  readonly peopleStatus: () => PeopleStatus
   readonly getOrLoad: (id: WorkspaceId) => Promise<AgentsWorkspaceRuntime>
   readonly evictOne: (id: WorkspaceId) => Promise<void>
   readonly remove: (id: WorkspaceId) => Promise<void>
@@ -208,6 +225,60 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     }
     return library
   }
+  // People directories open per Workspace on first use and share one waiter
+  // budget and one set of aggregate counters across the process.
+  const peopleDirectories = new Map<WorkspaceId, PeopleDirectory>()
+  const pendingPeople = new Map<WorkspaceId, Promise<PeopleDirectory>>()
+  const peopleMetrics = createPeopleMetrics()
+  const peopleWaiterBudget = createWaiterBudget()
+  const workspaceClosing = (): Error => Object.assign(new Error('Agents Workspace is closing'), { code: 'workspace_closing' })
+  const peopleFor = async (id: WorkspaceId): Promise<PeopleDirectory> => {
+    if (shuttingDown || removing.has(id)) throw workspaceClosing()
+    const open = peopleDirectories.get(id)
+    if (open) return open
+    const pending = pendingPeople.get(id)
+    if (pending) return await pending
+    const opening = (async (): Promise<PeopleDirectory> => {
+      if (!await opts.moduleState.has(id)) throw new Error(`Workspace not found: ${id}`)
+      // Removal or shutdown may have begun while the marker was read. From
+      // here to the map insert nothing yields, so a removed Workspace's
+      // directory is never recreated by opening its store.
+      if (shuttingDown || removing.has(id)) throw workspaceClosing()
+      const paths = workspaceModulePaths(id)
+      const directory = createPeopleDirectory({
+        workspaceId: id,
+        path: paths.agents.people,
+        metrics: peopleMetrics,
+        waiterBudget: peopleWaiterBudget,
+        admitGrowth: (bytes, work) => agentsStorageBudget().withGrowth(paths.agents.root, bytes, work),
+      })
+      peopleDirectories.set(id, directory)
+      return directory
+    })().finally(() => pendingPeople.delete(id))
+    pendingPeople.set(id, opening)
+    return await opening
+  }
+  // Answers every waiting sync and closes the store before its files go.
+  const closePeople = async (id: WorkspaceId): Promise<void> => {
+    const pending = pendingPeople.get(id)
+    // An opening that fails reports to its own caller; closing only needs it settled.
+    if (pending) await pending.then(() => undefined, () => undefined)
+    const directory = peopleDirectories.get(id)
+    // No directory: nobody used People in this Workspace since it was last closed.
+    if (directory === undefined) return
+    peopleDirectories.delete(id)
+    directory.close()
+  }
+  const peopleStatus = (): PeopleStatus => {
+    let waiters = 0
+    let liveScreens = 0
+    for (const directory of peopleDirectories.values()) {
+      const stats = directory.stats()
+      waiters += stats.waiters
+      liveScreens += stats.liveScreens
+    }
+    return { ...peopleMetrics.snapshot(), openDirectories: peopleDirectories.size, waiters, liveScreens }
+  }
   const idleMs = opts.idleMs ?? idleMsFromEnv()
   const drainMs = opts.drainMs ?? DEFAULT_DRAIN_MS
   const maxLoadedWorkspaces = opts.maxLoadedWorkspaces ?? maxLoadedWorkspacesFromEnv()
@@ -224,7 +295,18 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
 
   // --- Internals ---
 
-  // A5: two-phase drain.
+  // Closing Agents is part of quiescing producers, before scripts stop (a
+  // script stop waits for its cast to be idle): a turn still queued (a Room
+  // behind the running turn, or the cooldown after a reply) is dropped and
+  // none can start, so no turn begins on a runtime whose stores close.
+  const closeAgents = (system: AgentsWorkspaceRuntime): void => {
+    for (const agent of system.team.listAgents()) {
+      const ai = asAIAgent(agent)
+      if (ai) ai.close() // Human Agents take no turns.
+    }
+  }
+
+  // A5: two-phase drain of the turns still running after closeAgents.
   //   Phase 1 — race natural idle vs drainMs timeout. Most evals finish well
   //   under the limit; this is the happy path.
   //   Phase 2 — anything still generating (slow LLM, network hang) gets
@@ -321,6 +403,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     try {
       system.triggerScheduler.stop()
       system.summaryScheduler.dispose()
+      // Absent in a runtime without a Workspace Host.
+      system.proposalResumes?.dispose()
+      closeAgents(system)
       await Promise.all(system.scriptRunner.listRuns().map(run => system.scriptRunner.stop(run.roomId)))
       await drainAgents(system)
       await autoSaver?.dispose()
@@ -336,7 +421,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
 
   const ownsAutonomousWork = (system: AgentsWorkspaceRuntime): boolean =>
     system.scriptRunner.listRuns().some(run => !run.ended)
-    || system.team.listAgents().some(agent => agent.state.get() === 'generating' || agent.getTriggers?.().some(trigger => trigger.enabled))
+    || system.team.listAgents().some(agent => agent.state.get() === 'generating' || asAIAgent(agent)?.hasQueuedTurn() || agent.getTriggers?.().some(trigger => trigger.enabled))
     || system.rooms.listAllRooms().some(profile => {
       const room = system.rooms.getRoom(profile.id)
       if (!room) throw new Error(`Listed Room is missing: ${profile.id}`)
@@ -464,6 +549,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         // Quiesce producers before draining consumers and publishing the final generation.
         entry.system.triggerScheduler.stop()
         entry.system.summaryScheduler.dispose()
+        // Absent in a runtime without a Workspace Host.
+        entry.system.proposalResumes?.dispose()
+        closeAgents(entry.system)
         await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
         await drainAgents(entry.system)
         await entry.autoSaver.flush()
@@ -489,6 +577,15 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   const evictIdle = async (now: number = Date.now()): Promise<number> => {
+    // People first and synchronously: a failing runtime eviction below must
+    // not leave idle People directories open.
+    for (const [id, directory] of peopleDirectories) {
+      if (directory.canEvict(now, idleMs)) {
+        peopleDirectories.delete(id)
+        directory.close('evicted')
+        peopleMetrics.inc('directoriesEvicted')
+      }
+    }
     const targets: WorkspaceId[] = []
     for (const [id, entry] of map) {
       if (entry.state === 'active' && !workspaceOperations.get(id)?.activeCount() && !ownsAutonomousWork(entry.system) && now - entry.lastTouchedAt > idleMs) {
@@ -546,6 +643,12 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   // handler in bootstrap.ts (replaces the single-system flush).
   const shutdown = async (): Promise<void> => {
     shuttingDown = true
+    // Agents first: waiting for operation leases below can outlast a reply's
+    // cooldown, and the turn queued behind it must not start on a runtime
+    // whose comparisons already closed. evictOne closes them again, a no-op.
+    for (const entry of map.values()) closeAgents(entry.system)
+    // People next: waiting syncs answer at once instead of holding shutdown.
+    await Promise.all([...new Set([...pendingPeople.keys(), ...peopleDirectories.keys()])].map(closePeople))
     // Comparisons own admitted work too. Cancel before waiting for operation
     // leases, otherwise shutdown waits for whole model tasks to finish.
     await Promise.all([...map.values()].map(entry => entry.system.comparisons.close()))
@@ -580,11 +683,22 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     withWorkspace,
     getOrLoad,
     definitionsFor,
+    peopleFor,
+    peopleMetrics,
+    peopleStatus,
     evictOne,
     remove: id => {
       const existing = removing.get(id)
       if (existing) return existing
       const removingWorkspace = (async () => {
+        // As in shutdown: no queued turn starts while removal waits for
+        // operations below. evictOne closes the Agents again, a no-op.
+        const entry = map.get(id)
+        if (entry) closeAgents(entry.system) // A runtime still loading is closed by evictOne once it loads.
+        await closePeople(id)
+        // Comparisons own admitted model work: cancel it before draining
+        // operations, as shutdown does, or removal waits for whole model tasks.
+        await map.get(id)?.system.comparisons.close()
         await workspaceOperations.get(id)?.close()
         await definitionLibraries.get(id)?.close()
         await evictOne(id)

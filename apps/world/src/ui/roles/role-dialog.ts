@@ -82,10 +82,13 @@ const presetRoleIds = (declaration: RunRoles, entryId: string): ReadonlyArray<st
   return [roleById(declaration, entryId).id]
 }
 
-/** A preset row: holds (and sees) all its roles, or drops them all when all are held. */
+/** A preset row: holds (and sees) all its roles, or drops them all, Control and See, when all are held. */
 export const togglePreset = (declaration: RunRoles, draft: RoleDialogDraft, entryId: string): RoleDialogDraft => {
   const roleIds = presetRoleIds(declaration, entryId)
-  if (roleIds.every(roleId => draft.control.includes(roleId))) return { ...draft, control: draft.control.filter(roleId => !roleIds.includes(roleId)) }
+  // Unticked, the preset lets go of its roles altogether: Control and the See it gave them.
+  if (roleIds.every(roleId => draft.control.includes(roleId))) {
+    return { ...draft, control: draft.control.filter(roleId => !roleIds.includes(roleId)), hidden: orderedRoleSet(declaration, [...draft.hidden, ...roleIds]) }
+  }
   return {
     ...draft,
     control: orderedRoleSet(declaration, [...draft.control, ...roleIds]),
@@ -171,6 +174,10 @@ export interface RoleDialogModel {
   readonly canApply: boolean
   readonly applyText: string
 }
+
+/** Where focus starts as the dialog opens to join: on Join once a role is ticked, else on its first choice; a switch leaves focus where it was. */
+export const roleDialogInitialFocus = (mode: 'join' | 'switch', model: Pick<RoleDialogModel, 'canApply'>): 'apply' | 'first-choice' | null =>
+  mode === 'switch' ? null : model.canApply ? 'apply' : 'first-choice'
 
 export const roleDialogModel = (declaration: RunRoles, draft: RoleDialogDraft, context: {
   readonly mode: 'join' | 'switch'

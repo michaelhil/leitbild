@@ -461,7 +461,8 @@ const untypedObjectPaths = (schema: unknown, path = '$'): ReadonlyArray<string> 
 
 describe('electric grid query Capabilities', () => {
   test('publish typed output schemas with properties for every known shape', () => {
-    for (const capability of electricGridQueryCapabilities) {
+    // System-audience observation Capabilities carry the core shapes (assembly checks them) and never reach a catalog.
+    for (const capability of electricGridQueryCapabilities.filter(candidate => candidate.audience !== 'system')) {
       const schema = capabilityJsonSchema(capability.output) as { readonly type?: string; readonly properties?: Record<string, unknown> }
       expect(schema.type).toBe('object')
       expect(Object.keys(schema.properties ?? {}).length).toBeGreaterThan(0)
@@ -548,7 +549,7 @@ describe('electric grid query Capabilities', () => {
   test('summary lists only constrained branches and affected loads and states its thresholds', () => {
     const { grid, send } = harness()
     const normal = query(grid, 'world.electric-grid.grid.summary')
-    expect(normal.thresholds).toEqual({ constrainedBranchLoadingPercent: 70, affectedLoadUnservedMw: 0 })
+    expect(normal.thresholds).toEqual({ constrainedBranchLoadingPercent: 70, overloadLoadingPercent: 100, affectedLoadUnservedMw: 0 })
     expect(normal.affectedLoads).toEqual([])
     expect(normal.affectedLoadCount).toBe(0)
     expect(normal.constrainedBranchCount).toBe([...grid.branches.values()].filter(state => state.state === 'closed' && state.loadingPercent >= 70).length)

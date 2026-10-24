@@ -1,19 +1,23 @@
 import {
+  moduleActivitySchema,
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationResultSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionCollectionSchema,
   moduleFailureSchema,
+  moduleFeaturedDefinitionCollectionSchema,
   moduleIdSchema,
   moduleRegistrationSchema,
   moduleResourceCollectionSchema,
   platformErrorSchema,
   workspaceModuleManifestSchema,
+  type ModuleActivity,
   type ModuleCapabilityCollection,
   type ModuleCapabilityInvocation,
   type ModuleCapabilityInvocationResult,
   type ModuleDefinitionCollection,
   type ModuleFailure,
+  type ModuleFeaturedDefinitionCollection,
   type ModuleId,
   type ModuleRegistration,
   type ModuleResourceCollection,
@@ -35,8 +39,21 @@ export interface ModuleGateway {
   readonly definitions: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleDefinitionCollection>>
   readonly resources: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleResourceCollection>>
   readonly capabilities: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<ModuleCapabilityCollection>>
+  /** The Definitions a Module features for newcomers; Workspace-independent. */
+  readonly featuredDefinitions: (moduleId: ModuleId) => Promise<ModuleCallResult<ModuleFeaturedDefinitionCollection>>
+  /** What a Module states is going on in each Workspace; Workspace-independent. */
+  readonly activity: (moduleId: ModuleId) => Promise<ModuleCallResult<ModuleActivity>>
   readonly invoke: (moduleId: ModuleId, invocation: ModuleCapabilityInvocation, signal?: AbortSignal) => Promise<ModuleCallResult<ModuleCapabilityInvocationResult>>
 }
+
+// A Module that cannot be reached is reported in words people can act on. The
+// transport's own text (Bun: "The socket connection was closed unexpectedly…
+// pass `verbose: true`…") is kept in details for diagnosis, never as the message.
+const moduleNouns: Readonly<Record<string, string>> = { world: 'the simulation', agents: 'the AI agents' }
+const lostConnection = (moduleId: ModuleId, action: 'reconnect' | 'check'): string =>
+  `Lost the connection to ${moduleNouns[moduleId] ?? `the ${moduleId} Module`}. ${action === 'check'
+    ? 'Reload to check whether the action was applied.' : 'Reload to reconnect.'}`
+const transportCause = (error: unknown): { readonly cause: string } => ({ cause: error instanceof Error ? error.message : String(error) })
 
 const normalizeBaseUrl = (value: string): string => {
   const url = new URL(value)
@@ -68,8 +85,11 @@ const responseFailure = async <T>(
   })
 }
 
+const workspacePath = (pathTemplate: string, workspaceId: WorkspaceId): string =>
+  pathTemplate.replaceAll('{workspaceId}', encodeURIComponent(workspaceId))
+
 const expandWorkspacePath = (baseUrl: string, pathTemplate: string, workspaceId: WorkspaceId): string =>
-  `${baseUrl}${pathTemplate.replaceAll('{workspaceId}', encodeURIComponent(workspaceId))}`
+  `${baseUrl}${workspacePath(pathTemplate, workspaceId)}`
 
 const expandInvocationPath = (
   baseUrl: string,
@@ -104,8 +124,9 @@ export const createModuleGateway = (config: {
     } catch (error) {
       return moduleFailureSchema.parse({
         code: 'module_unavailable',
-        message: error instanceof Error ? error.message : String(error),
+        message: lostConnection(registration.moduleId, 'reconnect'),
         retryable: true,
+        details: transportCause(error),
       })
     }
     if (!response.ok) {
@@ -166,8 +187,9 @@ export const createModuleGateway = (config: {
     } catch (error) {
       return failure({
         code: 'module_unavailable',
-        message: error instanceof Error ? error.message : String(error),
+        message: lostConnection(moduleId, 'reconnect'),
         retryable: true,
+        details: transportCause(error),
       })
     }
     if (!response.ok) {
@@ -181,20 +203,20 @@ export const createModuleGateway = (config: {
 
   const readCollection = async <T>(config: {
     readonly moduleId: ModuleId
-    readonly workspaceId: WorkspaceId
-    readonly endpoint: 'definitions' | 'resources' | 'capabilities'
+    readonly endpoint: 'definitions' | 'resources' | 'capabilities' | 'featuredDefinitions' | 'activity'
+    readonly path: (manifest: WorkspaceModuleManifest) => string
     readonly parse: (value: unknown) => T
   }): Promise<ModuleCallResult<T>> => {
     const registration = byId.get(config.moduleId)
     if (!registration) return failure({ code: 'module_not_installed', message: `Module is not installed: ${config.moduleId}`, retryable: false })
     const manifest = await discover(registration)
     if ('code' in manifest) return { ok: false, failure: manifest }
-    const url = expandWorkspacePath(registration.internalBaseUrl, manifest.endpoints[config.endpoint], config.workspaceId)
+    const url = `${registration.internalBaseUrl}${config.path(manifest)}`
     let response: Response
     try {
       response = await fetchImpl(url, { headers: { Accept: 'application/json' } })
     } catch (error) {
-      return failure({ code: 'module_unavailable', message: error instanceof Error ? error.message : String(error), retryable: true })
+      return failure({ code: 'module_unavailable', message: lostConnection(config.moduleId, 'reconnect'), retryable: true, details: transportCause(error) })
     }
     if (!response.ok) {
       return await responseFailure(response, {
@@ -229,8 +251,8 @@ export const createModuleGateway = (config: {
         body: JSON.stringify(invocation),
       })
     } catch (error) {
-      return failure({ code: 'module_outcome_unknown', message: error instanceof Error ? error.message : String(error), retryable: false,
-        status: 504, details: { outcome: 'unknown', advice: 'Inspect the Resource before retrying this invocation.' } })
+      return failure({ code: 'module_outcome_unknown', message: lostConnection(moduleId, 'check'), retryable: false,
+        status: 504, details: { outcome: 'unknown', advice: 'Inspect the Resource before retrying this invocation.', ...transportCause(error) } })
     }
     if (!response.ok) {
       return await responseFailure(response, {
@@ -252,21 +274,33 @@ export const createModuleGateway = (config: {
     remove: (moduleId, workspaceId) => operate(moduleId, workspaceId, 'DELETE'),
     definitions: (moduleId, workspaceId) => readCollection({
       moduleId,
-      workspaceId,
       endpoint: 'definitions',
+      path: manifest => workspacePath(manifest.endpoints.definitions, workspaceId),
       parse: value => moduleDefinitionCollectionSchema.parse(value),
     }),
     resources: (moduleId, workspaceId) => readCollection({
       moduleId,
-      workspaceId,
       endpoint: 'resources',
+      path: manifest => workspacePath(manifest.endpoints.resources, workspaceId),
       parse: value => moduleResourceCollectionSchema.parse(value),
     }),
     capabilities: (moduleId, workspaceId) => readCollection({
       moduleId,
-      workspaceId,
       endpoint: 'capabilities',
+      path: manifest => workspacePath(manifest.endpoints.capabilities, workspaceId),
       parse: value => moduleCapabilityCollectionSchema.parse(value),
+    }),
+    featuredDefinitions: moduleId => readCollection({
+      moduleId,
+      endpoint: 'featuredDefinitions',
+      path: manifest => manifest.endpoints.featuredDefinitions,
+      parse: value => moduleFeaturedDefinitionCollectionSchema.parse(value),
+    }),
+    activity: moduleId => readCollection({
+      moduleId,
+      endpoint: 'activity',
+      path: manifest => manifest.endpoints.activity,
+      parse: value => moduleActivitySchema.parse(value),
     }),
     invoke,
   }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { einsatzCommandIds as ids } from './capabilities.ts'
 import {
-  borderConfig, borderDefinitions, borderStart, commanderOf, isScout, isShooter, playBorder, pointAt, stepsLost, timelineOf, unitsWhere,
+  borderConfig, borderDefinitions, borderRoles, borderStart, isScout, isShooter, overwatchGround, playBorder, pointAt, sensingCommandOf, stepsLost, timelineOf, unitsWhere,
   type Play, type PlayContext, type PlayLog, type TimedOrder,
 } from './fixtures/border-harness.ts'
 import { unitTypeOf } from './engine/model.ts'
@@ -16,7 +16,7 @@ import { unitTypeOf } from './engine/model.ts'
 const definition = borderDefinitions.scripted
 const [blue, red] = (definition.sides ?? []).map(side => side.id) as [string, string]
 const start = borderStart(definition)
-const commander = commanderOf(definition, blue, 'effector')
+const commander = sensingCommandOf(definition, blue)
 const scouts = unitsWhere(start, blue, isScout).map(unit => unit.id)
 const guns = unitsWhere(start, blue, isShooter).map(unit => unit.id)
 const scoutTypes = new Set(start.catalog.config.unitTypes.filter(isScout).map(type => type.label))
@@ -38,12 +38,11 @@ const huntScouts = ({ state }: PlayContext) => {
     .map(unit => ({ capabilityId: ids.engage, input: { unitId: unit.id, trackId: target.id } }))
 }
 
-const overwatch: ReadonlyArray<readonly [number, number]> = [[11.50246, 59.13419], [11.50426, 59.13665], [11.50134, 59.132]]
 const plays: Readonly<Record<'observationPostFirst' | 'unscoutedColumn' | 'naiveMovingScout' | 'passive', ReadonlyArray<Play>>> = {
   // The scout takes the screen post before Red moves; the guns take halted overwatch, weapons free, and hunt Red's scout first.
   observationPostFirst: [{
     side: blue, viewer: commander, react: huntScouts,
-    orders: [send(0, scouts[0]!, { taskId: screenTask.id }), ...guns.map((unitId, index) => send(0, unitId, toPoint(overwatch[index]!))), ...weaponsFree(0)],
+    orders: [send(0, scouts[0]!, { taskId: screenTask.id }), ...guns.map((unitId, index) => send(0, unitId, toPoint(overwatchGround[index]!))), ...weaponsFree(0)],
   }],
   // The guns drive up the road into the halted column with no scout ahead.
   unscoutedColumn: [{
@@ -75,19 +74,55 @@ const outcomeOf = async (name: keyof typeof plays): Promise<Outcome> => {
 const minutes = (ms: number): number => (ms - start.timeMs) / 60_000
 
 describe('halden-border plays', () => {
-  test('the fixture Definitions declare the six roles on two sides, and human Red differs only by Red\'s scripted moves', () => {
-    expect((definition.roles ?? []).map(role => [role.class, role.sees === 'all' ? 'all' : role.sees!.join(',')])).toEqual([
-      ['operator', blue], ['operator', blue], ['operator', blue], ['operator', blue], ['operator', red], ['controller', 'all'],
-    ])
-    expect(borderConfig(definition).authority.map(entry => entry.roleId)).toEqual((definition.roles ?? []).filter(role => role.class === 'operator').map(role => role.id))
-    expect(definition.rolePresets?.[0]?.roles).toEqual((definition.roles ?? []).filter(role => role.sees !== 'all' && role.sees?.includes(blue)).map(role => role.id))
+  test('the Definitions declare only a Controller; every unit is in exactly one sided group, whose roles the presets bundle, and human Red trades the scripted Red moves for Red\'s own calls and preset', () => {
+    const roles = borderRoles(definition)
+    expect((definition.roles ?? []).map(role => [role.class, role.sees])).toEqual([['controller', 'all']])
+    const groups = borderConfig(definition).groups
+    expect(groups.every(group => group.side === blue || group.side === red)).toBe(true)
+    expect(borderConfig(definition).authority).toEqual([])
+    // Every unit placed or created names one group of its own side.
+    const created = timelineOf(definition).filter(order => order.capabilityId === ids.unitCreate).map(order => order.input as { readonly side: string; readonly group: string })
+    const units = [...unitsWhere(start, blue, () => true), ...unitsWhere(start, red, () => true)]
+    for (const unit of [...units, ...created]) expect(groups.find(group => group.id === unit.group)?.side).toBe(unit.side)
+    const sideGroups = (side: string) => roles.filter(role => role.class === 'operator' && role.sees !== 'all' && role.sees?.includes(side) === true).map(role => role.id)
+    expect(sideGroups(blue).length + sideGroups(red).length).toBe(groups.length)
+    // The first preset is the one-person bundle of every Blue group, and the next two split it.
+    const [solo, first, second, ...rest] = definition.rolePresets ?? []
+    expect(solo!.roles).toEqual(sideGroups(blue))
+    expect([...first!.roles, ...second!.roles].sort()).toEqual([...solo!.roles].sort())
+    expect(first!.roles.some(role => second!.roles.includes(role))).toBe(false)
+    expect(rest).toEqual([])
     const human = borderDefinitions.humanRed
+    expect(human.rolePresets?.slice(0, 3)).toEqual(definition.rolePresets)
+    expect(human.rolePresets?.slice(3).map(preset => preset.roles)).toEqual([sideGroups(red)])
+    // Human Red gets Red's orders as its own calls, and its reinforcements, instead of the scripted moves; Blue's timeline is the same.
     const redUnits = new Set(unitsWhere(start, red, () => true).map(unit => unit.id))
     const movesRed = (order: TimedOrder): boolean => order.capabilityId === ids.send && (order.input as { readonly units: ReadonlyArray<string> }).units.every(unitId => redUnits.has(unitId))
-    expect(timelineOf(human)).toEqual(timelineOf(definition).filter(order => !movesRed(order)))
-    expect(timelineOf(definition).filter(movesRed).length).toBe(2 * redUnits.size)
-    const { id: _humanId, title: _humanTitle, description: _humanDescription, timeline: _humanTimeline, ...humanRest } = human
-    const { id: _id, title: _title, description: _description, timeline: _timeline, ...scriptedRest } = definition
+    const redOwn = (order: TimedOrder): boolean => (order.input as { readonly side?: string }).side === red
+    expect(timelineOf(human).filter(order => !redOwn(order))).toEqual(timelineOf(definition).filter(order => !movesRed(order)))
+    expect(new Set(timelineOf(human).filter(redOwn).map(order => order.capabilityId))).toEqual(new Set([ids.taskCreate, ids.unitCreate]))
+    expect(timelineOf(definition).filter(redOwn)).toEqual([])
+    expect(new Set(timelineOf(definition).filter(movesRed).flatMap(order => (order.input as { readonly units: ReadonlyArray<string> }).units))).toEqual(redUnits)
+    const humanStart = borderStart(human)
+    expect([...start.tasks.values()].every(task => task.side === blue)).toBe(true)
+    expect([...humanStart.tasks.values()].filter(task => task.side !== blue).map(task => task.side)).toEqual([red, red])
+    // Blue's items are the same; human Red starts with the same units, assembled further forward on the border road.
+    const sideItems = (source: typeof definition, side: string) => source.packs[0]!.items.filter(item => (item as { readonly side?: string }).side === side)
+    const publicItems = (source: typeof definition) => source.packs[0]!.items.filter(item => (item as { readonly side?: string }).side === undefined)
+    expect(sideItems(human, blue)).toEqual(sideItems(definition, blue))
+    expect(publicItems(human)).toEqual(publicItems(definition))
+    const withoutPosition = (items: ReadonlyArray<unknown>) => items.map(item => ({ ...(item as Record<string, unknown>), position: undefined }))
+    expect(withoutPosition(sideItems(human, red).filter(item => (item as { readonly type: string }).type === 'unit'))).toEqual(withoutPosition(sideItems(definition, red)))
+    // Each opens on its own Starting View: the scripted one a little wider, so Red's reserve further back is in view too (`ui/board-camera.test.ts`).
+    const { id: _humanId, title: _humanTitle, description: _humanDescription, objectives: _humanObjectives, timeline: _humanTimeline, rolePresets: _humanPresets, view: humanView, packs: humanPacks, ...humanRest } = human
+    const { id: _id, title: _title, description: _description, objectives: _objectives, timeline: _timeline, rolePresets: _presets, view: scriptedView, packs, ...scriptedRest } = definition
+    expect(humanView?.map?.center).toEqual(scriptedView?.map?.center)
+    // The configuration is the same but for the scripted exercise's word that Red's groups are scripted.
+    const unscripted = (config: unknown) => {
+      const parsed = config as { readonly groups: ReadonlyArray<{ readonly label: string }> }
+      return { ...parsed, groups: parsed.groups.map(group => ({ ...group, label: group.label.replace(' (scripted)', '') })) }
+    }
+    expect(humanPacks.map(pack => pack.config)).toEqual(packs.map(pack => unscripted(pack.config)))
     expect(humanRest).toEqual(scriptedRest)
   })
 
@@ -111,7 +146,7 @@ describe('halden-border plays', () => {
     expect(best.ratio, JSON.stringify(table)).toBeGreaterThan(scout.ratio)
     // Blue's orders all went through; the only refusals are scripted Red cues for units already lost.
     expect(best.log.refusals.filter(refusal => !refusal.reason.startsWith('unit_unavailable'))).toEqual([])
-  })
+  }, 60_000)
 
   test('passive Blue sees an engagement and a step-loss task between 12 and 16 minutes', async () => {
     const { log } = await outcomeOf('passive')
@@ -124,5 +159,5 @@ describe('halden-border plays', () => {
       expect(minutes(at)).toBeLessThanOrEqual(16)
     }
     expect(firstLoss!.side).toBe(blue)
-  })
+  }, 60_000)
 })

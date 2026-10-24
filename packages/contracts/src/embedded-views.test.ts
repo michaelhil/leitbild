@@ -1,15 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  embeddedViewContentSchema,
   embeddedViewEnvelopeSchema,
   embeddedViewFragment,
+  embeddedViewHeightMessageSchema,
   embeddedViewPath,
   embeddedViewPublicationSchema,
   parseEmbeddedViewFragment,
   embeddedViewOpenMessageSchema,
+  embeddedViewSubjectOpenMessageSchema,
   embeddedViewsMessageSchema,
   embeddedViewWindowMaximiseMessageSchema,
   EMBEDDED_VIEW_LISTING_MAX,
+  EMBEDDED_VIEW_MAX_HEIGHT,
+  EMBEDDED_VIEW_MIN_HEIGHT,
   EMBEDDED_VIEW_STATE_MAX_LENGTH,
 } from './embedded-views.ts'
 
@@ -64,22 +67,12 @@ describe('embedded view publication', () => {
     expect(embeddedViewPublicationSchema.safeParse(publication).success).toBe(true)
     expect(embeddedViewEnvelopeSchema.parse({ ...publication, moduleId: subject.moduleId, subject })).toEqual(embeddedViewEnvelopeSchema.parse(envelope))
   })
-})
 
-describe('embedded view content', () => {
-  const content = {
-    items: [{ names: ['PT-455', 'Pressurizer pressure'], values: [{ value: 15.7, unit: 'MPa' }], limits: [{ value: 16, unit: 'MPa' }], history: true }],
-    span: { shownMs: 60_000, horizonMs: 600_000 },
-    lead: { item: 0, reason: 'PT-455: 15.7 MPa, HI ALM 16 MPa · 0.285 below' },
-  }
-
-  test('describes items by their names and the values the view shows', () => {
-    expect(embeddedViewContentSchema.parse(content)).toEqual(content)
-  })
-
-  test('rejects a lead that is not one of the items, and unknown fields', () => {
-    expect(embeddedViewContentSchema.safeParse({ ...content, lead: { item: 1, reason: 'x' } }).success).toBe(false)
-    expect(embeddedViewContentSchema.safeParse({ ...content, note: 'x' }).success).toBe(false)
+  test('a view only the window shows (a dashboard a cited line opens) says so, and the envelope keeps it (R4 §2.6)', () => {
+    const { moduleId: _moduleId, subject, ...publication } = envelope
+    const board = { ...publication, viewType: 'display.dashboard', state: '{"scope":"run"}', windowOnly: true }
+    expect(embeddedViewEnvelopeSchema.parse({ ...embeddedViewPublicationSchema.parse(board), moduleId: subject.moduleId, subject }).windowOnly).toBe(true)
+    expect(embeddedViewPublicationSchema.safeParse({ ...board, windowOnly: false }).success).toBe(false)
   })
 })
 
@@ -93,11 +86,36 @@ describe('embedded view window messages', () => {
     expect(embeddedViewsMessageSchema.safeParse({ type: 'leitbild:views', views: many }).success).toBe(false)
   })
 
+  test('open a view at a part of it: a cited line\'s section of a dashboard, by its pin id or title', () => {
+    expect(embeddedViewOpenMessageSchema.parse({ type: 'leitbild:view-open', view: { ...listing, focus: 'Halden Unit 1' } }).view.focus).toBe('Halden Unit 1')
+    for (const focus of ['', 'x'.repeat(81)]) expect(embeddedViewOpenMessageSchema.safeParse({ type: 'leitbild:view-open', view: { ...listing, focus } }).success).toBe(false)
+  })
+
   test('open a view from a self-contained listing whose envelope is checked', () => {
     expect(embeddedViewOpenMessageSchema.safeParse({ type: 'leitbild:view-open', view: listing }).success).toBe(true)
     expect(embeddedViewOpenMessageSchema.safeParse({ type: 'leitbild:view-open', view: { ...listing, envelope: { ...envelope, height: 9_999 } } }).success).toBe(false)
     expect(embeddedViewOpenMessageSchema.safeParse({ type: 'leitbild:view-open', view: { ...listing, url: 'https://evil.example' } }).success).toBe(false)
     expect(embeddedViewOpenMessageSchema.safeParse({ type: 'leitbild:view-open', key: listing.key }).success).toBe(false)
+  })
+
+  test('open a subject\'s default display: an object of the Resource and an item of it, strictly (Q23)', () => {
+    const run = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }
+    const open = { type: 'leitbild:view-subject-open' as const, resource: run, subject: 'plant:halden-2#auxFeedwaterValveA', title: 'Review: THROTTLE to 40 % AFW-A-CV' }
+    expect(JSON.parse(JSON.stringify(embeddedViewSubjectOpenMessageSchema.parse(open)))).toEqual(open)
+    for (const subject of ['plant:halden-2', '#auxFeedwaterValveA', 'plant:halden-2#', 'plant:halden-2#a#b', 'plant:halden-2#aux valve']) {
+      expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, subject }).success).toBe(false)
+    }
+    expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, resource: { ...run, type: 'agents.room' } }).success).toBe(false)
+    expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, view: listing }).success).toBe(false)
+    expect(embeddedViewSubjectOpenMessageSchema.safeParse({ ...open, title: '' }).success).toBe(false)
+  })
+
+  test('an inline view says the whole pixels its content takes, within the heights a view may have', () => {
+    expect(embeddedViewHeightMessageSchema.parse({ type: 'leitbild:view-height', height: 420 }).height).toBe(420)
+    for (const height of [EMBEDDED_VIEW_MIN_HEIGHT - 1, EMBEDDED_VIEW_MAX_HEIGHT + 1, 420.5]) {
+      expect(embeddedViewHeightMessageSchema.safeParse({ type: 'leitbild:view-height', height }).success).toBe(false)
+    }
+    expect(embeddedViewHeightMessageSchema.safeParse({ type: 'leitbild:view-height', height: 420, width: 480 }).success).toBe(false)
   })
 
   test('maximise names the wanted state', () => {

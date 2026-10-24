@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +9,7 @@ import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
 import { createAgentsModuleState, type AgentsModuleState } from './module-state.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../api/__fixtures__/stub-gateway.ts'
 import { asAIAgent } from '../../agents/shared.ts'
+import { agentsActivity } from './workspace-activity.ts'
 
 // Phase D registry tests use the LEITBILD_HOME env var to redirect all paths
 // into a per-test tmpdir. The shared runtime is built with no providers
@@ -44,6 +45,23 @@ describe('WorkspaceRuntimeRegistry', () => {
     delete process.env.PROVIDER
     delete process.env.LEITBILD_SEED_WORKSPACE
     await rm(homeDir, { recursive: true, force: true })
+  })
+
+  // --- People directories ---
+
+  it('evicts idle People directories even when a runtime eviction in the same sweep fails', async () => {
+    const loaded = newWorkspaceId()
+    const people = newWorkspaceId()
+    await provision(loaded)
+    await provision(people)
+    await registry.peopleFor(people)
+    await registry.getOrLoad(loaded)
+    const flush = spyOn(registry.autoSaverFor(loaded)!, 'flush').mockImplementation(async () => { throw new Error('snapshot flush failed') })
+    try {
+      await expect(registry.evictIdle(Date.now() + 2_000_000)).rejects.toThrow('snapshot flush failed')
+    } finally { flush.mockRestore() }
+    expect(registry.peopleStatus()).toMatchObject({ openDirectories: 0, directoriesEvicted: 1 })
+    expect(registry.tryGetLive(people)).toBeUndefined()
   })
 
   // --- Validity ---
@@ -207,6 +225,60 @@ describe('WorkspaceRuntimeRegistry', () => {
     } finally { release(); await actual.shutdown() }
   })
 
+  it('removing a Workspace cancels a running model comparison instead of waiting for the model', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    let streams = 0
+    let comparisonEntered!: () => void
+    const comparisonStarted = new Promise<void>(resolve => { comparisonEntered = resolve })
+    let comparisonCancelled = false
+    // Test-only model: the Agent's own turn answers; the comparison's model call
+    // answers only by failing when its signal aborts, as a slow real model would.
+    const provider = { ...makeStubGateway(),
+      modelInfo: async (model: string) => ({ id: model, provider: 'stub', contextMax: 100_000, source: 'fixture' }),
+      stream: async function* (_request: unknown, signal?: AbortSignal) {
+        if (++streams === 1) {
+          yield { delta: 'Original answer.', done: true, tokensUsed: { prompt: 1, completion: 1 } }
+          return
+        }
+        comparisonEntered()
+        await new Promise<never>((_, reject) => {
+          if (!signal) return reject(new Error('Comparison model call carries no abort signal'))
+          signal.addEventListener('abort', () => { comparisonCancelled = true; reject(signal.reason) }, { once: true })
+        })
+      } }
+    const actual = createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1_000_000,
+      deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+    })
+    try {
+      const system = await actual.getOrLoad(id)
+      const room = system.rooms.createRoom({ name: 'Comparison lifetime', createdBy: 'test' })
+      const agent = asAIAgent(await system.spawnAIAgent({ name: 'Agent', model: 'mock-model', persona: '', tools: [] }))!
+      room.addMember(agent.id)
+      await agent.join(room)
+      // The Room delivers to its members; a second receive would queue a second turn.
+      room.post({ senderId: 'human', type: 'chat', content: 'Assess the plant.' })
+      const until = performance.now() + 10_000
+      while (!room.getRetainedMessages().some(message => message.senderId === agent.id) && performance.now() < until) await Bun.sleep(5)
+      await agent.whenIdle()
+      const original = room.getRetainedMessages().find(message => message.senderId === agent.id)!
+      const started = await system.comparisons.start(room.profile.id, original.id, 'stub:mock-model')
+      expect(started.status).toBe('running')
+      await comparisonStarted
+      let deadline: Timer | undefined
+      const outcome = await Promise.race([
+        actual.remove(id).then(() => 'removed' as const),
+        new Promise<'still waiting'>(resolve => { deadline = setTimeout(() => resolve('still waiting'), 10_000) }),
+      ])
+      clearTimeout(deadline)
+      expect(outcome).toBe('removed')
+      // The job was cancelled, and removal waited for it to end.
+      expect(comparisonCancelled).toBe(true)
+      expect(await moduleState.has(id)).toBe(false)
+      await expect(stat(workspaceModulePaths(id).agents.root)).rejects.toThrow()
+    } finally { await actual.shutdown() }
+  }, 30_000)
+
   it('does not evict autonomous summary work for idle or capacity', async () => {
     const busy = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState, maxLoadedWorkspaces: 1, idleMs: 1 })
     const a = newWorkspaceId(), b = newWorkspaceId()
@@ -221,6 +293,186 @@ describe('WorkspaceRuntimeRegistry', () => {
       expect(busy.tryGetLive(a)).toBe(system)
       expect(busy.tryGetLive(b)).toBeUndefined()
     } finally { await busy.shutdown() }
+  })
+
+  // --- A turn queued behind the reply cooldown ---
+  // After a reply, an Agent with another question queued waits 500 ms before
+  // its next turn and reads 'idle' meanwhile. That queued turn is work: it
+  // keeps the Workspace loaded, and a closing runtime never starts it.
+
+  const holdFirstTurn = async (registryFor: (provider: ReturnType<typeof makeStubGateway>) => WorkspaceRuntimeRegistry, id: WorkspaceId) => {
+    let streams = 0
+    let firstEntered!: () => void
+    let releaseFirst!: () => void
+    const firstStarted = new Promise<void>(resolve => { firstEntered = resolve })
+    const firstReleased = new Promise<void>(resolve => { releaseFirst = resolve })
+    const provider = { ...makeStubGateway(), stream: async function* () {
+      if (++streams === 1) { firstEntered(); await firstReleased }
+      yield { delta: `Answer ${streams}.`, done: true, tokensUsed: { prompt: 1, completion: 1 } }
+    } }
+    const actual = registryFor(provider)
+    const system = await actual.getOrLoad(id)
+    // Retaining an answer's starting input briefly holds a Workspace operation,
+    // which defers eviction by itself; this test is about the Agent alone.
+    spyOn(system.comparisons, 'link').mockImplementation(() => {})
+    const room = system.rooms.createRoom({ name: 'Cooldown', createdBy: 'test' })
+    const agent = asAIAgent(await system.spawnAIAgent({ name: 'Agent', model: 'mock-model', persona: '', tools: [] }))!
+    room.addMember(agent.id)
+    await agent.join(room)
+    // The Room delivers each post to its members once.
+    room.post({ senderId: 'human', type: 'chat', content: 'First question.' })
+    await firstStarted
+    // Asked while the first turn runs, so it queues behind it.
+    room.post({ senderId: 'human', type: 'chat', content: 'Second question.' })
+    releaseFirst()
+    const until = performance.now() + 5_000
+    while (!(room.getRetainedMessages().some(message => message.senderId === agent.id) && agent.state.get() === 'idle')) {
+      if (performance.now() > until) throw new Error('The first answer never arrived')
+      await Bun.sleep(1)
+    }
+    return { actual, system, room, agent, streams: () => streams }
+  }
+
+  it('keeps a Workspace whose Agent has a turn queued behind its reply cooldown', async () => {
+    const id = newWorkspaceId(), other = newWorkspaceId()
+    await provision(id); await provision(other)
+    const { actual, agent, streams } = await holdFirstTurn(provider => createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1, maxLoadedWorkspaces: 1,
+      deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+    }), id)
+    try {
+      expect(agent.state.get()).toBe('idle')
+      expect(agent.hasQueuedTurn()).toBe(true)
+      expect(agentsActivity(actual).workspaces).toEqual([{ workspaceId: id,
+        items: [{ key: 'agents-answering', label: '1 AI agent answering', count: 1, active: true }] }])
+      expect(await actual.evictIdle(Date.now() + 1_000_000)).toBe(0)
+      await expect(actual.getOrLoad(other)).rejects.toThrow('occupied by active work')
+      // whenIdle waits for the queued turn, not just the cooldown.
+      await agent.whenIdle()
+      expect(streams()).toBe(2)
+      expect(agent.hasQueuedTurn()).toBe(false)
+      expect(await actual.evictIdle(Date.now() + 1_000_000)).toBe(1)
+    } finally { await actual.shutdown() }
+  })
+
+  for (const ending of ['evict', 'remove', 'shutdown'] as const) {
+    it(`never starts a turn queued behind the reply cooldown once the runtime closes (${ending})`, async () => {
+      const id = newWorkspaceId()
+      await provision(id)
+      const errors: unknown[][] = []
+      const consoleError = spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args) })
+      const { actual, room, agent, streams } = await holdFirstTurn(provider => createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1_000_000,
+        deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+      }), id)
+      try {
+        const states: string[] = []
+        agent.state.subscribe(value => { states.push(value) })
+        if (ending === 'evict') await actual.evictOne(id)
+        else if (ending === 'remove') await actual.remove(id)
+        else await actual.shutdown()
+        expect(agent.hasQueuedTurn()).toBe(false)
+        // Longer than the 500 ms cooldown that held the queued turn.
+        await Bun.sleep(700)
+        expect(states).not.toContain('generating')
+        expect(streams()).toBe(1)
+        expect(errors).toEqual([])
+        // Nor does anything asked of it afterwards.
+        agent.forceEvaluate!(room.profile.id)
+        expect(agent.state.get()).toBe('idle')
+      } finally { consoleError.mockRestore(); await actual.shutdown() }
+    })
+  }
+
+  // Removal and shutdown close comparisons and wait for admitted Workspace
+  // operations (another Agent's tool call, say) before they evict. An
+  // operation held past the cooldown must not let the queued turn start in
+  // that wait.
+  for (const ending of ['remove', 'shutdown'] as const) {
+    it(`never starts a turn queued behind the reply cooldown while ${ending} waits for a held Workspace operation`, async () => {
+      const id = newWorkspaceId()
+      await provision(id)
+      const errors: unknown[][] = []
+      const consoleError = spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args) })
+      const { actual, agent, streams } = await holdFirstTurn(provider => createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1_000_000,
+        deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+      }), id)
+      try {
+        const states: string[] = []
+        agent.state.subscribe(value => { states.push(value) })
+        let entered!: () => void
+        const operationStarted = new Promise<void>(resolve => { entered = resolve })
+        // Longer than the 500 ms cooldown that holds the queued turn.
+        const held = actual.withWorkspace(id, async () => { entered(); await Bun.sleep(900) })
+        await operationStarted
+        if (ending === 'remove') await actual.remove(id)
+        else await actual.shutdown()
+        await held
+        expect(errors).toEqual([])
+        expect(streams()).toBe(1)
+        expect(states).not.toContain('generating')
+        expect(agent.hasQueuedTurn()).toBe(false)
+      } finally { consoleError.mockRestore(); await actual.shutdown() }
+    })
+  }
+
+  // A removed Agent leaves the team, so a later drain cannot see it: removal
+  // itself must stop its turns.
+  it('removing an Agent drops its queued turn, so none starts after the runtime closes', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    const errors: unknown[][] = []
+    const consoleError = spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args) })
+    const { actual, system, agent, streams } = await holdFirstTurn(provider => createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1_000_000,
+      deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+    }), id)
+    try {
+      const states: string[] = []
+      agent.state.subscribe(value => { states.push(value) })
+      expect(system.removeAgent(agent.id)).toBe(true)
+      expect(agent.hasQueuedTurn()).toBe(false)
+      await actual.evictOne(id)
+      // Longer than the 500 ms cooldown that held the queued turn.
+      await Bun.sleep(700)
+      expect(states).not.toContain('generating')
+      expect(streams()).toBe(1)
+      expect(errors).toEqual([])
+    } finally { consoleError.mockRestore(); await actual.shutdown() }
+  })
+
+  it('removing an Agent cancels its running turn, so its answer never lands on a closed runtime', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    let entered!: () => void
+    let release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const released = new Promise<void>(resolve => { release = resolve })
+    // Test-only model: answers once released, ignoring cancellation as a
+    // provider that finishes its stream would.
+    const provider = { ...makeStubGateway(), stream: async function* () {
+      entered(); await released
+      yield { delta: 'Late answer.', done: true, tokensUsed: { prompt: 1, completion: 1 } }
+    } }
+    const errors: unknown[][] = []
+    const consoleError = spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args) })
+    const actual = createWorkspaceRuntimeRegistry({ moduleState, idleMs: 1_000_000,
+      deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }),
+    })
+    try {
+      const system = await actual.getOrLoad(id)
+      const room = system.rooms.createRoom({ name: 'Removal', createdBy: 'test' })
+      const agent = asAIAgent(await system.spawnAIAgent({ name: 'Agent', model: 'mock-model', persona: '', tools: [] }))!
+      room.addMember(agent.id)
+      await agent.join(room)
+      room.post({ senderId: 'human', type: 'chat', content: 'Assess the plant.' })
+      await started
+      expect(system.removeAgent(agent.id)).toBe(true)
+      expect(agent.state.get()).toBe('idle')
+      await actual.evictOne(id)
+      release()
+      await Bun.sleep(50)
+      // Only the removal's own leave notice carries the Agent's id.
+      expect(room.getRetainedMessages().filter(message => message.senderId === agent.id).map(message => message.type)).toEqual(['leave'])
+      expect(errors).toEqual([])
+    } finally { release(); consoleError.mockRestore(); await actual.shutdown() }
   })
 
   it('rejects invalid Workspace ids at runtime', async () => {

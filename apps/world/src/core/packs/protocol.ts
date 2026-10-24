@@ -1,9 +1,11 @@
 import { packDescriptorSchema,type PackDescriptor } from '@leitbild/contracts'
-import type { Component } from 'svelte'
+import type { Component, Snippet } from 'svelte'
 import { z } from 'zod'
 import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
-import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide } from '../model/index.ts'
+import type { MapView } from '../../ui/map-view.ts'
+import type { SurfacePanelProps } from '../../ui/surface-panel-interaction.ts'
+import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureId,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide,SimulationRunId } from '../model/index.ts'
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
 import type { PackMapAppearance,PackMapLegend,PackMapLegendSwatch,PackReferenceDatasetStyle } from './reference-style.ts'
@@ -44,6 +46,8 @@ export interface PackObjectCategory {
    * objects declares it, so they are not listed twice.
    */
   readonly rail?: false
+  /** The closed list of status words this category's objects show (reserved; supplied with P2's presentation fields). */
+  readonly statusWords?: ReadonlyArray<string>
 }
 
 export interface PackObjectPresentation {
@@ -63,6 +67,20 @@ export interface PackObjectPresentation {
    * callsign and phase code. Without it the map draws no label.
    */
   readonly mapLabel?: string
+  /**
+   * A few short lines that stand for an object, such as its status and what
+   * it is doing now: the map's hover preview shows them beneath its label
+   * instead of every field. The rail row's tooltip keeps every field, with the
+   * context other Packs add (the weather at the object). Without them the
+   * hover lists the fields.
+   */
+  readonly glance?: ReadonlyArray<string>
+  /** Reserved (supplied in P2): sorts, never colours. */
+  readonly urgency?: { readonly order: number; readonly word: string }
+  /** Reserved (supplied in P2): objects this one relates to, both ways. */
+  readonly related?: ReadonlyArray<{ readonly objectId: ObjectId; readonly role: string }>
+  /** Reserved (supplied in P2): since when the status word holds. */
+  readonly since?: { readonly at: IsoTimestamp; readonly clock: 'simulation' | 'wall' }
 }
 
 export interface PackObjectField {
@@ -457,6 +475,21 @@ export interface PackRecordingContribution {
 
 export interface PackKnowledgeContribution {
   readonly wikiRefs: ReadonlyArray<PackWikiRef>
+  /** One line (≤ 200 characters) the Run context shows fenced as this Pack's guidance. */
+  readonly guidance?: string
+}
+
+/**
+ * Data only: which objects declare observations and the ids of this Pack's
+ * system-audience query Capabilities (core/observation/capabilities.ts) that
+ * declare, read and draw them. World reads them as the caller, lazily.
+ */
+export interface PackObservationContribution {
+  /** Presentation categories whose objects declare observations. */
+  readonly categories: ReadonlyArray<string>
+  readonly declarations: string
+  readonly read: string
+  readonly topology?: { readonly family: 'flow' | 'network'; readonly capability: string }
 }
 
 export interface PackReferenceDataContribution {
@@ -505,6 +538,8 @@ export interface PackPresentationContribution {
   /** Keys the layers panel renders for this Pack's map encodings. */
   readonly mapLegends?: ReadonlyArray<PackMapLegend>
   readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayer>
+  /** Credits for licensed data this Pack's `mapFeatures` draw. */
+  readonly mapFeatureAttribution?: string
 }
 
 export interface PackCreationContribution {
@@ -616,7 +651,8 @@ export interface PackSurfacePanelContribution {
   readonly id: string
   readonly label: string
   readonly defaultOpen: boolean
-  readonly load: () => Promise<{ readonly default: Component }>
+  /** The panel, mounted with the props the World surface passes to every surface panel. */
+  readonly load: () => Promise<{ readonly default: Component<SurfacePanelProps> }>
   /**
    * Opt-in: while this panel is open, every map target click for a controller
    * of the panel's own Pack goes to the `onMapTarget` it connects, and the
@@ -645,11 +681,90 @@ export interface PackSurfaceLayout {
   readonly railCollapsed?: true
 }
 
+/**
+ * What a Pack contributes to the embed bundle alone (panels drawn with OpenBridge): each Pack exports it from
+ * packs/<pack>/ui/embed.ts and ui/embed/pack-embed-loader.ts loads it, so nothing the main app loads reaches it.
+ */
+export interface PackEmbedContribution {
+  /** The panel a display's element faceplate shows for this Pack's elements (proposal, controls, resets); World places it, the Pack implements it. */
+  readonly elementActions?: () => Promise<{ readonly default: Component<PackElementActionsProps> }>
+  /** Reads what a drawing in the display window marks on an object's items; the drawing asks every few seconds while shown. */
+  readonly elementMarks?: () => Promise<{ readonly read: (runId: SimulationRunId, objectId: ObjectId) => Promise<PackElementMarks> }>
+}
+
+/** What a Pack's element-actions panel is mounted with: the element a display's faceplate shows. */
+export interface PackElementActionsProps {
+  /** The Run its panel calls (controls, validation, writes, resets, proposals, signal reads). */
+  readonly runId: SimulationRunId
+  readonly objectId: ObjectId
+  /** The declared element id (a topology node's `element`, or its id). */
+  readonly elementId: string
+  /** The display's samples are FROZEN (none for over 5 s, or failing): every control is disabled meanwhile (W8.1). */
+  readonly frozen: boolean
+  /** Pinned as an overlay: a monitoring overlay offers no command at a glance, its controls fold (W3.3). */
+  readonly pinned: boolean
+  /** The faceplate at rest is short of room: while no proposal waits its controls fold too, so its readings show (W3.2). */
+  readonly short: boolean
+}
+
+/**
+ * What a drawing marks on its items for a Pack's object (W3.6): the elements with a pending proposal, the one that
+ * lapses first first, each carrying OpenBridge's command request badge (`ai`: an AI agent proposed it) and its
+ * magnifier at rest.
+ */
+export interface PackElementMarks {
+  readonly pending: ReadonlyArray<{ readonly element: string; readonly ai: boolean }>
+}
+
+/** What a Pack's display-window tools are mounted with: the Run and the object whose display the window shows. */
+export interface PackWindowToolsProps {
+  readonly runId: SimulationRunId
+  /** The object whose display the window shows, as the page holds it now. */
+  readonly object: OperationalObject
+  /** Opens a subject's World default (displays/default) after the window's current display; Back returns to it. */
+  readonly openDisplay: (subject: string) => void
+  /** This screen plays the Run's controller (a controller-class role, or a Run that declares no roles): only then do tools that order the Run show. */
+  readonly controller: boolean
+  /** Opens the Run's Assistant room beside the page; null where the Host offers none on this page. */
+  readonly openAssistant: (() => void) | null
+  /** The procedures the object's active runs run. */
+  readonly runningProcedures: ReadonlyArray<ProcedureId>
+  /** Opens one of the object's procedures in the procedure window, in front of the display window. */
+  readonly openProcedure: (procedureId: ProcedureId) => void
+  /**
+   * The room the header gives the tools: all they need ('wide'); short of it ('short'), where their labels give way
+   * to their icons; or none ('folded', the window's narrow widths), where they keep their chips and give the rest to
+   * the window's More menu.
+   */
+  readonly room: 'wide' | 'short' | 'folded'
+  /** Gives the window the items its More menu lists while the tools are folded, null takes them back; each item calls `done` first, which closes the menu. */
+  readonly menu: (items: Snippet<[done: () => void]> | null) => void
+}
+
+/** What a Pack's settings editor is mounted with in the Scenario Builder: its Pack Selection's configuration. */
+export interface PackSettingsEditorProps {
+  /** The Pack Selection's configuration as authored; the editor parses it with its own schema. */
+  readonly config: unknown
+  readonly workspaceId: string
+  /** The builder map's centre, [longitude, latitude]. */
+  readonly center: readonly [number, number]
+  readonly mapView: MapView | null
+  /** Replaces the Pack Selection's configuration. */
+  readonly onchange: (value: Record<string, unknown>) => void
+}
+
 export interface PackUiContribution {
   readonly surfacePanels: ReadonlyArray<PackSurfacePanelContribution>
-  readonly settingsEditor?: () => Promise<{ readonly default: Component }>
+  readonly settingsEditor?: () => Promise<{ readonly default: Component<PackSettingsEditorProps> }>
   readonly mapInteraction?: PackMapInteraction
   readonly surfaceLayout?: PackSurfaceLayout
+  /**
+   * Tools the generic display window shows in its header beside a display of this Pack's object (actions, logs,
+   * pending proposals, status): main-app components, so never OpenBridge (that is PackEmbedContribution's).
+   */
+  readonly windowTools?: () => Promise<{ readonly default: Component<PackWindowToolsProps> }>
+  /** A press on one of this Pack's objects (its map icon or rail row) that orders nothing opens its display in the display window, where the Run observes it. */
+  readonly displayOnPress?: true
 }
 
 /** Pack-owned inputs to shared procedure observation queries. The generic UI
@@ -689,13 +804,17 @@ export interface PackProcedureSignalReadResult {
   readonly signals: ReadonlyArray<PackProcedureSignalObservation>
 }
 
+export interface PackProcedureTagValidation {
+  readonly id: string
+  readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
+  readonly signal?: Record<string, unknown>
+  /** The declared element (its observation declaration's id) a resolved tag is measured on, where it names one: the tag opens its default. */
+  readonly measuredOn?: string
+  readonly warnings: ReadonlyArray<string>
+}
+
 export interface PackProcedureTagValidationResult {
-  readonly tags: ReadonlyArray<{
-    readonly id: string
-    readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
-    readonly signal?: Record<string, unknown>
-    readonly warnings: ReadonlyArray<string>
-  }>
+  readonly tags: ReadonlyArray<PackProcedureTagValidation>
 }
 
 export interface PackProcedureAssessmentResult {
@@ -795,6 +914,7 @@ export interface WorldPack extends WorldPackView {
   readonly referenceData?: PackReferenceDataContribution
   readonly scenario?: PackScenarioSupport
   readonly interactions?: PackInteractionContribution
+  readonly observation?: PackObservationContribution
 }
 
 /** What a Pack derives its roles against: the Scenario's sides, empty when it declares none. */

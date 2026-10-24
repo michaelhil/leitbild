@@ -5,21 +5,33 @@
 // instead of zooming the browser page, and asks it to open a display after
 // it. A view that no window presents (a page of its own, or a display shown
 // inline in a chat answer) is shown at 1:1 and only says once that it
-// listens; inline in a chat answer whose page relays to the Workspace's
-// window (it says so with the contract's view-host message), it asks that
-// page to open a display there.
-import { embeddedViewHostMessageSchema, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
-import { parseDisplayFramePresentation, type DisplayFrameMessage } from './display-frame-protocol.ts'
-import { observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
+// listens. Framed by a page that opens displays for it (it says so with the
+// contract's view-host message): a chat answer's page, which relays to the
+// Workspace's window, or World's procedure tag dialog, which opens the window
+// itself, it asks that page to open a display there (the contract's view-open
+// message).
+import { EMBEDDED_VIEW_MAX_HEIGHT, EMBEDDED_VIEW_MIN_HEIGHT, embeddedViewHostMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
+import { parseDisplayFramePresentation, parseDisplayFrameSelect, type DisplayFrameMap, type DisplayFrameMessage, type DisplayFrameRoom } from './display-frame-protocol.ts'
+import { EXTENT_SETTLE_MS, observeDisplayExtent, type DisplayExtent } from './display-extent.ts'
+import type { WorldViewType } from '../process-display/display-window-messages.ts'
 
 export interface DisplayPresentation {
   readonly shown: boolean
   readonly zoom: number
   /** For a display its window opened from another: that one's title, which Back returns to. */
   readonly back?: string
+  /** The part of the page a person sees, where the window says (it scrolls a tall display); else the whole page. */
+  readonly visible?: DisplayFrameRoom
 }
 
-/** Where a view opens a display it names: its window, or the Workspace's window through the chat page that relays. */
+const sameRoom = (left: DisplayFrameRoom | undefined, right: DisplayFrameRoom | undefined): boolean =>
+  left === right || (left !== undefined && right !== undefined && left.x === right.x && left.y === right.y && left.width === right.width && left.height === right.height)
+
+/** Where a faceplate may stand: the part of the page the window shows, else the page's own viewport. */
+export const visibleRoom = (presentation: DisplayPresentation, viewport: { readonly width: number; readonly height: number }): DisplayFrameRoom =>
+  presentation.visible ?? { x: 0, y: 0, width: viewport.width, height: viewport.height }
+
+/** Where a view opens a display it names: its window, or the Workspace's window through the page that frames it (a chat answer's, a procedure tag dialog's). */
 export type DisplayOpening = 'window' | 'relay'
 
 /** How a view is presented until its window says otherwise, and always when it has none. */
@@ -34,7 +46,7 @@ export interface ReceivedMessage {
 /** The page a view host runs in; a test passes its own. */
 export interface ViewHostPorts {
   /** The window framing this page; null for a page of its own. */
-  readonly parent: { readonly postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage, targetOrigin: string) => void } | null
+  readonly parent: { readonly postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage, targetOrigin: string) => void } | null
   readonly origin: string
   readonly listen: (receive: (message: ReceivedMessage) => void) => () => void
   /** Says that the framing window sent something this view cannot read. */
@@ -48,10 +60,20 @@ export const createViewHost = (ports: ViewHostPorts) => {
   let presentedByWindow = false
   let relayed = false
   let reported: string | null = null
+  let heightReported: number | null = null
+  // What asks the window for the body's whole height (a standing faceplate, an alerts-only display), and what it was told.
+  const fills = new Set<string>()
+  let filled = false
+  const sendFill = (): void => {
+    if (!presentedByWindow || (fills.size > 0) === filled) return
+    filled = fills.size > 0
+    post({ type: 'world:display-fill', fill: filled })
+  }
   const subscribers = new Set<(presentation: DisplayPresentation) => void>()
   const onWindow = new Set<() => void>()
   const openingSubscribers = new Set<(opening: DisplayOpening | null) => void>()
-  const post = (message: DisplayFrameMessage | EmbeddedViewOpenMessage): void => ports.parent?.postMessage(message, ports.origin)
+  const selectSubscribers = new Set<(select: { readonly objectId: string; readonly elementId: string }) => void>()
+  const post = (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage): void => ports.parent?.postMessage(message, ports.origin)
   const opening = (): DisplayOpening | null => presentedByWindow ? 'window' : relayed ? 'relay' : null
   const openingChanged = (): void => {
     for (const subscriber of [...openingSubscribers]) subscriber(opening())
@@ -60,11 +82,17 @@ export const createViewHost = (ports: ViewHostPorts) => {
   const receive = (message: ReceivedMessage): void => {
     // Only the framing window, on this origin, presents the view.
     if (ports.parent === null || message.source !== ports.parent || message.origin !== ports.origin) return
-    // A chat page that relays to the Workspace's window says so once it is hosted.
+    // A page that opens displays for it (a chat answer's, a procedure tag dialog's) says so once it is hosted.
     if (embeddedViewHostMessageSchema.safeParse(message.data).success) {
       if (relayed) return
       relayed = true
       openingChanged()
+      return
+    }
+    // The window asks the display to select an element once (W2.8).
+    const select = parseDisplayFrameSelect(message.data)
+    if (select !== null) {
+      for (const subscriber of [...selectSubscribers]) subscriber({ objectId: select.objectId, elementId: select.elementId })
       return
     }
     const next = parseDisplayFramePresentation(message.data)
@@ -77,9 +105,11 @@ export const createViewHost = (ports: ViewHostPorts) => {
       for (const started of [...onWindow]) started()
       onWindow.clear()
       openingChanged()
+      // What asked for the body's whole height before a window presented the display is told now.
+      sendFill()
     }
-    if (next.shown === presentation.shown && next.zoom === presentation.zoom && next.back === presentation.back) return
-    presentation = { shown: next.shown, zoom: next.zoom, ...(next.back === undefined ? {} : { back: next.back }) }
+    if (next.shown === presentation.shown && next.zoom === presentation.zoom && next.back === presentation.back && sameRoom(next.visible, presentation.visible)) return
+    presentation = { shown: next.shown, zoom: next.zoom, ...(next.back === undefined ? {} : { back: next.back }), ...(next.visible === undefined ? {} : { visible: next.visible }) }
     for (const subscriber of [...subscribers]) subscriber(presentation)
   }
 
@@ -93,6 +123,11 @@ export const createViewHost = (ports: ViewHostPorts) => {
       return stop
     },
     current: (): DisplayPresentation => presentation,
+    /** Hears each element the window asks the display to select. Returns the stop. */
+    subscribeSelect: (subscriber: (select: { readonly objectId: string; readonly elementId: string }) => void): (() => void) => {
+      selectSubscribers.add(subscriber)
+      return () => { selectSubscribers.delete(subscriber) }
+    },
     /** Runs `start` once a display window presents this view (at once if one already has). */
     whenPresented: (start: () => void): (() => void) => {
       if (presentedByWindow) { start(); return () => {} }
@@ -127,11 +162,37 @@ export const createViewHost = (ports: ViewHostPorts) => {
      * Opens a display after this one: in its window, or through the chat page
      * as a listing of the Workspace's window. False where neither is there.
      */
-    openDisplay: (request: { readonly state: string; readonly title: string; readonly listing: () => EmbeddedViewListing }): boolean => {
+    openDisplay: (request: { readonly state: string; readonly title: string; readonly viewType: WorldViewType; readonly listing: () => EmbeddedViewListing }): boolean => {
       const where = opening()
-      if (where === 'window') post({ type: 'world:display-open', state: request.state, title: request.title })
+      if (where === 'window') post({ type: 'world:display-open', state: request.state, title: request.title, viewType: request.viewType })
       else if (where === 'relay') post({ type: 'leitbild:view-open', view: request.listing() })
       return where !== null
+    },
+    /** Frames the live map on these bounds through the display window; false where no window presents this view. */
+    showOnMap: (bounds: DisplayFrameMap['bounds']): boolean => {
+      if (!presentedByWindow) return false
+      post({ type: 'world:display-map', bounds })
+      return true
+    },
+    /**
+     * Asks the window for the body's whole height while any part of the display does (`reason` names that part: a
+     * drawing's standing faceplates, an alerts-only display), or stops asking; told once presented and on each change.
+     */
+    /**
+     * Tells the page that frames this view inline (a chat answer's) the height its content takes, so the frame keeps
+     * no empty band under it (W7.3); a window sizes its frames itself, so nothing is told once one presents the view.
+     */
+    reportHeight: (height: number): void => {
+      if (ports.parent === null || presentedByWindow) return
+      const whole = Math.min(EMBEDDED_VIEW_MAX_HEIGHT, Math.max(EMBEDDED_VIEW_MIN_HEIGHT, Math.ceil(height)))
+      if (whole === heightReported) return
+      heightReported = whole
+      post({ type: 'leitbild:view-height', height: whole })
+    },
+    reportFill: (reason: string, fill: boolean): void => {
+      if (fill) fills.add(reason)
+      else fills.delete(reason)
+      sendFill()
     },
     /** Back to the display the window opened this one from (DisplayPresentation.back). */
     back: (): void => {
@@ -189,7 +250,60 @@ export const createZoomAccumulator = (config: {
   }
 }
 
-/** The view samples only while it can be seen: its tab is visible and its window shows it. */
+export interface ViewportSize {
+  readonly width: number
+  readonly height: number
+}
+
+/**
+ * Whether a page can be seen, as far as it can tell from inside its frame:
+ * its tab is visible, its viewport has room (a frame inside a collapsed or
+ * display:none pane has none), and its root intersects the top-level
+ * viewport (null until the browser has said).
+ */
+export const pageOnScreen = (page: { readonly tabVisible: boolean; readonly viewport: ViewportSize; readonly intersecting: boolean | null }): boolean =>
+  page.tabVisible && page.viewport.width > 0 && page.viewport.height > 0 && page.intersecting !== false
+
+/** The page's visibility (pageOnScreen) and its changes, from the ports a browser page or a test gives. */
+export const createPageVisibility = (ports: {
+  readonly tabVisible: () => boolean
+  readonly onTabVisibility: (changed: () => void) => () => void
+  readonly viewport: () => ViewportSize
+  readonly onResize: (changed: () => void) => () => void
+  /** Reports whether the page's root intersects the top-level viewport, on every change; returns the stop. */
+  readonly observeIntersection: (report: (intersecting: boolean) => void) => () => void
+}) => {
+  let intersecting: boolean | null = null
+  const listeners = new Set<() => void>()
+  const changed = (): void => { for (const listener of [...listeners]) listener() }
+  let stops: Array<() => void> = []
+  return {
+    visible: (): boolean => pageOnScreen({ tabVisible: ports.tabVisible(), viewport: ports.viewport(), intersecting }),
+    /** Calls `listener` whenever the page may have become visible or hidden; returns the stop. */
+    listen: (listener: () => void): (() => void) => {
+      if (listeners.size === 0) {
+        stops = [
+          ports.onTabVisibility(changed),
+          ports.onResize(changed),
+          ports.observeIntersection(next => {
+            intersecting = next
+            changed()
+          }),
+        ]
+      }
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+        if (listeners.size > 0) return
+        for (const stop of stops) stop()
+        stops = []
+        intersecting = null
+      }
+    },
+  }
+}
+
+/** The view samples only while it can be seen: its page can be seen (pageOnScreen) and its window shows it. */
 export const trackVisibility = (config: {
   readonly host: Pick<ViewHost, 'subscribe'>
   readonly documentVisible: () => boolean
@@ -301,10 +415,54 @@ const forwardZoomGestures = (host: ViewHost): (() => void) => {
 }
 
 /**
+ * Esc is the display's Back (plan v5 §3, W3.1): once nothing inside the
+ * display claimed it (a selected command, an open faceplate, a menu each take
+ * theirs first and cancel it), it returns to the display this one was opened
+ * from, where the window says there is one.
+ */
+export const escapeGoesBack = (host: Pick<ViewHost, 'back'>, target: Pick<Window, 'addEventListener' | 'removeEventListener'>): (() => void) => {
+  const key = (event: Event): void => {
+    if ((event as KeyboardEvent).key !== 'Escape' || event.defaultPrevented) return
+    host.back()
+  }
+  target.addEventListener('keydown', key)
+  return () => target.removeEventListener('keydown', key)
+}
+
+/**
  * Hosts an embedded display in the window that frames it, from mount to the
  * returned cleanup: the display samples only while it can be seen, tells the
- * window the room its content needs, and passes zoom gestures to the window.
+ * window the room its content needs, passes zoom gestures to the window, and
+ * steps Back on Esc.
  */
+/** The height a page needs to show the card whole: down to its bottom, with the page's own margin under it. */
+export const inlineHeight = (card: { readonly bottom: number }, page: { readonly scrollY: number; readonly marginBottom: number }): number =>
+  Math.ceil(card.bottom + page.scrollY + page.marginBottom)
+
+/**
+ * Reports the card's height whenever it settles after a change, once the view has drawn (before that it would say the
+ * height of "Connecting…" and the frame would jump). The view host drops the reports once a window presents it.
+ */
+const observeInlineHeight = (config: {
+  readonly card: HTMLElement
+  readonly drawing: () => object | undefined
+  readonly report: (height: number) => void
+}): (() => void) => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const settle = (): void => {
+    if (config.drawing() === undefined) return
+    config.report(inlineHeight(config.card.getBoundingClientRect(), { scrollY: window.scrollY, marginBottom: Number.parseFloat(getComputedStyle(document.body).marginBottom) || 0 }))
+  }
+  const schedule = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(settle, EXTENT_SETTLE_MS)
+  }
+  const resized = new ResizeObserver(schedule)
+  resized.observe(config.card)
+  schedule()
+  return () => { clearTimeout(timer); resized.disconnect() }
+}
+
 export const hostDisplayFrame = (config: {
   readonly kind: 'advice' | 'generated'
   readonly card: HTMLElement | null
@@ -320,17 +478,34 @@ export const hostDisplayFrame = (config: {
   // Gestures and the room needed go to a display window only; a frame no window
   // presents (a chat answer's inline display) zooms and scrolls as any page.
   const windowStops: Array<() => void> = []
+  // A frame that is not on screen (its tab hidden, or its pane collapsed by the page around it) asks the Run nothing.
+  const page = createPageVisibility({
+    tabVisible: () => document.visibilityState === 'visible',
+    onTabVisibility: changed => listenTo(document, 'visibilitychange', changed),
+    viewport: () => ({ width: window.innerWidth, height: window.innerHeight }),
+    onResize: changed => listenTo(window, 'resize', changed),
+    observeIntersection: report => {
+      const observer = new IntersectionObserver(entries => {
+        const last = entries.at(-1)
+        if (last !== undefined) report(last.isIntersecting)
+      })
+      observer.observe(document.documentElement)
+      return () => observer.disconnect()
+    },
+  })
   const stops = [
     trackVisibility({
       host,
-      documentVisible: () => document.visibilityState === 'visible',
-      onDocumentVisibility: changed => listenTo(document, 'visibilitychange', changed),
+      documentVisible: page.visible,
+      onDocumentVisibility: page.listen,
       setVisible: config.setVisible,
     }),
     followPresentation({ host, presented: config.presented }),
     host.whenPresented(() => {
-      windowStops.push(forwardZoomGestures(host), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
+      windowStops.push(forwardZoomGestures(host), escapeGoesBack(host, window), observeDisplayExtent({ kind: config.kind, card, drawing: config.drawing, report: host.reportExtent }))
     }),
+    // Inline (no window presents it): the frame fits the content's height, once it has drawn (inlineHeight).
+    observeInlineHeight({ card, drawing: config.drawing, report: host.reportHeight }),
     host.listen(),
   ]
   return () => { for (const stop of [...stops, ...windowStops]) stop() }

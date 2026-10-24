@@ -15,12 +15,15 @@ import '../map/index.ts'
 import '../live-view/index.ts'
 import { getPostRenderProcessors } from '../extensions/post-render-registry.ts'
 import { icon } from '../icon.ts'
+import { isFocusedRoomView } from '../focused-room.ts'
 import { appendWhisperBadge } from '../whisper-badge.ts'
 import { showToast } from '../toast.ts'
 import { $messageThinking } from '../stores.ts'
 import { decorateProductSourceReferences } from '../modals/source-modal.ts'
 import { mountMessageComparisons } from '../message-comparisons.ts'
+import { mountProposalCards } from '../proposal-card/index.ts'
 import { applyDisplayReply, displayReplyCaptionElement, displayRequestRow, isDisplayReply, offersDisplayRequest } from '../display-request.ts'
+import { PROPOSAL_RESUME_CAUSE, proposalResumeCaption } from '../../../core/proposal-resume.ts'
 
 // Clipboard writes use the current Async Clipboard API. Returns false when
 // the browser or document context does not permit clipboard access.
@@ -106,7 +109,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   const isJoinLeave = msg.type === 'join' || msg.type === 'leave'
   const ageMs = Date.now() - msg.timestamp
   // Join/leave messages auto-fade 10s after posting; skip rendering if already expired.
-  if (isJoinLeave && ageMs > 10_000) return
+  // The Host's conversation view shows membership in its member row instead.
+  if (isJoinLeave && (ageMs > 10_000 || isFocusedRoomView)) return
 
   const div = document.createElement('div')
   div.setAttribute('data-msg-id', msg.id)
@@ -119,6 +123,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   const isError = msg.type === 'error'
   const isMute = msg.type === 'mute'
   const isRoomSummary = msg.type === 'room_summary'
+  const isProgress = msg.progress === true
 
   if (isError) {
     const senderInfo = getAgent(msg.senderId)
@@ -153,6 +158,23 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   } else if (isMute) {
     div.className = 'msg-system text-xs py-1 px-2 text-text-muted'
     div.textContent = msg.content
+  } else if (isProgress) {
+    // A line an Agent posted while its turn runs, saying what it just did:
+    // one small row in the Agent's tint, plain text, with none of an answer's
+    // header actions or generation footer. Its answer follows as a message.
+    const senderInfo = getAgent(msg.senderId)
+    div.className = 'msg-progress msg-agent rounded-md px-2 py-1 text-xs border border-border flex items-baseline gap-2'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'font-semibold text-text-strong shrink-0'
+    nameEl.textContent = senderInfo?.name ?? msg.senderName ?? msg.senderId
+    const timeEl = document.createElement('span')
+    timeEl.className = 'text-text-muted shrink-0'
+    timeEl.dataset.mhPiece = 'time'
+    timeEl.textContent = new Date(msg.timestamp).toLocaleTimeString('en-GB', { hour12: false })
+    const textEl = document.createElement('span')
+    textEl.className = 'text-text min-w-0 break-words'
+    textEl.textContent = msg.content
+    div.append(nameEl, timeEl, textEl)
   } else if (isSystem || isRoomSummary) {
     // System messages are normally plain text (compact, muted). Biometric-
     // caused system messages carry a ```biometric fenced block that must
@@ -319,13 +341,12 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     div.appendChild(header)
 
     // Persisted thinking renders above the response so reading
-    // order is reasoning → answer. `<details>` is open by default so
-    // the user sees the model's chain-of-thought after a kimi-k2.6 or
-    // o-series eval; when the user toggles the global "Thinking" piece
-    // off in the visibility popover (body.mh-hide-thinking), CSS
-    // suppresses the body and collapses to a single-line summary so
-    // the thinking pane doesn't dominate the chat. The user can still
-    // unfold any one message via the disclosure triangle.
+    // order is reasoning → answer. `<details>` is collapsed to a
+    // single-line summary while the global "Thinking" piece is hidden
+    // (body.mh-hide-thinking, the default: message-header-prefs.ts), so
+    // the thinking pane doesn't dominate the chat; showing the piece in
+    // the visibility popover opens it. The user can still unfold any one
+    // message via the disclosure triangle.
     const thinkingText = $messageThinking.get()[msg.id]
     if (thinkingText && thinkingText.length > 0) {
       const det = document.createElement('details')
@@ -382,6 +403,9 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     // the author holds the display Skill.
     if (sender && offersDisplayRequest(msg, sender)) div.appendChild(displayRequestRow(msg, sender.name))
 
+    // An answer whose turn proposed a plant operation shows World's status for it (proposal-card/index.ts).
+    mountProposalCards(div, msg)
+
     // If a script is active in this room, append the whisper attached to
     // THIS specific message (looked up by messageId in stepLogs). No-op
     // when no script is active or no whisper has been classified yet.
@@ -394,14 +418,17 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   // when an automation subsystem produced this message.
   // Subtle (text-text-subtle, small) so it doesn't compete with the message
   // body. Tooltip carries the full attribution. See Message.cause docs.
-  // A display-request reply names its requester and links to its answer.
+  // A display-request reply names its requester and links to its answer; a
+  // turn an approved proposal resumed names who approved what.
   if (isDisplayReply(msg)) {
     div.appendChild(displayReplyCaptionElement(container, msg))
   } else if (msg.cause) {
     const cap = document.createElement('div')
     cap.className = 'text-[10px] text-text-subtle mt-0.5'
     const stepFragment = msg.cause.step !== undefined ? ` step ${msg.cause.step + 1}` : ''
-    const label = `via ${msg.cause.kind}: ${msg.cause.name}${stepFragment}`
+    const label = msg.cause.kind === PROPOSAL_RESUME_CAUSE
+      ? proposalResumeCaption(msg.cause.name)
+      : `via ${msg.cause.kind}: ${msg.cause.name}${stepFragment}`
     cap.textContent = label
     cap.title = label
     div.appendChild(cap)

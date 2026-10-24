@@ -167,8 +167,8 @@ Action: Test-only handover.
     expect((await invoke('world.process-plant.procedure-condition.evaluate', { ...conditionInput, targetObjectId: plant.id })).status).toBe(403)
     const context = await invoke('world.simulation-run.context', {})
     expect(context.status).toBe(200)
-    expect(context.body!.result.situation.procedures.runs).toEqual([])
-    expect(context.body!.result.objects.items.some((object: { id: string }) => object.id === plant.id)).toBe(false)
+    expect(context.body!.result.context.text).not.toContain(plant.id)
+    expect(context.body!.result.context.text).toContain('1 objects hidden by this Run\'s AI restrictions')
     expect((await invoke('world.procedure.runs.list', {})).body!.result.runs).toEqual([])
     expect(JSON.stringify((await invoke('world.procedure.runs.list', {}, human)).body)).toContain('restricted-physical-evidence-canary')
     const historical = await invoke('world.simulation-run.changes', { afterSequence: 0, limit: 200 })
@@ -301,7 +301,7 @@ Action: Test-only handover.
     expect((await read({ ...identity, mode: 'full', componentId: 'core' })).status).toBe(400)
   })
 
-  test('rejects unknown display selectors as domain errors and accepts discovered selectors after recovery', async () => {
+  test('rejects an unknown Plant selector as a domain error and accepts a discovered one after recovery', async () => {
     const registry = await createRegistry()
     const workspaceId = newWorkspaceId()
     await provision(registry, workspaceId)
@@ -313,16 +313,15 @@ Action: Test-only handover.
         body: JSON.stringify({ workspaceId, capabilityId, resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }, input, access }),
       })
     const plantId = 'plant:halden-a1'
-    // The unit overview is generated from the Plant, so the only selector is the Plant itself.
-    const guessedPlant = await read('world.process-plant.display.overview', { plantId: 'plant:guessed' })
+    // A Plant's alarms are read by the Plant itself, the only selector.
+    const guessedPlant = await read('world.process-plant.alarms.status', { plantId: 'plant:guessed' })
     expect(guessedPlant.status).toBe(404)
     expect(guessedPlant.body!.error).toMatchObject({ code: 'capability_target_not_found', message: expect.stringContaining(`Live Plants: ${plantId}`) })
     expect(run.health().every(health => health.state === 'ready' && health.failureCount === 0 && health.lastFailure === undefined)).toBe(true)
-    expect((await read('world.process-plant.display.overview', { plantId, unexpected: true })).status).toBe(400)
-    const overview = await read('world.process-plant.display.overview', { plantId })
-    expect(overview.status).toBe(200)
-    expect(overview.body!.result).toHaveProperty('plantId', plantId)
-    expect(overview.body!.result).toHaveProperty('view.viewType', 'process-plant.display')
+    expect((await read('world.process-plant.alarms.status', { plantId, unexpected: true })).status).toBe(400)
+    const alarms = await read('world.process-plant.alarms.status', { plantId })
+    expect(alarms.status).toBe(200)
+    expect(alarms.body!.result).toHaveProperty('plantId', plantId)
   })
 
   test('procedure reads select canonical evidence without duplicating Markdown or changing the UI document', async () => {
@@ -520,7 +519,9 @@ Action: Inspect «OTHER-STEP».
     },0)
     expect((await read({...series,limit:1})).status).toBe(403)
     expect(runs.leaseSummary(run.id).leasesByKind.api).toBe(0)
-  })
+  // About 2.5–3 s alone (it records a Run's history); a loaded machine needs more wall time, so the bound is sized for
+  // load and measures nothing. The file's other cases take 0.2 s or less alone.
+  }, 60_000)
   test('container admission is bounded without evicting active definition owners', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'world-container-cap-'))
     temporaryDirectories.push(dataDir)
@@ -744,6 +745,9 @@ Action: Inspect «OTHER-STEP».
     expect((capabilities.body as { capabilities: Array<{ id: string }> }).capabilities.map(item => item.id)).toContain(
       'world.object.delete',
     )
+    // The displays an agent presents with its answer declare it; Agents gate "Show display" on the marker, not on an id.
+    expect(moduleCapabilityCollectionSchema.parse(capabilities.body).capabilities.filter(item => item.publishes?.includes('embedded-view')).map(item => String(item.id)).sort())
+      .toEqual(['world.simulation-run.display.compose'])
     const definitions = await call(registry, `/internal/workspaces/${workspaceId}/definitions`)
     const parsedDefinitions = moduleDefinitionCollectionSchema.parse(definitions.body)
     const scenario = parsedDefinitions.definitions.find(definition => definition.ref.id === 'test-response')!
@@ -774,7 +778,8 @@ Action: Inspect «OTHER-STEP».
     const parsedScenarioInspection = inspectionViewSchema.parse(scenarioInspection.body?.result)
     expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('authored-definition')
     expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('assets')
-    expect(parsedScenarioInspection.sections.map(section => section.id)).toContain('timeline')
+    // D13: a Scenario's timeline is hidden from an AI caller (agent-hidden-faults.test.ts holds a person's view).
+    expect(parsedScenarioInspection.sections.map(section => section.id)).not.toContain('timeline')
 
     const created = await call<{ result: { id: string }; createdResources: Array<{ id: string }> }>(
       registry,
@@ -841,7 +846,7 @@ Action: Inspect «OTHER-STEP».
     expect(parsedRunInspection.sections.map(section => section.id)).not.toContain('available-capabilities')
 
     const contextCapabilityId = capabilityIdSchema.parse('world.simulation-run.context')
-    const context = await call<{ result: { briefing: { title: string }; objects: { total: number; returned: number; selection: string; items: Array<{ id: string }> }; affordances: unknown } }>(
+    const context = await call<{ result: { context: { text: string; at: string; clock: string } } }>(
       registry,
       `/internal/workspaces/${workspaceId}/capabilities/${contextCapabilityId}/invoke`,
       {
@@ -856,10 +861,8 @@ Action: Inspect «OTHER-STEP».
         }),
       },
     )
-    expect(context.body?.result.briefing.title).toBe('Training shift')
-    expect(Array.isArray(context.body?.result.objects.items)).toBe(true)
-    expect(context.body?.result.objects.selection).toBe('one-per-pack-kind')
-    expect(context.body?.result.objects.total).toBeGreaterThanOrEqual(context.body?.result.objects.returned ?? 0)
+    expect(context.body?.result.context.text.split('\n')[0]).toStartWith('Training shift · simulation time ')
+    expect(context.body?.result.context.clock).toBe('simulation')
     expect(JSON.stringify(context.body)).not.toContain('timeline')
 
     const searchObjectsCapabilityId = capabilityIdSchema.parse('world.simulation-run.objects.search')
@@ -885,16 +888,7 @@ Action: Inspect «OTHER-STEP».
     const packCapabilityId = capabilityIdSchema.parse('world.fixture.state')
     const publishedCapabilities = moduleCapabilityCollectionSchema.parse(capabilities.body)
     const contextDescriptor = publishedCapabilities.capabilities.find(capability => capability.id === contextCapabilityId)
-    expect(contextDescriptor?.outputSchema).toMatchObject({
-      type: 'object',
-      properties: {
-        subject: { type: 'object' },
-        briefing: { type: 'object' },
-        situation: { type: 'object' },
-        objects: { type: 'object' },
-        affordances: { type: 'object' },
-      },
-    })
+    expect(contextDescriptor).toMatchObject({ publishes: ['context'], outputSchema: { type: 'object', required: ['context'], properties: { context: { type: 'object' } } } })
     const packCapability = publishedCapabilities.capabilities.find(capability => capability.id === packCapabilityId)
     expect(packCapability).toMatchObject({ kind: 'query', scope: { kind: 'resource', resourceType: 'world.simulation-run' } })
     expect(packCapability?.outputSchema).toMatchObject({
@@ -934,7 +928,7 @@ Action: Inspect «OTHER-STEP».
           workspaceId,
           capabilityId: deleteObjectCapabilityId,
           resource: run!.ref,
-          input: { objectId: context.body!.result.objects.items[0]!.id },
+          input: { objectId: searchedObjects.body!.result.objects[0]!.id },
           access,
         }),
       },

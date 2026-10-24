@@ -1,9 +1,11 @@
 import { z } from 'zod'
 import {
   inspectionViewSchema,
+  moduleActivitySchema,
   moduleCapabilityCollectionSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionCollectionSchema,
+  moduleFeaturedDefinitionCollectionSchema,
   moduleIdSchema,
   moduleResourceCollectionSchema,
   workspaceIdSchema,
@@ -18,14 +20,17 @@ import {
 import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { asAIAgent } from '../agents/shared.ts'
 import { runPromptDeckEntry, startRoomDefinition, validateRoomDefinition } from '../core/definitions/room-definition-service.ts'
-import { AssistanceRoomError, createAssistanceRoom, ensureAssistanceRoom } from '../core/definitions/assistant-room.ts'
+import { AssistanceRoomError, createAssistanceRoom, ensureAssistanceRoom, openNewAssistanceRoom } from '../core/definitions/assistant-room.ts'
 import type { RoomDefinitionLibrary } from '../core/definitions/room-definition-library.ts'
 import { roomDefinitionSchema, type RoomDefinition } from '../core/definitions/room-definition-catalog.ts'
 import type { AgentsModuleState } from '../core/workspaces/module-state.ts'
 import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
+import { agentsActivity } from '../core/workspaces/workspace-activity.ts'
 import { workspaceModulePaths } from '../core/paths.ts'
 import { loadWorkspaceModuleSnapshots } from '../core/storage/module-snapshots.ts'
 import { roomPacksInputSchema } from '../packs/activation.ts'
+import { isPeopleCapabilityId } from '../core/people/people-capability-ids.ts'
+import { invokePeopleCapability, peopleCapabilityDescriptors } from './people-capabilities.ts'
 
 export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
   module: {
@@ -39,9 +44,15 @@ export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
     resources: '/internal/workspaces/{workspaceId}/resources',
     capabilities: '/internal/workspaces/{workspaceId}/capabilities',
     invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
+    featuredDefinitions: '/internal/featured-definitions',
+    activity: '/internal/activity',
   },
   ui: { workspace: '/workspaces/{workspaceId}/agents' },
 })
+
+// Agents features and lists no Definition for newcomers; it still answers the
+// endpoint every Module publishes, with empty lists rather than an absent route.
+const agentsFeaturedDefinitions = moduleFeaturedDefinitionCollectionSchema.parse({ definitions: [], listed: [] })
 
 const AGENTS_MODULE_ID = moduleIdSchema.parse('agents')
 
@@ -63,12 +74,28 @@ const runPromptDeckEntrySchema = z.object({
 }).strict()
 const writeRoomDefinitionSchema = z.object({ definition: roomDefinitionSchema }).strict()
 const emptyInputSchema = z.object({}).strict()
-const assistantOpenInputSchema = z.object({
-  scope: workspaceRoomScopeSchema.default({ kind: 'workspace' }),
-  title: z.string().trim().min(1).max(256).optional(),
-  prompt: z.string().trim().min(1).max(64_000).optional(),
-  focusedSubjects: z.array(workspaceSubjectReferenceSchema).max(4).default([]),
-}).strict()
+const assistantPromptSchema = z.string().trim().min(1).max(64_000)
+const assistantFocusSchema = z.array(workspaceSubjectReferenceSchema).max(4).default([])
+// 'reuse' joins the Scope's existing Assistance Room; 'new' starts a separate
+// conversation that carries its own title and opens with the request. The
+// title becomes the Room name, so it leaves headroom under the 100-character
+// Room name limit for a uniqueness suffix.
+const assistantOpenInputSchema = z.union([
+  z.object({
+    conversation: z.literal('reuse').default('reuse'),
+    scope: workspaceRoomScopeSchema.default({ kind: 'workspace' }),
+    title: z.string().trim().min(1).max(256).optional(),
+    prompt: assistantPromptSchema.optional(),
+    focusedSubjects: assistantFocusSchema,
+  }).strict(),
+  z.object({
+    conversation: z.literal('new'),
+    scope: workspaceRoomScopeSchema.default({ kind: 'workspace' }),
+    title: z.string().trim().min(1).max(80),
+    prompt: assistantPromptSchema,
+    focusedSubjects: assistantFocusSchema,
+  }).strict(),
+])
 const assistanceCreateInputSchema = z.object({
   scope: workspaceRoomScopeSchema,
   title: z.string().trim().min(1).max(128),
@@ -85,7 +112,8 @@ const assistantOpenResultSchema = z.object({
 const ROOM_DEFINITION_TYPE = 'agents.room-definition'
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
-const apiError = (status: number, code: string, message: string): Response => json({ error: { code, message } }, status)
+const apiError = (status: number, code: string, message: string, retryable?: boolean): Response =>
+  json({ error: { code, message, ...(retryable === undefined ? {} : { retryable }) } }, status)
 const assistantError = (error: unknown): Response | undefined => error instanceof AssistanceRoomError
   ? apiError(error.status, error.code, error.message)
   : undefined
@@ -329,7 +357,7 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
       id: 'agents.assistance.open', moduleId: AGENTS_MODULE_ID,
       kind: 'command', scope: { kind: 'workspace' },
       title: 'Open assistance',
-      description: 'Reuses or creates an ordinary Assistance Room for the Workspace or a selected Resource collection, optionally posting the first request.',
+      description: 'Reuses or creates an ordinary Assistance Room for the Workspace or a selected Resource collection, optionally posting the first request. With conversation "new", starts a separate titled Assistance Room that opens with the request.',
       risk: 'write', idempotent: false,
       inputSchema: z.toJSONSchema(assistantOpenInputSchema),
       outputSchema: z.toJSONSchema(assistantOpenResultSchema),
@@ -346,12 +374,19 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
           : input.scope.collection.workspaceId
       if (scopeWorkspace !== invocation.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Room Scope belongs to another Workspace')
       try {
-        const opened = await ensureAssistanceRoom(runtime, library, flush, {
-          scope: input.scope,
-          title: input.title,
-          prompt: input.prompt,
-          focusedSubjects: input.focusedSubjects,
-        })
+        const opened = input.conversation === 'new'
+          ? await openNewAssistanceRoom(runtime, library, flush, {
+            scope: input.scope,
+            title: input.title,
+            prompt: input.prompt,
+            focusedSubjects: input.focusedSubjects,
+          })
+          : await ensureAssistanceRoom(runtime, library, flush, {
+            scope: input.scope,
+            title: input.title,
+            prompt: input.prompt,
+            focusedSubjects: input.focusedSubjects,
+          })
         const resource = workspaceResourceReferenceSchema.parse({
           workspaceId: invocation.workspaceId,
           moduleId: AGENTS_MODULE_ID,
@@ -863,6 +898,17 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   },
 ])
 
+// People Capabilities are dispatched outside the runtime lease (see
+// people-capabilities.ts); the published catalog lists both registries.
+const allCapabilityDescriptors = (() => {
+  const runtimeIds = agentsCapabilities.descriptors.map(descriptor => descriptor.id)
+  const misplaced = runtimeIds.filter(isPeopleCapabilityId)
+  if (misplaced.length > 0) throw new Error(`People Capability ids belong to the People registry: ${misplaced.join(', ')}`)
+  const strays = peopleCapabilityDescriptors.filter(descriptor => !isPeopleCapabilityId(descriptor.id))
+  if (strays.length > 0) throw new Error(`People registry holds a non-People Capability: ${strays.map(descriptor => descriptor.id).join(', ')}`)
+  return Object.freeze([...agentsCapabilities.descriptors, ...peopleCapabilityDescriptors])
+})()
+
 const invoke = async (
   capabilityId: string,
   workspaceId: WorkspaceId,
@@ -892,6 +938,9 @@ export const handleAgentsModuleApi = async (
 ): Promise<Response | null> => {
   try {
     if (url.pathname === '/.well-known/workspace-module' && request.method === 'GET') return json(agentsModuleManifest)
+    if (url.pathname === agentsModuleManifest.endpoints.featuredDefinitions && request.method === 'GET') return json(agentsFeaturedDefinitions)
+    // Every Workspace at once from loaded runtimes only; it loads none and touches no idle clock.
+    if (url.pathname === agentsModuleManifest.endpoints.activity && request.method === 'GET') return json(moduleActivitySchema.parse(agentsActivity(config.registry)))
 
     const match = url.pathname.match(/^\/internal\/workspaces\/([^/]+)(?:\/(definitions|resources|capabilities)|\/capabilities\/([^/]+)\/invoke)?$/)
     if (!match) return null
@@ -912,6 +961,12 @@ export const handleAgentsModuleApi = async (
       }
     }
 
+    // Before the Workspace lease: People never load the Agents runtime, and a
+    // waiting sync must not hold an operation that removal or eviction awaits.
+    if (capabilityId !== undefined && isPeopleCapabilityId(capabilityId) && request.method === 'POST') {
+      return await invokePeopleCapability(capabilityId, workspaceId, await readJson(request), config.registry, request.signal)
+    }
+
     return await config.registry.withWorkspace(workspaceId, async () => {
     await requireModule(config.state, workspaceId)
     if (collection === 'definitions' && request.method === 'GET') {
@@ -921,7 +976,7 @@ export const handleAgentsModuleApi = async (
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(workspaceId, config.registry) }))
     }
     if (collection === 'capabilities' && request.method === 'GET') {
-      return json(moduleCapabilityCollectionSchema.parse({ capabilities: agentsCapabilities.descriptors }))
+      return json(moduleCapabilityCollectionSchema.parse({ capabilities: allCapabilityDescriptors }))
     }
     if (capabilityId !== undefined && request.method === 'POST') {
       return await invoke(capabilityId, workspaceId, await readJson(request), config.registry)
@@ -929,8 +984,9 @@ export const handleAgentsModuleApi = async (
     return null
     })
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message)
-    if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message, true)
+    // Admission recovers when data is removed or the operator policy changes.
+    if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message, true)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)

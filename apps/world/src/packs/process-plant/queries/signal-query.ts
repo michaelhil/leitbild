@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { idSchema, matchesLiteralSearch } from '../../../core/model/index.ts'
+import { idSchema, matchesLiteralSearch, type IsoTimestamp, type ObjectId } from '../../../core/model/index.ts'
+import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDisciplineSchema } from '../graph/index.ts'
 import {
@@ -7,11 +8,27 @@ import {
   processPlantSignalQuality,
   processPlantSignalReferenceSchema,
   processPlantSignalView,
-  resolveProcessPlantSignalBinding,
+  isInjectedFault,
+  readableProcessPlantSignalBinding,
+  signalMeasuredOnElement,
 } from '../signals.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requirePlant } from './common.ts'
 import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-units.ts'
+import { declaredObservable } from '../observation/declarations.ts'
+import { readPlant } from '../observation/read.ts'
+
+/** The commands issued on these signals and the resets of actuations that held them, at the Run and plant time read at. */
+const operationsOn = (config: { readonly simulationTime?: IsoTimestamp }, system: ProcessPlantRuntimeInstance, paths: ReadonlySet<string>) => {
+  if (system.operations === undefined) return rejectCapabilityTarget(`Process Plant ${system.plant.id} keeps no operations record`)
+  if (config.simulationTime === undefined) throw new Error('signals.read with operations requires the Simulation Run time of the answering runtime')
+  return {
+    simulationTime: config.simulationTime,
+    plantElapsedMs: system.runtime.elapsedMs(),
+    log: system.operations.log().filter(record => paths.has(String(record.path))),
+    resets: system.operations.resets().filter(record => record.holds.some(path => paths.has(String(path)))),
+  }
+}
 
 export const signalsResolveQuerySchema = z.object({
   plantId: idSchema,
@@ -23,6 +40,8 @@ export const signalsReadQuerySchema = z.object({
   signals: z.array(processPlantSignalReferenceSchema.safeExtend({
     requestedUnit: z.string().trim().min(1).max(128).optional().describe('Optional presentation unit. Raw variable and quality remain unchanged; unsupported conversion returns the actual value/unit with an explicit unavailable reason.'),
   })).min(1),
+  operations: z.literal(true).optional().describe('Adds the commands issued on these signals and the resets of actuations that held them, with the Run and plant time read at.'),
+  observed: z.literal(true).optional().describe('Adds each signal\'s observation as World reads it (priority, the limit it is past) and its declared limits.'),
 }).strict()
 
 export const signalsSearchQuerySchema = z.object({
@@ -68,6 +87,8 @@ interface ProcessPlantProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
   readonly signal?: ReturnType<typeof processPlantSignalView>
+  /** The declared element the signal is measured on (signalMeasuredOnElement): a bundled device, else its component; its equipmentId is metadata and may name none. */
+  readonly measuredOn?: string
   readonly warnings: ReadonlyArray<string>
 }
 
@@ -109,6 +130,7 @@ const validateProcedureTags = (
     id: tag.id,
     status: warnings.length === 0 ? 'resolved' : 'resolved-with-warnings',
     signal,
+    measuredOn: signalMeasuredOnElement(system.plant.graph, binding),
     warnings,
   }
 })
@@ -141,6 +163,8 @@ const matchesSignalSearch = (
 export const answerProcessPlantSignalQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
+  /** The Run time the Plants stand at; a read with its operations names it. */
+  readonly simulationTime?: IsoTimestamp
 }): unknown | undefined => {
   if (!processPlantSignalQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
   if (config.request.capabilityId === 'world.process-plant.procedure-tags.validate') {
@@ -156,21 +180,28 @@ export const answerProcessPlantSignalQuery = (config: {
     const system = requirePlant(config.plants, payload.plantId)
     return {
       plantId: payload.plantId,
-      signals: payload.signals.map(signal => processPlantSignalView(resolveProcessPlantSignalBinding(system.plant.graph, signal))),
+      signals: payload.signals.map(signal => processPlantSignalView(readableProcessPlantSignalBinding(system.plant.graph, signal))),
     }
   }
   if (config.request.capabilityId === 'world.process-plant.signals.read') {
     const payload = signalsReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
+    const bindings = payload.signals.map(signal => readableProcessPlantSignalBinding(system.plant.graph, signal))
     return {
       plantId: payload.plantId,
-      signals: payload.signals.map(signal => {
-        const binding = resolveProcessPlantSignalBinding(system.plant.graph, signal)
+      ...(payload.operations === undefined ? {} : { operations: operationsOn(config, system, new Set(bindings.map(binding => String(binding.path)))) }),
+      signals: payload.signals.map((signal, index) => {
+        const binding = bindings[index]!
         const variable = system.runtime.readVariableSnapshot(binding.path)
+        const declared = payload.observed === undefined ? undefined : declaredObservable(payload.plantId as ObjectId, system.plant, null, String(binding.path))
         return {
           signal: processPlantSignalView(binding),
           variable,
           quality: processPlantSignalQuality(variable),
+          ...(declared === undefined ? {} : { observed: declared === null ? null : {
+            unit: declared.unit, quantity: declared.quantity, thresholds: declared.thresholds,
+            observation: readPlant({ objectId: payload.plantId as ObjectId, system, recording: null, simulationTime: config.simulationTime ?? rejectCapabilityTarget('signals.read with observed needs the Run time the Plants stand at'), history: undefined }, [String(binding.path)])[0],
+          } }),
           ...(signal.requestedUnit === undefined ? {} : {
             valueView: requestedSignalValueView({ unit: binding.unit, quantity: binding.quantity, value: variable.value }, signal.requestedUnit),
           }),
@@ -183,6 +214,7 @@ export const answerProcessPlantSignalQuery = (config: {
     ? [...config.plants.values()]
     : [requirePlant(config.plants, payload.plantId)]
   const matches = plants.flatMap(system => system.plant.graph.signalBindings
+    .filter(binding => !isInjectedFault(binding))
     .map(processPlantSignalView)
     .filter(binding => matchesSignalSearch(binding, payload))
     .map(signal => ({ plantId: system.plant.id, signal })))

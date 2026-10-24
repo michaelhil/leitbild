@@ -11,8 +11,9 @@ import {
   type PlantGraphSpec,
   type ProcessVariableLimits,
 } from '../src/packs/process-plant/index.ts'
-import { equipmentKeyValues, isDemand, leadValuesKey, overviewKeyValues, readsAsMeasured, type PlantNow } from '../src/packs/process-plant/displays/overview-key-values.ts'
-import { annunciatorSystems } from '../src/packs/process-plant/displays/annunciators.ts'
+import { equipmentKeyValues, isDemand, overviewKeyValues, plantNowOf, readsAsMeasured, type PlantNow } from '../src/packs/process-plant/ic/key-values.ts'
+import { leadPaths } from '../src/packs/process-plant/observation/read.ts'
+import { createProcessPlantRuntimeInstances } from '../src/packs/process-plant/sim/runtime-instance-factory.ts'
 import { createProcessPlantProtectionRunner, createProcessPlantRuntime, processPlantIcConfigSchema, processPlantOperatingMode } from '../src/packs/process-plant/runtime/index.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
@@ -115,6 +116,29 @@ describe('the values a unit overview leads with', () => {
     ] as never)
     expect(relief.read('safetyInjectionHeader.outletFlowKgPerS' as never)).toBeGreaterThan(30)
   }, PLANT_HANG_GUARD_MS)
+
+  test('its lead read gives, right after the overview\'s own values, the energy each source puts in and each sink takes out, in every mode', () => {
+    // A press on a unit opens its overview, whose column leads with this read: the rates the Plant card showed
+    // (owner, 23 Oct) are lead values at power and after a trip, the decay heat among them.
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:lead-energy', loopCount: 4 }))
+    const system = createProcessPlantRuntimeInstances({ compiledPlants: [plant], runtimeState: null }).get(plant.id)!
+    const step = () => {
+      system.runtime.tick(1_000)
+      system.protection!.evaluate({ runtime: system.runtime, elapsedMs: system.runtime.elapsedMs(), simulationRunId: 'run-lead-energy' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+    }
+    step()
+    const atPower = overviewKeyValues(plant, plantNowOf(system))
+    expect(atPower).toContain('turbine.electricMw' as never)
+    expect(leadPaths(system, 16).slice(0, 7)).toEqual([...atPower, 'core.totalThermalPowerMw'] as never)
+    for (const command of commandsForProcessPlantAction({ actionId: 'trip-reactor-coolant-pumps', parameters: {}, graph: plant.graph })) {
+      system.runtime.writeCommand({ type: 'setVariable', path: command.path, value: command.value })
+    }
+    for (let second = 0; second < 5; second += 1) step()
+    expect(plantNowOf(system).mode).toBe('hotStandby')
+    const tripped = overviewKeyValues(plant, plantNowOf(system))
+    expect(tripped).not.toContain('turbine.electricMw' as never)
+    expect(leadPaths(system, 16).slice(0, 8)).toEqual([...tripped, 'core.totalThermalPowerMw', 'turbine.electricMw'] as never)
+  }, PLANT_HANG_GUARD_MS)
 })
 
 describe('the values equipment opened from the overview leads with', () => {
@@ -179,7 +203,10 @@ describe('the values equipment opened from the overview leads with', () => {
       mode: processPlantOperatingMode({ system, runtime: run, modes: system.automation.operatingModes })?.id ?? null,
       read: path => run.readVariable(path),
     })
-    expect(leadValuesKey(plant, now(plant, runtime))).toBe('powerOperation|core.sourceRangeCountRateCps,core.sourceRangeStartupRateDpm|')
+    const core = (system: typeof plant): ReadonlyArray<number> => [system.graph.componentIndexById.get('core' as never)!]
+    const atPower = now(plant, runtime)
+    expect(atPower.mode).toBe('powerOperation')
+    expect(equipmentKeyValues(plant, core(plant), atPower).slice(0, 2)).toEqual(['core.powerRangePercent', 'core.averageTemperatureDeviationC'] as never)
     const tripped = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:equipment-values-trip', valueOverrides: { 'pressurizer.pressureMPa': 10 } }))
     const run = createProcessPlantRuntime({ system: tripped })
     const protection = createProcessPlantProtectionRunner({ system: tripped, protection: tripped.automation })
@@ -187,9 +214,10 @@ describe('the values equipment opened from the overview leads with', () => {
       run.tick(1_000)
       protection.evaluate({ runtime: run, elapsedMs: run.elapsedMs(), simulationRunId: 'run-key-values' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
     }
-    expect(leadValuesKey(tripped, now(tripped, run))).toStartWith('hotStandby|')
-    // The reactor trip has acted on both energy ends: their shutdown readings lead their details now.
-    expect(leadValuesKey(tripped, now(tripped, run))).toEndWith('|core,turbine')
+    const afterTrip = now(tripped, run)
+    expect(afterTrip.mode).toBe('hotStandby')
+    // The reactor trip has acted on the core: what says it stopped leads its detail now (rods on bottom, both trip breakers).
+    expect(equipmentKeyValues(tripped, core(tripped), afterTrip).slice(0, 4)).toEqual(['core.rodsOnBottom', 'reactorTripBreakerA.closedState', 'reactorTripBreakerB.closedState', 'core.rodStepsWithdrawn'] as never)
   })
 })
 
@@ -331,28 +359,6 @@ describe('what equipment leads with after its trip, and beside its program', () 
     expect(leads[leads.indexOf('core.referenceAverageTemperatureC' as never) - 1]).toBe('vessel.meanPrimaryCoolantTemperatureC' as never)
     const pressurizer = equipmentKeyValues(plant, [plant.graph.componentIndexById.get('pressurizer' as never)!], atPower)
     expect(pressurizer[pressurizer.indexOf('pressurizer.levelProgramPercent' as never) - 1]).toBe('pressurizer.levelPercent' as never)
-  })
-})
-
-describe('the annunciator systems an overview summarises its alarms by', () => {
-  const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:annunciators', loopCount: 4 }))
-
-  test('are the systems the I&C config declares, in its order, each with the rules that name it', () => {
-    const result = annunciatorSystems(plant, 134)
-    if (!result.ok) throw new Error(result.issues.join('; '))
-    const systems = result.systems
-    expect(systems.map(system => system.name)).toEqual(['Reactor protection', 'Reactor coolant system', 'Steam generators', 'Safety injection', 'Containment', 'Electrical', 'Feedwater', 'Balance of plant', 'Main steam'])
-    // A name too wide for a tile at its least width shows by its declared short label, never cut.
-    expect(systems.map(system => system.label)).toEqual(['Reactor protection', 'RCS', 'Steam generators', 'Safety injection', 'Containment', 'Electrical', 'Feedwater', 'Balance of plant', 'Main steam'])
-    // Every alarm and trip of the reference Plant is annunciated on exactly one system.
-    const annunciated = systems.flatMap(system => system.ruleIds)
-    expect(new Set(annunciated).size).toBe(annunciated.length)
-    expect(annunciated.length).toBe(plant.automation.rules.filter(rule => rule.enabled && rule.effects.some(effect => effect.type === 'alarm.enter' || effect.type === 'trip.enter')).length)
-  })
-
-  test('a declared name that fits no tile, with no short label that does, is refused', () => {
-    const long = { ...plant, automation: { ...plant.automation, annunciatorSystems: [{ id: 'turbineGeneratorAndAuxiliaries', label: 'Turbine generator and auxiliaries' }] } }
-    expect(annunciatorSystems(long, 134)).toEqual({ ok: false, issues: ['annunciator system turbineGeneratorAndAuxiliaries: neither "Turbine generator and auxiliaries" nor its short label (none declared) fits a tile 118 px wide; declare a short label that does'] })
   })
 })
 

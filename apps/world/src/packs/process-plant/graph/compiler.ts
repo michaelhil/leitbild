@@ -29,8 +29,10 @@ import {
   readingAccepts,
   type CompiledComponentSemantics,
   type CompiledEnergyRole,
+  type CompiledInsertion,
   type CompiledStateAspect,
   type ComponentSemantics,
+  type InsertionDeclaration,
   type ProgramDeclaration,
   type StateAspectDeclaration,
   type WiderRangeDeclaration,
@@ -237,11 +239,18 @@ const compileAspect = (context: string, declaration: StateAspectDeclaration, own
     if (declaration.aspect !== 'position') throw new Error(`${context}: only a position is driven shut by an isolation input, not ${declaration.aspect}`)
     if (!isolation.writable || isolation.actuation !== 'command' || isolation.quantity !== 'boolean') throw new Error(`${context}: position isolation ${declaration.isolation} is not a writable boolean command`)
   }
+  // A travel time says how long a state takes to follow a command: it needs both, and is a duration.
+  const travel = declaration.travel
+  if (travel !== undefined) {
+    if (command === undefined || state === undefined) throw new Error(`${context}: ${declaration.aspect} declares a travel time but no command and state to follow it`)
+    if (![travel.onS, travel.offS].every(seconds => Number.isFinite(seconds) && seconds >= 0)) throw new Error(`${context}: ${declaration.aspect} travel times must be finite and not negative`)
+  }
   return {
     aspect: declaration.aspect,
     ...(state === undefined || stateVariable === undefined ? {} : { state: { path: stateVariable.path, reading: state.reading } }),
     ...(command === undefined ? {} : { command: command.path }),
     ...(isolation === undefined ? {} : { isolation: isolation.path }),
+    ...(travel === undefined ? {} : { travel }),
   }
 }
 
@@ -281,6 +290,28 @@ const compileWiderRanges = (
     }
   }
   return compiled
+}
+
+// An insertion's parts read what its reading reads, one by one: solved, in its
+// quantity and unit, each over a hard range a drawing scales it on, and each
+// part named once.
+const compileInsertion = (context: string, declaration: InsertionDeclaration, resolve: VariableResolver): CompiledInsertion => {
+  const reading = resolve(declaration.reading as LocalVariablePath)
+  if (reading.writable) throw new Error(`${context}: insertion reading ${declaration.reading} must be a solved reading`)
+  const named = declaration.groups.flat()
+  if (declaration.groups.length === 0 || declaration.groups.some(group => group.length === 0)) throw new Error(`${context}: an insertion names its parts in groups, none empty`)
+  if (new Set(named).size !== named.length || named.includes(declaration.reading)) throw new Error(`${context}: an insertion names each part once, apart from its reading`)
+  return {
+    reading: reading.path,
+    insertedAt: declaration.insertedAt,
+    groups: declaration.groups.map(group => group.map(local => {
+      const part = resolve(local as LocalVariablePath)
+      if (part.writable || part.quantity !== reading.quantity || part.unit !== reading.unit) throw new Error(`${context}: insertion part ${local} must be a solved reading of what ${declaration.reading} reads`)
+      const range = part.limits?.hardRange
+      if (range === undefined || !(range.max > range.min)) throw new Error(`${context}: insertion part ${local} must declare the hard range it moves over`)
+      return { path: part.path, range: { min: range.min, max: range.max } }
+    })),
+  }
 }
 
 // A kind's semantics name its own variables and ports; every name must exist,
@@ -372,6 +403,7 @@ const compileComponentSemantics = (
       if (rate.quantity !== 'power' || rate.writable) throw new Error(`${context}: energy ${role.role} rate ${role.rate} must be a solved power`)
       return { ...role, rate: variablePathFor(componentId, role.rate as LocalVariablePath) }
     }),
+    ...(semantics.insertion === undefined ? {} : { insertion: compileInsertion(context, semantics.insertion, resolve) }),
   }
 }
 
@@ -473,6 +505,9 @@ const assertNamesUnambiguous = (components: ReadonlyArray<CompiledComponent>, va
       const variable = byPath.get(`${component.id}.${local}`)
       if (variable === undefined || variable.descriptor.quantity !== 'boolean') throw new Error(`component ${component.id} names state words for ${local}, which is not one of its on/off signals`)
     }
+    for (const local of [...Object.keys(component.metadata?.presentation?.names ?? {}), ...Object.keys(component.metadata?.presentation?.shortNames ?? {})]) {
+      if (!byPath.has(`${component.id}.${local}`)) throw new Error(`component ${component.id} names a reading ${local}, which is not one of its variables`)
+    }
   }
 }
 
@@ -491,6 +526,21 @@ const assertPushbuttonsMomentary = (components: ReadonlyArray<CompiledComponent>
       const variable = byPath.get(path)
       if (variable === undefined || !variable.writable || variable.actuation !== 'command' || variable.quantity !== 'boolean') throw new Error(`component ${component.id} marks ${local} momentary, which is not one of its on/off commands`)
       if (held.has(path)) throw new Error(`component ${component.id} marks ${local} momentary, but it is the input of a state aspect, which holds what it demands`)
+    }
+  }
+}
+
+// A command declared not offered is one of the component's own commands, and
+// the values it names are values that command takes.
+const assertNotOfferedCommands = (components: ReadonlyArray<CompiledComponent>, variables: ReadonlyArray<CompiledVariable>): void => {
+  const byPath = new Map(variables.map(variable => [String(variable.path), variable.descriptor]))
+  for (const component of components) {
+    for (const [local, declaration] of Object.entries(component.metadata?.presentation?.notOffered ?? {})) {
+      const variable = byPath.get(`${component.id}.${local}`)
+      if (variable === undefined || !variable.writable || variable.actuation !== 'command') throw new Error(`component ${component.id} declares ${local} not offered, which is not one of its commands`)
+      for (const value of declaration.values ?? []) {
+        if ((typeof value === 'boolean') !== (variable.quantity === 'boolean')) throw new Error(`component ${component.id} declares ${local} not offered at ${String(value)}, which it does not take`)
+      }
     }
   }
 }
@@ -522,6 +572,7 @@ const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => (
   ...(variable.descriptor.actuation === undefined ? {} : { actuation: variable.descriptor.actuation }),
   ...(variable.descriptor.measurand === undefined ? {} : { measurand: variable.descriptor.measurand }),
   ...(variable.descriptor.simulatorOnly === undefined ? {} : { simulatorOnly: variable.descriptor.simulatorOnly }),
+  ...(variable.descriptor.faultTruth === undefined ? {} : { faultTruth: variable.descriptor.faultTruth }),
   published: variable.published,
   owner: variable.owner,
 })
@@ -790,7 +841,12 @@ export const compilePlantGraph = (
   validateSignalMetadata(variables)
   assertVariableSemantics(variables)
   assertNamesUnambiguous(components, variables)
+  // A line's short names name its own variables, as a component's do (assertPresentationTargets).
+  for (const link of links) for (const local of Object.keys(link.metadata?.presentation?.shortNames ?? {})) {
+    if (!variables.some(variable => variable.path === processLinkVariablePathFor(link.id, local as never))) throw new Error(`connection ${link.id} names a reading ${local}, which is not one of its variables`)
+  }
   assertPushbuttonsMomentary(components, variables)
+  assertNotOfferedCommands(components, variables)
   validateValveControllerBindings(components, variables)
   validateProcessLinkContracts(links)
   validateStrongComponentContracts(components, links)

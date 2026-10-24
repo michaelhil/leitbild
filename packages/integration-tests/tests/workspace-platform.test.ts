@@ -2,7 +2,16 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { moduleRegistrationSchema, workspaceIdSchema, workspaceResourceCatalogSchema } from '@leitbild/contracts'
+import {
+  featuredDefinitionCatalogSchema,
+  moduleRegistrationSchema,
+  workspaceCapabilityCatalogSchema,
+  workspaceDefinitionCatalogSchema,
+  workspaceActivityCatalogSchema,
+  workspaceIdSchema,
+  workspaceResourceCatalogSchema,
+  workspaceSchema,
+} from '@leitbild/contracts'
 import { createServer as createWorldServer } from '../../../apps/world/src/core/api/server.ts'
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
@@ -12,6 +21,7 @@ import { compileScenarioDefinition } from '../../../apps/world/src/core/scenario
 import { createScenarioRuntimeResolver } from '../../../apps/world/src/core/scenarios/runtime-resolver.ts'
 import { createDirectRoutingAdapter } from '../../../apps/world/src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../../../apps/world/src/scenarios/definitions.ts'
+import { builtinFeaturedScenarioDefinitions } from '../../../apps/world/src/scenarios/featured.ts'
 import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-module-api.ts'
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
 import { effectiveAgentToolSelection } from '../../../apps/agents/src/agents/spawn.ts'
@@ -26,6 +36,7 @@ import {
   type WorkspaceRuntimeRegistry as AgentsWorkspaceRuntimeRegistry,
 } from '../../../apps/agents/src/core/workspaces/runtime-registry.ts'
 import { createWorkspaceHost } from '../../../apps/leitbild/src/host.ts'
+import { cardCapability } from '../../../apps/leitbild/src/ui/card-actions.ts'
 import { createModuleGateway } from '../../../apps/leitbild/src/module-gateway.ts'
 import { createWorkspaceHostServer } from '../../../apps/leitbild/src/server.ts'
 import { createWorkspaceStore } from '../../../apps/leitbild/src/store.ts'
@@ -77,6 +88,7 @@ describe('Workspace Host with real Modules', () => {
     })
     const worldServer = createWorldServer({
       workspaces: worldRegistry,
+      featuredDefinitions: builtinFeaturedScenarioDefinitions,
       bindHost: '127.0.0.1',
       port: 0,
       uiDistPath: uiDir,
@@ -127,6 +139,10 @@ describe('Workspace Host with real Modules', () => {
     })
     deployment.sharedSkillStore.register({
       name: 'operator-displays', description: 'Test display Skill', body: 'Compose displays when useful.',
+      tools: [], allowedToolNames: [], dirPath: leitbildHome,
+    })
+    deployment.sharedSkillStore.register({
+      name: 'procedure-runner', description: 'Test procedure Skill', body: 'Step through procedures.',
       tools: [], allowedToolNames: [], dirPath: leitbildHome,
     })
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
@@ -286,7 +302,8 @@ describe('Workspace Host with real Modules', () => {
       .map(id => agentsRuntime.team.getAgent(id))
       .find(agent => agent?.kind === 'ai')!
     const generalAssistantAI = asAIAgent(generalAssistant)!
-    expect(generalAssistantAI.getMaxToolIterations()).toBeUndefined()
+    // A visible check-in after 40 tool rounds, declared by the Assistant room definition: a cost guard that asks the person, not a hidden quota.
+    expect(generalAssistantAI.getMaxToolIterations()).toBe(40)
     expect(effectiveAgentToolSelection(generalAssistantAI.getConfig())).toEqual(expect.arrayContaining([
       'product_search',
       'product_read',
@@ -403,6 +420,52 @@ describe('Workspace Host with real Modules', () => {
     expect(afterWeather.success).toBe(true)
     expect((afterWeather.data as { state: { surface: { ice: number } } }).state.surface.ice).toBeCloseTo(0.8, 1)
 
+    // An Einsatz Run starts through the Host broker like any built-in
+    // Scenario: the open-mode supply-run, where every caller plays everything.
+    // The Workspace-scoped Assistant discovers its tasks, asks for a
+    // recommendation, sends it, sees the task served, and a second send of the
+    // same unit is refused with the Pack's code and words.
+    const einsatzCatalog = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)
+    expect(einsatzCatalog.status).toBe(200)
+    const supplyScenario = (await einsatzCatalog.json() as {
+      definitions: Array<{ ref: Record<string, string>; currentRevisionId: string }>
+    }).definitions.find(definition => definition.ref.type === 'world.scenario' && definition.ref.id === 'supply-run')!
+    expect(supplyScenario).toBeDefined()
+    const supplyStart = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.scenario.start/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ definition: { ...supplyScenario.ref, revisionId: supplyScenario.currentRevisionId }, input: {} }),
+    })
+    expect(supplyStart.status).toBe(200)
+    const supplyRunId = (await supplyStart.json() as { result: { id: string } }).result.id
+    const workspaceAssistantContext = { callerId: generalAssistant.id, callerName: generalAssistant.name, roomId: assistantRoomId }
+    const supplyTarget = { kind: 'resource' as const, ref: { workspaceId: workspace.id, moduleId: 'world', type: 'world.simulation-run', id: supplyRunId } }
+    const onSupplyRun = async (operationId: string, input: unknown) => {
+      const response = await invoke!.execute({ calls: [{ key: 'result', operationId, target: supplyTarget, input }] }, workspaceAssistantContext)
+      expect(response.success).toBe(true)
+      return (response.data as { results: Array<{ success: boolean; data?: unknown; error?: string }> }).results[0]!
+    }
+    const einsatzConfiguration = await onSupplyRun('world.einsatz.configuration', {})
+    expect(einsatzConfiguration).toMatchObject({ success: true, data: { revision: 0 } })
+    expect((einsatzConfiguration.data as { config: { taskTemplates: unknown[] } }).config.taskTemplates.length).toBeGreaterThan(0)
+    const searchedTasks = await onSupplyRun('world.simulation-run.objects.search', { packId: 'einsatz', kind: 'incident' })
+    expect(searchedTasks.success).toBe(true)
+    const [taskId, otherTaskId] = (searchedTasks.data as { objects: Array<{ id: string }> }).objects.map(object => object.id)
+    expect(taskId).toBeDefined()
+    expect(otherTaskId).toBeDefined()
+    const recommended = await onSupplyRun('world.einsatz.recommend', { taskId })
+    expect(recommended).toMatchObject({ success: true, data: { taskId, proposal: { covers: true } } })
+    const proposal = (recommended.data as { proposal: { units: Array<{ unitId: string }> } }).proposal.units.map(unit => unit.unitId)
+    expect(proposal.length).toBeGreaterThan(0)
+    expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId } })).toMatchObject({ success: true, data: { ok: true } })
+    expect(await onSupplyRun('world.einsatz.recommend', { taskId })).toMatchObject({ success: true, data: { taskId, need: null } })
+    const sentUnit = (await onSupplyRun('world.simulation-run.objects.search', { packId: 'einsatz', text: proposal[0] })).data as { objects: Array<{ id: string; status: string }> }
+    const committedUnit = sentUnit.objects.find(object => object.id === proposal[0])
+    expect(committedUnit).toBeDefined()
+    expect(['mobilizing', 'en-route']).toContain(committedUnit!.status)
+    expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId: otherTaskId } }))
+      .toMatchObject({ success: false, error: expect.stringContaining('unit_committed:') })
+
     const deleteRun = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.delete/invoke`,
       {
@@ -423,4 +486,233 @@ describe('Workspace Host with real Modules', () => {
     expect(await worldRegistry.list()).toEqual([])
     expect(await leitbildState.has(workspaceIdSchema.parse(workspace.id))).toBe(false)
   })
+
+  test('starts every featured demo and listed scenario in a new Workspace through that Workspace\'s own Definition and primary Capability', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'workspace-featured-world-'))
+    const agentsHome = await mkdtemp(join(tmpdir(), 'workspace-featured-agents-'))
+    const originalLeitbildHome = process.env.LEITBILD_HOME
+    const originalProvider = process.env.PROVIDER
+    process.env.LEITBILD_HOME = agentsHome
+    process.env.PROVIDER = 'ollama'
+    cleanup.push(async () => {
+      if (originalLeitbildHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = originalLeitbildHome
+      if (originalProvider === undefined) delete process.env.PROVIDER
+      else process.env.PROVIDER = originalProvider
+      await rm(agentsHome, { recursive: true, force: true })
+      await rm(dataDir, { recursive: true, force: true })
+    })
+
+    // Every demo World features, and every scenario it lists beside them, must start this way.
+    const featuredDefinitions = builtinFeaturedScenarioDefinitions
+    expect(featuredDefinitions.definitions.length).toBeGreaterThan(0)
+    expect(featuredDefinitions.listed.length).toBeGreaterThan(0)
+
+    const routing = createDirectRoutingAdapter()
+    const worldAssembly = createWorldApplicationAssembly({ routing })
+    const worldRegistry = createWorldWorkspaceRuntimeRegistry({
+      dataDir,
+      moduleState: createWorldModuleState({ dataDir }),
+      scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: worldAssembly.packs }),
+      scenarioDefinitions: builtinScenarioDefinitions,
+      compileScenarioDefinition: source => compileScenarioDefinition(source, worldAssembly.packs, { routing }),
+      scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldAssembly.packs),
+      runtimeAdapters: worldAssembly.runtimeAdapters,
+    })
+    // Stop the started demos before their data directory goes.
+    cleanup.push(() => worldRegistry.shutdown())
+    const worldServer = createWorldServer({
+      workspaces: worldRegistry,
+      featuredDefinitions,
+      bindHost: '127.0.0.1',
+      port: 0,
+      uiDistPath: dataDir,
+      mapArtifacts: { rootDir: join(dataDir, 'maps') },
+    })
+    cleanup.push(() => worldServer.stop())
+    const agentsState = createAgentsModuleState()
+    const agentsRegistry = createAgentsWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState: agentsState, idleMs: 1_000_000 })
+    cleanup.push(() => agentsRegistry.shutdown())
+    const agentsServer = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      async fetch(request) {
+        return await handleAgentsModuleApi(request, new URL(request.url), { state: agentsState, registry: agentsRegistry })
+          ?? new Response('Not found', { status: 404 })
+      },
+    })
+    cleanup.push(() => agentsServer.stop(true))
+    const store = createWorkspaceStore(':memory:')
+    cleanup.push(() => store.close())
+    const host = createWorkspaceHost({
+      store,
+      modules: createModuleGateway({
+        registrations: [
+          moduleRegistrationSchema.parse({ moduleId: 'world', internalBaseUrl: `http://127.0.0.1:${worldServer.port}`, manifestPath: '/.well-known/workspace-module' }),
+          moduleRegistrationSchema.parse({ moduleId: 'agents', internalBaseUrl: `http://127.0.0.1:${agentsServer.port}`, manifestPath: '/.well-known/workspace-module' }),
+        ],
+        // Starting four detailed plants and the national grid takes a few
+        // seconds; on a busy shared test machine it can pass the 30 s default.
+        requestTimeoutMs: 120_000,
+      }),
+    })
+    const hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0 })
+    cleanup.push(() => hostServer.stop(true))
+    const baseUrl = `http://127.0.0.1:${hostServer.port}`
+
+    // 1. The catalogue answers before any Workspace exists and wakes none.
+    const catalog = featuredDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/featured-definitions`)).json())
+    expect(catalog.modules.map(outcome => [String(outcome.moduleId), outcome.status])).toEqual([['world', 'ready'], ['agents', 'ready']])
+    expect(catalog.definitions).toEqual(featuredDefinitions.definitions)
+    expect(catalog.listed).toEqual(featuredDefinitions.listed)
+    expect(host.list()).toEqual([])
+    expect(await worldRegistry.list()).toEqual([])
+
+    for (const featured of [...catalog.definitions, ...catalog.listed]) {
+      // 2. A new Workspace, with every core Module ready.
+      const created = await fetch(`${baseUrl}/api/workspaces`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'New Workspace' }),
+      })
+      expect(created.status).toBe(201)
+      const workspace = workspaceSchema.parse((await created.json() as { workspace: unknown }).workspace)
+      expect(workspace.modules.every(state => state.status === 'ready')).toBe(true)
+
+      // 3. That Workspace's own Definition, matched by identity and exact revision.
+      const moduleId = featured.definition.moduleId
+      const definitions = workspaceDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions?moduleId=${moduleId}`)).json())
+      const capabilities = workspaceCapabilityCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities?moduleId=${moduleId}`)).json())
+      const descriptor = definitions.definitions.find(definition =>
+        definition.ref.moduleId === moduleId && definition.ref.type === featured.definition.type && definition.ref.id === featured.definition.id)
+      expect(descriptor?.currentRevisionId).toBe(featured.revisionId)
+
+      // 4. Its published primary Capability, never a guessed id.
+      const primary = cardCapability(descriptor!, 'primary', capabilities.capabilities)
+      expect(primary).toBeDefined()
+      const invoked = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/${primary!.id}/invoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ definition: { ...descriptor!.ref, revisionId: featured.revisionId }, input: {}, actor: { kind: 'human' } }),
+      })
+      expect(invoked.status).toBe(200)
+      const runId = (await invoked.json() as { result: { id: string } }).result.id
+
+      // 5. The Run exists in that Workspace.
+      const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=${moduleId}`)).json())
+      expect(resources.resources.some(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)).toBe(true)
+    }
+  }, 300_000)
+
+  test('says which Workspaces have simulations running, from the real Modules through the Host, until they are paused or deleted', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'workspace-activity-world-'))
+    const agentsHome = await mkdtemp(join(tmpdir(), 'workspace-activity-agents-'))
+    const originalLeitbildHome = process.env.LEITBILD_HOME
+    const originalProvider = process.env.PROVIDER
+    process.env.LEITBILD_HOME = agentsHome
+    process.env.PROVIDER = 'ollama'
+    cleanup.push(async () => {
+      if (originalLeitbildHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = originalLeitbildHome
+      if (originalProvider === undefined) delete process.env.PROVIDER
+      else process.env.PROVIDER = originalProvider
+      await rm(agentsHome, { recursive: true, force: true })
+      await rm(dataDir, { recursive: true, force: true })
+    })
+
+    const routing = createDirectRoutingAdapter()
+    const worldAssembly = createWorldApplicationAssembly({ routing })
+    const worldRegistry = createWorldWorkspaceRuntimeRegistry({
+      dataDir,
+      moduleState: createWorldModuleState({ dataDir }),
+      scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: worldAssembly.packs }),
+      scenarioDefinitions: builtinScenarioDefinitions,
+      compileScenarioDefinition: source => compileScenarioDefinition(source, worldAssembly.packs, { routing }),
+      scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(worldAssembly.packs),
+      runtimeAdapters: worldAssembly.runtimeAdapters,
+    })
+    cleanup.push(() => worldRegistry.shutdown())
+    const worldServer = createWorldServer({
+      workspaces: worldRegistry,
+      featuredDefinitions: builtinFeaturedScenarioDefinitions,
+      bindHost: '127.0.0.1',
+      port: 0,
+      uiDistPath: dataDir,
+      mapArtifacts: { rootDir: join(dataDir, 'maps') },
+    })
+    cleanup.push(() => worldServer.stop())
+    const agentsState = createAgentsModuleState()
+    const agentsRegistry = createAgentsWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState: agentsState, idleMs: 1_000_000 })
+    cleanup.push(() => agentsRegistry.shutdown())
+    const agentsServer = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      async fetch(request) {
+        return await handleAgentsModuleApi(request, new URL(request.url), { state: agentsState, registry: agentsRegistry })
+          ?? new Response('Not found', { status: 404 })
+      },
+    })
+    cleanup.push(() => agentsServer.stop(true))
+    const store = createWorkspaceStore(':memory:')
+    cleanup.push(() => store.close())
+    const host = createWorkspaceHost({
+      store,
+      modules: createModuleGateway({
+        registrations: [
+          moduleRegistrationSchema.parse({ moduleId: 'world', internalBaseUrl: `http://127.0.0.1:${worldServer.port}`, manifestPath: '/.well-known/workspace-module' }),
+          moduleRegistrationSchema.parse({ moduleId: 'agents', internalBaseUrl: `http://127.0.0.1:${agentsServer.port}`, manifestPath: '/.well-known/workspace-module' }),
+        ],
+      }),
+    })
+    const hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0 })
+    cleanup.push(() => hostServer.stop(true))
+    const baseUrl = `http://127.0.0.1:${hostServer.port}`
+    const activityOf = async (workspaceId: string) => {
+      const response = await fetch(`${baseUrl}/api/workspace-activity`)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      const catalog = workspaceActivityCatalogSchema.parse(await response.json())
+      expect(catalog.modules).toEqual([{ moduleId: 'world', status: 'ready' }, { moduleId: 'agents', status: 'ready' }] as never)
+      return catalog.workspaces.find(workspace => workspace.workspaceId === workspaceId)?.items.map(item => ({ ...item, moduleId: String(item.moduleId) }))
+    }
+
+    const created = await fetch(`${baseUrl}/api/workspaces`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Activity' }),
+    })
+    expect(created.status).toBe(201)
+    const workspace = workspaceSchema.parse((await created.json() as { workspace: unknown }).workspace)
+    expect(await activityOf(workspace.id)).toBeUndefined()
+
+    // A Run starts through the scenario's own published primary Capability.
+    const definitions = workspaceDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions?moduleId=world`)).json())
+    const capabilities = workspaceCapabilityCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities?moduleId=world`)).json())
+    const scenario = definitions.definitions.find(definition => definition.ref.type === 'world.scenario' && definition.ref.id === 'halden-weather-response')!
+    const start = cardCapability(scenario, 'primary', capabilities.capabilities)!
+    const started = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/${start.id}/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ definition: { ...scenario.ref, revisionId: scenario.currentRevisionId }, input: {}, actor: { kind: 'human' } }),
+    })
+    expect(started.status).toBe(200)
+    const runId = (await started.json() as { result: { id: string } }).result.id
+    expect(await activityOf(workspace.id)).toEqual([
+      { moduleId: 'world', key: 'simulations-running', label: '1 simulation running', count: 1, active: true },
+      { moduleId: 'world', key: 'simulations', label: '1 simulation', count: 1, active: false },
+    ])
+
+    // Paused through the Run's own published Capability, it is stored but no longer running.
+    const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=world`)).json())
+    const run = resources.resources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)!
+    expect(run.capabilityIds.map(String)).toContain('world.simulation-run.execution.set')
+    const paused = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.execution.set/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: run.ref, input: { playback: 'paused' }, actor: { kind: 'human' } }),
+    })
+    expect(paused.status).toBe(200)
+    expect(await activityOf(workspace.id)).toEqual([{ moduleId: 'world', key: 'simulations', label: '1 simulation', count: 1, active: false }])
+
+    // Deleted, the Workspace and what it held are gone from the answer.
+    expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
+    expect(await activityOf(workspace.id)).toBeUndefined()
+    expect(await worldRegistry.list()).toEqual([])
+  }, 60_000)
 })

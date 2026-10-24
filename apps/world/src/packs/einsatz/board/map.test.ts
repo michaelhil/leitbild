@@ -132,7 +132,7 @@ describe('Board map targets and previews', () => {
 
       // A tap on the site with nothing highlighted says what to tap first.
       await screen.mapTap('h1')
-      expect([screen.view().feedback?.text, screen.view().selected, screen.mapSelection()]).toEqual([`Tap one of ${word('unitBoard')} first, then H1`, null, null])
+      expect([screen.view().feedback?.text, screen.view().selected, screen.mapSelection()]).toEqual([`Tap one of your ${word('unitBoard').toLowerCase()} first, then H1`, null, null])
       // A unit the call's recommendation finds not eligible is not sent; the tap says why and it stays highlighted.
       await screen.click({ kind: 'row', list: 'work', id: 'fire' })
       await screen.mapTap('e2')
@@ -241,7 +241,7 @@ describe('Board map targets and previews', () => {
       }
       const targets: Array<Parameters<NonNullable<MapTargetPanel['onMapTarget']>>> = []
       const panel: MapTargetPanel = { label: 'Board', packId: einsatzPackId, onMapTarget: (controllerId, target) => { targets.push([controllerId, target]) }, previewMapTarget: (controllerId, target) => screen.preview(controllerId, target) }
-      const click = (controller: string | null): MapClickContext => ({ controller: controller === null ? null : object(controller), targeting, context: { objects }, panel })
+      const click = (controller: string | null): MapClickContext => ({ controller: controller === null ? null : object(controller), targeting, context: { objects }, panel, opensDisplay: () => false })
 
       // With nothing selected, a click selects what it hits, the carrier quietly as a controller.
       expect(routeObjectClick(object('u1'), click(null))).toEqual({ kind: 'select', objectId: 'u1' as ObjectId, note: null })

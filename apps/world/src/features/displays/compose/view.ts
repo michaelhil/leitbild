@@ -1,0 +1,423 @@
+/**
+ * A vignette state drawn and sampled (architecture A5, A6). Both read only what the state names, as the caller: refs it
+ * may not read have no declaration, objects it may not inspect are absent, so a forged state shows no more than the
+ * caller may see. The view comes from declarations, layouts and presentation words; the sample from observation reads,
+ * the alert slot, object state and recorded series.
+ */
+import { refObjectId } from '../../../core/model/alerts.ts'
+import type { ObjectId, OperationalObject } from '../../../core/model/index.ts'
+import { routeDistanceMeters } from '../../../core/model/route.ts'
+import type { ElementTable } from '../../../core/observation/capabilities.ts'
+import type { Observation } from '../../../core/observation/model.ts'
+import { alertRows, priorityRank, subjectOf, worstFirst, type AlertRow } from '../alerts/rows.ts'
+import { annunciatedRows } from '../alerts/annunciated.ts'
+import { bundledDevices, declarationOf, declaredRefs, valueOf, visibleObject, type Declared } from './declared.ts'
+import { ownStates, planLead, readLeads, tableRows, type LeadPlan } from './defaults.ts'
+import {
+  ENTITY_COLUMNS, horizonMs, type Collection, type EntityRow, type GroupedSection, type RecordedSeries, type ResolvedView, type SlotDeclaration, type VignetteSample,
+  type VignetteSection, type VignetteState, type VignetteValue, type VignetteView, zoneRows,
+} from './model.ts'
+import { presentedOf } from './present.ts'
+import { stripsOf } from './strips.ts'
+import type { ComposeRun } from './resolve.ts'
+import { elementBlocks } from './element-groups.ts'
+import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
+
+/** Lets the server's other work run before going on (a record read is synchronous). */
+const nextTurn = (): Promise<void> => new Promise(resolve => { setImmediate(resolve) })
+
+/** A Run's record of one series between two instants and up to its hold before them (the value held into `from`), Run time ascending, with that hold. */
+export type SeriesPort = (seriesId: string, from: string, to: string) => RecordedSeries
+export interface ViewRun extends ComposeRun { readonly series: SeriesPort }
+
+const distanceBands = { '1km': 1_000, '5km': 5_000, '20km': 20_000, '50km': 50_000, '150km': 150_000 } as const
+type SlotValue = VignetteSample['slots'][string][string]
+
+/**
+ * What a state names: refs of its chips, values and trends in view order, the objects of its other views and of its
+ * lead requests (topology adds its binding refs once scoped); given what its lead requests lead with now (readNow),
+ * those refs in their views' places.
+ */
+export const readsOf = (state: VignetteState, leads?: ReadonlyMap<number, ReadonlyArray<string>>): { readonly refs: ReadonlyArray<string>; readonly objectIds: ReadonlyArray<string> } => ({
+  refs: [...new Set([...state.chips ?? [], ...state.views.flatMap((view, index) => view.kind === 'values' || view.kind === 'trend' ? leads?.get(index) ?? view.refs ?? [] : [])])],
+  objectIds: [...new Set(state.views.flatMap(view => view.kind === 'slots' || view.kind === 'topology' ? [view.objectId]
+    : view.kind === 'entity' ? view.objectIds : view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds
+      : view.kind === 'map' ? [...view.objectIds ?? [], ...view.around === undefined ? [] : [view.around]]
+        : view.kind === 'values' && view.lead !== undefined ? [view.lead.objectId] : []))],
+})
+
+/** What a state reads now (readNow). */
+export interface StateReading {
+  /** Each values view's refs now, by view index, where it holds a lead request: its named refs, then what the request leads with, in its rows but its table's. */
+  readonly leads: ReadonlyMap<number, ReadonlyArray<string>>
+  /** By view index, the table a values view shows after its lead rows: its element's declared table. */
+  readonly tables: ReadonlyMap<number, ElementTable>
+  /** The refs its views show now: its values, trends and chips, what its lead requests lead with, and what its drawings bind. */
+  readonly refs: ReadonlyArray<string>
+  /** Those refs' values now, in that order. */
+  readonly observations: ReadonlyArray<Observation>
+}
+
+/** The refs a state's drawings bind, as each is scoped now. */
+const bindingsOf = async (run: ComposeRun, state: VignetteState): Promise<ReadonlyArray<string>> => {
+  const binding: string[] = []
+  for (const view of state.views) {
+    if (view.kind !== 'topology') continue
+    const graph = await topologyOf(run, view.objectId)
+    const scoped = graph === null ? null : scopeWithin(graph, view.request)
+    if (scoped?.ok === true) binding.push(...bindingRefs(scoped.scoped))
+  }
+  return binding
+}
+
+/** The readings a state's drawings trace with their items (W6.6). */
+const tracesOf = async (run: ComposeRun, state: VignetteState): Promise<ReadonlyArray<string>> => {
+  const traced: string[] = []
+  for (const view of state.views) {
+    if (view.kind !== 'topology') continue
+    const graph = await topologyOf(run, view.objectId)
+    const scoped = graph === null ? null : scopeWithin(graph, view.request)
+    if (scoped?.ok === true) traced.push(...tracedRefs(scoped.scoped))
+  }
+  return traced
+}
+
+/**
+ * A state read now in one read (R1 perf: a sample asks each object once): what its views name and its drawings bind,
+ * and what its lead requests read (an object's lead; an element's values and its stop's commands), so a display
+ * opened before an upset leads as its Pack does after it, within one sample. Each lead request's rows come from that
+ * one answer.
+ */
+export const readNow = async (run: ComposeRun, state: VignetteState): Promise<StateReading> => {
+  // The declarations and drawings its plans read, asked together: each Pack query waits for the Run's operations
+  // before it reads, and asked at once they wait once, as the one read after them does.
+  await Promise.all(state.views.flatMap((view): ReadonlyArray<Promise<unknown>> => view.kind === 'topology' ? [topologyOf(run, view.objectId)]
+    : view.kind === 'values' && view.lead !== undefined ? [declarationOf(run, view.lead.objectId), ...view.lead.element === undefined ? [] : [declarationOf(run, view.lead.objectId, [view.lead.element])]] : []))
+  const plans = new Map<number, LeadPlan>()
+  for (const [index, view] of state.views.entries()) if (view.kind === 'values' && view.lead !== undefined) plans.set(index, await planLead(run, view.lead, view.rows))
+  const tables = new Map([...plans].flatMap(([index, plan]) => (state.views[index] as ValuesView).table === true && plan.table !== undefined ? [[index, plan.table] as const] : []))
+  const tabled = [...tables.values()].flatMap(table => table.lines.flatMap(line => line.refs.flatMap(ref => ref ?? [])))
+  const bound = await bindingsOf(run, state)
+  const { observations, led } = await readLeads(run, [...plans.values()], [...readsOf(state).refs, ...bound, ...tabled])
+  const leads = new Map([...plans.keys()].map((index, at) => {
+    const view = state.views[index] as ValuesView
+    return [index, [...new Set([...view.refs ?? [], ...led[at]!.refs])].slice(0, view.rows - tableRows(tables.get(index)) - zoneRows(view))] as const
+  }))
+  const refs = [...new Set([...readsOf(state, leads).refs, ...tabled, ...bound])].filter(ref => visibleObject(run, refObjectId(ref)) !== undefined)
+  const values = new Map(observations.map(observation => [observation.ref, observation] as const))
+  return { leads, tables, refs, observations: refs.flatMap(ref => values.get(ref) ?? []) }
+}
+
+type ValuesView = Extract<VignetteState['views'][number], { kind: 'values' }>
+
+/** An element's declared table as drawn: a line per part, named as the table names it, a column per reading with the unit of its first. */
+const tableSection = (element: string, table: ElementTable, declared: ReadonlyMap<string, Declared>): GroupedSection => ({
+  kind: 'grouped', rows: tableRows(table),
+  quantities: table.columns.map((label, at) => ({ label, unit: table.lines.flatMap(line => declared.get(line.refs[at] ?? '')?.observable.unit ?? [])[0] ?? '' })),
+  lines: table.lines.map(line => ({
+    element: { id: `${element}:${line.label}`, class: 'table-line', label: line.label, shortLabel: line.label },
+    values: line.refs.map(ref => (ref === null || !declared.has(ref) ? null : valueOf(declared.get(ref)!))),
+  })),
+})
+
+/** Parallel values (one element class, each element in its own group, one value per quantity): a table, one line per element; else null. */
+export const groupValues = (values: ReadonlyArray<VignetteValue>): Extract<VignetteSection, { kind: 'grouped' }> | null => {
+  const elements = [...new Map(values.flatMap(value => value.element === undefined ? [] : [[value.element.id, value.element] as const])).values()]
+  const columns = [...new Set(values.map(value => `${value.quantity}|${value.unit}`))]
+  const cell = (element: string, column: string) => values.filter(value => value.element?.id === element && `${value.quantity}|${value.unit}` === column)
+  if (elements.length < 2 || values.some(value => value.element?.group === undefined) || new Set(elements.map(element => element.class)).size !== 1
+    || new Set(elements.map(element => element.group)).size !== elements.length || columns.length > 4 || elements.some(element => columns.some(column => cell(element.id, column).length > 1))) return null
+  return {
+    kind: 'grouped', rows: 1 + elements.length,
+    quantities: columns.map(column => ({ label: column.split('|')[0]!.replaceAll('-', ' '), unit: column.split('|')[1]! })),
+    lines: elements.map(element => ({ element, values: columns.map(column => cell(element.id, column)[0] ?? null) })),
+  }
+}
+
+const worstAlert = (object: OperationalObject): AlertRow | undefined => contextOrder({ objects: [object] }, alertRows([object], () => ({ label: object.label, categoryId: '' }))).rows[0]
+const positionAge = (run: ComposeRun, object: OperationalObject): number | undefined =>
+  object.spatial.position === undefined || run.clock === undefined ? undefined : Math.max(0, (Date.parse(run.clock.currentTime) - Date.parse(object.spatial.position.observedAt)) / 1_000)
+
+/** An entity table's row: presentation words, the worst alert, ETA, distance to `near` and the fix's age. */
+export const entityRow = (run: ComposeRun, object: OperationalObject, near?: OperationalObject): EntityRow => {
+  const presented = presentedOf(run, object)
+  const alert = worstAlert(object)
+  const [here, there] = [object.spatial.position?.point, near?.id === object.id ? undefined : near?.spatial.position?.point]
+  const ageS = positionAge(run, object)
+  return {
+    objectId: object.id, label: object.label, ...(object.lifecycle === 'resolved' || object.lifecycle === 'removed' ? { closed: true as const } : {}),
+    ...(presented?.status === undefined ? {} : { status: { word: presented.status.label, ...(presented.since === undefined ? {} : { since: presented.since }) } }),
+    ...(presented?.urgency === undefined ? {} : { urgency: presented.urgency.word }),
+    ...(alert === undefined ? {} : { alert: { priority: alert.priority, severity: alert.alert.severity, message: alert.alert.message } }),
+    ...(object.spatial.route?.etaSeconds === undefined ? {} : { etaS: object.spatial.route.etaSeconds }),
+    ...(here === undefined || there === undefined ? {} : { distanceM: routeDistanceMeters(there, here) }),
+    ...(ageS === undefined ? {} : { ageS }),
+  }
+}
+
+/** An entity-floor object's core slots and declared telemetry (at most eight signals), each with its value now. */
+export const slotsOf = (run: ComposeRun, object: OperationalObject): ReadonlyArray<SlotDeclaration & SlotValue> => {
+  const presented = presentedOf(run, object)
+  const slot = (key: string, label: string, unit: string, value: SlotValue['value'] | undefined, since?: SlotValue['since']) =>
+    value === undefined ? [] : [{ key, label, unit, value, ...(since === undefined ? {} : { since }) }]
+  return [
+    ...slot('status', 'Status', '', presented?.status?.label, presented?.since),
+    ...slot('priority', 'Priority', '', object.operational.priority),
+    ...slot('lifecycle', 'Lifecycle', '', object.lifecycle),
+    ...slot('eta', 'ETA', 's', object.spatial.route?.etaSeconds),
+    ...slot('remaining', 'Remaining distance', 'm', object.spatial.route?.progress?.remainingDistanceM),
+    ...slot('speed', 'Speed', 'm/s', object.spatial.position?.speedMps),
+    ...slot('communication', 'Communication', '', object.communication?.state),
+    ...slot('age', 'Position age', 's', positionAge(run, object)),
+    ...Object.values(object.telemetry?.signals ?? {}).slice(0, 8).flatMap(signal => slot(`telemetry:${signal.signalId}`, signal.label.slice(0, 80), signal.unit.slice(0, 16), signal.latest)),
+  ]
+}
+
+/** A live collection's members, as the caller sees them: by urgency, then worst alert, then Run order. */
+export const membersOf = (run: ComposeRun, of: Collection): ReadonlyArray<OperationalObject> => {
+  const near = of.near === undefined ? undefined : visibleObject(run, of.near)?.spatial.position?.point
+  const words = of.status?.map(word => word.toLowerCase())
+  const order = new Map(run.objects.map((object, at) => [object.id, at]))
+  const urgency = (object: OperationalObject): number => presentedOf(run, object)?.urgency?.order ?? Infinity
+  const byAlert = (left: OperationalObject, right: OperationalObject): number => {
+    const [a, b] = [worstAlert(left), worstAlert(right)]
+    return a === undefined || b === undefined ? Number(a === undefined) - Number(b === undefined) : worstFirst(a, b)
+  }
+  return run.objects.filter(object => {
+    const presented = run.denied.has(object.id) || object.packId !== of.packId ? null : presentedOf(run, object)
+    if (presented?.categoryId !== of.categoryId) return false
+    if (!of.closed && (object.lifecycle === 'resolved' || object.lifecycle === 'removed')) return false
+    if (words !== undefined && !words.includes((presented.status?.label ?? object.operational.status).toLowerCase())) return false
+    return of.within === undefined || (near !== undefined && object.spatial.position !== undefined && routeDistanceMeters(near, object.spatial.position.point) <= distanceBands[of.within])
+  }).sort((left, right) => urgency(left) - urgency(right) || byAlert(left, right) || order.get(left.id)! - order.get(right.id)!)
+}
+
+const entityObjects = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'entity' | 'collection' }>): ReadonlyArray<OperationalObject> =>
+  view.kind === 'collection' ? membersOf(run, view.of) : view.objectIds.flatMap(id => visibleObject(run, id) ?? [])
+const nearOf = (run: ComposeRun, view: ResolvedView): OperationalObject | undefined => view.kind === 'collection' && view.of.near !== undefined ? visibleObject(run, view.of.near) : undefined
+/** An entity view's rows now: as many as its rows hold, the header and a "+N" line aside. */
+export const entityRows = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'entity' | 'collection' }>): { readonly rows: ReadonlyArray<EntityRow>; readonly more: number } => {
+  const members = entityObjects(run, view)
+  const shown = members.length > view.rows - 1 ? Math.max(0, view.rows - 2) : members.length
+  return { rows: members.slice(0, shown).map(object => entityRow(run, object, nearOf(run, view))), more: members.length - shown }
+}
+/** What a map view frames: these objects, a collection's members, or everything within `within` of `around`. */
+export const framedBy = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'map' }>): ReadonlyArray<OperationalObject> => {
+  if (view.of !== undefined) return membersOf(run, view.of)
+  if (view.objectIds !== undefined) return view.objectIds.flatMap(id => visibleObject(run, id) ?? [])
+  const around = view.around === undefined ? undefined : visibleObject(run, view.around)?.spatial.position?.point
+  return around === undefined ? [] : run.objects.filter(object => !run.denied.has(object.id) && object.spatial.position !== undefined
+    && routeDistanceMeters(around, object.spatial.position.point) <= distanceBands[view.within ?? '5km'])
+}
+
+/**
+ * Whether a vignette keeps a row under its title for its trip line (W2.4): it is about one object (the one its drawing
+ * draws, else the one its alerts list, as the trip line takes it) whose Pack declares first-out groups. The row stands
+ * empty at rest, so nothing moves when one trips; the composer counts it and the view says so (`tripLine`).
+ */
+export const keepsTripLine = async (run: ComposeRun, views: ReadonlyArray<{ readonly kind: string; readonly objectId?: string | undefined; readonly objectIds?: 'run' | ReadonlyArray<string> | undefined }>): Promise<boolean> => {
+  const drawn = views.find(view => view.kind === 'topology')
+  const listed = [...new Set(views.flatMap(view => view.kind === 'alerts' && view.objectIds !== undefined && view.objectIds !== 'run' ? view.objectIds : []))]
+  const objectId = drawn?.objectId ?? (listed.length === 1 ? listed[0]! : undefined)
+  if (objectId === undefined || visibleObject(run, objectId) === undefined) return false
+  return ((await declarationOf(run, objectId))?.annunciation?.groups.length ?? 0) > 0
+}
+
+export const compileVignette = async (run: ComposeRun, state: VignetteState): Promise<VignetteView> => {
+  const { leads, tables } = await readNow(run, state)
+  const declared = await declaredRefs(run, [...readsOf(state, leads).refs, ...[...tables.values()].flatMap(table => table.lines.flatMap(line => line.refs.flatMap(ref => ref ?? [])))])
+  const values = (refs: ReadonlyArray<string>): ReadonlyArray<VignetteValue> => refs.flatMap(ref => declared.has(ref) ? [valueOf(declared.get(ref)!)] : [])
+  const sections: VignetteSection[] = []
+  for (const [index, view] of state.views.entries()) {
+    // A lead request's rows keep their places whatever it leads with (never grouped); each sample brings its values now.
+    if (view.kind === 'values' && leads.has(index)) {
+      const table = tables.get(index)
+      const devices = view.lead?.element === undefined ? [] : await bundledDevices(run, view.lead.objectId, view.lead.element)
+      sections.push({ kind: 'values', rows: view.rows, values: values(leads.get(index)!), lead: index, ...(table === undefined ? {} : { table: tableSection(view.lead!.element!, table, declared) }), ...(devices.length === 0 ? {} : { devices }), ...(view.zones === true ? { zones: true } : {}) })
+    }
+    else if (view.kind === 'values') {
+      // Named values: parallel ones as one table; values of several elements grouped by element (W7.4); else rows.
+      const named = values(view.refs ?? [])
+      const blocks = elementBlocks(named, value => visibleObject(run, refObjectId(value.ref))?.label)
+      sections.push(groupValues(named) ?? { kind: 'values', rows: view.rows, values: named, ...(blocks === null ? {} : { blocks }) })
+    }
+    else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
+    else if (view.kind === 'alerts') {
+      const objectIds = view.objectIds === 'run' ? 'run' : view.objectIds.filter(id => visibleObject(run, id) !== undefined)
+      if (objectIds.length > 0) sections.push({ kind: 'alerts', rows: view.rows, objectIds, ...(view.elements === undefined ? {} : { elements: view.elements }), ...(view.refs === undefined ? {} : { refs: view.refs }), ...(view.all === true ? { all: true } : {}) })
+    }
+    else if (view.kind === 'slots') {
+      const object = visibleObject(run, view.objectId)
+      if (object !== undefined) sections.push({ kind: 'slots', rows: view.rows, objectId: object.id, slots: slotsOf(run, object).map(({ key, label, unit }) => ({ key, label, unit })) })
+    } else if (view.kind === 'entity' || view.kind === 'collection') {
+      const { rows } = entityRows(run, view)
+      const near = nearOf(run, view)
+      sections.push({ kind: 'entity', rows: view.rows, columns: ENTITY_COLUMNS.filter(column => rows.some(row => row[({ status: 'status', urgency: 'urgency', alert: 'alert', eta: 'etaS', distance: 'distanceM', age: 'ageS' } as const)[column]] !== undefined)),
+        ...(near === undefined ? {} : { near: { label: near.label } }) })
+    } else if (view.kind === 'topology') {
+      const graph = await topologyOf(run, view.objectId)
+      const scoped = graph === null ? null : scopeWithin(graph, view.request)
+      const drawing = scoped?.ok === true ? await drawingOf(run, scoped.scoped) : null
+      if (scoped?.ok === true && drawing !== null) {
+        const units = await declaredRefs(run, bindingRefs(scoped.scoped))
+        sections.push(topologySection(view.objectId, visibleObject(run, view.objectId)!.packId, scoped.scoped, drawing, view.rows, ref => units.get(ref)?.observable))
+      }
+    } else sections.push({ kind: 'map', rows: view.rows })
+  }
+  const chips = values(state.chips ?? [])
+  // The one object every part of it is on, and the one element every value and pen is on, which a label drops (W7.3).
+  const objects = new Set([...readsOf(state, leads).refs.map(refObjectId), ...readsOf(state, leads).objectIds])
+  const object = objects.size === 1 ? visibleObject(run, [...objects][0]!)?.label : undefined
+  const shown = sections.flatMap(section => section.kind === 'values' ? section.values : section.kind === 'trend' ? section.strips.flat() : [])
+  const elements = new Set(shown.map(value => value.element?.id))
+  const element = elements.size === 1 && !elements.has(undefined) ? shown[0]!.element! : undefined
+  const subject = object === undefined ? undefined : { object, ...(element === undefined ? {} : { element: element.shortLabel ?? element.label }) }
+  // An answer's vignette: why and when it was composed, and whether a model it reads changed since (W8.2).
+  const changed = await Promise.all(Object.entries(state.models ?? {}).map(async ([objectId, revision]) => (await topologyOf(run, objectId as ObjectId))?.revision !== revision))
+  const answer = state.by !== 'assistant' ? undefined : { ...(state.why === undefined ? {} : { why: state.why }), at: state.at, ...(changed.includes(true) ? { modelChanged: true as const } : {}) }
+  return {
+    title: state.title, ...(state.by === undefined ? {} : { by: state.by }), ...(chips.length === 0 ? {} : { chips }), ...(state.beside === undefined ? {} : { beside: true }), sections,
+    ...(subject === undefined ? {} : { subject }), ...(answer === undefined ? {} : { answer }), ...(await keepsTripLine(run, state.views) ? { tripLine: true as const } : {}),
+  }
+}
+
+/**
+ * Alert rows as the Run context ranks and names them: first each object's worst (its highest priority, the first of
+ * those in the Pack's own order, as its context line names it; advisories and acknowledged alarms count), objects by
+ * that priority then Run order; then each object's first-out where that is another alert; then every other alert by
+ * priority, Run order and the Pack's order. So no object's lead alert sorts behind another's second.
+ */
+export const contextOrder = (run: Pick<ComposeRun, 'objects'>, rows: ReadonlyArray<AlertRow>): { readonly rows: ReadonlyArray<AlertRow>; readonly leading: number } => {
+  const order = new Map(run.objects.map((object, at) => [object.id, at]))
+  const own = new Map(rows.map((row, at) => [row, at]))
+  const sorted = [...rows].sort((left, right) => priorityRank(right.priority) - priorityRank(left.priority) || order.get(left.objectId)! - order.get(right.objectId)! || own.get(left)! - own.get(right)!)
+  const heads = [...new Set(rows.map(row => row.objectId))].map(objectId => sorted.find(row => row.objectId === objectId)!)
+    .sort((left, right) => sorted.indexOf(left) - sorted.indexOf(right))
+  const firstOuts = heads.flatMap(head => {
+    const firstOut = rows.filter(row => row.objectId === head.objectId && row.alert.firstOut !== undefined)
+      .sort((left, right) => left.alert.firstOut!.rank - right.alert.firstOut!.rank || own.get(left)! - own.get(right)!)[0]
+    return firstOut === undefined || firstOut === head ? [] : [firstOut]
+  })
+  const lead = new Set([...heads, ...firstOuts])
+  return { rows: [...heads, ...firstOuts, ...sorted.filter(row => !lead.has(row))], leading: lead.size }
+}
+
+/**
+ * The alert rows an alerts view shows, in the context's order: the Run's (every object the caller may see) or these
+ * objects', or only those on its elements or observables (an element's own: its object's first-outs are its trip
+ * line's). `leading`: the rows it shows before any other (each object's worst and first-out).
+ */
+const alertList = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): { readonly rows: ReadonlyArray<AlertRow>; readonly leading: number } => {
+  const objects = view.objectIds === 'run' ? run.objects.filter(object => !run.denied.has(object.id)) : view.objectIds.flatMap(id => visibleObject(run, id) ?? [])
+  const all = alertRows(objects, object => ({ label: object.label, categoryId: presentedOf(run, object)?.categoryId ?? '' }))
+  const filtered = view.elements !== undefined || view.refs !== undefined
+  // A row on an element, or on a group its Pack declares as an element (a Grid island), is that element's.
+  return contextOrder(run, all.filter(row => !filtered
+    || (subjectOf(row) !== undefined && view.elements?.includes(subjectOf(row)!) === true)
+    || (row.alert.observable !== undefined && view.refs?.includes(row.alert.observable) === true)))
+}
+export const alertsOf = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): ReadonlyArray<AlertRow> => alertList(run, view).rows
+/** The rows an alerts view needs: a header, then what it leads with (alertList), and at least eight alerts where there are (W2.5), and "+N more" where there are more. */
+export const alertRowsFor = (run: ComposeRun, view: Extract<ResolvedView, { kind: 'alerts' }>): number => {
+  const { rows, leading } = alertList(run, view)
+  const lines = Math.max(1, Math.min(rows.length, Math.max(ALERT_LINES_AT_LEAST, leading)))
+  return 1 + lines + (rows.length > lines ? 1 : 0)
+}
+/** The fewest alerts a list shows where it has that many (W2.5), beside its head and its "+N more". */
+export const ALERT_LINES_AT_LEAST = 8
+
+/**
+ * Everything a state's views read now, in one read (readNow), each lead request read again (its values now in `leads`,
+ * so a display opened before an upset leads as its Pack does after it, within one sample); the records its trends and
+ * values rows draw (from `fromMs`, Run time) only when asked: on open, after a gap, and those of `refs` alone for a row
+ * that appeared.
+ */
+export const sampleVignette = async (run: ViewRun, state: VignetteState, history?: { readonly fromMs: number; readonly refs?: ReadonlyArray<string> | undefined }): Promise<VignetteSample> => {
+  const { leads: led, observations: read } = await readNow(run, state)
+  const leadDeclared = led.size === 0 ? new Map<string, Declared>() : await declaredRefs(run, [...led.values()].flat())
+  // A lead row at an end of its span reads its wider range instead (W4.4): read only then, so a sample at rest asks its
+  // Pack once.
+  const value = (ref: string) => read.find(observation => observation.ref === ref)?.value
+  const wider = [...leadDeclared.values()].flatMap(({ observable }) => {
+    const reading = value(observable.ref)
+    const span = observable.span
+    return observable.wider === undefined || span === undefined || typeof reading !== 'number' || (reading > span.min && reading < span.max)
+      || read.some(observation => observation.ref === observable.wider!.ref) ? [] : [observable.wider.ref]
+  })
+  const observations = wider.length === 0 ? read : [...read, ...(await run.port.read({ refs: wider })).observations]
+  const leads = Object.fromEntries([...led].map(([index, list]) => [index, list.flatMap(ref => leadDeclared.has(ref) ? [valueOf(leadDeclared.get(ref)!)] : [])] as const))
+  const alerts = new Map<string, AlertRow>()
+  const entities: Record<number, { rows: ReadonlyArray<EntityRow>; more: number }> = {}
+  const slots: Record<string, Record<string, SlotValue>> = {}
+  const maps: Record<number, VignetteSample['maps'][number]> = {}
+  state.views.forEach((view, index) => {
+    if (view.kind === 'alerts') for (const row of alertsOf(run, view)) alerts.set(row.key, row)
+    // A drawing frames its items by its object's alerts now, whether or not an alerts view lists them (and the frame's
+    // worst chip reads them): after the views' own rows, each row once.
+    if (view.kind === 'topology') for (const row of alertsOf(run, { kind: 'alerts', objectIds: [view.objectId], rows: 1 })) if (!alerts.has(row.key)) alerts.set(row.key, row)
+    const object = view.kind === 'slots' ? visibleObject(run, view.objectId) : undefined
+    if (object !== undefined) slots[object.id] = Object.fromEntries(slotsOf(run, object).map(({ key, value, since }) => [key, { value, ...(since === undefined ? {} : { since }) }]))
+    if (view.kind === 'entity' || view.kind === 'collection') entities[index] = entityRows(run, view)
+    if (view.kind === 'map') {
+      const framed = framedBy(run, view)
+      const points = framed.flatMap(entry => entry.spatial.position === undefined ? [] : [entry.spatial.position.point])
+      const [lons, lats] = [points.map(point => point.coordinates[0]), points.map(point => point.coordinates[1])]
+      const around = view.around ?? view.of?.near
+      const within = view.within ?? view.of?.within
+      maps[index] = {
+        positioned: points.length, missing: framed.length - points.length, ...(within === undefined ? {} : { within }),
+        ...(around === undefined || visibleObject(run, around) === undefined ? {} : { around: visibleObject(run, around)!.label }),
+        bounds: points.length === 0 ? null : [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+        extentM: points.length < 2 ? null : Math.max(...points.flatMap(a => points.map(b => routeDistanceMeters(a, b)))),
+      }
+    }
+  })
+  const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const, paused: false } : { at: run.clock.currentTime, clock: 'simulation' as const, paused: run.clock.paused }
+  const series = history === undefined ? undefined : await (async () => {
+    // Each trend pen's record and each values row's now (its sparkline, W4.2), each reading a drawing traces (W6.6),
+    // or only those asked for: a row that appeared when its lead changed (W8.5).
+    const traced = await tracesOf(run, state)
+    const drawn = [...state.views.flatMap((view, index) => view.kind === 'trend' ? view.refs : view.kind === 'values' ? led.get(index) ?? view.refs ?? [] : []), ...traced]
+    const declared = await declaredRefs(run, history.refs === undefined ? drawn : drawn.filter(ref => history.refs!.includes(ref)))
+    const read: Array<readonly [string, RecordedSeries]> = []
+    for (const { observable } of declared.values()) {
+      if (observable.series === null) continue
+      // Each record on a turn of its own: ten minutes of a unit's fourteen records reach a mature Run's Historian pages
+      // for 200-350 ms, which would hold every other request (another display opening, the Run's own steps) (§5.8).
+      await nextTurn()
+      read.push([observable.series.seriesId, run.series(observable.series.seriesId, new Date(history.fromMs).toISOString(), at.at)])
+    }
+    return Object.fromEntries(read)
+  })()
+  const shown = state.views.flatMap(view => view.kind === 'alerts' && view.objectIds !== 'run' ? view.objectIds : view.kind === 'topology' ? [view.objectId] : [])
+  const annunciated = await annunciate(run, [...alerts.values()], at, shown)
+  return {
+    at, observations, alerts: annunciated.rows, ...(annunciated.categories === undefined ? {} : { categories: annunciated.categories }), entities, slots, maps,
+    ...(series === undefined ? {} : { series }), ...(led.size === 0 ? {} : { leads }),
+  }
+}
+
+/**
+ * Alert rows as their Packs annunciate them now (annunciated.ts), and the categories the Packs of the `shown` objects
+ * declare (their tiles): from each object's declaration, read once per request.
+ */
+const annunciate = async (run: ComposeRun, rows: ReadonlyArray<AlertRow>, at: VignetteSample['at'], shown: ReadonlyArray<string>): Promise<{ readonly rows: ReadonlyArray<AlertRow>; readonly categories?: VignetteSample['categories'] }> => {
+  const objectIds = [...new Set([...rows.map(row => row.objectId), ...shown])].filter(id => visibleObject(run, id) !== undefined)
+  const declared = new Map(await Promise.all(objectIds.map(async id => [id, { declaration: await declarationOf(run, id), own: new Set(await ownStates(run, id as ObjectId)) }] as const)))
+  // A row on a subject group its Pack declares as an element is named by that element (its tile's label, never its id).
+  const named = rows.map(row => {
+    const label = row.group.subjectGroup === undefined ? undefined : declared.get(row.objectId)?.declaration?.elements.find(element => element.id === row.group.subjectGroup)?.label
+    return label === undefined ? row : { ...row, group: { ...row.group, label } }
+  })
+  const objectRows = new Map<string, ReadonlyArray<AlertRow>>()
+  const categories = Object.fromEntries(shown.flatMap(id => (declared.get(id)?.declaration?.annunciation?.categories.length ?? 0) > 0 ? [[id, declared.get(id)!.declaration!.annunciation!.categories] as const] : []))
+  return {
+    rows: annunciatedRows(named, {
+      annunciation: id => declared.get(id)?.declaration?.annunciation,
+      objectRows: id => objectRows.get(id) ?? objectRows.set(id, alertsOf(run, { kind: 'alerts', objectIds: [id as ObjectId], rows: 1 })).get(id)!,
+      ownStates: id => declared.get(id)?.own ?? new Set(),
+      nowMs: at.clock === 'simulation' ? Date.parse(at.at) : null,
+    }),
+    ...(Object.keys(categories).length === 0 ? {} : { categories }),
+  }
+}

@@ -87,7 +87,7 @@ describe('Role Runs through the Host broker', () => {
   test('a person without a role reaches only the open Run controls', async () => {
     const { workspaces, workspaceId } = await setup()
     const run = await createRun(workspaces, workspaceId, 'role-run')
-    for (const capabilityId of ['world.simulation-run.read', 'world.simulation-run.context', 'world.simulation-run.inspect', 'world.simulation-run.objects.search', 'world.simulation-run.background.set', 'world.fixture.assign', 'world.object.delete']) {
+    for (const capabilityId of ['world.simulation-run.read', 'world.simulation-run.context', 'world.simulation-run.inspect', 'world.simulation-run.objects.search', 'world.simulation-run.observables.search', 'world.simulation-run.background.set', 'world.fixture.assign', 'world.object.delete']) {
       const refused = await invoke(workspaces, workspaceId, capabilityId, { actor: 'human', run })
       expect({ capabilityId, status: refused.status, code: refused.body.error?.code }).toEqual({ capabilityId, status: 403, code: 'role_required' })
     }
@@ -146,7 +146,7 @@ const nextOf = async (messages: ReceivedMessage[], type: string, after: number):
 describe('Role sets on the WebSocket', () => {
   const startServer = async () => {
     const { workspaces, workspaceId } = await setup()
-    const server = createServer({ workspaces, port: 0, bindHost: '127.0.0.1' })
+    const server = createServer({ workspaces, featuredDefinitions: { definitions: [], listed: [] }, port: 0, bindHost: '127.0.0.1' })
     cleanups.push(async () => { await server.stop() })
     const base = `127.0.0.1:${server.port}/api/workspaces/${workspaceId}/world`
     return { workspaces, workspaceId, http: `http://${base}`, ws: `ws://${base}/ws` }

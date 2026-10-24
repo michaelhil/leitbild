@@ -96,7 +96,41 @@ const subcriticality = (): ProcessPlantIcSafetyFunction => {
       }),
       no: status('red', 'Power range is at or above 5 % after a trip demand: the reactor is not shut down (ATWS).', 'FR-S.1'),
     }),
-    checks: [],
+    // E-0's first step, verified once a trip is demanded: the trip itself, beside the tree that judges what follows it.
+    checks: [
+      {
+        label: 'Reactor trip: both reactor trip breakers open',
+        shortLabel: 'trip breakers open',
+        basis: 'Westinghouse ERG E-0 step 1 (generic): verify reactor trip, reactor trip and bypass breakers open',
+        when: tripDemanded(),
+        condition: all([comparison({ tagId: 'TRIP-BKR-A-POS' }, '==', false), comparison({ tagId: 'TRIP-BKR-B-POS' }, '==', false)]),
+        notMet: 'A reactor trip breaker still reads closed after the trip demand: the reactor may not be tripped; trip it by hand, and go to FR-S.1 if power range stays up.',
+      },
+      {
+        label: 'Reactor trip: rods on the bottom',
+        shortLabel: 'rods on bottom',
+        basis: 'Westinghouse ERG E-0 step 1 (generic): verify reactor trip, rod bottom lights lit',
+        when: tripDemanded(),
+        condition: comparison({ tagId: 'ROD-BOTTOM' }, '==', true),
+        notMet: 'Not every rod reads on the bottom after the trip: the core holds less shutdown margin than the trip assumes.',
+      },
+      {
+        label: `Reactor trip: power range below ${subcriticalPowerRangePercent} %`,
+        shortLabel: `PR < ${subcriticalPowerRangePercent} %`,
+        basis: 'Westinghouse ERG E-0 step 1 (generic): verify reactor trip, neutron flux decreasing; F-0.1 power range less than [5 %]',
+        when: tripDemanded(),
+        condition: comparison({ tagId: 'NIS-PR-AVG' }, '<', subcriticalPowerRangePercent),
+        notMet: 'Power range is at or above 5 % after the trip demand: the reactor is not shut down (FR-S.1).',
+      },
+      {
+        label: 'Reactor trip: intermediate-range startup rate zero or negative',
+        shortLabel: 'IR SUR ≤ 0',
+        basis: 'Westinghouse ERG E-0 step 1 (generic): verify reactor trip, neutron flux decreasing; F-0.1 intermediate-range SUR zero or negative',
+        when: tripDemanded(),
+        condition: comparison({ tagId: 'NIS-IR-SUR' }, '<=', 0),
+        notMet: 'The intermediate-range flux is rising after the trip: the core is not shutting down (FR-S.1).',
+      },
+    ],
     expectations: [{
       when: tripDemanded(),
       text: 'After a trip, power range falls below 5 % within about a minute and the intermediate-range startup rate stays negative (pinned at −0.5 DPM at first) as the flux decays: that is shutdown, not a challenge.',
@@ -172,6 +206,7 @@ const coreCooling = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPl
     checks: [
       {
         label: `Natural circulation: subcooling above ${naturalCirculationSubcoolingC} °C (30 °F)`,
+        shortLabel: 'subcooling',
         basis: 'ES-0.1 natural-circulation verification: RCS subcooling greater than [30 °F]',
         when: noPumpRunning,
         condition: comparison({ tagId: 'SUB-MARGIN' }, '>', naturalCirculationSubcoolingC),
@@ -179,6 +214,7 @@ const coreCooling = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPl
       },
       {
         label: `Natural circulation: every cold leg within ${coldLegAtSaturationC} °C (5 °F) of its steam generator's saturation temperature`,
+        shortLabel: 'cold legs at SG Tsat',
         basis: 'ES-0.1 natural-circulation verification: RCS cold-leg temperatures at saturation temperature for steam generator pressure',
         when: noPumpRunning,
         condition: all(loops.map(loop => ({
@@ -192,6 +228,7 @@ const coreCooling = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPl
       },
       {
         label: 'Natural circulation: steam generator pressures stable or falling',
+        shortLabel: 'SG pressures',
         basis: 'ES-0.1 natural-circulation verification: SG pressures stable or falling; here each pressure moving the saturation temperature it sets up by no more than 0.03 °C/min (0.1 % of 7.6 MPa a minute)',
         when: noPumpRunning,
         condition: all(loops.map(loop => comparison({ tagId: `SG-${loop}-TSAT-RATE` }, '<=', stableSteamGeneratorSaturationCPerS))),
@@ -199,6 +236,7 @@ const coreCooling = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPl
       },
       {
         label: 'Natural circulation: hot legs stable or falling',
+        shortLabel: 'hot legs',
         basis: 'ES-0.1 natural-circulation verification: RCS hot-leg temperatures stable or falling; here none rising faster than 0.3 °C/min',
         when: noPumpRunning,
         condition: all(loops.map(loop => comparison({ tagId: `TE-${loopNumber(loops, loop)}-HOT-RATE` }, '<=', stableTemperatureCPerS))),
@@ -206,6 +244,7 @@ const coreCooling = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPl
       },
       {
         label: 'Natural circulation: core exit stable or falling',
+        shortLabel: 'core exit',
         basis: 'ES-0.1 natural-circulation verification: core-exit thermocouples stable or falling; here not rising faster than 0.3 °C/min',
         when: noPumpRunning,
         condition: comparison({ tagId: 'CET-AVG-RATE' }, '<=', stableTemperatureCPerS),
@@ -222,7 +261,7 @@ const coreCooling = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPl
 /** 10 %: ERG F-0.3, a narrow-range level on span in a steam generator (normal containment). */
 const narrowRangeOnSpanPercent = 10
 /** 27.8 kg/s (440 gpm): ERG F-0.3, the total feed flow that removes decay heat. */
-const minimumFeedFlowKgPerS = 27.8
+export const minimumFeedFlowKgPerS = 27.8
 /** 8.27 MPa (1,185 psig): this model's lowest main steam safety valve set pressure. */
 const safetyValveSetMPa = 8.27
 /** 82 %: this model's steam generator high-high level, feedwater isolation (reference-ic-steam-generator.ts). */
@@ -251,7 +290,7 @@ const heatSink = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPlant
           basis: 'ERG F-0.3: narrow-range level in all SGs greater than [10 %]',
           condition: all(loops.map(loop => comparison(level(loop), '>', narrowRangeOnSpanPercent))),
           yes: status('green', 'Every steam generator has level on span and pressure in hand: the heat sink is satisfied.'),
-          no: status('yellow', 'A steam generator\'s narrow-range level is below span while feed holds the heat sink; after a trip from power that is the expected shrink, refilled by auxiliary feedwater.', 'FR-H.5'),
+          no: status('yellow', 'A steam generator\'s narrow-range level is below span while feed holds the heat sink; after a loss of its feedwater at power that is the expected shrink and boil-off, refilled by auxiliary feedwater.', 'FR-H.5'),
         }),
         no: status('yellow', 'A steam generator is above its relief valves\' pressure: normal steam release is not holding it.', 'FR-H.4'),
       }),
@@ -277,10 +316,18 @@ const heatSink = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPlant
         no: status('red', 'No steam generator has level on span and feed is below the minimum flow: the secondary heat sink is lost.', 'FR-H.1'),
       }),
     }),
-    checks: [],
+    // E-0 verifies the feed that holds the heat sink once a trip is demanded, whatever path the tree takes.
+    checks: [{
+      label: `Heat sink: total feed flow to the steam generators at least ${minimumFeedFlowKgPerS} kg/s (440 gpm)`,
+      shortLabel: 'total feed flow',
+      basis: 'Westinghouse ERG E-0 (generic): verify total auxiliary feedwater flow greater than [440 gpm]; F-0.3 total feedwater flow to SGs, here the feed flowing into every steam generator, auxiliary and main',
+      when: tripDemanded(),
+      condition: { type: 'total', signals: loops.map(loop => signalReference({ path: `sg${loop}.feedwaterFlowKgPerS` })), operator: '>=', value: minimumFeedFlowKgPerS },
+      notMet: 'Total feed flow is below the minimum that removes decay heat: start auxiliary feedwater; with no steam generator level on span that is a loss of heat sink (FR-H.1).',
+    }],
     expectations: [{
       when: tripDemanded(),
-      text: 'After a trip from power, shrink takes narrow-range levels below span; total feed flow at or above 27.8 kg/s holds the heat sink while auxiliary feedwater refills the steam generators.',
+      text: 'After a trip from power, shrink takes narrow-range levels down to about the low-low set point within a minute or two, and below span after a loss of feedwater; total feed flow at or above 27.8 kg/s holds the heat sink while auxiliary feedwater refills the steam generators.',
     }],
   }
 }

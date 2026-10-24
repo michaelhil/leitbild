@@ -3,11 +3,14 @@ import type { OperationalObject } from '../../../core/model/index.ts'
 import type { Actor } from '../../../core/simulation-runs/actors.ts'
 import { einsatzDataSchema, type LastAction, type TaskData, type UnitData } from '../engine/model.ts'
 import { createWall, follow, openScreen, roleScreen, type Screen } from '../fixtures/board-harness.ts'
+import { borderDefinitions, borderStart, isScout, unitsWhere } from '../fixtures/border-harness.ts'
+import border from '../../../scenarios/halden-border.scenario.json'
+import { einsatzCommandIds as ids } from '../capabilities.ts'
 import { groupDeclaration, groupItems, groups } from '../fixtures/groups-run.ts'
 import civil from '../fixtures/halden-civil.scenario.json'
 import { renameDefinition, type Namespace, type Renaming } from '../fixtures/renaming.ts'
 import { definitionOf, openRun, type OpenRun } from '../fixtures/run-harness.ts'
-import supplyRun from '../fixtures/supply-run.scenario.json'
+import supplyRun from '../../../scenarios/supply-run.scenario.json'
 import { groupRoleId } from '../ids.ts'
 import { refusalCode } from '../refusal.ts'
 
@@ -15,7 +18,10 @@ import { refusalCode } from '../refusal.ts'
  * The recommendation follower presses N, then Enter (and Enter again to
  * confirm), on every unserved row as it appears, on a running Run. On civil
  * Halden the late top-priority call must divert the unit on its way to the
- * minor call. The renaming generality test runs the follower on each shipped
+ * minor call; on halden-border, played by one screen holding all of Blue, the
+ * receiving site that closes at 18:00 reroutes the units carrying load to the
+ * other one, and the 25:00 top-priority call diverts the unit on its way to the
+ * 24:00 minor call. The renaming generality test runs the follower on each shipped
  * Definition and on a copy whose every type, tag, template, class, property,
  * label and word is an opaque token: both Runs must journal the same
  * transitions, modulo the renaming, with the same Board actions and results.
@@ -64,6 +70,55 @@ describe('Recommendation follower', () => {
       expect(screen.calls.every(call => call.result.ok)).toBe(true)
     })
   }, 60_000)
+
+  test('on halden-border the closing site reroutes the units carrying load, and the 22:30 top-priority call is served within six minutes', async () => {
+    const definition = borderDefinitions.scripted
+    const [blue] = (definition.sides ?? []).map(side => side.id) as [string]
+    const start = borderStart(definition)
+    const [scout] = unitsWhere(start, blue, isScout)
+    const borderCue = (id: string) => border.timeline.cues.find(entry => entry.id === id)!
+    const [push, closing, late] = [borderCue('red-push-1'), borderCue('site-closes'), borderCue('call-17')]
+    const closedSite = (closing.actions[0]!.input as { readonly siteId: string }).siteId
+    const lateLabel = (late.actions[0]!.input as { readonly label: string }).label
+
+    const run = await openRun({ definition: border })
+    try {
+      // One person plays all of Blue from the first preset: every call, the military ones included, by recommendation.
+      const actor = roleScreen(run, ...definition.rolePresets![0]!.roles)
+      const dispatcher = await openScreen(run, createWall(), { actor })
+      const startMs = run.nowMs()
+      // The one beat the recommendations do not cover: when Red pushes onto the screen post, the scout is pulled back.
+      let pulledBack = false
+      const pullBack = async () => {
+        if (pulledBack || run.nowMs() - startMs < push.at.seconds * 1_000) return
+        pulledBack = true
+        expect(await run.invoke(ids.recall, { unitId: scout!.id }, actor)).toMatchObject({ ok: true })
+      }
+      await follow(run, dispatcher, { untilMs: startMs + (late.at.seconds + 6 * 60) * 1_000, stepMs: 5_000, alongside: pullBack })
+
+      // Units carrying load to the closing site were released from it at the closure, with their load, and handed it over at another site.
+      const unitRecords = run.journal.flatMap((event, index) => {
+        if (event.type !== 'object.upserted') return []
+        const data = einsatzDataSchema.safeParse(event.object.packData)
+        return data.success && data.data.type === 'unit' ? [{ index, unitId: event.object.id, unit: data.data }] : []
+      })
+      const releases = unitRecords.filter(entry => entry.unit.lastAction?.verb === 'release' && entry.unit.lastAction.target === closedSite)
+      expect(releases.length).toBeGreaterThan(0)
+      for (const release of releases) {
+        expect((release.unit.lastAction!.atMs - startMs) / 1_000).toBe(closing.at.seconds)
+        expect(Object.values(release.unit.load).reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0)
+        const handover = unitRecords.find(entry => entry.index > release.index && entry.unitId === release.unitId && entry.unit.phase === 'at-site')
+        expect(handover?.unit.siteId).toBeDefined()
+        expect(handover?.unit.siteId).not.toBe(closedSite)
+      }
+
+      const lateTask = run.run.snapshot().objects.find(object => object.kind === 'incident' && object.label === lateLabel)!
+      expect(run.task(lateTask.id).closedAtMs).toBeLessThanOrEqual(startMs + (late.at.seconds + 6 * 60) * 1_000)
+      expect(dispatcher.calls.every(call => call.result.ok)).toBe(true)
+    } finally {
+      await run.close()
+    }
+  }, 120_000)
 })
 
 const mapKeys = (record: Readonly<Record<string, number>> | undefined, rename: (key: string) => string) =>

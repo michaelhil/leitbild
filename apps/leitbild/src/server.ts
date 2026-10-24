@@ -21,7 +21,11 @@ const contentTypeFor = (path: string): string => {
   if (path.endsWith('.js') || path.endsWith('.mjs')) return 'application/javascript; charset=utf-8'
   if (path.endsWith('.svg')) return 'image/svg+xml'
   if (path.endsWith('.png')) return 'image/png'
+  if (path.endsWith('.webp')) return 'image/webp'
+  if (path.endsWith('.avif')) return 'image/avif'
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
   if (path.endsWith('.ico')) return 'image/x-icon'
+  if (path.endsWith('.woff2')) return 'font/woff2'
   return 'application/octet-stream'
 }
 
@@ -45,6 +49,15 @@ const serveUi = async (pathname: string, uiDistPath: string): Promise<Response |
   })
 }
 
+// An exact content ETag lets a client revalidate a catalogue it already holds.
+const revalidatedJson = (request: Request, body: string, cacheControl: string): Response => {
+  const etag = '"' + new Bun.CryptoHasher('sha256').update(body).digest('hex') + '"'
+  const headers = { ETag: etag, 'Cache-Control': cacheControl, 'Content-Type': 'application/json' }
+  return request.headers.get('if-none-match') === etag
+    ? new Response(null, { status: 304, headers })
+    : new Response(body, { headers })
+}
+
 const jsonError = (
   status: number,
   code: string,
@@ -64,33 +77,32 @@ const parseJson = async (request: Request): Promise<unknown> => {
   }
 }
 
+// Bun drops a request idle for 10 s. A Module Capability may answer later than
+// that (World's run wait holds up to 20 s); the gateway gives a Module 30 s.
+// Deleting a Workspace waits on every Module's removal under the same budget.
+const capabilityInvokeIdleSeconds = 35
+
 export const createWorkspaceHostServer = (config: {
   readonly host: WorkspaceHost
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
-  readonly publicOrigin?: string
 }) => {
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/ui/dist`)
-  const publicOrigin = config.publicOrigin === undefined ? null : new URL(config.publicOrigin).origin
-  const publicUrl = (path: string, requestUrl: URL): string => new URL(path, publicOrigin ?? requestUrl.origin).href
   return Bun.serve({
     port: config.port ?? 3100,
     hostname: config.bindHost ?? '127.0.0.1',
-    async fetch(request) {
+    async fetch(request, server) {
       const url = new URL(request.url)
       try {
         if (url.pathname === '/health' && request.method === 'GET') {
           return Response.json({ status: 'ok', workspaces: config.host.list().length })
         }
 
+        // The root always opens the landing page; it never picks a Workspace.
+        // The Location is host-relative so every public domain stays on itself.
         if (url.pathname === '/' && request.method === 'GET') {
-          const workspaces = config.host.list()
-          if (workspaces.length === 1) {
-            const workspace = workspaces[0]!
-            return Response.redirect(publicUrl(`/workspaces/${workspace.id}`, url), 303)
-          }
-          return Response.redirect(publicUrl('/workspaces', url), 303)
+          return new Response(null, { status: 303, headers: { Location: '/workspaces' } })
         }
 
         const uiResponse = request.method === 'GET' ? await serveUi(url.pathname, uiDistPath) : null
@@ -98,6 +110,13 @@ export const createWorkspaceHostServer = (config: {
 
         if (url.pathname.startsWith('/api/knowledge/') && request.method === 'GET') return knowledgeResponse(request)
 
+        if (url.pathname === '/api/featured-definitions' && request.method === 'GET') {
+          return revalidatedJson(request, JSON.stringify(await config.host.featuredDefinitions()), 'public, no-cache')
+        }
+        // What runs now changes from one moment to the next: never served from a cache.
+        if (url.pathname === '/api/workspace-activity' && request.method === 'GET') {
+          return Response.json(await config.host.activity(), { headers: { 'Cache-Control': 'no-store' } })
+        }
         if (url.pathname === '/api/modules' && request.method === 'GET') {
           return Response.json({ modules: config.host.installedModuleIds().map(moduleId => ({ id: moduleId })) })
         }
@@ -111,6 +130,7 @@ export const createWorkspaceHostServer = (config: {
 
         const invocationMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
         if (invocationMatch && request.method === 'POST') {
+          server.timeout(request, capabilityInvokeIdleSeconds)
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(invocationMatch[1] ?? ''))
           const capabilityId = capabilityIdSchema.parse(decodeURIComponent(invocationMatch[2] ?? ''))
           const requestInput = workspaceCapabilityInvocationRequestSchema.parse(await parseJson(request))
@@ -146,12 +166,7 @@ export const createWorkspaceHostServer = (config: {
         if (capabilitiesMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
           const moduleId = url.searchParams.has('moduleId') ? moduleIdSchema.parse(url.searchParams.get('moduleId')) : undefined
-          const body = JSON.stringify(await config.host.capabilities(workspaceId, moduleId))
-          const etag = '"' + new Bun.CryptoHasher('sha256').update(body).digest('hex') + '"'
-          const headers = { ETag: etag, 'Cache-Control': 'private, no-cache', 'Content-Type': 'application/json' }
-          return request.headers.get('if-none-match') === etag
-            ? new Response(null, { status: 304, headers })
-            : new Response(body, { headers })
+          return revalidatedJson(request, JSON.stringify(await config.host.capabilities(workspaceId, moduleId)), 'private, no-cache')
         }
 
         const moduleMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/modules\/([^/]+)(\/retry)?$/)
@@ -174,6 +189,7 @@ export const createWorkspaceHostServer = (config: {
             return Response.json({ workspace: config.host.rename(workspaceId, input) })
           }
           if (request.method === 'DELETE') {
+            server.timeout(request, capabilityInvokeIdleSeconds)
             await config.host.delete(workspaceId)
             return new Response(null, { status: 204 })
           }

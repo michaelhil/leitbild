@@ -13,8 +13,14 @@ export const defineSimulationCapability = (config: SimulationCapability): Simula
   if (config.kind === 'query' && config.schedulable === true) {
     throw new Error(`Query Capability ${config.id} cannot be scheduled`)
   }
+  if (config.audience === 'system' && config.kind !== 'query') {
+    throw new Error(`System-audience Capability ${config.id} must be a query`)
+  }
   if (config.kind === 'query' && config.buildCommand !== undefined) {
     throw new Error(`Query Capability ${config.id} cannot declare command targets`)
+  }
+  if (config.kind === 'query' && config.withheldFromAgents !== undefined) {
+    throw new Error(`Query Capability ${config.id} issues no command to withhold`)
   }
   if (config.kind === 'command' && config.buildCommand === undefined) {
     throw new Error(`Command Capability ${config.id} must build a command`)
@@ -22,12 +28,15 @@ export const defineSimulationCapability = (config: SimulationCapability): Simula
   return Object.freeze(config)
 }
 
-export const defineSimulationQueryCapability = (config: Omit<SimulationCapability, 'kind' | 'risk' | 'idempotent' | 'schedulable' | 'buildCommand'>): SimulationCapability =>
+export const defineSimulationQueryCapability = (config: Omit<SimulationCapability, 'kind' | 'risk' | 'idempotent' | 'schedulable' | 'buildCommand' | 'withheldFromAgents'>): SimulationCapability =>
   defineSimulationCapability({ ...config, kind: 'query', risk: 'read', idempotent: true })
 
 export const defineSimulationCommandCapability = (config: Omit<SimulationCapability, 'kind' | 'risk'> & {
   readonly risk?: 'write' | 'destructive'
 }): SimulationCapability => defineSimulationCapability({ ...config, kind: 'command', risk: config.risk ?? 'write' })
+
+/** Public: callable through the broker and the Run, listed in catalogs. A system-audience Capability is World core's alone. */
+export const isPublicCapability = (capability: Pick<SimulationCapability, 'audience'>): boolean => capability.audience !== 'system'
 
 export const capabilityIds = (
   capabilities: ReadonlyArray<SimulationCapability>,

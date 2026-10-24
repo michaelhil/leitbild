@@ -7,12 +7,24 @@ import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
 import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
 import { createSimulationRunRegistry,type SimulationRunRegistry } from '../simulation-runs/registry.ts'
+import { listStoredSimulationRunIds } from '../simulation-runs/stored-runs.ts'
+import { mapWithConcurrency, workspaceFanOutLimit } from '../storage/bounded-fan-out.ts'
 import { createKeyedOperations } from '../storage/keyed-operations.ts'
 import type { WorldModuleMarker,WorldModuleState } from './module-state.ts'
+import { worldWorkspacePaths } from './paths.ts'
 
 export interface WorldWorkspaceRuntime {
   readonly workspaceId: WorkspaceId
   readonly simulationRuns: SimulationRunRegistry
+}
+
+/** A provisioned Workspace's Simulation Runs: how many it stores and how many advance now. */
+export interface WorldWorkspaceActivity {
+  readonly workspaceId: WorkspaceId
+  /** Its Run directories, together with any Run loaded in memory. */
+  readonly storedRuns: number
+  /** Its loaded Runs whose clock plays or that maximum pace advances; a Run not loaded advances nothing. */
+  readonly advancingRuns: number
 }
 
 export interface WorldWorkspaceRuntimeRegistry {
@@ -24,6 +36,12 @@ export interface WorldWorkspaceRuntimeRegistry {
   readonly getOrLoad: (id: WorkspaceId) => Promise<WorldWorkspaceRuntime>
   readonly withRuntime: <T>(id: WorkspaceId, work: (runtime: WorldWorkspaceRuntime) => Promise<T>) => Promise<T>
   readonly getLoaded: (id: WorkspaceId) => WorldWorkspaceRuntime | undefined
+  /**
+   * Every provisioned Workspace's Simulation Run activity, from memory and one
+   * Run directory listing per Workspace. It loads no Workspace runtime or Run
+   * and changes no last-use order, lease or idle-close countdown.
+   */
+  readonly activity: () => Promise<ReadonlyArray<WorldWorkspaceActivity>>
   readonly close: (id: WorkspaceId) => Promise<boolean>
   readonly remove: (id: WorkspaceId) => Promise<boolean>
   readonly shutdown: () => Promise<void>
@@ -103,6 +121,9 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   const closeLoaded = async (id: WorkspaceId): Promise<boolean> => {
     const runtime = loaded.get(id)
     if (!runtime) return false
+    // Waits on this Workspace's Runs end at once, so draining its requests does
+    // not sit out a 20 s wait; every other request finishes before the Runs close.
+    runtime.simulationRuns.beginClose()
     await operations.get(id)!.close()
     await runtime.simulationRuns.shutdown()
     loaded.delete(id)
@@ -110,6 +131,19 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     return true
   }
   const close = (id: WorkspaceId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
+
+  const activityOf = async (workspaceId: WorkspaceId): Promise<WorldWorkspaceActivity> => {
+    const stored = await listStoredSimulationRunIds(worldWorkspacePaths(config.dataDir, workspaceId).simulationRuns)
+    // Read after the listing, so the loaded Runs are as current as the answer.
+    const runtime = loaded.get(workspaceId)
+    if (!runtime) return { workspaceId, storedRuns: stored.length, advancingRuns: 0 }
+    const runs = runtime.simulationRuns.activity()
+    return {
+      workspaceId,
+      storedRuns: new Set([...stored, ...runs.loadedRunIds]).size,
+      advancingRuns: runs.advancingRunIds.length,
+    }
+  }
 
   const remove = (id: WorkspaceId): Promise<boolean> => lifecycle.run(id, async () => {
     await closeLoaded(id)
@@ -122,6 +156,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
     getOrLoad,
     withRuntime,
     getLoaded: id => loaded.get(id),
+    activity: async () => await mapWithConcurrency(await config.moduleState.list(), workspaceFanOutLimit, marker => activityOf(marker.workspaceId)),
     close,
     remove,
     shutdown: async () => {

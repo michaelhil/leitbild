@@ -10,8 +10,8 @@
   import type { ObjectId } from '../../../core/model/index.ts'
   import { shownBesideBoard } from './board-camera.ts'
   import { boardIconIds, createBoardIcons } from './board-icons.ts'
-  import { boardBottomClearancePx, boardChromePx, boardEdgeGapPx, boardLayoutFor, boardMapCover, boardSections, boardTopClearancePx, listRowsTemplate, rowBoxStyle } from './board-layout.ts'
-  import { logTime, stripHeading } from './board-presenter.ts'
+  import { boardBottomClearancePx, boardChromePx, boardEdgeGapPx, boardHeightFor, boardLayoutFor, boardMapCover, boardSections, boardTopClearancePx, foldedContactsPx, listRowsTemplate, rowBoxStyle, shownSections } from './board-layout.ts'
+  import { contactsSummary, logTime, stripHeading } from './board-presenter.ts'
   import { createBoardSession, type BoardSession } from './board-session.ts'
   import { createBoardTone, type BoardTone } from './board-tone.ts'
   import { boardMapOrders } from './map-orders.ts'
@@ -37,7 +37,11 @@
    *
    * Touch first: the action bar on top says what the next tap sends; the
    * status line below it carries the result, Undo and sound; Calls and Assets
-   * share the rest in fixed parts, each scrolling on its own. Every control
+   * share the rest in fixed parts, each scrolling on its own. Nothing moves
+   * under the finger: every part but the lists keeps a fixed height whatever
+   * it says, the newest alert takes the first line of the foot above the
+   * event log, and the lists' parts are pixels of the Board's height, so an
+   * alert, a message or a list that grows moves no row. Every control
    * is at least 44 px and nothing hides behind hover or hints at a key. A
    * tap on open ground shows the controller's "Move here" prompt on the map.
    * It never takes the keyboard itself: a pointer passing over it must not
@@ -51,7 +55,7 @@
   let problem = $state<string | null>(null)
   let retry = $state.raw<(() => void) | null>(null)
   let surfaceWidth = $state(0)
-  let surfaceHeight = 0
+  let surfaceHeight = $state(0)
   let root = $state<HTMLElement | null>(null)
   let tone: BoardTone | null = null
 
@@ -62,7 +66,13 @@
   })
   // Until the configuration arrives the Board takes the work list's width.
   const layout = $derived(boardLayoutFor(surfaceWidth, view?.arrangement.lead ?? 'work-list'))
-  const sections = $derived(view === null ? [] : boardSections(view.arrangement))
+  // Folded Contacts leave the lists' grid for one line below it; the lists above keep the parts they have with it open.
+  const folded = $derived(view !== null && view.contactsFolded)
+  const arranged = $derived(view === null ? [] : boardSections(view.arrangement))
+  const sections = $derived(shownSections(arranged, folded))
+  const rowsTemplate = $derived(listRowsTemplate(arranged, boardHeightFor(surfaceHeight), folded))
+  // The foot's alert line: the newest alert, and how many more stand.
+  const alert = $derived(view?.alerts[0] ?? null)
   const heading = $derived(view === null ? boardWords.board : stripHeading(view))
   const missingArtwork = $derived.by(() => {
     void revision
@@ -239,17 +249,10 @@
   aria-label={heading}
 >
   {#if view !== null}
-    {#if view.alerts.length > 0}
-      <ul class="alerts" aria-label={view.headings.alerts} style:max-height={`${boardChromePx.alerts}px`}>
-        {#each view.alerts as alert, index (index)}
-          <li><strong>{alert.label}</strong> {alert.message}</li>
-        {/each}
-      </ul>
-    {/if}
-    <div class="action" style:max-height={`${boardChromePx.actionBar}px`}>
+    <div class="action" style:height={`${boardChromePx.actionBar}px`}>
       <BoardActionBar commit={view.commit} selected={view.selected} {click} />
     </div>
-    <div class="status" style:min-height={`${boardChromePx.statusLine}px`}>
+    <div class="status" style:height={`${boardChromePx.statusLine}px`}>
       <p class="feedback" role="status" aria-live="polite" data-tone={view.feedback?.tone ?? 'none'}>{view.feedback?.text ?? ''}</p>
       {#if view.undo !== null}<button type="button" class="undo" onclick={() => click({ kind: 'undo' })}>{view.undo}</button>{/if}
       {#if view.sound.on}
@@ -266,7 +269,7 @@
     </p>
   {/if}
   {#if view !== null}
-    <div class="body" style:grid-template-rows={listRowsTemplate(sections)} style:gap={`${boardChromePx.gap}px`}>
+    <div class="body" style:grid-template-rows={rowsTemplate} style:gap={`${boardChromePx.gap}px`}>
       {#each sections as section (section)}
         {#if section === 'work'}
           <BoardWorkList heading={view.headings.workList} focused={view.focus === 'work'} rows={view.workList.rows} empty={view.workList.empty} {icon} {click} />
@@ -277,12 +280,20 @@
         {/if}
       {/each}
     </div>
+    {#if folded && view.contacts !== null}
+      <p class="contacts" style:height={`${foldedContactsPx}px`}><strong>{view.contacts.heading}</strong> {contactsSummary(view.contacts)}</p>
+    {/if}
     {#if missingArtwork !== null}<p class="artwork">{missingArtwork}</p>{/if}
-    <ol class="log" aria-label={view.headings.log} style:height={`${boardChromePx.log}px`}>
-      {#each view.log as entry, index (index)}
-        <li><span class="num">{logTime(entry)}</span> {entry.text}</li>
-      {/each}
-    </ol>
+    <div class="foot" style:height={`${boardChromePx.foot}px`}>
+      {#if alert !== null}
+        <p class="alert" role="group" aria-label={view.headings.alerts}><strong>{alert.label}</strong><span class="message">{alert.message}</span>{#if view.alerts.length > 1}<span class="more num">+{view.alerts.length - 1}</span>{/if}</p>
+      {/if}
+      <ol class="log" aria-label={view.headings.log}>
+        {#each view.log as entry, index (index)}
+          <li><span class="num">{logTime(entry)}</span> {entry.text}</li>
+        {/each}
+      </ol>
+    </div>
   {:else if problem === null}
     <p class="loading">{boardWords.loading}</p>
   {/if}
@@ -307,12 +318,11 @@
     pointer-events: auto;
   }
 
-  .alerts { flex: none; overflow: auto; margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
-  .alerts li { padding: 3px 7px; border-left: 3px solid var(--critical); border-radius: 4px; background: color-mix(in srgb, var(--critical) 9%, var(--panel)); font-size: 12px; }
-  /* Past its cap the action bar scrolls inside, so the lists keep their room. */
+  /* The action bar keeps its height whatever it holds, and scrolls inside past it, so the lists keep their room and their place. */
   .action { flex: none; overflow: auto; overscroll-behavior: contain; }
+  /* The status line keeps its height too: feedback shows two lines at most. */
   .status { flex: none; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 0 0 6px; border-radius: 6px; background: var(--panel-strong); }
-  .feedback { flex: 1; min-width: 0; margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+  .feedback { flex: 1; min-width: 0; margin: 0; font-size: 12px; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   .feedback[data-tone='pending'] { color: var(--muted); }
   .feedback[data-tone='done'] { color: var(--success); }
   .feedback[data-tone='refused'] { color: var(--critical); }
@@ -323,8 +333,16 @@
   .problem { flex: none; margin: 0; color: var(--critical); }
   .problem button { min-height: 44px; margin-left: 6px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: inherit; cursor: pointer; }
   .body { flex: 1; min-height: 0; display: grid; }
+  .contacts { flex: none; box-sizing: border-box; margin: 0; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .contacts strong { color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
   .artwork { flex: none; margin: 0; color: var(--warning); font-size: 11px; }
-  .log { flex: none; box-sizing: border-box; overflow: auto; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 11px; line-height: 15px; }
+  /* The foot keeps its height: the alert line, while one stands, then the log in what is left. */
+  .foot { flex: none; box-sizing: border-box; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .alert { display: flex; gap: 6px; min-width: 0; margin: 0; padding: 0 6px; border-left: 3px solid var(--critical); border-radius: 3px; background: color-mix(in srgb, var(--critical) 9%, var(--panel)); font-size: 12px; white-space: nowrap; }
+  .alert strong { flex: none; }
+  .alert .message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .alert .more { flex: none; color: var(--critical); font-weight: 750; }
+  .log { min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 11px; line-height: 15px; }
   .num { font-variant-numeric: tabular-nums; }
   .loading { margin: 0; color: var(--muted); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

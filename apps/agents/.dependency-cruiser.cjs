@@ -3,6 +3,20 @@
 // Lives at repo root so `bunx dependency-cruiser src` picks it up automatically.
 // Boundaries reflect the codebase layering documented in AGENTS.md.
 
+const { realpathSync } = require('node:fs')
+const { createRequire } = require('node:module')
+const { join } = require('node:path')
+
+// dependency-cruiser loads `typescript` from its own install location, not from
+// this package, and without a version it supports (< 7) it skips every .ts file
+// and reports no violations. Fail unless it finds the TypeScript 6 compiler API
+// this package declares (see the repository's bunfig.toml).
+const declaredTypescript = require.resolve('typescript')
+const cruiserTypescript = createRequire(realpathSync(join(__dirname, 'node_modules/dependency-cruiser/package.json'))).resolve('typescript')
+if (cruiserTypescript !== declaredTypescript) {
+  throw new Error(`dependency-cruiser resolves typescript to ${cruiserTypescript}, not ${declaredTypescript}, and would skip every .ts file. Delete node_modules/.bun/node_modules/typescript at the repository root, left by an install before bunfig.toml, and run bun install.`)
+}
+
 module.exports = {
   forbidden: [
     {
@@ -15,11 +29,11 @@ module.exports = {
     {
       name: 'ui-must-not-import-core-internals',
       severity: 'error',
-      comment: 'UI talks to backend via HTTP/WS. Direct imports of core/* runtime modules bypass the API contract. Pure type modules (anything named types.ts or under core/types/) are fine — they cross the boundary as type information only, not runtime code. Browser-safe contracts shared with a route (render-validators, display-request.ts) are allowed by name.',
+      comment: 'UI talks to backend via HTTP/WS. Direct imports of core/* runtime modules bypass the API contract. Pure type modules (anything named types.ts or under core/types/) are fine — they cross the boundary as type information only, not runtime code. Browser-safe contracts shared with a route or the server (render-validators, display-request.ts, proposal-resume.ts, tool-evidence.ts — one tool-interaction pairing for Agent retrieval and the request inspector) are allowed by name.',
       from: { path: '^src/ui/' },
       to: {
         path: '^src/core/',
-        pathNot: ['^src/core/types/', '/types\\.ts$', '/render-validators/', '/scripts/script-md-parser\\.ts$', '^src/core/display-request\\.ts$'],
+        pathNot: ['^src/core/types/', '/types\\.ts$', '/render-validators/', '/scripts/script-md-parser\\.ts$', '^src/core/display-request\\.ts$', '^src/core/proposal-resume\\.ts$', '^src/core/tool-evidence\\.ts$'],
       },
     },
     {

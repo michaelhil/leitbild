@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { einsatzCommandIds as ids } from '../capabilities.ts'
 import { borderWith, civilConfig, civilKinds, civilWith, createWall, onObject, openScreen, pastGuardMs, pointAt, roleScreen, runFor, taskAt, unitAt } from '../fixtures/board-harness.ts'
 import { blue, red } from '../fixtures/combat-harness.ts'
-import border from '../fixtures/halden-border.scenario.json'
+import border from '../../../scenarios/halden-border.scenario.json'
 import { openRun, type OpenRun } from '../fixtures/run-harness.ts'
 import { neutralLexicon, wordFor } from '../lexicon.ts'
 import { boardWords } from './text.ts'
@@ -25,6 +25,8 @@ const at = (eastKm: number, northKm = 0): [number, number] => [11.38 + eastKm / 
 const borderTypes: ReadonlyArray<{ readonly id: string; readonly components: Readonly<Record<string, unknown>> }> = border.packs[0]!.config.unitTypes
 /** The border configuration's first unit type with exactly these components. */
 const borderType = (...components: ReadonlyArray<string>): string => borderTypes.find(type => Object.keys(type.components).sort().join() === [...components].sort().join())!.id
+/** The border configuration's first group of a side: where a test's own unit of a type no group holds is placed. */
+const sideGroup = (side: string): string => border.packs[0]!.config.groups.find(group => group.side === side)!.id
 /** What the civil configuration calls the units its two-unit template needs, counted more than one. */
 const pairNeed = civilConfig.taskTemplates.find(template => template.id === kinds.templates.pair)!.requires[0]!.label!.other
 
@@ -65,7 +67,7 @@ describe('Fixes from the tap-only walkthrough', () => {
       expect(screen.view().unitBoard.sites.map(entry => [entry.id, entry.label])).toEqual([['h1', 'H1']])
       expect(screen.view().unitBoard.sitesHeading).toBe(neutralLexicon.sites)
       await screen.click({ kind: 'site', id: 'h1' })
-      expect([screen.view().feedback?.text, screen.calls]).toEqual([`Tap one of ${civilConfig.lexicon.unitBoard} first, then H1`, []])
+      expect([screen.view().feedback?.text, screen.calls]).toEqual([`Tap one of your ${civilConfig.lexicon.unitBoard!.toLowerCase()} first, then H1`, []])
       await screen.click({ kind: 'row', list: 'units', id: 'u1' })
       await screen.click({ kind: 'site', id: 'h1' })
       expect(screen.calls.map(call => [call.input, call.result.ok])).toEqual([[{ units: ['u1'], to: { siteId: 'h1' } }, true]])
@@ -76,8 +78,8 @@ describe('Fixes from the tap-only walkthrough', () => {
     const post = { id: 'post', label: 'Post', icon: 'binoculars', tags: ['post'], components: { sensor: { detectM: 3000, identifyM: 2000 } } }
     const definition = borderWith([
       unitAt('amb', 'AMB', borderType('carry', 'mobility', 'service'), at(0), { side: blue }),
-      unitAt('post-blue', 'BLUE POST', 'post', at(1), { side: blue }),
-      unitAt('post-red', 'RED POST', 'post', at(2), { side: red }),
+      unitAt('post-blue', 'BLUE POST', 'post', at(1), { side: blue, group: sideGroup(blue) }),
+      unitAt('post-red', 'RED POST', 'post', at(2), { side: red, group: sideGroup(red) }),
       unitAt('kalnes', 'KALNES', borderType('receiving'), at(3)),
     ]) as { readonly packs: ReadonlyArray<{ readonly config: { readonly unitTypes: ReadonlyArray<unknown> } }> }
     const pack = definition.packs[0]!

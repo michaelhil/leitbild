@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
   import type { ModuleCapabilityDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
+  import ConfirmDialog from './ConfirmDialog.svelte'
+  import Icon from './Icon.svelte'
   import { jsonRequest, request } from './api.ts'
+  import { catalogDeleteBody, catalogDeleteItem, catalogNoun, createCatalogRemover, type CatalogDeleteItem } from './catalog-delete.ts'
+  import { createRecoverableError } from './recoverable-error.ts'
   import { simulationTimeLabel } from './simulation-time.ts'
 
   interface AccelerationState {
@@ -44,22 +48,29 @@
     readonly resource: ModuleResourceDescriptor
     readonly resources: ReadonlyArray<ModuleResourceDescriptor>
     readonly capabilities: ReadonlyArray<ModuleCapabilityDescriptor>
-    readonly onSwitch: (runId: string) => void
+    /** `replace`: the open Run was deleted, so Back must not return to it. */
+    readonly onSwitch: (runId: string, replace?: boolean) => void
     readonly onClose: () => void
     readonly refreshResources: () => Promise<void>
     readonly reportError: (message: string) => void
+    /** Takes back an error reported here once its cause is gone, where the page still shows it. */
+    readonly retractError: (message: string) => void
   }
 
-  let { workspaceId, resource, resources, capabilities, onSwitch, onClose, refreshResources, reportError }: Props = $props()
+  let { workspaceId, resource, resources, capabilities, onSwitch, onClose, refreshResources, reportError, retractError }: Props = $props()
   let execution = $state<ExecutionState | null>(null)
   let actionBusy = $state(false)
   let actionError = $state('')
-  let minutes = $state(60)
+  /** What the duration dialog offers first: a few minutes, not past a short exercise's end. */
+  let minutes = $state(5)
+  /** One-tap durations, so a touch screen needs no keyboard. */
+  const quickMinutes = [1, 2, 5] as const
   let onComplete = $state<'pause' | 'play-realtime'>('pause')
   let copyName = $state('')
   let wallNow = $state(Date.now())
   let copyDialog = $state<HTMLDialogElement | null>(null)
   let timerDialog = $state<HTMLDialogElement | null>(null)
+  let paceDialog = $state<HTMLDialogElement | null>(null)
   let restrictionsDialog = $state<HTMLDialogElement | null>(null)
   let restrictions = $state<AgentRestrictionsState | null>(null)
   let restrictionObjects = $state<ReadonlyArray<ObjectSearchResult['objects'][number]>>([])
@@ -73,9 +84,19 @@
   let notice = $state('')
   let noticeTimer: ReturnType<typeof setTimeout> | null = null
   let refreshToken = 0
+  let deleteTargets = $state<ReadonlyArray<CatalogDeleteItem>>([])
+  let familyTrigger = $state<HTMLButtonElement | null>(null)
+  let confirmingDelete = $state(false)
+  let deleteButton = $state<HTMLButtonElement | null>(null)
+  /** A 404 asked the Workspace's list once whether this Run still exists; a second one is reported. */
+  let goneChecked = false
+  // The Run's clock is read every second: a failed read is reported while it fails and taken back once a read succeeds.
+  const readFailure = createRecoverableError({ report: message => reportError(message), retract: message => retractError(message) })
 
-  const capabilityAvailableFor = (candidate: ModuleResourceDescriptor, id: string): boolean =>
-    candidate.capabilityIds.includes(id) && capabilities.some(capability => capability.id === id)
+  const capabilityAvailableFor = (candidate: ModuleResourceDescriptor, id: string): boolean => {
+    const capability = capabilities.find(entry => entry.id === id)
+    return capability !== undefined && candidate.capabilityIds.includes(capability.id)
+  }
   const capabilityAvailable = (id: string): boolean => capabilityAvailableFor(resource, id)
   const invoke = async <T>(target: ModuleResourceDescriptor['ref'], capabilityId: string, input: unknown): Promise<InvocationResponse<T>> =>
     await request(`/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
@@ -104,7 +125,19 @@
       const nextExecution = await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.read', {})
       if (token !== refreshToken) return
       execution = nextExecution.result
-    } catch (cause) { if (token === refreshToken) reportError(cause instanceof Error ? cause.message : String(cause)) }
+      goneChecked = false
+      readFailure.recovered()
+    } catch (cause) {
+      // While a delete runs, its dialog reports the outcome.
+      if (token !== refreshToken || confirmingDelete) return
+      // A Run deleted elsewhere answers 404: reading the Workspace's Resources again closes it on this page.
+      if ((cause as { status?: unknown }).status === 404 && !goneChecked) {
+        goneChecked = true
+        void refreshResources().catch(refreshCause => reportError(refreshCause instanceof Error ? refreshCause.message : String(refreshCause)))
+        return
+      }
+      readFailure.failed(cause instanceof Error ? cause.message : String(cause))
+    }
   }
   const runAction = async (action: () => Promise<void>): Promise<void> => {
     if (actionBusy) return
@@ -143,15 +176,33 @@
     })
   }
   const togglePlayback = (): void => setExecution({ playback: execution?.playback === 'playing' ? 'paused' : 'playing' })
-  const togglePace = (): void => setExecution({ pace: execution?.pace === 'maximum' ? 'realtime' : 'maximum' })
-  const advanceByDuration = (): void => {
-    if (!Number.isFinite(minutes) || minutes <= 0) return
+  /**
+   * Maximum pace runs the Run as fast as it can until it is switched back,
+   * with no end: one stray tap could carry an exercise far past its end. So
+   * arming it asks first, and offers a fixed duration instead; switching
+   * back to realtime never asks.
+   */
+  const togglePace = (): void => {
+    if (execution?.pace === 'maximum') return setExecution({ pace: 'realtime' })
+    paceDialog?.showModal()
+  }
+  const armMaximumPace = (): void => {
+    paceDialog?.close()
+    setExecution({ pace: 'maximum' })
+  }
+  const chooseDuration = (): void => {
+    paceDialog?.close()
+    timerDialog?.showModal()
+  }
+  const advanceBy = (duration: number): void => {
+    if (!Number.isFinite(duration) || duration <= 0) return
     void runAction(async () => {
       refreshToken += 1
-      execution = (await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.advance', { minutes, onComplete })).result
+      execution = (await invoke<ExecutionState>(resource.ref, 'world.simulation-run.execution.advance', { minutes: duration, onComplete })).result
       timerDialog?.close()
     })
   }
+  const advanceByDuration = (): void => advanceBy(minutes)
   const openRestrictions = (): void => {
     if (restrictionBusy) return
     restrictionBusy = true
@@ -234,16 +285,36 @@
       cancelRename()
     }
   }
-  const deleteRun = (member: ModuleResourceDescriptor): void => {
-    if (!confirm(`Delete ${member.title}? This cannot be undone.`)) return
-    const deletingCurrent = member.ref.id === resource.ref.id
-    void runAction(async () => {
-      await invoke(member.ref, 'world.simulation-run.delete', {})
-      const remaining = family.filter(candidate => candidate.ref.id !== member.ref.id)
-      await refreshResources()
-      familyOpen = false
-      if (deletingCurrent) remaining.length > 0 ? onSwitch(remaining[0]!.ref.id) : onClose()
-    })
+  // Each Run is deleted through the delete Capability its own descriptor names.
+  const removeRun = $derived(createCatalogRemover(workspaceId))
+  const deletableRun = (member: ModuleResourceDescriptor): CatalogDeleteItem | null => catalogDeleteItem(member, capabilities)
+  const askDelete = (member: ModuleResourceDescriptor): void => {
+    const item = deletableRun(member)
+    if (!item) return
+    familyOpen = false
+    cancelRename()
+    deleteTargets = [item]
+    confirmingDelete = true
+  }
+  /**
+   * Deleting the open Run moves to a remaining copy, or back to the Workspace
+   * page, in place of the deleted Run's address so Back does not return to it.
+   */
+  const runsDeleted = async (removed: ReadonlyArray<CatalogDeleteItem>): Promise<void> => {
+    if (removed.length === 0) return
+    const gone = new Set(removed.map(item => item.subject.ref.id))
+    if (gone.has(resource.ref.id)) {
+      const next = family.find(candidate => !gone.has(candidate.ref.id))
+      if (next === undefined) return onClose()
+      onSwitch(next.ref.id, true)
+      showNotice(`You are now in ${next.title}`)
+    }
+    await refreshResources().catch(cause => reportError(cause instanceof Error ? cause.message : String(cause)))
+  }
+  // The copies menu that held the deleted Run's Delete has closed: focus goes to its button, or to this Run's own Delete.
+  const focusAfterDelete = (): void => {
+    if (familyTrigger?.isConnected && familyTrigger.getClientRects().length > 0) familyTrigger.focus()
+    else deleteButton?.focus()
   }
   const displayTime = $derived(simulationTimeLabel(execution, wallNow))
 
@@ -274,7 +345,7 @@
 
 <div class="run-controls" aria-label="Simulation controls">
   {#if family.length > 1}<div class="family-control">
-    <button class="family-trigger" type="button" aria-haspopup="true" aria-expanded={familyOpen} onclick={toggleFamily} title={resource.title}>
+    <button bind:this={familyTrigger} class="family-trigger" type="button" aria-haspopup="true" aria-expanded={familyOpen} onclick={toggleFamily} title={resource.title}>
       <span class="family-label">{resource.title}</span><span aria-hidden="true">⌄</span>
     </button>
     {#if familyOpen}
@@ -287,20 +358,25 @@
               <button class="family-member" type="button" aria-current={member.ref.id === resource.ref.id ? 'true' : undefined} title={member.title} onclick={() => switchRun(member.ref.id)}>{member.title}</button>
             {/if}
             <button class="family-rename" type="button" disabled={actionBusy || !capabilityAvailableFor(member, 'world.simulation-run.rename')} aria-label={`Rename ${member.title}`} title={`Rename ${member.title}`} onclick={() => void startRename(member)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>
-            <button class="family-delete" type="button" aria-label={`Delete ${member.title}`} title={`Delete ${member.title}`} onclick={() => deleteRun(member)}>×</button>
+            <button class="family-delete" type="button" disabled={deletableRun(member) === null} aria-label={`Delete ${member.title}`} title={`Delete ${member.title}`} onclick={() => askDelete(member)}><Icon name="trash" size={15} /></button>
           </div>
         {/each}
       </div>
     {/if}
   </div>{:else}<span class="run-title" title={resource.title}>{resource.title}</span>{/if}
+  <!-- First in the strip, apart from the Assistant: visible without scrolling at any width. -->
+  <button bind:this={deleteButton} class="run-delete" type="button" disabled={deletableRun(resource) === null} onclick={() => askDelete(resource)} title="Delete this Run" aria-label="Delete this Run"><Icon name="trash" size={16} /></button>
+  <span class="divider" aria-hidden="true"></span>
   <button type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.copy')} onclick={openCopyDialog} title="Copy this Run" aria-label="Copy this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-  <button class:active={execution?.playback === 'playing'} type="button" aria-pressed={execution?.playback === 'playing'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlayback} title={execution?.playback === 'playing' ? 'Playing — click to pause' : 'Paused — click to play'} aria-label={execution?.playback === 'playing' ? 'Playing; pause simulation' : 'Paused; play simulation'}>{#if execution?.playback === 'playing'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{/if}</button>
+  <button class:active={execution?.playback === 'playing'} type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlayback} title={execution?.playback === 'playing' ? 'Playing — click to pause' : 'Paused — click to play'} aria-label={execution?.playback === 'playing' ? 'Pause simulation' : 'Play simulation'}>{#if execution?.playback === 'playing'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{/if}</button>
   <button class:active={execution?.pace === 'maximum'} type="button" aria-pressed={execution?.pace === 'maximum'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || (!execution.maximumPace.available && execution.pace !== 'maximum')} onclick={togglePace} title={execution?.maximumPace.available ? execution?.pace === 'maximum' ? 'Maximum pace armed — click for realtime' : 'Realtime pace — click for maximum' : execution?.maximumPace.reason ?? 'Maximum pace unavailable'} aria-label={execution?.pace === 'maximum' ? 'Maximum pace armed; switch to realtime' : 'Realtime pace; switch to maximum'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
   <span class:fast={execution?.pace === 'maximum'} class="clock" title={execution?.playback === 'playing' && execution?.pace === 'maximum' ? `Playing at ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}× measured` : execution?.pace === 'maximum' ? 'Paused with maximum pace armed' : execution?.playback === 'paused' ? 'Simulation paused' : 'Simulation playing in realtime'}>{displayTime}{#if execution?.pace === 'maximum'}<small>{execution.playback === 'playing' ? `${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×` : 'MAX armed'}</small>{/if}</span>
   <button class:active={execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false} onclick={() => timerDialog?.showModal()} title="Run at maximum pace for a fixed duration" aria-label="Run at maximum pace for a fixed duration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M12 14l3-3M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8z"/></svg></button>
   <button type="button" disabled={restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set')} onclick={openRestrictions} title="AI restrictions for this Run" aria-label="AI restrictions for this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></button>
 </div>
 {#if actionError}<div class="control-error" role="alert">{actionError}</div>{/if}
+<ConfirmDialog bind:open={confirmingDelete} items={deleteTargets} noun={catalogNoun(deleteTargets)} body={catalogDeleteBody(deleteTargets)}
+  remove={removeRun} onfinished={runsDeleted} returnFocus={focusAfterDelete} />
 {#if notice}<div class="switch-notice" role="status">{notice}</div>{/if}
 
 <dialog class="control-dialog" bind:this={copyDialog}>
@@ -316,11 +392,20 @@
     <section class="progress"><strong>{execution.acceleration.status === 'running' ? `Maximum pace · ${execution.acceleration.measuredSpeed.toFixed(1)}×` : 'Paused · target retained'}</strong><span>{new Date(execution.acceleration.currentSimulationTime).toLocaleString()} → {execution.acceleration.targetSimulationTime ? new Date(execution.acceleration.targetSimulationTime).toLocaleString() : ''}</span></section>
     <div class="actions"><button class="primary" type="button" disabled={actionBusy} onclick={() => setExecution({ playback: execution?.playback === 'playing' ? 'paused' : 'playing' })}>{execution.acceleration.status === 'running' ? 'Pause' : 'Resume'}</button></div>
   {:else}
-    <label>Simulated minutes<input type="number" min="0.01" max="10080" step="1" bind:value={minutes} /></label>
     <fieldset><legend>When the target is reached</legend><label class="choice"><input type="radio" value="pause" bind:group={onComplete} /> Pause</label><label class="choice"><input type="radio" value="play-realtime" bind:group={onComplete} /> Play in realtime</label></fieldset>
+    <div class="quick" role="group" aria-label="Fast-forward by">
+      {#each quickMinutes as quick (quick)}<button type="button" disabled={actionBusy} onclick={() => advanceBy(quick)}>+{quick} min</button>{/each}
+    </div>
+    <label>Or simulated minutes<input type="number" min="0.01" max="10080" step="1" bind:value={minutes} /></label>
     <div class="actions"><button class="primary" type="button" disabled={actionBusy} onclick={advanceByDuration}>{actionBusy ? 'Starting…' : 'Start fast-forward'}</button></div>
   {/if}
   <p class="hint">Live external feeds cannot invent future observations and will reject fast-forward.</p>
+</dialog>
+
+<dialog class="control-dialog" bind:this={paceDialog}>
+  <header><div><small>Simulation time</small><h2>Run at maximum pace?</h2></div><button class="close" type="button" onclick={() => paceDialog?.close()} aria-label="Close">×</button></header>
+  <p class="hint">Maximum pace runs the simulation as fast as it can, without stopping, until you switch it back to realtime. It does not stop at the end of an exercise, and the Run cannot be wound back. To skip a few minutes, fast-forward by a duration instead.</p>
+  <div class="actions"><button type="button" disabled={actionBusy} onclick={armMaximumPace}>Run at maximum pace</button><button class="primary" type="button" onclick={chooseDuration}>Fast-forward by a duration</button></div>
 </dialog>
 
 <dialog class="control-dialog restrictions-dialog" bind:this={restrictionsDialog}>
@@ -346,11 +431,21 @@
   button:hover { border-color: #87958a; background: #314037; } button:disabled { opacity: .45; cursor: wait; } button.active { border-color: #65a9ea; color: #b9dcff; background: #1c4261; }
   button svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .clock { min-width: 112px; padding: 0 .25rem; color: #cbd6cc; font: 600 .74rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; white-space: nowrap; } .clock small { margin-left: .28rem; color: #8ec6ff; font-size: .64rem; } .clock.fast { color: #d8ecff; }
-  .family-control { position: relative; min-width: 0; } .family-trigger { max-width: min(250px, 24vw); display: flex; align-items: center; gap: .35rem; font-size: .7rem; } .family-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .family-control { position: relative; min-width: 0; display: flex; } .family-trigger { max-width: min(250px, 24vw); display: flex; align-items: center; gap: .35rem; font-size: .7rem; } .family-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-title { max-width: min(250px, 24vw); overflow: hidden; color: #dfe8dc; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
   .family-menu { position: absolute; z-index: 80; top: calc(100% + .4rem); right: 0; width: min(360px, calc(100vw - 2rem)); padding: .35rem; border: 1px solid #647168; border-radius: 9px; background: #18231c; box-shadow: 0 14px 38px #0008; }
   .family-menu > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; border-radius: 6px; } .family-menu > div.current { background: #2a3d30; }
-  .family-member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; text-align: left; } .family-delete { border: 0; color: #d8a7a3; background: transparent; font-size: 1rem; }
+  .family-member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; text-align: left; }
+  .family-delete { min-width: 30px; padding: 0 .4rem; border: 0; color: #f0b4ad; background: transparent; } .family-delete:hover:not(:disabled) { color: #ffd9d4; background: #5a2622; }
+  .run-delete { position: relative; color: #f0b4ad; } .run-delete:hover:not(:disabled) { border-color: #b8645c; color: #ffe1dc; background: #5a2622; }
+  .family-delete :global(svg), .run-delete :global(svg) { display: block; }
+  .divider { flex: none; width: 1px; height: 20px; margin: 0 .2rem; background: #3d4c41; }
+  /* A 44 px target on touch: the button fills the strip's height and its hit area reaches the bar's edges. */
+  @media (pointer: coarse) {
+    .run-delete { min-width: 44px; min-height: 34px; }
+    .run-delete::before { content: ''; position: absolute; inset: -5px 0; }
+    .family-delete { min-width: 44px; min-height: 44px; }
+  }
   .family-rename { min-width: 28px; padding: 0 .35rem; border: 0; color: #b9c6bc; background: transparent; } .family-rename svg { width: 14px; height: 14px; }
   .family-name-input { min-width: 0; margin: .2rem .35rem; padding: .38rem .45rem; border: 1px solid #7f9d87; border-radius: 5px; color: #f4faf5; background: #111a14; font: inherit; outline: none; } .family-name-input:focus { border-color: #a6c5ad; box-shadow: 0 0 0 2px #5d8f6a55; }
   .control-error { position: fixed; z-index: 120; top: 3rem; right: 1rem; max-width: min(440px, calc(100vw - 2rem)); padding: .65rem .8rem; border-radius: 8px; color: #fff; background: #8e302b; box-shadow: 0 8px 24px #0005; font-size: .78rem; }
@@ -364,7 +459,20 @@
   fieldset { margin-top: 1rem !important; padding: .7rem .8rem; display: flex; gap: 1rem; border: 1px solid #cbd5c9; border-radius: 8px; } fieldset legend { padding: 0 .25rem; color: #4c584e; font-size: .78rem; font-weight: 650; } label.choice { display: flex; align-items: center; gap: .35rem; font-size: .8rem; }
   .progress { margin-top: 1rem; padding: .8rem; display: grid; gap: .25rem; border: 1px solid #65a9ea; border-radius: 8px; background: #fff; box-shadow: inset 3px 0 #3988d1; font-size: .8rem; }
   .actions { margin-top: .85rem; display: flex; justify-content: flex-end; gap: .5rem; } .control-dialog .actions button { min-height: 38px; padding: .5rem .8rem; border-color: #aeb9ad; color: #213026; background: #fff; } .control-dialog .actions button.primary { border-color: #263c2b; color: #f5fff2; background: #263c2b; }
+  .quick { margin-top: 1rem; display: flex; gap: .5rem; } .control-dialog .quick button { flex: 1; min-height: 44px; border-color: #263c2b; color: #213026; background: #fff; font-weight: 700; }
   .hint { font-size: .72rem; line-height: 1.4; } @media (max-width: 760px) { .family-control, .run-title { display: none; } .clock { min-width: 96px; } }
+  /* In a crowded Run bar only the title gives way; the buttons and the clock keep their size. */
+  .run-controls > :not(.run-title, .family-control) { flex-shrink: 0; }
+  /* At 760 px and below, without a title to give way, the controls the Run bar cannot hold
+     scroll sideways in their own strip instead of overlapping the buttons beside them. Its
+     edges fade, so a control cut off there reads as "more this way"; the padding the fades
+     lie on keeps the first and last controls clear of them, and focus rings unclipped. */
+  @media (max-width: 760px) {
+    .run-controls { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 4px 10px; scroll-padding-inline: 10px;
+      mask-image: linear-gradient(to right, transparent, #000 min(10px, 20%), #000 max(calc(100% - 10px), 80%), transparent); }
+    .run-controls::-webkit-scrollbar { display: none; }
+    .run-controls > * { flex: none; }
+  }
   .restrictions-dialog { width: min(680px, calc(100vw - 2rem)); } .object-restrictions { max-height: min(42vh, 420px); overflow: auto; display: grid; gap: .25rem; }
   .object-restrictions > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .8rem; padding: .4rem 0; border-bottom: 1px solid #e1e7df; }
   .object-restrictions > div > span { min-width: 0; display: grid; } .object-restrictions strong, .object-restrictions small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .object-restrictions small { color: #6b746c; }

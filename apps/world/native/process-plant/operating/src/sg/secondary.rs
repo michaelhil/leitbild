@@ -37,7 +37,8 @@ use super::{
 use crate::{
     joined::{
         block::{
-            Class, Command, Coordinates, Layout, Secondary, SecondaryView, Structure, Transaction,
+            Class, Command, Coordinates, Crossing, Layout, OwnerAccount, Secondary, SecondaryView,
+            Structure, Transaction,
         },
         packet::SecondaryStock,
     },
@@ -464,6 +465,34 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn layout(&self) -> &Layout {
         &self.layout
     }
+    fn account(&self) -> OwnerAccount {
+        let h_feed = self.derived.feed_enthalpy_j_kg;
+        let mut crossings = Vec::new();
+        for (k, (g, b)) in self.sgs.iter().zip(&self.boundary).enumerate() {
+            let hg = b.steam_enthalpy_j_kg.value;
+            let relief: f64 = b.relief_kg_s.iter().map(|m| m.value).sum();
+            for (port, mass, enthalpy) in [
+                ("feed", b.feed_kg_s.value, h_feed),
+                ("steam", -b.steam_kg_s.value, hg),
+                ("relief", -relief, hg),
+            ] {
+                crossings.push(Crossing {
+                    port: format!("SG.{}.{port}", g.id),
+                    volume: k,
+                    mass_kg_s: mass,
+                    energy_w: mass * enthalpy,
+                    tracer_kg_s: 0.,
+                });
+            }
+        }
+        OwnerAccount {
+            mechanical_j: 0.,
+            mechanical_rate_w: 0.,
+            crossings,
+            received_heat_w: self.boundary.iter().map(|b| b.heat_w.value).collect(),
+            power: None,
+        }
+    }
     fn prepared(&self) -> Vec<f64> {
         self.prepared.clone()
     }
@@ -766,6 +795,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
 
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure> {
         match command {
+            // G7's stuck cluster is the rod owner's malfunction; the steam
+            // demand is untouched (the turbine TRIP that follows ramps it).
+            Command::StuckCluster { .. } => Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"secondary","command":"StuckCluster","t_s":t,
+                    "steamDemand":"unchanged (a rod malfunction)"}),
+            }),
             // G7: the steam demand stays at its constant A/B values.
             Command::ManualReactorTrip => Ok(Transaction {
                 deposits: Vec::new(),

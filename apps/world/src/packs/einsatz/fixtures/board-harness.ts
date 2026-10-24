@@ -8,7 +8,7 @@ import type { BoardEffect, BoardEventBody, BoardKey, BoardView, CallResult, Clic
 import { configurationOutputSchema, type EinsatzConfig, type TaskTemplate, type UnitType } from '../config-schema.ts'
 import { einsatzConfigSchema } from '../config-validation.ts'
 import { openModeViewer, type PictureViewer } from '../picture.ts'
-import border from './halden-border.scenario.json'
+import border from '../../../scenarios/halden-border.scenario.json'
 import civil from './halden-civil.scenario.json'
 import civilRoles from './halden-civil-roles.scenario.json'
 import type { PackTargetContext } from '../../../core/packs/protocol.ts'
@@ -16,6 +16,7 @@ import { routeGroundClick, routeObjectClick, type MapClickContext, type MapClick
 import { einsatzPackId } from '../ids.ts'
 import { einsatzPackView } from '../ui-pack.ts'
 import { createMapOrders } from '../ui/map-orders.ts'
+import { borderDefinitions, groupOf } from './border-harness.ts'
 import { operator, type OpenRun } from './run-harness.ts'
 
 /**
@@ -198,7 +199,7 @@ export const openScreen = async (run: OpenRun, wall: Wall, options: { readonly v
   }
   const mapClickContext = (objects: ReadonlyArray<OperationalObject>): MapClickContext => {
     const context: PackTargetContext = runViewer === undefined ? { objects } : { objects, viewer: runViewer }
-    return { controller: objects.find(object => object.id === mapSelection && targeting.isController(object, context)) ?? null, targeting, context, panel }
+    return { controller: objects.find(object => object.id === mapSelection && targeting.isController(object, context)) ?? null, targeting, context, panel, opensDisplay: () => false }
   }
   /** What the World surface does with a routed map tap; a note or nothing is still the operator's tap. */
   const followRoute = async (route: MapClickRoute): Promise<void> => {
@@ -285,10 +286,19 @@ export const civilRolesWith = (items: ReadonlyArray<Record<string, unknown>>): u
   timeline: undefined,
 })
 
-/** halden-border with other items and no timeline: its roles, sides and configuration over a scene a test builds. */
+/**
+ * halden-border with other items and no timeline: its roles, sides, groups
+ * and configuration over a scene a test builds. A sided unit that names no
+ * group joins the group the Definition gives its side's units of its type.
+ */
 export const borderWith = (items: ReadonlyArray<Record<string, unknown>>): unknown => ({
   ...border,
-  packs: [{ ...border.packs[0]!, items }],
+  packs: [{
+    ...border.packs[0]!,
+    items: items.map(item => item.type === 'unit' && typeof item.side === 'string' && item.group === undefined
+      ? { ...item, group: groupOf(borderDefinitions.scripted, item.side, String(item.unitType)) }
+      : item),
+  }],
   timeline: undefined,
 })
 
@@ -389,11 +399,13 @@ export const pastGuardMs = 600
  * The recommendation follower: at every step of the running Run it presses N
  * and then Enter on the most urgent unserved row, confirming when the Board
  * asks (Enter on a busy unit's choice is "Do now"), until that row offers
- * nothing to commit. It stops at `untilMs` of Run time.
+ * nothing to commit. It stops at `untilMs` of Run time. `alongside` is what
+ * other screens do at each step, before this one acts.
  */
-export const follow = async (run: OpenRun, screen: Screen, options: { readonly untilMs: number; readonly stepMs: number }): Promise<void> => {
+export const follow = async (run: OpenRun, screen: Screen, options: { readonly untilMs: number; readonly stepMs: number; readonly alongside?: () => Promise<void> }): Promise<void> => {
   while (run.nowMs() < options.untilMs) {
     await runFor(run, options.stepMs, [screen])
+    await options.alongside?.()
     for (let round = 0; round < 20; round++) {
       await screen.key('n')
       if (screen.view().commit.state !== 'ready') break

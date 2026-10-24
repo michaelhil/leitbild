@@ -125,7 +125,7 @@ const roomProfileSchema = z.object({
 }).strict()
 
 const messageCauseSchema = z.object({
-  kind: z.enum(['script', 'trigger', 'biometric', 'resource-event', 'display-request']),
+  kind: z.enum(['script', 'trigger', 'biometric', 'resource-event', 'display-request', 'proposal-approved']),
   name: z.string(),
   step: z.number().int().optional(),
 }).strict()
@@ -151,6 +151,7 @@ const messageSchema = z.object({
   correlationId: z.string().optional(),
   inReplyTo: z.array(z.string()).optional(),
   cause: messageCauseSchema.optional(),
+  progress: z.literal(true).optional(),
   generationMs: z.number().finite().optional(),
   generationTraceId: z.string().optional(),
   promptTokens: z.number().finite().optional(),

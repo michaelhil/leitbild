@@ -56,3 +56,22 @@ test('capacity reclamation preserves requests and stays bounded across concurren
     expect(await state.list()).toHaveLength(3)
   } finally { gate.resolve(); await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
 })
+
+// Bun's 10 s idle timeout does not cut off a server running inside bun test, but
+// does one in a process of its own, as World runs in production: so a child process.
+test('a Workspace removal that takes longer than Bun\'s 10 s idle limit still answers the Host', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'world-slow-remove-'))
+  const child = Bun.spawn([process.execPath, join(import.meta.dir, 'fixtures', 'slow-workspace-removal.ts'), join(dataDir, 'maps')], { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' })
+  try {
+    const reader = child.stdout.getReader()
+    let output = ''
+    while (!/port=\d+/.test(output)) {
+      const { value, done } = await reader.read()
+      if (done) throw new Error(`Fixture exited before listening: ${output}`)
+      output += new TextDecoder().decode(value)
+    }
+    const port = Number(/port=(\d+)/.exec(output)![1])
+    const response = await fetch(`http://127.0.0.1:${port}/internal/workspaces/${newWorkspaceId()}`, { method: 'DELETE' })
+    expect(response.status).toBe(204)
+  } finally { child.kill(); await child.exited; await rm(dataDir, { recursive: true, force: true }) }
+}, 60_000)

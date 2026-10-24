@@ -299,12 +299,40 @@ export const processGraphPresentationSchema = z.object({
    */
   states: z.record(z.string().min(1), z.object({ on: z.string().min(1).max(40), off: z.string().min(1).max(40) }).strict()).optional(),
   /**
+   * What crews call its readings, by local variable path, where the name is
+   * the standard one for that very signal (R37): the core-exit thermocouples'
+   * average "CET", a mean coolant temperature "Tavg", the power-range flux
+   * the board and the procedures read as "reactor power"; or the reading by
+   * its equipment where its kind's words name only the kind ("Relief header
+   * pressure", not "Process header pressure node"). Written into the
+   * reading's label, as words a search finds it by; a name that names its
+   * equipment is the whole label. Never an alias.
+   */
+  names: z.record(z.string().min(1), z.string().min(1).max(60)).optional(),
+  /**
+   * What a row, a chip or a card line names its readings by where room is
+   * short, by local variable path, where the name derived from its label and
+   * the component's short name would not read as crews say it
+   * (observation/short-labels.ts): "Subcooling", "RVLIS level", "AFW flow".
+   */
+  shortNames: z.record(z.string().min(1), z.string().min(1).max(24)).optional(),
+  /**
    * Its pushbuttons, by local variable path: on/off commands that spring back
    * once pressed (an SI block, a manual trip), so an operator presses them
    * rather than switching them on or off. Never the command or isolation
    * input of a state aspect, which holds what it demands.
    */
   momentary: z.array(z.string().min(1)).min(1).optional(),
+  /**
+   * Its commands an operator is not offered, by local variable path, with
+   * why: where the model would make working them look wrong (an RCP start,
+   * whose seal injection and oil lift it does not model). `values` names the
+   * values not offered (START, not STOP); absent, none of them is.
+   */
+  notOffered: z.record(z.string().min(1), z.object({
+    text: z.string().min(1).max(200),
+    values: z.array(processVariableValueSchema).min(1).optional(),
+  }).strict()).optional(),
 }).strict()
 export type ProcessGraphPresentation = z.infer<typeof processGraphPresentationSchema>
 
@@ -421,6 +449,13 @@ const variableDescriptorBaseSchema = z.object({
    * bus's spare power. Displays tag it SIM wherever they show it.
    */
   simulatorOnly: z.literal(true).optional(),
+  /**
+   * A value that exists only because a fault is injected (a leak's flow, a
+   * steam generator's tube leak flow): the model's truth about the fault,
+   * which no person or AI agent reads, as no control room measures it; they
+   * infer the fault from its symptoms (signals.ts isInjectedFault).
+   */
+  faultTruth: z.literal(true).optional(),
 })
 export const variableDescriptorSchema = variableDescriptorBaseSchema.superRefine(validateQuantityUnit)
 export type VariableDescriptor = z.infer<typeof variableDescriptorSchema>
@@ -621,6 +656,8 @@ export interface ProcessSignalBinding {
   readonly measurand?: RatioMeasurand
   /** A value only the simulator computes (variableDescriptorBaseSchema.simulatorOnly). */
   readonly simulatorOnly?: true
+  /** A value that exists only because a fault is injected (variableDescriptorBaseSchema.faultTruth). */
+  readonly faultTruth?: true
   readonly published: boolean
   readonly owner:
     | { readonly type: 'component'; readonly componentIndex: number }

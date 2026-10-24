@@ -7,6 +7,7 @@ import type { RouteEntry } from './types.ts'
 import { asAIAgent } from '../../agents/shared.ts'
 import { exportRoomConversation } from '../../core/rooms/room-export.ts'
 import { roomPacksInputSchema } from '../../packs/activation.ts'
+import { storedTurnCards } from '../../agents/answer-cards.ts'
 
 export const roomRoutes: RouteEntry[] = [
   {
@@ -35,6 +36,34 @@ export const roomRoutes: RouteEntry[] = [
       const turn = system.executionStore.getTurn(room.profile.id, decodeURIComponent(match[2]!))
       if (!turn) return errorResponse('Execution turn not found', 404)
       return json({ turn, calls: system.executionStore.listCalls(room.profile.id, turn.id) })
+    },
+  },
+  {
+    // What the turn proposed and where World says each proposal stands (the answer's proposal card).
+    method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/executions\/([^/]+)\/proposals$/,
+    handler: async (_req, match, { system }) => {
+      try {
+        return json({ cards: await system.readProposalCards(decodeURIComponent(match[1]!), decodeURIComponent(match[2]!)) })
+      } catch (error) {
+        const code = (error as { code?: unknown }).code
+        if (code === 'room_not_found' || code === 'turn_not_found') return errorResponse((error as Error).message, 404)
+        if (code === 'workspace_host_unavailable') return errorResponse((error as Error).message, 503)
+        throw error
+      }
+    },
+  },
+  {
+    // The cards the turn's answer cites, keyed as it cites them (the answer's frozen card and key chips).
+    method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/executions\/([^/]+)\/cards$/,
+    handler: (_req, match, { system }) => {
+      const room = system.rooms.getRoom(decodeURIComponent(match[1]!))
+      if (!room) return errorResponse('Room not found', 404)
+      const turn = system.executionStore.getTurn(room.profile.id, decodeURIComponent(match[2]!))
+      if (!turn) return errorResponse('Execution turn not found', 404)
+      const calls = system.executionStore.listCalls(room.profile.id, turn.id).map(call => system.executionStore.getCall(room.profile.id, turn.id, call.id)!)
+      return json({ cards: storedTurnCards(calls) })
     },
   },
   {

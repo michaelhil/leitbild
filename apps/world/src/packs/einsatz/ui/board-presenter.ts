@@ -1,5 +1,5 @@
 import type { einsatzColors } from '../colors.ts'
-import type { BoardView, ContactRow, LogEntry, UnitRow, WorkRow } from '../board/types.ts'
+import type { BoardView, ContactRow, ContactsView, LogEntry, UnitRow, WorkRow } from '../board/types.ts'
 
 /**
  * What the Board panel shows beyond the controller's view, as pure
@@ -51,6 +51,11 @@ export const contactFacts = (row: ContactRow): ReadonlyArray<Fact> => [
   ...fact(row.fixText),
   ...fact(row.engagedText),
 ]
+
+/** Folded Contacts' one line, after the heading: each group's count, under its side's label on a screen holding several sides. */
+export const contactsSummary = (contacts: ContactsView): string => contacts.sides
+  .map(side => [...(side.label === null ? [] : [side.label]), `${side.engageable.heading} ${side.engageable.rows.length}`, `${side.other.heading} ${side.other.rows.length}`].join(' · '))
+  .join(' · ')
 
 /** A unit out of action is muted; a free one shows it is free. */
 export const unitIconTone = (row: UnitRow): IconTone => row.destroyed ? 'muted' : row.free ? 'free' : 'unit'

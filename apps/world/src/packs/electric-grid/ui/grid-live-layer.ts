@@ -12,7 +12,7 @@ import type {
   PackMapFeatureSelection,
 } from '../../../core/packs/protocol.ts'
 import type { PackMapAppearance, PackMapLegend, PackMapTheme, PackMapThemedColor } from '../../../core/packs/reference-style.ts'
-import { parseElectricGridObjectData } from '../model.ts'
+import { gridModelAttribution, parseElectricGridObjectData } from '../model.ts'
 import {
   gridMapGeometryResultSchema,
   gridMapStateResultSchema,
@@ -20,6 +20,7 @@ import {
   type GridMapStateResult,
 } from '../queries/map-schemas.ts'
 import { gridMapPalette } from './grid-map-palette.ts'
+import { GRID_ATTENTION_LOADING_PERCENT, type GridLoadingBands } from '../loading-bands.ts'
 import { gridNorwayStyle } from './grid-norway-style.ts'
 
 // The Grid's live map layer: branch loading, switching, trips, energisation and flow direction,
@@ -31,21 +32,19 @@ export const gridLiveLayerGroupId = 'electric-grid:live'
 const liveLayerId = 'electric-grid'
 const flowArrowImageId = `${liveLayerId}:flow-arrow`
 
-// Loading bands (% of the derated rating): attention from 70 % (the summary's constrained
-// threshold), high from 90 %, overloaded from 100 %.
-const watchLoadingPercent = 70
-const highLoadingPercent = 90
-const overloadLoadingPercent = 100
+// Loading bands (% of the derated rating), as map.state reads them from the Grid's Automation
+// (loading-bands.ts): attention from the summary's constrained threshold, high from the lowest
+// continuous-rating loading alarm, overloaded from the highest.
 // Feature-state carries a branch's loading band (0 normal, 1 watch, 2 high, 3 overloaded), the
 // steps its paint draws, not the raw percent: a revision then re-sets, and MapLibre re-evaluates,
 // only the branches that change band. The hover card and labels read the exact percent.
 const watchBand = 1
 const highBand = 2
 const overloadBand = 3
-export const gridLoadingBand = (loadingPercent: number): number =>
-  loadingPercent >= overloadLoadingPercent ? overloadBand
-    : loadingPercent >= highLoadingPercent ? highBand
-      : loadingPercent >= watchLoadingPercent ? watchBand
+export const gridLoadingBand = (bands: GridLoadingBands, loadingPercent: number): number =>
+  loadingPercent >= bands.overloadPercent ? overloadBand
+    : loadingPercent >= bands.highPercent ? highBand
+      : loadingPercent >= bands.attentionPercent ? watchBand
         : 0
 // Flow below 5 MW draws no direction arrow: it is within the DC model's rounding of small flows.
 const flowArrowMinimumMw = 5
@@ -180,11 +179,13 @@ const hvdcColor = (palette: LivePalette): ReadonlyArray<unknown> => ['case',
 ]
 
 const majorBranch: ReadonlyArray<unknown> = ['>=', ['get', 'kv'], majorBranchKv]
-// A network equivalent stands for out-of-scope sub-transmission, not a mapped line: thin and dashed.
+// A network equivalent stands for out-of-scope sub-transmission, not a physical line, so the map
+// never draws it as one: no line, no flow arrows, no label. Only while it is selected (from the
+// Grid's lists) a thin dotted connector between its buses shows which buses it joins.
 const isEquivalent: ReadonlyArray<unknown> = ['==', ['get', 'equivalent'], true]
 const isMappedBranch: ReadonlyArray<unknown> = ['all', isKind('branch'), ['!', isEquivalent]]
-const equivalentDash = [2, 2]
-const equivalentWidth: ReadonlyArray<unknown> = ['interpolate', ['exponential', 1.4], ['zoom'], 4, 0.8, 8, 1.4, 12, 2.4, 16, 4]
+const equivalentDash = [0.5, 2.5]
+const equivalentWidth: ReadonlyArray<unknown> = ['interpolate', ['exponential', 1.4], ['zoom'], 4, 1.2, 8, 1.8, 12, 2.8, 16, 4]
 // Dash pattern in line widths: a tripped branch reads as broken; an HVDC cable as a dashed DC link.
 const trippedDash = [1.5, 1.5]
 const hvdcDash = [3, 1.5]
@@ -196,7 +197,7 @@ const flowArrows = (direction: 1 | -1): PackLiveMapLayerSpec => ({
   source: 'features',
   type: 'symbol',
   minzoom: detailZoom,
-  filter: ['any', isKind('branch'), isKind('hvdc')],
+  filter: ['any', isMappedBranch, isKind('hvdc')],
   layout: {
     'symbol-placement': 'line',
     'symbol-spacing': 160,
@@ -256,18 +257,17 @@ const layersFor = (appearance: PackMapAppearance): ReadonlyArray<PackLiveMapLaye
       'line-opacity': ['case', flagState('tripped', false), 1, 0],
     },
   }, {
-    id: 'equivalent-line',
+    id: 'equivalent-selected',
     source: 'features',
     type: 'line',
     filter: ['all', isKind('branch'), isEquivalent],
-    layout: { 'line-join': 'round', 'line-cap': 'butt' },
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
     paint: {
-      'line-color': ['case', flagState('selected', false), palette.selected, flagState('hover', false), palette.hover, branchColor(palette)],
+      'line-color': palette.selected,
       'line-width': equivalentWidth,
       'line-dasharray': equivalentDash,
-      'line-opacity': 1,
+      'line-opacity': ['case', flagState('selected', false), 1, 0],
     },
-    interactive: true,
   }, {
     id: 'hvdc-casing',
     source: 'features',
@@ -419,8 +419,9 @@ const percent = (value: number): string => `${value.toFixed(1)} %`
 
 const drawnAs: Readonly<Record<GridMapGeometryResult['branches'][number]['pathSource'], string>> = {
   'mapped-route': 'Mapped route',
+  'designed-route': 'Designed route of a fictional connection, along existing corridors (not a mapped line)',
   transformer: 'Transformer, drawn between its buses',
-  'network-equivalent': 'Network equivalent (not a mapped line)',
+  'network-equivalent': 'Network equivalent (not a physical line)',
   'bus-to-bus': 'Straight line between its buses (no mapped route)',
 }
 
@@ -478,7 +479,7 @@ const presentState = (gridId: string, geometry: GridMapGeometryResult, rawState:
   geometry.branches.forEach((branch, position) => {
     const closed = result.branches.closed[position] === 1
     const energized = busEnergized(branch.fromBus) && busEnergized(branch.toBus)
-    const loadingBand = gridLoadingBand(result.branches.loadingPercent[position]!)
+    const loadingBand = gridLoadingBand(result.loadingBands, result.branches.loadingPercent[position]!)
     const flow = result.branches.flowMw[position]!
     featureStates.set(refs.branchStart + position, {
       live: true,
@@ -540,13 +541,15 @@ const presentState = (gridId: string, geometry: GridMapGeometryResult, rawState:
 
   // Tripped branches first ("Tripped" is short enough to fit along a short line), then the most loaded
   // closed ones, within the label limit; every HVDC link carries its transfer or state.
+  // A network equivalent is not drawn, so it carries no label.
+  const drawn = (position: number): boolean => geometry.branches[position]!.pathSource !== 'network-equivalent'
   const branchLabel = (position: number, text: string, tone: 'alarm' | 'normal') => ({ path: geometry.branches[position]!.path, text, tone })
-  const tripped = geometry.branches.flatMap((_branch, position) => result.branches.tripped[position] === 1 ? [branchLabel(position, 'Tripped', 'alarm')] : [])
+  const tripped = geometry.branches.flatMap((_branch, position) => result.branches.tripped[position] === 1 && drawn(position) ? [branchLabel(position, 'Tripped', 'alarm')] : [])
   const loaded = geometry.branches
     .map((branch, position) => ({ branch, position, loading: result.branches.loadingPercent[position]! }))
-    .filter(item => result.branches.closed[item.position] === 1 && item.loading >= watchLoadingPercent)
+    .filter(item => result.branches.closed[item.position] === 1 && item.loading >= result.loadingBands.attentionPercent && drawn(item.position))
     .sort((left, right) => right.loading - left.loading)
-    .map(item => branchLabel(item.position, `${item.branch.label} ${Math.round(item.loading)} %`, item.loading >= overloadLoadingPercent ? 'alarm' : 'normal'))
+    .map(item => branchLabel(item.position, `${item.branch.label} ${Math.round(item.loading)} %`, item.loading >= result.loadingBands.overloadPercent ? 'alarm' : 'normal'))
   const links = geometry.hvdcLinks.map((link, position) => {
     const linkState = result.hvdcLinks.state[position]!
     const transfer = result.hvdcLinks.transferMw[position]!
@@ -591,11 +594,13 @@ const presentState = (gridId: string, geometry: GridMapGeometryResult, rawState:
       const position = fid - refs.busStart
       const bus = geometry.buses[position]!
       const islandPosition = result.buses.island[position]!
+      const drawnAt = bus.external?.station === undefined ? [] : [packField('drawn', 'Drawn at', bus.external.station)]
       if (islandPosition === null && bus.external?.synchronous === true) {
         return {
           title: bus.label,
           fields: [
             packField('external', 'External system', `${bus.external.label}, behind AC ties`),
+            ...drawnAt,
             packField('voltage', 'Voltage level', `${bus.kv} kV`),
             packField('role', 'Connection', 'Separated from Norway: every tie to this boundary bus is open. The external system holds it energised; closing a tie is checked on frequency difference.'),
           ],
@@ -607,6 +612,7 @@ const presentState = (gridId: string, geometry: GridMapGeometryResult, rawState:
           title: bus.label,
           fields: [
             ...(bus.external === undefined ? [] : [packField('external', 'External system', bus.external.label)]),
+            ...drawnAt,
             packField('role', 'Connection', 'HVDC terminal outside the modelled AC network and every island; the external system supplies or absorbs its links\' transfer'),
             ...links.map(({ link, linkPosition }) => {
               const linkState = result.hvdcLinks.state[linkPosition]!
@@ -623,6 +629,7 @@ const presentState = (gridId: string, geometry: GridMapGeometryResult, rawState:
         title: bus.label,
         fields: [
           ...(bus.external === undefined ? [] : [packField('external', 'External system', `${bus.external.label}, behind AC ties`)]),
+          ...drawnAt,
           packField('voltage', 'Voltage level', `${bus.kv} kV`),
           packField('island', 'Island', `${island.id} (${result.islands.length} in the Grid)`),
           packField('energized', 'Energised', island.energized
@@ -753,18 +760,18 @@ export const gridLiveMapLayer: PackLiveMapLayer = {
   layersFor,
   imagesFor,
   referenceContext: { datasetIds: [gridNorwayStyle.datasetId], color: gridReferenceContextColor },
-  // The Grid Model's sources and licences; NOTICE.md and each asset's provenance give the detail.
-  attribution: 'Grid model: © OpenStreetMap contributors (ODbL) · NVE (NLOD 2.0) · Elhub, Kartverket, SSB, Svenska kraftnät, ENTSO-E via Energy-Charts (CC BY 4.0)',
+  attribution: gridModelAttribution,
 }
 
 export const gridLiveStateLegend: PackMapLegend = {
   id: 'electric-grid:live-state',
   title: 'Live grid state',
   entries: [
-    { id: 'normal', label: `Loaded below ${watchLoadingPercent} %`, symbol: 'line', color: themed.normal, sizePx: 3 },
-    { id: 'watch', label: `${watchLoadingPercent}–${highLoadingPercent} %`, symbol: 'line', color: themed.watch, sizePx: 3 },
-    { id: 'high', label: `${highLoadingPercent}–${overloadLoadingPercent} %`, symbol: 'line', color: themed.high, sizePx: 3 },
-    { id: 'overload', label: `Overloaded (≥ ${overloadLoadingPercent} %)`, symbol: 'line', color: themed.overload, sizePx: 4 },
+    // The alarm bands come from the Grid's Automation, which a static legend cannot read: it names them, the hover card gives the percent.
+    { id: 'normal', label: `Loaded below ${GRID_ATTENTION_LOADING_PERCENT} %`, symbol: 'line', color: themed.normal, sizePx: 3 },
+    { id: 'watch', label: `${GRID_ATTENTION_LOADING_PERCENT} % to the loading alarm`, symbol: 'line', color: themed.watch, sizePx: 3 },
+    { id: 'high', label: 'Loading alarm', symbol: 'line', color: themed.high, sizePx: 3 },
+    { id: 'overload', label: 'Overloaded (overload alarm)', symbol: 'line', color: themed.overload, sizePx: 4 },
     { id: 'tripped', label: 'Tripped by protection', symbol: 'dashed-line', color: themed.tripped, sizePx: 3 },
     { id: 'open', label: 'Open', symbol: 'line', color: themed.open, sizePx: 3 },
     { id: 'hvdc', label: 'HVDC link in service (grey: blocked, red: tripped)', symbol: 'dashed-line', color: themed.hvdc, sizePx: 3 },

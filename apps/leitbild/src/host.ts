@@ -2,23 +2,28 @@ import {
   capabilityIdSchema,
   coreModuleIds,
   createWorkspaceInputSchema,
+  featuredDefinitionCatalogSchema,
   moduleIdSchema,
   moduleProvisioningStateSchema,
   renameWorkspaceInputSchema,
   workspaceCapabilityCatalogSchema,
   workspaceDefinitionCatalogSchema,
   workspaceDefinitionRevisionReferenceSchema,
+  workspaceActivityCatalogSchema,
   workspaceIdSchema,
   workspaceResourceCatalogSchema,
   workspaceResourceReferenceSchema,
   type AccessContext,
   type CapabilityId,
   type CreateWorkspaceInput,
+  type FeaturedDefinitionCatalog,
   type InvokeCapabilityInput,
   type ModuleId,
   type ModuleProvisioningState,
   type RenameWorkspaceInput,
   type Workspace,
+  type WorkspaceActivityCatalog,
+  type WorkspaceActivityEntry,
   type WorkspaceCapabilityCatalog,
   type WorkspaceDefinitionCatalog,
   type WorkspaceId,
@@ -38,6 +43,13 @@ export interface WorkspaceHost {
   readonly definitions: (id: WorkspaceId, moduleId?: ModuleId) => Promise<WorkspaceDefinitionCatalog>
   readonly resources: (id: WorkspaceId, moduleId?: ModuleId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId, moduleId?: ModuleId) => Promise<WorkspaceCapabilityCatalog>
+  /** Every installed Module's featured and listed Definitions, with one outcome per Module; no Workspace involved. */
+  readonly featuredDefinitions: () => Promise<FeaturedDefinitionCatalog>
+  /**
+   * What every installed Module states is going on in each Workspace the Host
+   * knows, with one outcome per Module; the Host shows it without reading it.
+   */
+  readonly activity: () => Promise<WorkspaceActivityCatalog>
   readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext, signal?: AbortSignal) => Promise<import('@leitbild/contracts').ModuleCapabilityInvocationResult>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
 }
@@ -80,6 +92,16 @@ export const createWorkspaceHost = (config: {
       workspaceId,
       provisioningState(moduleId, result.ok ? 'ready' : 'provision_failed', result),
     )!
+  }
+
+  // A Module holding work for a Workspace the Host does not know is an orphan: it is
+  // left out of the answer, and said once per Module and Workspace so it can be found.
+  const reportedOrphans = new Set<string>()
+  const reportOrphan = (moduleId: ModuleId, workspaceId: WorkspaceId): void => {
+    const key = `${moduleId}:${workspaceId}`
+    if (reportedOrphans.has(key)) return
+    reportedOrphans.add(key)
+    console.warn(`Module ${moduleId} reports activity for a Workspace the Host does not know: ${workspaceId}`)
   }
 
   const unavailableModuleFailure = (item: ModuleProvisioningState) => item.failure ?? {
@@ -276,6 +298,49 @@ export const createWorkspaceHost = (config: {
         return item.result.value.capabilities
       })
       return workspaceCapabilityCatalogSchema.parse({ workspaceId: id, modules: outcomes, capabilities })
+    },
+    featuredDefinitions: async () => {
+      const results = await Promise.all(installedModuleIds.map(async moduleId => {
+        const result = await config.modules.featuredDefinitions(moduleId)
+        // A Module may feature and list only its own Definitions; the contract
+        // already keeps each preview inside its Definition Module's /assets/<moduleId>/.
+        const foreignIn = (verb: string, list: ReadonlyArray<{ readonly definition: { readonly moduleId: string } }>) => {
+          const item = list.find(candidate => candidate.definition.moduleId !== moduleId)
+          return item === undefined ? undefined : `Module ${moduleId} ${verb} a Definition owned by ${item.definition.moduleId}`
+        }
+        const foreign = result.ok ? foreignIn('featured', result.value.definitions) ?? foreignIn('listed', result.value.listed) : undefined
+        return foreign === undefined ? { moduleId, result } : {
+          moduleId,
+          result: { ok: false as const, failure: { code: 'module_contract_invalid', message: foreign, retryable: false } },
+        }
+      }))
+      return featuredDefinitionCatalogSchema.parse({
+        modules: results.map(item => item.result.ok
+          ? { moduleId: item.moduleId, status: 'ready' as const }
+          : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure }),
+        definitions: results.flatMap(item => item.result.ok ? item.result.value.definitions : []),
+        listed: results.flatMap(item => item.result.ok ? item.result.value.listed : []),
+      })
+    },
+    activity: async () => {
+      const results = await Promise.all(installedModuleIds.map(async moduleId => ({ moduleId, result: await config.modules.activity(moduleId) })))
+      // Read after the Modules answered: a Workspace deleted meanwhile is gone,
+      // and an id the Host does not know is not a Workspace, whatever a Module holds.
+      const entries = new Map(config.store.list().map(workspace => [workspace.id, [] as WorkspaceActivityEntry[]]))
+      for (const { moduleId, result } of results) {
+        if (!result.ok) continue
+        for (const workspace of result.value.workspaces) {
+          const known = entries.get(workspace.workspaceId)
+          if (known) known.push(...workspace.items.map(item => ({ moduleId, ...item })))
+          else reportOrphan(moduleId, workspace.workspaceId)
+        }
+      }
+      return workspaceActivityCatalogSchema.parse({
+        modules: results.map(item => item.result.ok
+          ? { moduleId: item.moduleId, status: 'ready' as const }
+          : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure }),
+        workspaces: [...entries].filter(([, items]) => items.length > 0).map(([workspaceId, items]) => ({ workspaceId, items })),
+      })
     },
     invoke: invokeCapability,
     installedModuleIds: () => config.modules.list().map(registration => registration.moduleId),

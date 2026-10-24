@@ -186,6 +186,8 @@ describe('evaluation view-fence guard', () => {
     expect(callLog.length).toBe(2)
     const correction = callLog[1]!.request.messages.at(-1)!.content
     expect(correction).toContain('call_0_0/compose is not a display composed in this turn')
+    // Any Module's operation may compose the display: the guard names none.
+    expect(correction).not.toMatch(/\bworld\.[a-z-]+\./)
     expect(result.decision.response).toEqual({ action: 'respond', content: 'Pressure is holding in its control band.' })
   })
 
@@ -312,19 +314,116 @@ describe('evaluation required view (display requests)', () => {
   })
 })
 
-describe('evaluation answer-display consistency', () => {
-  // Run 19 rcp-trip: the answer cited a loop flow its display did not show.
-  const fenced = (text: string): string => `${text}\n\n\`\`\`leitbild-view\nview call_0_0/compose\n\`\`\``
-  const inconsistent = fenced('Core cooling is not confirmed. All four RCP loops were at about 401 kg/s; CET-AVG is 302.4 °C.')
-  const corrected = fenced('Core cooling is not confirmed. CET-AVG is 302.4 °C; loop flow (not shown) is about 401 kg/s.')
-  const viewContent = {
-    items: [{ names: ['CET-AVG', 'Core coolant outlet temperature'], values: [{ value: 302.4, unit: '°C' }], limits: [], history: true }],
-    span: { shownMs: 60_000, horizonMs: 120_000 },
-    lead: null,
+describe('evaluation card citations', () => {
+  const at = { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' }
+  const loading = { at, more: 0, adjusted: [], items: [
+    { key: 'k1', label: 'Line A · loading', reading: '91.3 %', unit: '%', numbers: [{ value: 91.3, decimals: 1 }] },
+    { key: 'k2', label: 'Line B · loading', reading: '92.2 %', unit: '%', numbers: [{ value: 92.2, decimals: 1 }] },
+  ] }
+  const reserve = { at, more: 0, adjusted: [], items: [{ key: 'k1', label: 'Grid · reserve margin', reading: '2291 MW', unit: 'MW', numbers: [{ value: 2291, decimals: 0 }] }] }
+  // Two tool rounds, each a compose whose result carries one card, then the scripted answers.
+  const run = async (answers: ReadonlyArray<string>, cards: ReadonlyArray<unknown> = [loading, reserve]) => {
+    const scripted = [
+      ...cards.map((_, index) => ({ content: '', toolCalls: [{ id: `w${index}`, function: { name: 'workspace_call', arguments: { calls: [] } } }] })),
+      ...answers.map(content => ({ content })),
+    ]
+    let index = 0
+    let round = 0
+    const calls: ChatRequest[] = []
+    const events: unknown[] = []
+    const provider: LLMProvider = {
+      models: async () => [],
+      chat: async request => { calls.push(request); return { ...mkResponse(''), ...scripted[index++]! } },
+    }
+    const executor = async () => {
+      const card = cards[round++]
+      return [{ success: true, data: { results: [{ key: 'compose', operationId: 'world.simulation-run.display.compose', success: true, data: { card } }] } }]
+    }
+    const result = await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', {
+      toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
+      onEvent: event => { if (event.kind === 'correction') events.push(event) },
+    })
+    return { calls, result, events }
   }
-  const run = async (answers: ReadonlyArray<string>, data: unknown = { viewContent }) => {
+
+  test('a further card of the turn reaches the model re-keyed, and an answer citing both lines as they read costs nothing', async () => {
+    const answer = 'Line A is at 91.3 % ⟦k1⟧ and the reserve margin at 2,291 MW ⟦k3⟧.'
+    const { calls, result } = await run([answer])
+    expect(calls).toHaveLength(3)
+    const toolText = calls[2]!.messages.filter(message => message.role === 'tool').map(message => message.content).join('\n')
+    expect(toolText).toContain('k2 · Line B · loading · 92.2 %')
+    expect(toolText).toContain('k3 · Grid · reserve margin · 2291 MW')
+    expect(result.decision.response).toEqual({ action: 'respond', content: answer })
+  })
+
+  test('a number its line contradicts is corrected once, naming what the line reads', async () => {
+    const wrong = 'The reserve margin is 2,391 MW ⟦k3⟧.'
+    const right = 'The reserve margin is 2,291 MW ⟦k3⟧.'
+    const { calls, result, events } = await run([wrong, right])
+    expect(calls).toHaveLength(4)
+    const correction = calls[3]!.messages.at(-1)!.content
+    expect(correction).toContain('- 2,391 is cited with ⟦k3⟧, but k3 reads "2291 MW" (Grid · reserve margin).')
+    expect(correction).toContain('with its key right after it')
+    expect(events).toEqual([{ kind: 'correction', causes: ['contradiction'], issues: ['2,391 is cited with ⟦k3⟧, but k3 reads "2291 MW" (Grid · reserve margin).'] }])
+    expect(result.decision.response).toEqual({ action: 'respond', content: right })
+  })
+
+  test('a key on no card costs no correction turn; a second contradiction is posted as it is', async () => {
+    const unknown = 'Line A is at 91.3 % ⟦k9⟧.'
+    expect((await run([unknown])).calls).toHaveLength(3)
+    const wrong = 'Line B is at 95.0 % ⟦k2⟧.'
+    const { calls, result } = await run([wrong, wrong])
+    expect(calls).toHaveLength(4)
+    expect(result.decision.response).toEqual({ action: 'respond', content: wrong })
+  })
+
+  test('the model reads a vignette by reference and its card as lines; the check reads the evidence it left out', async () => {
+    const state = JSON.stringify({ title: 'Loading', views: [{ kind: 'values', refs: ['grid:g#line-a.loading'] }] })
+    const view = { viewType: 'display.vignette', title: 'Loading', height: 240, state }
+    const subject = { workspaceId: 'ws', moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }
+    const display = { success: true, data: { results: [{
+      key: 'compose', operationId: 'world.simulation-run.display.compose', success: true,
+      data: { view, card: loading }, embeddedView: { ...view, moduleId: 'world', subject }, viewRef: 'call_0_0/compose',
+    }] } }
+    const fenced = (text: string) => `${text}\n\n\`\`\`leitbild-view\nview call_0_0/compose\n\`\`\``
     const scripted = [
       { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [] } } }] },
+      { content: fenced('Line A is at 95.0 % ⟦k1⟧.') },
+      { content: fenced('Line A is at 91.3 % ⟦k1⟧.') },
+    ]
+    let index = 0
+    const calls: ChatRequest[] = []
+    const provider: LLMProvider = { models: async () => [], chat: async request => { calls.push(structuredClone(request)); return { ...mkResponse(''), ...scripted[index++]! } } }
+    const result = await evaluate(mkContext(), mkConfig(), provider, async () => [display], 5, 'room-1', {
+      toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
+    })
+    const evidence = calls[1]!.messages.find(message => message.role === 'tool')!.content
+    expect(evidence).not.toContain('grid:g#line-a')
+    expect(evidence).not.toContain('embeddedView')
+    expect(JSON.parse(evidence)).toEqual({ results: [{
+      key: 'compose', operationId: 'world.simulation-run.display.compose', success: true, viewRef: 'call_0_0/compose',
+      data: { view: { viewType: 'display.vignette', title: 'Loading', height: 240 }, card: ['card at 2026-01-01T10:16:00.000Z (simulation)', 'k1 · Line A · loading · 91.3 %', 'k2 · Line B · loading · 92.2 %'] },
+    }] })
+    // The citation check read the raw card, and the fence check its viewRef.
+    expect(calls).toHaveLength(3)
+    expect(calls[2]!.messages.at(-1)!.content).toContain('- 95.0 is cited with ⟦k1⟧, but k1 reads "91.3 %" (Line A · loading).')
+    expect(result.decision.response).toEqual({ action: 'respond', content: fenced('Line A is at 91.3 % ⟦k1⟧.') })
+    expect(result.decision.toolTrace![0]!.resultBytes).toBe(new TextEncoder().encode(evidence).byteLength)
+    expect(display.data.results[0]!.embeddedView.state).toBe(state)
+  })
+
+  test('a card that breaks the contract fails the turn loudly', async () => {
+    const { result } = await run(['Fine.'], [{ items: 'none' }])
+    expect(result.decision.response.action).toBe('error')
+  })
+})
+
+describe('evaluation operation claims', () => {
+  // Demo beat 4: the turn proposes shutting MOV-8000A; only a person executes it.
+  const proposeInput = { plantId: 'plant:halden-1', tagId: 'MOV-8000A', value: 0, reason: 'PORV-456A does not follow its SHUT demand', evidence: ['PT-455'] }
+  const run = async (answers: ReadonlyArray<string>) => {
+    const scripted = [
+      { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [{ key: 'propose', operationId: 'world.process-plant.control.propose', input: proposeInput }] } } }] },
       ...answers.map(content => ({ content })),
     ]
     let index = 0
@@ -335,7 +434,7 @@ describe('evaluation answer-display consistency', () => {
     }
     const executor = async () => [{
       success: true,
-      data: { results: [{ key: 'compose', operationId: 'world.process-plant.display.compose', success: true, data, viewRef: 'call_0_0/compose' }] },
+      data: { results: [{ key: 'propose', operationId: 'world.process-plant.control.propose', success: true, data: { ok: true, commandId: 'command:p1', acceptedAt: '2026-10-12T10:02:40.000Z' } }] },
     }]
     const result = await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', {
       toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
@@ -343,65 +442,60 @@ describe('evaluation answer-display consistency', () => {
     return { calls, result }
   }
 
-  test('an answer citing what its display does not show is corrected once, naming each issue', async () => {
-    const { calls, result } = await run([inconsistent, corrected])
+  test('an answer saying done what its turn only proposed is corrected once', async () => {
+    const claimed = 'I shut the PORV block valve MOV-8000A; pressure will recover.'
+    const proposed = 'I proposed shutting the PORV block valve MOV-8000A; it is awaiting your approval in the display window.'
+    const { calls, result } = await run([claimed, proposed])
     expect(calls).toHaveLength(3)
     const correction = calls[2]!.messages.at(-1)!.content
-    expect(correction).toContain('- It cites 401 kg/s, but the display shows no value in kg/s.')
-    expect(correction).toContain('mark one "(not shown)"')
-    expect(correction).not.toMatch(/\b(?:below|above) the answer\b/)
-    expect(result.decision.response).toEqual({ action: 'respond', content: corrected })
+    expect(correction).toContain('but this turn only proposed the operation of MOV-8000A')
+    expect(correction).toContain('awaits their approval')
+    expect(result.decision.response).toEqual({ action: 'respond', content: proposed })
   })
 
-  test('a second disagreement is posted as it is: one correction per answer', async () => {
-    const { calls, result } = await run([inconsistent, inconsistent])
-    expect(calls).toHaveLength(3)
-    expect(result.decision.response).toEqual({ action: 'respond', content: inconsistent })
-  })
-
-  test('equivalent physical units do not incur a false correction', async () => {
-    const answer = fenced('Pressurizer pressure is 15.5 MPa.')
-    const { calls, result } = await run([answer], { viewContent: { ...viewContent, items: [
-      { names: ['Pressurizer pressure'], values: [{ value: 15500, unit: 'kPa' }], limits: [], history: false },
-    ] } })
+  test('an answer saying it proposed is posted as it is', async () => {
+    const proposed = 'Proposed: SHUT MOV-8000A, awaiting a person\'s approval.'
+    const { calls, result } = await run([proposed])
     expect(calls).toHaveLength(2)
-    expect(result.decision.response).toEqual({ action: 'respond', content: answer })
+    expect(result.decision.response).toEqual({ action: 'respond', content: proposed })
+  })
+})
+
+describe('evaluation correction causes', () => {
+  // Every pass that sends an answer back is logged, before it runs, with why.
+  const fenced = (ref: string): string => `Core exit is at 290.0 °C ⟦k1⟧.\n\n\`\`\`leitbild-view\nview ${ref}\n\`\`\``
+  const card = { at: { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' }, more: 0, adjusted: [], items: [{ key: 'k1', label: 'Unit · Core exit temperature', reading: '302.4 °C', unit: 'degC', numbers: [{ value: 302.4, decimals: 1 }] }] }
+  const corrections = async (answers: ReadonlyArray<{ content: string; toolCalls?: ChatResponse['toolCalls'] }>, requireView = false) => {
+    let index = 0
+    const provider: LLMProvider = { models: async () => [], chat: async () => ({ ...mkResponse(''), ...answers[Math.min(index++, answers.length - 1)]! }) }
+    const executor = async (calls: ReadonlyArray<{ callId?: string }>) => [{
+      success: true,
+      data: { results: [{ key: 'compose', operationId: 'world.simulation-run.display.compose', success: true, data: { card }, viewRef: `${calls[0]!.callId}/compose` }] },
+    }]
+    const events: Array<{ kind: string; causes?: ReadonlyArray<string>; issues?: ReadonlyArray<string> }> = []
+    await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', {
+      toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
+      requireView,
+      onEvent: event => { if (event.kind === 'correction') events.push(event) },
+    })
+    return events
+  }
+  const compose = { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [] } } }] }
+
+  test('a required display, an unpresented one, an invalid block and a contradicted value each name their cause', async () => {
+    expect(await corrections([{ content: 'No display.' }, { content: 'Still none.' }], true)).toEqual([
+      { kind: 'correction', causes: ['required-view'], issues: ['The reader asked for a live display, and the response presents none.'] },
+    ])
+    const unpresented = await corrections([compose, { content: 'Core cooling holds.' }, { content: 'Core cooling holds.' }, { content: 'Core cooling holds.' }])
+    expect(unpresented.map(event => event.causes)).toEqual([['unpresented-view'], ['unpresented-view']])
+    const map = await corrections([{ content: '```map\n{"features":[{"type":"marker","lat":999,"lng":5}]}\n```' }, { content: 'fixed' }])
+    expect(map.map(event => event.causes)).toEqual([['map-fence']])
+    expect(await corrections([compose, { content: fenced('call_0_0/compose') }, { content: fenced('call_0_0/compose') }])).toEqual([
+      { kind: 'correction', causes: ['contradiction'], issues: ['290.0 is cited with ⟦k1⟧, but k1 reads "302.4 °C" (Unit · Core exit temperature).'] },
+    ])
   })
 
-  const legsAndLevel = { viewContent: { ...viewContent, items: [
-    { names: ['Hot leg temperature'], values: [{ value: 300, unit: '°C' }], limits: [], history: false },
-    { names: ['Cold leg temperature'], values: [{ value: 290, unit: '°C' }], limits: [], history: false },
-    { names: ['Steam generator level'], values: [{ value: 55, unit: '%' }], limits: [], history: true },
-  ] } }
-
-  test('swapped subjects remain a model quality case: the check compares with what is shown, it does not certify prose', async () => {
-    // Both values are on the display, each beside the other leg's name; the
-    // check does not bind a value to the item a sentence names, so it passes.
-    const answer = fenced('Hot leg temperature is 290 °C. Cold leg temperature is 300 °C.')
-    const { calls, result } = await run([answer], legsAndLevel)
-    expect(calls).toHaveLength(2)
-    expect(result.decision.response).toEqual({ action: 'respond', content: answer })
-  })
-
-  test('a current value the display contradicts is corrected once', async () => {
-    // The display reads the level at 55 % now. 99 % may be an earlier value of
-    // its trend, but the answer states it as the current reading: a false
-    // current claim the operator would read beside the display.
-    const answer = fenced('Steam generator level is currently 99 percent.')
-    const fixed = fenced('Steam generator level is currently 55 percent.')
-    const { calls, result } = await run([answer, fixed], legsAndLevel)
-    expect(calls).toHaveLength(3)
-    expect(calls[2]!.messages.at(-1)!.content).toContain('- It cites 99 percent as current, but the display reads Steam generator level 55 % now.')
-    expect(result.decision.response).toEqual({ action: 'respond', content: fixed })
-  })
-
-  test('malformed structured display evidence still fails loudly', async () => {
-    const { result } = await run([corrected], { viewContent: { items: 'not-an-array' } })
-    expect(result.decision.response.action).toBe('error')
-  })
-
-  test('an answer agreeing with its display, or a view without published content, costs no extra call', async () => {
-    expect((await run([corrected])).calls).toHaveLength(2)
-    expect((await run([inconsistent], {})).calls).toHaveLength(2)
+  test('an answer that needs no correction logs none', async () => {
+    expect(await corrections([{ content: 'Core cooling holds.' }])).toEqual([])
   })
 })

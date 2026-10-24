@@ -3,10 +3,10 @@ import type { OperationalObject } from '../../../core/model/index.ts'
 import { sideViewOfSnapshot } from '../../../core/simulation-runs/side-view.ts'
 import { einsatzCommandIds as ids } from '../capabilities.ts'
 import { roeWords } from '../lexicon.ts'
-import { createWall, openScreen, roleScreen, runFor, unitAt, type Screen } from '../fixtures/board-harness.ts'
+import { borderWith, createWall, openScreen, roleScreen, runFor, unitAt, type Screen } from '../fixtures/board-harness.ts'
 import { borderDefinitions, commanderOf } from '../fixtures/border-harness.ts'
 import { at, blue, red, types } from '../fixtures/combat-harness.ts'
-import scripted from '../fixtures/halden-border.scenario.json'
+import scripted from '../../../scenarios/halden-border.scenario.json'
 import { openRun, type OpenRun } from '../fixtures/run-harness.ts'
 import { einsatzPackId } from '../ids.ts'
 import { readBoardRecords } from './records.ts'
@@ -31,8 +31,6 @@ const untilTracked = async (run: OpenRun): Promise<void> => {
   if (!tracked('blue') || !tracked('red')) throw new Error('halden-border tracked no unit of either side in 30 minutes')
 }
 
-/** halden-border with these items and no timeline: its roles, sides and configuration over a scene a test builds. */
-const borderWith = (items: ReadonlyArray<Record<string, unknown>>): unknown => ({ ...scripted, packs: [{ ...scripted.packs[0]!, items }], timeline: undefined })
 const northOf = (metres: number): [number, number] => [...at(metres).coordinates]
 
 describe('Board on halden-border', () => {
@@ -44,8 +42,8 @@ describe('Board on halden-border', () => {
       expect(einsatzTypes(truth)).toEqual(['task', 'track', 'track-index', 'unit'])
       expect(einsatzTypes(sideViewOfSnapshot(run.run.snapshot(), ['blue']).objects)).toEqual(['task', 'track', 'unit'])
 
-      // Every role of the Definition: the Controller and each side's operators.
-      for (const role of scripted.roles) {
+      // Every role of the Run: the Controller and each side's group roles.
+      for (const role of run.run.roles()!.roles) {
         const screen = await openScreen(run, createWall(), { actor: roleScreen(run, role.id) })
         await runFor(run, 2_000, [screen])
         const view = screen.view()
@@ -95,10 +93,10 @@ describe('Board on halden-border', () => {
         for (const screen of all) await screen.sync()
       }
       // One snapshot before and one after each order, so each line comes from comparing two record sets.
-      await order(ids.setRoe, { unitId: 'b1', roe: 'free' })
+      await order(ids.setRoe, { unitId: 'b1', roe: 'return-fire' })
       await order(ids.engage, { unitId: 'b1', trackId: track.id })
       const lines = (screen: Screen) => screen.view().log.filter(entry => entry.recordId === 'b1').map(entry => entry.text)
-      const expected = [`B1: engaging ${track.label}`, `B1: set · ${roeWords.free}`]
+      const expected = [`B1: engaging ${track.label}`, `B1: set · ${roeWords['return-fire']}`]
       expect(lines(screens.own).slice(0, 2)).toEqual(expected)
       expect(lines(screens.truth).slice(0, 2)).toEqual(expected)
       expect(lines(screens.other)).toEqual([])

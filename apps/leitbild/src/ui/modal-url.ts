@@ -1,0 +1,136 @@
+// Deep links for the landing page's modals (plan v2 §2): one namespace per
+// parameter, `?guide=<page>&card=<card>`, `?demos` / `?demos=<moduleId>:<id>`,
+// `?scenarios` (the Demos modal's More scenarios list) and `?manage` (Manage
+// Workspaces, where many can be deleted at once). Opening pushes,
+// paging replaces, Back or × removes. Modals never stack: the guide's "Try …"
+// replaces `?guide` with `?demos=…`, and the Demos modal's switch between its
+// demos and More scenarios replaces `?demos=…` and `?scenarios`.
+
+export type ModalRoute =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'guide'; readonly page: string; readonly card: string | null }
+  | { readonly kind: 'demos'; readonly demo: string | null }
+  | { readonly kind: 'scenarios' }
+  | { readonly kind: 'manage' }
+
+/** Why Modal.svelte closed; 'programmatic' is `open = false` from the caller (e.g. Back). */
+export type ModalCloseReason = 'escape' | 'close-button' | 'backdrop' | 'programmatic'
+
+export const NO_MODAL: ModalRoute = { kind: 'none' }
+
+const token = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/
+const tokenOrNull = (value: string | null): string | null => value !== null && token.test(value) ? value : null
+
+/** `world:halden-offsite-power-restoration`, the key a featured demo is linked by. */
+export const demoKey = (definition: { readonly moduleId: string; readonly id: string }): string => `${definition.moduleId}:${definition.id}`
+
+/**
+ * Reads the modal from a query. `?guide` without a valid page opens the first
+ * page (`start`); the guide validates the page id against its own content.
+ * `?demos=<anything>` keeps the raw key so the Demos modal can say "That demo
+ * is no longer featured." for an unknown or malformed one.
+ */
+export const readModalRoute = (search: string | URLSearchParams): ModalRoute => {
+  const params = typeof search === 'string' ? new URLSearchParams(search) : search
+  if (params.has('guide')) {
+    return { kind: 'guide', page: tokenOrNull(params.get('guide')) ?? 'start', card: tokenOrNull(params.get('card')) }
+  }
+  if (params.has('demos')) {
+    const demo = params.get('demos')
+    return { kind: 'demos', demo: demo === null || demo === '' ? null : demo }
+  }
+  if (params.has('scenarios')) return { kind: 'scenarios' }
+  if (params.has('manage')) return { kind: 'manage' }
+  return NO_MODAL
+}
+
+/** The URL with this modal's parameters; all other parameters and the hash are kept. */
+export const modalRouteUrl = (route: ModalRoute, current: string | URL): string => {
+  const url = new URL(current)
+  url.searchParams.delete('guide')
+  url.searchParams.delete('card')
+  url.searchParams.delete('demos')
+  url.searchParams.delete('scenarios')
+  url.searchParams.delete('manage')
+  if (route.kind === 'guide') {
+    url.searchParams.set('guide', route.page)
+    if (route.card !== null) url.searchParams.set('card', route.card)
+  }
+  if (route.kind === 'demos') url.searchParams.set('demos', route.demo ?? '')
+  if (route.kind === 'scenarios') url.searchParams.set('scenarios', '')
+  if (route.kind === 'manage') url.searchParams.set('manage', '')
+  // `?demos=`, `?scenarios=` and `?manage=` read better as `?demos`, `?scenarios` and `?manage`.
+  const search = url.searchParams.toString().replace(/(^|&)(demos|scenarios|manage)=(?=&|$)/, '$1$2')
+  return `${url.pathname}${search ? `?${search}` : ''}${url.hash}`
+}
+
+/** Links from other pages (the Workspace page's "Getting started"). */
+export const guideHref = (page = 'start', card: string | null = null): string =>
+  modalRouteUrl({ kind: 'guide', page, card }, 'https://leitbild.invalid/workspaces')
+
+export const demosHref = (demo: string | null = null): string =>
+  modalRouteUrl({ kind: 'demos', demo }, 'https://leitbild.invalid/workspaces')
+
+/** Manage Workspaces, from the Workspaces switcher on any page. */
+export const manageHref = (): string => modalRouteUrl({ kind: 'manage' }, 'https://leitbild.invalid/workspaces')
+
+/** Both views of the Demos modal: its demos and its More scenarios list. */
+export const isDemosModalRoute = (route: ModalRoute): route is Extract<ModalRoute, { kind: 'demos' | 'scenarios' }> =>
+  route.kind === 'demos' || route.kind === 'scenarios'
+
+export interface ModalUrlPort {
+  readonly location: { readonly href: string }
+  readonly history: Pick<History, 'pushState' | 'replaceState' | 'back' | 'state'>
+  addEventListener(type: 'popstate', listener: () => void): void
+  removeEventListener(type: 'popstate', listener: () => void): void
+}
+
+export interface ModalUrlController {
+  route(): ModalRoute
+  /** Opening a modal pushes its parameter. */
+  open(route: ModalRoute): void
+  /** Changing page or slide, switching guide → Demos, or Demos ↔ More scenarios replaces it. */
+  replace(route: ModalRoute): void
+  /** × or Esc: Back when this page pushed the entry, otherwise replace (deep link). */
+  close(): void
+  /** Back/Forward: the route now in the URL. */
+  subscribe(listener: (route: ModalRoute) => void): () => void
+  destroy(): void
+}
+
+const PUSHED = 'leitbildModal'
+const pushedByUs = (state: unknown): boolean =>
+  typeof state === 'object' && state !== null && (state as Record<string, unknown>)[PUSHED] === true
+
+export const createModalUrl = (port: ModalUrlPort): ModalUrlController => {
+  const listeners = new Set<(route: ModalRoute) => void>()
+  const route = (): ModalRoute => readModalRoute(new URL(port.location.href).search)
+  const onPop = (): void => {
+    const current = route()
+    for (const listener of listeners) listener(current)
+  }
+  port.addEventListener('popstate', onPop)
+  return {
+    route,
+    open: next => {
+      if (next.kind === 'none') return
+      port.history.pushState({ [PUSHED]: true }, '', modalRouteUrl(next, port.location.href))
+    },
+    replace: next => {
+      port.history.replaceState(port.history.state, '', modalRouteUrl(next, port.location.href))
+    },
+    close: () => {
+      if (route().kind === 'none') return
+      if (pushedByUs(port.history.state)) port.history.back()
+      else port.history.replaceState(port.history.state, '', modalRouteUrl(NO_MODAL, port.location.href))
+    },
+    subscribe: listener => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    destroy: () => {
+      port.removeEventListener('popstate', onPop)
+      listeners.clear()
+    },
+  }
+}

@@ -110,15 +110,46 @@ export const turbineTripWrites = (idPrefix: string): ReadonlyArray<ReferenceIcEf
 ]
 
 /**
- * Feedwater isolation: both main feedwater pumps trip, and every feed
- * regulating valve's isolation signal shuts it against its level controller
- * until the isolation is released (reference-ic-balance-of-plant.ts). The
- * model has no feedwater isolation valves to close.
+ * The feed regulating valves' isolation: every feed regulating valve's
+ * isolation signal shuts it against its level controller until the isolation
+ * is released (reference-ic-balance-of-plant.ts). It is what P-4 with low
+ * Tavg does after a reactor trip: the main feedwater pumps keep running. The
+ * model draws no regulating bypass valves to shut with them.
+ */
+export const feedRegulatingValveIsolationWrites = (idPrefix: string, loops: ReadonlyArray<string>): ReadonlyArray<ReferenceIcEffect> =>
+  loops.map(loop => write(`${idPrefix}-shut-feed-regulating-valve-${loop.toLowerCase()}`, { path: `feedwaterControlValve${loop}.isolationSignal` }, true))
+
+/**
+ * Feedwater isolation, as safety injection and P-14 high-high level act it:
+ * both main feedwater pumps trip and every feed line is shut. The model draws
+ * no feedwater isolation valves, so the feed regulating valves, shut by their
+ * isolation signals (feedRegulatingValveIsolationWrites), shut the lines
+ * instead; nothing feeds the steam generators but auxiliary feedwater until
+ * operators restart a pump.
  */
 export const feedwaterIsolationWrites = (idPrefix: string, loops: ReadonlyArray<string>): ReadonlyArray<ReferenceIcEffect> => [
   write(`${idPrefix}-trip-main-feedwater-pump-a`, { tagId: 'MFW-PUMP-A-RUN' }, false),
   write(`${idPrefix}-trip-main-feedwater-pump-b`, { tagId: 'MFW-PUMP-B-RUN' }, false),
-  ...loops.map(loop => write(`${idPrefix}-shut-feed-regulating-valve-${loop.toLowerCase()}`, { path: `feedwaterControlValve${loop}.isolationSignal` }, true)),
+  ...feedRegulatingValveIsolationWrites(idPrefix, loops),
+]
+
+/**
+ * The steam lines that supply the turbine-driven auxiliary feedwater pump's
+ * turbine, ahead of their isolation valves, as the reference design takes
+ * them and its graph spec draws them: those of loops B and C, of the loops
+ * the Plant has. Either alone drives the pump.
+ */
+export const turbineDrivenAfwSteamSupplyLoops = (loops: ReadonlyArray<string>): ReadonlyArray<string> =>
+  loops.filter(loop => loop === 'B' || loop === 'C')
+
+/**
+ * The turbine-driven auxiliary feedwater pump's start: its steam supply
+ * valves open and its trip and throttle valve admits the steam (its run
+ * command), so the turbine comes up and drives the pump.
+ */
+export const turbineDrivenAfwStartWrites = (loops: ReadonlyArray<string>): ReadonlyArray<ReferenceIcEffect> => [
+  write('start-turbine-afw', { tagId: 'AFW-PUMP-T' }, true),
+  ...turbineDrivenAfwSteamSupplyLoops(loops).map(loop => write(`open-turbine-afw-steam-supply-${loop.toLowerCase()}`, { tagId: `TDAFW-STM-${loop}` }, 1)),
 ]
 
 export const rule = (config: {
@@ -135,6 +166,10 @@ export const rule = (config: {
   readonly effects: ReadonlyArray<ReferenceIcEffect>
   /** For a permissive or interlock: the writes it gates. */
   readonly commandGates?: ReadonlyArray<{ readonly signal: SignalRef; readonly message?: string }>
+  /** For an actuation that opens a modulating valve: how far a person may throttle it while it stands. */
+  readonly throttleFloor?: ProcessPlantIcRule['throttleFloor']
+  /** For a latched actuation: the least time after it acted before a person may reset it. */
+  readonly resetAfterMs?: number
 }): ProcessPlantIcRule => ({
   id: config.id,
   ...(config.label === undefined ? {} : { label: config.label }),
@@ -149,6 +184,8 @@ export const rule = (config: {
   resetWhenClear: config.resetWhenClear ?? false,
   effects: [...config.effects],
   commandGates: (config.commandGates ?? []).map(gate => ({ signal: signalReference(gate.signal), ...(gate.message === undefined ? {} : { message: gate.message }) })),
+  ...(config.throttleFloor === undefined ? {} : { throttleFloor: config.throttleFloor }),
+  ...(config.resetAfterMs === undefined ? {} : { resetAfterMs: config.resetAfterMs }),
 })
 
 export const deadbandController = (config: {

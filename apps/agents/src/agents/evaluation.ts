@@ -8,7 +8,7 @@
 
 import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
 import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider, ProviderContinuation } from '../core/types/llm.ts'
-import type { EvalEventCore } from '../core/types/agent-eval.ts'
+import type { CorrectionCause, EvalEventCore } from '../core/types/agent-eval.ts'
 import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult } from '../core/types/tool.ts'
 import type { MessageCause, ToolTraceEntry } from '../core/types/messaging.ts'
 import type { ContextResult, FlushInfo } from './context-builder.ts'
@@ -16,8 +16,10 @@ import { classifyLLMError } from './error-classify.ts'
 import { extractFences } from './fence-extract.ts'
 import { parseMapBody, formatMapErrors } from '../core/render-validators/map-schema.ts'
 import { parseViewFenceBody, viewRefFor, VIEW_FENCE_LANGUAGE } from '../core/render-validators/view-fence.ts'
-import { embeddedViewContentSchema, type EmbeddedViewContent } from '@leitbild/contracts'
-import { answerViewIssues } from './answer-consistency.ts'
+import { createTurnCards, type TurnCards } from './answer-cards.ts'
+import { citationIssues } from './citations.ts'
+import { collectTurnOperations, operationClaimIssues, type TurnOperation } from './operation-claims.ts'
+import { workspaceCallResultForModel } from '../tools/built-in/workspace-capability-tools.ts'
 
 // Max times the eval loop will ask the LLM to fix an invalid map/geojson
 // fence before giving up and posting the broken response (the UI banner
@@ -29,8 +31,8 @@ import { answerViewIssues } from './answer-consistency.ts'
 // `evaluation.fence-retry.test.ts` asserts 3 total LLM calls (1 + 2 retries).
 export const MAX_FENCE_RETRIES = 2
 
-// Times the eval loop asks the LLM to make an answer agree with the display
-// it presents (answer-consistency.ts). One: the issues name each fix, and a
+// Times the eval loop asks the LLM to correct a number the card lines its keys
+// cite contradict (citations.ts). One: the issues name each fix, and a
 // second round would cost another full answer's latency for a model that
 // did not take the first; the corrected answer is still fence-checked.
 export const MAX_CONSISTENCY_CORRECTIONS = 1
@@ -99,9 +101,15 @@ export const formatToolDataForLLM = (data: unknown): string => {
   }
 }
 
-const formatToolResult = (result: ToolResult): string => result.success
-  ? formatToolDataForLLM(result.data)
-  : JSON.stringify({ success: false, error: result.error ?? 'Tool failed', ...(result.data === undefined ? {} : { details: result.data }) })
+// What the model reads of a tool result, once per result: a card in it takes
+// the turn's next keys. Checks of the answer read the raw result or the turn's
+// cards, never this text (workspaceCallResultForModel says what it leaves out).
+const formatToolResult = (tool: string, raw: ToolResult, cards: TurnCards): string => {
+  const result = tool === 'workspace_call' ? workspaceCallResultForModel(raw, cards) : raw
+  return result.success
+    ? formatToolDataForLLM(result.data)
+    : JSON.stringify({ success: false, error: result.error ?? 'Tool failed', ...(result.data === undefined ? {} : { details: result.data }) })
+}
 
 const messageTokens = (message: ChatRequest['messages'][number]): number =>
   Math.ceil((message.content.length + (message.toolCalls ? JSON.stringify(message.toolCalls).length : 0)) / 4)
@@ -275,29 +283,35 @@ const callLLMOnce = async (
 // up to MAX_FENCE_RETRIES times. Returns the final response content
 // (corrected if a retry succeeded; the last attempt's content if all retries
 // failed — the UI then shows the error in place of the block). Once the
-// fences are valid, an answer that disagrees with the display it presents is
-// corrected the same way, at most MAX_CONSISTENCY_CORRECTIONS times. That
-// compares the answer with what the display publishes; it does not certify
-// that free prose is true (two values swapped between named items pass).
+// fences are valid, an answer citing a number the card line its key names
+// contradicts (citations.ts) is corrected the same way, at most
+// MAX_CONSISTENCY_CORRECTIONS times. That compares the answer with the cards
+// its turn read; it does not certify that free prose is true.
 //
 // Mermaid is excluded by design: its parser is browser-only; a server-side
 // validator would only catch trivial cases (oversized, completely wrong
 // keyword) and miss real syntax errors. Honest scoping > pretend-bulletproof.
-const mapFenceErrors = (content: string): ReadonlyArray<string> =>
+/** One reason a response's blocks send it back, with the cause it is logged under. */
+interface FenceError {
+  readonly cause: CorrectionCause
+  readonly error: string
+}
+
+const mapFenceErrors = (content: string): ReadonlyArray<FenceError> =>
   extractFences(content, ['map', 'geojson']).flatMap(fence => {
     const result = parseMapBody(fence.body)
-    return result.ok ? [] : [`\`\`\`${fence.language}\` block at content line ${fence.startLine} (see the rendering skill for the schema):\n${formatMapErrors(result.errors)}`]
+    return result.ok ? [] : [{ cause: 'map-fence' as const, error: `\`\`\`${fence.language}\` block at content line ${fence.startLine} (see the rendering skill for the schema):\n${formatMapErrors(result.errors)}` }]
   })
 
 // A view fence must name a display this turn actually composed. Evidence of
 // earlier turns is not accepted: the answer must present what it just built.
 // A display composed in this turn and left out is corrected too: the answer
 // would point the operator to a display that is not there.
-const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): ReadonlyArray<string> => {
+const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): ReadonlyArray<FenceError> => {
   const fences = extractFences(content, [VIEW_FENCE_LANGUAGE])
   if (fences.length === 0) {
     const latest = [...viewRefs].at(-1)
-    return latest === undefined ? [] : [`This turn composed a display (viewRef ${latest}) but the response does not present it. End the response with the \`${VIEW_FENCE_LANGUAGE}\` block (view ${latest}), or, if that display does not answer the question, say so in one sentence and never refer to it as shown.`]
+    return latest === undefined ? [] : [{ cause: 'unpresented-view', error: `This turn composed a display (viewRef ${latest}) but the response does not present it. End the response with the \`${VIEW_FENCE_LANGUAGE}\` block (view ${latest}), or, if that display does not answer the question, say so in one sentence and never refer to it as shown.` }]
   }
   const errors: string[] = []
   if (fences.length > 1) errors.push(`Show at most one display per answer; the response has ${fences.length} \`${VIEW_FENCE_LANGUAGE}\` blocks.`)
@@ -306,10 +320,10 @@ const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): Readon
     if (parsed.kind === 'invalid') { errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${parsed.error}`); continue }
     const ref = viewRefFor(parsed.ref.callId, parsed.ref.key)
     if (!viewRefs.has(ref)) {
-      errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${ref} is not a display composed in this turn. Paste the viewRef returned by world.process-plant.display.compose, or remove the block if no display was composed.`)
+      errors.push(`\`${VIEW_FENCE_LANGUAGE}\` block at content line ${fence.startLine}: ${ref} is not a display composed in this turn. Paste the viewRef the call that composed it returned, or remove the block if no display was composed.`)
     }
   }
-  return errors
+  return errors.map(error => ({ cause: 'view-fence', error }))
 }
 
 // A turn that must present a live view (RequestedTurn.requireView) and
@@ -317,10 +331,12 @@ const viewFenceErrors = (content: string, viewRefs: ReadonlySet<string>): Readon
 // the model can still compose it. A second answer without one stands.
 const REQUIRED_VIEW_CORRECTION = `The reader asked for a live display, and this response presents none. If you have not composed one yet, compose it now and end the response with its \`${VIEW_FENCE_LANGUAGE}\` block. If no display can be produced, reply with one sentence saying why.`
 
-const validateResponseFences = (content: string, viewRefs: ReadonlySet<string>): { ok: boolean; errors: string } => {
-  const errors = [...mapFenceErrors(content), ...viewFenceErrors(content, viewRefs)]
-  return { ok: errors.length === 0, errors: errors.join('\n\n') }
-}
+const validateResponseFences = (content: string, viewRefs: ReadonlySet<string>): ReadonlyArray<FenceError> =>
+  [...mapFenceErrors(content), ...viewFenceErrors(content, viewRefs)]
+
+/** The correction event of a pass: each cause once, in order, with every issue it names. */
+const correctionEvent = (entries: ReadonlyArray<{ readonly cause: CorrectionCause; readonly issue: string }>): EvalEventCore =>
+  ({ kind: 'correction', causes: [...new Set(entries.map(entry => entry.cause))], issues: entries.map(entry => entry.issue) })
 
 /** viewRefs that successful workspace_call results in this turn made presentable. */
 export const collectViewRefs = (into: Set<string>, tool: string, result: ToolResult): void => {
@@ -333,41 +349,25 @@ export const collectViewRefs = (into: Set<string>, tool: string, result: ToolRes
   }
 }
 
-/** What the Modules said each view composed in this turn shows, by viewRef. */
-export const collectViewContents = (into: Map<string, EmbeddedViewContent>, tool: string, result: ToolResult): void => {
-  if (tool !== 'workspace_call' || !result.success) return
-  const entries = (result.data as { results?: unknown } | undefined)?.results
-  if (!Array.isArray(entries)) return
-  for (const entry of entries) {
-    const { viewRef, data } = (entry ?? {}) as { viewRef?: unknown; data?: unknown }
-    if (typeof viewRef !== 'string' || typeof data !== 'object' || data === null || !('viewContent' in data)) continue
-    // A Module that publishes content must publish it valid: a broken
-    // contract fails the turn loudly rather than skipping the check.
-    into.set(viewRef, embeddedViewContentSchema.parse((data as { viewContent: unknown }).viewContent))
-  }
-}
+// Numbers the card lines their keys cite contradict (citations.ts).
+const citationCorrection = (issues: ReadonlyArray<string>): string =>
+  `The answer cites numbers its card lines do not show:\n${issues.map(issue => `- ${issue}`).join('\n')}\n\n` +
+  'Re-emit the FULL corrected response, keeping any display block. Give each value as its line reads it, with its key right after it; ' +
+  'a number from elsewhere carries no key. Keep the assessment and actions.'
 
-// Where an answer and the display it presents disagree. A view whose Module
-// says nothing of what it shows (a unit overview) is not checked: there is
-// nothing to compare the answer with.
-const presentedViewIssues = (content: string, viewContents: ReadonlyMap<string, EmbeddedViewContent>): ReadonlyArray<string> => {
-  const fence = extractFences(content, [VIEW_FENCE_LANGUAGE])[0]
-  if (fence === undefined) return []
-  const parsed = parseViewFenceBody(fence.body)
-  if (parsed.kind === 'invalid') return []
-  const view = viewContents.get(viewRefFor(parsed.ref.callId, parsed.ref.key))
-  return view === undefined ? [] : answerViewIssues(content, view)
-}
-
-const consistencyCorrection = (issues: ReadonlyArray<string>): string =>
-  `The answer and the display it presents disagree, and the operator reads them together:\n${issues.map(issue => `- ${issue}`).join('\n')}\n\n` +
-  `Re-emit the FULL corrected response with the same \`${VIEW_FENCE_LANGUAGE}\` block. Cite values and watch items only as the display shows them, or mark one "(not shown)"; ` +
-  'name what the display leads with; give its time span as the display draws it. Keep the assessment and actions.'
+// An answer that says done what its turn only proposed (operation-claims.ts),
+// with any number its card lines contradict, in one correction.
+const claimCorrection = (claims: ReadonlyArray<string>, cited: ReadonlyArray<string>): string =>
+  `The answer says something happened that did not:\n${claims.map(issue => `- ${issue}`).join('\n')}\n\n` +
+  (cited.length === 0 ? '' : `It also cites numbers its card lines do not show:\n${cited.map(issue => `- ${issue}`).join('\n')}\n\n`) +
+  'Re-emit the FULL corrected response, keeping any display block. A proposal is executed only when a person approves it in the display window: ' +
+  'say what you proposed and that it awaits their approval, or that World refused it and why. Keep the assessment.'
 
 const correctResponse = async (
   initialContent: string,
   viewRefs: ReadonlySet<string>,
-  viewContents: ReadonlyMap<string, EmbeddedViewContent>,
+  cards: TurnCards,
+  operations: ReadonlyArray<TurnOperation>,
   context: Array<ChatRequest['messages'][number]>,
   config: AIAgentConfig,
   llmProvider: LLMProvider,
@@ -385,20 +385,27 @@ const correctResponse = async (
   let fenceRetries = 0
   let consistencyCorrections = 0
   for (;;) {
-    const validation = validateResponseFences(content, viewRefs)
+    const fenceErrors = validateResponseFences(content, viewRefs)
     let correction: string
-    if (!validation.ok) {
+    if (fenceErrors.length > 0) {
       if (fenceRetries === MAX_FENCE_RETRIES) break
       fenceRetries++
+      onEvent?.(correctionEvent(fenceErrors.map(({ cause, error }) => ({ cause, issue: error }))))
       correction =
-        `Your previous response contained one or more invalid fenced blocks:\n\n${validation.errors}\n\n` +
+        `Your previous response contained one or more invalid fenced blocks:\n\n${fenceErrors.map(entry => entry.error).join('\n\n')}\n\n` +
         `Re-emit the FULL corrected response (keep the surrounding prose, fix or remove the listed blocks).`
     } else {
-      // Valid fences: does the answer agree with the display it presents?
-      const issues = consistencyCorrections === MAX_CONSISTENCY_CORRECTIONS ? [] : presentedViewIssues(content, viewContents)
-      if (issues.length === 0) return content
+      // Valid fences: do the card lines it cites contradict the answer, and does it claim what its turn did not do?
+      const done = consistencyCorrections === MAX_CONSISTENCY_CORRECTIONS
+      const issues = done ? [] : citationIssues(content, cards.items()).contradictions.map(contradiction => contradiction.issue)
+      const claims = done ? [] : operationClaimIssues(content, operations)
+      if (issues.length === 0 && claims.length === 0) return content
       consistencyCorrections++
-      correction = consistencyCorrection(issues)
+      onEvent?.(correctionEvent([
+        ...claims.map(issue => ({ cause: 'claimed-execution' as const, issue })),
+        ...issues.map(issue => ({ cause: 'contradiction' as const, issue })),
+      ]))
+      correction = claims.length > 0 ? claimCorrection(claims, issues) : citationCorrection(issues)
     }
     // Append the response + a precise correction prompt. The next LLM call
     // will see (a) what it just emitted, (b) why it must change,
@@ -443,6 +450,10 @@ export interface EvalOptions {
   // The turn must present a live view; see REQUIRED_VIEW_CORRECTION.
   readonly requireView?: boolean
   readonly onEvent?: (event: EvalEventCore) => void
+  // Posts a tool result's progress line (ToolResult.progress) to the person at
+  // once, while the turn continues. A standalone evaluation (a model
+  // comparison replay) has no conversation to post to and omits it.
+  readonly onProgress?: (line: string) => void
   readonly signal?: AbortSignal
   // Optional operator-configured tool-iteration check-in. Returns true to
   // continue this turn without another quota, or false to stop (user clicked
@@ -467,7 +478,7 @@ export const evaluate = async (
   const context: Array<ChatRequest['messages'][number]> = [...contextResult.messages]
   let totalGenerationMs = 0
   let metrics: LLMCallMetrics = { modelCalls: 0 }
-  const { toolDefinitions, inReplyTo, requireView, onEvent, signal, requestToolCheckin } = options ?? {}
+  const { toolDefinitions, inReplyTo, requireView, onEvent, onProgress, signal, requestToolCheckin } = options ?? {}
   // Optional mutable operator threshold. Undefined means there is no hidden
   // engine quota; the Agent decides when it has enough evidence.
   let effectiveMaxIterations = maxToolIterations
@@ -484,7 +495,10 @@ export const evaluate = async (
   // Rounds spent insisting on a view call the model again without a tool
   // round of the agent's own; they do not count against its iteration limit.
   let insistRounds = 0
-  const viewContents = new Map<string, EmbeddedViewContent>()
+  // The cards this turn's results carried, re-keyed as the model read them.
+  const turnCards = createTurnCards()
+  // What this turn's workspace calls issued: an answer may not say done what it only proposed.
+  const turnOperations: TurnOperation[] = []
   let lastGenerationQuery: GenerationQuery | undefined
   const captureRequest = (request: ChatRequest): void => {
     // ChatRequest is JSON-shaped. Clone at the call boundary so subsequent
@@ -609,17 +623,22 @@ export const evaluate = async (
           onEvent?.({ kind: 'tool_start', tool: call.tool, callId: call.callId ?? String(i) })
         }
         const results = await toolExecutor(calls, triggerRoomId, signal, options?.executionTurnId)
+        // A line says what has already happened, so it is posted even when
+        // the turn is cancelled now; posted lines stay.
+        for (const result of results) for (const line of result.progress ?? []) onProgress?.(line)
         signal?.throwIfAborted()
+        const serializedResults: string[] = []
         for (let i = 0; i < results.length; i++) {
           const call = calls[i]
           const result = results[i]
           if (!call || !result) continue
           collectViewRefs(viewRefs, call.tool, result)
-          collectViewContents(viewContents, call.tool, result)
+          collectTurnOperations(turnOperations, call.tool, call.arguments, result)
           const operationOutcomes = operationOutcomesFor(call.tool, result)
           const traceSuccess = result.success && (operationOutcomes?.every(outcome => outcome.success) ?? true)
           onEvent?.({ kind: 'tool_result', tool: call.tool, callId: call.callId ?? String(i), success: traceSuccess, preview: traceSuccess ? undefined : result.error ?? 'One or more requested operations failed' })
-          const serializedResult = formatToolResult(result)
+          const serializedResult = formatToolResult(call.tool, result, turnCards)
+          serializedResults[i] = serializedResult
           toolTrace.push({
             tool: call.tool,
             ...traceArguments(call.tool, call.arguments),
@@ -638,7 +657,7 @@ export const evaluate = async (
           const call = calls[i]
           const result = results[i]
           if (!call || !result) continue
-          toolMessages.push({ role: 'tool', toolCallId: wireCalls[i]!.id, name: call.tool, content: formatToolResult(result) })
+          toolMessages.push({ role: 'tool', toolCallId: wireCalls[i]!.id, name: call.tool, content: serializedResults[i]! })
         }
         const systemTokens = Math.ceil((contextResult.systemBlocks?.map(block=>block.text).join('\n\n').length ?? 0)/4)
         const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens, turnStart)
@@ -681,6 +700,7 @@ export const evaluate = async (
         viewInsisted = true
         insistRounds++
         context.push({ role: 'assistant', content, ...(streamResult.continuation ? { continuation: streamResult.continuation } : {}) })
+        onEvent?.(correctionEvent([{ cause: 'required-view', issue: 'The reader asked for a live display, and the response presents none.' }]))
         context.push({ role: 'user', content: REQUIRED_VIEW_CORRECTION })
         continue
       }
@@ -698,7 +718,8 @@ export const evaluate = async (
       const finalContent = await correctResponse(
         content,
         viewRefs,
-        viewContents,
+        turnCards,
+        turnOperations,
         context,
         config,
         llmProvider,

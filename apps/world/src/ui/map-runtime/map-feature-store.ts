@@ -1,6 +1,8 @@
 import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import { remainingRouteGeometry } from '../../core/model/index.ts'
 import type { PackMapFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import { alertRows, asksAttention, worstFirst } from '../../features/displays/alerts/rows.ts'
+import { severityTable, type Palette } from '../displays/severity.ts'
 import { colorWithAlpha, hexToRgba, toneColor, white } from './colors.ts'
 import { symbolAtlasFor, symbolSizePx } from './symbol-kit.ts'
 import {
@@ -27,7 +29,13 @@ export interface MapFeatureStore {
 }
 
 interface FamilyState<T extends { readonly id: string; readonly signature: string }> {
-  readonly items: T[]
+  /**
+   * The family's features. A change of members replaces the array, so a deck
+   * layer drawing it sees new data and sizes every attribute buffer, picking
+   * colours included, for the new count; a change of signatures alone
+   * updates it in place, for the layers' update triggers to redraw.
+   */
+  items: T[]
   readonly signatures: Map<string, string>
   revision: number
 }
@@ -50,7 +58,7 @@ const syncFamily = <T extends { readonly id: string; readonly signature: string 
 ): void => {
   let changed = !idsMatch(family.items, nextItems)
   if (changed) {
-    family.items.splice(0, family.items.length, ...nextItems)
+    family.items = [...nextItems]
     family.signatures.clear()
     for (const item of nextItems) family.signatures.set(item.id, item.signature)
     family.revision += 1
@@ -89,6 +97,19 @@ const pointPriority = (
   return 40
 }
 
+/**
+ * An object's live-map alert badge (D9): its worst alert that asks for attention (standing and advisory ones never
+ * do), in the one severity table's colour for the screen's palette; a notice has no hue and gets none. Its Pack's
+ * colour and tone never set it.
+ */
+export const alertBadge = (object: OperationalObject, palette: Palette): OperationalPointFeature['alert'] => {
+  const worst = alertRows([object], () => ({ label: object.label, categoryId: '' })).filter(asksAttention).sort(worstFirst)[0]
+  const priority = worst?.priority ?? null
+  const rgb = priority === null || priority === 'none' ? null : severityTable[priority].rgb?.[palette] ?? null
+  const channels = rgb?.match(/^rgb\((\d+), (\d+), (\d+)\)$/)
+  return priority === null || channels == null ? null : { priority, color: [Number(channels[1]), Number(channels[2]), Number(channels[3]), 255] }
+}
+
 const presentationTone = (presentation: PackObjectPresentation): NonNullable<PackObjectPresentation['status']>['tone'] =>
   presentation.status?.tone ?? 'idle'
 
@@ -111,6 +132,7 @@ const operationalPointFor = (
   const muted = presentation.muted === true || context.mutedObjectIds.has(object.id)
   const color = muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
   const sizePx = presentation.mapIconSizePx ?? symbolSizePx(symbolId)
+  const alert = alertBadge(object, context.alertPalette)
   const signature = [
     object.id,
     positionSignature(position),
@@ -123,6 +145,7 @@ const operationalPointFor = (
     hasNewInfo ? 'n' : '',
     muted ? 'm' : '',
     label ?? '',
+    alert === null ? '' : alert.color.join(','),
   ].join(':')
   return {
     id: object.id,
@@ -133,6 +156,7 @@ const operationalPointFor = (
     label,
     color,
     statusTone: tone,
+    alert,
     selected,
     highlighted,
     hasNewInfo,
@@ -232,6 +256,7 @@ const projectionContextFor = (
   hiddenObjectCategoryIds: new Set(input.hiddenObjectCategoryIds),
   hasNewInfo: input.hasNewInfo,
   presentationFor: input.presentationFor,
+  alertPalette: input.alertPalette,
 })
 
 const projectObjects = (

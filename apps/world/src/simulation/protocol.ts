@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { ActorId,ClientId,CommandEnvelope,CommandResult,ElectricalConnectionDefinition,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,PackRuntimeRecordingBatch,Provenance,RecordedSample,RunViewer,ScenarioRecordingSelection,ScenarioRole,ScenarioSide,ScenarioWorldDefinition,SimulationClockState,SimulationRunEvent,SimulationRunId,TelemetryState } from '../core/model/index.ts'
 import type { PackRuntimeClock } from '../core/packs/protocol.ts'
+import type { CapabilityPublication } from '@leitbild/contracts'
 
 export interface PackRuntimeSnapshot {
   readonly simulationRunId: SimulationRunId
@@ -114,10 +115,25 @@ export interface PackRuntimeQuery {
   readonly viewer?: RunViewer
 }
 
+/** Who issues a command: a person, an AI agent, or the Run itself (its Scenario timeline, a system caller). */
+export type CommandOrigin = 'person' | 'ai' | 'system'
+
 /** What core tells a Pack about a command's caller beyond the journaled envelope. */
 export interface PackCommandContext {
   /** As PackRuntimeQuery.viewer: from the caller's connection, absent in open mode and for the timeline. */
   readonly viewer?: RunViewer
+  /**
+   * From the caller's Actor role, stamped by core on every command it issues;
+   * absent only where no Run issues it (a Pack test driving its connection),
+   * which a Pack grants nothing reserved to a person, an agent or the Run.
+   */
+  readonly origin?: CommandOrigin
+  /**
+   * The objects whose active procedure Run the caller drives, stamped by core
+   * on every command it issues: a Pack may let an AI agent operate them as
+   * that procedure's operator, until a person takes the Run over.
+   */
+  readonly procedureDriven?: ReadonlySet<string>
 }
 
 export interface PackRuntimeStateStore {
@@ -142,6 +158,12 @@ export interface SimulationCapability {
   readonly input: z.ZodType
   readonly output: z.ZodType
   readonly schedulable?: boolean
+  /** `system`: called only by World core for a caller it admits (a Pack's observation Capabilities);
+   * never on the public path or in the AI catalog. */
+  readonly audience?: 'system'
+  /** What a successful result publishes for other Modules to present (contracts resources.ts):
+   * `embedded-view` where the result carries an embedded view publication in `view`. */
+  readonly publishes?: ReadonlyArray<CapabilityPublication>
   /** Objects whose detailed state a query inspects. Broad discovery/list
    * operations deliberately omit this: they may reveal that an object exists,
    * but not bypass a restriction on detailed inspection. */
@@ -150,6 +172,11 @@ export interface SimulationCapability {
     readonly targetObjectIds: ReadonlyArray<ObjectId>
     readonly payload: unknown
   }
+  /**
+   * Whether a command with this payload sets up what the Run's AI agents are not to learn of (an injected fault,
+   * D-88, D13): its journal events reach an AI caller only as a count. People and the instructor see them whole.
+   */
+  readonly withheldFromAgents?: (payload: unknown) => boolean
 }
 
 export interface PackRuntimeAdapter {
@@ -200,8 +227,10 @@ export interface PackScenarioRuntimeConfig {
 /**
  * The samples this runtime recorded in its Run's historian, read by
  * simulation time: one series and window per read, the newest up to the
- * limit. The host binds it to the runtime, so a Pack reads only what it
- * recorded itself.
+ * limit; with `withOldest`, the window's oldest sample after them where it is
+ * not among them, so a reader learns how far back the record reaches without
+ * reading the window. The host binds it to the runtime, so a Pack reads only
+ * what it recorded itself.
  */
 export interface PackRuntimeRecordedHistory {
   readonly read: (query: {
@@ -209,6 +238,7 @@ export interface PackRuntimeRecordedHistory {
     readonly from: IsoTimestamp
     readonly to: IsoTimestamp
     readonly limit: number
+    readonly withOldest?: boolean
   }) => ReadonlyArray<RecordedSample>
 }
 

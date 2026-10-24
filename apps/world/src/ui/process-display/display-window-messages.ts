@@ -1,25 +1,39 @@
 import {
   embeddedViewOpenMessageSchema,
+  embeddedViewSubjectOpenMessageSchema,
   embeddedViewsMessageSchema,
+  type EmbeddedViewEnvelope,
   type EmbeddedViewListing,
   type EmbeddedViewWindowMaximiseMessage,
   type EmbeddedViewWindowReadyMessage,
 } from '@leitbild/contracts'
 
 // What the Host relays to the World page that shows the process display
-// window: the conversation's current list of displays and requests to open
-// one. Only the Host (this page's parent, same origin) may send them, each is
-// validated with the contract schema, and every listed view must be a World
-// process display about a Run of this page's Workspace.
+// window: the conversation's current list of displays, requests to open one,
+// and requests to open a subject's default display (a proposal's element,
+// Q23), which the window composes on the Run named. Only the Host (this page's parent, same origin) may send them, and each
+// is validated with the contract schema. Listings are judged one by one: a
+// listing about another Workspace is refused on its own, and a view this
+// window cannot show (another view type) is listed with the reason in place of
+// a frame. One such listing never refuses the rest of the list.
 
-// The run page reads these messages before any Pack code loads, so the view
-// type is named here rather than imported with the Pack's display schemas
-// (a test keeps it equal to the Pack's own constant).
-export const PROCESS_DISPLAY_VIEW_TYPE = 'process-plant.display'
+/** World's vignettes, any object of any Pack (ui/embed/vignette): what the window shows. */
+export const VIGNETTE_VIEW_TYPE = 'display.vignette'
+/** A Run's shared dashboard of one scope (ui/embed/dashboard): the window shows it beside the assets' defaults (D-H). */
+export const DASHBOARD_VIEW_TYPE = 'display.dashboard'
+export type WorldViewType = typeof VIGNETTE_VIEW_TYPE | typeof DASHBOARD_VIEW_TYPE
+
+/** A listing the window leaves out, and why. */
+export interface RefusedListing {
+  readonly key: string
+  readonly reason: string
+}
 
 export type DisplayWindowHostMessage =
-  | { readonly kind: 'views'; readonly views: ReadonlyArray<EmbeddedViewListing> }
+  | { readonly kind: 'views'; readonly views: ReadonlyArray<EmbeddedViewListing>; readonly refused: ReadonlyArray<RefusedListing> }
   | { readonly kind: 'open'; readonly view: EmbeddedViewListing }
+  /** A subject's default display on a Run of this Workspace: `<objectId>#<item>`. */
+  | { readonly kind: 'subject-open'; readonly runId: string; readonly subject: string; readonly title: string }
   /** A message of ours that must not be used; the reason is shown, never swallowed. */
   | { readonly kind: 'rejected'; readonly reason: string }
 
@@ -35,16 +49,26 @@ interface ExpectedSender {
   readonly workspaceId: string
 }
 
-const listingProblem = (listing: EmbeddedViewListing, workspaceId: string): string | null => {
-  const { envelope } = listing
-  if (envelope.subject.workspaceId !== workspaceId) return `display ${listing.key} belongs to another Workspace`
-  if (envelope.moduleId !== 'world') return `display ${listing.key} is not a World view`
-  if (envelope.viewType !== PROCESS_DISPLAY_VIEW_TYPE) return `display ${listing.key} is a ${envelope.viewType}, not a process display`
-  if (envelope.subject.type !== 'world.simulation-run') return `display ${listing.key} is not about a Simulation Run`
-  return null
+/**
+ * Why this window cannot show a view, or null where it can: a plain switch on
+ * the view type. It shows World's vignettes and dashboards about a Simulation Run.
+ */
+export const listingRefusal = (envelope: EmbeddedViewEnvelope): string | null => {
+  switch (envelope.viewType) {
+    case VIGNETTE_VIEW_TYPE:
+    case DASHBOARD_VIEW_TYPE:
+      if (envelope.moduleId !== 'world') return `it is a ${envelope.viewType} view published by ${envelope.moduleId}, not by World`
+      if (envelope.subject.type !== 'world.simulation-run') return `it is about a ${envelope.subject.type}, not a Simulation Run`
+      return null
+    default:
+      return `it is a ${envelope.viewType} view, which this window does not show`
+  }
 }
 
-const issueText = (issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey>; readonly message: string }>): string => {
+const foreignWorkspace = (listing: EmbeddedViewListing, workspaceId: string): string | null =>
+  listing.envelope.subject.workspaceId === workspaceId ? null : `display ${listing.key} belongs to another Workspace`
+
+export const issueText = (issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey>; readonly message: string }>): string => {
   const issue = issues[0]
   if (!issue) return 'invalid message'
   return issue.path.length === 0 ? issue.message : `${issue.path.map(String).join('.')}: ${issue.message}`
@@ -59,16 +83,51 @@ export const readDisplayWindowHostMessage = (event: MessageLike, expected: Expec
   if (type === 'leitbild:views') {
     const parsed = embeddedViewsMessageSchema.safeParse(data)
     if (!parsed.success) return { kind: 'rejected', reason: `display list is invalid: ${issueText(parsed.error.issues)}` }
-    const problem = parsed.data.views.map(view => listingProblem(view, expected.workspaceId)).find(found => found !== null)
-    return problem ? { kind: 'rejected', reason: `display list refused: ${problem}` } : { kind: 'views', views: parsed.data.views }
+    const views: EmbeddedViewListing[] = []
+    const refused: RefusedListing[] = []
+    for (const view of parsed.data.views) {
+      const problem = foreignWorkspace(view, expected.workspaceId)
+      if (problem === null) views.push(view)
+      else refused.push({ key: view.key, reason: problem })
+    }
+    return { kind: 'views', views, refused }
   }
   if (type === 'leitbild:view-open') {
     const parsed = embeddedViewOpenMessageSchema.safeParse(data)
     if (!parsed.success) return { kind: 'rejected', reason: `display request is invalid: ${issueText(parsed.error.issues)}` }
-    const problem = listingProblem(parsed.data.view, expected.workspaceId)
-    return problem ? { kind: 'rejected', reason: `display request refused: ${problem}` } : { kind: 'open', view: parsed.data.view }
+    const problem = foreignWorkspace(parsed.data.view, expected.workspaceId)
+    return problem ? { kind: 'rejected', reason: `display request refused: ${problem}` } : { kind: 'open', view: focused(parsed.data.view) }
+  }
+  if (type === 'leitbild:view-subject-open') {
+    const parsed = embeddedViewSubjectOpenMessageSchema.safeParse(data)
+    if (!parsed.success) return { kind: 'rejected', reason: `display request is invalid: ${issueText(parsed.error.issues)}` }
+    const { resource, subject, title } = parsed.data
+    if (resource.workspaceId !== expected.workspaceId) return { kind: 'rejected', reason: `display request refused: ${subject} belongs to another Workspace` }
+    if (resource.type !== 'world.simulation-run') return { kind: 'rejected', reason: `display request refused: ${subject} is on a ${resource.type}, not a Simulation Run` }
+    return { kind: 'subject-open', runId: resource.id, subject, title }
   }
   return null
+}
+
+/**
+ * A dashboard opened at a part of it (a cited line's section, the listing's `focus`): the board's own state names the
+ * section it shows and marks first, so the frame needs nothing more. Any other view opens as given, and so does a
+ * state that is no object, which the board's page refuses with its own reason.
+ */
+const focused = (view: EmbeddedViewListing): EmbeddedViewListing => {
+  if (view.focus === undefined || view.envelope.viewType !== DASHBOARD_VIEW_TYPE) return view
+  const state = stateObject(view.envelope.state)
+  return state === null ? view : { ...view, envelope: { ...view.envelope, state: JSON.stringify({ ...state, focus: view.focus }) } }
+}
+
+const stateObject = (state: string): Readonly<Record<string, unknown>> | null => {
+  try {
+    const parsed: unknown = JSON.parse(state)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch (error) {
+    if (error instanceof SyntaxError) return null
+    throw error
+  }
 }
 
 export const displayWindowReadyMessage = (): EmbeddedViewWindowReadyMessage => ({ type: 'leitbild:view-window-ready' })

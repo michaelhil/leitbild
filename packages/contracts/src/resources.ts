@@ -90,6 +90,24 @@ export type WorkspaceSubjectFocusMessage = z.infer<typeof workspaceSubjectFocusM
 
 const jsonSchemaSchema = z.record(z.string(), z.unknown())
 
+// What a Capability's successful result publishes for other Modules to
+// present, declared by its owning Module: `embedded-view` is an embedded view
+// publication in the result's `view` (embedded-views.ts), which an Agent can
+// present with its answer; `context` is a read whose result is a
+// publishedContext an Agent may pre-fetch for its Room's Resource each turn.
+export const capabilityPublicationSchema = z.enum(['embedded-view', 'context'])
+export type CapabilityPublication = z.infer<typeof capabilityPublicationSchema>
+
+/** A context publication: bounded text about the Resource, and the time and clock it describes. */
+export const publishedContextSchema = z.object({
+  context: z.object({
+    text: z.string().min(1).max(8_000),
+    at: z.string().datetime({ offset: true }),
+    clock: z.enum(['simulation', 'wall']),
+  }).strict(),
+}).strict()
+export type PublishedContext = z.infer<typeof publishedContextSchema>
+
 export const moduleCapabilityDescriptorSchema = z.object({
   id: capabilityIdSchema,
   moduleId: moduleIdSchema,
@@ -113,9 +131,19 @@ export const moduleCapabilityDescriptorSchema = z.object({
   // uncertain retry. This is distinct from semantic repeat safety.
   acceptsIdempotencyKey: z.literal(true).optional(),
   schedulable: z.boolean().optional(),
+  publishes: z.array(capabilityPublicationSchema).min(1).optional(),
   inputSchema: jsonSchemaSchema,
   outputSchema: jsonSchemaSchema,
 }).strict().superRefine((capability, ctx) => {
+  if (capability.publishes !== undefined && new Set(capability.publishes).size !== capability.publishes.length) {
+    ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'A Capability names each publication once' })
+  }
+  if (capability.publishes?.includes('embedded-view') && capability.scope.kind !== 'resource') {
+    ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'An embedded view is published about the Resource a Capability is invoked on' })
+  }
+  if (capability.publishes?.includes('context') && (capability.scope.kind !== 'resource' || capability.kind !== 'query')) {
+    ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'A context is published by a query about the Resource it is invoked on' })
+  }
   if (!capability.id.startsWith(`${capability.moduleId}.`)) {
     ctx.addIssue({ code: 'custom', path: ['id'], message: 'Capability id must be namespaced by its owning Module' })
   }

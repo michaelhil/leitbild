@@ -7,9 +7,10 @@ import { sideViewOfCompiledScenario, sideViewOfSnapshot } from '../simulation-ru
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
-import { apiError,json,readJson } from './responses.ts'
+import { apiError,json,readJson,zodReason } from './responses.ts'
 import { runCopyInputSchema } from '../simulation-runs/execution.ts'
 import { recordingSeriesQuerySchema } from '../model/recording.ts'
+import { displayRunOf, handleDashboard, handleDisplayRoute } from './display-capabilities.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -106,8 +107,8 @@ export const actorIdForAccessContext = (accessContext: AccessContext): Actor['id
     ? defaultOperatorActorId
     : actorIdSchema.parse(`actor:${accessContext.actor.kind}:${accessContext.actor.id}`)
 
-export const buildSimulationRunActorForAccess = (accessContext: AccessContext): Actor =>
-  buildSimulationRunActor(
+export const buildSimulationRunActorForAccess = (accessContext: AccessContext): Actor => {
+  const actor = buildSimulationRunActor(
     actorIdForAccessContext(accessContext),
     accessContext.actor.kind === 'ai'
       ? 'ai_agent'
@@ -115,6 +116,10 @@ export const buildSimulationRunActorForAccess = (accessContext: AccessContext): 
         ? 'system'
         : 'operator',
   )
+  // Attribution only: a name shown beside what this actor did, never an identity check.
+  const displayName = accessContext.actor.displayName?.trim().slice(0, 80)
+  return displayName === undefined || displayName.length === 0 ? actor : { ...actor, displayName }
+}
 
 const buildSignal = (simulationRunId: SimulationRunId, raw: unknown, defaultActorId: Actor['id']): {
   readonly signal: InteractionSignal
@@ -357,13 +362,28 @@ const handleSimulationRunApiInner = async (
       })
       return json(outcome)
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
+      const reason = error instanceof z.ZodError ? zodReason(error) : error instanceof Error ? error.message : String(error)
       if (isRoleGateRefusal(error)) return apiError(error.status, error.code, reason, error.details)
       if (error instanceof CommandIdempotencyConflictError) {
         return apiError(error.status, error.code, reason)
       }
       return apiError(400, 'capability_invocation_failed', reason)
     }
+  }
+
+  // Vignettes for people (architecture A6): open, sample or default one, read or change a dashboard (A4), read as this
+  // screen's perspective; never the AI's.
+  const displayMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/displays\/(view|sample|default|dashboard\/read|dashboard\/update)$/)
+  if (displayMatch && req.method === 'POST') {
+    if (config.accessContext.actor.kind === 'ai') return apiError(403, 'display_route_for_people', 'The display routes serve people; the Assistant composes through world.simulation-run.display.compose and reads and changes a dashboard through world.simulation-run.dashboard.read and .update')
+    // A display never loads a Run: one not loaded is reported, and the display waits for someone to open it.
+    const runtime = config.registry.get(simulationRunIdSchema.parse(decodeURIComponent(displayMatch[1] ?? '')))
+    if (runtime === undefined) return apiError(409, 'simulation_run_not_loaded', 'The Run is not loaded; a display shows it once someone opens it')
+    const actor = actorForPerspective(buildSimulationRunActorForAccess(config.accessContext), perspective)
+    const run = await displayRunOf(config.registry, runtime, actor, new Set())
+    const dashboard = displayMatch[2] === 'dashboard/read' ? 'read' : displayMatch[2] === 'dashboard/update' ? 'update' : null
+    if (dashboard !== null) return await handleDashboard(dashboard, await readJson(req), { registry: config.registry, runtime, run, by: 'person' })
+    return (await handleDisplayRoute(displayMatch[2]!, await readJson(req), run))!
   }
 
   const procedureCatalogMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/procedures$/)
@@ -439,10 +459,10 @@ export const handleSimulationRunApi = async (
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_busy') return apiError(409, 'simulation_run_busy', err.message)
     if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return apiError(409, 'simulation_run_failed', err.message)
     if (err instanceof Error && 'code' in err && typeof err.code === 'string'
-      && ['simulation_run_commit_uncertain', 'simulation_run_observer_failed', 'simulation_run_recovery_required'].includes(err.code)) return apiError(409, err.code, err.message)
+      && ['simulation_run_commit_uncertain', 'simulation_run_observer_failed', 'simulation_run_recovery_required', 'simulation_run_closed'].includes(err.code)) return apiError(409, err.code, err.message)
     if (err instanceof Error && 'code' in err && err.code === 'fast_forward_unsupported') return apiError(422, 'fast_forward_unsupported', err.message)
     if (err instanceof SyntaxError) return apiError(400, 'invalid_json', err.message)
-    if (err instanceof z.ZodError) return apiError(400, 'invalid_request', err.message)
+    if (err instanceof z.ZodError) return apiError(400, 'invalid_request', zodReason(err))
     throw err
   } finally { release?.() }
 }

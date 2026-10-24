@@ -1,16 +1,16 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { ClipboardList, FileText, Gamepad2, GitBranch, Library, MonitorCog, Settings2, ShieldCheck, X } from 'lucide-svelte'
+  import { ClipboardList, Gamepad2, MonitorCog, Settings2, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
   import InlineConfirmation from './components/InlineConfirmation.svelte'
   import StatusIndicator from './components/StatusIndicator.svelte'
-  import { processPlantIdForObject, type ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
+  import { processPlantIdForObject } from '../packs/process-plant/model.ts'
   import ProcedureRunBadges from './procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
 
-  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
 
   interface Props {
     readonly object: OperationalObject
@@ -22,17 +22,14 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     /** Absent where this screen may not delete: a role Run's operator-class role sets. */
-    readonly deleteObject?: (object: OperationalObject) => Promise<void>
-    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>
-    readonly openProcessDisplay?: (object: OperationalObject) => void
-    readonly openProcedureSystem?: (object: OperationalObject) => void
-    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
-    readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
-    readonly openProcessPlantCatalog?: (object: OperationalObject) => void
-    readonly openProcessPlantCredibility?: (object: OperationalObject) => void
-    readonly openDroneControl?: (object: OperationalObject) => void
-    readonly openDroneProfileEditor?: (object: OperationalObject) => void
-    readonly procedureSummaries?: ProcedureRunSummaryGroup
+    readonly deleteObject?: ((object: OperationalObject) => Promise<void>) | undefined
+    readonly detailPresentationFor?: ((object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>) | undefined
+    readonly openProcessDisplay?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystem?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystemAt?: ((object: OperationalObject, summary?: ProcedureRunSummary) => void) | undefined
+    readonly openDroneControl?: ((object: OperationalObject) => void) | undefined
+    readonly openDroneProfileEditor?: ((object: OperationalObject) => void) | undefined
+    readonly procedureSummaries?: ProcedureRunSummaryGroup | undefined
     readonly proceduresVisible: boolean
   }
 
@@ -50,9 +47,6 @@
     openProcessDisplay,
     openProcedureSystem,
     openProcedureSystemAt,
-    openProcessPlantArtifact,
-    openProcessPlantCatalog,
-    openProcessPlantCredibility,
     openDroneControl,
     openDroneProfileEditor,
     procedureSummaries = emptyProcedureRunSummaries,
@@ -137,17 +131,6 @@
       && openProcedureSystem !== undefined
       && processSystemIdAvailable,
   )
-  const processArtifactAvailable = $derived(
-    object.packId === 'process-plant'
-      && openProcessPlantArtifact !== undefined
-      && processSystemIdAvailable,
-  )
-  const processCatalogAvailable = $derived(object.packId === 'process-plant' && openProcessPlantCatalog !== undefined)
-  const processCredibilityAvailable = $derived(
-    object.packId === 'process-plant'
-      && openProcessPlantCredibility !== undefined
-      && processSystemIdAvailable,
-  )
   const droneControlAvailable = $derived(object.packId === 'drone' && openDroneControl !== undefined)
   const droneProfileEditorAvailable = $derived(object.packId === 'drone' && openDroneProfileEditor !== undefined)
   const confirmDelete = (): void => {
@@ -166,7 +149,7 @@
 </script>
 
 <div
-  class:selected
+  class:selected={selected}
   class:has-new-info={hasNewInfo}
   class:muted={presentation.muted === true}
   class="object-row"
@@ -235,54 +218,6 @@
             size={13}
             variant="bare"
             onClick={() => openProcedureSystem?.(object)}
-          />
-        {/if}
-        {#if processArtifactAvailable}
-          {#if processCatalogAvailable}
-            <IconButton
-              label="Open process plant catalog"
-              title="Process plant catalog"
-              icon={Library}
-              size={13}
-              variant="bare"
-              onClick={() => openProcessPlantCatalog(object)}
-            />
-          {/if}
-          <IconButton
-            label="Open plant specification source for {object.label}"
-            title="Plant specification source"
-            icon={FileText}
-            size={13}
-            variant="bare"
-            onClick={() => openProcessPlantArtifact?.(object, 'authored-spec')}
-          />
-          <IconButton
-            label="Open full component graph for {object.label}"
-            title="Full component graph"
-            icon={GitBranch}
-            size={13}
-            variant="bare"
-            onClick={() => openProcessPlantArtifact?.(object, 'compiled-graph-mermaid')}
-          />
-          {#if processCredibilityAvailable}
-            <IconButton
-              label="Open credibility evidence for {object.label}"
-              title="Credibility evidence"
-              icon={ShieldCheck}
-              size={13}
-              variant="bare"
-              onClick={() => openProcessPlantCredibility?.(object)}
-            />
-          {/if}
-        {/if}
-        {#if !processArtifactAvailable && processCatalogAvailable}
-          <IconButton
-            label="Open process plant catalog"
-            title="Process plant catalog"
-            icon={Library}
-            size={13}
-            variant="bare"
-            onClick={() => openProcessPlantCatalog(object)}
           />
         {/if}
         {#if droneControlAvailable}

@@ -3,7 +3,7 @@ import { answerProcessPlantQuery, commandsForProcessPlantAction, compileProcessP
 import { createProcessPlantProtectionRunner, createProcessPlantRuntime, processPlantIcConfigSchema, type ProcessPlantRuntime } from '../src/packs/process-plant/runtime/index.ts'
 import { assertProcessPlantIcSafetyFunctionsValid } from '../src/packs/process-plant/runtime/ic/control-protection-validation.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
-import { evaluateSafetyFunction, evaluateSafetyFunctions, safetyFunctionSignals, type SafetyFunctionEvaluation } from '../src/packs/process-plant/safety-functions.ts'
+import { evaluateSafetyFunction, evaluateSafetyFunctions, safetyFunctionSignals, worstSafetyFunction, type SafetyFunctionEvaluation, type SafetyFunctionStatus } from '../src/packs/process-plant/safety-functions.ts'
 import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
@@ -44,11 +44,12 @@ describe('critical safety function status trees', () => {
     expect(plant.automation.safetyFunctions.every(safetyFunction => safetyFunction.basis.includes('reference-model criteria'))).toBe(true)
     const declared = plant.automation.safetyFunctions[0]!
     expect(() => processPlantIcConfigSchema.parse({ ...plant.automation, safetyFunctions: [declared, declared] })).toThrow('safety function subcriticality is declared twice')
-    // What the trees and checks judge, which a display short of room keeps before what only an alarm judges; not
-    // what only says when a tree is judged (the trip breakers), nor what no tree reads (the relief tank).
+    // What the trees and checks judge, which a display short of room keeps before what only an alarm judges (the trip
+    // breakers' positions and the rods, which E-0's trip checks verify); not what only says when a tree is judged (the
+    // trip breakers' commands), nor what no tree reads (the relief tank).
     const judgedSignals = safetyFunctionSignals(plant)
-    for (const path of ['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'pressurizer.levelPercent', 'sgA.feedwaterFlowKgPerS', 'containment.pressureMPa']) expect(judgedSignals.has(path as never), path).toBe(true)
-    for (const path of ['reactorTripBreakerA.closedState', 'pressurizerReliefTank.levelPercent', 'pressurizerReliefTank.pressureMPa']) expect(judgedSignals.has(path as never), path).toBe(false)
+    for (const path of ['vessel.subcoolingMarginC', 'core.coreExitTemperatureC', 'pressurizer.levelPercent', 'sgA.feedwaterFlowKgPerS', 'containment.pressureMPa', 'reactorTripBreakerA.closedState', 'core.rodsOnBottom']) expect(judgedSignals.has(path as never), path).toBe(true)
+    for (const path of ['reactorTripBreakerA.closed', 'pressurizerReliefTank.levelPercent', 'pressurizerReliefTank.pressureMPa']) expect(judgedSignals.has(path as never), path).toBe(false)
     // A tree judges the Plant by its instruments: one on a value only the simulator solves is refused.
     const onDeficit = { ...declared, id: 'core-heat', tree: { question: 'Heat removed', basis: 'test', condition: { type: 'comparison' as const, signal: { path: 'core.coreHeatRemovalDeficitMw' }, operator: '<' as const, value: 1 }, yes: { status: 'green' as const, meaning: 'ok' }, no: { status: 'red' as const, meaning: 'not' } } }
     expect(() => assertProcessPlantIcSafetyFunctionsValid(plant.graph, [onDeficit as never])).toThrow('process plant I&C safety function core-heat reads simulator-only signal core.coreHeatRemovalDeficitMw, which no plant instrument measures')
@@ -81,6 +82,9 @@ describe('critical safety function status trees', () => {
     expect(heatSink.expected[0]).toContain('shrink')
     expect(statuses.get('subcriticality')).toMatchObject({ status: 'green' })
     expect(statuses.get('rcs-inventory')!.checks).toEqual([])
+    // E-0's checks once the trip is demanded (W1.4): the trip verified, and the total feed past its minimum.
+    expect(statuses.get('subcriticality')!.checks.map(check => [check.label.slice(0, check.label.indexOf(':')), check.met])).toEqual(Array.from({ length: 4 }, () => ['Reactor trip', 'yes']))
+    expect(heatSink.checks).toMatchObject([{ met: 'yes', comparisons: [{ combines: 'total', operator: '>=', threshold: 27.8, answer: 'yes' }] }])
   }, PLANT_HANG_GUARD_MS)
 
   test('with every coolant pump stopped core cooling is green on CET and subcooling, with the natural-circulation checks and the CET rise expected', () => {
@@ -163,6 +167,20 @@ describe('critical safety function status trees', () => {
       return runtime.readVariableSnapshot(path)
     } }
     expect(judged(failed).get('core-cooling')).toMatchObject({ status: 'unknown', meaning: expect.stringContaining('Acquisition failed') })
+  })
+
+  test('the most challenged function: red, orange, one that cannot be judged, yellow, then green; the first declared among equals', () => {
+    const runtime = after(null, 2)
+    expect(worstSafetyFunction(evaluateSafetyFunctions(plant, runtime))).toMatchObject({ id: 'core-cooling', status: 'green' })
+    expect(worstSafetyFunction(evaluateSafetyFunctions(plant, reading(runtime, { 'reactorTripBreakerA.closed': false })))).toMatchObject({ id: 'subcriticality', status: 'red', procedure: 'FR-S.1' })
+    const now = evaluateSafetyFunctions(plant, runtime)
+    const judgedAs = (...statuses: ReadonlyArray<SafetyFunctionStatus>): ReadonlyArray<SafetyFunctionEvaluation> =>
+      now.map((evaluation, index) => ({ ...evaluation, status: statuses[index]! }))
+    expect(worstSafetyFunction(judgedAs('green', 'yellow', 'unknown', 'orange', 'green', 'green'))?.id).toBe('rcs-integrity')
+    expect(worstSafetyFunction(judgedAs('not-monitored', 'yellow', 'unknown', 'green', 'green', 'yellow'))?.id).toBe('heat-sink')
+    expect(worstSafetyFunction(judgedAs('green', 'yellow', 'green', 'yellow', 'green', 'green'))?.id).toBe('core-cooling')
+    expect(worstSafetyFunction(judgedAs('not-monitored', 'not-monitored', 'not-monitored', 'not-monitored', 'not-monitored', 'not-monitored'))?.id).toBe('subcriticality')
+    expect(worstSafetyFunction([])).toBeUndefined()
   })
 
   test('the assessments capability returns every function with its path, labelled reference-model criteria, and refuses an undeclared one', () => {

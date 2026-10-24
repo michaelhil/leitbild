@@ -27,10 +27,13 @@ import {
   type WeatherField,
 } from '../cell-field.ts'
 import { weatherCommandSchemas } from '../commands.ts'
+import { weatherAdvisories } from '../conditions.ts'
 import { frameAt } from '../influence.ts'
 import { weatherItemSchema,weatherPackConfigSchema,weatherPackDataSchema } from '../model.ts'
 import { weatherQuantities,weatherRecordingProfiles } from '../quantities.ts'
 import { answerWeatherQuery,weatherQueryCapabilities } from '../query.ts'
+import { weatherObservationDeclarations } from '../observation/declarations.ts'
+import { weatherObservationRead } from '../observation/read.ts'
 import { createWeatherObject } from '../scenario.ts'
 import { weatherSimRuntimeId } from './constants.ts'
 
@@ -77,6 +80,8 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       }),
     ),
     ...weatherQueryCapabilities,
+    weatherObservationDeclarations.capability,
+    weatherObservationRead.capability,
   ],
   connect: async (config) => {
     const settings = weatherPackConfigSchema.parse(config.scenario.runtimeConfig)
@@ -196,9 +201,11 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
               ).center
         const point = geoPointFromLonLat(...coordinates)
         const sample = sampleWeather(field, point)
-        if (JSON.stringify(data.sample) === JSON.stringify(sample) && !recordIds.has(object.id)) continue
+        const alerts = weatherAdvisories(object, sample.state, field.at)
+        if (JSON.stringify(data.sample) === JSON.stringify(sample) && JSON.stringify(object.alerts) === JSON.stringify(alerts) && !recordIds.has(object.id)) continue
         const updated: OperationalObject = {
           ...object,
+          alerts: [...alerts],
           revision: object.revision + 1,
           spatial: { ...object.spatial, position: { point, observedAt: nowIso(), staleAfterMs: 600000 } },
           timestamps: { ...object.timestamps, updatedAt: nowIso() },
@@ -322,6 +329,8 @@ export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         if (health.state === 'degraded' && request.capabilityId !== 'world.weather.field-stats' && request.capabilityId !== 'world.weather.describe') {
           throw new Error('Weather runtime is degraded: ' + health.lastFailure?.message)
         }
+        if (request.capabilityId === weatherObservationDeclarations.capability.id) return weatherObservationDeclarations.answer(request.input, objects, config.recording)
+        if (request.capabilityId === weatherObservationRead.capability.id) return weatherObservationRead.answer(request.input, objects)
         return answerWeatherQuery(field, request)
       },
       observeCommittedEvents: async (events) => {

@@ -10,6 +10,8 @@ import type {
   SimulationRunId,
 } from '../src/core/model/index.ts'
 import { createSimulationClock, type SimulationClock } from '../src/core/model/time.ts'
+import { recordingSeriesIdFor } from '../src/core/model/index.ts'
+import { createRunHistorian } from '../src/features/historian/store.ts'
 import type { PackRuntimeConnection, PackRuntimeQuery, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 import {
   createLocalProcessPlantPackRuntimeAdapter,
@@ -195,11 +197,10 @@ describe('process plant Pack runtime lifecycle', () => {
       }))
       expect((read as { variables: ReadonlyArray<{ value: number }> }).variables[0]?.value).toBeCloseTo(0.5, 2)
 
-      const overview = await connection.invokeQuery(query('world.process-plant.display.overview', { plantId: basePlant.id }))
-      expect(JSON.parse((overview as { view: { state: string } }).view.state)).toEqual({ overview: { plantId: basePlant.id } })
-
-      const automation = await connection.invokeQuery(query('world.process-plant.ic.catalog', { plantId: basePlant.id }))
-      expect((automation as { ic: { rules: ReadonlyArray<unknown> } }).ic.rules.length).toBeGreaterThan(0)
+      const automation = await connection.invokeQuery(query('world.process-plant.ic.catalog', { plantId: basePlant.id })) as { ruleCount: number; returned: number; rules: ReadonlyArray<unknown> }
+      expect(automation.rules.length).toBeGreaterThan(0)
+      expect(automation.returned).toBe(automation.rules.length)
+      expect(automation.ruleCount).toBeGreaterThanOrEqual(automation.returned)
 
       const catalog = await connection.invokeQuery(query('world.process-plant.catalog.list'))
       expect(catalog).toMatchObject({ models: [{ id: processPlantPwrReferenceModelRef }] })
@@ -227,7 +228,41 @@ describe('process plant Pack runtime lifecycle', () => {
       expect(batch.samples).toHaveLength(batch.descriptors.length)
       expect(batch.descriptors.every(descriptor => descriptor.subjectId === basePlant.id)).toBe(true)
       expect(batch.descriptors.map(descriptor => descriptor.signalId)).toContain('core.totalThermalPowerMw')
+      // Each title stands alone: the unit by its object's label, the equipment, and the tag where there is one.
+      const titles = batch.descriptors.map(descriptor => descriptor.title)
+      expect(new Set(titles).size).toBe(titles.length)
+      expect(titles.every(title => title.startsWith(`${basePlant.label} · `))).toBe(true)
+      expect(batch.descriptors.find(descriptor => descriptor.signalId === 'rcpA.speedFraction')?.title).toBe(`${basePlant.label} · Speed · Reactor Coolant Pump A (RCP-A-SPD)`)
     } finally {
+      await connection.close()
+    }
+  })
+
+  test('a Run recorded under earlier series titles keeps recording: a title is no series semantics', async () => {
+    const runClock = pausedRunClock()
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
+      simulationRunId,
+      scenario: scenarioWithPlants(),
+      runtimeStateStore: createMemoryStateStore(),
+      recording: { packId: 'process-plant', profileId: 'operations', intervalMs: 250 },
+      runClock,
+    })
+    const historian = createRunHistorian(':memory:')
+    try {
+      const batches: PackRuntimeRecordingBatch[] = []
+      connection.subscribe(emission => { if (emission.recording) batches.push(emission.recording) })
+      await advance(connection, runClock, 250)
+      const batch = batches[0]!
+      // The history a saved Run holds: the same series, described with the titles plants were recorded under before.
+      const id = recordingSeriesIdFor(basePlant.id, 'rcpA.speedFraction')
+      const current = batch.descriptors.find(descriptor => descriptor.id === id)!
+      historian.record('process-plant.local', { descriptors: batch.descriptors.map(descriptor => ({ ...descriptor, title: 'Reference PWR 4-loop plant · Speed' })), samples: [] })
+      historian.record('process-plant.local', batch)
+      expect(historian.status().sampleCount).toBe(batch.samples.length)
+      // The stored description is kept; only series recorded afresh carry the new titles.
+      expect(historian.listSeries().find(series => series.id === id)).toMatchObject({ title: 'Reference PWR 4-loop plant · Speed', unit: current.unit })
+    } finally {
+      historian.close()
       await connection.close()
     }
   })

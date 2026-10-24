@@ -43,7 +43,7 @@ const snapshotOf = (
   objects,
   selectedControllerId: null,
   highlightedObjectIds: [],
-  hiddenObjectCategoryIds: [],
+  hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
   placementPoints: [],
   packFeatures,
   hasNewInfo: () => false,
@@ -55,6 +55,8 @@ const layersOf = (snapshot: OperationalRenderSnapshot, catalogueAtlas: Catalogue
   visibleFamilies: new Set(['objects', 'routes']),
   catalogueAtlas,
   disksPick: false,
+  diskClicks: null,
+  zoom: 10,
   onObjectSelected: () => undefined,
   onObjectSeen: () => undefined,
   onObjectHover: () => undefined,
@@ -113,6 +115,34 @@ describe('operational map icons', () => {
     expect((layers.find(layer => layer.id === 'leitbild-area-catalogue-symbols')?.props.data as ReadonlyArray<{ readonly id: string }>).map(symbol => symbol.id)).toEqual(['area-symbol:area'])
   })
 
+  test('an object arriving mid-Run gives the disk and halo layers new data, so deck sizes their buffers for it; a move alone updates them in place', () => {
+    const store = createMapFeatureStore()
+    const input = (objects: ReadonlyArray<OperationalObject>) => ({
+      objects,
+      selectedControllerId: null,
+      highlightedObjectIds: [],
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
+      placementPoints: [],
+      packFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor: presentationWith({}),
+    })
+    const dataOf = (snapshot: OperationalRenderSnapshot, id: string) => layersOf(snapshot, emptyCatalogueSymbolAtlas).find(layer => layer.id === id)?.props.data as ReadonlyArray<{ readonly id: string }>
+    const before = store.update(input([objectOf('a', 11.3), objectOf('b', 11.4)]))
+    const disks = dataOf(before, 'leitbild-object-status-disks')
+    const halos = dataOf(before, 'leitbild-object-halos')
+    const grown = store.update(input([objectOf('a', 11.3), objectOf('b', 11.4), objectOf('c', 11.5)]))
+    for (const [id, earlier] of [['leitbild-object-status-disks', disks], ['leitbild-object-halos', halos]] as const) {
+      const data = dataOf(grown, id)
+      expect(data).not.toBe(earlier)
+      expect(data.map(point => point.id)).toEqual(['a', 'b', 'c'])
+    }
+    expect(disks.map(point => point.id)).toEqual(['a', 'b'])
+    const moved = store.update(input([objectOf('a', 11.3), objectOf('b', 11.45), objectOf('c', 11.5)]))
+    expect(dataOf(moved, 'leitbild-object-status-disks')).toBe(dataOf(grown, 'leitbild-object-status-disks'))
+    expect(moved.revisions.points).toBe(grown.revisions.points + 1)
+  })
+
   test('an object the screen may not order is drawn muted, its presentation aside', () => {
     const store = createMapFeatureStore()
     const snapshot = store.update({
@@ -120,7 +150,7 @@ describe('operational map icons', () => {
       selectedControllerId: null,
       highlightedObjectIds: [],
       mutedObjectIds: ['b'],
-      hiddenObjectCategoryIds: [],
+      hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
       placementPoints: [],
       packFeatures: [],
       hasNewInfo: () => false,
@@ -146,6 +176,8 @@ describe('operational map icons', () => {
       visibleFamilies: new Set(['objects', 'routes']),
       catalogueAtlas: emptyCatalogueSymbolAtlas,
       disksPick: false,
+      diskClicks: null,
+      zoom: 10,
       onObjectSelected: point => { selected.push(point.id) },
       onObjectSeen: point => { seen.push(point.id) },
       onObjectHover: point => { hovered.push(point?.id ?? null) },
@@ -265,6 +297,8 @@ describe('catalogue symbol atlas', () => {
       visibleFamilies: new Set(['objects', 'routes']),
       catalogueAtlas: emptyCatalogueSymbolAtlas,
       disksPick,
+      diskClicks: null,
+      zoom: 10,
       onObjectSelected: point => { selected.push(point.id) },
       onObjectSeen: () => undefined,
       onObjectHover: point => { hovered.push(point?.id ?? null) },
@@ -298,6 +332,43 @@ describe('catalogue symbol atlas', () => {
     // Halos and new-info rings never pick.
     for (const id of ['leitbild-object-halos', 'leitbild-object-new-info']) {
       expect(targets.find(layer => layer.id === id)?.props.pickable).toBe(false)
+    }
+  })
+
+  test('the whole disk of an object a click opens a card for takes a mouse click and hover on every surface, through a transparent layer of those disks alone; a finger, a pen and every other object pick as before', () => {
+    const snapshot = snapshotOf([objectOf('a', 11.3), objectOf('b', 11.4)], presentationWith({}, {}))
+    const cardObjectId = snapshot.points[1]!.object.id
+    type Pick = (info: { readonly object: unknown }) => void
+    const layersFor = (disksPick: boolean, pointerType: string | null, selected: string[], hovered: Array<string | null>) => createOperationalDeckLayers({
+      snapshot,
+      visibleFamilies: new Set(['objects', 'routes']),
+      catalogueAtlas: emptyCatalogueSymbolAtlas,
+      disksPick,
+      diskClicks: pickingRadiusFor(pointerType, operationalIconPx) === 0 ? object => object.id === cardObjectId : null,
+      zoom: 10,
+      onObjectSelected: point => { selected.push(point.id) },
+      onObjectSeen: () => undefined,
+      onObjectHover: point => { hovered.push(point?.id ?? null) },
+    })
+    const selected: string[] = []
+    const hovered: Array<string | null> = []
+    const mouse = layersFor(false, 'mouse', selected, hovered)
+    const hits = mouse.find(layer => layer.id === 'leitbild-object-disk-clicks')
+    expect(hits?.props.pickable).toBe(true)
+    expect((hits?.props.data as ReadonlyArray<{ readonly id: string }>).map(point => point.id)).toEqual([snapshot.points[1]!.id])
+    expect((hits?.props as unknown as { readonly getFillColor: unknown }).getFillColor).toEqual([0, 0, 0, 0])
+    ;(hits?.props.onClick as unknown as Pick)({ object: snapshot.points[1] })
+    ;(hits?.props.onHover as unknown as Pick)({ object: snapshot.points[1] })
+    expect(selected).toEqual([snapshot.points[1]!.id])
+    expect(hovered).toEqual([snapshot.points[1]!.id])
+    // The drawn disks still pick only while the surface picks targets.
+    expect(mouse.find(layer => layer.id === 'leitbild-object-status-disks')?.props.pickable).toBe(false)
+    // Below the glyphs, which keep their own picking.
+    const ids = mouse.map(layer => layer.id)
+    expect(ids.indexOf('leitbild-object-disk-clicks')).toBeLessThan(ids.indexOf('leitbild-object-symbols'))
+    // A finger or a pen, and a surface whose every disk already picks, draw no such layer.
+    for (const layers of [layersFor(false, 'touch', [], []), layersFor(false, 'pen', [], []), layersFor(true, 'mouse', [], [])]) {
+      expect(layers.some(layer => layer.id === 'leitbild-object-disk-clicks')).toBe(false)
     }
   })
 })

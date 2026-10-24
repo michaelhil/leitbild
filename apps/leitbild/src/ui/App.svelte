@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
+    type FeaturedDefinitionCatalog,
     type InspectionView,
     type ModuleCapabilityDescriptor,
     type ModuleDefinitionDescriptor,
@@ -14,16 +15,39 @@
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
-  import WorkspacePicker from './WorkspacePicker.svelte'
-  import InlineName from './InlineName.svelte'
   import SimulationRunControls from './SimulationRunControls.svelte'
   import AssistantLauncher from './AssistantLauncher.svelte'
   import RunRoomControls from './RunRoomControls.svelte'
+  import Wordmark from './Wordmark.svelte'
+  import Icon from './Icon.svelte'
+  import MoreMenu from './MoreMenu.svelte'
+  import WorkspaceHeader from './WorkspaceHeader.svelte'
+  import ContinueList from './ContinueList.svelte'
+  import FeaturedRow from './FeaturedRow.svelte'
+  import DefinitionCatalog from './DefinitionCatalog.svelte'
+  import WorkspaceSwitcher from './WorkspaceSwitcher.svelte'
+  import PeopleControl from './PeopleControl.svelte'
+  import PeopleChat from './PeopleChat.svelte'
   import { request, jsonRequest } from './api.ts'
   import { cardCapability } from './card-actions.ts'
-  import { roomScopeIncludingRun, roomSelectsRun, roomUsesFamily, runFamilyFor, sameResource } from './run-room-scope.ts'
+  import { roomScopeIncludingRun, roomSelectsRun, roomServesRun, roomUsesFamily, runDeclaresRoles, runFamilyFor, sameResource } from './run-room-scope.ts'
+  import { keptSelection } from './open-selection.ts'
+  import { withUnreadCount, workspacePageTitle } from './page-title.ts'
+  import { ageText, moduleTitle, workspaceLabel } from './launch-workspace.ts'
+  import { workspacePath, workspaceUrl } from './launch-destination.ts'
+  import { createPeopleSession, type PeopleSession, type PeopleState } from './people-session.ts'
+  import { browserPeoplePorts } from './people-browser.ts'
+  import { PEOPLE_SYNC_CAPABILITY_ID, type PersonWire } from './people-wire.ts'
+  import { browserWorkspaceMemory } from './workspace-memory.ts'
+  import { demosHref, guideHref } from './modal-url.ts'
+  import { createWorkspaceAdmin } from './workspace-admin.ts'
+  import { errorDiagnostic, plainError, plainErrorText } from './error-text.ts'
+  import { bannerAfterRetract } from './recoverable-error.ts'
+  import { createStartRunner, startAnnouncement, type StartState, type StartTarget } from './definition-start.ts'
+  import { readFeaturedCatalogue } from './featured-catalogue.ts'
+  import { continueItems, featuredStartRevision, openedFromGuide, workspaceDemos, type FeaturedCard } from './workspace-page.ts'
 
-  type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
+  type Page = { readonly kind: 'workspace'; readonly id: string }
   interface InvocationResponse {
     readonly result: unknown
     readonly createdResources?: ReadonlyArray<ModuleResourceDescriptor['ref']>
@@ -32,9 +56,8 @@
     | { readonly kind: 'definition'; readonly descriptor: ModuleDefinitionDescriptor }
     | { readonly kind: 'resource'; readonly descriptor: ModuleResourceDescriptor }
 
-  const moduleTitles: Readonly<Record<string, string>> = { world: 'World', agents: 'Agents' }
+  // `/workspaces` itself is the landing page (Landing.svelte); this shell serves one Workspace.
   const page = (): Page => {
-    if (location.pathname === '/workspaces') return { kind: 'list' }
     const match = location.pathname.match(/^\/workspaces\/([^/]+)$/)
     if (!match) throw new Error('Unknown Workspace route')
     return { kind: 'workspace', id: decodeURIComponent(match[1] ?? '') }
@@ -46,7 +69,8 @@
   let selectedWorldRunId = $state(initialSelection.get('world'))
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
-  let workspaces = $state<ReadonlyArray<Workspace>>([])
+  // A conversation the Getting started guide opened links back to it (plan v2 §2).
+  const fromGuide = openedFromGuide(initialSelection)
   let workspace = $state<Workspace | null>(null)
   let loading = $state(true)
   let busy = $state(false)
@@ -67,9 +91,17 @@
   let scenarioEditorFrame = $state<HTMLIFrameElement | null>(null)
   let scenarioEditorDirty = $state(false)
   let scenarioEditorSubject = $state<WorkspaceSubjectReference | null>(null)
-  const workspaceTitle = $derived(workspace?.name ?? workspace?.id ?? 'Workspace')
+  const workspaceTitle = $derived(workspace ? workspaceLabel(workspace, 'header') : 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
-  const continuableResources = $derived(resources.filter(resource => resource.ref.type === 'world.simulation-run' && resource.uiPath !== undefined))
+  const continuing = $derived(continueItems(resources))
+  const memory = browserWorkspaceMemory()
+  const admin = createWorkspaceAdmin()
+  let featuredCatalog = $state<FeaturedDefinitionCatalog | null>(null)
+  let featuredFailed = $state(false)
+  const demos = $derived(workspaceDemos(definitions, featuredCatalog))
+  const startRunner = createStartRunner({ fetch: (input, init) => fetch(input, init) })
+  let startState = $state<StartState>(startRunner.state())
+  startRunner.subscribe(state => { startState = state })
   const selectedWorldResource = $derived(resources.find(resource =>
     resource.ref.type === 'world.simulation-run' && resource.ref.id === selectedWorldRunId,
   ))
@@ -89,24 +121,20 @@
     ...(scenarioEditorSubject === null ? [] : [scenarioEditorSubject]),
     ...(selectedWorldResource === undefined ? [] : [selectedWorldResource.ref]),
   ].slice(0, 4))
-  const pageTitle = $derived(currentPage.kind === 'list'
-    ? 'Leitbild'
-    : `${selectedWorldResource?.title ?? selectedAgentsResource?.title ?? workspaceTitle} · Leitbild`)
+  const pageTitle = $derived(workspacePageTitle({
+    workspace: workspace ? workspaceTitle : null,
+    run: selectedWorldResource?.title ?? null,
+    room: selectedAgentsResource?.title ?? null,
+  }))
 
-  const normalizeOpenSelection = (catalog: ReadonlyArray<ModuleResourceDescriptor>): void => {
-    const run = catalog.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === selectedWorldRunId)
-    const room = catalog.find(resource => resource.ref.type === 'agents.room' && resource.ref.id === selectedAgentsRoomId)
-    if (selectedWorldRunId && !run) selectedWorldRunId = null
-    if (selectedAgentsRoomId && !room) {
-      selectedAgentsRoomId = null
-      agentsVisible = false
-    }
-    if (run && room) {
-      if (!roomSelectsRun(room, run)) {
-        selectedAgentsRoomId = null
-        agentsVisible = false
-      }
-    }
+  /** The Modules' answers to the last Resource read, so Back and Forward can check a restored selection too. */
+  let resourceOutcomes: ReadonlyArray<ModuleQueryOutcome> = []
+  const normalizeOpenSelection = (catalog: ReadonlyArray<ModuleResourceDescriptor>, modules: ReadonlyArray<ModuleQueryOutcome>): void => {
+    resourceOutcomes = modules
+    const kept = keptSelection({ world: selectedWorldRunId, agents: selectedAgentsRoomId, agentsVisible }, catalog, modules)
+    selectedWorldRunId = kept.world
+    selectedAgentsRoomId = kept.agents
+    agentsVisible = kept.agentsVisible
     const url = new URL(location.href)
     if (selectedWorldRunId) url.searchParams.set('world', selectedWorldRunId)
     else url.searchParams.delete('world')
@@ -115,8 +143,46 @@
     history.replaceState(null, '', url)
   }
 
+  // People and direct chat (Agents' people Capabilities). One session per page,
+  // made the first time a Run is open and Agents publishes people; it lives
+  // across Run switches, so an open chat stays open. Its failures stay inside
+  // the control: they never reach this page's error banner.
+  const peopleAvailable = $derived(capabilities.some(capability => capability.id === PEOPLE_SYNC_CAPABILITY_ID))
+  let people = $state.raw<PeopleSession | null>(null)
+  let peopleState = $state.raw<PeopleState | null>(null)
+  let peopleControl = $state<ReturnType<typeof PeopleControl> | null>(null)
+  let worldPane = $state<HTMLElement | null>(null)
+  let chatFocusRequest = $state(0)
+  const peopleShown = $derived(people !== null && peopleState !== null && peopleAvailable && selectedWorldResource !== undefined)
+  const peopleRunUrl = $derived(workspace && selectedWorldRunId ? `${location.origin}${workspaceUrl(workspace.id, { world: selectedWorldRunId })}` : '')
   $effect(() => {
-    document.title = pageTitle
+    if (people !== null || !workspace || !peopleAvailable || !selectedWorldResource) return
+    const workspaceId = workspace.id
+    untrack(() => {
+      const session = createPeopleSession({ workspaceId, ports: browserPeoplePorts() })
+      peopleState = session.state()
+      session.subscribe(state => { peopleState = state })
+      people = session
+    })
+  })
+  $effect(() => {
+    const viewing = peopleAvailable ? selectedWorldResource?.ref ?? null : null
+    const session = people
+    untrack(() => session?.setViewing(viewing))
+  })
+  onDestroy(() => people?.dispose())
+  const openPeopleChat = (person: PersonWire): void => {
+    people?.openChat(person)
+    chatFocusRequest += 1
+  }
+  const closePeopleChat = (): void => {
+    people?.closeChat()
+    peopleControl?.focusTrigger()
+  }
+
+  $effect(() => {
+    // "(3) PWR 4-loop · Leitbild.ai": unread direct messages lead the title while a Run is open.
+    document.title = withUnreadCount(pageTitle, peopleState?.active ? peopleState.unreadTotal : 0)
   })
 
   let catalogRequest = 0
@@ -136,7 +202,7 @@
     definitions = definitionResponse.definitions
     if (resourceToken === resourceRequest) {
       resources = resourceResponse.resources
-      normalizeOpenSelection(resources)
+      normalizeOpenSelection(resources, resourceResponse.modules)
       refreshError = null
     }
     capabilities = capabilityResponse.capabilities
@@ -150,6 +216,10 @@
     if (token !== resourceRequest) return
     resources = response.resources
     refreshError = response.modules.filter(outcome => outcome.status === 'failed').map(outcome => outcome.failure.message).join('; ') || null
+    // An open Run or conversation that no longer exists (deleted here or elsewhere) closes.
+    const openRun = selectedWorldRunId
+    normalizeOpenSelection(resources, response.modules)
+    if (openRun !== null && selectedWorldRunId === null) error = 'The simulation you had open was deleted.'
   }
 
   const handleWindowMessage = (event: MessageEvent): void => {
@@ -168,17 +238,21 @@
     loading = true
     error = null
     try {
-      if (currentPage.kind === 'list') {
-        workspaces = (await request<{ workspaces: ReadonlyArray<Workspace> }>('/api/workspaces')).workspaces
-      } else {
-        const workspaceId = encodeURIComponent(currentPage.id)
-        await Promise.all([
-          request<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`).then(response => { workspace = response.workspace }),
-          loadWorkspaceCatalog(currentPage.id),
-        ])
-      }
+      const workspaceId = encodeURIComponent(currentPage.id)
+      await Promise.all([
+        request<{ workspace: Workspace }>(`/api/workspaces/${workspaceId}`).then(response => {
+          workspace = response.workspace
+          // Opening a Workspace adds it to "Recent in this browser"; it never becomes the default (rule 6).
+          memory.visited(response.workspace.id)
+        }),
+        loadWorkspaceCatalog(currentPage.id),
+      ])
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
+      const plain = plainError(cause)
+      console.error(errorDiagnostic(cause))
+      // A Workspace that no longer exists stops being a launch default or a Recent entry.
+      if (plain.code === 'workspace_not_found') memory.forget(currentPage.id)
+      error = plain.text
     } finally {
       loading = false
     }
@@ -201,44 +275,74 @@
     await loadWorkspaceCatalog(workspace.id)
   })
 
-  const openResources = (created: ReadonlyArray<ModuleResourceDescriptor['ref']>): void => {
-    const world = created.find(resource => resource.moduleId === 'world' && resource.type === 'world.simulation-run')
-    const agents = created.find(resource => resource.moduleId === 'agents' && resource.type === 'agents.room')
-    const params = new URLSearchParams()
-    if (world) params.set('world', world.id)
-    else if (selectedWorldRunId) params.set('world', selectedWorldRunId)
-    if (agents) params.set('agents', agents.id)
-    else if (!world && selectedAgentsRoomId) params.set('agents', selectedAgentsRoomId)
-    location.href = `${location.pathname}${params.size > 0 ? `?${params}` : ''}`
+  // The featured list needs no Workspace runtime; it is read once, when the home first shows.
+  let featuredRequested = false
+  $effect(() => {
+    if (workspace && !showingComposer && !featuredRequested) {
+      featuredRequested = true
+      void loadFeatured()
+    }
+  })
+  const loadFeatured = async (): Promise<void> => {
+    try {
+      featuredCatalog = await readFeaturedCatalogue((input, init) => fetch(input, init))
+      featuredFailed = false
+    } catch (cause) {
+      console.error('Featured Definitions are unavailable', cause)
+      featuredFailed = true
+    }
   }
 
-  const invokeDefinition = (definition: ModuleDefinitionDescriptor, capability: ModuleCapabilityDescriptor): Promise<void> => run(async () => {
-    if (!workspace) return
-    if (capability.risk === 'destructive' && !confirm(`${capability.title}: ${definition.title}? Existing live resources will remain.`)) return
-    const response = await request<InvocationResponse>(
-      `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          definition: { ...definition.ref, revisionId: definition.currentRevisionId },
-          input: {}, actor: { kind: 'human' },
-        }),
-      },
-    )
-    if (response.createdResources?.length) openResources(response.createdResources)
-    else await loadWorkspaceCatalog(workspace.id)
-  })
+  const featuredKey = (card: FeaturedCard): string => `featured:${card.definition.ref.moduleId}:${card.definition.ref.type}:${card.definition.ref.id}`
+  const definitionKey = (definition: ModuleDefinitionDescriptor): string => `definition:${definition.ref.moduleId}:${definition.ref.type}:${definition.ref.id}`
 
-  const invokeResource = (resource: ModuleResourceDescriptor, capability: ModuleCapabilityDescriptor): Promise<void> => run(async () => {
+  // Start from the Workspace page (plan v2 §5.3 steps 4–7): the runner shows each
+  // step; arriving opens what was created and makes this Workspace the default.
+  const startFrom = async (target: StartTarget): Promise<void> => {
     if (!workspace) return
-    if (capability.risk === 'destructive' && !confirm(`${capability.title}: ${resource.title}? This cannot be undone.`)) return
-    await request<InvocationResponse>(
-      `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resource: resource.ref, input: {}, actor: { kind: 'human' } }),
-      },
-    )
-    await loadWorkspaceCatalog(workspace.id)
-  })
+    const result = await startRunner.start(target)
+    if (result === null) return
+    if (result.destination !== null) {
+      memory.remember(workspace.id, 'launched')
+      location.assign(result.destination)
+      return
+    }
+    startRunner.cancel()
+    await run(() => loadWorkspaceCatalog(workspace!.id))
+  }
+  const startFeatured = (card: FeaturedCard): void => {
+    if (!workspace) return
+    void startFrom({ key: featuredKey(card), workspaceId: workspace.id, definition: card.definition.ref, revisionId: featuredStartRevision(card), featured: true })
+  }
+  const startDefinition = (definition: ModuleDefinitionDescriptor): void => {
+    if (!workspace) return
+    void startFrom({ key: definitionKey(definition), workspaceId: workspace.id, definition: definition.ref })
+  }
+  const retryStart = async (): Promise<void> => {
+    const result = await startRunner.retry()
+    if (result === null || !workspace) return
+    if (result.destination !== null) {
+      memory.remember(workspace.id, 'launched')
+      location.assign(result.destination)
+      return
+    }
+    startRunner.cancel()
+    await run(() => loadWorkspaceCatalog(workspace!.id))
+  }
+  const reloadAfterStart = (): void => {
+    startRunner.dismiss()
+    if (workspace) void run(() => loadWorkspaceCatalog(workspace!.id))
+  }
+  const openEditor = async (path: string, subject: WorkspaceSubjectReference | null): Promise<void> => {
+    scenarioEditorSubject = subject
+    scenarioEditorPath = path
+    await tick()
+    scenarioEditorFrame?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  const workspaceDeleted = (): void => {
+    if (workspace) memory.forget(workspace.id)
+    location.assign('/workspaces')
+  }
 
   const inspect = async (subject: InspectionSubject): Promise<void> => {
     if (!workspace) return
@@ -303,18 +407,10 @@
     }
   }
 
-  const openResource = (resource: ModuleResourceDescriptor): void => {
-    const params = new URLSearchParams()
-    if (resource.ref.type === 'world.simulation-run') params.set('world', resource.ref.id)
-    if (resource.ref.type === 'agents.room') params.set('agents', resource.ref.id)
-    if (params.size > 0) location.href = `${location.pathname}?${params}`
-    else if (resource.uiPath) location.href = resource.uiPath
-  }
-
   const switchWorldRun = (runId: string, replace = false): void => {
     selectedWorldRunId = runId
     const nextRun = resources.find(candidate => candidate.ref.type === 'world.simulation-run' && candidate.ref.id === runId)
-    if (selectedAgentsResource && nextRun && !roomSelectsRun(selectedAgentsResource, nextRun)) {
+    if (selectedAgentsResource && nextRun && !roomServesRun(selectedAgentsResource, nextRun)) {
       selectedAgentsRoomId = null
       agentsVisible = false
     }
@@ -336,14 +432,18 @@
     if (listed() === undefined && workspace) await refreshResources(workspace.id)
     const found = listed()
     if (found === undefined) return 'The display\'s Run is not in this Workspace'
+    if (selectedAgentsResource && runDeclaresRoles(found)) {
+      return 'The display\'s Run has roles, so it offers no Assistant beside it; open the Run to see the display'
+    }
     if (selectedAgentsResource && !roomSelectsRun(selectedAgentsResource, found)) {
       return 'The display\'s Run is outside this room\'s scope; open the Run to see the display'
     }
     return null
   }
 
+  // The open Run was deleted: its address is replaced, so Back does not return to it.
   const closeWorldRun = (): void => {
-    location.href = workspace ? `/workspaces/${encodeURIComponent(workspace.id)}` : '/workspaces'
+    location.replace(workspace ? `/workspaces/${encodeURIComponent(workspace.id)}` : '/workspaces')
   }
 
   const restoreUrlSelection = (): void => {
@@ -351,6 +451,8 @@
     selectedWorldRunId = selection.get('world')
     selectedAgentsRoomId = selection.get('agents')
     agentsVisible = selectedAgentsRoomId !== null
+    // Back to a Run or conversation deleted since is the Workspace page, not a dead view.
+    if (!loading) normalizeOpenSelection(resources, resourceOutcomes)
   }
 
   const capabilityFor = (id: string): ModuleCapabilityDescriptor | undefined => capabilities.find(item => item.id === id)
@@ -367,6 +469,8 @@
         actor: { kind: 'human' },
       }),
     )
+    // Asking the Assistant here makes this Workspace the default (rule 6).
+    memory.remember(workspace.id, 'asked')
     selectedAgentsRoomId = response.result.resource.id
     selectedWorldRunId = null
     agentsVisible = true
@@ -376,14 +480,25 @@
     history.pushState(null, '', url)
     void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
   }
-  const toggleRunAssistant = async (): Promise<void> => {
-    if (!workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) return
-    if (agentsVisible) {
-      agentsVisible = false
-      const url = new URL(location.href)
-      url.searchParams.delete('agents')
-      history.replaceState(null, '', url)
-      return
+  // A Run offers its Assistant where it belongs to a run family, Agents
+  // publishes the Assistant and the Run declares no roles; its World page then
+  // offers it too.
+  const runAssistantAvailable = $derived(workspace !== null && selectedWorldResource !== undefined && selectedRunFamily !== undefined
+    && assistantCapability !== undefined && !runDeclaresRoles(selectedWorldResource))
+  // Shows the shown Run's Assistant room: the room shown when it serves the
+  // Run, else one that does, else a family room whose scope is widened to the
+  // Run, else a new one. It never hides the room, so the World page may ask
+  // for it as often as it likes.
+  // One open at a time, whoever asks (the toolbar launcher or a World page): a second click
+  // while the first is still finding or creating the room waits for it, so no second room is made.
+  let runAssistantOpening: Promise<void> | null = null
+  const openRunAssistant = (): Promise<void> => {
+    runAssistantOpening ??= openRunAssistantRoom().finally(() => { runAssistantOpening = null })
+    return runAssistantOpening
+  }
+  const openRunAssistantRoom = async (): Promise<void> => {
+    if (!runAssistantAvailable || !workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) {
+      throw new Error('Run Assistant is unavailable for this Run')
     }
     const existing = selectedAgentsResource && roomSelectsRun(selectedAgentsResource, selectedWorldResource)
       ? selectedAgentsResource
@@ -438,6 +553,13 @@
     url.searchParams.set('agents', selectedAgentsRoomId!)
     history.replaceState(null, '', url)
   }
+  const toggleRunAssistant = async (): Promise<void> => {
+    if (!agentsVisible) return openRunAssistant()
+    agentsVisible = false
+    const url = new URL(location.href)
+    url.searchParams.delete('agents')
+    history.replaceState(null, '', url)
+  }
   const showRunAssistant = (): void => {
     if (!selectedAgentsRoomId) return
     agentsVisible = true
@@ -475,27 +597,11 @@
       jsonRequest('POST', { resource: resource.ref, input: { name: name || null, expectedTitle }, actor: { kind: 'human' } }))
     await refreshResources(workspace.id)
   }
-  const definitionsFor = (moduleId: string): ReadonlyArray<ModuleDefinitionDescriptor> => definitions.filter(item => item.ref.moduleId === moduleId)
-  const resourcesFor = (moduleId: string): ReadonlyArray<ModuleResourceDescriptor> => continuableResources.filter(item => item.ref.moduleId === moduleId)
-  const relativeTime = (timestamp: string): string => {
-    const deltaSeconds = Math.round((summaryClock - Date.parse(timestamp)) / 1000)
-    const future = deltaSeconds < 0
-    const seconds = Math.abs(deltaSeconds)
-    if (seconds < 10) return 'just now'
-    const [value, unit] = seconds < 60
-      ? [seconds, 's']
-      : seconds < 3_600
-        ? [Math.round(seconds / 60), 'm']
-        : seconds < 86_400
-          ? [Math.round(seconds / 3_600), 'h']
-          : [Math.round(seconds / 86_400), 'd']
-    return future ? `in ${value}${unit}` : `${value}${unit} ago`
-  }
   const summaryValue = (item: ResourceSummaryItem): string =>
-    item.kind === 'timestamp' ? relativeTime(item.value) : String(item.value)
+    item.kind === 'timestamp' ? ageText(new Date(item.value), new Date(summaryClock)) : String(item.value)
   const refreshInterval = setInterval(() => {
     summaryClock = Date.now()
-    if (currentPage.kind === 'workspace' && workspace && !showingComposer) {
+    if (workspace && !showingComposer) {
       void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
     }
   }, 20_000)
@@ -510,9 +616,14 @@
 
 <svelte:window onmessage={handleWindowMessage} />
 
-{#if currentPage.kind === 'workspace' && workspace}
+{#if showingComposer && !workspace}
+  <header class="workspace-bar"><div class="workspace-identity"><Wordmark href="/workspaces" tone="dark" label="Leitbild.ai home" /></div></header>
+{:else if showingComposer && workspace}
   <header class="workspace-bar">
-    <div class="workspace-identity"><a class="brand" href="/workspaces">Leitbild</a><a class="workspace-name" href={`/workspaces/${workspace.id}`} title={workspaceTitle}>[{workspaceTitle}]</a></div>
+    <div class="workspace-identity"><Wordmark href="/workspaces" tone="dark" compact label="Leitbild.ai home" /><a class="workspace-name" href={workspacePath(workspace.id)} title={workspaceTitle}><span>{workspaceTitle}</span></a>
+      {#if peopleShown && people && peopleState && selectedWorldResource}<PeopleControl bind:this={peopleControl} session={people} people={peopleState}
+        runUrl={peopleRunUrl} runId={selectedWorldResource.ref.id} onOpenChat={openPeopleChat} />{/if}
+      {#if fromGuide}<a class="guide-back" href={guideHref('ask')}>← Getting started</a>{/if}</div>
     <div class="workspace-actions">
       {#if selectedWorldResource}
         <SimulationRunControls
@@ -524,8 +635,9 @@
           onClose={closeWorldRun}
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
+          retractError={message => { error = bannerAfterRetract(error, message) }}
         />
-        {#if agentsVisible && selectedRunFamily}
+        {#if agentsVisible && selectedRunFamily && !runDeclaresRoles(selectedWorldResource)}
           {@const familyResource = resources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === selectedRunFamily.id)}
           {#if familyResource}
             <RunRoomControls
@@ -543,7 +655,9 @@
         {/if}
       {/if}
       {#if selectedWorldResource}
-        <AssistantLauncher disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
+        {#if !runDeclaresRoles(selectedWorldResource)}
+          <AssistantLauncher disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
+        {/if}
       {:else}
         <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
       {/if}
@@ -551,90 +665,77 @@
     </div>
   </header>
 {:else}
-  <header class="topbar"><a class="brand" href="/workspaces">Leitbild</a><span class="tagline">— A modular microworld simulation and AI agent sandbox system</span><WikiLink /></header>
+  <a class="lb-skip-link" href="#main">Skip to content</a>
+  <header class="ws-topbar">
+    <Wordmark href="/workspaces" tone="dark" mark label="Leitbild.ai home" />
+    <span class="topbar-sep" aria-hidden="true"></span>
+    {#if workspace}<WorkspaceSwitcher current={workspace} currentIsPage {memory} />{/if}
+    <nav class="ws-nav" aria-label="Main">
+      <div class="nav-wide">
+        <a class="nav-link" href={guideHref('start')}><Icon name="compass" size={18} /><span>Getting started</span></a>
+        <a class="nav-link" href={demosHref()}><Icon name="demos" size={18} /><span>Demos</span></a>
+        <a class="nav-link" href="/wiki"><Icon name="book" size={18} /><span class="wiki-text">Wiki</span></a>
+      </div>
+      <div class="nav-narrow">
+        <MoreMenu label="Menu" tone="dark" triggerClass="nav-link nav-menu" items={[
+          { label: 'Getting started', icon: 'compass', href: guideHref('start') },
+          { label: 'Demos', icon: 'demos', href: demosHref() },
+          { label: 'Wiki', icon: 'book', href: '/wiki' },
+        ]}>{#snippet trigger()}<Icon name="dots" size={18} /><span>Menu</span>{/snippet}</MoreMenu>
+      </div>
+      {#if workspace}<AssistantLauncher label="Ask" disabled={assistantCapability === undefined} submit={openAssistant} />{/if}
+    </nav>
+  </header>
 {/if}
 
-<main class:workspace-main={currentPage.kind === 'workspace' && showingComposer}>
+<main id="main" tabindex="-1" class:workspace-main={showingComposer} class:ws-page={!showingComposer}>
   {#if loading}
     <section class="notice">Loading Workspace…</section>
-  {:else if error && currentPage.kind === 'workspace' && !workspace}
+  {:else if error && !workspace}
     <section class="notice error"><h1>Workspace unavailable</h1><p>{error}</p><a href="/workspaces">Back to Workspaces</a></section>
-  {:else if currentPage.kind === 'list'}
-    {#if error}<p class="notice error" role="alert">{error}</p>{/if}
-    <WorkspacePicker {workspaces} />
   {:else if workspace}
     {#each workspace.modules as moduleState (moduleState.moduleId)}
       {#if moduleState.status !== 'ready'}
-        <section class="notice error" role="alert"><p>{moduleTitles[moduleState.moduleId]}: {moduleState.failure?.message ?? moduleState.status}</p>
+        <section class="notice error" role="alert"><p>{moduleTitle(moduleState.moduleId)}: {moduleState.failure?.message ?? moduleState.status}</p>
           {#if moduleState.status === 'provision_failed'}<button disabled={busy} onclick={() => void retryModule(moduleState.moduleId)}>Retry setup</button>{/if}
-          {#if moduleState.status === 'remove_failed' || moduleState.status === 'removing'}<a href="/workspaces">Manage workspaces to retry deletion</a>{/if}
+          {#if moduleState.status === 'remove_failed' || moduleState.status === 'removing'}<span>Deleting this Workspace did not finish. Use ⋯ → Delete Workspace… to try again.</span>{/if}
         </section>
       {/if}
     {/each}
-    {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitles[outcome.moduleId]}: {outcome.failure.message}</p>{/if}{/each}
+    {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
     <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
-      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} onError={message => { error = message }} />
+      {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
+      onError={message => { error = message }} bind:worldPane />
+    {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}
+      focusRequest={chatFocusRequest} onClose={closePeopleChat} />{/if}
     {:else}
-      <section class="workspace-home">
-        {#if error}<p class="notice error">{error}</p>{/if}
-        <section class="catalog-section-home scenario-builder-home">
-          <header><h2>Create</h2><span>World scenario</span></header>
-          {#if scenarioEditorPath}
-            <div class="scenario-builder-frame"><button class="builder-close" type="button" onclick={() => { if (!scenarioEditorDirty || confirm('Discard unsaved scenario changes?')) { scenarioEditorPath = null; scenarioEditorSubject = null; scenarioEditorDirty = false } }}>Close editor</button><iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></div>
-          {:else}
-            <article class="scenario-builder-launch"><div><h3>Build a scenario</h3><p>Pick World Packs, place assets on the map, and save the result as a reusable scenario.</p></div><button class="primary" onclick={() => { if (workspace) { scenarioEditorSubject = null; scenarioEditorPath = `/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new` } }}>Open editor</button></article>
-          {/if}
-        </section>
-        <section class="catalog-section-home"><header><h2>World</h2><span>{definitionsFor('world').length} scenarios</span></header><div class="catalog-grid">
-            {#each definitionsFor('world') as definition (`${definition.ref.type}:${definition.ref.id}`)}
-              {@const primary = cardCapability(definition, 'primary', capabilities)}
-              {@const remove = cardCapability(definition, 'delete', capabilities)}
-              <article class="catalog-card clickable-card" aria-busy={busy}>
-                {#if primary}<button class="card-hit-target" disabled={busy} aria-label={`Start ${definition.title}`} onclick={() => void invokeDefinition(definition, primary)}></button>{/if}
-                <div>{#if definition.category}<span class="card-category">{definition.category}</span>{/if}<h3>{definition.title}</h3><p>{definition.description ?? definition.ref.id}</p></div>
-                <div class="card-actions card-control">
-                  {#if definition.uiPath}<button onclick={() => { scenarioEditorSubject = { ...definition.ref, revisionId: definition.currentRevisionId }; scenarioEditorPath = definition.uiPath ?? null }}>Edit</button>{/if}
-                  {#if definition.inspectionCapabilityId}<button disabled={inspectionLoading} onclick={() => void inspect({ kind: 'definition', descriptor: definition })}>Inspect</button>{/if}
-                </div>
-                {#if remove}<button class="card-delete card-control" disabled={busy} aria-label={`Delete ${definition.title}`} title="Delete scenario" onclick={() => void invokeDefinition(definition, remove)}>×</button>{/if}
-              </article>
-            {/each}
-          </div></section>
-        {#if continuableResources.length > 0}
-          <section class="catalog-section-home">
-            <header><h2>Continue</h2><span>{continuableResources.length} resources</span></header>
-            <div class="resource-columns">
-                <div><h3>World</h3>
-                  {#each resourcesFor('world') as resource (`${resource.ref.type}:${resource.ref.id}`)}
-                    {@const deleteCapability = cardCapability(resource, 'delete', capabilities)}
-                    <article class="resource-card clickable-card">
-                      <button class="card-hit-target" aria-label={`Continue ${resource.title}`} onclick={() => openResource(resource)}></button>
-                      <div class="resource-open">
-                        {#if resource.renameCapabilityId}<InlineName value={resource.title} fallback={resource.ref.id} label={`Rename ${resource.title}`} onsave={(name, original) => renameResource(resource, name, original)} />{:else}<strong>{resource.title}</strong>{/if}
-                        {#if resource.description}<span class="resource-description">{resource.description}</span>{/if}
-                        {#if resource.summary.length > 0}
-                          <span class="resource-summary">
-                            {#each resource.summary as item (item.key)}
-                              <span class="resource-fact" title={item.kind === 'timestamp' ? item.value : undefined}>
-                                <small>{item.label}</small><b>{summaryValue(item)}</b>
-                              </span>
-                            {/each}
-                          </span>
-                        {/if}
-                      </div>
-                      <span class="resource-tools card-control">
-                        {#if resource.inspectionCapabilityId}<button class="resource-inspect" type="button" aria-label={`Inspect ${resource.title}`} disabled={inspectionLoading} onclick={() => void inspect({ kind: 'resource', descriptor: resource })}>Inspect</button>{/if}
-                        {#if deleteCapability}<button class="resource-delete" type="button" aria-label={`${deleteCapability.title}: ${resource.title}`} title={deleteCapability.title} disabled={busy} onclick={() => void invokeResource(resource, deleteCapability)}>×</button>{/if}
-                      </span>
-                    </article>
-                  {/each}
-                </div>
-            </div>
+      <div class="ws-home">
+        <WorkspaceHeader {workspace} {admin} onrenamed={updated => { workspace = updated }} ondeleted={workspaceDeleted} />
+        {#if error}<p class="notice error" role="alert">{error}</p>{/if}
+        <p class="visually-hidden" role="status">{startAnnouncement(startState)}</p>
+        <ContinueList items={continuing} workspaceId={workspace.id} {capabilities} {summaryValue} inspecting={inspectionLoading}
+          oninspect={resource => void inspect({ kind: 'resource', descriptor: resource })}
+          onrename={(resource, name, original) => renameResource(resource, name, original)}
+          onremoved={() => refreshResources(workspace!.id).catch(cause => { refreshError = String(cause) })} />
+        <FeaturedRow cards={demos.cards} unavailable={featuredFailed || demos.unavailable.length > 0} start={startState} keyOf={featuredKey}
+          onstart={startFeatured} onretry={() => void retryStart()} ondismiss={() => startRunner.dismiss()} oncancel={() => startRunner.cancel()} onreload={reloadAfterStart} />
+        <DefinitionCatalog definitions={demos.others} listed={featuredCatalog?.listed ?? []} {capabilities} workspaceId={workspace.id} start={startState} keyOf={definitionKey} inspecting={inspectionLoading}
+          onstart={startDefinition} onretry={() => void retryStart()} ondismiss={() => startRunner.dismiss()} oncancel={() => startRunner.cancel()} onreload={reloadAfterStart}
+          onedit={definition => { if (definition.uiPath) void openEditor(definition.uiPath, { ...definition.ref, revisionId: definition.currentRevisionId }) }}
+          oninspect={definition => void inspect({ kind: 'definition', descriptor: definition })}
+          onremoved={() => loadWorkspaceCatalog(workspace!.id).catch(cause => { error = plainErrorText(cause) })} />
+        {#if scenarioEditorPath}
+          <section class="scenario-builder-frame" aria-label="Scenario editor"><button class="builder-close" type="button" onclick={() => { if (!scenarioEditorDirty || confirm('Discard unsaved scenario changes?')) { scenarioEditorPath = null; scenarioEditorSubject = null; scenarioEditorDirty = false } }}>Close editor</button><iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></section>
+        {:else}
+          <section class="build" aria-labelledby="build-heading">
+            <span class="build-icon" aria-hidden="true"><Icon name="edit" size={18} /></span>
+            <div><h2 id="build-heading">Build your own scenario</h2><p>Pick World Packs, place assets on the map and save it as a reusable scenario.</p></div>
+            <button class="lb-btn" type="button" onclick={() => { if (workspace) void openEditor(`/workspaces/${encodeURIComponent(workspace.id)}/world/scenarios/new`, null) }}>Open editor</button>
           </section>
         {/if}
-      </section>
+      </div>
     {/if}
 
     {#if error && showingComposer}<p class="workspace-error" role="alert">{error}<button type="button" aria-label="Dismiss" onclick={() => { error = null }}>×</button></p>{/if}
@@ -662,3 +763,60 @@
     </dialog>
   {/if}
 </main>
+
+<style>
+  /* Workspace page top bar (plan v2 §2; VISUAL-SPEC §3.2). The Run view keeps its 42 px .workspace-bar. */
+  .ws-topbar { position: sticky; top: 0; z-index: 20; min-height: var(--lb-topbar-h); padding: 0 var(--lb-gutter); display: flex; align-items: center; gap: 12px;
+    color: var(--lb-on-dark); background: var(--lb-brand-900); border-bottom: 1px solid #0d150f; }
+  .topbar-sep { flex: none; width: 1px; height: 24px; background: var(--lb-on-dark-line); }
+  .ws-nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .nav-wide { display: flex; align-items: center; gap: 2px; }
+  .nav-narrow { display: none; }
+  .ws-topbar :global(.nav-link) { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border: 0; border-radius: var(--lb-r-sm);
+    color: var(--lb-on-dark); background: transparent; font-size: .875rem; font-weight: 550; text-decoration: none; white-space: nowrap; cursor: pointer; }
+  .ws-topbar :global(.nav-link:hover) { background: rgba(255, 255, 255, .08); }
+  .ws-topbar :global(.nav-link:focus-visible) { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; }
+  .ws-topbar :global(.nav-link .lb-icon) { color: var(--lb-on-dark-2); }
+  .ws-topbar :global(.assistant-launch.labelled) { margin-left: 6px; }
+  @media (max-width: 1023px) {
+    .wiki-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+  @media (max-width: 699px) {
+    .ws-topbar { gap: 8px; min-height: 52px; }
+    .topbar-sep { display: none; }
+    .nav-wide { display: none; }
+    .nav-narrow { display: block; }
+  }
+  @media (pointer: coarse) { .ws-topbar :global(.nav-link) { min-height: 44px; } }
+
+  /* A crowded Run bar gives way in order, so nothing overlaps: first the Workspace name
+     ellipsises down to four letters, never further, as it is the way back to the Workspace
+     page; then the Run's title; then, at 760 px and below, the Run's controls scroll
+     sideways in their own strip (SimulationRunControls.svelte). The identity never gets
+     narrower than its mark, those letters and the people control (the name's grid column
+     has no minimum, so the name adds only its four letters to that), its shrink weight
+     makes it give way before the Run's controls, and no other control in the bar shrinks. */
+  .workspace-identity { min-width: auto; flex-shrink: 100; }
+  .workspace-name { display: grid; grid-template-columns: minmax(0, auto); min-width: 4ch; }
+  .workspace-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workspace-actions > :global(:not(.run-controls)) { flex-shrink: 0; }
+  .guide-back { flex: none; color: #aebbb0; font-size: .78rem; text-decoration: none; white-space: nowrap; }
+  .guide-back:hover { color: white; }
+  .guide-back:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; border-radius: 4px; }
+
+  /* Workspace page body (plan v2 §6): 28 px from the bar, sections 36 px apart. */
+  main.ws-page { width: 100%; max-width: calc(1200px + 2 * var(--lb-gutter)); margin: 0 auto; padding: 28px var(--lb-gutter) 64px; }
+  main:focus { outline: none; }
+  .ws-home { display: grid; gap: 36px; min-width: 0; }
+  .ws-home > :global(*) { min-width: 0; }
+  .build { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--lb-s4); padding: 16px 20px;
+    border: 1px dashed var(--lb-line-strong); border-radius: var(--lb-r-lg); background: rgba(255, 255, 255, .5); }
+  .build-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--lb-r-md); color: var(--lb-brand-600); background: var(--lb-brand-50); }
+  .build h2 { margin: 0 0 2px; font-size: .9375rem; font-weight: 700; }
+  .build p { margin: 0; color: var(--lb-ink-3); font-size: var(--lb-fs-small); line-height: 1.45; }
+  @media (max-width: 699px) {
+    .ws-home { gap: 28px; }
+    .build { grid-template-columns: minmax(0, 1fr); }
+    .build-icon { display: none; }
+  }
+</style>

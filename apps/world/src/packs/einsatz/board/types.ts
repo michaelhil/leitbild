@@ -1,6 +1,6 @@
 import type { GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import type { PackMapTarget, PackTargetPreview } from '../../../core/packs/protocol.ts'
-import type { PanelKey } from '../../../ui/keys/panel-key-router.ts'
+import type { PanelKey } from '../../../ui/keys/panel-key.ts'
 import type { EinsatzCommandId } from '../capabilities.ts'
 
 /**
@@ -338,8 +338,6 @@ export interface ContactSide {
 export interface ContactsView {
   readonly heading: string
   readonly sides: ReadonlyArray<ContactSide>
-  /** What detection is and is not, shown as a line under the list's heading. */
-  readonly hover: string
 }
 
 /**
@@ -436,15 +434,18 @@ export interface BoardView {
   readonly keysActive: boolean
   /** Whether sound is on, and what the sound control says: how to enable it, or that it is on. */
   readonly sound: { readonly on: boolean; readonly text: string }
+  /** The header strip's alerts, newest first: the strip shows the first and counts the rest. */
   readonly alerts: ReadonlyArray<HeaderAlert>
   readonly workList: { readonly rows: ReadonlyArray<WorkRow>; readonly empty: string | null }
   readonly unitBoard: { readonly rows: ReadonlyArray<UnitRow>; readonly empty: string | null; readonly sitesHeading: string; readonly sites: ReadonlyArray<SiteRow> }
   /** Null unless the arrangement includes the Contacts list. */
   readonly contacts: ContactsView | null
+  /** Whether Contacts folds to one line of counts: on a screen led by its work list, until a track first becomes engageable on it. */
+  readonly contactsFolded: boolean
   readonly selected: SelectedTask | { readonly kind: 'unit'; readonly id: string } | null
   readonly commit: CommitElement
   readonly feedback: Feedback | null
-  /** The Undo button's label for 8 s after a send or a queue was accepted and the Run shows the step it created; null otherwise. */
+  /** The Undo button's label for 8 s, of wall time and of Run time, after a send or a queue was accepted and the Run shows the step it created; null otherwise. */
   readonly undo: string | null
   /** The prompt to show on the map after a tap on open ground; null when there is none. */
   readonly mapPrompt: BoardMapPrompt | null

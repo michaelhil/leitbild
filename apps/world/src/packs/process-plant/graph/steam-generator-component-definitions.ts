@@ -16,9 +16,16 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       // valve: steam it vents leaves the Plant, so it is a circuit of its own.
       steamReliefOutlet: { kind: 'steam', direction: 'out', circuit: 'relief' },
       isolationSignal: { kind: 'logicSignal', direction: 'in' },
+      // The steam line's branch to a pump's drive turbine (the turbine-driven
+      // auxiliary feedwater pump's), ahead of the isolation valve, so it still
+      // has steam with the steam lines isolated. The turbine exhausts it to
+      // the atmosphere, so it too is a circuit of its own.
+      driveSteamOutlet: { kind: 'steam', direction: 'out', circuit: 'drive' },
     },
     parametersSchema: z.object({
       nominalPressureMPa: z.number().finite().positive(),
+      /** The feedwater temperature the plant's feedwater heaters deliver at full power: with the nominal pressure it sets the energy each kilogram of steam takes. */
+      designFeedwaterTemperatureC: z.number().finite(),
       nominalLevelPercent: normalized,
       heatTransferCoefficientMwPerK: z.number().finite().positive(),
       initialPrimaryInletTemperatureC: z.number().finite().optional(),
@@ -37,6 +44,11 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       nominalSteamMassKg: z.number().finite().positive().optional(),
       voidFractionAtNominalBoiling: normalized.optional(),
       voidFractionTimeConstantS: z.number().finite().positive().optional(),
+      /**
+       * The mixture level the boiling voids add, in percent of the full-scale inventory per unit void fraction:
+       * the swell a trip's void collapse takes away. Calibrate it against the narrow range's span, not the
+       * generator's height: the reference's full-power swell is about a fifth of its narrow range.
+       */
       swellLevelGainPercent: z.number().finite().nonnegative().optional(),
       narrowRangeLowerFraction: normalized.optional(),
       narrowRangeUpperFraction: normalized.optional(),
@@ -95,7 +107,7 @@ export const steamGeneratorComponentDefinitions: ReadonlyArray<ComponentDefiniti
       variable({ path: 'steamMassBalanceResidualKg', label: 'Steam mass balance residual', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg', simulatorOnly: true }),
       variable({ path: 'boilingEnergyResidualMw', label: 'Boiling energy balance residual', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'powerDelta', unit: 'MW', simulatorOnly: true }),
       variable({ path: 'tubeLeakFraction', label: 'Tube leak fraction', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', measurand: 'leak', quantity: 'ratio', unit: 'fraction' }),
-      variable({ path: 'primaryToSecondaryLeakKgPerS', label: 'Primary-to-secondary leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true }),
+      variable({ path: 'primaryToSecondaryLeakKgPerS', label: 'Primary-to-secondary leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true, faultTruth: true }),
       variable({ path: 'secondaryRadiationMSvPerH', label: 'Secondary radiation', kind: 'derived', discipline: 'radiological', writable: false, publish: 'telemetry', quantity: 'radiationDoseRate', unit: 'mSv/h' }),
       // How fast the saturation temperature of its pressure moves: its pressure's trend, which natural circulation
       // checks stable or falling. Declared last, so the variables before it keep their places.

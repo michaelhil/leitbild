@@ -8,21 +8,25 @@
 import { addPostRenderProcessor } from '../extensions/post-render-registry.ts'
 import { apiFetch, currentWorkspaceId } from '../api-client.ts'
 import { $roomMessages, $selectedRoomId } from '../stores.ts'
-import { VIEW_FENCE_LANGUAGE } from '../../../core/render-validators/view-fence.ts'
-import { findPostedAnswer, roomViewFences, viewFenceOf, viewListingOf, type ViewFence } from './listing.ts'
+import { parseViewFenceBody, VIEW_FENCE_LANGUAGE, viewRefFor } from '../../../core/render-validators/view-fence.ts'
+import { proposedInTurn } from '../proposal-card/model.ts'
+import { citedKeys, createTurnCardsReader, frozenCard, WINDOW_ONLY_MARK, type TurnCardList } from './cards.ts'
+import { answerMessage, postedAnswerOf, presentedViewRefs, roomViewFences, viewFenceKey, viewFenceOf, viewListingOf, type PostedAnswer, type ViewFence } from './listing.ts'
 import { createViewResolutionCache, resolveViewReference } from './resolve.ts'
 import { openView } from './open.ts'
 import {
   createViewListPublisher,
   createViewListSync,
+  focusedListing,
+  inlineHeightRequest,
   inlineHostAnnouncement,
   inlineOpenRequest,
   isViewHostAnnouncement,
   workspaceRoomHref,
   type ViewHostMessage,
 } from './host-link.ts'
-import { inlineFrameWindows, relayInlineOpens } from './inline.ts'
-import { createChipHost, fenceNotice, promoteUnhostedChips, showAvailable, showPreparing, showRefused, showUnhosted, type ChipActions } from './chip.ts'
+import { fitInline, inlineFrameWindows, relayInlineOpens } from './inline.ts'
+import { citeKeys, createChipHost, fenceNotice, promoteUnhostedChips, showAvailable, showPreparing, showRefused, showUnhosted, type CardViewOpener, type ChipActions, type ChipCard } from './chip.ts'
 
 // Long enough for a burst of re-renders and resolutions to settle into one
 // list, short enough that a new answer's display reaches the window at once.
@@ -35,6 +39,9 @@ const fetchJson = async (path: string): Promise<{ readonly status: number; reado
   const response = await apiFetch(path)
   return { status: response.status, body: response.status === 200 ? await response.json() : null }
 }
+
+// One read of each answer's cards: the frozen card on its chips and the chips for its keys.
+const turnCards = createTurnCardsReader(fetchJson)
 
 const resolutions = createViewResolutionCache<ViewFence>(fence =>
   resolveViewReference(fence.ref, { roomId: fence.answer.roomId, turnId: fence.answer.turnId, workspaceId: currentWorkspaceId() }, fetchJson))
@@ -79,8 +86,9 @@ const refreshViewList = (): void => {
 
 const settleChip = async (host: HTMLElement, roomId: string, turnId: string, body: string): Promise<void> => {
   // renderMessage renders only messages of the room store, so the answer is there.
-  const answer = findPostedAnswer($roomMessages.get()[roomId] ?? [], turnId)
-  if (answer === null) {
+  const message = answerMessage($roomMessages.get()[roomId] ?? [], turnId)
+  const answer = message === null ? null : postedAnswerOf(message)
+  if (message === null || answer === null) {
     showRefused(host, 'view_answer_missing', 'the answer that composed this display is not loaded')
     return
   }
@@ -95,8 +103,54 @@ const settleChip = async (host: HTMLElement, roomId: string, turnId: string, bod
     return
   }
   const listing = viewListingOf(parsed.fence, resolution.envelope)
-  if (hosted) showAvailable(host, listing, chipActions)
-  else showUnhosted(host, listing, workspaceRoomHref(currentWorkspaceId(), roomId), chipActions)
+  // A vignette's chip shows its card; a display that returned none (a Pack's own) keeps the plain chip.
+  const read = await turnCards(roomId, turnId)
+  const entry = read.kind === 'cards' ? read.cards.find(candidate => candidate.viewRef === viewRefFor(parsed.fence.ref.callId, parsed.fence.ref.key)) : undefined
+  // The lines the answer cites lead its card; an answer that proposed an operation reviews it first (its proposal card).
+  const card: ChipCard | undefined = read.kind === 'refused' ? { refused: read.message } : entry === undefined ? undefined : frozenCard(entry.card, citedKeys(message.content))
+  const context = { proposal: proposedInTurn(message) }
+  if (hosted) showAvailable(host, listing, chipActions, card, context)
+  else showUnhosted(host, listing, workspaceRoomHref(currentWorkspaceId(), roomId), chipActions, card, context)
+}
+
+// Each ⟦k⟧ of a posted answer becomes a chip for the line it cites, from the answer's own turn.
+const renderCitedKeys = async (container: HTMLElement): Promise<void> => {
+  const roomId = container.dataset.viewRoom
+  const turnId = container.dataset.viewTurn
+  if (roomId === undefined || turnId === undefined || container.textContent?.includes('⟦k') !== true) return
+  const message = answerMessage($roomMessages.get()[roomId] ?? [], turnId)
+  const answer = message === null ? null : postedAnswerOf(message)
+  const read = await turnCards(roomId, turnId)
+  const presented = presentedViewRefs(message?.content ?? '')
+  const boards = message === null || answer === null || read.kind !== 'cards' ? new Map<string, CardViewOpener>()
+    : await citedBoards(container, read.cards, presented, answer, citedKeys(message.content))
+  citeKeys(container, read, presented, boards)
+}
+
+/**
+ * The cards an answer cites whose view only the window shows (a dashboard's board, R4 §2.6: receipts link to the
+ * board, nothing embeds it): each stands under the answer as its frozen card, the cited lines first, its Open opening
+ * the board in the window, never inline; a key on it opens the board there at the cited line's section (its `at`).
+ */
+const citedBoards = async (container: HTMLElement, cards: TurnCardList, presented: ReadonlySet<string>, answer: PostedAnswer, cited: ReadonlyArray<string>): Promise<ReadonlyMap<string, CardViewOpener>> => {
+  const boards = new Map<string, CardViewOpener>()
+  for (const { viewRef, card } of cards) {
+    if (presented.has(viewRef) || !card.items.some(item => cited.includes(item.key))) continue
+    const parsed = parseViewFenceBody(`view ${viewRef}`)
+    if (parsed.kind !== 'reference') continue
+    const fence = { key: viewFenceKey(answer, parsed.ref), answer, ref: parsed.ref }
+    const resolution = await resolutions.resolve(fence)
+    if (resolution.kind !== 'view' || resolution.envelope.windowOnly !== true) continue
+    const listing = viewListingOf(fence, resolution.envelope)
+    const host = createChipHost()
+    container.append(host)
+    const frozen = frozenCard(card, cited, WINDOW_ONLY_MARK)
+    if (hosted) showAvailable(host, listing, chipActions, frozen, { proposal: false })
+    else showUnhosted(host, listing, workspaceRoomHref(currentWorkspaceId(), answer.roomId), chipActions, frozen, { proposal: false })
+    // Where a window shows displays, the cited line's part opens there; outside the Host the line alone shows.
+    boards.set(viewRef, at => { if (hosted) openView(focusedListing(listing, at)) })
+  }
+  return boards
 }
 
 const renderViewBlocks = async (container: HTMLElement): Promise<void> => {
@@ -122,8 +176,15 @@ const renderViewBlocks = async (container: HTMLElement): Promise<void> => {
 }
 
 addPostRenderProcessor('leitbild-view', renderViewBlocks)
+addPostRenderProcessor('leitbild-card-keys', renderCitedKeys)
 
 window.addEventListener('message', event => {
+  // An inline display says how tall its content is: its frame fits it, hosted or not (W7.3).
+  const height = inlineHeightRequest(event, { origin: location.origin, inlineFrames: inlineFrameWindows() })
+  if (height !== null) {
+    fitInline(event.source, height)
+    return
+  }
   // An inline display asks for another in the window (C1 E5: a chip or banner label on it): relayed while hosted.
   const open = hosted ? inlineOpenRequest(event, { origin: location.origin, workspaceId: currentWorkspaceId(), inlineFrames: inlineFrameWindows() }) : null
   if (open !== null) {

@@ -1,0 +1,236 @@
+/**
+ * A vignette as it travels and as it is drawn (architecture A5, A6). The
+ * state is the resolved spec only: what each view reads, by ref or object
+ * id, and the rows it was allotted; the routes derive every read from it and
+ * read only that, as the caller. The view is compiled from declarations and
+ * the sample from observation reads, so the renderer adds no number, limit,
+ * colour or coordinate. Rows are units of the renderer's grid.
+ */
+import { z } from 'zod'
+import type { DeclaredCategory } from '../alerts/census.ts'
+import type { AlertRow } from '../alerts/rows.ts'
+import { observableRefSchema, type AlertSeverity, type Priority } from '../../../core/model/alerts.ts'
+import { objectIdSchema } from '../../../core/model/ids.ts'
+import type { ObservationDeclaration } from '../../../core/observation/capabilities.ts'
+import type { Observable, Observation } from '../../../core/observation/model.ts'
+import { distanceBandSchema } from '../../../core/observation/spec.ts'
+import type { TopologyGraph, TopologyNode } from '../../../core/observation/topology.ts'
+import type { TopologyLayout } from '../topology/layout.ts'
+
+/** The most rows a vignette takes, its frame included (960 px). */
+export const VIGNETTE_MAX_ROWS = 40
+export const FRAME_ROWS = 2
+
+/** The least a drawing is ever scaled to: its 12 px text at 11 px, the window's Fit floor (grid.ts, display-zoom.ts). */
+export const DRAWING_SCALE_FLOOR = 11 / 12
+
+/**
+ * The scale a drawing is shown at: whole where its rows hold it, else the share of its height its rows leave ("drawing
+ * scaled to n % to fit": its rows but the last, its attribution's, over the grid rows its layout reaches into), never
+ * below its text floor. Rows that do not hold it at the floor show it at the floor, scrolling within them.
+ */
+export const drawingScale = (section: { readonly rows: number; readonly layout: { readonly height: number } }): number =>
+  Math.min(1, Math.max(DRAWING_SCALE_FLOOR, (section.rows - 1) / Math.max(1, Math.ceil(section.layout.height))))
+
+const rows = z.number().int().min(1).max(VIGNETTE_MAX_ROWS)
+const nodeIds = z.array(z.string().min(1).max(200)).min(1).max(16).optional()
+const horizons = { '2m': 120_000, '10m': 600_000, '30m': 1_800_000 } as const
+export const horizonMs = (horizon: keyof typeof horizons): number => horizons[horizon]
+
+export const collectionSchema = z.object({
+  packId: z.string().min(1).max(128), categoryId: z.string().min(1).max(128), status: z.array(z.string().min(1).max(80)).min(1).max(6).optional(),
+  near: objectIdSchema.optional(), within: distanceBandSchema.optional(), closed: z.boolean(),
+}).strict()
+
+/**
+ * A lead request: the values an object, or one of its elements, leads with as its Pack judges each sample (the Pack's
+ * mode-aware lead read; an element's declared lead, its stop's first while it has been stopped). Never resolved refs:
+ * each sample reads it again into the view's reserved rows, so a change of lead set never moves the layout.
+ */
+export const leadRequestSchema = z.object({ objectId: objectIdSchema, element: z.string().min(1).max(200).optional() }).strict()
+export type LeadRequest = z.output<typeof leadRequestSchema>
+
+export const resolvedViewSchema = z.discriminatedUnion('kind', [
+  /**
+   * Named values (`refs`) first, then what a lead request leads with now, in the `rows` it reserves; `table`: then its
+   * element's declared table of its parallel parts, in the rows after those; `zones` (a window default's): a heading
+   * over its rows and its margin lines under them, in rows of their own (zoneRows).
+   */
+  z.object({ kind: z.literal('values'), refs: z.array(observableRefSchema).min(1).max(16).optional(), lead: leadRequestSchema.optional(), table: z.literal(true).optional(), zones: z.literal(true).optional(), rows }).strict()
+    .refine(view => view.refs !== undefined || view.lead !== undefined, { message: 'a values view names refs or a lead request' })
+    .refine(view => view.table === undefined || view.lead?.element !== undefined, { message: 'only an element\'s lead request shows its table' })
+    .refine(view => view.zones === undefined || view.lead !== undefined, { message: 'only a lead request\'s rows stand in zones' }),
+  z.object({ kind: z.literal('trend'), refs: z.array(observableRefSchema).min(1).max(12), horizon: z.enum(['2m', '10m', '30m']), rows }).strict(),
+  /** The objects' alerts, or only those on these elements or observables; `all`: the full alerts view (L4), every alert by category, filtered. */
+  z.object({
+    kind: z.literal('alerts'), objectIds: z.union([z.literal('run'), z.array(objectIdSchema).min(1).max(48)]),
+    elements: z.array(z.string().min(1).max(200)).min(1).max(8).optional(), refs: z.array(observableRefSchema).min(1).max(8).optional(), all: z.literal(true).optional(), rows,
+  }).strict(),
+  /** An entity-floor object's core slots. */
+  z.object({ kind: z.literal('slots'), objectId: objectIdSchema, rows }).strict(),
+  /** A table of these objects, or of a live collection's members. */
+  z.object({ kind: z.literal('entity'), objectIds: z.array(objectIdSchema).min(1).max(48), rows }).strict(),
+  z.object({ kind: z.literal('collection'), of: collectionSchema, rows }).strict(),
+  z.object({
+    kind: z.literal('topology'), objectId: objectIdSchema,
+    /** `overview`: the object's declared overview; otherwise a scope by ends or around. */
+    request: z.object({ overview: z.literal(true).optional(), from: nodeIds, to: nodeIds, around: nodeIds, media: nodeIds, groups: nodeIds, reach: z.number().int().min(1).max(4).optional() }).strict(),
+    rows,
+  }).strict(),
+  /** These objects, or a collection's members, or every object within `within` of `around`. */
+  z.object({
+    kind: z.literal('map'), objectIds: z.array(objectIdSchema).min(1).max(48).optional(), of: collectionSchema.optional(),
+    around: objectIdSchema.optional(), within: distanceBandSchema.optional(), rows,
+  }).strict(),
+])
+export type ResolvedView = z.output<typeof resolvedViewSchema>
+
+/** A window default's lead rows (W4.2): a heading over them, then a heading over the margins of those near or past a limit, and this many margin lines. */
+export const MARGIN_LINES = 3
+/** The rows a values view's zones take beside its values: none without zones. */
+export const zoneRows = (view: { readonly zones?: true | undefined }): number => (view.zones === true ? 2 + MARGIN_LINES : 0)
+export type Collection = z.output<typeof collectionSchema>
+
+export const vignetteStateSchema = z.object({
+  title: z.string().min(1).max(80),
+  /** The Assistant composed it; absent for a World default. */
+  by: z.literal('assistant').optional(),
+  /** When it was composed: a frozen card's time. */
+  at: z.object({ at: z.string().datetime({ offset: true }), clock: z.enum(['simulation', 'wall']) }).strict(),
+  /** A whole object's own states (safety-function statuses, an operating mode) in declared order: one row of chips under the title. */
+  chips: z.array(observableRefSchema).min(1).max(8).optional(),
+  /** A drawing taller than the stack leaves stands beside a column of the other views (a window frame, Q20). */
+  beside: z.literal(true).optional(),
+  /** An answer's vignette: why the Assistant composed it, its question and need, said on it (W8.2). */
+  why: z.string().min(1).max(603).optional(),
+  /** An answer's vignette: the model each drawn object had when it was composed (its topology's revision), so it can say the model changed since. */
+  models: z.record(objectIdSchema, z.string().min(1).max(128)).optional(),
+  views: z.array(resolvedViewSchema).min(1).max(4),
+}).strict()
+export type VignetteState = z.output<typeof vignetteStateSchema>
+
+/** A declared element an observable is measured on, as a vignette names it: never what it leads with. */
+export type VignetteElement = Omit<ObservationDeclaration['elements'][number], 'lead' | 'stopped' | 'criteria' | 'table'>
+
+/** A declared observable as a vignette names it: its label qualified with its object's ("<object> · <observable>", R25); `basis`: a demand reads as one (W1.3). */
+export type VignetteValue = Pick<Observable, 'ref' | 'quantity' | 'unit' | 'valueType' | 'states' | 'thresholds' | 'series' | 'decades' | 'checks' | 'basis' | 'shortLabel' | 'decidingElement' | 'invalidWhile' | 'span' | 'wider' | 'travel'> & {
+  readonly label: string
+  readonly element?: VignetteElement
+  /** Only its simulator computes it, in an object that declares what its instruments measure: it reads SIM (W4.4, #67). */
+  readonly simulated?: true
+}
+
+type Stamp = { readonly at: string; readonly clock: 'simulation' | 'wall' }
+
+/** The core slots an entity table shows beside each object's label, in this order (when any row has one). */
+export const ENTITY_COLUMNS = ['status', 'urgency', 'alert', 'eta', 'distance', 'age'] as const
+export type EntityColumn = (typeof ENTITY_COLUMNS)[number]
+/** `alert` is its worst; its `severity` only words a priority not declared, never colours. Distance is to the collection's `near`; age is the position fix's. */
+export interface EntityRow {
+  readonly objectId: string; readonly label: string; readonly closed?: true; readonly status?: { readonly word: string; readonly since?: Stamp }; readonly urgency?: string
+  readonly alert?: { readonly priority: Priority | null; readonly severity: AlertSeverity; readonly message: string }; readonly etaS?: number; readonly distanceM?: number; readonly ageS?: number
+}
+
+/** One core slot or telemetry signal of an entity-floor object: World's word for it and its unit code ('' for words). */
+export interface SlotDeclaration { readonly key: string; readonly label: string; readonly unit: string }
+
+/** A binding the caller reads, with its observable's declared quantity, unit, states (a state marked `active` reads as on) and decades, so a drawing writes the reading as the card does. */
+/** A drawing's binding with its declared unit and words; a traced one with its record's series. */
+export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & { readonly series?: NonNullable<Observable['series']> }
+export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 'shortLabel' | 'element'> {
+  /** A stop's label says "to" or "from" and names its far ends (topology/stops.ts). */
+  readonly class: TopologyNode['class'] | 'stop'
+  readonly bindings: ReadonlyArray<TopologyBinding>
+  /** A stop: whether flow leaves through it (`out`) or comes in, the lines its label is set in, and each far end with its element and its state's binding where the stop writes it. */
+  readonly stop?: { readonly direction: 'in' | 'out'; readonly lines: ReadonlyArray<string>; readonly far: ReadonlyArray<{ readonly id: string; readonly label: string; readonly element?: string; readonly bindings: ReadonlyArray<TopologyBinding> }> }
+}
+
+/** Parallel values: one line per element (or per line of an element's declared table), one column per quantity. */
+export interface GroupedSection {
+  readonly kind: 'grouped'; readonly rows: number; readonly quantities: ReadonlyArray<{ readonly label: string; readonly unit: string }>
+  readonly lines: ReadonlyArray<{ readonly element: VignetteElement; readonly values: ReadonlyArray<VignetteValue | null> }>
+}
+
+/** Values of one element under its name (none: values on no element), or parallel elements as one table (W7.4). */
+export type ValueBlock =
+  | { readonly kind: 'element'; readonly element: VignetteElement | null; readonly values: ReadonlyArray<VignetteValue> }
+  | { readonly kind: 'table'; readonly table: GroupedSection }
+
+export type VignetteSection =
+  /**
+   * `lead`: the index of the state's view whose lead request it shows; its values now are the sample's `leads[lead]`,
+   * in its rows but its table's. `table`: its element's declared table, in its last rows, its values the sample's.
+   * `devices`: an element's lead request's, the devices the element bundles (declared with it as their parent, W3.5).
+   * `blocks`: an answer's values of several elements, grouped by element (W7.4), in its rows.
+   * `zones`: its rows stand under a heading, its margin lines after them (zoneRows).
+   */
+  | { readonly kind: 'values'; readonly rows: number; readonly values: ReadonlyArray<VignetteValue>; readonly lead?: number; readonly table?: GroupedSection; readonly devices?: ReadonlyArray<VignetteElement>; readonly blocks?: ReadonlyArray<ValueBlock>; readonly zones?: true }
+  | GroupedSection
+  /** Pens drawn together share a strip: at most four strips of at most four pens. */
+  | { readonly kind: 'trend'; readonly rows: number; readonly horizonMs: number; readonly strips: ReadonlyArray<ReadonlyArray<VignetteValue>> }
+  | { readonly kind: 'alerts'; readonly rows: number; readonly objectIds: ReadonlyArray<string> | 'run'; readonly elements?: ReadonlyArray<string>; readonly refs?: ReadonlyArray<string>; readonly all?: true }
+  /** Its values are the sample's `slots[objectId]`. */
+  | { readonly kind: 'slots'; readonly rows: number; readonly objectId: string; readonly slots: ReadonlyArray<SlotDeclaration> }
+  /** Its rows are the sample's `entities[section]`. */
+  | { readonly kind: 'entity'; readonly rows: number; readonly columns: ReadonlyArray<EntityColumn>; readonly near?: { readonly label: string } }
+  /**
+   * Layout ids: a graph node's or edge's id (a flow edge drawn in segments adds `.n`), a stop `s<n>` and its edge
+   * `s<n>.edge`; every drawn node, stops included, is in `nodes`.
+   */
+  | {
+    /** `packId` is the object's Pack: the pop-over loads that Pack's element actions. */
+    readonly kind: 'topology'; readonly rows: number; readonly objectId: string; readonly packId: string; readonly family: 'flow' | 'network'; readonly layout: TopologyLayout
+    readonly nodes: ReadonlyArray<TopologyNodeView>
+    /** `auxiliary`: a line outside the principal equipment its graph declares (its overview), drawn small. */
+    readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding>; readonly auxiliary?: true }>
+    readonly attribution?: string
+  }
+  /** Its counts are the sample's `maps[section]`. */
+  | { readonly kind: 'map'; readonly rows: number }
+
+/**
+ * `chips`: the object's own states, one row under the title. `beside` (window vignettes only): the first topology
+ * section stands on the left, every other section in a column to its right; rows count as the taller.
+ */
+export interface VignetteView {
+  readonly title: string; readonly by?: 'assistant'; readonly chips?: ReadonlyArray<VignetteValue>; readonly beside?: true; readonly sections: ReadonlyArray<VignetteSection>
+  /** It keeps a row under its title for its trip line, empty at rest (keepsTripLine, W2.4): never stored, read from what it is about. */
+  readonly tripLine?: true
+  /** The one object every part is on, by its label, and the one element every value is on, as labels name it: a label drops them (W7.3). */
+  readonly subject?: { readonly object: string; readonly element?: string }
+  /** An answer's vignette: why it was composed, when, and whether a drawn object's model changed since (W8.2). */
+  readonly answer?: { readonly why?: string; readonly at: Stamp; readonly modelChanged?: true }
+}
+
+/** A recorded point: Run time in epoch ms and the value then. */
+export interface SeriesPoint { readonly t: number; readonly v: number }
+/** A series' recorded points, Run time ascending, and how long a reader holds each until the next: the Historian's hold (historian/policy.ts recordedHoldMs). */
+export interface RecordedSeries { readonly holdMs: number; readonly points: ReadonlyArray<SeriesPoint> }
+
+export interface VignetteSample {
+  readonly at: Stamp & { readonly paused: boolean }
+  readonly observations: ReadonlyArray<Observation>
+  /** The rows of every alerts section, in each section's order (alertsOf), then those of each drawn topology's object (its frames), each row once. */
+  readonly alerts: ReadonlyArray<AlertRow>
+  /** By object id: the categories its Pack declares its alerts under, for the tiles of each object an alerts section lists or a drawing draws (W2.2). */
+  readonly categories?: Readonly<Record<string, ReadonlyArray<DeclaredCategory>>>
+  /** By section index: an entity section's rows, sorted and capped, and how many more there are. */
+  readonly entities: Readonly<Record<number, { readonly rows: ReadonlyArray<EntityRow>; readonly more: number }>>
+  /** By object id: each slot's value now. */
+  readonly slots: Readonly<Record<string, Readonly<Record<string, { readonly value: number | string | boolean | null; readonly since?: Stamp }>>>>
+  /** By section index: what a map section frames; "Show on map" frames the live map on `bounds` ([[west, south], [east, north]]). */
+  readonly maps: Readonly<Record<number, {
+    readonly positioned: number; readonly missing: number; readonly within?: string; readonly around?: string
+    readonly bounds: readonly [readonly [number, number], readonly [number, number]] | null; readonly extentM: number | null
+  }>>
+  /** Only when history was asked for: each trend pen's record from then (and up to its hold before) until the sample, by series id. */
+  readonly series?: Readonly<Record<string, RecordedSeries>>
+  /** By the index of each values view holding a lead request: its values now, at most its rows (named ones first). */
+  readonly leads?: Readonly<Record<number, ReadonlyArray<VignetteValue>>>
+}
+
+export type ComposeIssueCode = 'unknown_name' | 'pack_is_not_an_object' | 'agent_access_restricted' | 'not_observed' | 'not_fitted'
+export interface ComposeIssue {
+  readonly path: string; readonly code: ComposeIssueCode; readonly message: string
+  readonly didYouMean?: ReadonlyArray<{ readonly pack: string; readonly suggestions: ReadonlyArray<string> }>
+}

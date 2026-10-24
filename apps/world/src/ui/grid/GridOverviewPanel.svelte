@@ -5,13 +5,15 @@
   import { parseElectricGridObjectData } from '../../packs/electric-grid/model.ts'
   import type { GridIslandsResult } from '../../packs/electric-grid/queries/islands.ts'
   import { gridAssetItemId, parseGridAssetItemId } from '../../packs/electric-grid/ui/grid-live-layer.ts'
-  import { gridLocalTimeZone } from '../../packs/electric-grid/ui/operator-alarms.ts'
+  import { gridCount, gridLocalTimeZone } from '../../packs/electric-grid/ui/operator-alarms.ts'
   import { querySimulationRunCapability } from '../simulation-run-client.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import GridAlarmList from './GridAlarmList.svelte'
   import GridAssetBrowser from './GridAssetBrowser.svelte'
   import GridContingencyView from './GridContingencyView.svelte'
   import GridLfddStages from './GridLfddStages.svelte'
+  import type { MapCover } from '../surface-panel-contract.ts'
+  import { gridPanelMapCover } from './panel-cover.ts'
 
   type MapTarget =
     | { readonly kind: 'point'; readonly center: readonly [number, number] }
@@ -25,9 +27,11 @@
     /** `<gridId>#<assetId>` selected on the map or in this panel. */
     readonly selectedItemId?: string | null
     readonly onSelectItem?: (itemId: string | null) => void
+    /** The surface keeps the map camera and the alarm strip clear of what this panel covers. */
+    readonly onMapCover: (cover: MapCover) => void
   }
 
-  const { simulationRunId, objects, onClose, onFocusMap = () => undefined, selectedItemId = null, onSelectItem = () => undefined }: Props = $props()
+  const { simulationRunId, objects, onClose, onFocusMap = () => undefined, selectedItemId = null, onSelectItem = () => undefined, onMapCover }: Props = $props()
 
   interface GridOverviewSummary {
     readonly gridId: string
@@ -44,7 +48,7 @@
       readonly activeAlarmCount: number
       readonly islands: ReadonlyArray<{ readonly id: string; readonly energized: boolean; readonly loadMw: number; readonly alarmCount: number }>
     }
-    readonly thresholds: { readonly constrainedBranchLoadingPercent: number }
+    readonly thresholds: { readonly constrainedBranchLoadingPercent: number; readonly overloadLoadingPercent: number }
     readonly constrainedBranchCount: number
     readonly constrainedBranches: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly loadingPercent: number } }>
     readonly generators: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly dispatchMw: number } }>
@@ -251,6 +255,12 @@
     }
   }
 
+  // The panel is drawn only once its Grid's summary arrives; until then it covers nothing.
+  $effect(() => {
+    const cover = gridPanelMapCover(panelElement === null ? null : frame, parentSize().width)
+    untrack(() => onMapCover(cover))
+  })
+
   const panelStyle = $derived(frame
     ? `left: ${frame.left}px; top: ${frame.top}px; width: ${frame.width}px; height: ${frame.height}px;`
     : '')
@@ -374,9 +384,9 @@
           <p class="eyebrow">Electric grid</p>
           <h2>{summary?.model.title ?? selectedGridItem?.object.label ?? 'Grid overview'}</h2>
         </div>
-        <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'}>
+        <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'} title="Frequency of the largest connected part of the grid">
           <span>{system.frequencyHz === null ? 'De-energised' : system.frequencyHz.toFixed(3)}</span>
-          <small>{system.frequencyHz === null ? '' : 'Hz (largest island)'}</small>
+          <small>{system.frequencyHz === null ? '' : 'Hz · grid frequency'}</small>
         </div>
       </div>
       <button
@@ -438,12 +448,12 @@
           {#if system.activeAlarmCount === 0}
             <p class="empty-state">No active alarms.</p>
           {:else}
-            <p class="alarm-status">{system.activeAlarmCount} active · {system.statusLabel} <button type="button" class="link-button" onclick={() => { view = 'alarms' }}>Open alarm list</button></p>
+            <p class="alarm-status">{gridCount(system.activeAlarmCount, 'active alarm', 'active alarms')} <button type="button" class="link-button" onclick={() => { view = 'alarms' }}>Open alarm list</button></p>
             <ul>
-              {#if summary && summary.constrainedBranchCount > 0}<li>{summary.constrainedBranchCount} corridors at or above {summary.thresholds.constrainedBranchLoadingPercent}% loading</li>{/if}
-              {#if summary && summary.affectedLoadCount > 0}<li>{summary.affectedLoadCount} loads with unserved demand</li>{/if}
-              {#if deenergizedIslandCount > 0}<li>{deenergizedIslandCount} de-energised islands with demand</li>{/if}
-              {#if frequencyAlarmIslandCount > 0}<li>{frequencyAlarmIslandCount} energised islands with active alarms</li>{/if}
+              {#if summary && summary.constrainedBranchCount > 0}<li>{gridCount(summary.constrainedBranchCount, 'corridor', 'corridors')} at or above {summary.thresholds.constrainedBranchLoadingPercent}% loading</li>{/if}
+              {#if summary && summary.affectedLoadCount > 0}<li>{gridCount(summary.affectedLoadCount, 'load', 'loads')} with unserved demand</li>{/if}
+              {#if deenergizedIslandCount > 0}<li>{gridCount(deenergizedIslandCount, 'de-energised island', 'de-energised islands')} with demand</li>{/if}
+              {#if frequencyAlarmIslandCount > 0}<li>{gridCount(frequencyAlarmIslandCount, 'energised island', 'energised islands')} with active alarms</li>{/if}
             </ul>
           {/if}
         </div>
@@ -462,7 +472,7 @@
           <div>
             <h3>Constrained corridors</h3>
             {#each branches as branch (branch.id)}
-              {@render assetRow(branch.id, branch.label, `${Math.round(branch.state.loadingPercent)}%`, branch.state.loadingPercent >= 100)}
+              {@render assetRow(branch.id, branch.label, `${Math.round(branch.state.loadingPercent)}%`, summary !== null && branch.state.loadingPercent >= summary.thresholds.overloadLoadingPercent)}
             {:else}
               {#if summary}<p class="empty-state">None at or above {summary.thresholds.constrainedBranchLoadingPercent}% loading.</p>{/if}
             {/each}
@@ -501,7 +511,7 @@
                 !island.energized || island.unservedLoadMw > 0,
               )}
             {/each}
-            {#if islands.total > islands.islands.length}<p class="empty-state">{islands.total - islands.islands.length} smaller islands not shown.</p>{/if}
+            {#if islands.total > islands.islands.length}<p class="empty-state">{gridCount(islands.total - islands.islands.length, 'smaller island', 'smaller islands')} not shown.</p>{/if}
           </div>
         {/if}
       </div>
@@ -676,6 +686,7 @@
   .frequency small {
     font-weight: 800;
     font-size: 12px;
+    white-space: nowrap;
   }
 
   .metric-grid {

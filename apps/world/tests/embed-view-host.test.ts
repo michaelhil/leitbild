@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { EmbeddedViewListing, EmbeddedViewOpenMessage } from '@leitbild/contracts'
+import { embeddedViewHeightMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
 import { parseDisplayFrameMessage, type DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import {
   ADVICE_MIN_WIDTH,
@@ -12,9 +12,12 @@ import {
   trackViewport,
 } from '../src/ui/embed/display-extent.ts'
 import {
+  createPageVisibility,
   createViewHost,
   createZoomAccumulator,
   followPresentation,
+  inlineHeight,
+  pageOnScreen,
   trackVisibility,
   wheelZoomFactor,
   zoomStepOfKey,
@@ -25,9 +28,9 @@ import {
 const origin = 'https://leitbild.test'
 
 const framedPage = () => {
-  const posted: Array<{ readonly message: DisplayFrameMessage | EmbeddedViewOpenMessage; readonly targetOrigin: string }> = []
+  const posted: Array<{ readonly message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage; readonly targetOrigin: string }> = []
   const refused: unknown[] = []
-  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage, targetOrigin: string) => { posted.push({ message, targetOrigin }) } }
+  const parent = { postMessage: (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage, targetOrigin: string) => { posted.push({ message, targetOrigin }) } }
   let receive: ((message: ReceivedMessage) => void) | null = null
   const host = createViewHost({
     parent,
@@ -66,6 +69,20 @@ describe('a view framed by the display window', () => {
 
     stop()
     expect(page.listening()).toBe(false)
+  })
+
+  test('hears an element its window asks it to select, from its own window only (W2.8); a malformed ask is refused', () => {
+    const page = framedPage()
+    const selected: Array<{ readonly objectId: string; readonly elementId: string }> = []
+    page.host.subscribeSelect(select => { selected.push(select) })
+    page.host.listen()
+    page.fromWindow({ type: 'world:display-select', objectId: 'plant:halden-1', elementId: 'turbine' })
+    page.deliver({ origin: 'https://elsewhere.test', source: page.parent, data: { type: 'world:display-select', objectId: 'plant:halden-1', elementId: 'core' } })
+    page.fromWindow({ type: 'world:display-select', objectId: 'plant:halden-1' })
+    expect(selected).toEqual([{ objectId: 'plant:halden-1', elementId: 'turbine' }])
+    expect(page.refused).toEqual([{ type: 'world:display-select', objectId: 'plant:halden-1' }])
+    // Selecting changes nothing of its presentation.
+    expect(page.host.current()).toEqual({ shown: true, zoom: 1 })
   })
 
   test('takes its presentation only from its own window on its own origin, and says when that window sends something unreadable', () => {
@@ -127,7 +144,7 @@ describe('a view framed by the display window', () => {
     const page = framedPage()
     const opened: Array<string | null> = []
     page.host.subscribeOpening(where => { opened.push(where) })
-    const request = { state: '{"detail":{"plantId":"unit-1","components":["core"]}}', title: 'Reactor Core', listing: () => { throw new Error('a window needs no listing') } }
+    const request = { state: '{"detail":{"plantId":"unit-1","components":["core"]}}', title: 'Reactor Core', viewType: 'display.vignette' as const, listing: () => { throw new Error('a window needs no listing') } }
     page.host.listen()
     expect(page.host.openDisplay(request)).toBe(false)
     page.fromWindow({ type: 'world:display-frame', shown: true, zoom: 1, back: 'SG B low-low and feedwater response' })
@@ -137,7 +154,7 @@ describe('a view framed by the display window', () => {
     expect(page.host.openDisplay(request)).toBe(true)
     page.host.back()
     expect(page.posted.map(post => post.message)).toEqual([
-      { type: 'world:display-open', state: request.state, title: 'Reactor Core' },
+      { type: 'world:display-open', state: request.state, title: 'Reactor Core', viewType: 'display.vignette' },
       { type: 'world:display-back' },
     ])
     for (const { message } of page.posted) expect(parseDisplayFrameMessage(JSON.parse(JSON.stringify(message)))).toEqual(message as DisplayFrameMessage)
@@ -148,13 +165,30 @@ describe('a view framed by the display window', () => {
     expect(page.posted).toEqual([])
   })
 
+  test('asks its window to frame the live map on bounds World computed, only when a window presents it; malformed bounds are refused', () => {
+    // Architecture B2: a vignette's "Show on map"; the window frames the page's live map.
+    const page = framedPage()
+    const bounds = [[10.9, 59.1], [11.5, 59.3]] as const
+    page.host.listen()
+    expect(page.host.showOnMap(bounds)).toBe(false)
+    page.fromWindow({ type: 'world:display-frame', shown: true, zoom: 1 })
+    page.posted.length = 0
+    expect(page.host.showOnMap(bounds)).toBe(true)
+    expect(page.posted.map(post => post.message)).toEqual([{ type: 'world:display-map', bounds }])
+    expect(parseDisplayFrameMessage(JSON.parse(JSON.stringify(page.posted[0]!.message)))).toEqual({ type: 'world:display-map', bounds })
+    expect(parseDisplayFrameMessage({ type: 'world:display-map', bounds: [[11.5, 59.1], [10.9, 59.3]] })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-map', bounds: [[10.9, 95], [11.5, 96]] })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-map', bounds: [[10.9, 59.1]] })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-map', bounds, extra: 1 })).toBeNull()
+  })
+
   test('inline in a chat answer whose page relays to the Workspace\'s window, it asks that page to open the display there', () => {
     const page = framedPage()
     const opened: Array<string | null> = []
     page.host.subscribeOpening(where => { opened.push(where) })
     page.host.listen()
-    const listing = { key: 'opened:1', caption: 'From SG B low-low', envelope: { moduleId: 'world', subject: { workspaceId: 'ws', moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }, viewType: 'process-plant.display', title: 'Reactor Core', height: 600, state: '{}' } } as unknown as EmbeddedViewListing
-    const request = { state: '{}', title: 'Reactor Core', listing: () => listing }
+    const listing = { key: 'opened:1', caption: 'From SG B low-low', envelope: { moduleId: 'world', subject: { workspaceId: 'ws', moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }, viewType: 'display.vignette', title: 'Reactor Core', height: 600, state: '{}' } } as unknown as EmbeddedViewListing
+    const request = { state: '{}', title: 'Reactor Core', viewType: 'display.vignette' as const, listing: () => listing }
     expect(page.host.openDisplay(request)).toBe(false)
     page.fromWindow({ type: 'leitbild:view-host' })
     expect(opened).toEqual([null, 'relay'])
@@ -162,6 +196,25 @@ describe('a view framed by the display window', () => {
     page.posted.length = 0
     expect(page.host.openDisplay(request)).toBe(true)
     expect(page.posted.map(post => post.message)).toEqual([{ type: 'leitbild:view-open', view: listing }])
+  })
+
+  test('inline in a chat answer it says the height its content takes, so its frame keeps no empty band; once a window presents it, nothing (W7.3)', () => {
+    const page = framedPage()
+    page.host.listen()
+    page.posted.length = 0
+    // A drawing too wide for the chat gave way to "View drawing ›": the content ends 412.3 px down the page.
+    page.host.reportHeight(inlineHeight({ bottom: 404.3 }, { scrollY: 0, marginBottom: 8 }))
+    page.host.reportHeight(413)
+    expect(page.posted.map(post => post.message)).toEqual([{ type: 'leitbild:view-height', height: 413 }])
+    expect(embeddedViewHeightMessageSchema.parse(page.posted[0]!.message)).toEqual({ type: 'leitbild:view-height', height: 413 })
+    // A view too tall or too small for a frame says the most or least a frame may be.
+    page.host.reportHeight(4_000)
+    page.host.reportHeight(10)
+    expect(page.posted.slice(1).map(post => post.message)).toEqual([{ type: 'leitbild:view-height', height: 960 }, { type: 'leitbild:view-height', height: 120 }])
+    page.posted.length = 0
+    page.fromWindow({ type: 'world:display-frame', shown: true, zoom: 1 })
+    page.host.reportHeight(500)
+    expect(page.posted.map(post => post.message)).toEqual([])
   })
 
   test('a frame no window presents (a chat answer\'s inline display) says only that it listens', () => {
@@ -286,6 +339,62 @@ describe('a framed view samples only while it can be seen', () => {
     expect(tracking()).toBe(false)
     page.fromWindow({ type: 'world:display-frame', shown: false, zoom: 1.25 })
     expect(calls).toEqual([true, false, true, false, true])
+  })
+})
+
+describe('a frame knows from inside whether it is on screen', () => {
+  const browserPage = () => {
+    let tabVisible = true
+    let viewport = { width: 1280, height: 800 }
+    let tabChanged: (() => void) | null = null
+    let resized: (() => void) | null = null
+    let report: ((intersecting: boolean) => void) | null = null
+    const visibility = createPageVisibility({
+      tabVisible: () => tabVisible,
+      onTabVisibility: changed => { tabChanged = changed; return () => { tabChanged = null } },
+      viewport: () => viewport,
+      onResize: changed => { resized = changed; return () => { resized = null } },
+      observeIntersection: next => { report = next; return () => { report = null } },
+    })
+    return {
+      visibility,
+      // The Host collapses the World pane with display:none: every frame inside it is left with a zero-size viewport.
+      collapse: () => { viewport = { width: 0, height: 0 }; resized?.() },
+      restore: () => { viewport = { width: 1280, height: 800 }; resized?.() },
+      intersect: (intersecting: boolean) => report?.(intersecting),
+      tab: (visible: boolean) => { tabVisible = visible; tabChanged?.() },
+      observing: () => tabChanged !== null && resized !== null && report !== null,
+    }
+  }
+
+  test('a zero-size or hidden frame is not on screen; one the browser has not judged yet is', () => {
+    expect(pageOnScreen({ tabVisible: true, viewport: { width: 1280, height: 800 }, intersecting: null })).toBe(true)
+    expect(pageOnScreen({ tabVisible: true, viewport: { width: 0, height: 0 }, intersecting: null })).toBe(false)
+    expect(pageOnScreen({ tabVisible: true, viewport: { width: 1280, height: 0 }, intersecting: true })).toBe(false)
+    expect(pageOnScreen({ tabVisible: true, viewport: { width: 1280, height: 800 }, intersecting: false })).toBe(false)
+    expect(pageOnScreen({ tabVisible: false, viewport: { width: 1280, height: 800 }, intersecting: true })).toBe(false)
+  })
+
+  test('a pane collapsed around the frame stops its sampling, and restoring it resumes', () => {
+    const page = framedPage()
+    page.host.listen()
+    const browser = browserPage()
+    const calls: boolean[] = []
+    const stop = trackVisibility({ host: page.host, documentVisible: browser.visibility.visible, onDocumentVisibility: browser.visibility.listen, setVisible: visible => { calls.push(visible) } })
+    expect(calls).toEqual([true])
+    browser.collapse()
+    expect(calls).toEqual([true, false])
+    browser.restore()
+    expect(calls).toEqual([true, false, true])
+    // Scrolled or clipped out of the top-level viewport, as the browser reports it.
+    browser.intersect(false)
+    expect(calls).toEqual([true, false, true, false])
+    browser.intersect(true)
+    browser.tab(false)
+    browser.tab(true)
+    expect(calls).toEqual([true, false, true, false, true, false, true])
+    stop()
+    expect(browser.observing()).toBe(false)
   })
 })
 

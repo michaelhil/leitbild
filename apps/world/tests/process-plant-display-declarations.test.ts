@@ -16,7 +16,7 @@ import {
 } from '../src/packs/process-plant/index.ts'
 import { component, connect, plantGraph } from '../src/packs/process-plant/graph/builder.ts'
 import { aspect } from '../src/packs/process-plant/graph/semantics.ts'
-import { stateTexts } from '../src/packs/process-plant/displays/state-words.ts'
+import { aspectStateWords } from '../src/packs/process-plant/operations/controls.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -84,7 +84,7 @@ describe('an aspect read through a port', () => {
     })
     const suction = (own: ComponentSemantics): Partial<ComponentSemantics> => ({ aspects: [...own.aspects, aspect('level', { variable: 'levelPercent', reading: 'value', via: 'inlet' })] })
     expect(componentById(compileDeclaring('centrifugalPump', suction, spec(true))(), 'pump').semantics.aspects).toEqual([
-      { aspect: 'running', state: { path: 'pump.runningState', reading: 'true' }, command: 'pump.running' },
+      { aspect: 'running', state: { path: 'pump.runningState', reading: 'true' }, command: 'pump.running', travel: { onS: 0, offS: 0 } },
       { aspect: 'level', state: { path: 'tank.levelPercent', reading: 'value' } },
     ] as never)
     expect(componentById(compileDeclaring('centrifugalPump', suction, spec(false))(), 'pump').semantics.aspects.map(entry => entry.aspect)).toEqual(['running'])
@@ -144,7 +144,7 @@ describe('presentation of states and pushbuttons', () => {
     const spec = presenting('turbine', { states: { outputBreakerClosed: { on: 'ON LINE', off: 'OFF LINE' } } })
     const graph = compilePlantGraph(spec, declaring('turbineLoadSink', () => ({ aspects: [aspect('running', { variable: 'outputBreakerClosed', reading: 'true' })] })))
     expect(componentById(graph, 'turbine').semantics.aspects).toEqual([{ aspect: 'running', state: { path: 'turbine.outputBreakerClosed', reading: 'true' } }] as never)
-    expect(stateTexts(graph, graph.signalBindingByPath.get('turbine.outputBreakerClosed' as never)!)).toEqual({ on: 'ON LINE · Turbine', off: 'OFF LINE · Turbine' })
+    expect(aspectStateWords(graph, componentById(graph, 'turbine').semantics.aspects[0]!, undefined)).toEqual({ on: 'ON LINE', off: 'OFF LINE' })
   })
 
   test('a pushbutton is an on/off command of its own component that no state aspect holds', () => {

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type {
+  CompiledComponent,
   CompiledPlantGraph,
   ProcessSignalBinding,
   ProcessSignalTagId,
@@ -49,6 +50,45 @@ export const resolveProcessPlantSignalBinding = (
   throw new Error('process signal reference must define path or tagId')
 }
 
+/**
+ * A fault the scenario injects (a valve's failure, a leak's area) is the
+ * instructor's knob, never a reading, and so is the model's truth about it
+ * (a leak's flow, a tube leak's flow: faultTruth), which no control room
+ * measures: no person or AI agent searches, reads, evaluates, records or is
+ * shown either, so the fault shows only through its symptoms. Instructor
+ * actions and the Scenario set it through their own path. A boundary (the
+ * grid's frequency) is a condition outside the Plant that its instruments
+ * read, and stays a reading.
+ */
+export const isInjectedFault = (binding: Pick<ProcessSignalBinding, 'actuation' | 'faultTruth'>): boolean =>
+  binding.actuation === 'faultInjection' || binding.faultTruth === true
+
+/** A signal as a person or AI agent reads it: refused, with why, where it is a fault the scenario injects. */
+export const readableProcessPlantSignalBinding = (
+  graph: CompiledPlantGraph,
+  reference: ProcessPlantSignalReference,
+): ProcessSignalBinding => {
+  const binding = resolveProcessPlantSignalBinding(graph, reference)
+  if (!isInjectedFault(binding)) return binding
+  return rejectCapabilityTarget(binding.faultTruth === true
+    ? `${binding.tagId ?? binding.path} is the model's truth about an injected fault, not a reading: no person or AI agent reads it`
+    : `${binding.tagId ?? binding.path} is a fault the scenario injects, not a reading: no person or AI agent reads it`)
+}
+
+/** Refuses a condition a person or AI agent asks to evaluate where any signal it compares is a fault the scenario injects. */
+export const refuseInjectedFaultsIn = (graph: CompiledPlantGraph, condition: unknown): void => {
+  if (Array.isArray(condition)) {
+    for (const entry of condition) refuseInjectedFaultsIn(graph, entry)
+    return
+  }
+  if (condition === null || typeof condition !== 'object') return
+  for (const [key, entry] of Object.entries(condition)) {
+    const reference = key === 'signal' ? processPlantSignalReferenceSchema.safeParse(entry) : undefined
+    if (reference?.success === true) readableProcessPlantSignalBinding(graph, reference.data)
+    else refuseInjectedFaultsIn(graph, entry)
+  }
+}
+
 export const findProcessPlantSignalBinding = (
   graph: CompiledPlantGraph,
   reference: ProcessPlantSignalReference,
@@ -59,6 +99,31 @@ export const findProcessPlantSignalBinding = (
       ?? graph.signalBindingByExternalRef.get(reference.tagId)
   }
   return undefined
+}
+
+/**
+ * The component a signal is measured on: the component that owns it, or for a
+ * line's signal the equipment the line flows into. Its declared equipmentId is
+ * metadata and may name no component.
+ */
+export const signalMeasuredOn = (
+  graph: CompiledPlantGraph,
+  owner: ProcessSignalBinding['owner'],
+): CompiledComponent =>
+  graph.components[owner.type === 'component' ? owner.componentIndex : graph.links[owner.linkIndex]!.toComponentIndex]!
+
+/**
+ * The declared element a signal is measured on, as a procedure tag opens it (plan v5 W3.1, D-E): the device its
+ * component bundles where the signal is one of that device's variables (the pressurizer's PORV for PORV-456A), named
+ * `<component>.<device>` as the observation declaration names it, else the component it is measured on.
+ */
+export const signalMeasuredOnElement = (
+  graph: CompiledPlantGraph,
+  binding: Pick<ProcessSignalBinding, 'owner' | 'path'>,
+): string => {
+  const component = signalMeasuredOn(graph, binding.owner)
+  const device = binding.owner.type === 'component' ? component.semantics.embedded.find(entry => entry.variables.includes(binding.path)) : undefined
+  return device === undefined ? String(component.id) : `${component.id}.${device.id}`
 }
 
 export const resolveProcessPlantSignalPath = (
@@ -123,5 +188,3 @@ export const processPlantSignalQuality = (
   }
   return { status: 'good' }
 }
-
-export const tagIdForLookup = (value: string): ProcessSignalTagId => processSignalTagIdSchema.parse(value)

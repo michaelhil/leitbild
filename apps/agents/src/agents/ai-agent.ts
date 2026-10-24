@@ -30,6 +30,8 @@ import type { ToolDefinition, ToolExecutor } from '../core/types/tool.ts'
 import { DEFAULTS, SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { extractAgentProfile as extractProfile } from './shared.ts'
 import { buildContext, buildSystemSections, estimateTokens, flushIncoming, type BuildContextDeps, type ContextResult } from './context-builder.ts'
+import type { RunContextFetcher } from './run-context.ts'
+import { discoveryMemo } from './discovery-memo.ts'
 import { evaluate, type EvalResult, type OnDecision } from './evaluation.ts'
 import { createConcurrencyManager } from './concurrency.ts'
 import type { ModelInfo } from '../core/types/model-info.ts'
@@ -58,11 +60,25 @@ export interface AgentTurnStart {
   readonly requireView?: boolean
 }
 
+/** A line a turn posts while it runs (ToolResult.progress), in the Room it answers. */
+export interface AgentProgress {
+  readonly roomId: string
+  readonly content: string
+  readonly inReplyTo?: ReadonlyArray<string>
+}
+
 export interface AIAgentOptions {
   readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
   readonly onTurnFinished?: (executionTurnId: string) => void
+  // Posts a turn's progress line to its Room at once, as this Agent's own
+  // message (Message.progress). Standalone/test agents without a Room runtime
+  // omit it and post none.
+  readonly onProgress?: (progress: AgentProgress) => void
   readonly executionStore?: ExecutionStore
   readonly executionGrowth?: <T>(bytes: number, work: () => Promise<T>) => Promise<T>
+  // Reads the Room Scope's Run context once per turn, before its context is
+  // built (run-context.ts); absent without a Workspace Host.
+  readonly fetchRunContext?: RunContextFetcher
   readonly toolExecutor?: ToolExecutor
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
   // Per-eval tool-surface resolver — when provided, the agent calls this
@@ -108,8 +124,10 @@ export interface AIAgentOptions {
 }
 
 // Messages that ask the agent for an answer; the others only join its view.
+// A progress line reports a turn that is still running; its answer follows.
 const triggersEvaluation = (message: Message): boolean =>
   message.type !== 'system' && message.type !== 'join' && message.type !== 'leave' && message.type !== 'pass' && message.type !== 'error'
+  && message.progress !== true
 
 // === Factory ===
 
@@ -254,6 +272,7 @@ export const createAIAgent = (
     contextTokenBudget: resolveContextTokenBudget(effectiveModel, definitions),
     getCompressedIds: (roomId: string) => getCompressedIds?.(roomId) ?? new Set<string>(),
     getCompressionSummary: options?.getCompressionSummary,
+    ...(options?.executionStore === undefined ? {} : { getDiscoveryMemo: (roomId: string) => discoveryMemo(options.executionStore!, roomId, agentId) }),
     getRoomMembers,
     supportsImages: modelSupportsImages(effectiveModel),
     modelForWarn: effectiveModel,
@@ -331,6 +350,7 @@ export const createAIAgent = (
     evalToolDefs: ReadonlyArray<ToolDefinition> | undefined,
     inReplyTo?: ReadonlyArray<string>,
     requireView?: boolean,
+    capturedContext?: ContextResult,
   ): Promise<EvalResult> => {
     const evalConfig = {
       ...baseConfig,
@@ -364,12 +384,25 @@ export const createAIAgent = (
         pendingCheckins.set(triggerRoomId, finish)
       })
     }
+    // A line that cannot be posted is reported, never a failed turn: the
+    // change it reports has happened and its answer still follows.
+    const onProgress = options?.onProgress
+    const postProgress = onProgress && ((line: string): void => {
+      try {
+        onProgress({ roomId: triggerRoomId, content: line, ...(inReplyTo ? { inReplyTo } : {}) })
+      } catch (error) {
+        const message = `Could not post a progress line: ${error instanceof Error ? error.message : String(error)}`
+        console.error(`[${config.name}] ${message}`)
+        emit({ kind: 'warning', message })
+      }
+    })
     const evalOpts = {
       executionTurnId: traceId,
       ...(evalToolDefs ? { toolDefinitions: evalToolDefs } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
       ...(requireView ? { requireView } : {}),
       onEvent: emit,
+      ...(postProgress ? { onProgress: postProgress } : {}),
       signal,
       ...(checkinEnabled && maxToolIterationsCfg !== undefined ? { requestToolCheckin } : {}),
     }
@@ -380,7 +413,7 @@ export const createAIAgent = (
           executionTurnId: traceId,
           roomId: triggerRoomId,
           agentId,
-          context: contextResult,
+          context: capturedContext ?? contextResult,
           config: evalConfig,
           toolDefinitions: evalToolDefs ?? [],
           focusedSubjects: focusedSubjectsByRoom.get(triggerRoomId) ?? [],
@@ -450,6 +483,10 @@ export const createAIAgent = (
   }
 
   const tryEvaluate = (triggerRoomId: string): void => {
+    // A closing runtime starts no turns. Dropping is intentional: the message
+    // stays in the Room's canonical transcript, and close() already dropped
+    // the queued and requested turns.
+    if (cm.isClosed()) return
     if (cm.isBusy()) {
       cm.addPending(triggerRoomId)
       return
@@ -497,8 +534,18 @@ export const createAIAgent = (
         const info = await llmProvider.modelInfo?.(effectiveModel)
         if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
         describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
+        // A scripted turn's context is the script's alone, so it reads no Run context.
+        const runContext = getScriptContext?.(triggerRoomId, config.name) === undefined
+          ? await options?.fetchRunContext?.(triggerRoomId, focusedSubjectsByRoom.get(triggerRoomId) ?? [], { id: agentId, name: config.name }, abortController.signal)
+          : undefined
+        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
         const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
-        const initialContext = buildContext(contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction), triggerRoomId)
+        const deps = contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction)
+        const initialContext = buildContext({ ...deps, ...(runContext === undefined ? {} : { runContext }) }, triggerRoomId)
+        // The Run context is not stored (owner, 20 Oct): a comparison record keeps the turn's input without it. That
+        // build counts no metrics twice.
+        const { metricsSink: _counted, ...quiet } = deps
+        const captured = runContext === undefined ? undefined : buildContext(quiet, triggerRoomId)
         // Only prior replay uses the working target. During a tool turn, keep
         // complete new evidence and fit older history to actual known capacity.
         const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
@@ -547,6 +594,7 @@ export const createAIAgent = (
         }
         const { decision, flushInfo } = await runEvaluate(
           contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, emit, effectiveToolDefs, inReplyTo, requested?.requireView,
+          captured === undefined ? undefined : { ...captured, tokenBudget: contextResult.tokenBudget },
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled — discard stale result
 
@@ -595,11 +643,11 @@ export const createAIAgent = (
             : cm.nextPending() ?? undefined
           if (nextRoom) {
             if (nextRoom !== triggerRoomId) cm.consumePending(nextRoom)
-            // After a respond, delay re-evaluation to let other agents' messages coalesce
+            // After a respond, delay re-evaluation to let other agents' messages coalesce.
+            // The concurrency manager owns the delayed turn, so whenIdle waits
+            // for it and cancelGeneration or close drops it.
             if (wasRespond) {
-              setTimeout(() => {
-                if (cm.isEpochCurrent(epoch)) tryEvaluate(nextRoom)
-              }, EVAL_COOLDOWN_MS)
+              cm.scheduleNext(nextRoom, EVAL_COOLDOWN_MS, tryEvaluate)
             } else {
               tryEvaluate(nextRoom)
             }
@@ -612,7 +660,9 @@ export const createAIAgent = (
 
   // --- Receive ---
   // All messages have a roomId. Own messages go straight to room history for
-  // re-evaluation continuity without triggering a new eval.
+  // re-evaluation continuity without triggering a new eval. That includes the
+  // progress lines of a running turn; flushIncoming keeps them after the
+  // messages the turn answers.
 
   const receive = (message: Message): void => {
     extractProfile(message, agentId, agentHistory.agentProfiles)
@@ -765,7 +815,13 @@ export const createAIAgent = (
       ...(currentTriggers.length > 0 ? { triggers: [...currentTriggers] } : {}),
     }),
     cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; requestedTurns.clear(); cm.cancelAll() },
+    hasQueuedTurn: cm.hasQueuedWork,
+    close: () => { requestedTurns.clear(); cm.close() },
     requestTurn: (roomId: string, turn: RequestedTurn) => {
+      // Only a closing runtime closes an Agent still in the Team, and removal
+      // and shutdown close it while admitted Workspace operations still run.
+      // Marked as runWorkspaceOperation marks a closing runtime.
+      if (cm.isClosed()) throw Object.assign(new Error(`Agents Workspace is closing; ${config.name} takes no requested turns`), { code: 'workspace_closing' })
       if (requestedTurns.has(roomId) || runningRequests.has(roomId)) return { kind: 'refused', reason: 'pending', message: `${config.name} is already working on a request in this room; ask again when its reply arrives` }
       if (getScriptContext?.(roomId, resolveName(agentId))) return { kind: 'refused', reason: 'script', message: 'A script directs this room; requested turns wait until it ends' }
       const queued = cm.isBusy()

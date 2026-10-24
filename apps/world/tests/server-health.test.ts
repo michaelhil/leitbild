@@ -68,7 +68,7 @@ describe('server health', () => {
   test('routes both regional and overview tiles through the artifact handler', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-map-routes-'))
     const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: [] })
-    const server = createServer({ workspaces, port: 0, bindHost: '127.0.0.1', mapArtifacts: { rootDir: dataDir } })
+    const server = createServer({ workspaces, featuredDefinitions: { definitions: [], listed: [] }, port: 0, bindHost: '127.0.0.1', mapArtifacts: { rootDir: dataDir } })
     try {
       for (const source of ['current', 'overview']) {
         const response = await fetch(`http://127.0.0.1:${server.port}/map/tiles/${source}/0/0/0.mvt`)
@@ -114,7 +114,7 @@ describe('server health', () => {
     await Bun.write(join(uiDistPath, 'index.html'), 'app page')
     await Bun.write(join(uiDistPath, 'embed.html'), 'embed page')
     const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: [] })
-    const server = createServer({ workspaces, port: 0, bindHost: '127.0.0.1', uiDistPath, mapArtifacts: { rootDir: dataDir } })
+    const server = createServer({ workspaces, featuredDefinitions: { definitions: [], listed: [] }, port: 0, bindHost: '127.0.0.1', uiDistPath, mapArtifacts: { rootDir: dataDir } })
     try {
       const workspaceId = newWorkspaceId()
       const embed = await fetch(`http://127.0.0.1:${server.port}/workspaces/${workspaceId}/world/embed/process-plant.display`)
@@ -122,6 +122,36 @@ describe('server health', () => {
       expect(embed.headers.get('cache-control')).toBe('no-cache')
       const app = await fetch(`http://127.0.0.1:${server.port}/workspaces/${workspaceId}/world/runs/run-1`)
       expect(await app.text()).toBe('app page')
+    } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
+  })
+
+  test('lets browsers keep content-addressed assets for good and revalidate the pages that name them', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-asset-cache-'))
+    const uiDistPath = join(dataDir, 'ui')
+    await mkdir(join(uiDistPath, 'assets', 'world', 'scenario-previews'), { recursive: true })
+    await Bun.write(join(uiDistPath, 'index.html'), 'app page')
+    await Bun.write(join(uiDistPath, 'embed.html'), 'embed page')
+    await Bun.write(join(uiDistPath, 'assets', 'world', 'embed-Bq3x_9Zk.js'), 'chunk')
+    await Bun.write(join(uiDistPath, 'assets', 'world', 'scenario-previews', 'halden-960.04aeacb1.webp'), 'preview')
+    await Bun.write(join(uiDistPath, 'robots.txt'), 'robots')
+    const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: [] })
+    const server = createServer({ workspaces, featuredDefinitions: { definitions: [], listed: [] }, port: 0, bindHost: '127.0.0.1', uiDistPath, mapArtifacts: { rootDir: dataDir } })
+    const cacheControl = async (path: string): Promise<string | null> => {
+      const response = await fetch(`http://127.0.0.1:${server.port}${path}`)
+      expect([path, response.status]).toEqual([path, 200])
+      await response.arrayBuffer()
+      return response.headers.get('cache-control')
+    }
+    try {
+      const workspaceId = newWorkspaceId()
+      for (const path of ['/assets/world/embed-Bq3x_9Zk.js', '/assets/world/scenario-previews/halden-960.04aeacb1.webp']) {
+        expect([path, await cacheControl(path)]).toEqual([path, 'public, max-age=31536000, immutable'])
+      }
+      for (const path of [`/workspaces/${workspaceId}/world/embed/process-plant.display`, `/workspaces/${workspaceId}/world/runs/run-1`, '/embed.html']) {
+        expect([path, await cacheControl(path)]).toEqual([path, 'no-cache'])
+      }
+      // Outside assets/world nothing is content-addressed: the browser's own rules apply.
+      expect(await cacheControl('/robots.txt')).toBeNull()
     } finally { await server.stop(); await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
   })
 

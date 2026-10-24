@@ -1,5 +1,6 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import { alarm, annunciator, comparison, deadbandController, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
+import { expectedAfterReactorTrip } from './reference-ic-first-out-groups.ts'
 
 const pzrAlarm = annunciator({
   system: 'reactorCoolantSystem',
@@ -9,7 +10,8 @@ const pzrAlarm = annunciator({
   role: 'symptom',
 })
 
-// The pressure reactor trips are the reactor protection system's, in the reactor trip's first-out group.
+// The pressure reactor trips are the reactor protection system's, in the reactor trip's first-out group: expected
+// after its first-out unless one of them is it, as every reactor trip but the first out is.
 const pzrReactorTrip = annunciator({
   system: 'reactorProtection',
   equipmentId: 'pressurizer',
@@ -17,6 +19,7 @@ const pzrReactorTrip = annunciator({
   firstOutGroup: 'reactor-trip',
   priority: 'urgent',
   role: 'automaticAction',
+  expectedAfter: expectedAfterReactorTrip,
 })
 
 // Pressurizer pressure ladder of the reference four-loop plant, absolute, with
@@ -164,12 +167,14 @@ export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
     delayMs: 1_000,
     latch: false,
     resetWhenClear: true,
+    // After a trip from power the coolant shrinks as it cools to no-load and pressure dips below the alarm for a
+    // few minutes: expected then, as the steam generators' shrink is. Before a trip it is a symptom.
     effects: [alarm({
       id: 'pressure-low',
       title: 'Pressurizer pressure low',
       message: 'Pressurizer pressure is below the reference low-pressure threshold.',
       severity: 'warning',
-      annunciator: pzrAlarm,
+      annunciator: annunciator({ ...pzrAlarm, expectedAfter: expectedAfterReactorTrip }),
     })],
   }),
   rule({

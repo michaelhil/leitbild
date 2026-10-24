@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { tick, untrack, type Component, type Snippet } from 'svelte'
   import {
     Check,
     ChevronDown,
@@ -10,50 +10,58 @@
     Maximize2,
     Minimize2,
     Minus,
+    Pin,
     Plus,
     X,
-    Zap,
   } from 'lucide-svelte'
   import type { EmbeddedViewEnvelope, EmbeddedViewListing } from '@leitbild/contracts'
-  import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
-  import { processPlantActionInvokeCommandKind } from '../../packs/process-plant/command-kinds.ts'
+  import type { OperationalObject, ProcedureId, SimulationRunId } from '../../core/model/index.ts'
+  import type { PackObjectStatusPresentation, PackWindowToolsProps } from '../../core/packs/protocol.ts'
+  import StatusIndicator from '../components/StatusIndicator.svelte'
+  import type { MapFocusTarget } from '../map-view.ts'
   import { DISPLAY_ZOOM_MAX, DISPLAY_ZOOM_MIN, type DisplayFrameOpen, type DisplayFrameZoomRequest } from '../embed/display-frame-protocol.ts'
+  import { dashboardEnvelope, pinToRunDashboard, type DashboardCollection } from '../embed/dashboard/dashboard.ts'
   import { openedListing } from '../embed/opened-display.ts'
   import { zoomStepOfKey } from '../embed/view-host.ts'
+  import { loadUiPack } from '../pack-loader.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
-  import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
-  import { invokeSimulationRunCapability } from '../simulation-run-client.ts'
-  import { statusToneColor } from '../status-presentation.ts'
+  import type { ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
     floatingWindowBoundsForDrag,
     normalizeFloatingWindowBounds,
     type FloatingWindowDragMode,
   } from '../window-bounds.ts'
+  import { activeWorkspaceId } from '../workspace-context.ts'
   import DisplayFrame from './DisplayFrame.svelte'
-  import PlantActionsDialog from './PlantActionsDialog.svelte'
+  import { defaultDisplayEnvelope, readDefaultDisplay } from './default-display.ts'
   import {
     acknowledgeShown,
-    buildDisplayDeck,
-    deckEntryPlant,
+    backFrom,
+    buildWindowDeck,
+    DASHBOARD_TITLE,
+    dashboardDeckEntry,
+    deckEntryAsset,
     mountedDeckEntries,
     newDisplayAnnouncement,
     observeConversation,
     observeListingsForShown,
+    openedAfter,
     openingAcknowledgement,
     requestedDeckEntry,
     shownDeckEntry,
     steppedDeckEntry,
     touchMountedFrames,
     unseenListings,
+    type AssetDeckEntry,
     type DeckAcknowledgement,
+    type DeckAsset,
     type DeckEntry,
-    type DeckPlant,
+    type DeckReturns,
     type DeckRunJoin,
     type DeckStep,
     type DisplayWindowRequest,
     type MountedDeckFrame,
-    type OverviewDeckEntry,
     type ShownDeckEntry,
   } from './display-deck.ts'
   import {
@@ -75,48 +83,68 @@
     type DisplayZoomState,
     type StoredDisplayZoom,
   } from './display-zoom.ts'
-  import { displayWindowMaximiseMessage } from './display-window-messages.ts'
-  import { processPlantIdForObject, readUnitOverviewView, type ProcessPlantActionCatalogEntry } from './process-display-client.ts'
+  import { displayWindowMaximiseMessage, VIGNETTE_VIEW_TYPE } from './display-window-messages.ts'
   import {
     readProcessDisplayWindowBounds,
     storeProcessDisplayWindowBounds,
     type ProcessDisplayWindowBounds,
   } from './process-display-layout.ts'
 
-  // The one process display window of a Run. It steps through every display
-  // the operator can bring up here: the unit overview of each Plant in the
-  // Run and every display the conversation's answers composed. Each display
-  // is live when shown and has its own zoom. The window moves, resizes and
-  // maximises; it never changes what it shows unless the operator asks, and
-  // Esc never closes it (inside a display, Esc is the display's Back).
+  // The one display window of a Run. It steps through every display the
+  // operator can bring up here: World's default display of each asset the Run
+  // observes, in rail order, and every display the conversation's answers
+  // composed. Each display is live when shown and has its own zoom. Its
+  // header carries the tools the shown asset's Pack gives the window
+  // (windowTools), and the asset's procedures and status. The window moves,
+  // resizes and maximises; it never changes what it shows unless the operator
+  // asks, and Esc never closes it (inside a display, Esc is the display's Back).
 
   interface Props {
     /** The Run of the page, from its address: the window opens without waiting for the page to open the Run. */
     readonly simulationRunId: SimulationRunId
-    /** Whether the page has opened the Run; its Plants, actions and procedures wait for it. */
+    /** Whether the page has opened the Run; its assets' tools and procedures wait for it. */
     readonly runJoin: DeckRunJoin
-    /** The Run's Process Plants, in rail order. */
-    readonly plantObjects: ReadonlyArray<OperationalObject>
+    /** The assets the Run observes, in rail order: the window opens each one's World default. */
+    readonly assetObjects: ReadonlyArray<OperationalObject>
+    /** The rail's categories holding several of them: the Run's dashboard offers to compare each. */
+    readonly collections: ReadonlyArray<DashboardCollection>
+    /** An asset's status as its rail row shows it: the window's status dot follows the rail's colour rule. */
+    readonly statusOf: (object: OperationalObject) => PackObjectStatusPresentation
     /** The conversation's displays, oldest first, as the Host relays them. */
     readonly listings: ReadonlyArray<EmbeddedViewListing>
     readonly request: DisplayWindowRequest
+    /** Whether an asset runs computer-based procedures (its Pack scopes them to it). */
+    readonly runsProcedures: (object: OperationalObject) => boolean
     readonly procedureSummariesFor: (object: OperationalObject) => ProcedureRunSummaryGroup
-    readonly openProcedureSystemAt: (object: OperationalObject, summary?: ProcedureRunSummary) => void
+    /** Opens an asset's procedure window, at one of its procedures where named. */
+    readonly openProcedureWindowAt: (object: OperationalObject, procedureId?: ProcedureId) => void
+    /** This screen plays the Run's controller: the asset's Pack tools offer what orders the Run only then. */
+    readonly controller: boolean
+    /** Opens the Run's Assistant room, which the asset's Pack tools offer; null where the Host offers none. */
+    readonly openAssistant: (() => void) | null
+    /** Frames the page's live map (a vignette's "Show on map"). */
+    readonly focusMap: (target: MapFocusTarget) => void
     readonly close: () => void
   }
 
   let {
     simulationRunId,
     runJoin,
-    plantObjects,
+    assetObjects,
+    collections,
+    statusOf,
     listings,
     request,
+    runsProcedures,
     procedureSummariesFor,
-    openProcedureSystemAt,
+    openProcedureWindowAt,
+    controller,
+    openAssistant,
+    focusMap,
     close,
   }: Props = $props()
 
-  type OverviewView =
+  type DefaultView =
     | { readonly state: 'loading' }
     | { readonly state: 'ready'; readonly envelope: EmbeddedViewEnvelope }
     | { readonly state: 'failed'; readonly error: string }
@@ -150,6 +178,8 @@
   ]
 
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
+  /** How far the resize handles reach over the body's edges (style.css: 10 px edges, 18 px corners): a faceplate keeps clear. */
+  const RESIZE_HANDLE_REACH = 18
   const windowConstraints = { minWidth: 320, minHeight: 200, margin: 12 } as const
   const zoomWriteDelayMs = 400
   const runId = untrack(() => simulationRunId)
@@ -186,17 +216,18 @@
   let shown = $state.raw<ShownDeckEntry | null>(null)
   let acknowledgement = $state.raw<DeckAcknowledgement>(openingAcknowledgement(untrack(() => listings)))
   let mountedFrames = $state.raw<ReadonlyArray<MountedDeckFrame>>([])
-  let overviewViews = $state.raw<ReadonlyMap<string, OverviewView>>(new Map())
+  let defaultViews = $state.raw<ReadonlyMap<string, DefaultView>>(new Map())
   let zoomStates = $state.raw<ReadonlyMap<string, DisplayZoomState>>(new Map())
   let extents = $state.raw<ReadonlyMap<string, DisplayExtent>>(new Map())
   let framesUp = $state.raw<ReadonlySet<string>>(new Set())
   // A display the window opened from another, or for a request from chat, and the display Back returns to.
-  let returnTo = $state.raw<ReadonlyMap<string, DeckEntry>>(new Map())
+  let returnTo = $state.raw<DeckReturns>(new Map())
   let bodySize = $state.raw<DisplaySize | null>(null)
   let popover = $state<Popover | null>(null)
+  // In front of the other floating windows (the procedure windows among them) once asked for with focus, as a procedure
+  // tag's "Open in display window" asks (W3.1, F4), until a press elsewhere on the page; a press in it brings it back.
+  let raised = $state(false)
   let listActiveIndex = $state(0)
-  let actionsPlant = $state.raw<DeckPlant | null>(null)
-  let runningActionId = $state<string | null>(null)
   let sectionElement = $state<HTMLElement | null>(null)
   let bodyElement = $state<HTMLElement | null>(null)
   let popoverElement = $state<HTMLElement | null>(null)
@@ -210,40 +241,39 @@
   const pendingZoomWrites = new Map<string, { readonly entry: DeckEntry; readonly state: DisplayZoomState }>()
   let zoomWriteTimer: ReturnType<typeof setTimeout> | null = null
 
-  const plants = $derived<ReadonlyArray<DeckPlant>>(plantObjects.flatMap(object => {
-    const plantId = processPlantIdForObject(object)
-    return plantId === null ? [] : [{ objectId: String(object.id), plantId, label: object.label }]
-  }))
-  const deck = $derived(buildDisplayDeck({ simulationRunId: runId, plants, listings, shown }))
+  const assets = $derived<ReadonlyArray<DeckAsset>>(assetObjects.map(object => ({ objectId: object.id, packId: object.packId, label: object.label })))
+  // The Run's dashboard, beside the defaults (D-H); its view changes only when the collections it offers do.
+  const collectionsKey = $derived(JSON.stringify(collections))
+  const dashboard = $derived(dashboardDeckEntry(runId, dashboardEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: runId, title: DASHBOARD_TITLE, state: collectionsKey === '[]' ? { scope: 'run' } : { scope: 'run', collections: JSON.parse(collectionsKey) as DashboardCollection[] } })))
+  const deck = $derived(buildWindowDeck({ simulationRunId: runId, assets, listings, shown, dashboard }))
   const current = $derived(shown === null ? null : deck.find(entry => entry.key === shown!.entry.key) ?? null)
   const position = $derived(current === null ? 0 : deck.findIndex(entry => entry.key === current!.key) + 1)
   const hasPrevious = $derived(position > 1)
   const hasNext = $derived(position > 0 && position < deck.length)
   const unseen = $derived(unseenListings(acknowledgement, listings))
   const announcement = $derived(newDisplayAnnouncement(unseen))
-  const plantTarget = $derived(current === null
+  // The asset the shown display is about: its Pack's tools, its procedures and its status dot act on it.
+  const assetTarget = $derived(current === null
     ? { ok: false as const, reason: 'No display is shown' }
-    : deckEntryPlant(current, plants, runJoin))
-  const plantObject = $derived(plantTarget.ok
-    ? plantObjects.find(object => String(object.id) === plantTarget.plant.objectId) ?? null
+    : deckEntryAsset(current, assets, runJoin))
+  const assetObject = $derived(assetTarget.ok
+    ? assetObjects.find(object => object.id === assetTarget.asset.objectId) ?? null
     : null)
-  const procedureSummaries = $derived(plantObject === null ? emptyProcedureRunSummaries : procedureSummariesFor(plantObject))
-  const statusColor = $derived(plantObject === null ? null : statusToneColor(
-    plantObject.operational.priority === 'critical'
-      ? 'error'
-      : plantObject.operational.priority === 'high'
-        ? 'working'
-        : plantObject.operational.status === 'normal'
-          ? 'ready'
-          : 'idle',
-  ))
-  const plantUnavailable = $derived(plantTarget.ok ? null : plantTarget.reason)
+  const assetUnavailable = $derived(assetTarget.ok ? null : assetTarget.reason)
+  // The procedures control shows for an asset that runs procedures, and, disabled with its reason, while the shown display names none.
+  const proceduresShown = $derived(assetObject === null ? assetUnavailable !== null : runsProcedures(assetObject))
+  const procedureSummaries = $derived(assetObject !== null && runsProcedures(assetObject) ? procedureSummariesFor(assetObject) : emptyProcedureRunSummaries)
+  const assetStatus = $derived(assetObject === null ? null : statusOf(assetObject))
   const currentZoom = $derived(current === null ? null : zoomStates.get(current.key) ?? null)
   const zoomPercent = $derived(currentZoom === null ? 100 : displayZoomPercent(currentZoom.zoom))
   const scaled = $derived(currentZoom !== null && !isActualSize(currentZoom.zoom))
-  const currentOverview = $derived(current?.source === 'overview' ? overviewViews.get(current.key) ?? null : null)
+  const currentDefault = $derived(current?.source === 'asset' ? defaultViews.get(current.key) ?? null : null)
   const currentEnvelope = $derived(current === null ? null : envelopeFor(current))
-  const connecting = $derived(current !== null && currentOverview?.state !== 'failed'
+  // A listing this window cannot show (another view type) says so in place of a frame.
+  const currentRefusal = $derived(current?.source === 'answer' ? current.refusal : null)
+  // The display the shown one was opened after: Back returns there.
+  const backTarget = $derived(current === null ? null : returnTo.get(current.key) ?? null)
+  const connecting = $derived(current !== null && currentDefault?.state !== 'failed' && currentRefusal === null
     && (currentEnvelope === null || !framesUp.has(current.key)))
   const effectiveBounds = $derived<ProcessDisplayWindowBounds>(maximised
     ? {
@@ -257,7 +287,8 @@
     ? 'wide'
     : effectiveBounds.width >= 700 ? 'medium' : effectiveBounds.width >= 520 ? 'narrow' : 'tiny')
   const groups = $derived([
-    { id: 'plants', label: 'Plant displays', entries: deck.filter(entry => entry.source === 'overview') },
+    { id: 'dashboard', label: 'Dashboard', entries: deck.filter(entry => entry.source === 'dashboard') },
+    { id: 'assets', label: 'Overviews', entries: deck.filter(entry => entry.source === 'asset') },
     { id: 'answers', label: 'From answers', entries: deck.filter(entry => entry.source === 'answer') },
   ].filter(group => group.entries.length > 0))
   // A frame stays while its display briefly leaves the deck (the chat page reloading empties the list).
@@ -267,8 +298,9 @@
   }))
 
   function envelopeFor(entry: DeckEntry): EmbeddedViewEnvelope | null {
-    if (entry.source === 'answer') return entry.listing.envelope
-    const view = overviewViews.get(entry.key)
+    if (entry.source === 'dashboard') return entry.envelope
+    if (entry.source === 'answer') return entry.refusal === null ? entry.listing.envelope : null
+    const view = defaultViews.get(entry.key)
     return view?.state === 'ready' ? view.envelope : null
   }
 
@@ -293,20 +325,21 @@
     }
   }
 
-  const zoomStoreFor = (entry: DeckEntry) => entry.source === 'overview' ? overviewZooms : answerZooms
+  const zoomStoreFor = (entry: DeckEntry) => entry.source === 'answer' ? answerZooms : overviewZooms
 
   const zoomStorageKey = (entry: DeckEntry): string =>
-    entry.source === 'overview' ? overviewZoomKey(runId, entry.plant.plantId) : entry.listing.key
+    entry.source === 'asset' ? overviewZoomKey(runId, entry.asset.objectId) : entry.source === 'dashboard' ? entry.key : entry.listing.key
 
   const flushZoomWrites = (): void => {
     zoomWriteTimer = null
     const writes = [...pendingZoomWrites.values()]
     pendingZoomWrites.clear()
     for (const { entry, state } of writes) {
+      // A zoom the operator set is remembered; choosing Fit forgets it, so the display reopens at its default.
       const stored = storedDisplayZoom(state)
-      if (stored === null) continue
       try {
-        zoomStoreFor(entry).write(zoomStorageKey(entry), stored)
+        if (stored === null) zoomStoreFor(entry).forget(zoomStorageKey(entry))
+        else zoomStoreFor(entry).write(zoomStorageKey(entry), stored)
       } catch (err) {
         notice = `The zoom of ${entry.title} could not be remembered: ${errorText(err)}`
       }
@@ -371,7 +404,7 @@
   const measureBody = (size: DisplaySize): void => {
     if (bodySize !== null && bodySize.width === size.width && bodySize.height === size.height) return
     bodySize = size
-    // The shown display follows, even an overview whose view is still loading. A hidden
+    // The shown display follows, even a default whose view is still loading. A hidden
     // one keeps the size it was hidden at and refits when it is shown again (showEntry).
     const entry = current
     const state = entry === null ? undefined : zoomStates.get(entry.key)
@@ -389,6 +422,23 @@
     extents = withoutKey(extents, key)
   }
 
+  // A display that opened another from inside its frame, or stepped Back, had the keys: the one shown now takes them,
+  // so its Esc steps Back in turn (DisplayFrame focuses its frame once its page listens).
+  let frameFocus = $state.raw<{ readonly key: string; readonly sequence: number } | null>(null)
+  let frameSelect = $state.raw<{ readonly key: string; readonly sequence: number; readonly objectId: string; readonly elementId: string } | null>(null)
+  let selectSequence = 0
+  const focusShown = (): void => {
+    if (current !== null) frameFocus = { key: current.key, sequence: (frameFocus?.sequence ?? 0) + 1 }
+  }
+
+  // A display shown after another, its Back returning to the one it came from.
+  const openAfter = (from: DeckEntry, listing: EmbeddedViewListing): void => {
+    const entry = requestedDeckEntry(deck, runId, { kind: 'listing', listing })
+    if (entry === null) return
+    returnTo = openedAfter(returnTo, entry, from)
+    showEntry(entry)
+  }
+
   // A display asks for equipment it names to be opened after it (a safety function chip, a banner label): the
   // window shows it as a display of its own, and its Back returns to the one it came from.
   const frameOpen = (key: string, request: DisplayFrameOpen): void => {
@@ -401,50 +451,81 @@
       notice = `${request.title} cannot be opened: ${errorText(err)}`
       return
     }
+    openAfter(from.entry, listing)
+    focusShown()
+  }
+
+  // A subject's World default (a proposal's element), on this Run or the one chat names: composed for the person, shown
+  // after the shown display with Back to it, or on its own where the window shows none yet.
+  const openDefaultAfter = async (subject: string, on: { readonly runId: string; readonly title?: string } = { runId }): Promise<void> => {
+    // Opened while the window shows nothing yet (chat's "Review in display"): the subject's own asset overview first, so
+    // its default has a Back and, opened after another, pins the faceplate of the proposal it draws (W3.6).
+    const asset = current === null && on.runId === runId && subject.includes('#')
+      ? deck.find(entry => entry.source === 'asset' && entry.asset.objectId === subject.slice(0, subject.indexOf('#'))) ?? null
+      : null
+    if (asset !== null) showEntry(asset)
+    const from = asset ?? current
+    let listing: EmbeddedViewListing
+    try {
+      const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: on.runId as SimulationRunId, view: await readDefaultDisplay(on.runId as SimulationRunId, subject) })
+      const opened = { state: envelope.state, title: on.title ?? envelope.title, viewType: VIGNETTE_VIEW_TYPE } as const
+      listing = openedListing({ key: from?.key ?? `subject:${on.runId}`, title: from?.title ?? opened.title, envelope }, opened)
+    } catch (err) {
+      if (!disposed) notice = `${on.title ?? subject} cannot be opened: ${errorText(err)}`
+      return
+    }
+    if (disposed) return
+    if (from !== null) return openAfter(from, listing)
     const entry = requestedDeckEntry(deck, runId, { kind: 'listing', listing })
-    if (entry === null) return
-    returnTo = withValue(returnTo, entry.key, from.entry)
-    showEntry(entry)
+    if (entry !== null) showEntry(entry)
   }
 
   const frameBack = (key: string): void => {
-    const target = returnTo.get(key)
-    if (target === undefined) return
-    returnTo = withoutKey(returnTo, key)
-    showEntry(deck.find(entry => entry.key === target.key) ?? target)
+    const back = backFrom(returnTo, deck, key)
+    if (back === null) return
+    returnTo = back.returns
+    showEntry(back.to)
+    focusShown()
+  }
+
+  // Displays that ask for the body's whole height (a faceplate stands on one, W3.4; one shows alerts only, its list
+  // filling the window, W2.5): each is given it meanwhile.
+  let filling = $state.raw<ReadonlySet<string>>(new Set())
+  const frameFill = (key: string, fill: boolean): void => {
+    if (filling.has(key) === fill) return
+    filling = fill ? new Set([...filling, key]) : new Set([...filling].filter(candidate => candidate !== key))
   }
 
   const frameProblem = (_key: string, problem: string): void => {
     notice = problem
   }
 
-  const loadOverviewView = async (entry: OverviewDeckEntry): Promise<void> => {
-    const existing = overviewViews.get(entry.key)
+  const loadDefaultView = async (entry: AssetDeckEntry): Promise<void> => {
+    const existing = defaultViews.get(entry.key)
     if (existing && existing.state !== 'failed') return
-    overviewViews = withValue(overviewViews, entry.key, { state: 'loading' })
+    defaultViews = withValue(defaultViews, entry.key, { state: 'loading' })
     try {
-      const envelope = await readUnitOverviewView(runId, entry.plant.plantId)
-      if (!disposed) overviewViews = withValue(overviewViews, entry.key, { state: 'ready', envelope })
+      const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId: runId, view: await readDefaultDisplay(runId, entry.asset.objectId) })
+      if (!disposed) defaultViews = withValue(defaultViews, entry.key, { state: 'ready', envelope })
     } catch (err) {
-      if (!disposed) overviewViews = withValue(overviewViews, entry.key, { state: 'failed', error: errorText(err) })
+      if (!disposed) defaultViews = withValue(defaultViews, entry.key, { state: 'failed', error: errorText(err) })
     }
   }
 
   // --- Deck -----------------------------------------------------------------
 
   const showEntry = (entry: DeckEntry): void => {
+    if (notice !== null && notice === pinSaid) notice = null
     const nextShown = shownDeckEntry(deck, entry, listings)
-    const nextDeck = buildDisplayDeck({ simulationRunId: runId, plants, listings, shown: nextShown })
+    const nextDeck = buildWindowDeck({ simulationRunId: runId, assets, listings, shown: nextShown, dashboard })
     showSequence += 1
     shown = nextShown
-    mountedFrames = touchMountedFrames(
-      mountedFrames.filter(frame => nextDeck.some(candidate => candidate.key === frame.key)),
-      entry,
-      showSequence,
-    )
+    const kept = mountedFrames.filter(frame => nextDeck.some(candidate => candidate.key === frame.key))
+    // A listing the window cannot show gets no frame, so it never takes a mounted frame's place.
+    mountedFrames = entry.source === 'answer' && entry.refusal !== null ? kept : touchMountedFrames(kept, entry, showSequence)
     acknowledgement = acknowledgeShown(acknowledgement, listings, entry)
     prepareZoom(entry)
-    if (entry.source === 'overview') void loadOverviewView(entry)
+    if (entry.source === 'asset') void loadDefaultView(entry)
   }
 
   const step = (direction: DeckStep): void => {
@@ -466,15 +547,23 @@
   const applyRequest = (next: DisplayWindowRequest): void => {
     if (next.sequence === appliedRequest) return
     appliedRequest = next.sequence
+    if (next.target.kind === 'subject') {
+      void openDefaultAfter(next.target.subject, { runId: next.target.runId, title: next.target.title })
+      if (next.focus) { raised = true; void focusWindow() }
+      return
+    }
     const entry = requestedDeckEntry(deck, runId, next.target)
     // A display chat opens that the window does not list (equipment named on an answer's display) returns to what it showed.
-    if (entry !== null && entry.source === 'answer' && !entry.listed && current !== null && current.key !== entry.key) returnTo = withValue(returnTo, entry.key, current)
+    if (entry !== null && entry.source === 'answer' && !entry.listed && current !== null) returnTo = openedAfter(returnTo, entry, current)
+    // An alarm strip's group row asks its unit's display to select its first-out (W2.8); any other request asks none.
+    frameSelect = entry !== null && next.target.kind === 'asset' && next.target.select !== undefined
+      ? { key: entry.key, sequence: ++selectSequence, objectId: next.target.objectId, elementId: next.target.select } : null
     if (entry !== null) showEntry(entry)
     else {
-      notice = 'That Plant is not in this Run.'
+      notice = 'That asset is not in this Run.'
       if (shown === null && deck[0]) showEntry(deck[0])
     }
-    if (next.focus) void focusWindow()
+    if (next.focus) { raised = true; void focusWindow() }
   }
 
   // Requests come from the rail and, through the Host, from chat.
@@ -634,47 +723,49 @@
     }
   }
 
-  // --- Instructor actions ---------------------------------------------------
+  // --- The asset's tools and procedures ---------------------------------------
 
-  const openPlantActions = (): void => {
+  // The tools the shown asset's Pack gives the window's header, loaded once per Pack; a Pack that gives none adds none.
+  let toolsByPack = $state.raw<ReadonlyMap<string, Component<PackWindowToolsProps> | null>>(new Map())
+  const toolsPack = $derived(assetTarget.ok ? assetTarget.asset.packId : null)
+  $effect(() => {
+    const packId = toolsPack
+    if (packId === null || untrack(() => toolsByPack.has(packId))) return
+    void (async (): Promise<void> => {
+      try {
+        const load = (await loadUiPack(packId)).ui?.windowTools
+        const tools = load === undefined ? null : (await load()).default
+        if (!disposed) toolsByPack = withValue(toolsByPack, packId, tools)
+      } catch (err) {
+        if (!disposed) notice = `The window tools of ${packId} cannot be loaded: ${errorText(err)}`
+      }
+    })()
+  })
+  const Tools = $derived(toolsPack === null ? null : toolsByPack.get(toolsPack) ?? null)
+  // Short of room, the tools' labels give way; with none, they keep their chips in the header and list the rest in More.
+  const toolsRoom = $derived<PackWindowToolsProps['room']>(tier === 'wide' ? 'wide' : tier === 'medium' ? 'short' : 'folded')
+  let toolsMenu = $state.raw<Snippet<[done: () => void]> | null>(null)
+
+  // A person pins what they see (R4 B4): the shown vignette of this Run, by its state, on the whole Run's dashboard.
+  const pinnable = $derived(currentEnvelope?.viewType === VIGNETTE_VIEW_TYPE && currentEnvelope.subject.id === String(runId) ? currentEnvelope : null)
+  const pinTitle = $derived(pinnable !== null ? 'Pin this display to the whole Run\'s dashboard'
+    : current?.source === 'dashboard' || currentEnvelope?.viewType !== VIGNETTE_VIEW_TYPE ? 'Pin to dashboard: a dashboard\'s sections pin one by one' : 'Pin to dashboard: this display is of another Run')
+  let pinning = $state(false)
+  /** What the last pin said: it goes once the person steps to another display, not to stand over that one. */
+  let pinSaid: string | null = null
+  const pinShown = async (): Promise<void> => {
+    const view = pinnable
+    if (view === null || pinning) return
+    pinning = true
+    const title = current?.title ?? view.title
+    try { notice = pinSaid = await pinToRunDashboard(runId, { state: view.state, title }) } catch (err) { notice = `${title} was not pinned: ${errorText(err)}` } finally { pinning = false }
+  }
+
+  const openProcedures = (procedureId?: ProcedureId): void => {
     popover = null
-    if (plantTarget.ok) actionsPlant = plantTarget.plant
-  }
-
-  const closePlantActions = (): void => {
-    actionsPlant = null
-    void focusWindow()
-  }
-
-  const openProcedures = (summary?: ProcedureRunSummary): void => {
-    popover = null
-    if (plantObject !== null) openProcedureSystemAt(plantObject, summary)
-  }
-
-  // The display samples the Plant every second, so an action shows there without a reload; the window's notice
-  // says what became of it: sent, then accepted or refused with the Plant's reason, or why it could not be sent.
-  const runPlantAction = async (
-    plant: DeckPlant,
-    action: ProcessPlantActionCatalogEntry,
-    parameters: Readonly<Record<string, number>>,
-  ): Promise<void> => {
-    if (runningActionId !== null) return
-    actionsPlant = null
-    runningActionId = action.id
-    const named = `Instructor action "${action.title}" on ${plant.label}`
-    notice = `${named}: sent…`
-    try {
-      const response = await invokeSimulationRunCapability(runId, {
-        capabilityId: processPlantActionInvokeCommandKind,
-        input: { plantId: plant.plantId, actionId: action.id, parameters },
-      })
-      if (response.kind !== 'command') throw new Error(`${processPlantActionInvokeCommandKind} is not a command`)
-      if (!disposed) notice = response.result.ok ? `${named}: accepted.` : `${named}: refused. ${response.result.reason}`
-    } catch (err) {
-      if (!disposed) notice = `${named} could not be sent: ${errorText(err)}`
-    } finally {
-      if (!disposed) runningActionId = null
-    }
+    // The procedure window opens in front of this one.
+    raised = false
+    if (assetObject !== null) openProcedureWindowAt(assetObject, procedureId)
   }
 
   runOnMount(() => {
@@ -682,15 +773,17 @@
       viewport = currentViewport()
     }
     const outside = (event: PointerEvent): void => {
-      if (popover === null) return
       const target = event.target
       if (!(target instanceof Node)) return
+      raised = sectionElement?.contains(target) === true
+      if (popover === null) return
       if (popoverElement?.contains(target) || popoverTrigger(popover)?.contains(target)) return
       popover = null
     }
-    // Focus moving into a display frame leaves no pointer event here.
+    // Focus moving into a display frame leaves no pointer event here: it brings the window forward, as a press in it would.
     const blurred = (): void => {
       popover = null
+      setTimeout(() => { if (sectionElement?.contains(document.activeElement) === true) raised = true }, 0)
     }
     const observer = new ResizeObserver(entries => {
       const box = entries[0]?.contentRect
@@ -716,7 +809,8 @@
   })
 </script>
 
-<div class="process-display-window-layer">
+<!-- Raised: above the procedure windows' layer (style.css .procedure-window-layer, z-index 92). -->
+<div class="process-display-window-layer" style:z-index={raised ? 93 : undefined}>
   <!-- Zoom keys and Esc act while focus is anywhere in the window: the section delegates them from its controls. -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <section
@@ -776,6 +870,18 @@
           >New ›</button>
         {/if}
       </div>
+      {#if backTarget !== null}
+        <button
+          type="button"
+          class="display-window-back"
+          aria-label="Back to {backTarget.title}"
+          title="Back to {backTarget.title}"
+          onclick={() => { if (current !== null) frameBack(current.key) }}
+        >
+          <ChevronLeft size={16} aria-hidden="true" />
+          <span>{backTarget.title}</span>
+        </button>
+      {/if}
 
       <!-- The title strip moves the window; double-click maximises (also ⤢). -->
       <div
@@ -787,15 +893,18 @@
         onpointercancel={finishWindowDrag}
         ondblclick={() => setMaximised(!maximised)}
       >
-        <span
-          class="process-display-asset-dot"
-          class:unknown={statusColor === null}
-          style:background={statusColor}
-          title={plantObject === null ? (plantUnavailable ?? '') : `${plantObject.label}: ${plantObject.operational.status}`}
-        ></span>
-        <strong id={windowLabelId}>{current?.title ?? 'Process displays'}</strong>
+        {#if assetObject !== null && assetStatus !== null}
+          <StatusIndicator tone={assetStatus.tone} label={`${assetObject.label}: ${assetStatus.label}`} indicator={assetStatus.indicator} />
+        {:else}
+          <span class="process-display-asset-dot" title={assetUnavailable ?? ''}></span>
+        {/if}
+        <strong id={windowLabelId}>{current?.title ?? 'Displays'}</strong>
         {#if current !== null && tier !== 'narrow' && tier !== 'tiny'}
           <span class="display-window-caption">· {current.caption}</span>
+        {/if}
+        {#if assetTarget.ok && assetTarget.among !== undefined}
+          <!-- An answer about several assets: its tools and procedures are its lead subject's, and the window says so. -->
+          <span class="display-window-caption">· {assetTarget.asset.label}'s tools, the first of {assetTarget.among} assets it names</span>
         {/if}
       </div>
 
@@ -855,7 +964,7 @@
             type="button"
             class="display-window-fit"
             aria-pressed={currentZoom?.fit ?? false}
-            title="Fit the display to the window"
+            title="Fit the display to the window; its text stays readable and the display scrolls where it does not fit"
             disabled={currentZoom === null}
             onclick={() => changeZoom({ type: 'toggle-fit' })}
           >Fit</button>
@@ -863,29 +972,41 @@
       </div>
 
       {#if tier === 'wide' || tier === 'medium'}
-        <div class="display-window-plant" role="group" aria-label="Plant">
-          <ProcedureRunBadges summaries={procedureSummaries} onOpen={openProcedures} />
+        <button type="button" class="display-window-button" aria-label={pinTitle} title={pinTitle} aria-disabled={pinnable === null || pinning} onclick={() => { void pinShown() }}>
+          <Pin size={16} aria-hidden="true" />
+        </button>
+      {/if}
+      {#if (tier === 'wide' || tier === 'medium') && proceduresShown}
+        <div class="display-window-procedures" role="group" aria-label="Procedures">
+          <ProcedureRunBadges summaries={procedureSummaries} onOpen={summary => openProcedures(summary.procedureId)} />
           <button
             type="button"
             class="display-window-button"
-            aria-label={plantTarget.ok ? `Instructor actions on ${plantTarget.plant.label}` : `Instructor actions unavailable: ${plantTarget.reason}`}
-            title={plantTarget.ok ? `Instructor actions on ${plantTarget.plant.label}: scenario events and faults` : plantTarget.reason}
-            aria-disabled={!plantTarget.ok}
-            onclick={openPlantActions}
-          >
-            <Zap size={17} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            class="display-window-button"
-            aria-label={plantObject !== null ? `Computer-based procedures for ${plantObject.label}` : `Procedures unavailable: ${plantUnavailable ?? ''}`}
-            title={plantObject !== null ? `Computer-based procedures for ${plantObject.label}` : (plantUnavailable ?? '')}
-            aria-disabled={plantObject === null}
+            aria-label={assetObject !== null ? `Computer-based procedures for ${assetObject.label}` : `Procedures unavailable: ${assetUnavailable ?? ''}`}
+            title={assetObject !== null ? `Computer-based procedures for ${assetObject.label}` : (assetUnavailable ?? '')}
+            aria-disabled={assetObject === null}
             onclick={() => openProcedures()}
           >
             <ClipboardList size={17} aria-hidden="true" />
           </button>
         </div>
+      {/if}
+      {#if Tools !== null && assetObject !== null}
+        {#key assetObject.id}
+          <Tools
+            runId={runId}
+            object={assetObject}
+            openDisplay={(subject: string) => { void openDefaultAfter(subject) }}
+            {controller}
+            {openAssistant}
+            runningProcedures={procedureSummaries.active.map(summary => summary.procedureId)}
+            openProcedure={openProcedures}
+            room={toolsRoom}
+            menu={items => { toolsMenu = items }}
+          />
+        {/key}
+      {/if}
+      {#if tier === 'wide' || tier === 'medium'}
         <button
           type="button"
           class="display-window-button"
@@ -900,7 +1021,7 @@
           bind:this={moreButton}
           type="button"
           class="display-window-button display-window-more"
-          aria-label="More: Instructor actions, procedures, maximise"
+          aria-label={`More: ${[...(proceduresShown ? ['procedures'] : []), 'pin to dashboard', ...(toolsMenu !== null ? ['tools'] : []), 'maximise'].join(', ')}`}
           title="More"
           aria-haspopup="true"
           aria-expanded={popover === 'more'}
@@ -939,17 +1060,27 @@
           onZoomRequest={receiveZoomRequest}
           onProblem={frameProblem}
           back={returnTo.get(mounted.entry.key)?.title ?? null}
+          focus={frameFocus?.key === mounted.entry.key ? frameFocus.sequence : 0}
+          select={frameSelect?.key === mounted.entry.key ? frameSelect : null}
+          handles={maximised ? 0 : RESIZE_HANDLE_REACH}
+          fill={filling.has(mounted.entry.key)}
+          onFill={frameFill}
           onOpen={frameOpen}
           onBack={frameBack}
+          onMap={bounds => focusMap({ kind: 'bounds', bounds })}
         />
       {/each}
       {#if current === null}
-        <div class="display-window-message">No process display to show.</div>
-      {:else if currentOverview?.state === 'failed' && current.source === 'overview'}
+        <div class="display-window-message">No display to show.</div>
+      {:else if currentRefusal !== null}
+        <div class="display-window-message" role="status">
+          <span><strong>{current.title}</strong> cannot be shown here: {currentRefusal}.</span>
+        </div>
+      {:else if currentDefault?.state === 'failed' && current.source === 'asset'}
         {@const failedEntry = current}
         <div class="display-window-message error" role="alert">
-          <span>{currentOverview.error}</span>
-          <button type="button" onclick={() => { void loadOverviewView(failedEntry) }}>Retry</button>
+          <span>{currentDefault.error}</span>
+          <button type="button" onclick={() => { void loadDefaultView(failedEntry) }}>Retry</button>
         </div>
       {:else if connecting}
         <div class="display-window-message" role="status">
@@ -1028,34 +1159,34 @@
             <Plus size={16} aria-hidden="true" />
           </button>
         {/if}
-        <button type="button" class="display-window-reset" disabled={currentZoom === null} onclick={() => changeZoom({ type: 'step', step: 'reset' })}>100 %</button>
+        <!-- The readout is the button that opened this popover; this one is an action, and says so. -->
+        <button type="button" class="display-window-reset" disabled={currentZoom === null} onclick={() => changeZoom({ type: 'step', step: 'reset' })}>Reset to 100 %</button>
         {#if tier === 'tiny'}
           <button type="button" class="display-window-fit" aria-pressed={currentZoom?.fit ?? false} disabled={currentZoom === null} onclick={() => changeZoom({ type: 'toggle-fit' })}>Fit</button>
         {/if}
       </div>
     {:else if popover === 'more'}
       <div bind:this={popoverElement} class="display-window-popover more" role="group" aria-label="More">
-        <ProcedureRunBadges summaries={procedureSummaries} onOpen={openProcedures} />
-        <button
-          type="button"
-          class="display-window-menu-item"
-          title={plantTarget.ok ? '' : plantTarget.reason}
-          aria-disabled={!plantTarget.ok}
-          onclick={openPlantActions}
-        >
-          <Zap size={16} aria-hidden="true" />
-          <span>{plantTarget.ok ? `Instructor actions on ${plantTarget.plant.label}` : `Instructor actions: ${plantTarget.reason}`}</span>
+        {#if proceduresShown}
+          <ProcedureRunBadges summaries={procedureSummaries} onOpen={summary => openProcedures(summary.procedureId)} />
+          <button
+            type="button"
+            class="display-window-menu-item"
+            title={assetObject !== null ? '' : (assetUnavailable ?? '')}
+            aria-disabled={assetObject === null}
+            onclick={() => openProcedures()}
+          >
+            <ClipboardList size={16} aria-hidden="true" />
+            <span>{assetObject !== null ? `Procedures for ${assetObject.label}` : `Procedures: ${assetUnavailable ?? ''}`}</span>
+          </button>
+        {/if}
+        <button type="button" class="display-window-menu-item" title={pinTitle} aria-disabled={pinnable === null || pinning} onclick={() => { popover = null; void pinShown() }}>
+          <Pin size={16} aria-hidden="true" />
+          <span>Pin to dashboard</span>
         </button>
-        <button
-          type="button"
-          class="display-window-menu-item"
-          title={plantObject !== null ? '' : (plantUnavailable ?? '')}
-          aria-disabled={plantObject === null}
-          onclick={() => openProcedures()}
-        >
-          <ClipboardList size={16} aria-hidden="true" />
-          <span>{plantObject !== null ? `Procedures for ${plantObject.label}` : `Procedures: ${plantUnavailable ?? ''}`}</span>
-        </button>
+        {#if toolsMenu !== null}
+          {@render toolsMenu(() => closePopover(true))}
+        {/if}
         <button
           type="button"
           class="display-window-menu-item"
@@ -1084,14 +1215,4 @@
       {/each}
     {/if}
   </section>
-
-  {#if actionsPlant !== null}
-    <PlantActionsDialog
-      simulationRunId={runId}
-      plant={actionsPlant}
-      {runningActionId}
-      run={(plant, action, parameters) => { void runPlantAction(plant, action, parameters) }}
-      close={closePlantActions}
-    />
-  {/if}
 </div>

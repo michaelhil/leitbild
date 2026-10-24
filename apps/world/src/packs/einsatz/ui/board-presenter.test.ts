@@ -8,7 +8,7 @@ import { openRun, type OpenRun } from '../fixtures/run-harness.ts'
 import { wordFor } from '../lexicon.ts'
 import { openModeViewer } from '../picture.ts'
 import { boardIconIds, createBoardIcons, svgImageSource } from './board-icons.ts'
-import { contactFacts, contactIconTone, logTime, stripHeading, unitFacts, unitIconTone, workFacts } from './board-presenter.ts'
+import { contactFacts, contactIconTone, contactsSummary, logTime, stripHeading, unitFacts, unitIconTone, workFacts } from './board-presenter.ts'
 
 /**
  * What the Board panel arranges beyond the controller's view: each row's
@@ -128,9 +128,21 @@ describe('Board icons', () => {
       ...view,
       workList: { rows: [workRow({ icon: 'package' })], empty: null },
       unitBoard: { rows: [unitRow({ icon: 'container' }), unitRow({ id: 'u2', icon: 'container' })], empty: null, sitesHeading: 'Sites', sites: [{ id: 's1', label: 'S1', typeLabel: 'Depot', icon: 'warehouse' }] },
-      contacts: { heading: 'Tracks', sides: [side('A', [contactRow({ icon: 'shield' })], [contactRow({ id: 'track:a:2' })]), side('B', [], [contactRow({ id: 'track:b:1', icon: 'flag' })])], hover: '' },
+      contacts: { heading: 'Tracks', sides: [side('A', [contactRow({ icon: 'shield' })], [contactRow({ id: 'track:a:2' })]), side('B', [], [contactRow({ id: 'track:b:1', icon: 'flag' })])] },
     }
     expect(boardIconIds(withRows)).toEqual(['package', 'container', 'warehouse', 'shield', 'circle-question-mark', 'flag'])
+  })
+
+  test('folded Contacts read as one line of counts, under each side\'s label on a screen holding several sides', () => {
+    const side = (label: string | null, engageable: ReadonlyArray<ContactRow>, other: ReadonlyArray<ContactRow>): ContactSide => ({
+      label,
+      engageable: { heading: 'Engageable', rows: engageable, empty: engageable.length === 0 ? 'None' : null },
+      other: { heading: 'Other', rows: other, empty: other.length === 0 ? 'None' : null },
+    })
+    const quiet = { heading: 'Contacts', sides: [side(null, [], [contactRow({ id: 'track:a:1' }), contactRow({ id: 'track:a:2' })])] }
+    expect(contactsSummary(quiet)).toBe('Engageable 0 · Other 2')
+    // Several sides' tracks are counted under each side's label.
+    expect(contactsSummary({ ...quiet, sides: [side('Blue', [], []), side('Red', [], [contactRow({ id: 'track:b:1' })])] })).toBe('Blue · Engageable 0 · Other 0 · Red · Engageable 0 · Other 1')
   })
 })
 

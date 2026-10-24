@@ -1,0 +1,73 @@
+{
+  "kind": "ld01-settled-state-pin",
+  "status": "Regression pin (NOT evidence; S2 is not declared): the exact consistent pair at the end of the S2-07 re-settle PREVIEW (settled at 522 s by revision 7's settling block, packet 91d85fc1, frozen app 0d8ad6a29 with the test-only run caaa8e9c4, wiki 4ee6f47), re-pinned 15 Oct 2026 by the S2-07 lane on the lead's brief (S2-D11 model freeze); replaces the provisional probe-4 pin",
+  "file": "settled-state-s2-07-522s-91d85fc1.bits.json.gz",
+  "sha256": "0d71168f26a8411353ad9ab27f28f69a627c21a6e8139988a13d4c20c36c74ef",
+  "bytes": 14086,
+  "packet_sha256": "91d85fc11a753e9fcb587f6d01bcb9d50561455fb72660506813c71f580333ac",
+  "t_s": 522.0,
+  "row_bound": 1e-10,
+  "provisional": false,
+  "known_misses": [],
+  "digest": {
+    "macos-aarch64": "0x0b1823da1c03b743"
+  },
+  "made_by": "ld01_regression::settled_state_pin from operating-joined-spine-s2/resume-2026-10-14/s2-07/settle-91d85fc1-1/settled-state.json",
+  "source": {
+    "file": "operating-joined-spine-s2/resume-2026-10-14/s2-07/settle-91d85fc1-1/settled-state.json",
+    "max_abs_scaled_row_as_settled": 2.411176736254576e-07,
+    "sha256": "9c073d00f8f43ebd9c9f6f7c3446c5543b9472cf908c5ad24d32f29e87c19228"
+  },
+  "start": {
+    "constraint_rate": 9.269716816514249e-20,
+    "correction_wrms": 1.4731545267472745e-05,
+    "projection_passes": 1,
+    "rate_passes": 1,
+    "residual": 6.033876223141442e-14
+  },
+  "at_pin": {
+    "max_abs_scaled_row": 6.033876223141442e-14,
+    "rates_per_20_s": {
+      "average_coolant_k": {
+        "change": 0.00014732154340890702,
+        "holds": true,
+        "threshold": 0.0034
+      },
+      "core_cell_liquid_k": {
+        "change": 0.00012966711437911727,
+        "holds": true,
+        "threshold": 0.01
+      },
+      "core_power": {
+        "change": 2.465658683941025e-06,
+        "holds": true,
+        "threshold": 6.8e-05
+      },
+      "loop_flow": {
+        "change": 4.539785717758468e-07,
+        "holds": true,
+        "threshold": 0.0005
+      },
+      "pt1_pa": {
+        "change": 342.00543351471424,
+        "holds": true,
+        "threshold": 344.0
+      },
+      "pzr_level_m": {
+        "change": 1.3608556059807597e-05,
+        "holds": true,
+        "threshold": 0.00068
+      },
+      "sg_liquid_m3": {
+        "change": 2.3037813434712007e-05,
+        "holds": true,
+        "threshold": 0.0034
+      },
+      "sg_pressure_pa": {
+        "change": 15.738928690552711,
+        "holds": true,
+        "threshold": 344.0
+      }
+    }
+  }
+}

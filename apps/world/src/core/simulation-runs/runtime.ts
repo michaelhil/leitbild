@@ -1,15 +1,17 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
-import type { RunHistorian } from '../../features/historian/store.ts'
+import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/store.ts'
 import type { RunHistorianStatus } from '../../features/historian/policy.ts'
 import { recordingSeriesQuerySchema, type RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
+import { createProcedureObservationPort,type ProcedureObservationPort } from '../../features/procedures/pack-observations.ts'
+import { createObservationCache, createObservationPort, observationProviderFor, type ObservationPort } from '../../features/displays/observation/port.ts'
 import { createProcedureSourceService,type ProcedureSourceService, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
-import type { PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
+import type { CommandOrigin,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
 import type { AgentRestrictions,RunRoles,ScenarioSide,CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
 import { procedureObservationUpdatedEventSchema, objectIdSchema, actorIdSchema,agentRestrictionsSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,isSideView,notificationIdSchema,nowIso,sidedObjectAudienceIssue,simulationClockUpdateSchema,type AudienceIssue } from '../model/index.ts'
 import { createSimulationClock,type SimulationClock } from '../model/time.ts'
-import type { PackWikiRef } from '../packs/protocol.ts'
+import type { PackProcedureContribution,PackWikiRef,WorldPack } from '../packs/protocol.ts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
 import { canIssueCommand,type Actor } from './actors.ts'
 import { assertRunCapabilityAllowed,isAudienceRefusal,roleGateRefusal,roleViewNotSupportedRefusal,viewerForActor,type RoleGateRefusal } from './role-gates.ts'
@@ -82,12 +84,23 @@ export interface SimulationRunRuntime {
     readonly sourcePath?: string
   }) => Promise<ProcedureDocument>
   readonly procedureEvidence: (config: ProcedureEvidenceRequest) => Promise<ProcedureEvidence>
+  /**
+   * A procedure scope's live observations through its owning Pack's procedure
+   * contribution, read as `actor` so that actor's restrictions apply.
+   */
+  readonly procedureObservations: (actor: Actor, plantId: string) => ProcedureObservationPort
+  /** Pack observation content (declarations, values, topology), read lazily as `actor`. */
+  readonly observations: (actor: Actor) => ObservationPort
+  /** The Packs this Run runs, for World's server-side presentation (words, categories) of its objects. */
+  readonly packs: () => ReadonlyArray<WorldPack>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly metrics: () => SimulationRunRuntimeMetricsSnapshot
   readonly health: () => ReadonlyArray<PackRuntimeHealth>
   readonly recordingStatus: () => RunHistorianStatus | null
   readonly recordingSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
   readonly recordedSamples: (query: RecordingSeriesQuery) => RecordingPage
+  /** A series' samples by id between two simulation times, newest first up to the limit, without a page's summaries: what a display draws. */
+  readonly recordedSeriesSamples: (query: SeriesSamplesQuery) => ReadonlyArray<RecordedSample>
   readonly close: () => Promise<void>
 }
 
@@ -155,6 +168,8 @@ export const createSimulationRunRuntime = async (config: {
   readonly snapshotStore: SimulationRunSnapshotStore
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly restoredSnapshot?: SimulationRunStateSnapshot
+  /** A new Run starts paused rather than playing; a restored one keeps the clock it was saved with. */
+  readonly startPaused?: boolean
   readonly restoredEvents?: ReadonlyArray<SimulationRunEvent>
   readonly initialSeq?: number
   readonly scenario: {
@@ -173,6 +188,10 @@ export const createSimulationRunRuntime = async (config: {
    */
   readonly roleAwarePackIds?: ReadonlyArray<string>
   readonly procedureSourceService?: ProcedureSourceService
+  /** The procedure contribution of the Pack that owns an object, where that Pack offers one. */
+  readonly procedureProvider?: (object: OperationalObject) => PackProcedureContribution | undefined
+  /** The Packs the Run's Scenario resolved, whose observation contributions and presentation World reads. */
+  readonly packs?: ReadonlyArray<WorldPack>
   /** Wall-time transport health bound; never a physical qualification duration. */
   readonly observationAcquisitionTimeoutMs?: number
   readonly historian?: RunHistorian
@@ -201,13 +220,17 @@ export const createSimulationRunRuntime = async (config: {
   let projectedSnapshotTimer: ReturnType<typeof setTimeout> | null = null
   let operationTail: Promise<void> = Promise.resolve()
   let closing = false
+  // Set once close has saved the final snapshot: nothing may commit or save after it.
+  let closed = false
   let maximumPaceActive = false
   let terminalExecutionFailure: string | null = null
   let commitFailure: Error | null = null
   let commitFailedAt: IsoTimestamp | null = null
   let lastCommitAt = nowIso()
   let quarantinePending: Promise<void> | null = null
-  let activeMutations = 0
+  // Commands admitted at an execution boundary and still preparing or committing;
+  // close waits for them so none commits into a closed or deleted Run.
+  const commandsInFlight = new Set<Promise<void>>()
   let scenarioRunner: ScenarioTimelineRunner | null = null
   let pendingRuntimeEmissions = 0
   let runtimeEmissionFailure: unknown = null
@@ -273,6 +296,7 @@ export const createSimulationRunRuntime = async (config: {
 
   const assertCommitAvailable = (): void => {
     if (commitFailure) throw commitFailure
+    if (closed) throw Object.assign(new Error('Simulation Run is closed; nothing more is committed to it'), { code: 'simulation_run_closed' })
   }
 
   const failCommit = async (error: unknown, committedObservationFailure = false): Promise<never> => {
@@ -852,13 +876,23 @@ export const createSimulationRunRuntime = async (config: {
   const handleCoreCommand = async (command: CommandEnvelope, commandSource: Provenance['source'], actor: Actor): Promise<CommandResult | null> => {
     const at = nowIso()
     if (command.kind !== deleteObjectCommandKind) {
+      const actorKind = actor.role === 'ai_agent' ? 'ai' as const : actor.role === 'system' ? 'system' as const : 'person' as const
       try {
         const commit = await prepareProcedureCommand({
           command,
           procedures: state.snapshot().procedures,
+          actorKind,
           readDocument: async documentConfig =>
             await procedureSourceService.readDocument(documentConfig),
           ...(procedureSourceService.assertTargetApplicable === undefined ? {} : { assertTargetApplicable: procedureSourceService.assertTargetApplicable }),
+          observations: plantId => procedureObservations(actor, plantId),
+          soleSourceId: () => {
+            const sources = procedureSourceService.listSources()
+            if (sources.length === 1) return sources[0]!.sourceId
+            throw new Error(sources.length === 0
+              ? 'No procedure source is configured for this Run.'
+              : `This Run has ${sources.length} procedure sources (${sources.map(source => source.sourceId).join(', ')}): name sourceId.`)
+          },
         })
         if (commit === null) return null
         await publishGenerated(async () => {
@@ -880,6 +914,8 @@ export const createSimulationRunRuntime = async (config: {
             simulationRunId: config.id, at: nowIso(), procedures: snapshot.procedures,
             simulationTime: runClock.read().currentTime,
             commandSource,
+            actorKind,
+            ...(actor.displayName === undefined ? {} : { actorLabel: actor.displayName }),
             objectIds: new Set(snapshot.objects.map(object => object.id)),
             objects: new Map(snapshot.objects.map(object => [object.id, object])),
             factory: { eventId, nextSeq: () => ++seq },
@@ -1086,13 +1122,19 @@ export const createSimulationRunRuntime = async (config: {
   }
   const hydratedClock = state.snapshot().clock
   if (hydratedClock) {
-    const initial = { ...hydratedClock, paused: config.restoredSnapshot?.clock?.paused ?? false }
+    const initial = { ...hydratedClock, paused: config.restoredSnapshot?.clock?.paused ?? config.startPaused === true }
     await config.runtimeConnection.setClock(initial)
     runClock.set(initial)
     state.hydrate({ ...state.snapshot(), clock: initial })
   }
   committedState.hydrate(state.snapshot())
   const runRoles: RunRoles | null = config.scenario.roles ?? null
+
+  // A Pack tells a person's command from an AI agent's and the Run's own by this, never by parsing actor ids.
+  const commandOriginOf = (actor: Actor): CommandOrigin => actor.role === 'ai_agent' ? 'ai' : actor.role === 'system' ? 'system' : 'person'
+  // The objects whose active procedure Run the command's issuer drives, read as the command reaches its Pack.
+  const procedureDrivenBy = (command: CommandEnvelope): ReadonlySet<string> => new Set((state.snapshot().procedures?.runs ?? [])
+    .filter(run => run.status === 'active' && run.driver?.actorId === command.actorId).map(run => run.scope.plantId))
 
   const issueCommandThroughRuntime = async (
     actor: Actor,
@@ -1118,7 +1160,9 @@ export const createSimulationRunRuntime = async (config: {
     }), { history: commandEventDisposition })
     const viewer = viewerForActor(runRoles, actor)
     const result = await handleCoreCommand(command, commandSource, actor)
-      ?? await config.runtimeConnection.sendCommand(command, viewer === undefined ? {} : { viewer })
+      ?? await config.runtimeConnection.sendCommand(command, {
+        ...(viewer === undefined ? {} : { viewer }), origin: commandOriginOf(actor), procedureDriven: procedureDrivenBy(command),
+      })
     await drainRuntimeEmissions()
     await publishOneGenerated(() => ({
       id: eventId(),
@@ -1392,24 +1436,37 @@ export const createSimulationRunRuntime = async (config: {
     })
   }
 
-  const invokeCapability = async (
-    actor: Actor,
-    invocation: SimulationRunCapabilityInvocation,
-  ): Promise<SimulationRunCapabilityInvocationResult> => {
-    assertRunCapabilityAllowed(runRoles, actor, invocation.capabilityId)
+  // An AI agent's command is journaled as the AI's, not as an operator's (plan-final S3).
+  const commandSourceOf = (actor: Actor): Provenance['source'] => actor.role === 'ai_agent' ? 'ai' : 'operator'
+
+  // The gates every caller passes before a Capability runs, public or as
+  // admitted by World core; restrictions and the viewer stamp follow in
+  // invokeCapabilityThroughRuntime.
+  const admit = (actor: Actor, capabilityId: string): void => {
+    assertRunCapabilityAllowed(runRoles, actor, capabilityId)
     // Deny by default: a side view reaches only Capabilities of role-aware
     // Packs, which answer within its picture. World's own operations and any
     // other Pack's would show it truth.
     const viewer = viewerForActor(runRoles, actor)
     if (viewer !== undefined && isSideView(viewer.sees)) {
-      const packId = runtimeCapabilities.get(invocation.capabilityId)?.packId
-      if (packId === undefined || !roleAwarePackIds.has(packId)) throw roleViewNotSupportedRefusal(`Capability ${invocation.capabilityId}`)
+      const packId = runtimeCapabilities.get(capabilityId)?.packId
+      if (packId === undefined || !roleAwarePackIds.has(packId)) throw roleViewNotSupportedRefusal(`Capability ${capabilityId}`)
     }
+  }
+
+  const invokeCapability = async (
+    actor: Actor,
+    invocation: SimulationRunCapabilityInvocation,
+  ): Promise<SimulationRunCapabilityInvocationResult> => {
+    if (runtimeCapabilities.get(invocation.capabilityId)?.capability.audience === 'system') {
+      throw Object.assign(new Error(`Capability ${invocation.capabilityId} is World's own and not offered to callers`), { code: 'capability_not_public', status: 404 })
+    }
+    admit(actor, invocation.capabilityId)
     // Generic object deletion is a short canonical mutation. Commit it inside
     // the execution queue so maximum pace cannot advance another slice between
     // validation and deletion. Pack cleanup follows the resulting core event.
     if (invocation.capabilityId === deleteObjectCommandKind) {
-      return await enqueueOperation(async () => await invokeCapabilityThroughRuntime(actor, invocation, 'operator'))
+      return await enqueueOperation(async () => await invokeCapabilityThroughRuntime(actor, invocation, commandSourceOf(actor)))
     }
     // Enter at an exact execution boundary, then let potentially slow command
     // preparation (routing, document reads) overlap. Canonical commits already
@@ -1417,13 +1474,56 @@ export const createSimulationRunRuntime = async (config: {
     // Holding operationTail across preparation would deadlock valid reset and
     // deletion races while adding no consistency guarantee.
     const mutating = runtimeCapabilities.get(invocation.capabilityId)?.capability.kind === 'command'
-    await enqueueOperation(async () => { if (mutating) activeMutations++ })
-    try { return await invokeCapabilityThroughRuntime(actor, invocation, 'operator') }
-    finally { if (mutating) activeMutations-- }
+    let admitted: { readonly done: Promise<void>; readonly finish: () => void } | undefined
+    await enqueueOperation(async () => {
+      if (!mutating) return
+      let finish!: () => void
+      const done = new Promise<void>(resolve => { finish = resolve })
+      admitted = { done, finish }
+      commandsInFlight.add(done)
+    })
+    try { return await invokeCapabilityThroughRuntime(actor, invocation, commandSourceOf(actor)) }
+    finally {
+      if (admitted) { commandsInFlight.delete(admitted.done); admitted.finish() }
+    }
   }
 
+  // The scope's owning Pack answers through its declared read Capabilities,
+  // invoked as the caller: World interprets none of its plant logic.
+  const procedureObservations = (actor: Actor, plantId: string): ProcedureObservationPort => {
+    const object = state.snapshot().objects.find(candidate => candidate.id === plantId)
+    if (!object) throw new Error(`procedure target no longer exists: ${plantId}`)
+    const provider = config.procedureProvider?.(object)
+    if (!provider) throw new Error(`Pack ${object.packId} offers no procedure observations for ${plantId}`)
+    if (provider.scopeIdForObject(object) !== plantId) throw new Error(`Pack ${object.packId} does not scope procedures on ${plantId}`)
+    return createProcedureObservationPort({
+      scopeId: plantId,
+      provider,
+      query: async query => {
+        const outcome = await invokeCapability(actor, { capabilityId: query.capabilityId, input: query.input })
+        if (outcome.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
+        return outcome.result
+      },
+    })
+  }
+
+  // Observation Capabilities run only here, admitted as the caller, from an exact execution boundary like any read.
+  const observationCache = createObservationCache()
+  const observationProvider = observationProviderFor(config.packs ?? [])
+  const observations = (actor: Actor): ObservationPort => createObservationPort({
+    object: objectId => committedState.getObject(objectId),
+    provider: observationProvider,
+    cache: observationCache,
+    query: async (capabilityId, input) => {
+      if (runtimeCapabilities.get(capabilityId)?.capability.audience !== 'system') throw new Error(`not an observation Capability: ${capabilityId}`)
+      admit(actor, capabilityId)
+      await enqueueOperation(async () => {})
+      return (await invokeCapabilityThroughRuntime(actor, { capabilityId, input }, commandSourceOf(actor))).result
+    },
+  })
+
   const checkpointForCopy = async (): Promise<SimulationRunCopyCheckpoint> => await enqueueOperation(async () => {
-    if (activeMutations > 0 || pendingCues > 0) throw Object.assign(
+    if (commandsInFlight.size > 0 || pendingCues > 0) throw Object.assign(
       new Error('Simulation Run has commands preparing changes; retry copy when they finish'),
       { code: 'simulation_run_busy' },
     )
@@ -1600,6 +1700,9 @@ export const createSimulationRunRuntime = async (config: {
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
     procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
     procedureEvidence: async evidenceConfig => await procedureSourceService.readEvidence(evidenceConfig),
+    procedureObservations,
+    observations,
+    packs: () => config.packs ?? [],
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => await enqueueOperation(async () => {
         await enqueuePublish(async () => {
           await handleInteractionSignalNow(signal, provenance)
@@ -1632,6 +1735,8 @@ export const createSimulationRunRuntime = async (config: {
     },
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
+    // No recording selection is legitimate: nothing recorded. An unavailable configured historian throws, as its query does.
+    recordedSeriesSamples: query => config.historian?.seriesSamples(query) ?? [],
     recordedSamples: (input) => {
       const query = recordingSeriesQuerySchema.parse(input)
       if (config.historian) return config.historian.query(query)
@@ -1664,6 +1769,9 @@ export const createSimulationRunRuntime = async (config: {
       pendingObservationAcquisitions.clear()
       scenarioRunner?.close()
       await operationTail
+      // Admitted commands finish inside the close: their results commit before
+      // the final snapshot, never after it into a closed or deleted Run.
+      await Promise.all([...commandsInFlight])
       await clockQueue
       await cueQueue
       scenarioRunner?.close()
@@ -1694,6 +1802,7 @@ export const createSimulationRunRuntime = async (config: {
         }
       } catch (error) { failures.push(error) }
       finally {
+        closed = true
         config.historian?.close()
         metrics.markClosed(nowIso())
         handlers.clear()

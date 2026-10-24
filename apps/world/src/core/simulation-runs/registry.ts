@@ -1,12 +1,13 @@
 import { semanticVersionSchema,type WorkspaceId } from '@leitbild/contracts'
 import { createOperationScope, createStorageBudget, type StorageBudget } from '@leitbild/module-runtime'
 import { createCaptureAdmission } from '../../features/historian/capture-admission.ts'
+import { readDashboards, writeDashboards, type DashboardFile } from '../../features/displays/dashboards/store.ts'
 import { lstat,readdir,rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z,ZodError } from 'zod'
 import { openRunHistorian, recordedHistoryOf } from '../../features/historian/store.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
-import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
+import { capabilityJsonSchema, isPublicCapability } from '../../simulation/capabilities.ts'
 import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
 import type { PackRuntimeAdapter, PackWorkspaceCapability } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
@@ -14,7 +15,6 @@ import type { CompiledScenario,IsoTimestamp,RunRoles,SimulationClockState,Simula
 import {
   newSimulationRunId,
   runRolesOf,
-  simulationRunIdSchema,
 } from '../model/index.ts'
 import { createSimulationClock,nowIso } from '../model/time.ts'
 import { scenarioPreviewFor,type ScenarioPreview } from '../scenarios/authoring-preview.ts'
@@ -35,6 +35,7 @@ import {
 import type { SimulationRunRuntimeMetricsSnapshot } from './runtime-metrics.ts'
 import { defaultSimulationRunRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
+import { listStoredSimulationRunIds } from './stored-runs.ts'
 import { createExecutionStore } from './execution-store.ts'
 import { accelerationStateSchema,executionAdvanceInputSchema,executionCheckpointWallIntervalMs,executionSetInputSchema,runCopyInputSchema,runExecutionStateSchema,type AccelerationState,type AdvanceCompletion,type ExecutionSetInput,type RunCopyOrigin,type RunExecutionState,type RunPace,type RunPlayback } from './execution.ts'
 import type { SimulationRunCapabilities } from './runtime.ts'
@@ -84,6 +85,13 @@ export interface SimulationRunRegistryStatus {
   readonly leases: ReadonlyArray<SimulationRunLeaseSummary>
 }
 
+/** The Runs a Workspace holds in memory now, and which of them advance. */
+export interface SimulationRunRegistryActivity {
+  readonly loadedRunIds: ReadonlyArray<SimulationRunId>
+  /** Loaded Runs whose clock plays, or that a maximum-pace job is still advancing. */
+  readonly advancingRunIds: ReadonlyArray<SimulationRunId>
+}
+
 /** Arms one idle-close countdown and returns its disarm; the countdown's close settles when the Run is closed or kept. */
 export type IdleRuntimeCloseTimer = (closeIfIdle: () => Promise<void>, delayMs: number) => () => void
 
@@ -110,11 +118,22 @@ export interface SimulationRunRegistry {
   readonly executionStatus: (id: SimulationRunId) => Promise<RunExecutionState>
   readonly executionOverview: (id: SimulationRunId) => Promise<RunExecutionState>
   readonly setExecution: (id: SimulationRunId, input: ExecutionSetInput) => Promise<RunExecutionState>
+  /**
+   * A screen holding roles joined the Run. A new Run that declares roles
+   * starts paused, so its clock does not run while its players still choose
+   * their roles; the first screen to join with roles starts it playing in
+   * realtime. Once anyone set the Run's execution, or it played, a join
+   * changes nothing. A start that fails leaves the Run waiting, so the next
+   * join retries; after a World restart the Run waits for the Host's Play.
+   */
+  readonly screenJoined: (id: SimulationRunId) => Promise<void>
   readonly advanceExecution: (id: SimulationRunId, input: { readonly minutes: number; readonly onComplete?: AdvanceCompletion }) => Promise<RunExecutionState>
   readonly load: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
   readonly rename: (id: SimulationRunId, name: string | null, expectedTitle: string) => Promise<SimulationRunSummary>
+  /** The Run's stored dashboards (runs/<id>/dashboards.json): read when asked, never on load; a change is one step of the Run's lifecycle. */
+  readonly dashboards: (id: SimulationRunId) => DashboardFile
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
@@ -122,6 +141,11 @@ export interface SimulationRunRegistry {
   /** The roles a Run declares, read from its pinned Compiled Scenario without loading it. */
   readonly runRoles: (id: SimulationRunId) => Promise<RunRoles | null>
   readonly status: () => Promise<SimulationRunRegistryStatus>
+  /**
+   * The loaded Runs and those advancing, read from memory alone: it loads no
+   * Run, does no I/O and touches no lease or idle-close countdown.
+   */
+  readonly activity: () => SimulationRunRegistryActivity
   readonly acquireLease: (id: SimulationRunId, kind: SimulationRunLeaseKind) => () => void
   readonly setBackgroundExecution: (id: SimulationRunId, enabled: boolean) => Promise<SimulationRunLeaseSummary>
   readonly leaseSummary: (id: SimulationRunId) => SimulationRunLeaseSummary
@@ -139,6 +163,10 @@ export interface SimulationRunRegistry {
   readonly shutdown: () => Promise<void>
   readonly close: (id: SimulationRunId) => Promise<boolean>
   readonly isIdle: () => boolean
+  /** The Workspace is closing: waits on its Runs end at once while its requests drain before shutdown. */
+  readonly beginClose: () => void
+  /** True from beginClose or shutdown on. */
+  readonly closing: () => boolean
 }
 
 export const createSimulationRunRegistry = (config: {
@@ -156,9 +184,16 @@ export const createSimulationRunRegistry = (config: {
   readonly procedureSourceService?: ProcedureSourceService
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
+  /**
+   * New Runs that declare roles, paused until the first screen joins with roles
+   * (`screenJoined`). The mark lives in this process: it survives an idle close
+   * and reload, but after a World restart such a Run waits for the Host's Play.
+   */
+  const awaitingFirstScreen = new Set<SimulationRunId>()
   const loadedCompiledScenarios = new Map<SimulationRunId, CompiledScenario>()
   const lifecycle = createKeyedOperations<SimulationRunId>()
   let shuttingDown = false
+  let closeRequested = false
   const definitionOperations = createOperationScope('World scenario library')
   const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
   const creatingSimulationRuns = new Map<SimulationRunId, Promise<SimulationRunRuntime>>()
@@ -225,7 +260,7 @@ export const createSimulationRunRegistry = (config: {
   const capabilityIdsForRuntimeIds = (runtimeIds: ReadonlyArray<string>): ReadonlyArray<string> => {
     const activeRuntimeIds = new Set(runtimeIds)
     return [...new Set(installedCapabilities
-      .filter(entry => entry.runtimeId === 'world.core' || activeRuntimeIds.has(entry.runtimeId))
+      .filter(entry => isPublicCapability(entry.capability) && (entry.runtimeId === 'world.core' || activeRuntimeIds.has(entry.runtimeId)))
       .map(entry => entry.capability.id))].sort()
   }
 
@@ -333,7 +368,7 @@ export const createSimulationRunRegistry = (config: {
         packId: 'world',
         runtimeId: 'world.core',
       })),
-      ...activeAdapters.flatMap(adapter => adapter.capabilities.map(capability => ({
+      ...activeAdapters.flatMap(adapter => adapter.capabilities.filter(isPublicCapability).map(capability => ({
         id: capability.id,
         kind: capability.kind,
         title: capability.title,
@@ -503,6 +538,7 @@ export const createSimulationRunRegistry = (config: {
     readonly manifest: SimulationRunManifest
     readonly initialSeq?: number
   }): Promise<SimulationRunRuntime> => {
+    if (shuttingDown) throw new Error('Workspace runtime is closing')
     await ensureScenarioLibrary()
     const { scenarioRuntime } = await resolveManifest(createConfig.manifest)
     const interactionHandlers = scenarioRuntime.packs.flatMap(pack => pack.interactions?.handlers ?? [])
@@ -607,6 +643,11 @@ export const createSimulationRunRegistry = (config: {
       throw error
     }
     const scenarioRoles = runRolesOf(scenarioRuntime.scenario)
+    // A new Run whose players choose roles waits, paused, for the first of them
+    // (`screenJoined`). Reloading the Run, after an idle close, keeps the mark;
+    // only a choice, a join that started it, or a delete clears it.
+    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null
+    if (awaitsScreen) awaitingFirstScreen.add(id)
     let runtime
     try {
       runtime = await createSimulationRunRuntime({
@@ -618,6 +659,7 @@ export const createSimulationRunRegistry = (config: {
         snapshotStore,
         ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
         ...(restoredSnapshot ? { restoredSnapshot } : {}),
+        ...(awaitsScreen ? { startPaused: true } : {}),
         ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
         ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
         scenario: {
@@ -633,6 +675,8 @@ export const createSimulationRunRegistry = (config: {
           || scenarioRuntime.runtimes.some(runtime => runtime.runtimeId === entry.runtimeId)),
         roleAwarePackIds: scenarioRuntime.packs.flatMap(pack => pack.roleAware === true ? [pack.descriptor.id] : []),
         procedureSourceService,
+        procedureProvider: object => scenarioRuntime.packs.find(pack => pack.descriptor.id === object.packId)?.procedures,
+        packs: scenarioRuntime.packs,
         runtimeStateLoaders: Object.fromEntries(Object.entries(runtimeStateStores).map(([runtimeId, store]) => [runtimeId, store.load])),
         ...(historian === undefined ? {} : { historian }),
       })
@@ -640,6 +684,12 @@ export const createSimulationRunRegistry = (config: {
       await runtimeConnection.close()
       historian?.close()
       throw error
+    }
+    // Shutdown began while this Run was built (a reset or copy in flight): close
+    // it rather than leave a live Run in a registry that has already closed its Runs.
+    if (shuttingDown) {
+      await runtime.close()
+      throw new Error('Workspace runtime is closing')
     }
     simulationRuns.set(id, runtime)
     loadedCompiledScenarios.set(id, scenarioRuntime.scenario)
@@ -889,11 +939,23 @@ export const createSimulationRunRegistry = (config: {
 
   const setExecution = async (id: SimulationRunId, rawInput: ExecutionSetInput): Promise<RunExecutionState> => {
     const input = executionSetInputSchema.parse(rawInput)
+    awaitingFirstScreen.delete(id)
     return await executionOperations.run(id, async () => await applyExecution(id, input))
+  }
+
+  const screenJoined = async (id: SimulationRunId): Promise<void> => {
+    if (!awaitingFirstScreen.has(id)) return
+    await executionOperations.run(id, async () => {
+      // A choice made while this join waited wins; a failed start keeps the mark, so the next join retries.
+      if (!awaitingFirstScreen.has(id)) return
+      await applyExecution(id, { playback: 'playing' })
+      awaitingFirstScreen.delete(id)
+    })
   }
 
   const advanceExecution = async (id: SimulationRunId, rawInput: { readonly minutes: number; readonly onComplete?: AdvanceCompletion }): Promise<RunExecutionState> => {
     const input = executionAdvanceInputSchema.parse(rawInput)
+    awaitingFirstScreen.delete(id)
     return await executionOperations.run(id, async () => {
       const active = maximumPaceJobs.get(id)
       if (active) {
@@ -945,6 +1007,9 @@ export const createSimulationRunRegistry = (config: {
         }
         const sourceSummary = await summaryFor(sourceId)
         await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), input.name ?? `${sourceSummary.title} - copy ${copyNumber}`)
+        // A copy holds the source's dashboards as they stand (A4).
+        const dashboards = await readDashboards(join(simulationRunRoot, sourceId, 'dashboards.json'))
+        if (dashboards.dashboards.length > 0) await writeDashboards(join(simulationRunRoot, id, 'dashboards.json'), dashboards)
       })
       return await createRuntime({ manifest })
     })
@@ -971,14 +1036,15 @@ export const createSimulationRunRegistry = (config: {
     return await loading
   })
 
-  const closeLoaded = async (id: SimulationRunId): Promise<boolean> => {
+  /** `interruptRequests`: an explicit delete closes the Run under requests in flight; a wait on it ends at once. */
+  const closeLoaded = async (id: SimulationRunId, options: { readonly interruptRequests?: boolean } = {}): Promise<boolean> => {
     // A failed construction has already released its resources; close still succeeds as a no-op.
     await creatingSimulationRuns.get(id)?.catch(() => undefined)
     const runtime = simulationRuns.get(id)
     if (!runtime) return false
     await settleCompletingMaximumPace(id)
     const leases = leaseSummary(id).leasesByKind
-    if (!shuttingDown && leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
+    if (!shuttingDown && options.interruptRequests !== true && leases.api > 0) throw Object.assign(new Error('Simulation Run has active requests; retry after they complete'), { code: 'simulation_run_busy' })
     if (!shuttingDown && leases['maximum-pace'] > 0) throw Object.assign(new Error('Simulation Run is playing at maximum pace; pause it before closing'), { code: 'simulation_run_busy' })
     backgroundReleases.get(id)?.()
     backgroundReleases.delete(id)
@@ -1020,7 +1086,9 @@ export const createSimulationRunRegistry = (config: {
     })
   })
 
-  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, async () => {
+  // Serialized with execution changes too, so none persists into a deleted Run's directory.
+  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
+    awaitingFirstScreen.delete(id)
     const maximumPaceJob = maximumPaceJobs.get(id)
     if (maximumPaceJob) {
       maximumPaceJob.destination = { playback: 'paused', pace: 'realtime' }
@@ -1028,7 +1096,9 @@ export const createSimulationRunRegistry = (config: {
       maximumPaceJob.stopRequested = true
       await maximumPaceJob.done
     }
-    const wasLoaded = await closeLoaded(id)
+    // Deleting is the owner's explicit decision: a Run an AI is waiting on or
+    // a viewer is querying is stopped with it, never refused as busy.
+    const wasLoaded = await closeLoaded(id, { interruptRequests: true })
     pinnedScenarioFacts.delete(id)
     executionStates.delete(id)
     const runDir = join(simulationRunRoot, id)
@@ -1041,23 +1111,9 @@ export const createSimulationRunRegistry = (config: {
     }
     if (existedOnDisk) await rm(runDir, { recursive: true, force: true })
     return wasLoaded || existedOnDisk
-  })
+  }))
 
-  const listPersistedIds = async (): Promise<ReadonlyArray<SimulationRunId>> => {
-    let entries: ReadonlyArray<{ readonly isDirectory: () => boolean; readonly name: string }>
-    try {
-      entries = await readdir(simulationRunRoot, { withFileTypes: true })
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
-      throw err
-    }
-    return entries
-      .filter(entry => entry.isDirectory())
-      .map(entry => simulationRunIdSchema.safeParse(entry.name))
-      .filter((result): result is { readonly success: true; readonly data: SimulationRunId } => result.success)
-      .map(result => result.data)
-      .sort()
-  }
+  const listPersistedIds = (): Promise<ReadonlyArray<SimulationRunId>> => listStoredSimulationRunIds(simulationRunRoot)
 
   const unavailableSummary = (id: SimulationRunId, loadError: string): SimulationRunSummary => ({
     id, name: null, title: id, scenarioId: null, scenarioTitle: null,
@@ -1204,6 +1260,23 @@ export const createSimulationRunRegistry = (config: {
     return { totalBytes, fileCount, directoryCount }
   }
 
+  // Maximum pace advances a Run with its clock paused; as in executionStatus,
+  // the job counts while its acceleration runs, not while it settles its end.
+  const advances = (id: SimulationRunId, runtime: SimulationRunRuntime): boolean => {
+    if (maximumPaceJobs.has(id) && executionStates.get(id)?.acceleration?.status === 'running') return true
+    const clock = runtime.snapshot().clock
+    if (!clock) throw new Error(`Simulation Run clock is not initialized: ${id}`)
+    return !clock.paused
+  }
+
+  const activity = (): SimulationRunRegistryActivity => {
+    const loadedRuns = [...simulationRuns]
+    return {
+      loadedRunIds: loadedRuns.map(([id]) => id),
+      advancingRunIds: loadedRuns.filter(([id, runtime]) => advances(id, runtime)).map(([id]) => id),
+    }
+  }
+
   const status = async (): Promise<SimulationRunRegistryStatus> => ({
     dataDir: workspaceRoot,
     storage: await measureDirectory(workspaceRoot),
@@ -1228,17 +1301,30 @@ export const createSimulationRunRegistry = (config: {
     executionStatus,
     executionOverview,
     setExecution,
+    screenJoined,
     advanceExecution,
     load,
     reset,
     delete: deleteSimulationRun,
     rename: renameRun,
+    dashboards: id => {
+      const path = join(simulationRunRoot, id, 'dashboards.json')
+      return {
+        read: () => readDashboards(path),
+        change: apply => lifecycle.run(id, async () => {
+          const { next, result } = apply(await readDashboards(path))
+          if (next !== undefined) await writeDashboards(path, next)
+          return result
+        }),
+      }
+    },
     get: (id: SimulationRunId) => simulationRuns.get(id),
     list: () => [...simulationRuns.values()],
     listKnown,
     summary: summaryFor,
     runRoles,
     status,
+    activity,
     acquireLease,
     compiledScenarioForRun: async id => {
       const stored = await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).load()
@@ -1265,6 +1351,7 @@ export const createSimulationRunRegistry = (config: {
       for (const job of maximumPaceJobs.values()) job.stopRequested = true
       await Promise.allSettled([...maximumPaceJobs.values()].map(job => job.done))
       await executionOperations.drain()
+      await familyOperations.drain()
       await definitionOperations.close()
       await Promise.allSettled([...creatingSimulationRuns.values()])
       await lifecycle.drain()
@@ -1275,6 +1362,8 @@ export const createSimulationRunRegistry = (config: {
       if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Simulation Run shutdown failed')
     },
     leaseSummary,
+    beginClose: () => { closeRequested = true },
+    closing: () => closeRequested || shuttingDown,
     isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0,
     listScenarios: () => definitionOperations.run(async () => {
       await ensureScenarioLibrary()

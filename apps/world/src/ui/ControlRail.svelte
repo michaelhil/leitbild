@@ -7,7 +7,6 @@
   import { PanelRightOpen, X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
-  import type { ProcessPlantArtifactKind } from './process-display/process-display-client.ts'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { CategoryRow } from './types.ts'
@@ -26,7 +25,7 @@
   const processPlantCategoryId = 'process-plants'
   const proceduresFieldKey = 'procedures'
   const procedureFieldOption = { key: proceduresFieldKey, label: 'Procedures' } as const
-  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
 
   interface Props {
     readonly status: string
@@ -46,13 +45,10 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     /** Absent where this screen may not delete: a role Run's operator-class role sets. */
-    readonly deleteObject?: (object: OperationalObject) => Promise<void>
+    readonly deleteObject?: ((object: OperationalObject) => Promise<void>) | undefined
     readonly openProcessDisplay?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
-    readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
-    readonly openProcessPlantCatalog?: (object: OperationalObject) => void
-    readonly openProcessPlantCredibility?: (object: OperationalObject) => void
     readonly openDroneControl?: (object: OperationalObject) => void
     readonly openDroneProfileEditor?: (object: OperationalObject) => void
     readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
@@ -90,9 +86,6 @@
     openProcessDisplay,
     openProcedureSystem,
     openProcedureSystemAt,
-    openProcessPlantArtifact,
-    openProcessPlantCatalog,
-    openProcessPlantCredibility,
     openDroneControl,
     openDroneProfileEditor,
     procedureSummariesForObject = () => emptyProcedureRunSummaries,
@@ -210,9 +203,6 @@
       {openProcessDisplay}
       {openProcedureSystem}
       {openProcedureSystemAt}
-      {openProcessPlantArtifact}
-      {openProcessPlantCatalog}
-      {openProcessPlantCredibility}
       {openDroneControl}
       {openDroneProfileEditor}
       {procedureSummariesForObject}

@@ -10,6 +10,16 @@ export const sameResource = (left: WorkspaceResourceReference, right: WorkspaceR
   && left.type === right.type
   && left.id === right.id
 
+/**
+ * Whether a World Run has roles, as its catalog summary publishes them:
+ * those its Definition declares and those a Pack derives at compile, such as
+ * one per group of units, so a Definition declaring only a Controller and
+ * groups counts too. Such a Run offers no Run Assistant: every screen of a
+ * Run shares one Room, which would carry one side's picture to another, and
+ * AI is refused there.
+ */
+export const runDeclaresRoles = (run: ModuleResourceDescriptor): boolean => run.summary.some(item => item.key === 'roles')
+
 export const runFamilyFor = (run: ModuleResourceDescriptor): WorkspaceResourceReference | undefined =>
   run.links.find(link => link.rel === 'member-of' && link.ref.type === 'world.run-family')?.ref
 
@@ -41,6 +51,15 @@ export const roomSelectsRun = (room: ModuleResourceDescriptor, run: ModuleResour
   if (selected.length > 0) return selected.some(link => sameResource(link.ref, run.ref))
   return !room.links.some(link => link.rel === 'scope-excluded' && sameResource(link.ref, run.ref))
 }
+
+/**
+ * Whether a Room may stay open beside this Run: the Run must offer a Run
+ * Assistant, having no roles, and the Room's scope must contain it. A
+ * Workspace-scoped Room selects every Run of its Workspace, a role Run too,
+ * so the Host keeps a Room beside a Run only when this holds.
+ */
+export const roomServesRun = (room: ModuleResourceDescriptor, run: ModuleResourceDescriptor): boolean =>
+  !runDeclaresRoles(run) && roomSelectsRun(room, run)
 
 export const roomScopeIncludingRun = (
   room: ModuleResourceDescriptor,

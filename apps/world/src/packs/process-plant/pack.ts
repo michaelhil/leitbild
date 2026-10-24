@@ -19,6 +19,7 @@ import {
   processPlantPwrReferenceModelRef,
 } from './plant-definitions.ts'
 import { processPlantRecordingProfiles, recordedPlantVariables } from './recording.ts'
+import { processPlantObservationCapabilityIds } from './observation/query.ts'
 import { processPlantSimAdapterId } from './sim/constants.ts'
 import { processPlantPackView } from './ui-pack.ts'
 
@@ -36,6 +37,8 @@ const processPlantScenarioItemSchema = z.object({
   automation: processPlantAutomationSelectionSchema,
   clusterId: z.string().min(1).optional(),
   coolingWater: z.string().min(1).optional(),
+  /** An AI agent operates this Plant directly (a training sandbox); absent, it only proposes (ProcessPlantUnitPackData.aiOperation). */
+  aiOperation: z.literal('direct').optional(),
 }).strict()
 
 const unsupported = (operation: string): never => {
@@ -79,6 +82,7 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
     electricalPorts: [...processPlantElectricalPortDefinitions(compiledPlant)],
     ...optionalUnitData(spec, 'clusterId'),
     ...optionalUnitData(spec, 'coolingWater'),
+    ...(spec.aiOperation === undefined ? {} : { aiOperation: z.literal('direct').parse(spec.aiOperation) }),
     projection: emptyProcessPlantProjection(at),
   }
   return {
@@ -151,6 +155,12 @@ export const processPlantPack: WorldPack = {
     }, 0),
   },
   knowledge: { wikiRefs: [{ name: 'Process plant knowledge', url: '/wiki?path=world%2Fpacks%2Fprocess-plant%2Findex.md' }] },
+  observation: {
+    categories: ['process-plants'],
+    declarations: processPlantObservationCapabilityIds.declarations,
+    read: processPlantObservationCapabilityIds.read,
+    topology: { family: 'flow', capability: processPlantObservationCapabilityIds.topology },
+  },
   scenario: {
     itemSchemas: { plant: processPlantScenarioItemSchema },
     expandItem: (spec, context) => {

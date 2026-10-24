@@ -178,6 +178,19 @@ export const processPlantIcCommandGateSchema = z.object({
   message: z.string().min(1).optional(),
 }).strict()
 
+/**
+ * How far a person may throttle, while this actuation stands, a modulating
+ * demand it drove fully open (an auxiliary feedwater control valve): no
+ * lower than `value`, in the demand's own unit, for the reason `basis`
+ * gives. Without one, nothing between the ends is accepted while it stands:
+ * only the end it drove (plan QA-2).
+ */
+export const processPlantIcThrottleFloorSchema = z.object({
+  value: z.number().finite(),
+  basis: z.string().min(1),
+}).strict()
+export type ProcessPlantIcThrottleFloor = z.infer<typeof processPlantIcThrottleFloorSchema>
+
 export const processPlantIcRuleSchema = z.object({
   id: idSchema,
   label: z.string().min(1).optional(),
@@ -194,6 +207,13 @@ export const processPlantIcRuleSchema = z.object({
   resetCondition: processPlantIcConditionSchema.optional(),
   effects: z.array(processPlantIcEffectSchema).default([]),
   commandGates: z.array(processPlantIcCommandGateSchema).default([]),
+  throttleFloor: processPlantIcThrottleFloorSchema.optional(),
+  /**
+   * The least plant time after a latched actuation acted before a person may
+   * reset it (the SI reset timer); absent, it may be reset as soon as its
+   * condition no longer holds.
+   */
+  resetAfterMs: z.number().finite().positive().optional(),
 }).strict()
 export type ProcessPlantIcRule = z.infer<typeof processPlantIcRuleSchema>
 
@@ -369,6 +389,8 @@ export const processPlantIcSafetyFunctionSchema = z.object({
   tree: processPlantIcStatusTreeNodeSchema,
   checks: z.array(z.object({
     label: z.string().min(1),
+    /** How a display names it where room is short, among those not yet met ("SG pressures"). */
+    shortLabel: z.string().min(1).max(24).optional(),
     basis: z.string().min(1),
     when: processPlantIcSafetyFunctionConditionSchema.optional(),
     condition: processPlantIcSafetyFunctionConditionSchema,

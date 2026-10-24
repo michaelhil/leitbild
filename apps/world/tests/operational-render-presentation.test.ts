@@ -33,7 +33,7 @@ describe('the map\'s per-render presentation cache', () => {
     const present = createRenderPresentationFor(presentationFor, () => key)
     const objects = [unitOf('engine-1', 'fire'), unitOf('patrol-1', 'police')]
     const store = createMapFeatureStore()
-    const drawn = () => store.update({ objects, selectedControllerId: null, highlightedObjectIds: [], hiddenObjectCategoryIds: [], placementPoints: [], packFeatures: [], hasNewInfo: () => false, presentationFor: present }).points.map(point => point.id)
+    const drawn = () => store.update({ objects, selectedControllerId: null, highlightedObjectIds: [], hiddenObjectCategoryIds: [], alertPalette: 'day', placementPoints: [], packFeatures: [], hasNewInfo: () => false, presentationFor: present }).points.map(point => point.id)
     expect(drawn()).toEqual(['engine-1', 'patrol-1'])
     seen = ['police']
     key = JSON.stringify(seen)

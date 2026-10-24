@@ -1,10 +1,13 @@
 import type { Layer } from '@deck.gl/core'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../../core/model/index.ts'
+import type { Priority } from '../../core/model/alerts.ts'
 import type { PackMapFeature, PackObjectPresentation, PackObjectStatusTone } from '../../core/packs/protocol.ts'
+import type { Palette } from '../displays/severity.ts'
 import type { MapPerformanceDiagnosticsSnapshot } from './map-performance-diagnostics.ts'
 import type { SymbolAtlas } from './symbol-kit.ts'
 import type { CameraInteraction } from '../map/map-camera.ts'
+import type { MapFocusTarget } from '../map-view.ts'
 
 export type RenderPhase =
   | 'base'
@@ -26,10 +29,6 @@ export type ColorRgba = readonly [number, number, number, number]
 export type Position2 = readonly [number, number]
 export type Position3 = readonly [number, number, number]
 
-export type MapFocusTarget =
-  | { readonly kind: 'point'; readonly center: Position2 }
-  | { readonly kind: 'bounds'; readonly bounds: readonly [Position2, Position2] }
-
 export interface MapFocusRequest {
   readonly revision: number
   readonly target: MapFocusTarget
@@ -45,6 +44,8 @@ export interface OperationalPointFeature {
   readonly label: string | null
   readonly color: ColorRgba
   readonly statusTone: PackObjectStatusTone
+  /** Its badge: its worst alert that asks for attention, in the one severity table's colour (D9); null for none. No Pack colour or tone sets it. */
+  readonly alert: { readonly priority: Priority; readonly color: ColorRgba } | null
   readonly selected: boolean
   readonly highlighted: boolean
   readonly hasNewInfo: boolean
@@ -105,6 +106,8 @@ export interface OperationalRenderInput {
   readonly packFeatures: ReadonlyArray<PackMapFeature>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+  /** The severity table's palette the alert badges take: the screen's theme. */
+  readonly alertPalette: Palette
 }
 
 export interface OperationalRenderSnapshot {
@@ -188,6 +191,7 @@ export interface MapFeatureProjectionContext {
   readonly hiddenObjectCategoryIds: ReadonlySet<string>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+  readonly alertPalette: Palette
 }
 
 export const lineStringPositions = (geometry: GeoJsonLineString): ReadonlyArray<Position2> =>

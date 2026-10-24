@@ -198,6 +198,40 @@ pub struct MaterialPartials {
     pub xenon: f64,
     pub samarium: f64,
 }
+
+/// One core region's coolant phase on an accepted state (owner answer B1,
+/// 15 Oct 2026): the liquid's departure from saturation and the vapour its
+/// coolant cell holds.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct RegionPhase {
+    /// `T_l - Tsat(p)` of the region's coolant [K]: reported, and it must be
+    /// a number (the phase is then evaluable); its sign is not judged.
+    pub saturation_departure_k: f64,
+    /// Vapour mass in the region's coolant cell [kg].
+    pub vapor_kg: f64,
+}
+
+/// The [`Error::OutsideDomain`] name of a phase-absence exit.
+pub const PHASE_ABSENCE: &str = "phase absence";
+
+/// Owner answer B1 as kinetics.md states it (S2-D42): pressure no longer
+/// stands in for single-phase validity. On an accepted state every core
+/// region's coolant must be single-phase liquid, with no vapour in its
+/// coolant cell; the first region that fails is a kinetics-domain exit
+/// (`OutsideDomain(PHASE_ABSENCE, region)`). Liquid at or above saturation
+/// without vapour (the metastable liquid G1 admits before a birth) is
+/// phase-absent; a phase that cannot be evaluated (a non-finite departure
+/// or vapour mass) fails. A check only: no equation, coefficient or
+/// tolerance changes.
+pub fn phase_absence(phase: &[RegionPhase]) -> Result<(), Error> {
+    match phase
+        .iter()
+        .position(|r| !(r.saturation_departure_k.is_finite() && r.vapor_kg == 0.))
+    {
+        Some(i) => Err(Error::OutsideDomain(PHASE_ABSENCE, i)),
+        None => Ok(()),
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     InvalidMetadata(&'static str),
@@ -703,6 +737,10 @@ impl Model {
         }
         Ok(())
     }
+    /// The compiled accepted-state domains.
+    pub fn domains(&self) -> Domains {
+        self.parameters.domains
+    }
     /// Additional achieved fissions/Fref SINCE this immutable prepared baseline.
     /// Original30-day spent stocks remain separate and are never reset here.
     pub fn validate_accepted(
@@ -712,6 +750,25 @@ impl Model {
         additional_reference_exposure_s: f64,
         out: &mut Output,
     ) -> Result<(), Error> {
+        self.validate_accepted_within(
+            neutrons,
+            c,
+            additional_reference_exposure_s,
+            out,
+            self.parameters.domains,
+        )
+    }
+    /// [`Model::validate_accepted`] against `domains`: the compiled ones, or
+    /// the D3 (a) post-trip extension while its checked shutdown margin holds
+    /// (`joined::post_trip_domain`, the only other caller).
+    pub fn validate_accepted_within(
+        &self,
+        neutrons: &[Scalar],
+        c: Conditions<'_>,
+        additional_reference_exposure_s: f64,
+        out: &mut Output,
+        domains: Domains,
+    ) -> Result<(), Error> {
         self.evaluate(neutrons, c, out)?;
         let within = |v: f64, b: Bounds, name: &'static str, i: usize| {
             if v < b.minimum || v > b.maximum {
@@ -720,7 +777,7 @@ impl Model {
                 Ok(())
             }
         };
-        let d = self.parameters.domains;
+        let d = domains;
         if !additional_reference_exposure_s.is_finite()
             || additional_reference_exposure_s < 0.
             || additional_reference_exposure_s > d.maximum_additional_reference_exposure_s

@@ -1,0 +1,714 @@
+{
+  "id": "halden-border",
+  "title": "Halden border",
+  "description": "Thirty minutes of civil dispatch and border defence around Halden against a scripted Red armoured column. The civil desks answer a steady stream of ambulance, police and fire calls, with a burst at 12 minutes when a farm worker near Objective KNUT is caught in the crossfire, a clinic that stops accepting at 18 and a top-priority call at 22:30. Blue military screens the border with its recces and holds KNUT with tanks as reinforcements arrive, taking a new order every few minutes; it sees Red only through its observation post and recces, as anonymous contacts first and identified tanks once a recce is in place. Red is scripted here and its groups are not for players: to play Red, start \"Halden border — Red played by a person\". A fictional exercise around Halden with no national markings: calls, forces and numbers are authored for play, not claims about real services or armed forces. How to play: pick \"Blue (one person)\", or split \"Civil desks\" and \"Blue military\" across two iPads; the role chip reopens the groups dialog. Tap a call to see its suggested units, then tap Dispatch. Tap one of your units to highlight it, then tap a call, a place or an identified enemy to send it there. When a unit is busy, + on its row adds the next call you tap to the end of its chain.",
+  "objectives": [
+    "Dispatch every call: all calls, civil and military, are closed by 30:00.",
+    "Reach C-17 Bakke, the 22:30 top-priority call, within six minutes.",
+    "Identify a Red tank before Red pushes at 11:00.",
+    "Hold Objective KNUT: cost Red at least four steps while Blue loses fewer than two."
+  ],
+  "roles": [{"id": "controller", "label": "Controller", "class": "controller", "sees": "all"}],
+  "rolePresets": [
+    {"id": "blue-one-person", "label": "Blue (one person)", "roles": ["group:ems", "group:police", "group:fire", "group:blue-recce", "group:blue-armour"]},
+    {"id": "civil-desks", "label": "Civil desks", "roles": ["group:ems", "group:police", "group:fire"]},
+    {"id": "blue-military", "label": "Blue military", "roles": ["group:blue-recce", "group:blue-armour"]}
+  ],
+  "sides": [{"id": "blue", "label": "Blue", "colour": "#2563eb"}, {"id": "red", "label": "Red", "colour": "#dc2626"}],
+  "packs": [
+    {
+      "id": "einsatz",
+      "config": {
+        "hostility": {"blue": ["red"], "red": ["blue"]},
+        "lexicon": {"workList": "Calls", "unitBoard": "Units", "tracks": "Contacts", "contact": "Contact", "identified": "Identified", "noWork": "No calls waiting", "close": "Close call", "send": "Dispatch"},
+        "loadClasses": [
+          {"id": "P1", "label": "Acute", "code": "P1", "noun": {"one": "patient", "other": "patients"}},
+          {"id": "P2", "label": "Urgent", "code": "P2", "noun": {"one": "patient", "other": "patients"}},
+          {"id": "P3", "label": "Minor", "code": "P3", "noun": {"one": "patient", "other": "patients"}}
+        ],
+        "unitTypes": [
+          {
+            "id": "ambulance",
+            "label": "Ambulance",
+            "icon": "ambulance",
+            "tags": ["medical"],
+            "components": {"mobility": {"mode": "road", "speedFactor": 1, "mobilizeS": 45}, "service": {"provides": ["medical"], "onSceneS": 90}, "carry": {"capacity": 1, "classes": ["P1", "P2", "P3"]}},
+            "lexicon": {"on-task": "On scene", "at-site": "At hospital"},
+            "standingOrders": {"deliver": "nearest-accepting", "return": {"afterIdleS": 60}}
+          },
+          {
+            "id": "helicopter",
+            "label": "Air ambulance",
+            "icon": "helicopter",
+            "tags": ["medical", "air"],
+            "components": {"mobility": {"mode": "direct", "speedMps": 60, "mobilizeS": 120}, "service": {"provides": ["medical"], "onSceneS": 180}, "carry": {"capacity": 2, "classes": ["P1", "P2", "P3"]}},
+            "lexicon": {"on-task": "On scene", "at-site": "At hospital"},
+            "standingOrders": {"deliver": "nearest-accepting", "return": {"afterIdleS": 120}}
+          },
+          {
+            "id": "hospital",
+            "label": "Hospital",
+            "icon": "hospital",
+            "tags": ["hospital"],
+            "public": true,
+            "components": {"receiving": {"accepts": ["P1", "P2", "P3"], "slots": 4, "handoverS": 60, "accepting": true}}
+          },
+          {"id": "objective", "label": "Objective", "icon": "flag", "tags": ["objective"], "public": true, "components": {}},
+          {
+            "id": "patrol-car",
+            "label": "Patrol car",
+            "icon": "car",
+            "tags": ["police"],
+            "components": {
+              "mobility": {"mode": "road", "speedFactor": 1.1, "mobilizeS": 30},
+              "service": {"provides": ["police"], "onSceneS": 240},
+              "sensor": {"detectM": 1000, "identifyM": 0},
+              "signature": {"factor": 1}
+            },
+            "lexicon": {"on-task": "On scene"},
+            "standingOrders": {"return": {"afterIdleS": 120}}
+          },
+          {
+            "id": "fire-engine",
+            "label": "Fire engine",
+            "icon": "fire-extinguisher",
+            "tags": ["fire"],
+            "components": {"mobility": {"mode": "road", "speedFactor": 0.9, "mobilizeS": 90}, "service": {"provides": ["firefighting"], "onSceneS": 300}},
+            "lexicon": {"on-task": "Firefighting"},
+            "standingOrders": {"return": {"afterIdleS": 120}}
+          },
+          {
+            "id": "observation-post",
+            "label": "Observation post",
+            "icon": "tower-control",
+            "tags": ["post"],
+            "components": {"sensor": {"detectM": 4000, "identifyM": 800}},
+            "lexicon": {"available": "Watching"}
+          },
+          {
+            "id": "blue-recce",
+            "label": "Recce",
+            "icon": "binoculars",
+            "tags": ["recce", "military"],
+            "components": {
+              "mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 30},
+              "service": {"provides": ["screen"], "onSceneS": 60},
+              "sensor": {"detectM": 3000, "identifyM": 2000},
+              "signature": {"factor": 0.6},
+              "durability": {"stepFireS": 20}
+            },
+            "properties": [{"id": "crew", "label": "Crew", "kind": "number", "min": 0, "max": 6, "default": 3, "board": true}],
+            "lexicon": {"on-task": "Screening"},
+            "standingOrders": {"withdraw": {"whenDamaged": true}, "onStepLost": {"createTask": "casualty", "perStep": {"P1": 1}}}
+          },
+          {
+            "id": "blue-tank",
+            "label": "Tank",
+            "icon": "shield",
+            "tags": ["armour", "military"],
+            "components": {
+              "mobility": {"mode": "road", "speedFactor": 0.6, "mobilizeS": 30},
+              "service": {"provides": ["overwatch"], "onSceneS": 60},
+              "sensor": {"detectM": 1500, "identifyM": 1000},
+              "signature": {"factor": 1},
+              "effector": {"rangeM": 2000, "targets": ["armour", "recce"]},
+              "durability": {"stepFireS": 90}
+            },
+            "properties": [{"id": "crew", "label": "Crew", "kind": "number", "min": 0, "max": 6, "default": 4, "board": true}],
+            "lexicon": {"on-task": "Taking position"},
+            "standingOrders": {"roe": "free", "withdraw": {"whenDamaged": true}, "onStepLost": {"createTask": "casualty", "perStep": {"P1": 1}}}
+          },
+          {
+            "id": "red-recce",
+            "label": "Recce",
+            "icon": "binoculars",
+            "tags": ["recce", "military"],
+            "components": {
+              "mobility": {"mode": "road", "speedFactor": 0.8, "mobilizeS": 30},
+              "service": {"provides": ["scout"], "onSceneS": 60},
+              "sensor": {"detectM": 3000, "identifyM": 2000},
+              "signature": {"factor": 0.6},
+              "durability": {"stepFireS": 20}
+            },
+            "properties": [{"id": "crew", "label": "Crew", "kind": "number", "min": 0, "max": 6, "default": 3, "board": true}],
+            "lexicon": {"on-task": "Scouting"},
+            "standingOrders": {"withdraw": {"whenDamaged": true}}
+          },
+          {
+            "id": "red-tank",
+            "label": "Tank",
+            "icon": "shield",
+            "tags": ["armour", "military"],
+            "components": {
+              "mobility": {"mode": "road", "speedFactor": 0.6, "mobilizeS": 30},
+              "service": {"provides": ["assault", "scout"], "onSceneS": 120},
+              "sensor": {"detectM": 1500, "identifyM": 1000},
+              "signature": {"factor": 1},
+              "effector": {"rangeM": 2000, "targets": ["armour", "recce"]},
+              "durability": {"stepFireS": 90}
+            },
+            "properties": [{"id": "crew", "label": "Crew", "kind": "number", "min": 0, "max": 6, "default": 4, "board": true}],
+            "lexicon": {"on-task": "Assaulting"},
+            "standingOrders": {"roe": "free", "withdraw": {"whenDamaged": true}}
+          }
+        ],
+        "taskTemplates": [
+          {"id": "medical", "label": "Medical call", "icon": "heart-pulse"},
+          {"id": "casualty", "label": "Casualty", "icon": "heart-crack"},
+          {
+            "id": "accident",
+            "label": "Traffic accident",
+            "icon": "car-front",
+            "priorityClass": "P2",
+            "requires": [{"provides": "police", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
+          },
+          {
+            "id": "police-call",
+            "label": "Police call",
+            "icon": "siren",
+            "priorityClass": "P2",
+            "requires": [{"provides": "police", "count": 1, "label": {"one": "patrol car", "other": "patrol cars"}}]
+          },
+          {
+            "id": "building-fire",
+            "label": "Building fire",
+            "icon": "flame",
+            "priorityClass": "P1",
+            "requires": [{"provides": "firefighting", "count": 1, "label": {"one": "fire engine", "other": "fire engines"}}]
+          },
+          {
+            "id": "grass-fire",
+            "label": "Grass fire",
+            "icon": "flame-kindling",
+            "priorityClass": "P3",
+            "requires": [{"provides": "firefighting", "count": 1, "label": {"one": "fire engine", "other": "fire engines"}}]
+          },
+          {"id": "screen", "label": "Screen", "icon": "eye", "priorityClass": "P2", "requires": [{"provides": "screen", "count": 1, "label": {"one": "recce", "other": "recces"}}]},
+          {"id": "overwatch", "label": "Overwatch", "icon": "crosshair", "priorityClass": "P2", "requires": [{"provides": "overwatch", "count": 3, "label": {"one": "tank", "other": "tanks"}}]},
+          {"id": "hold", "label": "Hold", "icon": "shield-check", "priorityClass": "P2", "requires": [{"provides": "overwatch", "count": 1, "label": {"one": "tank", "other": "tanks"}}]},
+          {"id": "block", "label": "Block", "icon": "construction", "priorityClass": "P2", "requires": [{"provides": "overwatch", "count": 2, "label": {"one": "tank", "other": "tanks"}}]},
+          {"id": "attack", "label": "Attack", "icon": "swords", "priorityClass": "P1", "requires": [{"provides": "assault", "count": 1, "label": {"one": "tank", "other": "tanks"}}]},
+          {"id": "scout", "label": "Scout", "icon": "scan-eye", "priorityClass": "P2", "requires": [{"provides": "scout", "count": 1, "label": {"one": "recce", "other": "recces"}}]},
+          {"id": "advance", "label": "Advance", "icon": "route", "priorityClass": "P2", "requires": [{"provides": "assault", "count": 3, "label": {"one": "tank", "other": "tanks"}}]},
+          {"id": "probe", "label": "Probe", "icon": "footprints", "priorityClass": "P2", "requires": [{"provides": "assault", "count": 1, "label": {"one": "tank", "other": "tanks"}}]}
+        ],
+        "groups": [
+          {"id": "ems", "label": "EMS", "category": "Civil", "side": "blue"},
+          {"id": "police", "label": "Police", "category": "Civil", "side": "blue"},
+          {"id": "fire", "label": "Fire", "category": "Civil", "side": "blue"},
+          {"id": "blue-recce", "label": "Blue recce", "category": "Military", "side": "blue"},
+          {"id": "blue-armour", "label": "Blue armour", "category": "Military", "side": "blue"},
+          {"id": "red-recce", "label": "Red recce (scripted)", "category": "Military", "side": "red"},
+          {"id": "red-armour", "label": "Red armour (scripted)", "category": "Military", "side": "red"}
+        ]
+      },
+      "items": [
+        {"type": "unit", "id": "site:halden-clinic", "label": "Halden emergency clinic — exercise", "unitType": "hospital", "position": [11.384, 59.121]},
+        {"type": "unit", "id": "site:ystehede", "label": "Ystehede receiving site — exercise", "unitType": "hospital", "position": [11.392, 59.142]},
+        {"type": "unit", "id": "site:knut", "label": "Objective KNUT — exercise", "unitType": "objective", "position": [11.4605, 59.1345]},
+        {"type": "unit", "id": "unit:amb-1", "label": "A1", "unitType": "ambulance", "position": [11.392, 59.126], "side": "blue", "group": "ems"},
+        {"type": "unit", "id": "unit:amb-2", "label": "A2", "unitType": "ambulance", "position": [11.392, 59.126], "side": "blue", "group": "ems"},
+        {"type": "unit", "id": "unit:amb-3", "label": "A3", "unitType": "ambulance", "position": [11.387, 59.124], "side": "blue", "group": "ems", "base": [11.392, 59.126]},
+        {"type": "unit", "id": "unit:amb-4", "label": "A4", "unitType": "ambulance", "position": [11.387, 59.124], "side": "blue", "group": "ems", "base": [11.392, 59.126]},
+        {"type": "unit", "id": "unit:amb-5", "label": "A5", "unitType": "ambulance", "position": [11.392, 59.126], "side": "blue", "group": "ems"},
+        {"type": "unit", "id": "unit:helo-1", "label": "H1", "unitType": "helicopter", "position": [11.392, 59.126], "side": "blue", "group": "ems"},
+        {"type": "unit", "id": "unit:pol-1", "label": "P1", "unitType": "patrol-car", "position": [11.388, 59.124], "side": "blue", "group": "police"},
+        {"type": "unit", "id": "unit:pol-2", "label": "P2", "unitType": "patrol-car", "position": [11.42, 59.13], "side": "blue", "group": "police"},
+        {"type": "unit", "id": "unit:fire-1", "label": "F1", "unitType": "fire-engine", "position": [11.395, 59.122], "side": "blue", "group": "fire"},
+        {"type": "unit", "id": "unit:blue-op-1", "label": "OP East", "unitType": "observation-post", "position": [11.51, 59.175], "side": "blue", "group": "blue-recce"},
+        {"type": "unit", "id": "unit:blue-recce-1", "label": "B-Recce 1", "unitType": "blue-recce", "position": [11.45649, 59.12924], "side": "blue", "group": "blue-recce"},
+        {"type": "unit", "id": "unit:blue-recce-2", "label": "B-Recce 2", "unitType": "blue-recce", "position": [11.43, 59.129], "side": "blue", "group": "blue-recce"},
+        {"type": "unit", "id": "unit:blue-tank-1", "label": "B-Tank 1", "unitType": "blue-tank", "position": [11.46198, 59.13148], "side": "blue", "group": "blue-armour"},
+        {"type": "unit", "id": "unit:blue-tank-2", "label": "B-Tank 2", "unitType": "blue-tank", "position": [11.46635, 59.13154], "side": "blue", "group": "blue-armour"},
+        {"type": "unit", "id": "unit:blue-tank-3", "label": "B-Tank 3", "unitType": "blue-tank", "position": [11.46209, 59.12922], "side": "blue", "group": "blue-armour"},
+        {"type": "unit", "id": "unit:red-recce-1", "label": "R-Recce 1", "unitType": "red-recce", "position": [11.52735, 59.16165], "side": "red", "group": "red-recce"},
+        {"type": "unit", "id": "unit:red-tank-1", "label": "R-Tank 1", "unitType": "red-tank", "position": [11.52955, 59.16313], "side": "red", "group": "red-armour"},
+        {"type": "unit", "id": "unit:red-tank-2", "label": "R-Tank 2", "unitType": "red-tank", "position": [11.53338, 59.16354], "side": "red", "group": "red-armour"},
+        {"type": "unit", "id": "unit:red-tank-3", "label": "R-Tank 3", "unitType": "red-tank", "position": [11.53504, 59.16537], "side": "red", "group": "red-armour"},
+        {"type": "unit", "id": "unit:red-tank-4", "label": "R-Tank 4", "unitType": "red-tank", "position": [11.53887, 59.16579], "side": "red", "group": "red-armour"},
+        {"type": "task", "id": "task:blue-screen", "label": "Screen east of Tistedal", "template": "screen", "side": "blue", "position": [11.47641, 59.15121]},
+        {"type": "task", "id": "task:blue-overwatch", "label": "Overwatch Rv21 east of KNUT", "template": "overwatch", "side": "blue", "position": [11.4745, 59.1385]}
+      ]
+    }
+  ],
+  "world": {"startsAt": "2026-09-03T08:00:00.000Z", "environment": {"city": "Halden", "model": "Fictional exercise; no national markings, no real persons"}},
+  "view": {"map": {"center": [11.4345, 59.135], "zoom": 11.4}},
+  "timeline": {
+    "cues": [
+      {
+        "id": "call-1",
+        "at": {"kind": "after_scenario_start", "seconds": 30},
+        "title": "C-1 Brekke",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.375, 59.118]}, "label": "C-1 Brekke", "loads": {"P2": 1}}
+          }
+        ]
+      },
+      {
+        "id": "call-2",
+        "at": {"kind": "after_scenario_start", "seconds": 150},
+        "title": "C-2 Rv21 Tistedal",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "accident", "side": "blue", "at": {"type": "Point", "coordinates": [11.43, 59.127]}, "label": "C-2 Rv21 Tistedal", "loads": {"P2": 1}}
+          }
+        ]
+      },
+      {
+        "id": "screen-north",
+        "at": {"kind": "after_scenario_start", "seconds": 180},
+        "title": "Screen the Ystehede road",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "screen", "side": "blue", "at": {"type": "Point", "coordinates": [11.445, 59.15]}, "label": "Screen the Ystehede road"}
+          }
+        ]
+      },
+      {
+        "id": "call-3",
+        "at": {"kind": "after_scenario_start", "seconds": 270},
+        "title": "C-3 Busterud",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.4, 59.135]}, "label": "C-3 Busterud", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "red-advance-1",
+        "at": {"kind": "after_scenario_start", "seconds": 300},
+        "title": "Red column moves into ambush",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-1"], "to": {"point": {"type": "Point", "coordinates": [11.5035, 59.1588]}}}}]
+      },
+      {
+        "id": "red-advance-2",
+        "at": {"kind": "after_scenario_start", "seconds": 300},
+        "title": "Red column moves into ambush",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-2"], "to": {"point": {"type": "Point", "coordinates": [11.506, 59.1572]}}}}]
+      },
+      {
+        "id": "red-advance-3",
+        "at": {"kind": "after_scenario_start", "seconds": 300},
+        "title": "Red column moves into ambush",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-3"], "to": {"point": {"type": "Point", "coordinates": [11.5075, 59.159]}}}}]
+      },
+      {
+        "id": "red-advance-recce",
+        "at": {"kind": "after_scenario_start", "seconds": 300},
+        "title": "Red recce moves forward",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-recce-1"], "to": {"point": {"type": "Point", "coordinates": [11.483, 59.155]}}}}]
+      },
+      {
+        "id": "reinforcement-1",
+        "at": {"kind": "after_scenario_start", "seconds": 330},
+        "title": "A Blue tank arrives behind KNUT",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.unit.create",
+            "input": {"type": "blue-tank", "side": "blue", "group": "blue-armour", "at": {"type": "Point", "coordinates": [11.45, 59.132]}, "label": "B-Tank 4"}
+          }
+        ]
+      },
+      {
+        "id": "hold-knut",
+        "at": {"kind": "after_scenario_start", "seconds": 360},
+        "title": "Hold Objective KNUT",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "hold", "side": "blue", "at": {"type": "Point", "coordinates": [11.4605, 59.1345]}, "label": "Hold Objective KNUT"}
+          }
+        ]
+      },
+      {
+        "id": "call-4",
+        "at": {"kind": "after_scenario_start", "seconds": 390},
+        "title": "C-4 Rød",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "building-fire", "side": "blue", "at": {"type": "Point", "coordinates": [11.355, 59.112]}, "label": "C-4 Rød", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "reinforcement-2",
+        "at": {"kind": "after_scenario_start", "seconds": 510},
+        "title": "A Blue tank arrives at Halden",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.unit.create",
+            "input": {"type": "blue-tank", "side": "blue", "group": "blue-armour", "at": {"type": "Point", "coordinates": [11.415, 59.135]}, "label": "B-Tank 5"}
+          }
+        ]
+      },
+      {
+        "id": "guard-north",
+        "at": {"kind": "after_scenario_start", "seconds": 510},
+        "title": "Guard the Ystehede road",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "hold", "side": "blue", "at": {"type": "Point", "coordinates": [11.44, 59.146]}, "label": "Guard the Ystehede road"}
+          }
+        ]
+      },
+      {
+        "id": "call-5",
+        "at": {"kind": "after_scenario_start", "seconds": 540},
+        "title": "C-5 Idd",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.36, 59.1]}, "label": "C-5 Idd", "loads": {"P2": 1}}
+          }
+        ]
+      },
+      {
+        "id": "call-6",
+        "at": {"kind": "after_scenario_start", "seconds": 630},
+        "title": "C-6 Sentrum",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "police-call", "side": "blue", "at": {"type": "Point", "coordinates": [11.388, 59.123]}, "label": "C-6 Sentrum"}
+          }
+        ]
+      },
+      {
+        "id": "red-push-1",
+        "at": {"kind": "after_scenario_start", "seconds": 660},
+        "title": "Red pushes onto the Tistedal heights",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-1"], "to": {"point": {"type": "Point", "coordinates": [11.4775, 59.1525]}}}}]
+      },
+      {
+        "id": "red-push-2",
+        "at": {"kind": "after_scenario_start", "seconds": 660},
+        "title": "Red pushes onto the Tistedal heights",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-2"], "to": {"point": {"type": "Point", "coordinates": [11.479, 59.1505]}}}}]
+      },
+      {
+        "id": "red-push-3",
+        "at": {"kind": "after_scenario_start", "seconds": 660},
+        "title": "Red pushes onto the Tistedal heights",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-3"], "to": {"point": {"type": "Point", "coordinates": [11.475, 59.15]}}}}]
+      },
+      {
+        "id": "red-attack-recce",
+        "at": {"kind": "after_scenario_start", "seconds": 660},
+        "title": "Red attacks Objective KNUT",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-recce-1"], "to": {"point": {"type": "Point", "coordinates": [11.4637, 59.1391]}}}}]
+      },
+      {
+        "id": "call-7",
+        "at": {"kind": "after_scenario_start", "seconds": 750},
+        "title": "C-7 Gimle",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.395, 59.13]}, "label": "C-7 Gimle", "loads": {"P2": 1}}
+          }
+        ]
+      },
+      {
+        "id": "call-8",
+        "at": {"kind": "after_scenario_start", "seconds": 770},
+        "title": "C-8 Hollenderhaven",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.38, 59.125]}, "label": "C-8 Hollenderhaven", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "block-bridge",
+        "at": {"kind": "after_scenario_start", "seconds": 780},
+        "title": "Block the Tistedal bridge",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "hold", "side": "blue", "at": {"type": "Point", "coordinates": [11.425, 59.135]}, "label": "Block the Tistedal bridge"}
+          }
+        ]
+      },
+      {
+        "id": "red-attack-1",
+        "at": {"kind": "after_scenario_start", "seconds": 780},
+        "title": "Red attacks Objective KNUT",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-1"], "to": {"point": {"type": "Point", "coordinates": [11.45764, 59.13432]}}}}]
+      },
+      {
+        "id": "red-attack-2",
+        "at": {"kind": "after_scenario_start", "seconds": 780},
+        "title": "Red attacks Objective KNUT",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-2"], "to": {"point": {"type": "Point", "coordinates": [11.46118, 59.13346]}}}}]
+      },
+      {
+        "id": "red-attack-3",
+        "at": {"kind": "after_scenario_start", "seconds": 780},
+        "title": "Red attacks Objective KNUT",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-3"], "to": {"point": {"type": "Point", "coordinates": [11.46107, 59.13572]}}}}]
+      },
+      {
+        "id": "call-9",
+        "at": {"kind": "after_scenario_start", "seconds": 785},
+        "title": "C-9 KNUT farm: a farm worker caught in the crossfire",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.452, 59.139]}, "label": "C-9 KNUT farm", "loads": {"P1": 1}}
+          }
+        ]
+      },
+      {
+        "id": "call-10",
+        "at": {"kind": "after_scenario_start", "seconds": 800},
+        "title": "C-10 Torpum",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "police-call", "side": "blue", "at": {"type": "Point", "coordinates": [11.41, 59.115]}, "label": "C-10 Torpum"}
+          }
+        ]
+      },
+      {
+        "id": "call-11",
+        "at": {"kind": "after_scenario_start", "seconds": 835},
+        "title": "C-11 E6 Svingen",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "accident", "side": "blue", "at": {"type": "Point", "coordinates": [11.36, 59.11]}, "label": "C-11 E6 Svingen", "loads": {"P2": 1}}
+          }
+        ]
+      },
+      {
+        "id": "call-12",
+        "at": {"kind": "after_scenario_start", "seconds": 880},
+        "title": "C-12 Svinesund road",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "grass-fire", "side": "blue", "at": {"type": "Point", "coordinates": [11.345, 59.105]}, "label": "C-12 Svinesund road"}
+          }
+        ]
+      },
+      {
+        "id": "rescreen",
+        "at": {"kind": "after_scenario_start", "seconds": 930},
+        "title": "Screen the Tistedal heights",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "screen", "side": "blue", "at": {"type": "Point", "coordinates": [11.48, 59.153]}, "label": "Screen the Tistedal heights"}
+          }
+        ]
+      },
+      {
+        "id": "call-13",
+        "at": {"kind": "after_scenario_start", "seconds": 990},
+        "title": "C-13 Remmen",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.405, 59.14]}, "label": "C-13 Remmen", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "site-closes",
+        "at": {"kind": "after_scenario_start", "seconds": 1080},
+        "title": "Halden emergency clinic stops accepting",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.site.set", "input": {"siteId": "site:halden-clinic", "accepting": false}}]
+      },
+      {
+        "id": "call-14",
+        "at": {"kind": "after_scenario_start", "seconds": 1110},
+        "title": "C-14 Brattås",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "police-call", "side": "blue", "at": {"type": "Point", "coordinates": [11.42, 59.12]}, "label": "C-14 Brattås"}
+          }
+        ]
+      },
+      {
+        "id": "screen-border",
+        "at": {"kind": "after_scenario_start", "seconds": 1110},
+        "title": "Screen the border road",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "screen", "side": "blue", "at": {"type": "Point", "coordinates": [11.505, 59.16]}, "label": "Screen the border road"}
+          }
+        ]
+      },
+      {
+        "id": "call-15",
+        "at": {"kind": "after_scenario_start", "seconds": 1260},
+        "title": "C-15 Tistedal school",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.44, 59.13]}, "label": "C-15 Tistedal school", "loads": {"P2": 1}}
+          }
+        ]
+      },
+      {
+        "id": "relieve-screen",
+        "at": {"kind": "after_scenario_start", "seconds": 1260},
+        "title": "Screen east of Tistedal again",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "screen", "side": "blue", "at": {"type": "Point", "coordinates": [11.47641, 59.15121]}, "label": "Screen east of Tistedal again"}
+          }
+        ]
+      },
+      {
+        "id": "call-16",
+        "at": {"kind": "after_scenario_start", "seconds": 1290},
+        "title": "C-16 Ørbekk",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.375, 59.13]}, "label": "C-16 Ørbekk", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "red-probe",
+        "at": {"kind": "after_scenario_start", "seconds": 1320},
+        "title": "Red's reserve probes towards KNUT",
+        "actions": [{"type": "invoke_capability", "capabilityId": "world.einsatz.unit.send", "input": {"units": ["unit:red-tank-4"], "to": {"point": {"type": "Point", "coordinates": [11.46461, 59.13486]}}}}]
+      },
+      {
+        "id": "call-17",
+        "at": {"kind": "after_scenario_start", "seconds": 1350},
+        "title": "C-17 Bakke",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.39, 59.14]}, "label": "C-17 Bakke", "loads": {"P1": 1}}
+          }
+        ]
+      },
+      {
+        "id": "block-north",
+        "at": {"kind": "after_scenario_start", "seconds": 1350},
+        "title": "Block Rv21 north of KNUT",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "block", "side": "blue", "at": {"type": "Point", "coordinates": [11.468, 59.142]}, "label": "Block Rv21 north of KNUT"}
+          }
+        ]
+      },
+      {
+        "id": "reinforcement-3",
+        "at": {"kind": "after_scenario_start", "seconds": 1440},
+        "title": "A Blue tank arrives at Halden",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.unit.create",
+            "input": {"type": "blue-tank", "side": "blue", "group": "blue-armour", "at": {"type": "Point", "coordinates": [11.415, 59.135]}, "label": "B-Tank 6"}
+          }
+        ]
+      },
+      {
+        "id": "reinforcement-4",
+        "at": {"kind": "after_scenario_start", "seconds": 1440},
+        "title": "A Blue recce arrives at Halden",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.unit.create",
+            "input": {"type": "blue-recce", "side": "blue", "group": "blue-recce", "at": {"type": "Point", "coordinates": [11.413, 59.133]}, "label": "B-Recce 3"}
+          }
+        ]
+      },
+      {
+        "id": "call-18",
+        "at": {"kind": "after_scenario_start", "seconds": 1470},
+        "title": "C-18 Ystehede road",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.398, 59.15]}, "label": "C-18 Ystehede road", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "relieve-knut",
+        "at": {"kind": "after_scenario_start", "seconds": 1500},
+        "title": "Relieve Objective KNUT",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "hold", "side": "blue", "at": {"type": "Point", "coordinates": [11.4605, 59.1345]}, "label": "Relieve Objective KNUT"}
+          }
+        ]
+      },
+      {
+        "id": "call-19",
+        "at": {"kind": "after_scenario_start", "seconds": 1590},
+        "title": "C-19 Ystehede school",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "medical", "side": "blue", "at": {"type": "Point", "coordinates": [11.394, 59.1435]}, "label": "C-19 Ystehede school", "loads": {"P3": 1}}
+          }
+        ]
+      },
+      {
+        "id": "screen-heights",
+        "at": {"kind": "after_scenario_start", "seconds": 1590},
+        "title": "Screen the Tistedal heights again",
+        "actions": [
+          {
+            "type": "invoke_capability",
+            "capabilityId": "world.einsatz.task.create",
+            "input": {"template": "screen", "side": "blue", "at": {"type": "Point", "coordinates": [11.484, 59.154]}, "label": "Screen the Tistedal heights again"}
+          }
+        ]
+      }
+    ]
+  }
+}

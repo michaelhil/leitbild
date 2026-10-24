@@ -28,6 +28,9 @@ const embeddedViewPublicationShape = {
   title: z.string().min(1).max(120),
   height: z.number().int().min(EMBEDDED_VIEW_MIN_HEIGHT).max(EMBEDDED_VIEW_MAX_HEIGHT),
   state: z.string().min(2).max(EMBEDDED_VIEW_STATE_MAX_LENGTH),
+  // Shown only in the window, opened from a line an answer cites (a dashboard: receipts link to the board, nothing
+  // embeds it by reference): no answer presents it by reference, inline or as a chip of its own.
+  windowOnly: z.literal(true).optional(),
 }
 export const embeddedViewPublicationSchema = z.object(embeddedViewPublicationShape).strict()
 export type EmbeddedViewPublication = z.infer<typeof embeddedViewPublicationSchema>
@@ -43,76 +46,6 @@ export const embeddedViewEnvelopeSchema = z.object({
 })
 export type EmbeddedViewEnvelope = z.infer<typeof embeddedViewEnvelopeSchema>
 
-// What a published view shows, in the terms a text presenting it may cite.
-// The owning Module returns it beside the view publication (`viewContent`);
-// an embedder checks that an answer cites only what its view shows, or says
-// that something is not shown. Values are in the units the view shows them in.
-const viewQuantitySchema = z.object({
-  value: z.number().finite(),
-  unit: z.string().min(1).max(16),
-  /** How many decimals the view writes it with; absent where it writes it otherwise (in powers of ten). */
-  decimals: z.number().int().min(0).max(12).optional(),
-}).strict()
-export const embeddedViewContentSchema = z.object({
-  items: z.array(z.object({
-    /** Every name the view or its publisher gives the item: tag, path, label, equipment id. */
-    names: z.array(z.string().min(1).max(200)).min(1).max(8),
-    /** What the view reads for it now. */
-    values: z.array(viewQuantitySchema).max(8),
-    /** The alarm, trip and control limits the view marks for it. */
-    limits: z.array(viewQuantitySchema).max(16),
-    /** Whether the view shows its recent history, so earlier values of it may be cited too. */
-    history: z.boolean(),
-    /** Its state as the view draws it, in words ("running", "level 29.6 %"). */
-    state: z.string().min(1).max(200).optional(),
-    /** Which way the view shows it going: its rate per minute in `unit` per minute, where the view shows a rate. */
-    trend: z.object({
-      rate: z.number().finite(),
-      unit: z.string().min(1).max(16),
-      direction: z.enum(['rising', 'falling', 'steady']),
-    }).strict().optional(),
-    /** The limit the view names ahead of it in its direction of travel, not yet passed ("LO ALM 14.8 MPa"). */
-    limitAhead: viewQuantitySchema.extend({ name: z.string().min(1).max(64) }).strict().optional(),
-    /** The time to the limit ahead at the current rate, where the view projects one. */
-    timeToLimitMs: z.number().int().positive().optional(),
-  }).strict().superRefine((item, ctx) => {
-    if (item.timeToLimitMs !== undefined && item.limitAhead === undefined) {
-      ctx.addIssue({ code: 'custom', path: ['timeToLimitMs'], message: 'A time to a limit needs the limit ahead' })
-    }
-  })).max(64),
-  /** How far back the view's time axis reaches now, and the horizon it widens to; null without one. */
-  span: z.object({
-    shownMs: z.number().int().positive(),
-    horizonMs: z.number().int().positive(),
-  }).strict().nullable(),
-  /**
-   * The item the view leads with (an index in items): the shortest projected
-   * time to a limit, else past or nearest a limit; and why in its words.
-   */
-  lead: z.object({
-    item: z.number().int().nonnegative(),
-    reason: z.string().min(1).max(300),
-  }).strict().nullable(),
-  /**
-   * Statuses the view shows that its publisher judges from what it reads (a
-   * plant's critical safety functions), each with the criteria answered on
-   * the way to it and the values and thresholds compared there; absent where
-   * the view shows none.
-   */
-  statuses: z.array(z.object({
-    names: z.array(z.string().min(1).max(200)).min(1).max(8),
-    /** As the view words it: "YELLOW · FR-H.5", "NOT JUDGED". */
-    status: z.string().min(1).max(64),
-    path: z.string().min(1).max(1_500),
-    values: z.array(viewQuantitySchema).max(48),
-  }).strict()).max(16).optional(),
-}).strict().superRefine((content, ctx) => {
-  if (content.lead !== null && content.lead.item >= content.items.length) {
-    ctx.addIssue({ code: 'custom', path: ['lead', 'item'], message: 'The lead must be one of the items' })
-  }
-})
-export type EmbeddedViewContent = z.infer<typeof embeddedViewContentSchema>
-
 // Same-origin browser messages for the one window that shows a Workspace's
 // embedded views. A Module UI lists the views it holds (Agents: the displays
 // its answers composed) and asks for one to be opened; the Host validates each
@@ -125,6 +58,8 @@ export const embeddedViewListingSchema = z.object({
   envelope: embeddedViewEnvelopeSchema,
   // Where the view comes from, as the window's caption says it, e.g. "Answer 14:02:31".
   caption: z.string().min(1).max(120),
+  // The part of the view to show and mark first: a card item's `at` (a dashboard's section a cited line is drawn in).
+  focus: z.string().min(1).max(80).optional(),
 }).strict()
 export type EmbeddedViewListing = z.infer<typeof embeddedViewListingSchema>
 
@@ -147,6 +82,31 @@ export const embeddedViewOpenMessageSchema = z.object({
   view: embeddedViewListingSchema,
 }).strict()
 export type EmbeddedViewOpenMessage = z.infer<typeof embeddedViewOpenMessageSchema>
+
+/**
+ * Asks for the window to show the default display of one subject of a
+ * Resource (a proposal's element: `<objectId>#<item>`), which the Module whose
+ * page shows the window composes, after the display it shows, with Back
+ * (ruling Q23). The Host relays it exactly as an open.
+ */
+export const embeddedViewSubjectOpenMessageSchema = z.object({
+  type: z.literal('leitbild:view-subject-open'),
+  resource: workspaceResourceReferenceSchema,
+  subject: z.string().min(3).max(400).regex(/^[^#\s]+#[^#\s]+$/, 'A subject is <objectId>#<item>'),
+  title: z.string().min(1).max(120),
+}).strict()
+export type EmbeddedViewSubjectOpenMessage = z.infer<typeof embeddedViewSubjectOpenMessageSchema>
+
+/**
+ * A view framed inline (a chat answer's display) -> the page framing it: the height its content takes now, within
+ * the heights a view may have, so the page fits the frame to what it shows: no empty band under it (a drawing too
+ * wide for a chat gives way to a link), and no row of it cut off.
+ */
+export const embeddedViewHeightMessageSchema = z.object({
+  type: z.literal('leitbild:view-height'),
+  height: z.number().int().min(EMBEDDED_VIEW_MIN_HEIGHT).max(EMBEDDED_VIEW_MAX_HEIGHT),
+}).strict()
+export type EmbeddedViewHeightMessage = z.infer<typeof embeddedViewHeightMessageSchema>
 
 /** Host -> Module UI on frame load: views listed or opened from this frame reach a window. */
 export const embeddedViewHostMessageSchema = z.object({

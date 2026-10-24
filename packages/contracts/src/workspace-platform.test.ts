@@ -2,6 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import {
   createWorkspaceInputSchema,
   coreModuleIds,
+  featuredDefinitionCatalogSchema,
+  moduleFeaturedDefinitionCollectionSchema,
+  moduleFeaturedDefinitionSchema,
+  moduleListedDefinitionSchema,
   moduleCapabilityDescriptorSchema,
   moduleCapabilityInvocationSchema,
   moduleDefinitionDescriptorSchema,
@@ -11,6 +15,7 @@ import {
   workspaceRoomScopeSchema,
   workspaceModuleManifestSchema,
   workspaceSchema,
+  publishedContextSchema,
 } from './index.ts'
 
 const now = '2026-08-29T17:00:00.000Z'
@@ -75,6 +80,8 @@ describe('Module contracts', () => {
         resources: '/internal/workspaces/{workspaceId}/resources',
         capabilities: '/internal/workspaces/{workspaceId}/capabilities',
         invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
+        featuredDefinitions: '/internal/featured-definitions',
+        activity: '/internal/activity',
       },
     })
     expect(String(manifest.module.id)).toBe('world')
@@ -85,6 +92,127 @@ describe('Module contracts', () => {
     })).toThrow()
   })
 
+  test('requires a Workspace-independent featured Definitions path on every Module', () => {
+    const endpoints = {
+      workspace: '/internal/workspaces/{workspaceId}',
+      definitions: '/internal/workspaces/{workspaceId}/definitions',
+      resources: '/internal/workspaces/{workspaceId}/resources',
+      capabilities: '/internal/workspaces/{workspaceId}/capabilities',
+      invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
+      activity: '/internal/activity',
+    }
+    const manifest = (featuredDefinitions?: string) => ({
+      module: { id: 'agents', title: 'Agents' },
+      endpoints: { ...endpoints, ...(featuredDefinitions === undefined ? {} : { featuredDefinitions }) },
+    })
+    expect(workspaceModuleManifestSchema.parse(manifest('/internal/featured-definitions')).endpoints.featuredDefinitions)
+      .toBe('/internal/featured-definitions')
+    expect(() => workspaceModuleManifestSchema.parse(manifest())).toThrow()
+    expect(() => workspaceModuleManifestSchema.parse(manifest('/internal/workspaces/{workspaceId}/featured'))).toThrow('must not contain a template')
+    expect(() => workspaceModuleManifestSchema.parse(manifest('https://module.test/featured'))).toThrow('origin')
+  })
+})
+
+describe('featured Definitions', () => {
+  const featured = {
+    definition: { moduleId: 'world', type: 'world.scenario', id: 'halden-offsite-power-restoration' },
+    revisionId: 'revision-0123456789abcdef0123456789abcdef',
+    title: 'Halden: loss of offsite power',
+    summary: 'Four simulated nuclear units lose their grid connection.',
+    about: 'A fault cuts four fictional units off the grid; restore offsite power.',
+    tags: ['Nuclear plant + grid', 'Desktop'],
+    previews: [{
+      alt: 'The grid map after the fault',
+      width: 1600,
+      height: 1000,
+      sources: [
+        { path: '/assets/world/scenario-previews/offsite-800.0a1b2c3d.webp', width: 800 },
+        { path: '/assets/world/scenario-previews/offsite-1600.0a1b2c3d.webp', width: 1600 },
+      ],
+    }],
+  }
+  const withPreviewPath = (path: string) => ({
+    ...featured,
+    previews: [{ ...featured.previews[0]!, sources: [{ path, width: 800 }] }],
+  })
+
+  test('names a Definition and its exact revision without a Workspace', () => {
+    const parsed = moduleFeaturedDefinitionSchema.parse(featured)
+    expect(String(parsed.definition.id)).toBe('halden-offsite-power-restoration')
+    expect(parsed).not.toHaveProperty('definition.workspaceId')
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, definition: { ...featured.definition, workspaceId: newWorkspaceId() } })).toThrow()
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, definition: { ...featured.definition, type: 'agents.room-definition' } }))
+      .toThrow('namespaced by its owning Module')
+  })
+
+  test('bounds the copy and requires at least one preview and one tag', () => {
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, previews: [] })).toThrow()
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, tags: [] })).toThrow()
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, tags: ['a', 'b', 'c', 'd', 'e'] })).toThrow()
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, summary: 'x'.repeat(201) })).toThrow()
+    expect(() => moduleFeaturedDefinitionSchema.parse({ ...featured, about: 'x'.repeat(1025) })).toThrow()
+  })
+
+  test('serves previews only from the featuring Module\'s own assets', () => {
+    expect(() => moduleFeaturedDefinitionSchema.parse(withPreviewPath('/assets/agents/offsite.webp'))).toThrow('/assets/world/')
+    expect(() => moduleFeaturedDefinitionSchema.parse(withPreviewPath('/assets/world/../agents/offsite.webp'))).toThrow('/assets/world/')
+    expect(() => moduleFeaturedDefinitionSchema.parse(withPreviewPath('/assets/world/offsite.webp?v=1'))).toThrow('/assets/world/')
+    expect(() => moduleFeaturedDefinitionSchema.parse(withPreviewPath('https://cdn.test/assets/world/offsite.webp'))).toThrow()
+    expect(() => moduleFeaturedDefinitionSchema.parse({
+      ...featured,
+      previews: [{ ...featured.previews[0]!, sources: [featured.previews[0]!.sources[0]!, featured.previews[0]!.sources[0]!] }],
+    })).toThrow('duplicate preview source width')
+  })
+
+  test('lists each featured Definition once, with a ready outcome for its Module', () => {
+    expect(() => moduleFeaturedDefinitionCollectionSchema.parse({ definitions: [featured, featured], listed: [] })).toThrow('duplicate featured Definition')
+    expect(featuredDefinitionCatalogSchema.parse({
+      modules: [{ moduleId: 'world', status: 'ready' }, { moduleId: 'agents', status: 'ready' }],
+      definitions: [featured],
+      listed: [],
+    }).definitions).toHaveLength(1)
+    expect(() => featuredDefinitionCatalogSchema.parse({
+      modules: [{ moduleId: 'world', status: 'failed', failure: { code: 'module_unavailable', message: 'offline', retryable: true } }],
+      definitions: [featured],
+      listed: [],
+    })).toThrow('no ready Module outcome')
+  })
+
+  const listed = {
+    definition: { moduleId: 'world', type: 'world.scenario', id: 'halden-normal-operation' },
+    revisionId: 'revision-fedcba9876543210fedcba9876543210',
+    title: 'Halden: normal operation',
+    summary: 'Four simulated nuclear units run at full power; nothing is scripted.',
+    tags: ['Nuclear plant + grid', 'No scripted faults'],
+  }
+
+  test('lists a Definition beside the featured ones with a short summary, one or two tags and no previews', () => {
+    expect(moduleListedDefinitionSchema.parse(listed)).toEqual(listed as never)
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, previews: featured.previews })).toThrow()
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, about: featured.about })).toThrow()
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, summary: 'x'.repeat(201) })).toThrow()
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, summary: ' ' })).toThrow()
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, tags: [] })).toThrow()
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, tags: ['a', 'b', 'c'] })).toThrow()
+    expect(() => moduleListedDefinitionSchema.parse({ ...listed, definition: { ...listed.definition, workspaceId: newWorkspaceId() } })).toThrow()
+  })
+
+  test('requires the listed collection, and keeps a Definition in one list once', () => {
+    expect(moduleFeaturedDefinitionCollectionSchema.parse({ definitions: [featured], listed: [listed] }).listed).toHaveLength(1)
+    expect(() => moduleFeaturedDefinitionCollectionSchema.parse({ definitions: [featured] })).toThrow()
+    expect(() => moduleFeaturedDefinitionCollectionSchema.parse({ definitions: [], listed: [listed, listed] })).toThrow('duplicate listed Definition')
+    const alsoFeatured = { ...listed, definition: featured.definition }
+    expect(() => moduleFeaturedDefinitionCollectionSchema.parse({ definitions: [featured], listed: [alsoFeatured] })).toThrow('duplicate listed Definition')
+    const ready = [{ moduleId: 'world', status: 'ready' }, { moduleId: 'agents', status: 'ready' }]
+    expect(featuredDefinitionCatalogSchema.parse({ modules: ready, definitions: [featured], listed: [listed] }).listed).toHaveLength(1)
+    expect(() => featuredDefinitionCatalogSchema.parse({ modules: ready, definitions: [featured] })).toThrow()
+    expect(() => featuredDefinitionCatalogSchema.parse({ modules: ready, definitions: [featured], listed: [alsoFeatured] })).toThrow('duplicate listed Definition')
+    expect(() => featuredDefinitionCatalogSchema.parse({
+      modules: [{ moduleId: 'world', status: 'failed', failure: { code: 'module_unavailable', message: 'offline', retryable: true } }],
+      definitions: [],
+      listed: [listed],
+    })).toThrow('listed Definition has no ready Module outcome')
+  })
 })
 
 describe('dynamic Resource and Capability discovery', () => {
@@ -139,6 +267,43 @@ describe('dynamic Resource and Capability discovery', () => {
       expect(String(capability.scope.resourceType)).toBe('world.simulation-run')
     }
     expect(capability).not.toHaveProperty('resourceId')
+  })
+
+  test('a Capability declares what its result publishes: an embedded view, about the Resource it is invoked on, named once', () => {
+    const compose = {
+      id: 'world.process-plant.display.compose',
+      moduleId: 'world',
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'display · compose',
+      description: 'Compose a small live operator display.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: { type: 'object' },
+      outputSchema: { type: 'object' },
+    } as const
+    expect(moduleCapabilityDescriptorSchema.parse({ ...compose, publishes: ['embedded-view'] }).publishes).toEqual(['embedded-view'])
+    expect(moduleCapabilityDescriptorSchema.parse(compose)).not.toHaveProperty('publishes')
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...compose, publishes: [] })).toThrow()
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...compose, publishes: ['embedded-view', 'embedded-view'] })).toThrow('each publication once')
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...compose, publishes: ['dashboard'] })).toThrow()
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...compose, scope: { kind: 'workspace' }, publishes: ['embedded-view'] })).toThrow('about the Resource')
+  })
+
+  test('a context is published by a query about its Resource, as bounded text with its time and clock', () => {
+    const context = {
+      id: 'world.simulation-run.context', moduleId: 'world', kind: 'query', scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Run context', description: 'The Run as the Assistant sees it.', risk: 'read', idempotent: true,
+      inputSchema: { type: 'object' }, outputSchema: { type: 'object' }, publishes: ['context'],
+    } as const
+    expect(moduleCapabilityDescriptorSchema.parse(context).publishes).toEqual(['context'])
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...context, kind: 'command' })).toThrow('published by a query')
+    expect(() => moduleCapabilityDescriptorSchema.parse({ ...context, scope: { kind: 'workspace' } })).toThrow('published by a query')
+    const published = { context: { text: 'Halden · PAUSED', at: '2026-10-20T08:00:00.000Z', clock: 'simulation' as const } }
+    expect(publishedContextSchema.parse(published)).toEqual(published)
+    expect(publishedContextSchema.safeParse({ context: { ...published.context, text: 'x'.repeat(8_001) } }).success).toBe(false)
+    expect(publishedContextSchema.safeParse({ context: { ...published.context, clock: 'local' } }).success).toBe(false)
+    expect(publishedContextSchema.safeParse({ ...published, objects: [] }).success).toBe(false)
   })
 
   test('keeps the selected Resource in each invocation instead of Agent configuration', () => {
