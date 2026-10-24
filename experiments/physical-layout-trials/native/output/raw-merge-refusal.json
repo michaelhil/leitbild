@@ -1,0 +1,5 @@
+{
+  "pass": true,
+  "error": "Error: UNSUPPORTED:merged-IFC-export-with-raw-imports; export exact retained raw files separately",
+  "sourceSha256": "dc3405bfda579df713b2509473df64868006587b37f230530b8617562fc0df16"
+}

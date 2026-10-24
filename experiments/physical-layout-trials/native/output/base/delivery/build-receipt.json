@@ -1,0 +1,50 @@
+{
+  "sourcePath": "/Users/hilde/Documents/ChatGPT/Leitbild-trial-native/experiments/physical-layout-trials/native/output/base/source.json",
+  "sourceSha256": "ac5d2336c154a8a89531a664cb4ec40293004b58f5456873c4908d94d7bd3abb",
+  "sourceOnly": true,
+  "noOriginalFixtureImport": true,
+  "compilerProvenance": {
+    "model.ts": "8654f56c96e9d30b29b211b9e8fcf99e9946275f0d340533f465f947f7c47e18",
+    "compile.ts": "bb24acd41c14b6c6484bd8598afb85f1c5ef0527c422c1ed92a015b3ad2a9a96",
+    "family-solid.ts": "58efd49a4b1e2018ed5c112dcc8232e28ece7bafcf0144f922f9099c4f1811ca",
+    "family-plan.ts": "bd8a7fb0fbc0e51ba468af8eef4760991382932f618e7d240be5175f7942db6b",
+    "mesh.ts": "e3ab640f7dde9afeff8ca191d4f802e933654cb8be58e1c940d7582c9b7fce97",
+    "math.ts": "2a85196ece533f96ceaba392d9f554bc68a98932c6d93d12e82b4746580c1df2",
+    "ifc.ts": "e91da106241731f8498cad8f3c6545d53659072565a5d3c8c66ee07e5dd024d1",
+    "build.ts": "a2f651a967653ae998d154dd3c5f0219be567300258f5d7a33a2cd0478c59ead"
+  },
+  "objects": 75,
+  "physicalOccurrences": 92,
+  "equipment": 16,
+  "interfaces": 32,
+  "triangleCount": 27728,
+  "durationMs": 243.566625,
+  "bun": "1.4.0",
+  "sourceBytes": 44865,
+  "deliveryBytes": 9271312,
+  "memory": {
+    "rss": 255950848,
+    "heapTotal": 69865472,
+    "heapUsed": 48159265,
+    "external": 12552882,
+    "arrayBuffers": 2818975
+  },
+  "resourceUsage": {
+    "userCPUTime": 459736,
+    "systemCPUTime": 51738,
+    "maxRSS": 249968,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 15729,
+    "majorPageFault": 106,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 30,
+    "involuntaryContextSwitches": 1560
+  }
+}
