@@ -64,7 +64,7 @@
   const layout = $derived.by(() => {
     if (!standsBeside(view)) return null
     const flow = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
-    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawingScale(flow), zoom })
+    return frameLayout({ width, drawingWidth: flow.layout.width * VIGNETTE_ROW_PX * drawingScale(flow), drawn: drawingScale(flow), zoom })
   })
   /** The band's alerts: their head, three rows, the count of the rest and the expected aggregate (§5.5 viewport: 3 alert rows). */
   const BAND_ALERT_ROWS = 6
