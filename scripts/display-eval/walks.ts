@@ -392,13 +392,26 @@ const DASHBOARD = String.raw`(() => {
   const onScreen = r => r.w > 0 && r.h > 0 && r.x >= Math.max(0, frameBox.x) - 1 && r.y >= Math.max(0, frameBox.y) - 1 && r.x + r.w <= Math.min(viewW, frameBox.x + frameBox.w) + 1 && r.y + r.h <= Math.min(viewH, frameBox.y + frameBox.h) + 1
   // Where a scroller around a line hides it: inside .sections, which scrolls under the frame.
   const visibleIn = el => { let r = lb.toTop(el); for (let a = el.parentElement; a && a !== shown.doc.documentElement; a = a.parentElement) { const st = shown.doc.defaultView.getComputedStyle(a); if (st.overflowY === 'visible' && st.overflowX === 'visible') continue; const q = lb.toTop(a); if (r.y < q.y - 1 || r.y + r.h > q.y + q.h + 1 || r.x < q.x - 1 || r.x + r.w > q.x + q.w + 1) return false } return onScreen(r) }
-  const leaves = root => [...root.querySelectorAll('*')].filter(el => lb.shown(el) && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()))
+  // A row's words as shown: its text and its readouts' shadow text, not the hidden sizers that reserve their width.
+  const deep = el => {
+    let out = ''
+    const visit = n => {
+      if (n.nodeType === 3) { out += n.textContent + ' '; return }
+      if (n.nodeType !== 1 && n.nodeType !== 11) return
+      if (n.nodeType === 1 && (n.classList.contains('sizer') || n.getAttribute('aria-hidden') === 'true' && n.classList.contains('full'))) return
+      if (n.shadowRoot) visit(n.shadowRoot)
+      for (const child of n.childNodes) visit(child)
+    }
+    visit(el)
+    return out.replace(/\s+/g, ' ').trim()
+  }
   const sections = [...main.querySelectorAll('section.section')].map(section => {
-    const rows = [...section.querySelectorAll('tr, .row, li, .readout, [role=row]')].filter(el => lb.shown(el) && /^\s*SG [A-D]\b/.test(el.innerText || ''))
+    const rows = [...section.querySelectorAll('tr, .row, li, .readout, [role=row]')].filter(el => lb.shown(el) && /^\s*SG [A-D]\b/.test(deep(el)))
     const levels = ['A', 'B', 'C', 'D'].map(letter => {
-      const row = rows.find(el => new RegExp('^\\s*SG ' + letter + '\\b').test(el.innerText || ''))
-      const text = row ? (row.innerText || '').replace(/\s+/g, ' ').trim() : null
-      return { sg: letter, text, level: text ? (text.match(/(\d+(?:\.\d+)?)\s*%/) || [])[1] ?? null : null, onScreen: row ? visibleIn(row) : false }
+      const row = rows.find(el => new RegExp('^\\s*SG ' + letter + '\\b').test(deep(el)))
+      const text = row ? deep(row) : null
+      // Its level: the row's first number (the table writes "%" in its column head, a list beside the number).
+      return { sg: letter, text, level: text ? (text.replace(/^\s*SG [A-D]\s*/, '').match(/-?\d+(?:\.\d+)?/) || [])[0] ?? null : null, onScreen: row ? visibleIn(row) : false }
     })
     return { title: section.getAttribute('aria-label') || '', levels }
   })
