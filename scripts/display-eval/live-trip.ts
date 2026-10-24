@@ -27,8 +27,10 @@
  *       no-frozen     throughout, while playing, the frame never says FROZEN
  *   R2  trip-line     within one sample of the trip, a line of the frame outside the alerts list and the drawing
  *                     (the trip line under the title row) names it ("RX TRIP", "1st …"), on screen, and keeps it
- *       rods-on-bottom  within one sample of the rods reaching the bottom (≤ 4 s after the trip: one sample and the
- *                     rods' drop), the core writes "Rods on bottom" with its flux on the instrument in range, on screen
+ *       rods-on-bottom  within one sample of the rods reaching the bottom (lead ruling, 24 Oct): the core writes "Rods
+ *                     on bottom" with its flux on the instrument in range, on screen, ≤ one sample period (1 s) + 0.5 s
+ *                     after the Pack itself reports it (its rodsOnBottom observation's since, else the mode change);
+ *                     the lag from the trip (≤ 4 s) is an info row, rods-on-bottom-from-trip
  *       rods-in       the core's rods are drawn fully inserted
  *       expected      within one sample of the first alert World's sample marks expected after a first-out
  *                     (AlertRow.expected, W2.3), the list shows the aggregate row ("N expected after RX TRIP"), and
@@ -47,6 +49,8 @@ import { viewport } from './matrix.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
 const ONE_SAMPLE_S = 2
+/** The display's sample period (vignette-client SAMPLE_INTERVAL_MS). */
+const SAMPLE_PERIOD_S = 1
 const POLL_MS = 300
 const PRIORITY_RANK: Readonly<Record<string, number>> = { caution: 1, warning: 2, alarm: 3, emergency: 4, critical: 4 }
 
@@ -208,6 +212,11 @@ const runSize = async (config: {
     // World's own expected marks at the end (AlertRow.expected), for the shown display: which alerts are expected.
     const endSample = viewState === null || !vignette ? null : await api.sample(copy, viewState).catch(() => null)
     const expectedIds = new Set<string>((endSample?.alerts ?? []).filter((row: any) => row.expected !== undefined).map((row: any) => String(row.alert?.id)))
+    // The Pack's own rods-on-bottom moment: its core's rodsOnBottom observation and since, in World's sample of the core.
+    const core = await api.defaultView(copy, `${subject}#core`).catch(() => null)
+    const coreSample = core === null ? null : await api.sample(copy, core.state).catch(() => null)
+    const rodsObservation = (coreSample?.observations ?? []).find((entry: any) => String(entry.ref ?? '').endsWith('#core.rodsOnBottom') && entry.value === true)
+    const packRodsMs: number | null = rodsObservation?.since?.at === undefined ? null : Date.parse(rodsObservation.since.at)
     await api.pause(copy)
     const after = fresh === null ? null : await api.defaultView(copy, subject)
     const postTripExpected = after === null ? null : leadLabels(after.view)
@@ -284,6 +293,8 @@ const runSize = async (config: {
     }
     const tripLine = lagScreen(poll => tripLineOf(poll).length > 0, tripMs ?? upsetMs)
     const rodsLine = lagScreen(poll => rodsOf(poll).length > 0, tripMs ?? upsetMs)
+    const packRodsFrom = packRodsMs ?? modeMs
+    const rodsFromPack = lagScreen(poll => rodsOf(poll).length > 0, packRodsFrom)
     const aggregate = lagScreen(poll => aggregateOf(poll).length > 0, firstExpectedMs)
     const countsLag = lagScreen(poll => poll.counts.shown, upsetMs)
     const endUnack = endSample === null ? null : (endSample.alerts ?? []).filter((row: any) => row.state === 'active-unack' || row.state === 'returned-unack').length
@@ -312,7 +323,8 @@ const runSize = async (config: {
       { id: 'no-overrun', release: 'R1', pass: statusPolls('overrun').length === 0, detail: statusPolls('overrun').length === 0 ? `no drawn value past its room in ${polls.length} reads` : `${statusPolls('overrun').length} of ${polls.length} reads had drawn values past the room their drawing reserved; the worst: ${listed('overrun')}`, shot: shots.end },
       { id: 'no-frozen', release: 'R1', pass: frozen.length === 0, detail: frozen.length === 0 ? `never FROZEN in ${polls.length} reads` : `FROZEN in ${frozen.length} of ${polls.length} reads`, shot: shots.end },
       { id: 'trip-line', release: 'R2', pass: afterUpset.length === 0 ? null : held(tripLine), detail: `${tripLine.lagS === null ? 'no trip line on screen outside the alerts list and the drawing' : `on screen ${tripLine.lagS} s after the trip, kept in ${kept(tripLine)} of reads`}; at the end: ${tripLineOf(lastPoll).map(line => `"${line.text.slice(0, 120)}"`).join(', ') || '-'}`, shot: shots['1-first-sample-after-upset'] },
-      { id: 'rods-on-bottom', release: 'R2', pass: afterUpset.length === 0 ? null : rodsLine.lagS !== null && rodsLine.lagS <= ONE_SAMPLE_S + 2 && (rodsLine.kept ?? 0) >= 0.95, detail: `${rodsLine.lagS === null ? '"Rods on bottom" with its flux never on screen' : `on screen ${rodsLine.lagS} s after the trip, kept in ${kept(rodsLine)} of reads`}; at the end: ${rodsOf(lastPoll).map(line => `"${line.text.slice(0, 80)}"`).join(', ') || onScreen(lastPoll.screen, /^core\b/i, ['drawing']).map(line => `core "${line.text}"`).join(', ') || '-'}`, shot: shots['2-upset+10s'] },
+      { id: 'rods-on-bottom', release: 'R2', pass: afterUpset.length === 0 ? null : rodsFromPack.lagS !== null && rodsFromPack.lagS <= SAMPLE_PERIOD_S + 0.5 && (rodsFromPack.kept ?? 0) >= 0.95, detail: `${packRodsFrom === null ? "the Pack's rods-on-bottom moment was not read" : `the Pack reports rods on bottom at ${new Date(packRodsFrom).toISOString().slice(11, 21)} (${packRodsMs !== null ? 'its rodsOnBottom since' : 'the mode change'}${tripMs === null ? '' : `, ${((packRodsFrom - tripMs) / 1000).toFixed(1)} s after the trip`})`}; ${rodsFromPack.lagS === null ? '"Rods on bottom" with its flux never on screen after it' : `on screen ${rodsFromPack.lagS.toFixed(1)} s after it (≤ ${SAMPLE_PERIOD_S + 0.5} s), ${rodsLine.lagS === null ? '?' : rodsLine.lagS.toFixed(1)} s after the trip, kept in ${kept(rodsFromPack)} of reads`}`, shot: shots['2-upset+10s'] },
+      { id: 'rods-on-bottom-from-trip', release: 'R2', pass: null, detail: `info (≤ 4 s from the trip, the former target): ${rodsLine.lagS === null ? '"Rods on bottom" with its flux never on screen' : `on screen ${rodsLine.lagS} s after the trip, kept in ${kept(rodsLine)} of reads`}; at the end: ${rodsOf(lastPoll).map(line => `"${line.text.slice(0, 80)}"`).join(', ') || onScreen(lastPoll.screen, /^core\b/i, ['drawing']).map(line => `core "${line.text}"`).join(', ') || '-'}`, shot: shots['2-upset+10s'] },
       { id: 'rods-in', release: 'R2', pass: rods === null ? null : rods.bars > 0 && rods.withdrawnBars === 0 && rods.unknownBars === 0 && rods.insertedShares.every(share => share >= 0.95), detail: rods === null ? 'no core vessel drawn' : `${rods.bars} rods, inserted shares ${rods.insertedShares.join(', ')}, ${rods.withdrawnBars} drawn withdrawn, ${rods.unknownBars} unknown`, shot: shots.end },
       { id: 'expected', release: 'R2', pass: afterUpset.length === 0 ? null : firstExpectedMs !== null && held(aggregate), detail: `${firstExpectedMs === null ? "World's sample marks no alert expected (AlertRow.expected)" : `first alert marked expected at ${new Date(firstExpectedMs).toISOString().slice(11, 19)}`}; aggregate ${aggregate.lagS === null ? (polls.some(poll => aggregateOf(poll).length > 0) ? 'shown, but not after a marked alert' : 'never on screen') : `on screen ${aggregate.lagS} s after, kept in ${kept(aggregate)} of reads`}; at the end: ${aggregateOf(lastPoll).map(text => `"${text}"`).join(', ') || '-'}`, shot: shots['3-upset+60s'] },
       { id: 'viewport', release: 'R2', pass: endViewport.pass, detail: endViewport.detail, shot: shots.end },

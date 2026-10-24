@@ -82,6 +82,18 @@ const PRESS_KEY = (key: string, index: number) => String.raw`(() => {
   }
   return { pressed: false, reason: 'no chip' }
 })()`
+/** A dashboard's card: its board's title ("Whole Run · dashboard", "Halden Unit 3 · dashboard"), window-only. */
+const WINDOW_ONLY = /· dashboard$/
+/** A dashboard board the display window shows now, and the section it marks (aria-current or .focused), if any. */
+const BOARD_OPENED = String.raw`(() => {
+  for (const { doc, frame } of lb.documents()) {
+    const main = doc && doc.querySelector && doc.querySelector('main.dashboard')
+    if (!main || (frame && !lb.shown(frame))) continue
+    const marked = main.querySelector('section.section[aria-current], section.section.focused')
+    return { title: main.getAttribute('aria-label') || '', section: marked ? marked.getAttribute('aria-label') : null }
+  }
+  return null
+})()`
 const LINE_SHOWN = (key: string) => String.raw`(() => {
   for (const { doc } of lb.documents()) {
     // R3 marks a card line with all its keys (data-card-keys); R1 and R2 with one (data-card-key).
@@ -147,7 +159,9 @@ if (import.meta.main) {
         for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased'] as const) await page.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, ...(type === 'mouseMoved' ? {} : { button: 'left', clickCount: 1 }) })
         await sleep(600)
         const line = await page.eval<{ found: boolean; shown: boolean; marked: boolean }>(LINE_SHOWN(entry.key))
-        keys.push({ key: entry.key, resolves: line.found && line.shown, why: line.found ? (line.shown ? (line.marked ? 'line shown and marked' : 'line shown') : 'line not on screen') : 'no line holds it' })
+        // A key from a dashboard's card (chat2) also opens its board in the window at the line's section, marked.
+        const board = await page.eval<{ title: string; section: string | null } | null>(BOARD_OPENED)
+        keys.push({ key: entry.key, resolves: line.found && line.shown, why: line.found ? (line.shown ? (line.marked ? 'line shown and marked' : 'line shown') : 'line not on screen') : 'no line holds it', ...(board === null ? {} : { board }) })
       }
       const shot = join(out, `${label}-card-480-${String(index).padStart(2, '0')}.png`)
       await page.shot(shot)
@@ -169,7 +183,8 @@ if (import.meta.main) {
       const result = {
         id: row.id, stage: row.stage, roomId: row.roomId, shot,
         cards: read.cards.length, lines: read.cards.reduce((n, card) => n + card.lines.filter(line => line.shown).length, 0),
-        card480: { pass: read.cards.length === 0 ? null : cut.length === 0 && toggles.length === 0 && read.cards.every(card => card.toggle !== null), cut, toggles, noToggle: read.cards.filter(card => card.toggle === null).map(card => card.title) },
+        // A dashboard's card (chat2) opens its board in the window only: no inline toggle by design, and none is wanted.
+        card480: { pass: read.cards.length === 0 ? null : cut.length === 0 && toggles.length === 0 && read.cards.every(card => card.toggle !== null || WINDOW_ONLY.test(card.title)), cut, toggles, noToggle: read.cards.filter(card => card.toggle === null && !WINDOW_ONLY.test(card.title)).map(card => card.title), windowOnly: read.cards.filter(card => WINDOW_ONLY.test(card.title)).map(card => card.title) },
         t7: { pass: keys.length === 0 ? null : keys.every(key => key.resolves), keys },
       }
       // The answer's display opened in the window at 1920 × 1080 (for the HMI rubric's AI displays and the gallery).
@@ -188,7 +203,8 @@ if (import.meta.main) {
         await page.size(width, height)
       }
       results.push(result)
-      console.log(`${label} ${row.stage} ${row.id}: ${read.cards.length} cards, ${result.lines} lines shown; card-480 ${result.card480.pass === null ? 'n/a' : result.card480.pass ? 'PASS' : 'FAIL'}${cut.length + toggles.length > 0 ? ` (${[...cut, ...toggles].slice(0, 3).join('; ')})` : ''}; T7 ${result.t7.pass === null ? 'n/a (no key cited)' : result.t7.pass ? 'PASS' : 'FAIL'} ${keys.filter(key => key.resolves).length}/${keys.length}${keys.some(key => !key.resolves) ? ` (${keys.filter(key => !key.resolves).slice(0, 4).map(key => `${key.key}: ${key.why}`).join('; ')})` : ''}`)
+      const boards = (keys as ReadonlyArray<{ key: string; board?: { title: string; section: string | null } }>).flatMap(key => key.board === undefined ? [] : [{ key: key.key, board: key.board }])
+      console.log(`${label} ${row.stage} ${row.id}: ${read.cards.length} cards, ${result.lines} lines shown; card-480 ${result.card480.pass === null ? 'n/a' : result.card480.pass ? 'PASS' : 'FAIL'}${cut.length + toggles.length > 0 ? ` (${[...cut, ...toggles].slice(0, 3).join('; ')})` : ''}; T7 ${result.t7.pass === null ? 'n/a (no key cited)' : result.t7.pass ? 'PASS' : 'FAIL'} ${keys.filter(key => key.resolves).length}/${keys.length}${keys.some(key => !key.resolves) ? ` (${keys.filter(key => !key.resolves).slice(0, 4).map(key => `${key.key}: ${key.why}`).join('; ')})` : ''}${boards.length > 0 ? `; board opened by ${boards.length} key${boards.length === 1 ? '' : 's'} (${boards.slice(0, 3).map(entry => `${entry.key} → "${entry.board.title}"${entry.board.section === null ? ', no section marked' : ` at "${entry.board.section}"`}`).join('; ')})` : ''}`)
       await Bun.write(join(out, `${label}-chat-cards.json`), JSON.stringify({ label, origin, runs, width, results }, null, 2))
     }
   } finally {
