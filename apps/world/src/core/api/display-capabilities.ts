@@ -9,7 +9,7 @@
  */
 import {
   displayCardSchema, EMBEDDED_VIEW_MAX_HEIGHT, EMBEDDED_VIEW_MIN_HEIGHT, EMBEDDED_VIEW_STATE_MAX_LENGTH, embeddedViewPublicationSchema,
-  moduleIdSchema, type ModuleCapabilityInvocation,
+  moduleIdSchema, type EmbeddedViewPublication, type ModuleCapabilityInvocation,
 } from '@leitbild/contracts'
 import type { CapabilityRegistration } from '@leitbild/module-runtime'
 import { z } from 'zod'
@@ -17,12 +17,14 @@ import { composeDefault, composeVignette, type ComposeOutcome } from '../../feat
 import { vignetteStateSchema, type VignetteState } from '../../features/displays/compose/model.ts'
 import { isIssue } from '../../features/displays/compose/resolve.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../../features/displays/compose/view.ts'
+import { visibleObject } from '../../features/displays/compose/declared.ts'
 import { changeDashboard, readDashboard, scopeInputSchema, type DashboardSection } from '../../features/displays/dashboards/dashboards.ts'
-import { dashboardScopeSchema, DASHBOARD_MAX_PINS, pinIdSchema } from '../../features/displays/dashboards/store.ts'
+import { dashboardScopeSchema, DASHBOARD_MAX_PINS, pinIdSchema, type DashboardScope } from '../../features/displays/dashboards/store.ts'
 import { requestPort } from '../../features/displays/observation/port.ts'
 import { recordedHoldMs } from '../../features/historian/policy.ts'
 import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
 import { VIGNETTE_ROW_PX } from '../../ui/embed/vignette/grid.ts'
+import { DASHBOARD_VIEW_TYPE } from '../../ui/process-display/display-window-messages.ts'
 import { observableRefSchema } from '../model/alerts.ts'
 import type { ObjectId } from '../model/index.ts'
 import { displaySpecSchema, subjectSchema } from '../observation/spec.ts'
@@ -113,6 +115,8 @@ const sectionSchema = z.object({
 export const dashboardReadingSchema = z.object({
   scope: dashboardScopeSchema, revision: z.number().int().nonnegative(), stored: z.boolean(),
   sections: z.array(sectionSchema).max(DASHBOARD_MAX_PINS), more: z.number().int().positive().optional(), card: displayCardSchema,
+  /** The Assistant's read: the board itself, shown only in the window, where its page names the scope (what a cited line opens). */
+  view: embeddedViewPublicationSchema.optional(),
 }).strict()
 export const dashboardChangedSchema = z.object({
   scope: dashboardScopeSchema, revision: z.number().int().positive(),
@@ -125,6 +129,25 @@ const sectionOut = (section: DashboardSection, drawn: boolean) => ({
   ...(section.refused === undefined ? {} : { refused: section.refused }),
   ...(drawn && section.state !== undefined ? { view: { viewType: VIGNETTE_VIEW_TYPE, title: section.state.title, height: vignetteHeight(section.rows!), state: JSON.stringify(section.state) } } : {}),
 })
+
+/**
+ * A scope's board as a view the window alone shows (R4 §2.6: receipts link to the board, nothing embeds it by
+ * reference): its page's state names the scope as the page reads it, the Run, an object by id or a collection by its
+ * category's label and Pack; none for a collection its page cannot name (one narrowed by status, distance or closure).
+ */
+export const boardView = (run: ViewRun, scope: DashboardScope): EmbeddedViewPublication | undefined => {
+  const named = (title: string, board: unknown): EmbeddedViewPublication =>
+    embeddedViewPublicationSchema.parse({ viewType: DASHBOARD_VIEW_TYPE, title: `${title} · dashboard`.slice(0, 120), height: EMBEDDED_VIEW_MAX_HEIGHT, state: JSON.stringify({ scope: board }), windowOnly: true })
+  if (scope === 'run') return named('Whole Run', 'run')
+  if ('objectId' in scope) {
+    const object = visibleObject(run, scope.objectId)
+    return object === undefined ? undefined : named(object.label, { subject: scope.objectId })
+  }
+  const { packId, categoryId, status, near, within, closed } = scope.of
+  const category = run.packs.find(pack => pack.descriptor.id === packId)?.presentation.categories.find(entry => entry.id === categoryId)
+  return category === undefined || status !== undefined || near !== undefined || within !== undefined || closed ? undefined
+    : named(category.label, { of: { category: `${category.label} (${packId})` } })
+}
 
 /** One dashboard call: the Run as its caller reads it, and who calls, a person or the Assistant. */
 export interface DashboardCall {
@@ -145,7 +168,9 @@ export const handleDashboard = async (kind: 'read' | 'update', body: unknown, ca
   if (kind === 'read') {
     const reading = await readDashboard(call.run, file, dashboardInputs.read.parse(body).scope)
     if (isIssue(reading)) return apiError(422, reading.code, issuesReason([reading]), { issues: [reading] })
-    return json({ result: dashboardReadingSchema.parse({ ...reading, sections: reading.sections.map(section => sectionOut(section, call.by === 'person')) }) })
+    // The Assistant's read names its board, so an answer citing its card opens it in the window at a line's section.
+    const view = call.by === 'agent' ? boardView(call.run, reading.scope) : undefined
+    return json({ result: dashboardReadingSchema.parse({ ...reading, sections: reading.sections.map(section => sectionOut(section, call.by === 'person')), ...(view === undefined ? {} : { view }) }) })
   }
   const outcome = await changeDashboard(call.run, file, call.by, dashboardInputs.update.parse(body))
   if (!outcome.ok) return apiError(outcome.status, outcome.code, typeof outcome.reason === 'string' ? outcome.reason : issuesReason(outcome.reason), outcome.details)

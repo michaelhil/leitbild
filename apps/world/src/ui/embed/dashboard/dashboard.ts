@@ -21,7 +21,11 @@ const scopeSchema = z.union([
   z.object({ subject: z.string().min(1).max(160) }).strict(),
   z.object({ of: z.object({ category: z.string().min(1).max(128) }).strict() }).strict(),
 ])
-export const dashboardStateSchema = z.object({ scope: scopeSchema, collections: z.array(collectionSchema).max(8).optional() }).strict()
+export const dashboardStateSchema = z.object({
+  scope: scopeSchema, collections: z.array(collectionSchema).max(8).optional(),
+  /** A section to show and mark first, by its pin's id or its title (a line an answer cites, R4 §2.6). */
+  focus: z.string().min(1).max(80).optional(),
+}).strict()
   .refine(state => state.collections === undefined || state.scope === 'run', { message: 'only a dashboard of the whole Run offers collections' })
 export type DashboardState = z.output<typeof dashboardStateSchema>
 export type DashboardScope = DashboardState['scope']

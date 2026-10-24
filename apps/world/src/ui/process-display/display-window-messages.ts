@@ -96,7 +96,7 @@ export const readDisplayWindowHostMessage = (event: MessageLike, expected: Expec
     const parsed = embeddedViewOpenMessageSchema.safeParse(data)
     if (!parsed.success) return { kind: 'rejected', reason: `display request is invalid: ${issueText(parsed.error.issues)}` }
     const problem = foreignWorkspace(parsed.data.view, expected.workspaceId)
-    return problem ? { kind: 'rejected', reason: `display request refused: ${problem}` } : { kind: 'open', view: parsed.data.view }
+    return problem ? { kind: 'rejected', reason: `display request refused: ${problem}` } : { kind: 'open', view: focused(parsed.data.view) }
   }
   if (type === 'leitbild:view-subject-open') {
     const parsed = embeddedViewSubjectOpenMessageSchema.safeParse(data)
@@ -107,6 +107,27 @@ export const readDisplayWindowHostMessage = (event: MessageLike, expected: Expec
     return { kind: 'subject-open', runId: resource.id, subject, title }
   }
   return null
+}
+
+/**
+ * A dashboard opened at a part of it (a cited line's section, the listing's `focus`): the board's own state names the
+ * section it shows and marks first, so the frame needs nothing more. Any other view opens as given, and so does a
+ * state that is no object, which the board's page refuses with its own reason.
+ */
+const focused = (view: EmbeddedViewListing): EmbeddedViewListing => {
+  if (view.focus === undefined || view.envelope.viewType !== DASHBOARD_VIEW_TYPE) return view
+  const state = stateObject(view.envelope.state)
+  return state === null ? view : { ...view, envelope: { ...view.envelope, state: JSON.stringify({ ...state, focus: view.focus }) } }
+}
+
+const stateObject = (state: string): Readonly<Record<string, unknown>> | null => {
+  try {
+    const parsed: unknown = JSON.parse(state)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch (error) {
+    if (error instanceof SyntaxError) return null
+    throw error
+  }
 }
 
 export const displayWindowReadyMessage = (): EmbeddedViewWindowReadyMessage => ({ type: 'leitbild:view-window-ready' })

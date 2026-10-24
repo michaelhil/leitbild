@@ -24,6 +24,12 @@ describe('display card', () => {
     expect(displayCardItemSchema.safeParse({ ...item, object: 'Unit' }).success).toBe(false)
   })
 
+  test('an item may name the part of its view that draws it, a dashboard\'s section, so a cited line opens the view there (R4 §2.6)', () => {
+    expect(displayCardItemSchema.parse({ ...item, at: 'pin-1a2b3c4d' }).at).toBe('pin-1a2b3c4d')
+    expect(displayCardItemSchema.safeParse({ ...item, at: '' }).success).toBe(false)
+    expect(displayCardItemSchema.safeParse({ ...item, at: 'x'.repeat(81) }).success).toBe(false)
+  })
+
   test('an item stands for an observable, an object or one alert of an object, and nothing else', () => {
     for (const subject of [{ objectId: 'incident-7' }, { objectId: 'grid:halden', alertId: 'alert-3' }]) expect(displayCardItemSchema.safeParse({ ...item, subject }).success).toBe(true)
     for (const subject of [{ eventId: 'e-9', at }, { featureId: 'line-420', attribution: '© OpenStreetMap contributors' }, { lon: 11.3 }, { ref: 'unit-2#A', objectId: 'unit-2' }]) {

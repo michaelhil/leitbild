@@ -30,6 +30,11 @@ export const displayCardItemSchema = z.object({
   limits: z.array(shownNumberSchema).max(4).optional(),
   /** The priority World read for it; absent where none is declared. */
   priority: z.enum(priorityLevels).optional(),
+  /**
+   * The part of the view its card comes with that draws it, where that view has parts (a dashboard's section, by its
+   * pin id or title), so a reader can open the view there (an embedded view listing's `focus`).
+   */
+  at: z.string().min(1).max(80).optional(),
   /** An observable by its ref, an object, or one alert of an object. */
   subject: z.union([
     z.object({ ref: z.string().min(1).max(256) }).strict(),

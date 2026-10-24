@@ -16,6 +16,7 @@ import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/
 import type { WorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
 import { compileVignette, sampleVignette } from '../src/features/displays/compose/view.ts'
 import { dashboardsFileSchema } from '../src/features/displays/dashboards/store.ts'
+import { dashboardStateSchema } from '../src/ui/embed/dashboard/dashboard.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
 import { createRoleRunWorkspaces, roleRunPacks, sidedRunDefinition } from './fixtures/role-runs.ts'
@@ -87,6 +88,20 @@ describe('dashboards (A4)', () => {
     const units = (await board(run.id, 'read', { scope: { of: { category: 'units' } } })).body.result
     expect(units.scope).toEqual({ of: { packId: 'fixture', categoryId: 'units', closed: false } })
     expect(units.sections.map((section: any) => section.title)).toEqual(['Unit One', 'Unit Two'])
+    // A default section's lines name it by its title (R4 §2.6). The Assistant's read names its scope's board as the
+    // window alone shows it, its page's scope in its state; a person's page reads no board of its own.
+    expect(new Set(all.body.result.card.items.map((item: any) => item.at))).toEqual(new Set(['Unit One', 'Unit Two']))
+    expect(all.body.result).not.toHaveProperty('view')
+    const boardOf = async (scope: unknown) => (await assistant(run.id, 'read', { scope })).body.result.view
+    expect(await boardOf({ subject: 'unit:one' })).toEqual({ viewType: 'display.dashboard', title: 'Unit One · dashboard', height: 960, state: '{"scope":{"subject":"unit:one"}}', windowOnly: true })
+    const named = dashboardStateSchema.parse(JSON.parse((await boardOf({ of: { category: 'units' } })).state))
+    expect(named.scope).toEqual({ of: { category: expect.stringMatching(/ \(fixture\)$/) } })
+    // The page reads the board it names: the same scope, the same sections.
+    expect((await board(run.id, 'read', named)).body.result.scope).toEqual(units.scope)
+    // A collection its page cannot name (one with closed members) offers no board.
+    const narrowed = await assistant(run.id, 'read', { scope: { of: { category: 'units', closed: true } } })
+    expect(narrowed.status).toBe(200)
+    expect(narrowed.body.result).not.toHaveProperty('view')
     const tasks = (await board(run.id, 'read', { scope: { of: { category: 'tasks' } } })).body.result
     expect(JSON.parse(tasks.sections[0].view.state).views[0]).toMatchObject({ kind: 'collection', of: { categoryId: 'tasks' } })
     // A subject's dashboard is about one object; an unknown scope is refused with the composer's words.
@@ -144,6 +159,12 @@ describe('dashboards (A4)', () => {
     expect(seen.body.result.sections.every((section: any) => section.view === undefined)).toBe(true)
     expect(seen.body.result.card.items.length).toBeGreaterThan(0)
     expect(JSON.stringify(seen.body.result.card)).not.toContain('unit:two')
+    // R4 §2.6: each line names the section that draws it, by its pin's id, and the read names its board as a view, so
+    // a key an answer cites opens the board at that section (the board's own state, its page's scope).
+    const pinned = seen.body.result.card.items.map((item: any) => item.at)
+    expect(new Set(pinned)).toEqual(new Set([(await registry().dashboards(run.id).read()).dashboards[0]!.pins[0]!.id]))
+    expect(seen.body.result.view).toMatchObject({ viewType: 'display.dashboard', title: 'Whole Run · dashboard', height: 960, windowOnly: true })
+    expect(dashboardStateSchema.parse(JSON.parse(seen.body.result.view.state))).toEqual({ scope: 'run' })
     // Its pins are refused on what it may not inspect; a pin it makes is the Assistant's.
     expect(await assistant(run.id, 'update', { scope: 'run', expectedRevision: 1, pin: [speedOf('two')] })).toMatchObject({ status: 422, body: { error: { code: 'agent_access_restricted' } } })
     expect((await assistant(run.id, 'update', { scope: 'run', expectedRevision: 1, pin: [speedOf('one')] })).body.result.pins.map((pin: any) => pin.by)).toEqual(['person', 'person', 'agent'])
