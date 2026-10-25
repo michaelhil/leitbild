@@ -58,6 +58,7 @@
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraElement = $state<HTMLElement | null>(null)
   let controller = $state.raw<PhysicalSceneController | null>(null)
+  let viewportFailure = $state<string | null>(null)
   let controlsOpen = $state(true)
   let componentsOpen = $state(false)
   let componentScope = $state<{ readonly sceneId: string; readonly label: string; readonly subjectIds: ReadonlyArray<string> } | null>(null)
@@ -426,9 +427,16 @@
     badgeMeasure = document.createElement('canvas').getContext('2d')
     if (badgeMeasure) badgeMeasure.font = `11px ${getComputedStyle(element).fontFamily}`
     const options = { palette: physicalLayoutPalette(element), fitPadding, onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
-    const next = host === 'map' && map !== null
-      ? createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
-      : createPhysicalCanvasController({ ...options, canvas: canvas! })
+    let next: PhysicalSceneController
+    try {
+      next = host === 'map' && map !== null
+        ? createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
+        : createPhysicalCanvasController({ ...options, canvas: canvas! })
+    } catch (error) {
+      viewportFailure = error instanceof Error ? error.message : String(error)
+      onerror(`Physical viewport unavailable: ${viewportFailure}`)
+      return
+    }
     controller = next
     size = next.surface.getSize()
     if (map !== null && host === 'map') overviewLayer = createPhysicalSceneOverview({ map, palette: options.palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical overview: ${error.message}`) })
@@ -551,7 +559,7 @@
     </div>
     {#if controlsOpen && focused.view.mode === '3d'}<CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onfit={fit} onhome={home} />{/if}
   {:else if host === 'browser'}
-    <div class="layout-tools empty-browser" style:top={`${toolsTop}px`}><button type="button" onclick={onback}>Back to map</button><p role="status">No physical layouts are available in the current Run and visible categories.</p></div>
+    <div class="layout-tools empty-browser" style:top={`${toolsTop}px`}><button type="button" onclick={onback}>Back to map</button><p role={viewportFailure === null ? 'status' : 'alert'}>{viewportFailure ?? 'No physical layouts are available in the current Run and visible categories.'}</p></div>
   {/if}
   {#each badges as badge (`${badge.sceneId}:${badge.occurrenceId}:${badge.elementId}`)}
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
