@@ -10,7 +10,7 @@ import { defaultPhysicalSceneView, type PhysicalScenePalette, type PhysicalScene
 import { fullGlState, sentinel, stateDifferences } from './gl-probes.ts'
 import { boundsCorners, localMercatorMatrix, multiply, transform } from '../../../src/ui/map/physical-scene/math.ts'
 
-declare global { interface Window { physicalProbe: { ready: Promise<void>; run: () => Promise<unknown>; view: (mode: '2d' | '3d', level: string) => Promise<void>; responsive: () => Promise<unknown>; responsive3d: () => Promise<unknown> } } }
+declare global { interface Window { physicalProbe: { ready: Promise<void>; run: () => Promise<unknown>; view: (mode: '2d' | '3d', level: string) => Promise<void>; responsive: () => Promise<unknown>; responsive3d: (separation?: number) => Promise<unknown> } } }
 setWorkerUrl('/worker.mjs')
 const errors: string[] = [], stateErrors: string[][] = [], glErrors: number[] = []
 const descriptor = await (await fetch('/descriptor.json')).json() as PackPhysicalSceneDescriptor
@@ -104,14 +104,16 @@ window.physicalProbe = {
     const bounds = { left: Math.min(...points.map(p => p.x)), right: Math.max(...points.map(p => p.x)), top: Math.min(...points.map(p => p.y)), bottom: Math.max(...points.map(p => p.y)) }
     return { width: innerWidth, height: innerHeight, bounds, inside: bounds.left >= 24 && bounds.top >= 24 && bounds.right <= innerWidth - 24 && bounds.bottom <= innerHeight - 24 }
   },
-  async responsive3d() {
+  async responsive3d(separation = 0) {
     await this.view('3d', 'all')
+    controller.setView(descriptor.id, { ...defaultPhysicalSceneView(descriptor.levels), mode: '3d', levelId: 'all', separation })
     const moved = new Promise<void>(resolve => map.once('moveend', () => resolve()))
     controller.fit(descriptor.id); await moved; await settle(4)
     const matrix = multiply(lastProjection!, localMercatorMatrix(descriptor.anchor, descriptor.bearing))
-    const points = boundsCorners(descriptor.bounds).map(point => transform(matrix, point)).map(point => ({ x: (point[0] + 1) * innerWidth / 2, y: (1 - point[1]) * innerHeight / 2 }))
+    const displayBounds = { min: descriptor.bounds.min, max: [descriptor.bounds.max[0], descriptor.bounds.max[1], descriptor.bounds.max[2] + (descriptor.levels.length - 1) * separation] as [number, number, number] }
+    const points = boundsCorners(displayBounds).map(point => transform(matrix, point)).map(point => ({ x: (point[0] + 1) * innerWidth / 2, y: (1 - point[1]) * innerHeight / 2 }))
     const bounds = { left: Math.min(...points.map(p => p.x)), right: Math.max(...points.map(p => p.x)), top: Math.min(...points.map(p => p.y)), bottom: Math.max(...points.map(p => p.y)) }
-    return { width: innerWidth, height: innerHeight, bounds, inside: bounds.left >= 24 && bounds.top >= 24 && bounds.right <= innerWidth - 24 && bounds.bottom <= innerHeight - 24 }
+    return { width: innerWidth, height: innerHeight, separation, displayBounds, bounds, inside: bounds.left >= 79.99 && bounds.top >= 79.99 && bounds.right <= innerWidth - 79.99 && bounds.bottom <= innerHeight - 109.99 }
   },
   async run() {
     await loaded

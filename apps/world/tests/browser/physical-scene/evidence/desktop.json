@@ -9,7 +9,7 @@
     "antialias": true
   },
   "source": {
-    "revision": "864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee",
+    "revision": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124",
     "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
     "objects": 64
   },
@@ -3558,7 +3558,7 @@
     "src/ui/map-runtime/operational-deck-layers.ts": "2eb3c1b415db921b58ecb940a32d9725edc31c128f0eeeef8c0b6ed16982e25e",
     "src/packs/physical-layout/native/compile-scene.ts": "b3e70a671f13b48e7724b0bb4ad67f0fe47069dbdf9d8ff9b9369296299820ad"
   },
-  "sceneSha256": "aa289ce64cd234c464af824d39d83418c077fc320de2d3bed06f1bd912eac22d",
+  "sceneSha256": "d34d57c298988f83006a90b30ff67d8eff41dc126681aaa8fcf3231cdd3a5010",
   "responsive": {
     "width": 638,
     "height": 720,
@@ -3573,11 +3573,48 @@
   "responsive3d": {
     "width": 638,
     "height": 720,
+    "separation": 0,
+    "displayBounds": {
+      "min": [
+        -44.8,
+        -26,
+        -0.4
+      ],
+      "max": [
+        44.4,
+        27.6,
+        31.2
+      ]
+    },
     "bounds": {
-      "left": 122.33497116648094,
-      "right": 515.6650288320428,
-      "top": 189.7103887479475,
-      "bottom": 415.2456350893428
+      "left": 122.33497120843913,
+      "right": 515.6650288304508,
+      "top": 189.71038867631415,
+      "bottom": 415.2456349890466
+    },
+    "inside": true
+  },
+  "responsiveSeparated": {
+    "width": 638,
+    "height": 720,
+    "separation": 30,
+    "displayBounds": {
+      "min": [
+        -44.8,
+        -26,
+        -0.4
+      ],
+      "max": [
+        44.4,
+        27.6,
+        61.2
+      ]
+    },
+    "bounds": {
+      "left": 167.6019539321827,
+      "right": 470.39804606718974,
+      "top": 151.46824696115544,
+      "bottom": 397.08011433564525
     },
     "inside": true
   }

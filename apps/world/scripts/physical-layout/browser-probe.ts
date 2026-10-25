@@ -87,7 +87,11 @@ try {
   result.responsive3d = responsive3d.result?.value
   result.passed &&= result.responsive3d?.inside === true
   const narrow3d = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'narrow-3d.png'), Buffer.from(narrow3d.data, 'base64'))
+  const separated = await call('Runtime.evaluate', { expression: 'window.physicalProbe.responsive3d(30)', awaitPromise: true, returnByValue: true, timeout: 10_000 })
+  result.responsiveSeparated = separated.result?.value
+  result.passed &&= result.responsiveSeparated?.inside === true
+  const separateShot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'narrow-separated.png'), Buffer.from(separateShot.data, 'base64'))
   await writeFile(join(output, 'receipt.json'), JSON.stringify(result, null, 2))
-  console.log(JSON.stringify({ output, passed: result.passed, profile: result.profile, errors: result.errors, stateErrors: result.stateErrors, glErrors: result.glErrors, basic: result.basic, lifecycle: { mountCycles: result.cycles.length, styleCycles: result.styles.length, contextRestored: result.contextRestore.sentinel.passed }, idleFrames: result.idleFrames, unchangedStateRefreshes: result.unchangedStateRefreshes, responsive: result.responsive, responsive3d: result.responsive3d, negativeControlDetected: result.negativeControlDetected, deckPick: result.deckPick }, null, 2))
+  console.log(JSON.stringify({ output, passed: result.passed, profile: result.profile, errors: result.errors, stateErrors: result.stateErrors, glErrors: result.glErrors, basic: result.basic, lifecycle: { mountCycles: result.cycles.length, styleCycles: result.styles.length, contextRestored: result.contextRestore.sentinel.passed }, idleFrames: result.idleFrames, unchangedStateRefreshes: result.unchangedStateRefreshes, responsive: result.responsive, responsive3d: result.responsive3d, responsiveSeparated: result.responsiveSeparated, negativeControlDetected: result.negativeControlDetected, deckPick: result.deckPick }, null, 2))
   if (!result.passed) process.exitCode = 1
 } finally { socket?.close(); chrome.kill(); await chrome.exited; server.stop(true); await rm(profile, { recursive: true, force: true }) }
