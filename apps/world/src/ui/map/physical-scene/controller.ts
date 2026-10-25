@@ -161,8 +161,8 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       if (destroyed) return
       if (new Set(sources.map(source => source.descriptor.id)).size !== sources.length) throw new Error('Physical scene IDs must be unique in a Run')
       const next = new Set(sources.map(source => source.descriptor.id))
-      for (const [id, entry] of entries) if (!next.has(id)) { entry.generation = ++generation; entries.delete(id) }
       let changed = false
+      for (const [id, entry] of entries) if (!next.has(id)) { entry.generation = ++generation; entries.delete(id); changed = true }
       for (const source of sources) {
         const previous = entries.get(source.descriptor.id)
         if (previous && JSON.stringify(previous.source.descriptor) === JSON.stringify(source.descriptor)) { previous.source = source; continue }
@@ -170,7 +170,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
         changed = true
         entries.set(source.descriptor.id, { source, generation: ++generation, scene: null, meshes: [], view: previous?.view ?? defaultPhysicalSceneView(source.descriptor.levels), status: new Map(), statusSignature: '[]', state: 'distant', eligible: false, lastUsed: 0, reason: undefined, loading: false, loadError: undefined })
       }
-      if (changed) layerFailure = null
+      if (changed) { layerFailure = null; currentLayer?.invalidatePicks() }
       reconcile(); map.triggerRepaint()
     },
     setView(sceneId: string, view: PhysicalSceneView): void {
@@ -180,6 +180,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       const old = entry.view
       entry.view = { ...view }
       const geometryChanged = old.levelId !== view.levelId || old.cutaway !== view.cutaway || old.separation !== view.separation || old.mode !== view.mode
+      if (geometryChanged || old.detail !== view.detail) currentLayer?.invalidatePicks()
       if (geometryChanged && entry.scene) entry.meshes = buildVisibleMeshes(entry.scene, view)
       if (old.mode !== view.mode) map.easeTo({ pitch: view.mode === '2d' ? 0 : 50, duration: duration() })
       reconcile(); map.triggerRepaint()

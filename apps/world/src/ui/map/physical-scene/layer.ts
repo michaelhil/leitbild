@@ -57,6 +57,7 @@ export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArra
   return {
     layer,
     dispose,
+    invalidatePicks(): void { picking = [] },
     metrics: () => backend ? { ...backend.metrics } : finalMetrics,
     pick(point: { x: number; y: number }): PhysicalSceneHit | null {
       if (!map || failed || disposed) return null
