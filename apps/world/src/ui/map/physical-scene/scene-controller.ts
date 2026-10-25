@@ -6,6 +6,7 @@ import { boundsCorners, localMercatorMatrix, transform } from './math.ts'
 import { createPhysicalGeometryPreparer, type PhysicalPreparedGeometry } from './preparation.ts'
 import { admitPhysicalPickAcceleration, derivePhysicalPickAcceleration } from './picking.ts'
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from './overview-geometry.ts'
+import { projectedInspectionFeature, automaticInspectionDemand } from './inspection-demand.ts'
 import { visiblePhysicalBounds } from './renderer.ts'
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle } from './types.ts'
@@ -18,9 +19,11 @@ const worldBounds = (anchor: readonly [number, number], bearing: number, bounds:
 }
 const combinedBounds = (values: ReadonlyArray<PhysicalSceneBounds>): PhysicalSceneBounds => ({ min: [0, 1, 2].map(a => Math.min(...values.map(b => b.min[a]!))) as [number, number, number], max: [0, 1, 2].map(a => Math.max(...values.map(b => b.max[a]!))) as [number, number, number] })
 
+let controllerSequence = 0
 /** Common retained scene orchestration; viewport adapters own real cameras and contexts. */
 export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewport, options: Options) => {
-  const entries = new Map<string, Entry>(), prepare = options.prepare ?? createPhysicalGeometryPreparer()
+  const entries = new Map<string, Entry>(), prepare = options.prepare ?? createPhysicalGeometryPreparer(), privateNamespace = ++controllerSequence
+  const identityFor = (entry: Entry, sourceGeneration = entry.generation) => entry.source.descriptor.geometryKey ?? `private/${privateNamespace}/${entry.source.descriptor.id}/${sourceGeneration}`
   let palette = options.palette, renderer: PhysicalViewportRenderer | null = null, active = true, destroyed = false, generation = 0, mode: PhysicalSceneView['mode'] = '2d', lastPresentation = '', queued = false, contextLost = false
   let focusedId: string | null = null, forcedId: string | null = null
   let pendingFocus: { entry: Entry; source: number; view: number; target: PhysicalSceneFocus; preservePose: boolean } | null = null
@@ -68,23 +71,23 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const prepareView = async (entry: Entry): Promise<void> => {
     if (!entry.scene) return
     const expected = ++entry.viewGeneration, sourceGeneration = entry.generation
-    const view = { ...entry.view, separation: entry.view.levelId === 'all' && entry.view.separation > 0 ? 1 : 0 }, identity = entry.source.descriptor.geometryKey ?? `private/${entry.source.descriptor.id}/${sourceGeneration}`, key = `${identity}/${JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation])}`
+    const view = { ...entry.view, separation: entry.view.levelId === 'all' && entry.view.separation > 0 ? 1 : 0 }, identity = identityFor(entry, sourceGeneration), key = `${identity}/${JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation])}`
     entry.state = 'loading'; entry.preparing = true; renderer?.invalidatePicks(); emit()
     try {
-      const prepared = await prepare(entry.scene, view, key, identity)
+      const prepared = await prepare(entry.scene, view, key, identity, `${identity}/detail`)
       if (destroyed || sourceGeneration !== entry.generation || expected !== entry.viewGeneration || entries.get(entry.source.descriptor.id) !== entry) return
       const objects = new Map(entry.scene!.objects.map(object => [object.id, object]))
       const rebound = { ...prepared, sourceAsset: prepared, meshes: prepared.meshes.map(mesh => { const object = objects.get(mesh.object.id); if (!object) throw new Error('Shared physical asset occurrence identity mismatch'); return { ...mesh, object } }) }
       admitPhysicalPickAcceleration(rebound.meshes, rebound.acceleration)
       entry.renderRevision++; entry.preparing = false; entry.prepared = rebound; entry.meshes = filteredMeshes(entry, rebound); entry.state = !active ? 'hidden' : entry.eligible ? 'ready' : 'distant';
       if (active && pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; viewport.fitWorld(entryBounds(entry, intent.target), { padding: padding(), preservePose: intent.preservePose, mode, bearing: entry.source.descriptor.bearing + (!intent.preservePose && mode === '3d' ? -25 : 0) }) }; reconcileRenderer(); viewport.requestRender(); emit()
-    } catch (error) { if (expected !== entry.viewGeneration || destroyed) return; entry.preparing = false; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
+    } catch (error) { if (expected !== entry.viewGeneration || sourceGeneration !== entry.generation || destroyed || entries.get(entry.source.descriptor.id) !== entry) return; entry.preparing = false; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
   }
   const prepareOverview = async (entry: Entry): Promise<void> => {
     if (entry.overview || entry.overviewPreparing || !entry.source.descriptor.overviewFootprints?.length || (viewport.surface.kind !== 'canvas' && !entry.scopeId)) return
     entry.overviewPreparing = true; const expected = entry.generation, requestedMode = mode, scene = createPhysicalOverviewScene(entry.source.descriptor)
-    const identity = entry.source.descriptor.geometryKey ?? `private/${scene.id}/${expected}`, key = `${identity}/overview/${mode}`
-    try { const asset = await prepare(scene, { ...entry.view, mode, levelId: 'all', cutaway: false, separation: 0 }, key, identity); if (destroyed || expected !== entry.generation || requestedMode !== mode || entries.get(scene.id) !== entry) return; entry.overviewPreparing = false; entry.overview = { scene, asset }; entry.renderRevision++; reconcileRenderer(); emit(); viewport.requestRender() }
+    const identity = identityFor(entry, expected), key = `${identity}/overview/${mode}`
+    try { const asset = await prepare(scene, { ...entry.view, mode, levelId: 'all', cutaway: false, separation: 0 }, key, identity, `${identity}/overview`); if (destroyed || expected !== entry.generation || requestedMode !== mode || entries.get(scene.id) !== entry) return; entry.overviewPreparing = false; entry.overview = { scene, asset }; entry.renderRevision++; reconcileRenderer(); emit(); viewport.requestRender() }
     catch (error) { if (destroyed || expected !== entry.generation) return; entry.overviewPreparing = false; options.reportError(error instanceof Error ? error : new Error(String(error))) }
   }
   const load = async (entry: Entry): Promise<void> => {
@@ -105,13 +108,18 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const d = entry.source.descriptor, bounds = worldBounds(d.anchor, d.bearing, d.bounds), points = boundsCorners(bounds).map(p => viewport.projectGeographic(new MercatorCoordinate(p[0], p[1]).toLngLat())), xs = points.map(p => p.x), ys = points.map(p => p.y)
       const intersects = Math.max(...xs) >= 0 && Math.min(...xs) <= size.width && Math.max(...ys) >= 0 && Math.min(...ys) <= size.height
       const physicalSpan = Math.max(...d.bounds.max.map((value, axis) => value - d.bounds.min[axis]!)), pixels = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), error = d.overviewGeometricErrorMetres ?? physicalSpan
-      const needsDetail = forcedId === d.id || error * pixels / Math.max(physicalSpan, Number.EPSILON) > pixelError
-      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && (mode !== '2d' || focusedId === d.id)
+      const inspectionPixels = intersects ? projectedInspectionFeature(d, viewport.projectGeographic) : 0
+      const overviewErrorPixels = error * pixels / Math.max(physicalSpan, Number.EPSILON)
+      const explicitDetail = forcedId === d.id || (viewport.surface.kind === 'canvas' && mode === '3d' && focusedId === null)
+      const needsDetail = explicitDetail || automaticInspectionDemand(inspectionPixels, overviewErrorPixels, pixelError)
+      const planAllowsDetail = mode !== '2d' || focusedId === d.id || (viewport.surface.kind === 'map' && focusedId === null)
+      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && planAllowsDetail
+      if (d.locationValid && !entry.failure) entry.reason = undefined
       if (active && intersects && d.locationValid && (!entry.eligible || entry.scopeId)) void prepareOverview(entry)
       if (!d.locationValid) { entry.state = 'unavailable'; entry.reason = d.reason ?? 'Layout location no longer matches its owner' }
       else if (entry.failure) { entry.state = 'unavailable'; entry.reason = entry.failure }
       else if (!active || entry.view.detail === 'hidden') entry.state = 'hidden'
-      else if (!entry.eligible) entry.state = 'distant'
+      else if (!entry.eligible) { entry.state = 'distant'; entry.reason = d.inspectionFeatureMetres === undefined && !explicitDetail ? 'Automatic inspection scale is not declared; choose a layout scope to inspect it' : undefined }
       else if (entry.preparing) entry.state = 'loading'
       else if (entry.prepared) entry.state = 'ready'
       else if (entry.scene) { entry.state = 'loading'; void prepareView(entry) }
@@ -146,9 +154,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
         if (previous) previous.generation = ++generation
         entries.set(source.descriptor.id, { renderRevision: 0, source, generation: ++generation, viewGeneration: 0, scene: null, prepared: null, meshes: [], view: previous?.view ?? { ...defaultPhysicalSceneView(source.descriptor.levels), mode }, status: new Map(), signature: '', state: 'distant', loading: false, eligible: false }); changed = true
       }
-      if (sources.length === 1 && focusedId === null) focusedId = sources[0]!.descriptor.id
-      else if (focusedId !== null && !entries.has(focusedId)) focusedId = null
-      if (changed) { renderer?.retainGeometryIdentities(new Set([...entries.values()].map(entry => entry.source.descriptor.geometryKey ?? `private/${entry.source.descriptor.id}/${entry.generation}`))); renderer?.invalidatePicks(); reconcile(); viewport.requestRender() }
+      if (focusedId !== null && !entries.has(focusedId)) { focusedId = null; forcedId = null }
+      if (changed) { prepare.retainIdentities?.(new Set([...entries.values()].map(entry => identityFor(entry)))); renderer?.retainGeometryIdentities(new Set([...entries.values()].map(entry => identityFor(entry)))); renderer?.invalidatePicks(); reconcile(); viewport.requestRender() }
     },
     setView(sceneId: string, view: PhysicalSceneView): void {
       const entry = requireEntry(sceneId)
@@ -185,9 +192,9 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => active && (renderer?.visibleAt(sceneId, occurrenceId, point) ?? false),
     project: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.project(sceneId, occurrenceId, levelId) ?? null : null,
     presentations, scene: (sceneId: string) => entries.get(sceneId)?.scene ?? null,
-    retry(sceneId: string): void { const entry = requireEntry(sceneId); entry.generation = ++generation; entry.viewGeneration++; entry.loading = false; entry.preparing = false; entry.failure = undefined; entry.reason = undefined; entry.scene = null; entry.prepared = null; entry.meshes = []; reconcile() },
+    retry(sceneId: string): void { const entry = requireEntry(sceneId); entry.generation = ++generation; entry.viewGeneration++; entry.loading = false; entry.preparing = false; entry.failure = undefined; entry.reason = undefined; entry.scene = null; entry.prepared = null; entry.meshes = []; prepare.retainIdentities?.(new Set([...entries.values()].map(entry => identityFor(entry)))); reconcile() },
     metrics: () => renderer?.metrics() ?? null,
-    diagnostics: () => ({ current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
-    destroy(): void { if (destroyed) return; destroyed = true; pendingFocus = null; for (const entry of entries.values()) { entry.generation = ++generation; entry.viewGeneration++ }; entries.clear(); for (const remove of cleanup) remove(); removeRenderer(); viewport.destroy() },
+    diagnostics: () => ({ preparation: prepare.diagnostics?.() ?? null, current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
+    destroy(): void { if (destroyed) return; destroyed = true; pendingFocus = null; for (const entry of entries.values()) { entry.generation = ++generation; entry.viewGeneration++ }; entries.clear(); prepare.destroy?.(); for (const remove of cleanup) remove(); removeRenderer(); viewport.destroy() },
   }
 }

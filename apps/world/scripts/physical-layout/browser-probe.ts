@@ -33,6 +33,8 @@ const scenario = await compileScenarioDefinition(definition, [processPlantPack, 
 const layout = scenario.initialObjects.find(object => object.id === 'layout:proof')!, owner = scenario.initialObjects.find(object => object.id === 'plant:proof')!
 const descriptor = describePhysicalLayoutScene(layout, scenario.initialObjects)!, scene = await loadPhysicalLayoutScene(layout)
 const operational = createMapFeatureStore().update({ objects: [owner], selectedControllerId: null, highlightedObjectIds: [], hiddenObjectCategoryIds: [], placementPoints: [], packFeatures: [], hasNewInfo: () => false, presentationFor: object => processPlantPresentation.presentObject(object, { objects: [owner] }), alertPalette: 'day' })
+const hashes: Record<string, string> = {}
+for (const file of ['src/ui/map/physical-scene/controller.ts', 'src/ui/map/physical-scene/map-viewport.ts', 'src/ui/map/physical-scene/scene-controller.ts', 'src/ui/map/physical-scene/preparation.ts', 'src/ui/map/physical-scene/preparation-worker.ts', 'src/ui/map/physical-scene/inspection-demand.ts', 'src/core/packs/scene.ts', 'src/core/packs/scene-transfer.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/overview.ts', 'src/ui/map-runtime/operational-deck-layers.ts', 'src/packs/physical-layout/native/compile-scene.ts', 'src/packs/physical-layout/native/campus/compile-scene.ts']) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
 const bundle = await Bun.build({ entrypoints: [join(root, 'tests/browser/physical-scene/app.ts')], outdir: built, target: 'browser', format: 'esm', splitting: true, minify: true, naming: { entry: 'app.js', chunk: '[name]-[hash].[ext]' } })
 if (!bundle.success) throw new AggregateError(bundle.logs, 'Physical browser proof build failed')
 const workerBundle = await Bun.build({ entrypoints: [join(root, 'src/ui/map/physical-scene/preparation-worker.ts')], outdir: built, target: 'browser', format: 'esm', minify: true, naming: { entry: 'preparation-worker.js' } })
@@ -102,8 +104,6 @@ try {
   // Gesture scenarios may change native camera pose; existing fit scenarios
   // begin from their own declared baseline rather than inheriting that state.
   await evaluate('window.physicalProbe.resetNavigationProbe()')
-  const hashes: Record<string, string> = {}
-  for (const file of ['src/ui/map/physical-scene/controller.ts', 'src/ui/map/physical-scene/map-viewport.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/overview.ts', 'src/ui/map-runtime/operational-deck-layers.ts', 'src/packs/physical-layout/native/compile-scene.ts', 'src/packs/physical-layout/native/campus/compile-scene.ts']) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
   result.sourceHashes = hashes; result.sceneSha256 = createHash('sha256').update(JSON.stringify(scene)).digest('hex'); result.designMode = designMode; result.design = design
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'final.png'), Buffer.from(shot.data, 'base64'))
   await call('Runtime.evaluate', { expression: `window.physicalProbe.view('2d','lower')`, awaitPromise: true });

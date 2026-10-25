@@ -13,13 +13,14 @@ const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObj
   scopes: [{ id: 'a', label: 'A', kind: 'building', bounds: { min: [0, 0, 0], max: [5, 10, 8] }, levelIds: ['lower', 'upper'] }, { id: 'b', label: 'B', kind: 'building', bounds: { min: [5, 0, 0], max: [10, 10, 8] }, levelIds: ['lower', 'upper'] }],
   layers: [{ id: 'utilities', label: 'Utilities', defaultVisible: true }],
   objects: ['machine', 'utility'].map((key, index) => ({ id: key, label: key, kind: 'equipment', levelId: 'lower', scopeIds: [index ? 'b' : 'a'], ...(index ? { layerId: 'utilities' } : {}), positions: [0, 0, 0, 5, 0, 8, 0, 5, 8], subjectIds: [`${id}:${key}`], material: 'metal' })) })
-const harness = () => {
+const harness = (kind: 'map' | 'canvas' = 'canvas') => {
+  let projectScale = 1_000_000
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
   const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = []
   const viewport: PhysicalViewport = {
-    surface: { kind: 'canvas', element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
+    surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
-    projectGeographic: point => ({ x: 400 + point.lng * 1_000_000, y: 300 + point.lat * 1_000_000 }), requestRender() {}, registered: () => true, orderRenderer() {}, removeRenderer() {},
+    projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() {}, registered: () => true, orderRenderer() {}, removeRenderer() {},
     installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
     cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose() {}, fitWorld(_bounds, options) { fits.push(options) }, panBy() {}, setNavigationTool() {}, cancelCamera() {}, destroy() {},
   }
@@ -30,8 +31,8 @@ const harness = () => {
   const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>()
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
     prepare: async (value, view, key, identity) => { if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
-  const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, hold, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
+  return { controller, source, fits, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -90,8 +91,29 @@ test('cancelled or suspended hosts cannot apply a late deferred camera fit', asy
 })
 
 test('failed preparation and GPU admission remain unavailable until an explicit retry can recover', async () => {
-  const h = harness(), value = scene('a'); h.failPreparation(); h.controller.setSources([h.source(value)]); await settled(); expect(h.controller.presentations()[0]!.status).toBe('unavailable')
+  const h = harness(), value = scene('a'); h.failPreparation(); h.controller.setSources([h.source(value)]); h.controller.selectScope('a'); await settled(); expect(h.controller.presentations()[0]!.status).toBe('unavailable')
   h.controller.retry('a'); await settled(); expect(h.controller.presentations()[0]!.status).toBe('ready')
   h.failRenderer(); await settled(); expect(h.controller.presentations()[0]!.status).toBe('unavailable')
   h.controller.retry('a'); await settled(); expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(h.errors.map(error => error.message)).toEqual(['Preparation rejected', 'Renderer rejected']); h.controller.destroy()
+})
+
+test('Map Plan automatically reveals every legible visible layout; explicit scope and Canvas collection retain intentional context', async () => {
+  const values = Array.from({ length: 17 }, (_, index) => ({ ...scene(`unit:${index}`), anchor: [index * .00001, 0] as [number, number] }))
+  const map = harness('map'); map.controller.setSources(values.map(map.source)); await settled(); expect(map.entries()).toHaveLength(17); expect(map.entries().every(entry => entry.view.mode === '2d' && entry.view.levelId === 'lower')).toBe(true)
+  map.controller.selectScope('unit:8', 'a'); expect(map.entries().map(entry => entry.scene.id)).toEqual(['unit:8']); map.controller.fitAll(); expect(map.entries()).toHaveLength(17); map.controller.destroy()
+  const canvas = harness('canvas'); canvas.controller.setSources(values.map(canvas.source)); await settled(); expect(canvas.prepares()).toBe(0); expect(canvas.entries()).toHaveLength(0)
+  canvas.controller.selectScope('unit:8', 'a'); await settled(); expect(canvas.entries().map(entry => entry.scene.id)).toEqual(['unit:8']); canvas.controller.destroy()
+})
+
+test('regional overview error alone cannot load interiors; access-scale legibility restores zoom reveal and missing scale remains manual', async () => {
+  const h = harness('map'), value = { ...scene('a'), bounds: { min: [0, 0, 0] as [number, number, number], max: [1000, 1000, 8] as [number, number, number] } }; h.scale(1_000); h.controller.setSources([h.source(value)]); await settled(); expect(h.controller.scene('a')).toBeNull(); expect(h.prepares()).toBe(0)
+  h.scale(200_000); h.controller.fitAll(); await settled(); expect(h.controller.presentations()[0]!.status).toBe('ready'); h.controller.destroy()
+  const manual = harness('map'), source = manual.source(scene('a')); const { inspectionFeatureMetres: _, ...descriptor } = source.descriptor; manual.controller.setSources([{ ...source, descriptor }]); await settled(); expect(manual.prepares()).toBe(0)
+  manual.controller.selectScope('a'); await settled(); expect(manual.controller.presentations()[0]!.status).toBe('ready'); manual.controller.destroy()
+})
+
+test('sources without an explicit reusable geometry key remain private to each host controller', async () => {
+  const a = harness('map'), b = harness('map'), value = scene('a')
+  for (const h of [a, b]) { const source = h.source(value), { geometryKey: _, ...descriptor } = source.descriptor; h.controller.setSources([{ ...source, descriptor }]) }; await settled()
+  expect(a.entries()[0]!.asset!.identity).not.toBe(b.entries()[0]!.asset!.identity); a.controller.destroy(); b.controller.destroy()
 })

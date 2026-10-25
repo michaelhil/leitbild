@@ -18,7 +18,7 @@ export interface PhysicalMesh {
   readonly bounds: PhysicalSceneBounds
   readonly offset: Vector3
 }
-const position = (v: ReadonlyArray<number>): Vector3 => [v[0]!, v[1]!, v[2]!]
+const position = (v: ArrayLike<number>): Vector3 => [v[0]!, v[1]!, v[2]!]
 const pointKey = (p: Vector3): string => p.map(value => Math.round(value * 100_000)).join(',')
 const vertexAt = (object: PhysicalSceneObject, index: number, normal: Vector3): Vertex => [
   object.positions[index * 3]!, object.positions[index * 3 + 1]!, object.positions[index * 3 + 2]!,

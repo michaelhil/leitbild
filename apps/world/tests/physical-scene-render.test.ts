@@ -169,7 +169,7 @@ const lifecycleMap = () => {
   }
 }
 const flush = async () => { for (let index = 0; index < 8; index++) await Promise.resolve() }
-const descriptorFor = (value: PackPhysicalScene) => ({ ...value, locationValid: true, subjectIds: ['pump'], modelDigest: 'a'.repeat(64) })
+const descriptorFor = (value: PackPhysicalScene) => ({ ...value, locationValid: true, inspectionFeatureMetres: 1, subjectIds: ['pump'], modelDigest: 'a'.repeat(64) })
 const palette = { materials: {}, defaultMaterial: [0.5, 0.5, 0.5] as const, line: [0.2, 0.2, 0.2] as const }
 
 describe('Physical scene load and shared-map lifecycle boundaries', () => {
