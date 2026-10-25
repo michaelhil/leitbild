@@ -99,7 +99,9 @@
   const inspect = (sceneId: string, elementId: string, label: string, occurrenceId: string | null): void => {
     if (suspended) return
     focusedId = sceneId
-    inspected = { sceneId, elementId, label, occurrenceId }
+    // A physical housing or casing is not a new measured process component.
+    const ownerLabel = snapshots.get(sceneId)?.latest?.subjects.find(subject => subject.elementId === elementId)?.label
+    inspected = { sceneId, elementId, label: ownerLabel ?? label, occurrenceId }
     hover = null
     inspectionHeight = 400
   }

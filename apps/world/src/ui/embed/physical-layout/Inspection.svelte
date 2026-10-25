@@ -93,7 +93,7 @@
     <p class="failure" role="alert">No current owner sample is available. This quick look will retry while visible.</p>
   {:else}
   <Faceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
-    name={subject?.label ?? parsed.state.label} {word} title={envelope.title} {readings}
+    name={subject?.label ?? parsed.state.label} {word} title={subject?.label ?? envelope.title} {readings}
     alerts={snapshot.latest?.sample.alerts ?? []} alertElements={[activeElement]} group={false}
     related={subject === undefined || subject.devices.length === 0 ? null : { heading: 'Devices', entries: subject.devices.map(device => ({ element: device.id, name: device.label })) }}
     anchor={null} at={{ x: 0, y: 44 }} avoid={[]} zoom={1} room={{ x: 0, y: 44, width: viewport.width, height: Math.max(0, viewport.height - 44) }}
