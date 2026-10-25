@@ -347,7 +347,7 @@
           "design": {
             "id": "pwr-campus",
             "revision": "pwr-campus-20261025-r1",
-            "digest": "ebce67d2064e71309e1aff7641cbdfd16961efe840f52b020940d350d0639c73"
+            "digest": "7525d6f9365ffc82eb440cb3dab3120600ea2e68ecdcc4b61b64899387ad129a"
           },
           "members": {
             "grid": "grid:halden-four-unit",

@@ -6,6 +6,7 @@ const endpoint = z.object({ role: id, portId: id }).strict()
 export const physicalAnchorSchema = z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-85).max(85)])
 export const physicalRelatedMemberRequirementSchema = z.object({
   role: id, packId: id, modelRef: id, modelDigest, anchor: physicalAnchorSchema,
+  physicalLayout: z.object({ design: z.object({ id, revision: id, digest: modelDigest }).strict(), bearing: z.number().finite().min(-360).max(360) }).strict().optional(),
 }).strict()
 export const physicalDesignRequirementsSchema = z.object({
   ownerRole: id, ownerPackId: id,

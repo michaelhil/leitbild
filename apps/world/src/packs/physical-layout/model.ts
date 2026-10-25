@@ -65,7 +65,9 @@ export const campusLayoutDataSchema = z.object({ ...layoutShape,
   if (data.relatedMembers.length !== required.length || new Set(data.relatedMembers.map(member => member.role)).size !== required.length) issue('Related member resolution must match every Design role')
   for (const requirement of required) {
     const member = data.relatedMembers.find(member => member.role === requirement.role)
-    if (!member || canonicalPhysicalJson({ role: member.role, packId: member.packId, modelRef: member.modelRef, modelDigest: member.modelDigest, anchor: member.anchor }) !== canonicalPhysicalJson(requirement)) issue(`Related member does not satisfy its Design requirement: ${requirement.role}`)
+    if (!member) { issue(`Related member does not satisfy its Design requirement: ${requirement.role}`); continue }
+    const { objectId: _objectId, ...resolution } = member
+    if (canonicalPhysicalJson(resolution) !== canonicalPhysicalJson(requirement)) issue(`Related member does not satisfy its Design requirement: ${requirement.role}`)
   }
   if (new Set([data.owner.objectId, ...data.relatedMembers.map(member => member.objectId)]).size !== data.relatedMembers.length + 1) issue('Design member roles must resolve to distinct owner objects')
   const placement = data.requirements.placement

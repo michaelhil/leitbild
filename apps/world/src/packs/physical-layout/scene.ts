@@ -3,6 +3,7 @@ import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from '../../core/
 import { campusLayoutDataSchema, canonicalPhysicalJson, physicalDesignManifest, physicalLayoutDataSchema, physicalLayoutPackId, turbineIslandLayoutDataSchema, type RetainedPhysicalLayoutData } from './model.ts'
 import { physicalBuildingFootprints } from './native/campus/footprints.ts'
 import { physicalRequiredConnections } from './connections.ts'
+import { physicalLayoutDependencyFailure } from './dependencies.ts'
 
 const parsed = new WeakMap<OperationalObject, RetainedPhysicalLayoutData>()
 const footprints = new WeakMap<OperationalObject, ReturnType<typeof physicalBuildingFootprints>>()
@@ -24,7 +25,9 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
   }
   const relatedMembers = 'relatedMembers' in data ? data.relatedMembers : []
   const invalidMember = relatedMembers.find(member => !attached(objects.find(candidate => candidate.id === member.objectId && candidate.packId === member.packId), member.anchor))
-  const locationValid = attached(owner, data.placement.anchor) && invalidMember === undefined
+  const dependencyFailure = relatedMembers.some(member => member.physicalLayout !== undefined)
+    ? physicalLayoutDependencyFailure(data, objects.filter(candidate => candidate.packId === physicalLayoutPackId).map(object => ({ object, data: dataFor(object) }))) : null
+  const locationValid = attached(owner, data.placement.anchor) && invalidMember === undefined && dependencyFailure === null
   let overviewFootprints = footprints.get(object)
   if (overviewFootprints === undefined && 'requirements' in data) {
     overviewFootprints = physicalBuildingFootprints(data.source)
@@ -38,7 +41,7 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
     ...(relatedMembers.length === 0 ? {} : { relatedTargets: relatedMembers.map(member => ({ objectId: member.objectId, packId: member.packId, modelDigest: member.modelDigest })) }),
     ...('requirements' in data && data.requirements.connections.length > 0 ? { requiredConnections: physicalRequiredConnections(data) } : {}),
     ...(overviewFootprints === undefined ? {} : { overviewFootprints }),
-    locationValid, ...(locationValid ? {} : { reason: invalidMember ? `Location mismatch: related member ${invalidMember.role} moved or is unavailable` : owner ? 'Location mismatch: the owner moved after layout admission' : 'Layout owner is unavailable' }),
+    locationValid, ...(locationValid ? {} : { reason: dependencyFailure ?? (invalidMember ? `Location mismatch: related member ${invalidMember.role} moved or is unavailable` : owner ? 'Location mismatch: the owner moved after layout admission' : 'Layout owner is unavailable') }),
   }
 }
 

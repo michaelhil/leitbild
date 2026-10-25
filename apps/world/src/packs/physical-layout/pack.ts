@@ -7,6 +7,7 @@ import { physicalDesignRefSchema, physicalLayoutDataSchema, physicalLayoutPackId
 import { physicalLayoutPackView } from './ui-pack.ts'
 import { physicalCoverageIssues } from './coverage.ts'
 import { validatePhysicalConnections } from './connections.ts'
+import { physicalLayoutDependencyFailure } from './dependencies.ts'
 
 export const physicalLayoutScenarioItemSchema = z.object({
   pack: z.literal(physicalLayoutPackId), type: z.literal('site-layout'), id: objectIdSchema,
@@ -27,7 +28,12 @@ export const physicalLayoutPack: WorldPack = {
   }] },
   scenario: {
     validateInitialObjects: (objects, _config, _at, _sides, connections) => {
-      for (const object of objects.filter(object => object.packId === physicalLayoutPackId)) validatePhysicalConnections(physicalLayoutDataSchema.parse(object.packData), connections)
+      const layouts = objects.filter(object => object.packId === physicalLayoutPackId).map(object => ({ object, data: physicalLayoutDataSchema.parse(object.packData) }))
+      for (const { data } of layouts) {
+        validatePhysicalConnections(data, connections)
+        const failure = physicalLayoutDependencyFailure(data, layouts)
+        if (failure !== null) throw new Error(failure)
+      }
     },
     itemSchemas: { 'site-layout': physicalLayoutScenarioItemSchema },
     referencedObjects: spec => Object.values(physicalLayoutScenarioItemSchema.parse(spec).members),

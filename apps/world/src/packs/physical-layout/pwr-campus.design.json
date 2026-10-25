@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261025-r1",
-    "digest": "ebce67d2064e71309e1aff7641cbdfd16961efe840f52b020940d350d0639c73"
+    "digest": "7525d6f9365ffc82eb440cb3dab3120600ea2e68ecdcc4b61b64899387ad129a"
   },
   "sourceDigest": "7a3722e46dd03612ab848c659482cb3d85c03e72fa36c863d8014381ccf8e160",
   "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
@@ -48,7 +48,15 @@
         "anchor": [
           11.47,
           59.087
-        ]
+        ],
+        "physicalLayout": {
+          "design": {
+            "id": "pwr-full-unit",
+            "revision": "pwr-full-unit-20261025-r1",
+            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+          },
+          "bearing": 0
+        }
       },
       {
         "role": "unit-2",
@@ -58,7 +66,15 @@
         "anchor": [
           11.477,
           59.085
-        ]
+        ],
+        "physicalLayout": {
+          "design": {
+            "id": "pwr-full-unit",
+            "revision": "pwr-full-unit-20261025-r1",
+            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+          },
+          "bearing": 0
+        }
       },
       {
         "role": "unit-3",
@@ -68,7 +84,15 @@
         "anchor": [
           11.484,
           59.083
-        ]
+        ],
+        "physicalLayout": {
+          "design": {
+            "id": "pwr-full-unit",
+            "revision": "pwr-full-unit-20261025-r1",
+            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+          },
+          "bearing": 0
+        }
       },
       {
         "role": "unit-4",
@@ -78,7 +102,15 @@
         "anchor": [
           11.491,
           59.081
-        ]
+        ],
+        "physicalLayout": {
+          "design": {
+            "id": "pwr-full-unit",
+            "revision": "pwr-full-unit-20261025-r1",
+            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+          },
+          "bearing": 0
+        }
       }
     ],
     "connections": [

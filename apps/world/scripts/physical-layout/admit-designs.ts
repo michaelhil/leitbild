@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { physicalSceneObjectSchema } from '../../src/core/packs/scene.ts'
 import { campusPhysicalCompilerFiles, campusPhysicalCompilerRef, physicalCompilerFiles, physicalCompilerRef } from '../../src/packs/physical-layout/compiler-identity.ts'
 import { canonicalPhysicalJson, physicalCorrespondenceSchema, turbineIslandCorrespondenceSchema } from '../../src/packs/physical-layout/model.ts'
-import { physicalCatalogContent, physicalCatalogManifestSchema } from '../../src/packs/physical-layout/catalog-manifest.ts'
+import { physicalCatalogContent, physicalCatalogManifestSchema, type PhysicalCatalogManifest } from '../../src/packs/physical-layout/catalog-manifest.ts'
 import { physicalCoverageEvidenceSchema, physicalCoverageIssues } from '../../src/packs/physical-layout/coverage.ts'
 import { physicalDesignRequirementsSchema } from '../../src/packs/physical-layout/requirements.ts'
 import { physicalSourceSchema as originalSource } from '../../src/packs/physical-layout/native/source.ts'
@@ -14,6 +14,7 @@ const hash = (value: unknown): string => createHash('sha256').update(canonicalPh
 const directory = new URL('../../src/packs/physical-layout/', import.meta.url)
 const read = (name: string): Promise<unknown> => Bun.file(new URL(name, directory)).json()
 const check = Bun.argv.includes('--check')
+const outputs: Array<{ stem: string; manifest: PhysicalCatalogManifest; text: string; path: URL; objects: number; triangles: number }> = []
 for (const artifact of [{ files: physicalCompilerFiles, reference: physicalCompilerRef }, { files: campusPhysicalCompilerFiles, reference: campusPhysicalCompilerRef }]) {
   const bytes = createHash('sha256')
   for (const name of artifact.files) bytes.update(name).update('\0').update(new Uint8Array(await Bun.file(new URL(`native/${name}`, directory)).arrayBuffer()))
@@ -47,7 +48,20 @@ for (const spec of [
   if (spec.profile === 'turbine-island' && digest !== '3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124') throw new Error('The originally admitted turbine-island artifact changed')
   const manifest = physicalCatalogManifestSchema.parse({ ...content, bounds, design: { id: source.id, revision: spec.revision, digest } })
   const text = `${JSON.stringify(manifest, null, 2)}\n`, path = new URL(`${spec.stem}.design.json`, directory)
-  if (check) { if (await Bun.file(path).text() !== text) throw new Error(`Stale Design admission: ${spec.stem}`) }
-  else await Bun.write(path, text)
-  console.log(`${spec.stem}: ${manifest.design.digest}; ${objects.length} objects, ${objects.reduce((count, object) => count + object.positions.length / 9, 0)} triangles${check ? ' (checked)' : ''}`)
+  outputs.push({ stem: spec.stem, manifest, text, path, objects: objects.length, triangles: objects.reduce((count, object) => count + object.positions.length / 9, 0) })
+}
+// Validate the whole admission set before writing any output. A unit physical
+// edit requires explicit shared-site review, never automatic latest rebinding.
+for (const { manifest } of outputs) if (manifest.profile === 'campus') for (const member of manifest.requirements.relatedMembers) {
+  const expected = member.physicalLayout
+  if (expected === undefined) continue
+  const matches = outputs.filter(output => canonicalPhysicalJson(output.manifest.design) === canonicalPhysicalJson(expected.design))
+  if (matches.length !== 1 || matches[0]!.manifest.modelRequirement.modelRef !== member.modelRef || matches[0]!.manifest.modelRequirement.modelDigest !== member.modelDigest) throw new Error(`Physical Design dependency needs explicit readmission: ${manifest.design.id}/${member.role}`)
+  const target = matches[0]!.manifest
+  if (target.profile === 'campus' && target.requirements.ownerPackId !== member.packId) throw new Error(`Physical Design dependency owner mismatch: ${manifest.design.id}/${member.role}`)
+}
+for (const output of outputs) {
+  if (check) { if (await Bun.file(output.path).text() !== output.text) throw new Error(`Stale Design admission: ${output.stem}`) }
+  else await Bun.write(output.path, output.text)
+  console.log(`${output.stem}: ${output.manifest.design.digest}; ${output.objects} objects, ${output.triangles} triangles${check ? ' (checked)' : ''}`)
 }

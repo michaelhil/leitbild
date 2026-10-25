@@ -11,7 +11,7 @@ import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-res
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
-import { actorIdSchema, geoPointFromLonLat, type IsoTimestamp, type OperationalObject } from '../src/core/model/index.ts'
+import { actorIdSchema, geoPointFromLonLat, objectIdSchema, type IsoTimestamp, type OperationalObject } from '../src/core/model/index.ts'
 import { sideViewOfSnapshot } from '../src/core/simulation-runs/side-view.ts'
 import type { SimulationRunStateSnapshot } from '../src/core/simulation-runs/state-store.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -20,7 +20,7 @@ import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { physicalLayoutPack, physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
 import { campusLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
-import { pwrFullUnitPhysicalDesignRef, pwrCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { currentPwrPhysicalDesignRef, pwrFullUnitPhysicalDesignRef, pwrCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
@@ -109,6 +109,26 @@ describe('Full PWR and shared campus admission', () => {
     await expect(compile(missing)).rejects.toThrow('Physical layout connection mismatch')
   })
 
+  test('shared routing requires exactly one unit physical Design with its admitted bearing and anchor', async () => {
+    const rotated = source()
+    rotated.packs.find(pack => pack.id === 'physical-layout')!.items.find(item => item.id === 'layout:halden-1')!.bearing = 90
+    await expect(compile(rotated)).rejects.toThrow('Physical layout dependency mismatch')
+    const replaced = source()
+    replaced.packs.find(pack => pack.id === 'physical-layout')!.items.find(item => item.id === 'layout:halden-1')!.design = currentPwrPhysicalDesignRef
+    await expect(compile(replaced)).rejects.toThrow('Physical layout dependency mismatch')
+    const removed = source()
+    const selected = removed.packs.find(pack => pack.id === 'physical-layout')!
+    selected.items = selected.items.filter(item => item.id !== 'layout:halden-1')
+    await expect(compile(removed)).rejects.toThrow('Physical layout dependency mismatch')
+    const duplicated = source()
+    const items = duplicated.packs.find(pack => pack.id === 'physical-layout')!.items
+    items.push({ ...structuredClone(items.find(item => item.id === 'layout:halden-1')!), id: objectIdSchema.parse('layout:duplicate-unit-1') })
+    await expect(compile(duplicated)).rejects.toThrow('Physical layout dependency mismatch')
+    const shifted = source()
+    shifted.packs.find(pack => pack.id === 'process-plant')!.items[0]!.location = [11.470001, 59.087]
+    await expect(compile(shifted)).rejects.toThrow('Physical layout dependency mismatch')
+  })
+
   test('related member movement or disappearance invalidates the shared attachment without moving any source', async () => {
     const compiled = await compile(source()), campus = objectFor(compiled.initialObjects, 'layout:halden-campus')
     const before = canonicalPhysicalJson(campus.packData)
@@ -116,6 +136,9 @@ describe('Full PWR and shared campus admission', () => {
     const moved = compiled.initialObjects.map(object => object.id !== 'plant:halden-2' ? object : { ...object, spatial: { ...object.spatial, position: { ...object.spatial.position!, point: geoPointFromLonLat(11.478, 59.085) } } })
     expect(describePhysicalLayoutScene(campus, moved)?.locationValid).toBe(false)
     expect(describePhysicalLayoutScene(campus, compiled.initialObjects.filter(object => object.id !== 'plant:halden-2'))?.locationValid).toBe(false)
+    const rotated = compiled.initialObjects.map(object => object.id !== 'layout:halden-1' ? object : { ...object, packData: { ...campusLayoutDataSchema.parse(object.packData), placement: { anchor: [11.47, 59.087], bearing: 90 } } })
+    expect(describePhysicalLayoutScene(campus, rotated)?.locationValid).toBe(false)
+    expect(describePhysicalLayoutScene(campus, compiled.initialObjects.filter(object => object.id !== 'layout:halden-1'))?.locationValid).toBe(false)
     expect(canonicalPhysicalJson(campus.packData)).toBe(before)
   })
 
@@ -137,6 +160,23 @@ describe('Full PWR and shared campus admission', () => {
 })
 
 describe('Real full-plant and shared-yard acquisition', () => {
+  test('a changed physical layout dependency is refused before owner observations', async () => withRun(async (registry, run) => {
+    const originalSnapshot = run.snapshot.bind(run), originalObservations = run.observations.bind(run)
+    const snapshotSpy = spyOn(run, 'snapshot').mockImplementation(() => { const snapshot = originalSnapshot(); return { ...snapshot, objects: snapshot.objects.map(object => {
+      if (object.id !== 'layout:halden-1') return object
+      const data = campusLayoutDataSchema.parse(object.packData)
+      return { ...object, packData: { ...data, placement: { ...data.placement, bearing: 90 } } }
+    }) } })
+    let reads = 0
+    const observationSpy = spyOn(run, 'observations').mockImplementation(actor => { const port = originalObservations(actor); return { ...port, read: async input => { reads++; return port.read(input) } } })
+    try {
+      const result = await read(registry, run, 'layout:halden-campus', pwrCampusPhysicalDesignRef.digest)
+      expect(result.status).toBe(409)
+      expect(result.body).toMatchObject({ error: { code: 'layout_location_mismatch' } })
+      expect(reads).toBe(0)
+    } finally { observationSpy.mockRestore(); snapshotSpy.mockRestore() }
+  }), 30_000)
+
   test('restore retains canonical topology and layout pins, while a mismatched loaded connection picture is refused before observation', async () => withRun(async (registry, run) => {
     const before = registry.loadedCompiledScenario(run.id).connections
     const sourceBefore = canonicalPhysicalJson(objectFor(run.snapshot().objects, 'layout:halden-campus').packData)
