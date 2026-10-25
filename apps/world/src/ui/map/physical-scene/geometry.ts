@@ -1,4 +1,5 @@
 import type { PackPhysicalScene, PhysicalSceneBounds, PhysicalSceneObject } from '../../../core/packs/scene.ts'
+import earcut from 'earcut'
 import { cross, dot, normalize, subtract, type Vector3 } from './math.ts'
 import type { PhysicalSceneView } from './types.ts'
 
@@ -54,7 +55,14 @@ const signedArea = (points: ReadonlyArray<Vertex>): number => points.reduce((sum
   return sum + point[0] * next[1] - next[0] * point[1]
 }, 0) / 2
 const turn = (a: Vertex, b: Vertex, c: Vertex): number => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-const insideTriangle = (p: Vertex, a: Vertex, b: Vertex, c: Vertex): boolean => turn(a, b, p) >= -1e-8 && turn(b, c, p) >= -1e-8 && turn(c, a, p) >= -1e-8
+const containsPoint = (loop: ReadonlyArray<Vertex>, point: Vertex): boolean => {
+  let inside = false
+  for (let index = 0, previous = loop.length - 1; index < loop.length; previous = index++) {
+    const a = loop[index]!, b = loop[previous]!
+    if ((a[1] > point[1]) !== (b[1] > point[1]) && point[0] < (b[0] - a[0]) * (point[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside
+  }
+  return inside
+}
 
 /** Horizontal wall cuts are inspection caps, never changes to authored geometry. */
 const appendCaps = (segments: Array<[Vertex, Vertex]>, output: number[]): void => {
@@ -66,6 +74,7 @@ const appendCaps = (segments: Array<[Vertex, Vertex]>, output: number[]): void =
     adjacent.set(key, entries)
   }
   const visited = new Set<string>()
+  const loops: Vertex[][] = []
   for (const [start, entries] of adjacent) {
     if (visited.has(start) || entries.length !== 2) continue
     const loop: Vertex[] = []
@@ -80,16 +89,26 @@ const appendCaps = (segments: Array<[Vertex, Vertex]>, output: number[]): void =
     } while (current !== start && !visited.has(current))
     if (current !== start || loop.length < 3) continue
     for (let index = loop.length - 1; index >= 0 && loop.length > 3; index--) if (Math.abs(turn(loop[(index + loop.length - 1) % loop.length]!, loop[index]!, loop[(index + 1) % loop.length]!)) < 1e-8) loop.splice(index, 1)
-    if (signedArea(loop) < 0) loop.reverse()
-    const remaining = [...loop]
-    while (remaining.length > 2) {
-      const ear = remaining.findIndex((b, index) => {
-        const a = remaining[(index + remaining.length - 1) % remaining.length]!, c = remaining[(index + 1) % remaining.length]!
-        return turn(a, b, c) > 1e-8 && !remaining.some(p => p !== a && p !== b && p !== c && insideTriangle(p, a, b, c))
-      })
-      if (ear < 0) break
-      for (const v of [remaining[(ear + remaining.length - 1) % remaining.length]!, remaining[ear]!, remaining[(ear + 1) % remaining.length]!]) output.push(v[0], v[1], v[2], 0, 0, 1, v[6])
-      remaining.splice(ear, 1)
+    loops.push(loop)
+  }
+  // Nested cut loops describe holes, not independent filled disks. Containment
+  // shells, shafts and hollow walls must remain open at every inspection cut.
+  const areas = loops.map(loop => Math.abs(signedArea(loop)))
+  const parents = loops.map((loop, index) => {
+    let parent = -1
+    for (let other = 0; other < loops.length; other++) if (areas[other]! > areas[index]! && containsPoint(loops[other]!, loop[0]!) && (parent < 0 || areas[other]! < areas[parent]!)) parent = other
+    return parent
+  })
+  const depth = (index: number): number => parents[index]! < 0 ? 0 : depth(parents[index]!) + 1
+  for (let index = 0; index < loops.length; index++) {
+    if (depth(index) % 2) continue
+    const vertices = [...loops[index]!], holes: number[] = []
+    for (let child = 0; child < loops.length; child++) if (parents[child] === index) { holes.push(vertices.length); vertices.push(...loops[child]!) }
+    const indices = earcut(vertices.flatMap(vertex => [vertex[0], vertex[1]]), holes, 2)
+    for (let corner = 0; corner < indices.length; corner += 3) {
+      const triangle = indices.slice(corner, corner + 3).map(vertex => vertices[vertex]!)
+      if (turn(triangle[0]!, triangle[1]!, triangle[2]!) < 0) triangle.reverse()
+      for (const vertex of triangle) output.push(vertex[0], vertex[1], vertex[2], 0, 0, 1, vertex[6])
     }
   }
 }
@@ -126,10 +145,13 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
     for (const level of bands) {
       // A deck belongs to the floor it supports, even when its thickness extends below that elevation.
       if (level && object.kind === 'slab' && object.levelId !== 'site' && object.levelId !== level.id) continue
-      const next = level ? levels.find(candidate => candidate.elevation > level.elevation) : undefined
-      const low = level ? level.elevation - (object.kind === 'slab' && object.levelId === level.id ? 1 : 0.01) : -Infinity
+      // Outdoor containment is independent of indoor level views. A pylon or
+      // site road must not be cut at an administration building's next floor.
+      const clipLevel = object.levelId === 'site' ? null : level
+      const next = clipLevel ? levels.find(candidate => candidate.elevation > clipLevel.elevation) : undefined
+      const low = clipLevel ? clipLevel.elevation - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
       const upper = next ? next.elevation - 0.001 : Infinity
-      const cut = view.cutaway && object.kind === 'wall' ? level?.cutHeight ?? levels.at(-1)!.cutHeight : Infinity
+      const cut = view.cutaway && object.kind === 'wall' && object.levelId !== 'site' ? clipLevel?.cutHeight ?? levels.at(-1)!.cutHeight : Infinity
       const high = Math.min(upper, cut)
       const vertices: number[] = [], segments: Array<[Vertex, Vertex]> = []
       const count = object.indices?.length ?? object.positions.length / 3

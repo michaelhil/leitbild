@@ -6,6 +6,7 @@
   import { objectIdSchema } from '../../core/model/index.ts'
   import type { PackObjectPresentation } from '../../core/packs/protocol.ts'
   import { createPhysicalSceneController } from '../map/physical-scene/controller.ts'
+  import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
@@ -54,6 +55,7 @@
   let screenRevision = $state(0)
   let size = $state(untrack(() => ({ width: map.getContainer().clientWidth, height: map.getContainer().clientHeight })))
   const sessions = new Map<string, { readonly key: string; readonly session: ReturnType<typeof createLayoutLiveSession> }>()
+  let overviewLayer = $state.raw<ReturnType<typeof createPhysicalSceneOverview> | null>(null)
   const controller = untrack(() => createPhysicalSceneController({
     map, palette: physicalLayoutPalette(map.getContainer()),
     beforeId: () => physicalSceneLayerAnchorId(map.getStyle()),
@@ -67,6 +69,7 @@
   }))
   const focused = $derived(scenes.find(scene => scene.descriptor.id === focusedId) ?? scenes.find(scene => scene.status === 'ready') ?? scenes[0] ?? null)
   const focusedOwner = $derived(objects.find(object => object.id === focused?.descriptor.targetObjectId) ?? null)
+  const focusedLabel = $derived(objects.find(object => object.id === focused?.descriptor.id)?.label ?? focusedOwner?.label ?? 'Physical layout')
   const latest = $derived(focused === null ? null : snapshots.get(focused.descriptor.id) ?? null)
   const frozen = $derived(latest === null || layoutLiveFrozen(latest, wallNow))
   const components = $derived(focused === null ? [] : focused.descriptor.subjectIds.map(id => ({
@@ -118,7 +121,8 @@
     const sources = physicalLayoutSources({ bindings, objects, hiddenCategoryIds, presentationFor })
     untrack(() => controller.setSources(sources))
   })
-  $effect(() => { void theme; untrack(() => controller.setPalette(physicalLayoutPalette(map.getContainer()))) })
+  $effect(() => { void theme; const palette = untrack(() => physicalLayoutPalette(map.getContainer())); untrack(() => { controller.setPalette(palette); overviewLayer?.setPalette(palette) }) })
+  $effect(() => { overviewLayer?.update(suspended ? [] : scenes) })
   $effect(() => { onDetailedOwners(suspended ? [] : scenes.filter(scene => scene.status === 'ready').map(scene => scene.descriptor.targetObjectId)) })
   $effect(() => {
     void scenes; void objects; void runId; void perspectiveEpoch; void suspended; void documentVisible
@@ -238,6 +242,7 @@
   })
 
   runOnMount(() => {
+    overviewLayer = createPhysicalSceneOverview({ map, palette: physicalLayoutPalette(map.getContainer()), beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical layout overview: ${error.message}`) })
     let hoverTimer: ReturnType<typeof setTimeout> | null = null
     let screenTimer: ReturnType<typeof setTimeout> | null = null
     const changed = (): void => {
@@ -268,17 +273,18 @@
       if (suspended) return false
       if (inspected !== null) { closeInspection(true); return true }
       const hit = controller.pick(point)
-      if (hit === null) return false
-      const scene = scenes.find(candidate => candidate.descriptor.id === hit.sceneId)
+      const sceneId = hit?.sceneId ?? overviewLayer?.sceneAt(point)
+      if (sceneId === null || sceneId === undefined) return false
+      const scene = scenes.find(candidate => candidate.descriptor.id === sceneId)
       if (scene === undefined) return false
-      focusedId = hit.sceneId; overview(scene); return true
+      focusedId = sceneId; overview(scene); return true
     } })
     return () => {
       onconnect(null); onDetailedOwners([]); leave(); if (screenTimer !== null) clearTimeout(screenTimer); clearInterval(clock)
       map.off('mousemove', move); map.off('move', changed); map.off('resize', changed); map.off('render', changed); map.off('movestart', moving)
       document.removeEventListener('visibilitychange', visibility); window.removeEventListener('message', receive)
       for (const entry of sessions.values()) entry.session.close()
-      sessions.clear(); controller.destroy()
+      sessions.clear(); overviewLayer?.destroy(); overviewLayer = null; controller.destroy()
     }
   })
 </script>
@@ -286,12 +292,12 @@
 {#if focused !== null}
   <div class="layout-tools" bind:this={toolsElement} style:--cover-right="{coverRight}px" style:top="{toolsTop}px" style:max-height="{Math.max(0, size.height - toolsTop - 24)}px">
     {#if scenes.length > 1}
-      <select aria-label="Plant physical layout" value={focused.descriptor.id} onchange={event => { focusedId = event.currentTarget.value; controlsOpen = true; controller.fit(focusedId) }}>
-        {#each scenes as scene (scene.descriptor.id)}<option value={scene.descriptor.id}>{objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId}</option>{/each}
+      <select aria-label="Physical layout" value={focused.descriptor.id} onchange={event => { focusedId = event.currentTarget.value; controlsOpen = true; controller.fit(focusedId) }}>
+        {#each scenes as scene (scene.descriptor.id)}<option value={scene.descriptor.id}>{objects.find(object => object.id === scene.descriptor.id)?.label ?? objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId}</option>{/each}
       </select>
     {/if}
     {#if controlsOpen && focused.status !== 'distant'}
-      <Controls title={focusedOwner?.label ?? 'Physical layout'} levels={focused.descriptor.levels} view={focused.view} status={statusText} {suspended}
+      <Controls title={focusedLabel} levels={focused.descriptor.levels} view={focused.view} status={statusText} {suspended}
         onviewchange={(view: PhysicalSceneView) => { hover = null; closeInspection(); const scene = claimFocus(); if (scene !== null) controller.setView(scene.descriptor.id, view) }}
         onfit={() => { const scene = claimFocus(); if (scene !== null) controller.fit(scene.descriptor.id) }} onreset={() => { hover = null; closeInspection(); const scene = claimFocus(); if (scene !== null) controller.reset(scene.descriptor.id) }}
         onoverview={() => { const scene = claimFocus(); if (scene !== null) overview(scene) }} oncomponents={() => { claimFocus(); componentsOpen = !componentsOpen }} onclose={() => { controlsOpen = false; componentsOpen = false }} />

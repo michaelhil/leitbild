@@ -22,7 +22,9 @@ export const physicalLayoutSources = (input: {
   const visible = input.objects.filter(object => !hidden.has(input.presentationFor(object).categoryId))
   const byId = new Map(visible.map(object => [object.id as string, object]))
   return input.bindings.flatMap(({ packId, contribution }) => visible.filter(object => object.packId === packId).flatMap(object => {
-    const descriptor = contribution.describe(object, visible)
+    // Category visibility controls the owning scene. Attachment validation may
+    // still need related members from the same already-authorized Run picture.
+    const descriptor = contribution.describe(object, input.objects)
     if (descriptor === null || !byId.has(descriptor.targetObjectId)) return []
     return [{ descriptor, load: () => contribution.load(object) }]
   }))

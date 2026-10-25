@@ -76,10 +76,24 @@ export type PhysicalSceneObject = z.infer<typeof physicalSceneObjectSchema>
 export type PhysicalSceneLevel = z.infer<typeof physicalSceneLevelSchema>
 export type PhysicalSceneBounds = z.infer<typeof physicalSceneBoundsSchema>
 
+/** Small authored building outlines, available before triangle geometry is loaded. */
+export const physicalOverviewFootprintSchema = z.object({
+  id: identifierSchema,
+  label: z.string().min(1).max(300),
+  ring: z.array(z.tuple([z.number().finite(), z.number().finite()])).min(4).max(1024),
+  base: z.number().finite(),
+  height: z.number().finite().positive(),
+}).strict().refine(value => {
+  const first = value.ring[0]!, last = value.ring.at(-1)!
+  return first[0] === last[0] && first[1] === last[1]
+}, 'Overview footprint rings must be closed')
+export type PhysicalOverviewFootprint = z.infer<typeof physicalOverviewFootprintSchema>
+
 /** Cheap placement/LOD/owner metadata; obtaining it never compiles triangle geometry. */
 export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'objects'> {
   readonly locationValid: boolean
   readonly reason?: string
   readonly subjectIds: ReadonlyArray<string>
   readonly modelDigest: string
+  readonly overviewFootprints?: ReadonlyArray<PhysicalOverviewFootprint>
 }
