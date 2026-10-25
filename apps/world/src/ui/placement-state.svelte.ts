@@ -2,6 +2,7 @@ import type { GeoJsonPoint, GeoJsonPolygon } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry } from '../core/packs/protocol.ts'
 import { isIconName } from './icons.ts'
 import type { CreateDraft, CreateParameterValue } from './types.ts'
+import { placementInstruction } from './placement-instruction.ts'
 
 export interface PlacementState {
   readonly mode: PackCreateObjectType | null
@@ -18,7 +19,6 @@ export interface PlacementState {
 export const createPlacementState = (config: {
   readonly packId: string
   readonly defaultName: (type: PackCreateObjectType) => string
-  readonly setCommandStatus: (status: string) => void
 }): PlacementState => {
   let mode = $state<PackCreateObjectType | null>(null)
   let draft = $state<CreateDraft | null>(null)
@@ -55,12 +55,6 @@ export const createPlacementState = (config: {
     mode = type
     draft = null
     points = []
-    const placementKind = type.placementKind ?? 'point'
-    config.setCommandStatus(placementKind === 'route'
-      ? `Click start point for new ${type.label.toLowerCase()}`
-      : placementKind === 'polygon'
-        ? `Click polygon vertices for new ${type.label.toLowerCase()}; press Enter to finish`
-        : `Click map to place new ${type.label.toLowerCase()}`)
   }
 
   const placePoint = (point: GeoJsonPoint): void => {
@@ -74,7 +68,6 @@ export const createPlacementState = (config: {
       const nextPoints = [...points, point]
       points = nextPoints
       if (nextPoints.length < 2) {
-        config.setCommandStatus(`Click end point for new ${mode.label.toLowerCase()}`)
         return
       }
       const from = nextPoints[0]
@@ -84,15 +77,11 @@ export const createPlacementState = (config: {
       return
     }
     points = [...points, point]
-    config.setCommandStatus(points.length < 3
-      ? `Click ${3 - points.length} more point${3 - points.length === 1 ? '' : 's'} for new ${mode.label.toLowerCase()}`
-      : `Press Enter to finish ${mode.label.toLowerCase()} polygon`)
   }
 
   const finishPolygon = (): void => {
     if (!mode || (mode.placementKind ?? 'point') !== 'polygon') return
     if (points.length < 3) {
-      config.setCommandStatus(`${mode.label} needs ${3 - points.length} more point${3 - points.length === 2 ? 's' : ''}`)
       return
     }
     createDraftFor(mode, { kind: 'polygon', polygon: closePolygon(points) })
@@ -105,11 +94,7 @@ export const createPlacementState = (config: {
   }
 
   const placementText = (): string => {
-    if (!mode) return ''
-    const placementKind = mode.placementKind ?? 'point'
-    if (placementKind === 'route') return `Click start and end points for new ${mode.label.toLowerCase()}`
-    if (placementKind === 'polygon') return 'Click area vertices; press Enter to finish'
-    return `Click map to place new ${mode.label.toLowerCase()}`
+    return placementInstruction(mode, points.length)
   }
 
   return {

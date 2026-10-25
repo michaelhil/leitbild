@@ -287,7 +287,7 @@
     await tick()
     if (origin?.isConnected) origin.focus({ preventScroll: true })
   }
-  $effect(() => { if (physicalOperationalCapture) { layoutBrowser = null; layoutBrowserOrigin = null } })
+  $effect(() => { if (physicalOperationalCapture) { layoutBrowser = null; layoutBrowserOrigin = null; if (railLayout.drawer) railLayout.collapse() } })
   let surfaceShell = $state<HTMLElement | null>(null)
   $effect(() => {
     const element = surfaceShell
@@ -300,9 +300,6 @@
   const placement = createPlacementState({
     packId: 'leitbild-control',
     defaultName: (type) => defaultName(type),
-    setCommandStatus: (nextStatus) => {
-      commandFeedback = noteAction(commandFeedback, nextStatus)
-    },
   })
   const placementMode = $derived(placement.mode)
   const placementPoints = $derived(placement.points)
@@ -624,7 +621,7 @@
       browser: browserDiagnostics(),
       startup: {
         status,
-        commandStatus: commandFeedbackText(commandFeedback.line),
+        commandStatus: placement.placementText() || commandFeedbackText(commandFeedback.line),
         dismissed: startupDismissed,
         statusModalOpen: startupStatusModalOpen,
         steps: startupSteps,
@@ -2170,7 +2167,7 @@
       {#if activePack}
         <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
       {/if}
-      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} />
+      <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
       {/if}
