@@ -53,6 +53,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
   let contextLost = false
   let reconcileQueued = false
   let layerFailure: string | null = null
+  let sharedMode: PhysicalSceneView['mode'] = '2d'
   const disposals: Array<NonNullable<ReturnType<ReturnType<typeof createPhysicalSceneLayer>['metrics']>>> = []
   const presentation = (): PhysicalScenePresentation[] => [...entries.values()].map(entry => ({ descriptor: entry.source.descriptor, view: entry.view, status: entry.state, ...(entry.reason ? { reason: entry.reason } : {}), occurrenceCount: entry.scene?.objects.length ?? 0 }))
   const emit = (): void => {
@@ -168,7 +169,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
         if (previous && JSON.stringify(previous.source.descriptor) === JSON.stringify(source.descriptor)) { previous.source = source; continue }
         if (previous) previous.generation = ++generation
         changed = true
-        entries.set(source.descriptor.id, { source, generation: ++generation, scene: null, meshes: [], view: previous?.view ?? defaultPhysicalSceneView(source.descriptor.levels), status: new Map(), statusSignature: '[]', state: 'distant', eligible: false, lastUsed: 0, reason: undefined, loading: false, loadError: undefined })
+        entries.set(source.descriptor.id, { source, generation: ++generation, scene: null, meshes: [], view: previous?.view ?? { ...defaultPhysicalSceneView(source.descriptor.levels), mode: sharedMode }, status: new Map(), statusSignature: '[]', state: 'distant', eligible: false, lastUsed: 0, reason: undefined, loading: false, loadError: undefined })
       }
       if (changed) { layerFailure = null; currentLayer?.invalidatePicks() }
       reconcile(); map.triggerRepaint()
@@ -177,12 +178,21 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       const entry = requireEntry(sceneId)
       if (!Number.isFinite(view.separation) || view.separation < 0 || view.separation > 100) throw new Error('Level separation must be between 0 and 100 metres')
       if (view.levelId !== 'all' && !entry.source.descriptor.levels.some(level => level.id === view.levelId)) throw new Error(`Unknown physical level: ${view.levelId}`)
-      const old = entry.view
-      entry.view = { ...view }
-      const geometryChanged = old.levelId !== view.levelId || old.cutaway !== view.cutaway || old.separation !== view.separation || old.mode !== view.mode
-      if (geometryChanged || old.detail !== view.detail) currentLayer?.invalidatePicks()
-      if (geometryChanged && entry.scene) entry.meshes = buildVisibleMeshes(entry.scene, view)
-      if (old.mode !== view.mode) map.easeTo({ pitch: view.mode === '2d' ? 0 : 50, duration: duration() })
+      const modeChanged = sharedMode !== view.mode
+      sharedMode = view.mode
+      // Projection belongs to the one shared camera. Neighboring layouts must
+      // not remain flattened plans inside a 3D view; their other settings stay local.
+      for (const target of entries.values()) {
+        const old = target.view
+        const next = target === entry ? { ...view } : modeChanged ? { ...old, mode: sharedMode,
+          levelId: sharedMode === '2d' && old.levelId === 'all' ? target.source.descriptor.levels[0]!.id : old.levelId } : old
+        if (next === old) continue
+        target.view = next
+        const geometryChanged = old.levelId !== next.levelId || old.cutaway !== next.cutaway || old.separation !== next.separation || old.mode !== next.mode
+        if (geometryChanged || old.detail !== next.detail) currentLayer?.invalidatePicks()
+        if (geometryChanged && target.scene) target.meshes = buildVisibleMeshes(target.scene, next)
+      }
+      if (modeChanged) map.easeTo({ pitch: view.mode === '2d' ? 0 : 50, duration: duration() })
       reconcile(); map.triggerRepaint()
     },
     setStatus(sceneId: string, status: ReadonlyMap<string, PhysicalSubjectStyle>): void {

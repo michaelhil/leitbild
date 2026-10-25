@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { PackPhysicalScene, PhysicalSceneObject } from '../src/core/packs/scene.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
+import { createPhysicalSceneController } from '../src/ui/map/physical-scene/controller.ts'
 import { createPhysicalSceneOverview, physicalOverviewFeatures } from '../src/ui/map/physical-scene/overview.ts'
 import { physicalSceneLayerAnchorId, physicalSceneLayerId, physicalSceneOverviewLayerId } from '../src/ui/map/physical-scene/order.ts'
 import { defaultPhysicalSceneView, type PhysicalScenePresentation } from '../src/ui/map/physical-scene/types.ts'
@@ -110,4 +111,34 @@ test('coarse layer preserves operational ordering, recovers a replaced style and
   expect(fake.listenerCount('style.load')).toBe(0)
   expect(fake.listenerCount('idle')).toBe(0)
   expect(errors).toEqual([])
+})
+
+test('one camera has one projection while each layout retains its own floor, separation and live settings', () => {
+  const fake = createFakeMapStyle(), pitches: number[] = []
+  const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ width: 800, height: 600 }) })
+  Object.assign(fake.map, { getCanvas: () => canvas, project: () => ({ x: 400, y: 300 }), triggerRepaint: () => {}, isStyleLoaded: () => true,
+    easeTo: (options: { pitch: number }) => pitches.push(options.pitch), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), fitBounds: () => {} })
+  const controller = createPhysicalSceneController({ map: fake.map, palette: { materials: {}, defaultMaterial: [0.4, 0.4, 0.4], line: [0.1, 0.1, 0.1] }, beforeId: () => undefined,
+    onChange: () => {}, reportError: error => { throw error } })
+  const source = (id: string, revision = 'design:retained') => ({ descriptor: { ...presentation().descriptor, id, revision }, load: async (): Promise<PackPhysicalScene> => { throw new Error('Distant sources must remain unloaded') } })
+  const a = source('a'), b = source('b'), c = source('c')
+  controller.setSources([a, b])
+  controller.setView('a', { ...presentation().view, mode: '3d', levelId: 'upper', separation: 12, cutaway: false, live: false })
+  const view = (id: string) => controller.presentations().find(entry => entry.descriptor.id === id)!.view
+  expect(view('b')).toEqual({ ...presentation().view, mode: '3d' })
+  controller.setSources([a, b, c])
+  expect(view('c').mode).toBe('3d')
+  controller.setView('b', { ...view('b'), levelId: 'all', separation: 8, detail: 'hidden' })
+  expect(view('a')).toEqual({ ...presentation().view, mode: '3d', levelId: 'upper', separation: 12, cutaway: false, live: false })
+  controller.setView('a', { ...view('a'), mode: '2d' })
+  expect(view('b')).toEqual({ ...presentation().view, levelId: 'ground', separation: 8, detail: 'hidden' })
+  expect(view('a').levelId).toBe('upper')
+  expect(view('c').mode).toBe('2d')
+  controller.setView('a', { ...view('a'), mode: '3d' })
+  controller.setSources([source('a', 'changed-design'), b, c])
+  expect(controller.presentations().every(entry => entry.view.mode === '3d')).toBe(true)
+  controller.reset('b')
+  expect(controller.presentations().every(entry => entry.view.mode === '2d')).toBe(true)
+  expect(pitches).toEqual([50, 0, 50, 0])
+  controller.destroy()
 })
