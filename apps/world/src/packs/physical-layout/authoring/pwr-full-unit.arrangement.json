@@ -1,0 +1,5376 @@
+{
+  "id": "pwr-full-unit",
+  "title": "Four-loop PWR full conceptual unit",
+  "origin": [
+    44.4,
+    26,
+    0
+  ],
+  "levels": [
+    {
+      "id": "lower",
+      "label": "Plant ground and lower machinery floor",
+      "elevation": 0,
+      "cutHeight": 1.2
+    },
+    {
+      "id": "service",
+      "label": "Auxiliary and electrical service floor",
+      "elevation": 8,
+      "cutHeight": 1.2
+    },
+    {
+      "id": "operating",
+      "label": "Turbine and main control floor",
+      "elevation": 15,
+      "cutHeight": 1.2
+    },
+    {
+      "id": "refuelling",
+      "label": "Reactor refuelling and high service platforms",
+      "elevation": 22,
+      "cutHeight": 1.2
+    }
+  ],
+  "retainedGroups": [
+    {
+      "id": "building/turbine-hall",
+      "label": "Turbine hall",
+      "levelId": "lower",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "dimensions": {
+        "length": 88.8,
+        "width": 36.8,
+        "height": 31.55
+      },
+      "sourceElementIds": [
+        "tg-hp",
+        "tg-lp-1",
+        "tg-lp-2",
+        "tg-lp-3",
+        "tg-generator",
+        "tg-exciter",
+        "msr-1",
+        "msr-2",
+        "stop-valve",
+        "condenser-1",
+        "condenser-2",
+        "condenser-3",
+        "cp-a",
+        "cp-b",
+        "wall/hall-north",
+        "opening/wall/hall-north/D-N1/lower",
+        "opening/wall/hall-north/W-1/operating",
+        "opening/wall/hall-north/W-2/operating",
+        "opening/wall/hall-north/W-3/operating",
+        "wall/hall-west",
+        "opening/wall/hall-west/D-W1/lower",
+        "wall/hall-east",
+        "opening/wall/hall-east/D-E1/lower",
+        "wall/hall-south",
+        "opening/wall/hall-south/D-P1/lower",
+        "door/D-W1a",
+        "door/D-W1b",
+        "door/D-N1",
+        "door/D-P1a",
+        "door/D-P1b",
+        "door-assembly/opening/wall/hall-west/D-W1/lower",
+        "door-assembly/opening/wall/hall-south/D-P1/lower",
+        "slab/lower",
+        "slab/operating",
+        "space/turbine-hall",
+        "hatch-cover",
+        "stair/main",
+        "column/0/0.4",
+        "column/0/36.4",
+        "column/1/0.4",
+        "column/1/36.4",
+        "column/2/0.4",
+        "column/2/36.4",
+        "column/3/0.4",
+        "column/3/36.4",
+        "column/4/0.4",
+        "column/4/36.4",
+        "column/5/0.4",
+        "column/5/36.4",
+        "column/6/0.4",
+        "column/6/36.4",
+        "column/7/0.4",
+        "column/7/36.4",
+        "column/8/0.4",
+        "column/8/36.4",
+        "pier/18.4/8",
+        "pier/18.4/26.7",
+        "pier/29.4/8",
+        "pier/29.4/26.7",
+        "pier/40.4/8",
+        "pier/40.4/26.7",
+        "pier/51.4/8",
+        "pier/51.4/26.7",
+        "main-steam-route"
+      ]
+    },
+    {
+      "id": "building/feedwater-annex",
+      "label": "Main-feedwater pump annex",
+      "levelId": "lower",
+      "position": [
+        8.4,
+        36.8,
+        0
+      ],
+      "dimensions": {
+        "length": 32.8,
+        "width": 16.8,
+        "height": 6.5
+      },
+      "sourceElementIds": [
+        "mfw-a",
+        "mfw-b",
+        "wall/annex-north",
+        "opening/wall/annex-north/D-P1b/lower",
+        "wall/annex-west",
+        "opening/wall/annex-west/D-P2/lower",
+        "wall/annex-east",
+        "wall/annex-south",
+        "opening/wall/annex-south/D-P3/lower",
+        "door/D-P3a",
+        "door/D-P3b",
+        "door-assembly/opening/wall/annex-south/D-P3/lower",
+        "slab/annex",
+        "space/feedwater-room",
+        "feedwater-route"
+      ]
+    }
+  ],
+  "buildings": [
+    {
+      "id": "building/auxiliary",
+      "label": "Auxiliary and safety-train building",
+      "levelId": "lower",
+      "position": [
+        -92,
+        43,
+        0
+      ],
+      "dimensions": {
+        "length": 87,
+        "width": 58,
+        "height": 16
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        },
+        {
+          "levelId": "service",
+          "elevation": 8
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/aux-a-si",
+          "label": "Train A injection and RHR pump cells",
+          "levelId": "lower",
+          "position": [
+            -91.5,
+            43.5,
+            0
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-a-cooling",
+          "label": "Train A spray and component-cooling cells",
+          "levelId": "lower",
+          "position": [
+            -91.5,
+            63,
+            0
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-a-chemistry",
+          "label": "CVCS charging A and volume control",
+          "levelId": "lower",
+          "position": [
+            -91.5,
+            82.5,
+            0
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 18,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-corridor-lower",
+          "label": "Auxiliary access corridor",
+          "levelId": "lower",
+          "position": [
+            -52,
+            43.5,
+            0
+          ],
+          "dimensions": {
+            "length": 7,
+            "width": 57,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-b-si",
+          "label": "Train B injection and RHR pump cells",
+          "levelId": "lower",
+          "position": [
+            -44.5,
+            43.5,
+            0
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-b-cooling",
+          "label": "Train B spray and component-cooling cells",
+          "levelId": "lower",
+          "position": [
+            -44.5,
+            63,
+            0
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-b-chemistry",
+          "label": "CVCS charging B and boric acid",
+          "levelId": "lower",
+          "position": [
+            -44.5,
+            82.5,
+            0
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 18,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-afw-a",
+          "label": "Motor-driven auxiliary feedwater A",
+          "levelId": "service",
+          "position": [
+            -91.5,
+            43.5,
+            8
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-afw-b",
+          "label": "Motor-driven auxiliary feedwater B",
+          "levelId": "service",
+          "position": [
+            -44.5,
+            43.5,
+            8
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-afw-turbine",
+          "label": "Turbine-driven auxiliary feedwater room",
+          "levelId": "service",
+          "position": [
+            -91.5,
+            63,
+            8
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-maintenance",
+          "label": "Auxiliary maintenance and heat-exchanger bay",
+          "levelId": "service",
+          "position": [
+            -44.5,
+            63,
+            8
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 19,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-additive",
+          "label": "Containment-spray additive and chemical service",
+          "levelId": "service",
+          "position": [
+            -91.5,
+            82.5,
+            8
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 18,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-radwaste",
+          "label": "Radwaste and sample service context",
+          "levelId": "service",
+          "position": [
+            -44.5,
+            82.5,
+            8
+          ],
+          "dimensions": {
+            "length": 39,
+            "width": 18,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/aux-corridor-service",
+          "label": "Auxiliary upper access corridor",
+          "levelId": "service",
+          "position": [
+            -52,
+            43.5,
+            8
+          ],
+          "dimensions": {
+            "length": 7,
+            "width": 57,
+            "height": 7.5
+          }
+        }
+      ],
+      "partitions": [
+        {
+          "id": "wall/aux-lower-corridor--52.25",
+          "levelId": "lower",
+          "position": [
+            -52.25,
+            43,
+            0
+          ],
+          "length": 58,
+          "yaw": 1.5707963267948966,
+          "height": 7.8,
+          "doorAt": 7,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-lower-corridor--45",
+          "levelId": "lower",
+          "position": [
+            -45,
+            43,
+            0
+          ],
+          "length": 58,
+          "yaw": 1.5707963267948966,
+          "height": 7.8,
+          "doorAt": 7,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-lower-a-62.5",
+          "levelId": "lower",
+          "position": [
+            -92,
+            62.5,
+            0
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-lower-a-82",
+          "levelId": "lower",
+          "position": [
+            -92,
+            82,
+            0
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-lower-b-62.5",
+          "levelId": "lower",
+          "position": [
+            -45,
+            62.5,
+            0
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-lower-b-82",
+          "levelId": "lower",
+          "position": [
+            -45,
+            82,
+            0
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-service-corridor--52.25",
+          "levelId": "service",
+          "position": [
+            -52.25,
+            43,
+            8
+          ],
+          "length": 58,
+          "yaw": 1.5707963267948966,
+          "height": 7.8,
+          "doorAt": 7,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-service-corridor--45",
+          "levelId": "service",
+          "position": [
+            -45,
+            43,
+            8
+          ],
+          "length": 58,
+          "yaw": 1.5707963267948966,
+          "height": 7.8,
+          "doorAt": 7,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-service-a-62.5",
+          "levelId": "service",
+          "position": [
+            -92,
+            62.5,
+            8
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-service-a-82",
+          "levelId": "service",
+          "position": [
+            -92,
+            82,
+            8
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-service-b-62.5",
+          "levelId": "service",
+          "position": [
+            -45,
+            62.5,
+            8
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/aux-service-b-82",
+          "levelId": "service",
+          "position": [
+            -45,
+            82,
+            8
+          ],
+          "length": 39.5,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 17,
+          "doorWidth": 2.4
+        }
+      ]
+    },
+    {
+      "id": "building/electrical-control",
+      "label": "Electrical and main control building",
+      "levelId": "lower",
+      "position": [
+        0,
+        62,
+        0
+      ],
+      "dimensions": {
+        "length": 58,
+        "width": 46,
+        "height": 23
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        },
+        {
+          "levelId": "service",
+          "elevation": 8
+        },
+        {
+          "levelId": "operating",
+          "elevation": 15
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/electrical-corridor-lower",
+          "label": "Electrical/control access corridor",
+          "levelId": "lower",
+          "position": [
+            0.5,
+            82.5,
+            0
+          ],
+          "dimensions": {
+            "length": 57,
+            "width": 5,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/electrical-corridor-service",
+          "label": "Electrical/control access corridor",
+          "levelId": "service",
+          "position": [
+            0.5,
+            82.5,
+            8
+          ],
+          "dimensions": {
+            "length": 57,
+            "width": 5,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/electrical-corridor-operating",
+          "label": "Electrical/control access corridor",
+          "levelId": "operating",
+          "position": [
+            0.5,
+            82.5,
+            15
+          ],
+          "dimensions": {
+            "length": 57,
+            "width": 5,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/electrical-a",
+          "label": "Train A AC switchgear",
+          "levelId": "lower",
+          "position": [
+            0.5,
+            62.5,
+            0
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/electrical-b",
+          "label": "Train B AC switchgear",
+          "levelId": "lower",
+          "position": [
+            29.5,
+            62.5,
+            0
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/load-centres-a",
+          "label": "Train A motor-control centres",
+          "levelId": "lower",
+          "position": [
+            0.5,
+            88,
+            0
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19.5,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/load-centres-b",
+          "label": "Train B motor-control centres",
+          "levelId": "lower",
+          "position": [
+            29.5,
+            88,
+            0
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19.5,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/battery-a",
+          "label": "Battery and inverter room A",
+          "levelId": "service",
+          "position": [
+            0.5,
+            62.5,
+            8
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19,
+            "height": 6.5
+          }
+        },
+        {
+          "id": "space/battery-b",
+          "label": "Battery and inverter room B",
+          "levelId": "service",
+          "position": [
+            29.5,
+            62.5,
+            8
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19,
+            "height": 6.5
+          }
+        },
+        {
+          "id": "space/cable-a",
+          "label": "Cable and relay service A",
+          "levelId": "service",
+          "position": [
+            0.5,
+            88,
+            8
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19.5,
+            "height": 6.5
+          }
+        },
+        {
+          "id": "space/cable-b",
+          "label": "Cable and relay service B",
+          "levelId": "service",
+          "position": [
+            29.5,
+            88,
+            8
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19.5,
+            "height": 6.5
+          }
+        },
+        {
+          "id": "space/control",
+          "label": "Main control room",
+          "levelId": "operating",
+          "position": [
+            0.5,
+            62.5,
+            15
+          ],
+          "dimensions": {
+            "length": 57,
+            "width": 19,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/relay-a",
+          "label": "Protection relay room A",
+          "levelId": "operating",
+          "position": [
+            0.5,
+            88,
+            15
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19.5,
+            "height": 7
+          }
+        },
+        {
+          "id": "space/relay-b",
+          "label": "Protection relay room B",
+          "levelId": "operating",
+          "position": [
+            29.5,
+            88,
+            15
+          ],
+          "dimensions": {
+            "length": 28,
+            "width": 19.5,
+            "height": 7
+          }
+        }
+      ],
+      "partitions": [
+        {
+          "id": "wall/electrical-lower-corridor-south",
+          "levelId": "lower",
+          "position": [
+            0,
+            82,
+            0
+          ],
+          "length": 58,
+          "yaw": 0,
+          "height": 7,
+          "doorAt": 27,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/electrical-lower-corridor-north",
+          "levelId": "lower",
+          "position": [
+            0,
+            87.5,
+            0
+          ],
+          "length": 58,
+          "yaw": 0,
+          "height": 7,
+          "doorAt": 27,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/electrical-lower-train-separation-south",
+          "levelId": "lower",
+          "position": [
+            29,
+            62,
+            0
+          ],
+          "length": 20,
+          "yaw": 1.5707963267948966,
+          "height": 7,
+          "doorAt": 8,
+          "doorWidth": 1.4
+        },
+        {
+          "id": "wall/electrical-lower-train-separation-north",
+          "levelId": "lower",
+          "position": [
+            29,
+            87.5,
+            0
+          ],
+          "length": 20.5,
+          "yaw": 1.5707963267948966,
+          "height": 7,
+          "doorAt": 8,
+          "doorWidth": 1.4
+        },
+        {
+          "id": "wall/electrical-service-corridor-south",
+          "levelId": "service",
+          "position": [
+            0,
+            82,
+            8
+          ],
+          "length": 58,
+          "yaw": 0,
+          "height": 7,
+          "doorAt": 27,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/electrical-service-corridor-north",
+          "levelId": "service",
+          "position": [
+            0,
+            87.5,
+            8
+          ],
+          "length": 58,
+          "yaw": 0,
+          "height": 7,
+          "doorAt": 27,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/electrical-service-train-separation-south",
+          "levelId": "service",
+          "position": [
+            29,
+            62,
+            8
+          ],
+          "length": 20,
+          "yaw": 1.5707963267948966,
+          "height": 7,
+          "doorAt": 8,
+          "doorWidth": 1.4
+        },
+        {
+          "id": "wall/electrical-service-train-separation-north",
+          "levelId": "service",
+          "position": [
+            29,
+            87.5,
+            8
+          ],
+          "length": 20.5,
+          "yaw": 1.5707963267948966,
+          "height": 7,
+          "doorAt": 8,
+          "doorWidth": 1.4
+        },
+        {
+          "id": "wall/electrical-operating-corridor-south",
+          "levelId": "operating",
+          "position": [
+            0,
+            82,
+            15
+          ],
+          "length": 58,
+          "yaw": 0,
+          "height": 7,
+          "doorAt": 27,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/electrical-operating-corridor-north",
+          "levelId": "operating",
+          "position": [
+            0,
+            87.5,
+            15
+          ],
+          "length": 58,
+          "yaw": 0,
+          "height": 7,
+          "doorAt": 27,
+          "doorWidth": 2.4
+        },
+        {
+          "id": "wall/electrical-operating-train-separation-south",
+          "levelId": "operating",
+          "position": [
+            29,
+            62,
+            15
+          ],
+          "length": 20,
+          "yaw": 1.5707963267948966,
+          "height": 7,
+          "doorAt": 8,
+          "doorWidth": 1.4
+        },
+        {
+          "id": "wall/electrical-operating-train-separation-north",
+          "levelId": "operating",
+          "position": [
+            29,
+            87.5,
+            15
+          ],
+          "length": 20.5,
+          "yaw": 1.5707963267948966,
+          "height": 7,
+          "doorAt": 8,
+          "doorWidth": 1.4
+        }
+      ]
+    },
+    {
+      "id": "building/containment",
+      "label": "Reactor containment",
+      "levelId": "lower",
+      "position": [
+        -79,
+        -21,
+        0
+      ],
+      "dimensions": {
+        "length": 58,
+        "width": 58,
+        "height": 48
+      },
+      "footprint": "ellipse",
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/reactor-cavity",
+          "label": "Reactor cavity and primary-loop area",
+          "levelId": "lower",
+          "position": [
+            -78,
+            -20,
+            0
+          ],
+          "dimensions": {
+            "length": 56,
+            "width": 56,
+            "height": 36
+          }
+        }
+      ],
+      "partitions": []
+    },
+    {
+      "id": "building/steam-gallery",
+      "label": "Steam and feedwater valve gallery",
+      "levelId": "lower",
+      "position": [
+        -20,
+        -24,
+        0
+      ],
+      "dimensions": {
+        "length": 19,
+        "width": 59,
+        "height": 22
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        },
+        {
+          "levelId": "operating",
+          "elevation": 15
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/steam-gallery-lower",
+          "label": "Feedwater and auxiliary-feedwater valve gallery",
+          "levelId": "lower",
+          "position": [
+            -19.5,
+            -23.5,
+            0
+          ],
+          "dimensions": {
+            "length": 18,
+            "width": 58,
+            "height": 14
+          }
+        },
+        {
+          "id": "space/steam-gallery-upper",
+          "label": "Main-steam isolation and relief gallery",
+          "levelId": "operating",
+          "position": [
+            -19.5,
+            -23.5,
+            15
+          ],
+          "dimensions": {
+            "length": 18,
+            "width": 58,
+            "height": 7
+          }
+        }
+      ],
+      "partitions": []
+    },
+    {
+      "id": "building/diesel-a",
+      "label": "Emergency diesel building A",
+      "levelId": "lower",
+      "position": [
+        -96,
+        112,
+        0
+      ],
+      "dimensions": {
+        "length": 31,
+        "width": 23,
+        "height": 9
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/diesel-a",
+          "label": "Diesel A machine hall",
+          "levelId": "lower",
+          "position": [
+            -95.5,
+            112.5,
+            0
+          ],
+          "dimensions": {
+            "length": 30,
+            "width": 16,
+            "height": 8
+          }
+        },
+        {
+          "id": "space/diesel-a-service",
+          "label": "Fuel/day-tank and ventilation service",
+          "levelId": "lower",
+          "position": [
+            -95.5,
+            129,
+            0
+          ],
+          "dimensions": {
+            "length": 30,
+            "width": 5.5,
+            "height": 8
+          }
+        }
+      ],
+      "partitions": [
+        {
+          "id": "wall/diesel-a-service",
+          "levelId": "lower",
+          "position": [
+            -96,
+            128.5,
+            0
+          ],
+          "length": 31,
+          "yaw": 0,
+          "height": 8,
+          "doorAt": 22,
+          "doorWidth": 2.4
+        }
+      ]
+    },
+    {
+      "id": "building/diesel-b",
+      "label": "Emergency diesel building B",
+      "levelId": "lower",
+      "position": [
+        -49,
+        112,
+        0
+      ],
+      "dimensions": {
+        "length": 31,
+        "width": 23,
+        "height": 9
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/diesel-b",
+          "label": "Diesel B machine hall",
+          "levelId": "lower",
+          "position": [
+            -48.5,
+            112.5,
+            0
+          ],
+          "dimensions": {
+            "length": 30,
+            "width": 16,
+            "height": 8
+          }
+        },
+        {
+          "id": "space/diesel-b-service",
+          "label": "Fuel/day-tank and ventilation service",
+          "levelId": "lower",
+          "position": [
+            -48.5,
+            129,
+            0
+          ],
+          "dimensions": {
+            "length": 30,
+            "width": 5.5,
+            "height": 8
+          }
+        }
+      ],
+      "partitions": [
+        {
+          "id": "wall/diesel-b-service",
+          "levelId": "lower",
+          "position": [
+            -49,
+            128.5,
+            0
+          ],
+          "length": 31,
+          "yaw": 0,
+          "height": 8,
+          "doorAt": 22,
+          "doorWidth": 2.4
+        }
+      ]
+    },
+    {
+      "id": "building/cooling-water",
+      "label": "Cooling-water intake pump house",
+      "levelId": "lower",
+      "position": [
+        98,
+        0,
+        0
+      ],
+      "dimensions": {
+        "length": 35,
+        "width": 28,
+        "height": 9
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/cooling-water",
+          "label": "Circulating and service-water pumps",
+          "levelId": "lower",
+          "position": [
+            98.5,
+            0.5,
+            0
+          ],
+          "dimensions": {
+            "length": 34,
+            "width": 27,
+            "height": 8
+          }
+        }
+      ],
+      "partitions": []
+    },
+    {
+      "id": "building/fuel-service",
+      "label": "Fuel handling and maintenance service",
+      "levelId": "lower",
+      "position": [
+        -142,
+        43,
+        0
+      ],
+      "dimensions": {
+        "length": 42,
+        "width": 58,
+        "height": 22
+      },
+      "floors": [
+        {
+          "levelId": "lower",
+          "elevation": 0
+        },
+        {
+          "levelId": "service",
+          "elevation": 8
+        }
+      ],
+      "rooms": [
+        {
+          "id": "space/fuel-lower",
+          "label": "Fuel-service stores and maintenance",
+          "levelId": "lower",
+          "position": [
+            -141.5,
+            43.5,
+            0
+          ],
+          "dimensions": {
+            "length": 41,
+            "width": 28,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/fuel-workshop",
+          "label": "Controlled maintenance workshop",
+          "levelId": "lower",
+          "position": [
+            -141.5,
+            72,
+            0
+          ],
+          "dimensions": {
+            "length": 41,
+            "width": 28.5,
+            "height": 7.5
+          }
+        },
+        {
+          "id": "space/fuel-pool",
+          "label": "Fuel handling and pool service context",
+          "levelId": "service",
+          "position": [
+            -141.5,
+            43.5,
+            8
+          ],
+          "dimensions": {
+            "length": 41,
+            "width": 56,
+            "height": 13
+          }
+        }
+      ],
+      "partitions": [
+        {
+          "id": "wall/fuel-workshop",
+          "levelId": "lower",
+          "position": [
+            -142,
+            71.5,
+            0
+          ],
+          "length": 42,
+          "yaw": 0,
+          "height": 7.8,
+          "doorAt": 19,
+          "doorWidth": 2.4
+        }
+      ]
+    }
+  ],
+  "equipment": [
+    {
+      "id": "equipment/vessel",
+      "label": "Reactor pressure vessel",
+      "family": "reactor-vessel",
+      "levelId": "lower",
+      "position": [
+        -53.5,
+        4.5,
+        0
+      ],
+      "dimensions": {
+        "length": 7,
+        "width": 7,
+        "height": 17
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "vessel",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/pressurizer",
+      "label": "Pressurizer",
+      "family": "pressurizer",
+      "levelId": "lower",
+      "position": [
+        -52,
+        25,
+        0
+      ],
+      "dimensions": {
+        "length": 4.5,
+        "width": 4.5,
+        "height": 13
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "pressurizer",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/pressurizerReliefTank",
+      "label": "Pressurizer relief tank",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -56,
+        -8,
+        0
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 3.5,
+        "height": 3.5
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "pressurizerReliefTank",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/sgA",
+      "label": "Steam generator A",
+      "family": "steam-generator",
+      "levelId": "lower",
+      "position": [
+        -65,
+        19,
+        0
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 6,
+        "height": 24
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "sgA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rcpA",
+      "label": "Reactor coolant pump A",
+      "family": "reactor-coolant-pump",
+      "levelId": "lower",
+      "position": [
+        -63,
+        11,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 8
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "rcpA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/safetyAccumulatorA",
+      "label": "Safety injection accumulator A",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -72,
+        9,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 6
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "safetyAccumulatorA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/feedwaterControlValveA",
+      "label": "Feedwater control valve A",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -18,
+        -18,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "feedwaterControlValveA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/auxFeedwaterValveA",
+      "label": "Auxiliary feedwater valve A",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -14,
+        -18,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "auxFeedwaterValveA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamIsolationValveA",
+      "label": "Main steam isolation valve A",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -18,
+        -18,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamIsolationValveA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/steamGeneratorReliefValveA",
+      "label": "Atmospheric relief valve A",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -11,
+        -14,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "steamGeneratorReliefValveA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamSafetyValveA",
+      "label": "Main steam safety-valve bank A",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -5,
+        -14,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamSafetyValveA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "One illustrative valve-bank assembly corresponds to the graph’s aggregate main-steam safety-valve subject, not a claim about individual valve count."
+    },
+    {
+      "id": "equipment/sgB",
+      "label": "Steam generator B",
+      "family": "steam-generator",
+      "levelId": "lower",
+      "position": [
+        -41,
+        19,
+        0
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 6,
+        "height": 24
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "sgB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rcpB",
+      "label": "Reactor coolant pump B",
+      "family": "reactor-coolant-pump",
+      "levelId": "lower",
+      "position": [
+        -43,
+        11,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 8
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "rcpB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/safetyAccumulatorB",
+      "label": "Safety injection accumulator B",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -32,
+        9,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 6
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "safetyAccumulatorB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/feedwaterControlValveB",
+      "label": "Feedwater control valve B",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -18,
+        -4,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "feedwaterControlValveB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/auxFeedwaterValveB",
+      "label": "Auxiliary feedwater valve B",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -14,
+        -4,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "auxFeedwaterValveB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamIsolationValveB",
+      "label": "Main steam isolation valve B",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -18,
+        -4,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamIsolationValveB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/steamGeneratorReliefValveB",
+      "label": "Atmospheric relief valve B",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -11,
+        0,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "steamGeneratorReliefValveB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamSafetyValveB",
+      "label": "Main steam safety-valve bank B",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -5,
+        0,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamSafetyValveB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "One illustrative valve-bank assembly corresponds to the graph’s aggregate main-steam safety-valve subject, not a claim about individual valve count."
+    },
+    {
+      "id": "equipment/sgC",
+      "label": "Steam generator C",
+      "family": "steam-generator",
+      "levelId": "lower",
+      "position": [
+        -41,
+        -9,
+        0
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 6,
+        "height": 24
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "sgC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rcpC",
+      "label": "Reactor coolant pump C",
+      "family": "reactor-coolant-pump",
+      "levelId": "lower",
+      "position": [
+        -43,
+        -1,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 8
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "rcpC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/safetyAccumulatorC",
+      "label": "Safety injection accumulator C",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -45,
+        -16,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 6
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "safetyAccumulatorC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/feedwaterControlValveC",
+      "label": "Feedwater control valve C",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -18,
+        10,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "feedwaterControlValveC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/auxFeedwaterValveC",
+      "label": "Auxiliary feedwater valve C",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -14,
+        10,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "auxFeedwaterValveC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamIsolationValveC",
+      "label": "Main steam isolation valve C",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -18,
+        10,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamIsolationValveC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/steamGeneratorReliefValveC",
+      "label": "Atmospheric relief valve C",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -11,
+        14,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "steamGeneratorReliefValveC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamSafetyValveC",
+      "label": "Main steam safety-valve bank C",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -5,
+        14,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamSafetyValveC",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "One illustrative valve-bank assembly corresponds to the graph’s aggregate main-steam safety-valve subject, not a claim about individual valve count."
+    },
+    {
+      "id": "equipment/sgD",
+      "label": "Steam generator D",
+      "family": "steam-generator",
+      "levelId": "lower",
+      "position": [
+        -65,
+        -9,
+        0
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 6,
+        "height": 24
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "sgD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rcpD",
+      "label": "Reactor coolant pump D",
+      "family": "reactor-coolant-pump",
+      "levelId": "lower",
+      "position": [
+        -63,
+        -1,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 8
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "rcpD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/safetyAccumulatorD",
+      "label": "Safety injection accumulator D",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -60,
+        -16,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 6
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "safetyAccumulatorD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/feedwaterControlValveD",
+      "label": "Feedwater control valve D",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -18,
+        24,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "feedwaterControlValveD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/auxFeedwaterValveD",
+      "label": "Auxiliary feedwater valve D",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -14,
+        24,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-lower",
+      "subjects": [
+        {
+          "id": "auxFeedwaterValveD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamIsolationValveD",
+      "label": "Main steam isolation valve D",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -18,
+        24,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamIsolationValveD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/steamGeneratorReliefValveD",
+      "label": "Atmospheric relief valve D",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -11,
+        28,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "steamGeneratorReliefValveD",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored valve-gallery placement tied to the exact loop component. Pipe paths are illustrative; they do not retune solver lengths or resistance."
+    },
+    {
+      "id": "equipment/mainSteamSafetyValveD",
+      "label": "Main steam safety-valve bank D",
+      "family": "valve",
+      "levelId": "operating",
+      "position": [
+        -5,
+        28,
+        15
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.8
+      },
+      "buildingId": "building/steam-gallery",
+      "spaceId": "space/steam-gallery-upper",
+      "subjects": [
+        {
+          "id": "mainSteamSafetyValveD",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "One illustrative valve-bank assembly corresponds to the graph’s aggregate main-steam safety-valve subject, not a claim about individual valve count."
+    },
+    {
+      "id": "equipment/rhrPumpA",
+      "label": "Residual heat removal pump A",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -87,
+        49,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-si",
+      "subjects": [
+        {
+          "id": "rhrPumpA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/safetyInjectionPumpA",
+      "label": "High-head safety injection pump A",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -67,
+        49,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-si",
+      "subjects": [
+        {
+          "id": "safetyInjectionPumpA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/containmentSprayPumpA",
+      "label": "Containment spray pump A",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -87,
+        70,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-cooling",
+      "subjects": [
+        {
+          "id": "containmentSprayPumpA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/componentCoolingWaterPumpA",
+      "label": "Component cooling-water pump A",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -67,
+        70,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-cooling",
+      "subjects": [
+        {
+          "id": "componentCoolingWaterPumpA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Physical pump placed for the graph’s electrical-load aggregate. Only its modeled electrical/operation observations are available; no additional hydraulic model or flow is invented."
+    },
+    {
+      "id": "equipment/containmentFanCoolersA",
+      "label": "Containment fan-cooler bank A",
+      "family": "heat-exchanger",
+      "levelId": "lower",
+      "position": [
+        -75,
+        0,
+        0
+      ],
+      "dimensions": {
+        "length": 8,
+        "width": 3,
+        "height": 3
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "containmentFanCoolersA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Illustrative fan-cooler bank corresponds to the graph’s aggregated electrical load. No independent cooler multiplicity or thermal state is inferred."
+    },
+    {
+      "id": "equipment/dieselGeneratorA",
+      "label": "Emergency diesel generator A",
+      "family": "diesel-generator",
+      "levelId": "lower",
+      "position": [
+        -89,
+        118,
+        0
+      ],
+      "dimensions": {
+        "length": 15,
+        "width": 5,
+        "height": 5
+      },
+      "buildingId": "building/diesel-a",
+      "spaceId": "space/diesel-a",
+      "subjects": [
+        {
+          "id": "dieselGeneratorA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/serviceWaterPumpA",
+      "label": "Service-water pump A",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        103,
+        18,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/cooling-water",
+      "spaceId": "space/cooling-water",
+      "subjects": [
+        {
+          "id": "serviceWaterPumpA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Physical service-water pump corresponds to a graph electrical-load aggregate; its hydraulic performance is not independently modeled."
+    },
+    {
+      "id": "equipment/safetyBusA",
+      "label": "Safety bus A",
+      "family": "cabinet",
+      "levelId": "lower",
+      "position": [
+        4,
+        65,
+        0
+      ],
+      "dimensions": {
+        "length": 9,
+        "width": 1.4,
+        "height": 2.7
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-a",
+      "subjects": [
+        {
+          "id": "safetyBusA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/unitBusA",
+      "label": "Unit bus A",
+      "family": "cabinet",
+      "levelId": "lower",
+      "position": [
+        4,
+        76,
+        0
+      ],
+      "dimensions": {
+        "length": 9,
+        "width": 1.4,
+        "height": 2.7
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-a",
+      "subjects": [
+        {
+          "id": "unitBusA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/offsiteBreakerA",
+      "label": "Offsite supply breaker A",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        16,
+        65,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-a",
+      "subjects": [
+        {
+          "id": "offsiteBreakerA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/unitBusBreakerA",
+      "label": "Unit bus supply breaker A",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        16,
+        76,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-a",
+      "subjects": [
+        {
+          "id": "unitBusBreakerA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/dieselBreakerA",
+      "label": "Diesel incoming breaker A",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        22,
+        65,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-a",
+      "subjects": [
+        {
+          "id": "dieselBreakerA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/loadCentresA",
+      "label": "Safety-train motor-control centre A",
+      "family": "cabinet",
+      "levelId": "lower",
+      "position": [
+        4,
+        94,
+        0
+      ],
+      "dimensions": {
+        "length": 15,
+        "width": 1.3,
+        "height": 2.6
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/load-centres-a",
+      "subjects": [
+        {
+          "id": "loadCentresA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "A motor-control cabinet lineup represents the graph’s lumped safety-train electrical-load subject; individual feeder cabinets acquire no additional states."
+    },
+    {
+      "id": "equipment/vitalBatteryA",
+      "label": "Vital battery rack A",
+      "family": "battery",
+      "levelId": "service",
+      "position": [
+        4,
+        66,
+        8
+      ],
+      "dimensions": {
+        "length": 13,
+        "width": 2.4,
+        "height": 2.4
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/battery-a",
+      "subjects": [
+        {
+          "id": "vitalBatteryA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/dcInverterA",
+      "label": "DC inverter A",
+      "family": "cabinet",
+      "levelId": "service",
+      "position": [
+        20,
+        67,
+        8
+      ],
+      "dimensions": {
+        "length": 3,
+        "width": 1.2,
+        "height": 2.5
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/battery-a",
+      "subjects": [
+        {
+          "id": "dcInverterA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/plantControlsLoadA",
+      "label": "Plant controls cabinet bank A",
+      "family": "cabinet",
+      "levelId": "operating",
+      "position": [
+        5,
+        94,
+        15
+      ],
+      "dimensions": {
+        "length": 10,
+        "width": 1.3,
+        "height": 2.6
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/relay-a",
+      "subjects": [
+        {
+          "id": "plantControlsLoadA",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Physical relay/control cabinet bank corresponds to the modeled aggregate controls electrical load. No individual relay positions or internal logic hardware are inferred."
+    },
+    {
+      "id": "equipment/reactorTripBreakerA",
+      "label": "Reactor trip breaker cabinet A",
+      "family": "breaker",
+      "levelId": "operating",
+      "position": [
+        20,
+        94,
+        15
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/relay-a",
+      "subjects": [
+        {
+          "id": "reactorTripBreakerA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rhrPumpB",
+      "label": "Residual heat removal pump B",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -40,
+        49,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-si",
+      "subjects": [
+        {
+          "id": "rhrPumpB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/safetyInjectionPumpB",
+      "label": "High-head safety injection pump B",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -20,
+        49,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-si",
+      "subjects": [
+        {
+          "id": "safetyInjectionPumpB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/containmentSprayPumpB",
+      "label": "Containment spray pump B",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -40,
+        70,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-cooling",
+      "subjects": [
+        {
+          "id": "containmentSprayPumpB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/componentCoolingWaterPumpB",
+      "label": "Component cooling-water pump B",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -20,
+        70,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-cooling",
+      "subjects": [
+        {
+          "id": "componentCoolingWaterPumpB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Physical pump placed for the graph’s electrical-load aggregate. Only its modeled electrical/operation observations are available; no additional hydraulic model or flow is invented."
+    },
+    {
+      "id": "equipment/containmentFanCoolersB",
+      "label": "Containment fan-cooler bank B",
+      "family": "heat-exchanger",
+      "levelId": "lower",
+      "position": [
+        -33,
+        0,
+        0
+      ],
+      "dimensions": {
+        "length": 8,
+        "width": 3,
+        "height": 3
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "containmentFanCoolersB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Illustrative fan-cooler bank corresponds to the graph’s aggregated electrical load. No independent cooler multiplicity or thermal state is inferred."
+    },
+    {
+      "id": "equipment/dieselGeneratorB",
+      "label": "Emergency diesel generator B",
+      "family": "diesel-generator",
+      "levelId": "lower",
+      "position": [
+        -42,
+        118,
+        0
+      ],
+      "dimensions": {
+        "length": 15,
+        "width": 5,
+        "height": 5
+      },
+      "buildingId": "building/diesel-b",
+      "spaceId": "space/diesel-b",
+      "subjects": [
+        {
+          "id": "dieselGeneratorB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/serviceWaterPumpB",
+      "label": "Service-water pump B",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        121,
+        18,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/cooling-water",
+      "spaceId": "space/cooling-water",
+      "subjects": [
+        {
+          "id": "serviceWaterPumpB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Physical service-water pump corresponds to a graph electrical-load aggregate; its hydraulic performance is not independently modeled."
+    },
+    {
+      "id": "equipment/safetyBusB",
+      "label": "Safety bus B",
+      "family": "cabinet",
+      "levelId": "lower",
+      "position": [
+        33,
+        65,
+        0
+      ],
+      "dimensions": {
+        "length": 9,
+        "width": 1.4,
+        "height": 2.7
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-b",
+      "subjects": [
+        {
+          "id": "safetyBusB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/unitBusB",
+      "label": "Unit bus B",
+      "family": "cabinet",
+      "levelId": "lower",
+      "position": [
+        33,
+        76,
+        0
+      ],
+      "dimensions": {
+        "length": 9,
+        "width": 1.4,
+        "height": 2.7
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-b",
+      "subjects": [
+        {
+          "id": "unitBusB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/offsiteBreakerB",
+      "label": "Offsite supply breaker B",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        45,
+        65,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-b",
+      "subjects": [
+        {
+          "id": "offsiteBreakerB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/unitBusBreakerB",
+      "label": "Unit bus supply breaker B",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        45,
+        76,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-b",
+      "subjects": [
+        {
+          "id": "unitBusBreakerB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/dieselBreakerB",
+      "label": "Diesel incoming breaker B",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        51,
+        65,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-b",
+      "subjects": [
+        {
+          "id": "dieselBreakerB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/loadCentresB",
+      "label": "Safety-train motor-control centre B",
+      "family": "cabinet",
+      "levelId": "lower",
+      "position": [
+        33,
+        94,
+        0
+      ],
+      "dimensions": {
+        "length": 15,
+        "width": 1.3,
+        "height": 2.6
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/load-centres-b",
+      "subjects": [
+        {
+          "id": "loadCentresB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "A motor-control cabinet lineup represents the graph’s lumped safety-train electrical-load subject; individual feeder cabinets acquire no additional states."
+    },
+    {
+      "id": "equipment/vitalBatteryB",
+      "label": "Vital battery rack B",
+      "family": "battery",
+      "levelId": "service",
+      "position": [
+        33,
+        66,
+        8
+      ],
+      "dimensions": {
+        "length": 13,
+        "width": 2.4,
+        "height": 2.4
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/battery-b",
+      "subjects": [
+        {
+          "id": "vitalBatteryB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/dcInverterB",
+      "label": "DC inverter B",
+      "family": "cabinet",
+      "levelId": "service",
+      "position": [
+        49,
+        67,
+        8
+      ],
+      "dimensions": {
+        "length": 3,
+        "width": 1.2,
+        "height": 2.5
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/battery-b",
+      "subjects": [
+        {
+          "id": "dcInverterB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/plantControlsLoadB",
+      "label": "Plant controls cabinet bank B",
+      "family": "cabinet",
+      "levelId": "operating",
+      "position": [
+        34,
+        94,
+        15
+      ],
+      "dimensions": {
+        "length": 10,
+        "width": 1.3,
+        "height": 2.6
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/relay-b",
+      "subjects": [
+        {
+          "id": "plantControlsLoadB",
+          "relation": "partOf"
+        }
+      ],
+      "reason": "Physical relay/control cabinet bank corresponds to the modeled aggregate controls electrical load. No individual relay positions or internal logic hardware are inferred."
+    },
+    {
+      "id": "equipment/reactorTripBreakerB",
+      "label": "Reactor trip breaker cabinet B",
+      "family": "breaker",
+      "levelId": "operating",
+      "position": [
+        49,
+        94,
+        15
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/relay-b",
+      "subjects": [
+        {
+          "id": "reactorTripBreakerB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/chargingPump",
+      "label": "Charging pump A",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -85,
+        88,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-chemistry",
+      "subjects": [
+        {
+          "id": "chargingPump",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/chargingPumpB",
+      "label": "Charging pump B",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        -38,
+        88,
+        0
+      ],
+      "dimensions": {
+        "length": 5,
+        "width": 2.5,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-chemistry",
+      "subjects": [
+        {
+          "id": "chargingPumpB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/volumeControlTank",
+      "label": "Volume-control tank",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -68,
+        88,
+        0
+      ],
+      "dimensions": {
+        "length": 4.5,
+        "width": 4.5,
+        "height": 6
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-chemistry",
+      "subjects": [
+        {
+          "id": "volumeControlTank",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/boricAcidTank",
+      "label": "Boric-acid storage tank",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        -20,
+        88,
+        0
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 5
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-chemistry",
+      "subjects": [
+        {
+          "id": "boricAcidTank",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/letdownValve",
+      "label": "CVCS letdown valve",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -77,
+        94,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.5
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-a-chemistry",
+      "subjects": [
+        {
+          "id": "letdownValve",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/boricAcidInjectionValve",
+      "label": "Boric-acid injection valve",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -28,
+        94,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.5
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-b-chemistry",
+      "subjects": [
+        {
+          "id": "boricAcidInjectionValve",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/auxFeedwaterPumpMotor",
+      "label": "Motor-driven auxiliary feedwater pump A",
+      "family": "pump",
+      "levelId": "service",
+      "position": [
+        -85,
+        51,
+        8
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 2.7,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-afw-a",
+      "subjects": [
+        {
+          "id": "auxFeedwaterPumpMotor",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/auxFeedwaterPumpMotorB",
+      "label": "Motor-driven auxiliary feedwater pump B",
+      "family": "pump",
+      "levelId": "service",
+      "position": [
+        -38,
+        51,
+        8
+      ],
+      "dimensions": {
+        "length": 6,
+        "width": 2.7,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-afw-b",
+      "subjects": [
+        {
+          "id": "auxFeedwaterPumpMotorB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/auxFeedwaterPumpTurbine",
+      "label": "Turbine-driven auxiliary feedwater pump",
+      "family": "pump",
+      "levelId": "service",
+      "position": [
+        -85,
+        71,
+        8
+      ],
+      "dimensions": {
+        "length": 8,
+        "width": 3.5,
+        "height": 4
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-afw-turbine",
+      "subjects": [
+        {
+          "id": "auxFeedwaterPumpTurbine",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/auxFeedwaterTurbineSteamValveB",
+      "label": "TD AFW steam-supply valve B",
+      "family": "valve",
+      "levelId": "service",
+      "position": [
+        -72,
+        72,
+        8
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.5
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-afw-turbine",
+      "subjects": [
+        {
+          "id": "auxFeedwaterTurbineSteamValveB",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/auxFeedwaterTurbineSteamValveC",
+      "label": "TD AFW steam-supply valve C",
+      "family": "valve",
+      "levelId": "service",
+      "position": [
+        -65,
+        72,
+        8
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.5
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-afw-turbine",
+      "subjects": [
+        {
+          "id": "auxFeedwaterTurbineSteamValveC",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/containmentSprayAdditiveTank",
+      "label": "Containment-spray additive tank",
+      "family": "tank",
+      "levelId": "service",
+      "position": [
+        -84,
+        88,
+        8
+      ],
+      "dimensions": {
+        "length": 4,
+        "width": 4,
+        "height": 5
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-additive",
+      "subjects": [
+        {
+          "id": "containmentSprayAdditiveTank",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rhrIsolationValve",
+      "label": "Residual-heat removal isolation valve",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        -53,
+        34,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.5
+      },
+      "buildingId": "building/containment",
+      "spaceId": "space/reactor-cavity",
+      "subjects": [
+        {
+          "id": "rhrIsolationValve",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/feedwaterTank",
+      "label": "Feedwater/deaerator tank",
+      "family": "tank",
+      "levelId": "lower",
+      "position": [
+        47,
+        42,
+        0
+      ],
+      "dimensions": {
+        "length": 8,
+        "width": 4,
+        "height": 6
+      },
+      "subjects": [
+        {
+          "id": "feedwaterTank",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/turbineBypassValve",
+      "label": "Turbine bypass valve",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        3,
+        9,
+        0
+      ],
+      "dimensions": {
+        "length": 2.4,
+        "width": 1.8,
+        "height": 3
+      },
+      "buildingId": "building/turbine-hall",
+      "subjects": [
+        {
+          "id": "turbineBypassValve",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/hotwellRejectValve",
+      "label": "Hotwell reject valve",
+      "family": "valve",
+      "levelId": "lower",
+      "position": [
+        72,
+        20,
+        0
+      ],
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.4,
+        "height": 2.5
+      },
+      "buildingId": "building/turbine-hall",
+      "subjects": [
+        {
+          "id": "hotwellRejectValve",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/rwst",
+      "label": "Refuelling-water storage tank",
+      "family": "tank",
+      "levelId": "site",
+      "position": [
+        -112,
+        -19,
+        0
+      ],
+      "dimensions": {
+        "length": 14,
+        "width": 14,
+        "height": 13
+      },
+      "subjects": [
+        {
+          "id": "rwst",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/auxFeedwaterTank",
+      "label": "Condensate storage tank",
+      "family": "tank",
+      "levelId": "site",
+      "position": [
+        68,
+        70,
+        0
+      ],
+      "dimensions": {
+        "length": 12,
+        "width": 12,
+        "height": 13
+      },
+      "subjects": [
+        {
+          "id": "auxFeedwaterTank",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/unitAuxTransformer",
+      "label": "Unit auxiliary transformer",
+      "family": "transformer",
+      "levelId": "site",
+      "position": [
+        96,
+        46,
+        0
+      ],
+      "dimensions": {
+        "length": 13,
+        "width": 8,
+        "height": 7
+      },
+      "subjects": [
+        {
+          "id": "unitAuxTransformer",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/pressurizerBackupHeaterBreakerA",
+      "label": "Pressurizer backup-heater breaker",
+      "family": "breaker",
+      "levelId": "lower",
+      "position": [
+        22,
+        76,
+        0
+      ],
+      "dimensions": {
+        "length": 2.5,
+        "width": 1.5,
+        "height": 2.8
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/electrical-a",
+      "subjects": [
+        {
+          "id": "pressurizerBackupHeaterBreakerA",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/circulatingWaterPump",
+      "label": "Circulating-water pump assembly",
+      "family": "pump",
+      "levelId": "lower",
+      "position": [
+        108,
+        6,
+        0
+      ],
+      "dimensions": {
+        "length": 12,
+        "width": 5,
+        "height": 5
+      },
+      "buildingId": "building/cooling-water",
+      "spaceId": "space/cooling-water",
+      "subjects": [
+        {
+          "id": "circulatingWaterPump",
+          "relation": "represents"
+        }
+      ],
+      "reason": "Authored physical equipment corresponding to the current graph component. Dimensions and nozzle positions are illustrative, not recovered from numerical parameters."
+    },
+    {
+      "id": "equipment/maintenance-heat-exchanger",
+      "label": "Component-cooling heat exchanger context",
+      "family": "heat-exchanger",
+      "levelId": "service",
+      "position": [
+        -38,
+        70,
+        8
+      ],
+      "dimensions": {
+        "length": 8,
+        "width": 3,
+        "height": 3
+      },
+      "buildingId": "building/auxiliary",
+      "spaceId": "space/aux-maintenance",
+      "subjects": [],
+      "reason": "Architectural equipment context absent from the current numerical graph. It has no operational correspondence, live value or alarm state."
+    },
+    {
+      "id": "equipment/control-console",
+      "label": "Main control-room console context",
+      "family": "cabinet",
+      "levelId": "operating",
+      "position": [
+        8,
+        68,
+        15
+      ],
+      "dimensions": {
+        "length": 16,
+        "width": 1.8,
+        "height": 1.6
+      },
+      "buildingId": "building/electrical-control",
+      "spaceId": "space/control",
+      "subjects": [],
+      "reason": "Architectural equipment context absent from the current numerical graph. It has no operational correspondence, live value or alarm state."
+    },
+    {
+      "id": "equipment/fuel-handling-bridge",
+      "label": "Fuel-service bridge context",
+      "family": "cabinet",
+      "levelId": "service",
+      "position": [
+        -136,
+        52,
+        8
+      ],
+      "dimensions": {
+        "length": 24,
+        "width": 2,
+        "height": 2
+      },
+      "buildingId": "building/fuel-service",
+      "spaceId": "space/fuel-pool",
+      "subjects": [],
+      "reason": "Architectural equipment context absent from the current numerical graph. It has no operational correspondence, live value or alarm state."
+    }
+  ],
+  "routes": [
+    {
+      "id": "route/hot-leg-A",
+      "label": "Primary loop A hot leg",
+      "levelId": "lower",
+      "width": 0.9,
+      "path": [
+        [
+          -50,
+          8,
+          5
+        ],
+        [
+          -62,
+          8,
+          5
+        ],
+        [
+          -62,
+          22,
+          5
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/cold-leg-A",
+      "label": "Primary loop A cold leg",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -62,
+          22,
+          3
+        ],
+        [
+          -61,
+          22,
+          3
+        ],
+        [
+          -61,
+          13,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/rcp-return-A",
+      "label": "Primary loop A pump return",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -61,
+          13,
+          3
+        ],
+        [
+          -50,
+          13,
+          3
+        ],
+        [
+          -50,
+          8,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/steam-riser-A",
+      "label": "Loop A main-steam riser",
+      "levelId": "operating",
+      "width": 0.76,
+      "path": [
+        [
+          -62,
+          22,
+          23
+        ],
+        [
+          -23,
+          22,
+          23
+        ],
+        [
+          -23,
+          -18,
+          18.5
+        ],
+        [
+          -17,
+          -18,
+          18.5
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/feedwater-A",
+      "label": "Loop A feedwater route",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -17,
+          -18,
+          1.5
+        ],
+        [
+          -23,
+          -18,
+          1.5
+        ],
+        [
+          -23,
+          22,
+          4
+        ],
+        [
+          -62,
+          22,
+          4
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/hot-leg-B",
+      "label": "Primary loop B hot leg",
+      "levelId": "lower",
+      "width": 0.9,
+      "path": [
+        [
+          -50,
+          8,
+          5
+        ],
+        [
+          -38,
+          8,
+          5
+        ],
+        [
+          -38,
+          22,
+          5
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/cold-leg-B",
+      "label": "Primary loop B cold leg",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -38,
+          22,
+          3
+        ],
+        [
+          -41,
+          22,
+          3
+        ],
+        [
+          -41,
+          13,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/rcp-return-B",
+      "label": "Primary loop B pump return",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -41,
+          13,
+          3
+        ],
+        [
+          -50,
+          13,
+          3
+        ],
+        [
+          -50,
+          8,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/steam-riser-B",
+      "label": "Loop B main-steam riser",
+      "levelId": "operating",
+      "width": 0.76,
+      "path": [
+        [
+          -38,
+          22,
+          23
+        ],
+        [
+          -23,
+          22,
+          23
+        ],
+        [
+          -23,
+          -4,
+          18.5
+        ],
+        [
+          -17,
+          -4,
+          18.5
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/feedwater-B",
+      "label": "Loop B feedwater route",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -17,
+          -4,
+          1.5
+        ],
+        [
+          -23,
+          -4,
+          1.5
+        ],
+        [
+          -23,
+          22,
+          4
+        ],
+        [
+          -38,
+          22,
+          4
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/hot-leg-C",
+      "label": "Primary loop C hot leg",
+      "levelId": "lower",
+      "width": 0.9,
+      "path": [
+        [
+          -50,
+          8,
+          5
+        ],
+        [
+          -38,
+          8,
+          5
+        ],
+        [
+          -38,
+          -6,
+          5
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/cold-leg-C",
+      "label": "Primary loop C cold leg",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -38,
+          -6,
+          3
+        ],
+        [
+          -41,
+          -6,
+          3
+        ],
+        [
+          -41,
+          1,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/rcp-return-C",
+      "label": "Primary loop C pump return",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -41,
+          1,
+          3
+        ],
+        [
+          -50,
+          1,
+          3
+        ],
+        [
+          -50,
+          8,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/steam-riser-C",
+      "label": "Loop C main-steam riser",
+      "levelId": "operating",
+      "width": 0.76,
+      "path": [
+        [
+          -38,
+          -6,
+          23
+        ],
+        [
+          -23,
+          -6,
+          23
+        ],
+        [
+          -23,
+          10,
+          18.5
+        ],
+        [
+          -17,
+          10,
+          18.5
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/feedwater-C",
+      "label": "Loop C feedwater route",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -17,
+          10,
+          1.5
+        ],
+        [
+          -23,
+          10,
+          1.5
+        ],
+        [
+          -23,
+          -6,
+          4
+        ],
+        [
+          -38,
+          -6,
+          4
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/hot-leg-D",
+      "label": "Primary loop D hot leg",
+      "levelId": "lower",
+      "width": 0.9,
+      "path": [
+        [
+          -50,
+          8,
+          5
+        ],
+        [
+          -62,
+          8,
+          5
+        ],
+        [
+          -62,
+          -6,
+          5
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/cold-leg-D",
+      "label": "Primary loop D cold leg",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -62,
+          -6,
+          3
+        ],
+        [
+          -61,
+          -6,
+          3
+        ],
+        [
+          -61,
+          1,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/rcp-return-D",
+      "label": "Primary loop D pump return",
+      "levelId": "lower",
+      "width": 0.85,
+      "path": [
+        [
+          -61,
+          1,
+          3
+        ],
+        [
+          -50,
+          1,
+          3
+        ],
+        [
+          -50,
+          8,
+          3
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/steam-riser-D",
+      "label": "Loop D main-steam riser",
+      "levelId": "operating",
+      "width": 0.76,
+      "path": [
+        [
+          -62,
+          -6,
+          23
+        ],
+        [
+          -23,
+          -6,
+          23
+        ],
+        [
+          -23,
+          24,
+          18.5
+        ],
+        [
+          -17,
+          24,
+          18.5
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/feedwater-D",
+      "label": "Loop D feedwater route",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -17,
+          24,
+          1.5
+        ],
+        [
+          -23,
+          24,
+          1.5
+        ],
+        [
+          -23,
+          -6,
+          4
+        ],
+        [
+          -62,
+          -6,
+          4
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/main-steam-header",
+      "label": "Main-steam header assembly",
+      "levelId": "operating",
+      "width": 0.9,
+      "path": [
+        [
+          -8,
+          -18,
+          18.5
+        ],
+        [
+          -8,
+          29,
+          18.5
+        ],
+        [
+          -8,
+          29,
+          23
+        ],
+        [
+          5.7,
+          29,
+          23
+        ],
+        [
+          5.7,
+          0.4,
+          23
+        ]
+      ],
+      "subjectId": "mainSteamHeader",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/feedwater-header",
+      "label": "Main-feedwater header assembly",
+      "levelId": "lower",
+      "width": 0.4,
+      "path": [
+        [
+          42.5,
+          37.7,
+          1.65
+        ],
+        [
+          -2,
+          37.7,
+          1.65
+        ],
+        [
+          -2,
+          -18,
+          1.65
+        ]
+      ],
+      "subjectId": "feedwaterHeader",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/aux-feedwater-header",
+      "label": "Auxiliary-feedwater header assembly",
+      "levelId": "service",
+      "width": 0.3,
+      "path": [
+        [
+          -84,
+          56,
+          9.2
+        ],
+        [
+          -39,
+          56,
+          9.2
+        ],
+        [
+          -39,
+          81,
+          9.2
+        ],
+        [
+          -8,
+          81,
+          9.2
+        ]
+      ],
+      "subjectId": "auxFeedwaterHeader",
+      "buildingId": "building/auxiliary",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/safety-injection-header",
+      "label": "Safety-injection header assembly",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -64,
+          51,
+          3.8
+        ],
+        [
+          -64,
+          60,
+          3.8
+        ],
+        [
+          -18,
+          60,
+          3.8
+        ],
+        [
+          -18,
+          41,
+          3.8
+        ]
+      ],
+      "subjectId": "safetyInjectionHeader",
+      "buildingId": "building/auxiliary",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/containment-spray-header",
+      "label": "Containment-spray header assembly",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -84,
+          72,
+          3.8
+        ],
+        [
+          -84,
+          79,
+          3.8
+        ],
+        [
+          -37,
+          79,
+          3.8
+        ],
+        [
+          -37,
+          39,
+          3.8
+        ]
+      ],
+      "subjectId": "containmentSprayHeader",
+      "buildingId": "building/auxiliary",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/rhr-header",
+      "label": "Residual-heat removal header assembly",
+      "levelId": "lower",
+      "width": 0.35,
+      "path": [
+        [
+          -84,
+          51,
+          3.8
+        ],
+        [
+          -84,
+          57,
+          3.8
+        ],
+        [
+          -37,
+          57,
+          3.8
+        ],
+        [
+          -37,
+          40,
+          3.8
+        ],
+        [
+          -52,
+          35,
+          3.8
+        ]
+      ],
+      "subjectId": "rhrHeader",
+      "buildingId": "building/auxiliary",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/pressurizer-relief-header",
+      "label": "Pressurizer relief header",
+      "levelId": "service",
+      "width": 0.3,
+      "path": [
+        [
+          -49.75,
+          27.25,
+          13
+        ],
+        [
+          -54,
+          27.25,
+          13
+        ],
+        [
+          -53,
+          -6.25,
+          3
+        ]
+      ],
+      "subjectId": "pressurizerReliefHeader",
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/pressurizer-surge",
+      "label": "Pressurizer surge-line context",
+      "levelId": "lower",
+      "width": 0.3,
+      "path": [
+        [
+          -50,
+          8,
+          4
+        ],
+        [
+          -49.75,
+          8,
+          4
+        ],
+        [
+          -49.75,
+          27.25,
+          4
+        ]
+      ],
+      "buildingId": "building/containment",
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/cooling-water-supply",
+      "label": "Cooling-water supply route",
+      "levelId": "lower",
+      "width": 1.4,
+      "path": [
+        [
+          115,
+          4,
+          1.5
+        ],
+        [
+          115,
+          -8,
+          1.5
+        ],
+        [
+          90,
+          -8,
+          1.5
+        ],
+        [
+          90,
+          9,
+          1.5
+        ],
+        [
+          50,
+          9,
+          1.5
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    },
+    {
+      "id": "route/cooling-water-return",
+      "label": "Cooling-water discharge route",
+      "levelId": "lower",
+      "width": 1.4,
+      "path": [
+        [
+          50,
+          28,
+          1.5
+        ],
+        [
+          91,
+          28,
+          1.5
+        ],
+        [
+          91,
+          -13,
+          1.5
+        ],
+        [
+          144,
+          -13,
+          1.5
+        ]
+      ],
+      "reason": "Authored illustrative physical route preserving system identity; path length/nozzle locations do not change numerical links or qualify maintenance access."
+    }
+  ],
+  "elements": [
+    {
+      "id": "roof/turbine-hall",
+      "label": "Turbine hall roof",
+      "kind": "roof",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          0,
+          31.2
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 88.8,
+        "width": 36.8,
+        "height": 0.35
+      },
+      "disposition": "installed",
+      "buildingId": "building/turbine-hall"
+    },
+    {
+      "id": "roof/feedwater-annex",
+      "label": "Feedwater annex roof",
+      "kind": "roof",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          8.4,
+          36.8,
+          6.2
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 32.8,
+        "width": 16.8,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/feedwater-annex"
+    },
+    {
+      "id": "stair/aux",
+      "label": "aux protected stair context",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -51,
+          93,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "stair/electrical",
+      "label": "electrical protected stair context",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          48,
+          98,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 15
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "stair/gallery",
+      "label": "gallery protected stair context",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -19,
+          28,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 15
+      },
+      "disposition": "installed",
+      "buildingId": "building/steam-gallery"
+    },
+    {
+      "id": "stair/containment",
+      "label": "containment protected stair context",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -74,
+          14,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "stair/fuel",
+      "label": "fuel protected stair context",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -139,
+          90,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/fuel-service"
+    },
+    {
+      "id": "platform/containment/service/west",
+      "label": "Containment service perimeter access platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -73,
+          -9,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 4,
+        "width": 34,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/east",
+      "label": "Containment service perimeter access platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -31,
+          -9,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 4,
+        "width": 34,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/north",
+      "label": "Containment service perimeter access platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -63,
+          28,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 26,
+        "width": 3,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/south",
+      "label": "Containment service perimeter access platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -63,
+          -15,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 26,
+        "width": 3,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/west",
+      "label": "Containment operating perimeter access platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -73,
+          -9,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 4,
+        "width": 34,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/east",
+      "label": "Containment operating perimeter access platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -31,
+          -9,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 4,
+        "width": 34,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/north",
+      "label": "Containment operating perimeter access platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -63,
+          28,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 26,
+        "width": 3,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/south",
+      "label": "Containment operating perimeter access platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -63,
+          -15,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 26,
+        "width": 3,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/west",
+      "label": "Containment refuelling perimeter access platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -73,
+          -9,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 4,
+        "width": 34,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/east",
+      "label": "Containment refuelling perimeter access platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -31,
+          -9,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 4,
+        "width": 34,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/north",
+      "label": "Containment refuelling perimeter access platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -63,
+          28,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 26,
+        "width": 3,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/south",
+      "label": "Containment refuelling perimeter access platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -63,
+          -15,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 26,
+        "width": 3,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "support/containment/-71/-8",
+      "label": "Containment access-platform support",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -71,
+          -8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.45,
+        "width": 0.45,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "support/containment/-29/-8",
+      "label": "Containment access-platform support",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -29,
+          -8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.45,
+        "width": 0.45,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "support/containment/-71/24",
+      "label": "Containment access-platform support",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -71,
+          24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.45,
+        "width": 0.45,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "support/containment/-29/24",
+      "label": "Containment access-platform support",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -29,
+          24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.45,
+        "width": 0.45,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/deaerator",
+      "label": "Feedwater tank service platform",
+      "kind": "slab",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          44,
+          39,
+          -0.3
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 14,
+        "width": 15,
+        "height": 0.3
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/ultimateHeatSink",
+      "label": "Cooling-water intake basin",
+      "kind": "slab",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          98,
+          -24,
+          -0.4
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 35,
+        "width": 18,
+        "height": 0.4
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/coolingWaterDischarge",
+      "label": "Cooling-water discharge channel",
+      "kind": "slab",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          138,
+          -24,
+          -0.4
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 18,
+        "height": 0.4
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/intake/south",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          98,
+          -24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 35,
+        "width": 0.3,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/intake/north",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          98,
+          -6,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 35,
+        "width": 0.3,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/intake/west",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          98,
+          -24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.3,
+        "width": 18,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/intake/east",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          133,
+          -24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.3,
+        "width": 18,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/discharge/south",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          138,
+          -24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 0.3,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/discharge/north",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          138,
+          -6,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 0.3,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/discharge/west",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          138,
+          -24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.3,
+        "width": 18,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "basin/discharge/east",
+      "label": "Concrete basin edge",
+      "kind": "wall",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          150,
+          -24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.3,
+        "width": 18,
+        "height": 1.2
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "platform/fuel-pool",
+      "label": "Fuel-pool civil context",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -134,
+          58,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 25,
+        "width": 20,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/fuel-service"
+    },
+    {
+      "id": "service/laydown",
+      "label": "Controlled equipment laydown",
+      "kind": "slab",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          -142,
+          108,
+          -0.1
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 39,
+        "width": 22,
+        "height": 0.1
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "pad/transformer",
+      "label": "Unit transformer bund",
+      "kind": "slab",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          94,
+          44,
+          -0.3
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 17,
+        "width": 12,
+        "height": 0.3
+      },
+      "disposition": "installed"
+    }
+  ],
+  "unplaced": [
+    {
+      "subjectId": "core",
+      "disposition": "internal",
+      "reason": "The core is inside the reactor vessel. A separate exposed machine or independently locatable core mesh would misstate its physical identity; the vessel occurrence supplies housing context.",
+      "physicalElementIds": [
+        "equipment/vessel"
+      ]
+    },
+    {
+      "subjectId": "atmosphere",
+      "disposition": "boundary",
+      "reason": "Environmental boundary extending outside the plant. There is no finite atmosphere equipment occurrence.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "offsiteGrid",
+      "disposition": "boundary",
+      "reason": "Operational 420kV interface. The remote shared switchyard and circuits are owned and bound by the separate Grid site design; no local duplicate yard is invented.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "deltaTChannelA",
+      "disposition": "functional",
+      "reason": "Graph protection-channel function; exact individual sensor and processing hardware positions are not supplied. Control-building cabinets are architectural context, not a fabricated sensor location.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "deltaTChannelB",
+      "disposition": "functional",
+      "reason": "Graph protection-channel function; exact individual sensor and processing hardware positions are not supplied. Control-building cabinets are architectural context, not a fabricated sensor location.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "deltaTChannelC",
+      "disposition": "functional",
+      "reason": "Graph protection-channel function; exact individual sensor and processing hardware positions are not supplied. Control-building cabinets are architectural context, not a fabricated sensor location.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "deltaTChannelD",
+      "disposition": "functional",
+      "reason": "Graph protection-channel function; exact individual sensor and processing hardware positions are not supplied. Control-building cabinets are architectural context, not a fabricated sensor location.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "rcsInventoryBalance",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "safetyInjectionBlockLogic",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "manualReactorTrip",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "manualTurbineTrip",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "manualSafetyInjection",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "loadSequencerA",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    },
+    {
+      "subjectId": "loadSequencerB",
+      "disposition": "functional",
+      "reason": "Logical, balance, manual-actuation or sequencing function. No justified independent physical equipment identity is supplied by this graph; it remains available in process displays.",
+      "physicalElementIds": [
+        "building/electrical-control"
+      ]
+    }
+  ],
+  "modelRequirement": {
+    "modelRef": "process-plant.pwr.reference",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+  },
+  "evidence": {
+    "accuracy": "illustrative",
+    "origin": "Conceptual full-unit arrangement for the current four-loop executable PWR, authored 25 October 2026 from its exact component graph and NRC generic PWR system/building relationships. Accepted turbine geometry retained. Civil dimensions, levels, access, nozzle positions and routing are authored illustration, not surveyed, as-built, maintenance or safety qualification."
+  },
+  "bindings": [
+    {
+      "physicalElementId": "building/containment/shell",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "The concrete shell locates the modeled containment region; it does not make the civil shell a separate pressure/temperature state."
+    },
+    {
+      "physicalElementId": "basin/ultimateHeatSink",
+      "elementId": "ultimateHeatSink",
+      "relation": "partOf",
+      "reason": "Illustrative intake-basin context locates the lumped ultimate heat-sink subject. It is not a surveyed source-water extent or proof of water availability."
+    },
+    {
+      "physicalElementId": "basin/coolingWaterDischarge",
+      "elementId": "coolingWaterDischarge",
+      "relation": "partOf",
+      "reason": "Illustrative discharge-channel context locates the modeled cooling-water discharge boundary; no additional receiving-water state is invented."
+    }
+  ]
+}
