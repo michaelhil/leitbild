@@ -1,0 +1,277 @@
+{
+  "profile": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "hardwareConcurrency": 8
+  },
+  "dimensions": {
+    "width": 1440,
+    "height": 913,
+    "dpr": 1
+  },
+  "sourceCount": 5,
+  "occurrences": 2372,
+  "coldMs": 1644.5,
+  "canvasAfterGcMs": 97.70000004768372,
+  "canvasColdLongTasks": [
+    50
+  ],
+  "steadyResources": {
+    "geometryUploads": 2,
+    "geometryBytes": 23942352,
+    "draws": 44,
+    "buffers": 6,
+    "programs": 1,
+    "textures": 4,
+    "textureBytes": 74768,
+    "instanceBytes": 340,
+    "instanceUploads": 22,
+    "statusUploads": 2,
+    "paletteUploads": 2,
+    "evictions": 0,
+    "peakRequiredBytes": 24017460,
+    "liveBuffersAfterDisposal": null,
+    "liveProgramsAfterDisposal": null,
+    "liveTexturesAfterDisposal": null
+  },
+  "phases": [
+    {
+      "name": "map-idle",
+      "raf": {
+        "n": 99,
+        "median": 16.699999999999818,
+        "p95": 16.800000000000182,
+        "max": 16.800000000000182
+      },
+      "cheapRosterMs": {
+        "n": 0,
+        "median": null,
+        "p95": null,
+        "max": null
+      },
+      "packedOcclusionMs": {
+        "n": 0,
+        "median": null,
+        "p95": null,
+        "max": null
+      },
+      "longTasks": [],
+      "geometryUploadDelta": 0,
+      "drawDelta": 0
+    },
+    {
+      "name": "map-moving-paused",
+      "raf": {
+        "n": 99,
+        "median": 16.699999999999818,
+        "p95": 16.799999999999272,
+        "max": 50
+      },
+      "cheapRosterMs": {
+        "n": 100,
+        "median": 0.7000000476837158,
+        "p95": 1.6000001430511475,
+        "max": 21.200000047683716
+      },
+      "packedOcclusionMs": {
+        "n": 100,
+        "median": 6.299999952316284,
+        "p95": 9.700000047683716,
+        "max": 49.80000019073486
+      },
+      "longTasks": [],
+      "geometryUploadDelta": 0,
+      "drawDelta": 400
+    },
+    {
+      "name": "map-moving-status",
+      "raf": {
+        "n": 99,
+        "median": 16.699999999999818,
+        "p95": 16.700000000000728,
+        "max": 16.799999999999272
+      },
+      "cheapRosterMs": {
+        "n": 100,
+        "median": 0.5999999046325684,
+        "p95": 0.7999999523162842,
+        "max": 1.4000000953674316
+      },
+      "packedOcclusionMs": {
+        "n": 100,
+        "median": 5.8999998569488525,
+        "p95": 7.199999809265137,
+        "max": 9.199999809265137
+      },
+      "longTasks": [],
+      "geometryUploadDelta": 0,
+      "drawDelta": 400
+    },
+    {
+      "name": "canvas-idle",
+      "raf": {
+        "n": 99,
+        "median": 16.69999999999891,
+        "p95": 16.799999999999272,
+        "max": 16.80000000000109
+      },
+      "cheapRosterMs": {
+        "n": 0,
+        "median": null,
+        "p95": null,
+        "max": null
+      },
+      "packedOcclusionMs": {
+        "n": 0,
+        "median": null,
+        "p95": null,
+        "max": null
+      },
+      "longTasks": [],
+      "geometryUploadDelta": 0,
+      "drawDelta": 0
+    },
+    {
+      "name": "canvas-moving-paused",
+      "raf": {
+        "n": 99,
+        "median": 16.69999999999891,
+        "p95": 16.700000000000728,
+        "max": 33.399999999999636
+      },
+      "cheapRosterMs": {
+        "n": 100,
+        "median": 0.6000001430511475,
+        "p95": 1,
+        "max": 7.1000001430511475
+      },
+      "packedOcclusionMs": {
+        "n": 100,
+        "median": 5.099999904632568,
+        "p95": 7,
+        "max": 24.100000143051147
+      },
+      "longTasks": [],
+      "geometryUploadDelta": 0,
+      "drawDelta": 400
+    },
+    {
+      "name": "canvas-moving-status",
+      "raf": {
+        "n": 99,
+        "median": 16.69999999999891,
+        "p95": 16.700000000000728,
+        "max": 16.80000000000109
+      },
+      "cheapRosterMs": {
+        "n": 100,
+        "median": 0.5999999046325684,
+        "p95": 0.7000000476837158,
+        "max": 0.7999999523162842
+      },
+      "packedOcclusionMs": {
+        "n": 100,
+        "median": 5.5,
+        "p95": 6.099999904632568,
+        "max": 6.800000190734863
+      },
+      "longTasks": [],
+      "geometryUploadDelta": 0,
+      "drawDelta": 400
+    }
+  ],
+  "separationResourcesBefore": {
+    "geometryUploads": 9,
+    "geometryBytes": 35539296,
+    "draws": 868,
+    "buffers": 9,
+    "programs": 1,
+    "textures": 6,
+    "textureBytes": 85040,
+    "instanceBytes": 340,
+    "instanceUploads": 434,
+    "statusUploads": 210,
+    "paletteUploads": 9,
+    "evictions": 6,
+    "peakRequiredBytes": 35624676,
+    "liveBuffersAfterDisposal": null,
+    "liveProgramsAfterDisposal": null,
+    "liveTexturesAfterDisposal": null
+  },
+  "separationResourcesAfter": {
+    "geometryUploads": 9,
+    "geometryBytes": 35539296,
+    "draws": 1168,
+    "buffers": 9,
+    "programs": 1,
+    "textures": 6,
+    "textureBytes": 85040,
+    "instanceBytes": 340,
+    "instanceUploads": 584,
+    "statusUploads": 260,
+    "paletteUploads": 9,
+    "evictions": 6,
+    "peakRequiredBytes": 35624676,
+    "liveBuffersAfterDisposal": null,
+    "liveProgramsAfterDisposal": null,
+    "liveTexturesAfterDisposal": null
+  },
+  "scheduler": {
+    "ms": 246.90000009536743,
+    "total": 654,
+    "visible": 320
+  },
+  "detailedWorkerJobsBeforeGc": 2,
+  "detailedWorkerJobsAfterCanvas": 2,
+  "disposalZero": true,
+  "limits": [
+    "Engine ports and real module worker, MapLibre GL and dedicated canvas, cached admitted delivery fixtures. Full Svelte/OperationalMap and transport/playing runtime are separate qualification.",
+    "Status phase changes presentation values for draw invalidation; it does not claim actual Run playback.",
+    "Cold timers begin after cached admitted fixture delivery JSON is parsed; source worker/network lifecycle is not measured here.",
+    "All in-frustum bound candidates enter deadline scheduling; 44 CSS pixels is target geometry in the packing diagnostic, not a count cap."
+  ],
+  "provenance": {
+    "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-layout-remediation-render/apps/world",
+    "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world",
+    "rendererCommit": "5d6c220788659a02799b140ca8a4387f7c0a7615",
+    "sourceCommit": "753ca06310c738a9dc986d84a300276d31f2635d",
+    "fixtureDeliveryBytes": 130861433,
+    "fixtureSha256": "d56f0308bc679f09f6bdf89927ce0980eb6d5550b5e9330aaef0089c68d17d0a",
+    "definitions": [
+      {
+        "id": "layout:halden-1",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-2",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-3",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-4",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-campus",
+        "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+      }
+    ],
+    "sources": {
+      "src/ui/map/physical-scene/backend.ts": "8a2ce4d6fc08005b723e2c28cb1c4e64d86a5bac74f051b2120d22212ec29f03",
+      "src/ui/map/physical-scene/scene-controller.ts": "f3399f7fe3b8996f4b28f7dc5f74c776c2af09f97cbe4407513003218f8eb0fe",
+      "src/ui/map/physical-scene/preparation.ts": "e454cd0d44b3fce9bbeaa90e5e588d57d6cc656299326335ae1e679a8e56531f",
+      "src/ui/map/physical-scene/renderer.ts": "15c34377b09293954008140523fbe85adfe52e22248d98c559d79e8db282a929",
+      "src/ui/map/physical-scene/geometry.ts": "9e84690813cb71e2e271b1984109b15f4d41a0d448a0206479cf7b679c403584",
+      "src/ui/map/physical-scene/canvas-viewport.ts": "038599a53c44ee709120c67d60913249fe5e1f1dac7c6b2342904309b5925d15",
+      "tests/browser/physical-scene/retained-host-app.ts": "9c269ab98173357d5ed5450c5024681213838807ab87d6794d4385e9c86f706b"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "purpose": "Executed immutable reference receipts; source identities remain as originally recorded",
+  "files": [
+    {
+      "file": "automatic-map-plan.json",
+      "bytes": 1013,
+      "sha256": "c3ed72d5cbbd5a32778752c6c7d47a5cb572e2ca9630b8dd23a3d281890b1a1b"
+    },
+    {
+      "file": "orbit-gesture.json",
+      "bytes": 52820,
+      "sha256": "99bc9fe8ac0b347664d093035b0a7896045992586db601032cb203e38846c8fb"
+    },
+    {
+      "file": "plan-gl-final.json",
+      "bytes": 95299,
+      "sha256": "ddad3ba91fd67324ab22ae9ff69a57bcbe510ab76ea3343882a6b396448cb6ea"
+    },
+    {
+      "file": "plan-parking-final.json",
+      "bytes": 165563,
+      "sha256": "724e92d352461146fcad9710a1a6b362ac89d8f87875a83a0ae932ca1c95b0f3"
+    },
+    {
+      "file": "plan-summary.json",
+      "bytes": 10571,
+      "sha256": "6b47dc2735c53bb9ab30dcf49a6ed810d2359f696612cc5d638e409ed15aa9b0"
+    },
+    {
+      "file": "product-before-transfer.json",
+      "bytes": 138595,
+      "sha256": "3f72bbf5c21e52d69ba9edf4d04e7bbb6890f5afa5a652a1fb2d4821f34b102d"
+    },
+    {
+      "file": "product-final.json",
+      "bytes": 174372,
+      "sha256": "369165eb452562d707f38414d7d47684344a003aca0f537d3291a02ee8bfa803"
+    },
+    {
+      "file": "product-transfer-phase.json",
+      "bytes": 153134,
+      "sha256": "4c0a03721905781533a10b7e3638212ea369c2d165869de8f119a17123e31000"
+    },
+    {
+      "file": "product-ui-phase.json",
+      "bytes": 4242,
+      "sha256": "612cac99ab9463ecfb401b467f4ccb8f33bf152f88535b3b847936b0ec55888f"
+    },
+    {
+      "file": "renderer-resource-phase.json",
+      "bytes": 861129,
+      "sha256": "b5c63a7fbd1b75564fdc5295151c085cc3b651cf6046a46ea75c3db0bd80e03f"
+    },
+    {
+      "file": "renderer-resource-summary.json",
+      "bytes": 8595,
+      "sha256": "0a62e991b2b969447ba83f992277dac81c767abee318280768fc055e91683c0c"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "environment": {
+    "origin": "http://127.0.0.1:43130",
+    "workspaceId": "961a89a6-0c10-451f-91bf-252ccf97b904",
+    "runId": "run-4cf76f65-2f90-4eac-8de2-9c661f9afd76",
+    "browser": "separate background CUA IAB tab",
+    "viewport": [
+      1280,
+      720
+    ],
+    "narrowMethod": "Host World/Agents divider dragged to approximately400px World pane"
+  },
+  "captureBeforeFix": {
+    "browserRemoval": "PASS: dedicated browser unmounted immediately after Objects > Add weather; underlying map reported inspection suspended and placement instruction",
+    "cancel": "PASS: Escape removed Cancel placement and unsuspended inspection; weather count remained2",
+    "reachability": "DEFECT: temporary Objects drawer stayed open; its first Close/outside click cancelled placement and was consumed by existing global placement handler",
+    "staleHint": "DEFECT: persistent command-feedback notice retained Click map to place new weather probe after cancel and into reopened browser"
+  },
+  "artifacts": {
+    "armedCapture": "product-capture-armed-drawer.png",
+    "armedAX": "product-capture-armed-drawer.ax.txt",
+    "drawerAfterConsumedCancel": "product-capture-drawer-cancel-before-fix.png",
+    "campusBeforeLatestRendererUpdate": "product-campus-browser.png",
+    "campusManualCloseContextBeforeLatestRendererUpdate": "product-campus-context-close.png"
+  },
+  "pending": [
+    "Renderer owner to investigate/resolve Plan parking marking visibility before final visual acceptance"
+  ],
+  "limits": [
+    "No object was placed or created in World",
+    "No user production Run accessed",
+    "Selected-controller and panel-target capture were not exercised in this Scenario; no unsupported facet was fabricated",
+    "Pre-update campus screenshots are visual observations, not final quality acceptance"
+  ],
+  "verifiedBuild": "4ffb61dd2, including source-fixed pins/owned numeric transport and drawer/placement lifecycle fix",
+  "captureFinal": {
+    "sequence": [
+      "Reload isolated QA Run",
+      "Open dedicated layout browser",
+      "Open Host Agents pane and drag divider to approximately400px World width",
+      "Open Objects drawer",
+      "Add weather",
+      "Observe dedicated browser unmounted and drawer automatically collapsed, underlying map visible",
+      "Escape",
+      "Observe placement instruction removed and inspection unsuspended",
+      "Restore wide Host World view"
+    ],
+    "result": "PASS",
+    "weatherCountBefore": 2,
+    "weatherCountAfter": 2,
+    "worldObjectCreation": "None: no map placement point was clicked and no draft was submitted",
+    "armedScreenshot": "product-capture-final-armed.png",
+    "armedAX": "product-capture-final-armed.ax.txt",
+    "cancelledScreenshot": "product-capture-final-cancelled.png",
+    "cancelledAX": "product-capture-final-cancelled.ax.txt"
+  },
+  "visualFinal": {
+    "campus3dClose": "product-campus-final-close.png",
+    "campusPlan": "product-campus-final-plan.png",
+    "administrationAndJoinedJunctions": "product-campus-admin-parking-final.png",
+    "parkingPlan": "product-campus-parking-final.png",
+    "parking3d": "product-campus-parking-3d-final.png",
+    "firstSupports": "product-campus-first-supports-final.png",
+    "observations": [
+      "Administration room partitions/doors and joined rounded service/pedestrian junctions are visible at close range",
+      "Switchyard overhead lines terminate at authored first supports; the first-support image shows two supports and adjacent unit context",
+      "Parking stall markings are visible in3D but absent in the corresponding Plan image: concrete unresolved visual defect reported to root",
+      "Whole-site framing was not used as proof of close equipment visual quality"
+    ],
+    "firstSupportAuthoredLocations": {
+      "pylon/hasle-double": [
+        -240,
+        210,
+        0
+      ],
+      "pylon/hasle-single": [
+        -130,
+        255,
+        0
+      ],
+      "pylon/tegneby-double": [
+        180,
+        160,
+        0
+      ],
+      "pylon/tegneby-single": [
+        290,
+        130,
+        0
+      ]
+    }
+  },
+  "cleanup": "Separate agent-created background CUA tab closed; Host pane restored wide; no duplicate UI demand remains for root timing benchmark"
+}

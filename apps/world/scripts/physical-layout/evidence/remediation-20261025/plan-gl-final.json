@@ -1,0 +1,3607 @@
+{
+  "passed": true,
+  "profile": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "width": 1440,
+    "height": 913,
+    "dpr": 1,
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "antialias": true
+  },
+  "coplanarDrawOrder": {
+    "passed": true,
+    "results": [
+      {
+        "flat": false,
+        "interleaved": true,
+        "picked": "B",
+        "pixel": [
+          0,
+          232,
+          0,
+          255
+        ],
+        "draws": 3,
+        "geometryUploads": 2,
+        "passed": true
+      },
+      {
+        "flat": false,
+        "interleaved": false,
+        "picked": "A2",
+        "pixel": [
+          232,
+          0,
+          0,
+          255
+        ],
+        "draws": 2,
+        "geometryUploads": 2,
+        "passed": true
+      },
+      {
+        "flat": true,
+        "interleaved": true,
+        "picked": "B",
+        "pixel": [
+          0,
+          255,
+          0,
+          255
+        ],
+        "draws": 3,
+        "geometryUploads": 2,
+        "passed": true
+      },
+      {
+        "flat": true,
+        "interleaved": false,
+        "picked": "A2",
+        "pixel": [
+          255,
+          0,
+          0,
+          255
+        ],
+        "draws": 2,
+        "geometryUploads": 2,
+        "passed": true
+      }
+    ],
+    "disposal": {
+      "geometryUploads": 2,
+      "geometryBytes": 0,
+      "draws": 10,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 8,
+      "statusUploads": 2,
+      "paletteUploads": 2,
+      "evictions": 0,
+      "peakRequiredBytes": 524,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0
+    }
+  },
+  "source": {
+    "revision": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+    "objects": 64
+  },
+  "coarse": null,
+  "basic": {
+    "sentinel": {
+      "colorDepth": [
+        204,
+        26,
+        178,
+        255
+      ],
+      "stencil": [
+        229,
+        204,
+        26,
+        255
+      ],
+      "after": [
+        26,
+        204,
+        51,
+        255
+      ],
+      "passed": true
+    },
+    "state": {
+      "uploadsBefore": 1,
+      "uploadsAfter": 1,
+      "changedPixels": true
+    },
+    "pick": {
+      "sceneId": "layout:proof",
+      "targetObjectId": "plant:proof",
+      "occurrenceId": "condenser-1",
+      "label": "Condenser section 1",
+      "subjectIds": [
+        "condenser"
+      ],
+      "screen": {
+        "x": 458.99160449122957,
+        "y": 554.8059701904187,
+        "depth": -0.2666709959521182,
+        "visible": true
+      }
+    },
+    "statusKeepsPicks": true,
+    "levelChangeClearsPicks": true,
+    "lowerVisibleCount": 46,
+    "layers": [
+      "ground",
+      "probe-before",
+      "physical-scenes:solids",
+      "probe-after",
+      "operational-zone"
+    ],
+    "canvasCount": 2
+  },
+  "levels": {
+    "upperVisibleCount": 28,
+    "lowerAndUpperDiffer": true,
+    "pitch": 50
+  },
+  "cycles": [
+    {
+      "index": 0,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 2,
+          "transferredBytes": 4739136
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 2,
+            "geometryBytes": 0,
+            "draws": 24,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 12,
+            "statusUploads": 3,
+            "paletteUploads": 2,
+            "evictions": 1,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 7,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 1,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 2,
+          "viewRequests": 3,
+          "transferredBytes": 9478272
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 2,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 3,
+          "viewRequests": 4,
+          "transferredBytes": 14217408
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 3,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 5,
+          "transferredBytes": 18956544
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 4,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 5,
+          "viewRequests": 6,
+          "transferredBytes": 23695680
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 5,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 6,
+          "viewRequests": 7,
+          "transferredBytes": 28434816
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 6,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 7,
+          "viewRequests": 8,
+          "transferredBytes": 33173952
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 7,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 8,
+          "viewRequests": 9,
+          "transferredBytes": 37913088
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 8,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 9,
+          "viewRequests": 10,
+          "transferredBytes": 42652224
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 9,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 10,
+          "viewRequests": 11,
+          "transferredBytes": 47391360
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 10,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 11,
+          "viewRequests": 12,
+          "transferredBytes": 52130496
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 11,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 12,
+          "viewRequests": 13,
+          "transferredBytes": 56869632
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 12,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 13,
+          "viewRequests": 14,
+          "transferredBytes": 61608768
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 13,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 14,
+          "viewRequests": 15,
+          "transferredBytes": 66347904
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 14,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 15,
+          "viewRequests": 16,
+          "transferredBytes": 71087040
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 15,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 16,
+          "viewRequests": 17,
+          "transferredBytes": 75826176
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 16,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 17,
+          "viewRequests": 18,
+          "transferredBytes": 80565312
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 17,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 18,
+          "viewRequests": 19,
+          "transferredBytes": 85304448
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 18,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 19,
+          "viewRequests": 20,
+          "transferredBytes": 90043584
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    },
+    {
+      "index": 19,
+      "disposal": {
+        "preparation": {
+          "workerAlive": false,
+          "clients": 0,
+          "registeredSources": 0,
+          "registeredBytes": 0,
+          "leases": 0,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 20,
+          "viewRequests": 21,
+          "transferredBytes": 94782720
+        },
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 1986756,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 4,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 2,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 2,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      }
+    }
+  ],
+  "styles": [
+    {
+      "index": 0,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 1,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 2,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 3,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 4,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 5,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 6,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 7,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 8,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 9,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 10,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 11,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 12,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 13,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 14,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 15,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 16,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 17,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 18,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 19,
+      "diagnostics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 4739136,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 21,
+          "viewRequests": 22,
+          "transferredBytes": 99521856
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 1984896,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5260672,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    }
+  ],
+  "contextRestore": {
+    "diagnostics": {
+      "preparation": {
+        "workerAlive": true,
+        "clients": 1,
+        "registeredSources": 1,
+        "registeredBytes": 4739136,
+        "leases": 1,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 21,
+        "viewRequests": 22,
+        "transferredBytes": 99521856
+      },
+      "current": {
+        "geometryUploads": 1,
+        "geometryBytes": 1984896,
+        "draws": 8,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 5260672,
+        "instanceBytes": 68,
+        "instanceUploads": 4,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 1986756,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "plan": {
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 47329920,
+          "textureBytes": 5258880,
+          "allocations": 1,
+          "composites": 4,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        }
+      },
+      "disposals": [
+        {
+          "geometryUploads": 1,
+          "geometryBytes": 0,
+          "draws": 4,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 1986756,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "plan": {
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          }
+        }
+      ],
+      "retainedScenes": 1,
+      "loadingScenes": 0
+    },
+    "sentinel": {
+      "colorDepth": [
+        204,
+        26,
+        178,
+        255
+      ],
+      "stencil": [
+        229,
+        204,
+        26,
+        255
+      ],
+      "after": [
+        26,
+        204,
+        51,
+        255
+      ],
+      "passed": true
+    }
+  },
+  "idleFrames": 0,
+  "unchangedStateRefreshes": 5,
+  "idleMeasurement": "350ms after500ms recoveryquiescence, with repeated equalstyle refreshes",
+  "repaintCalls": [],
+  "negativeControlDetected": true,
+  "deckPick": {
+    "id": "plant:proof",
+    "layer": "leitbild-object-status-disks"
+  },
+  "stateErrors": [],
+  "glErrors": [],
+  "errors": [],
+  "loadCount": 21,
+  "limits": [
+    "Isolated desktop Chrome, not constrained hardware or WAN.",
+    "Empty test ground style; full PMTiles/context and app input/card/Run flow require separate integrated checks.",
+    "Test-controlled shader state is not operational plant status.",
+    "Same production native scene/controller and operational Deck layer factory; no experiment renderer imported."
+  ],
+  "gestures": {
+    "closedLoopOrbit": {
+      "tool": "orbit",
+      "button": "left",
+      "moving": true,
+      "cancel": false,
+      "clickDelta": 0,
+      "cameraRevisions": 120,
+      "nativePanEnabled": true
+    },
+    "ordinaryOrbitClick": {
+      "tool": "orbit",
+      "button": "left",
+      "moving": false,
+      "cancel": false,
+      "clickDelta": 1,
+      "cameraRevisions": 0,
+      "nativePanEnabled": true
+    },
+    "nativePanLoop": {
+      "tool": "pan",
+      "button": "left",
+      "moving": true,
+      "cancel": false,
+      "clickDelta": 0,
+      "cameraRevisions": 120,
+      "nativePanEnabled": true
+    },
+    "nativeSecondaryLoop": {
+      "tool": "orbit",
+      "button": "right",
+      "moving": true,
+      "cancel": false,
+      "clickDelta": 0,
+      "cameraRevisions": 120,
+      "nativePanEnabled": true
+    },
+    "cancelledOrbit": {
+      "tool": "orbit",
+      "button": "left",
+      "moving": true,
+      "cancel": true,
+      "clickDelta": 0,
+      "cameraRevisions": 30,
+      "nativePanEnabled": true
+    },
+    "followingPanClick": {
+      "tool": "pan",
+      "button": "left",
+      "moving": false,
+      "cancel": false,
+      "clickDelta": 1,
+      "cameraRevisions": 0,
+      "nativePanEnabled": true
+    }
+  },
+  "gesturesPassed": true,
+  "sourceHashes": {
+    "src/ui/map/physical-scene/controller.ts": "f7c1ab97d309030af0ecd225026eb33d7dc3f23db11355e06f60ad912223ca8d",
+    "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+    "src/ui/map/physical-scene/scene-controller.ts": "f0cb2f563ad14ea1ddb3e1bc976769e14ad97cd1465e18ab8270ea7f25062706",
+    "src/ui/map/physical-scene/preparation.ts": "f503c49865e1eed29ff6236a137737630a3f6bab3f4e679ab6da1b6eeed87e63",
+    "src/ui/map/physical-scene/preparation-worker.ts": "866b832e49dabf621bb8ee8b3c975284be8939a14df20c199a3346240bddd05b",
+    "src/ui/map/physical-scene/inspection-demand.ts": "fff0509984fb6deca90bc1cf005f874b3207b68381fdd8a7356f460f1ff2d4ae",
+    "src/ui/map/physical-scene/plan-pass.ts": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+    "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+    "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+    "src/ui/map/physical-scene/gl-state.ts": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+    "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+    "src/core/packs/scene.ts": "ba6941e4f2df9f00d4cd52bae7235a1820aaac6766f052f155c29354305b2738",
+    "src/core/packs/scene-transfer.ts": "721de87648a44b7e4cfcfaea6de928766d29e4d3fd87b4604eec0002476ab523",
+    "src/ui/map/physical-scene/backend.ts": "968e40727ae99edcb810485b9ebfa397e05aa21589297907a044257492a4a8fd",
+    "src/ui/map/physical-scene/geometry.ts": "a0713f5ee6a5699639c0e361cb402b91a19bd228015561bac6e0208349448b3b",
+    "src/ui/map/physical-scene/overview.ts": "37d8a226ef9e6624b6c207831c5b93e2500dd1c9b62cf814c76f2eb781428c6b",
+    "src/ui/map-runtime/operational-deck-layers.ts": "2eb3c1b415db921b58ecb940a32d9725edc31c128f0eeeef8c0b6ed16982e25e",
+    "src/packs/physical-layout/native/compile-scene.ts": "b3e70a671f13b48e7724b0bb4ad67f0fe47069dbdf9d8ff9b9369296299820ad",
+    "src/packs/physical-layout/native/campus/compile-scene.ts": "f5ca21f0d5d26be45b76515f7702c5b40309ba1a621f9cb58b09a2f71f16cbda"
+  },
+  "sceneSha256": "d34d57c298988f83006a90b30ff67d8eff41dc126681aaa8fcf3231cdd3a5010",
+  "designMode": "turbine-island",
+  "design": {
+    "id": "pwr-turbine-island",
+    "revision": "pwr-turbine-island-20261024-r2",
+    "digest": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124"
+  },
+  "responsive": {
+    "width": 638,
+    "height": 720,
+    "bounds": {
+      "left": 79.9999999858715,
+      "right": 557.9999999788072,
+      "top": 201.38565023210313,
+      "bottom": 488.6143497890896
+    },
+    "inside": true
+  },
+  "responsive3d": {
+    "width": 638,
+    "height": 720,
+    "separation": 0,
+    "displayBounds": {
+      "min": [
+        -44.8,
+        -26,
+        -0.4
+      ],
+      "max": [
+        44.4,
+        27.6,
+        31.2
+      ]
+    },
+    "bounds": {
+      "left": 95.29355892730324,
+      "right": 542.7064410673836,
+      "top": 171.77774950294736,
+      "bottom": 424.0717817610631
+    },
+    "inside": true
+  },
+  "responsiveSeparated": {
+    "width": 638,
+    "height": 720,
+    "separation": 30,
+    "displayBounds": {
+      "min": [
+        -44.8,
+        -26,
+        -0.4
+      ],
+      "max": [
+        44.4,
+        27.6,
+        61.2
+      ]
+    },
+    "bounds": {
+      "left": 104.6111650557359,
+      "right": 533.3888349758114,
+      "top": 83.38891417290914,
+      "bottom": 415.50202485421426
+    },
+    "inside": true
+  }
+}
