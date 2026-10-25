@@ -31,3 +31,13 @@ test('scene admission refuses invented membership and cyclic scope ancestry', ()
   expect(packPhysicalSceneSchema.safeParse({ ...scene, objects: [{ ...data.objects[0], scopeIds: ['invented'] }] }).success).toBe(false)
   expect(packPhysicalSceneSchema.safeParse({ ...scene, scopes: data.scopes.map(scope => scope.id === 'unit' ? { ...scope, parentId: 'room' } : scope) }).success).toBe(false)
 })
+
+test('touching a floor datum does not invent volume on that floor; a planar feature keeps its declared floor', () => {
+  const closedAtUpper: PhysicalScopeSource = { ...source, elements: source.elements.map(element => element.id === 'room' ? { ...element, dimensions: { length: 5, width: 5, height: 8 } } : element) }
+  const flat = { ...physical('vessel', 'upper'), positions: [0, 0, 8, 1, 0, 8, 0, 1, 8] }
+  const data = physicalScopeManifest(closedAtUpper, [flat])
+  // The declared room volume ends at the upper datum. Its planar feature is
+  // still correctly identified at that datum, without duplicating the room.
+  expect(data.objects[0]!.levelIds).toEqual(['upper'])
+  expect(data.scopes.find(scope => scope.id === 'room')!.levelIds).toEqual(['ground'])
+})

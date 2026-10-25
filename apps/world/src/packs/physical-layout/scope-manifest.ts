@@ -75,10 +75,13 @@ export const physicalScopeManifest = (source: PhysicalScopeSource, input: Readon
     return [...result]
   }
   const orderedLevels = [...source.levels].sort((a, b) => a.elevation - b.elevation)
-  const levelsFor = (bounds: PhysicalSceneBounds): string[] => orderedLevels.filter((level, index) => {
+  const levelsFor = (bounds: PhysicalSceneBounds, planeLevelId?: string): string[] => {
+    if (bounds.min[2] === bounds.max[2] && planeLevelId !== undefined) return [planeLevelId]
+    return orderedLevels.filter((level, index) => {
     const top = orderedLevels[index + 1]?.elevation ?? Infinity
-    return bounds.max[2] >= level.elevation && bounds.min[2] < top
+    return bounds.max[2] > level.elevation && bounds.min[2] < top
   }).map(level => level.id)
+  }
   const authoredBounds = (element: ScopeElement): PhysicalSceneBounds => {
     const dimensions = { ...(element.typeId ? types.get(element.typeId) : element.dimensions), ...element.override }
     if (dimensions.length === undefined || dimensions.width === undefined || dimensions.height === undefined) throw new Error(`A physical scope needs dimensions: ${element.id}`)
@@ -96,7 +99,7 @@ export const physicalScopeManifest = (source: PhysicalScopeSource, input: Readon
     const element = elements.get(object.id)
     if (!element) throw new Error(`A rendered occurrence is absent from physical source: ${object.id}`)
     const bounds = positionBounds(object)
-    return { ...object, bounds, scopeIds: membership(element), levelIds: object.levelId === 'site' ? ['site'] : levelsFor(bounds) }
+    return { ...object, bounds, scopeIds: membership(element), levelIds: object.levelId === 'site' ? ['site'] : levelsFor(bounds, object.levelId) }
   })
   const rootBounds = union(objects.map(object => object.bounds))
   const manifest: PhysicalSceneScope[] = [{ ...source.rootScope, bounds: rootBounds, levelIds: orderedLevels.map(level => level.id) }]
