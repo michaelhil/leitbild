@@ -27,12 +27,12 @@ export const physicalLayoutPack: WorldPack = {
   scenario: {
     itemSchemas: { 'site-layout': physicalLayoutScenarioItemSchema },
     referencedObjects: spec => [physicalLayoutScenarioItemSchema.parse(spec).members.unit],
-    expandItem: (spec: PackScenarioItemSpec, context) => {
+    expandItem: async (spec: PackScenarioItemSpec, context) => {
       const item = physicalLayoutScenarioItemSchema.parse(spec)
       const owner = context.objectById(item.members.unit)
       if (!owner?.spatial?.position) throw new Error(`Physical layout owner has no admitted point: ${item.members.unit}`)
       if (!context.physicalTargetsFor) throw new Error('Physical-layout admission requires owner target description')
-      const targets = context.physicalTargetsFor(item.members.unit)
+      const targets = await context.physicalTargetsFor(item.members.unit)
       const retained = resolvePhysicalDesign(item.design)
       if (targets.objectId !== owner.id || targets.modelRef !== retained.modelRequirement.modelRef || targets.modelDigest !== retained.modelRequirement.modelDigest) throw new Error(`Physical-layout owner model mismatch: ${owner.id}`)
       const subjectIds = new Set(targets.subjects.map(subject => subject.id))

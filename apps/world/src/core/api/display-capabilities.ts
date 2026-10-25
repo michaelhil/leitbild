@@ -73,7 +73,7 @@ export const handleLayoutDisplay = async (registry: SimulationRunRegistry, runti
   const input = layoutReadInputSchema.parse(body)
   const identity = displayRuntimeIdentity(runtime)
   const run = await displayRunOf(registry, runtime, actor, new Set())
-  const descriptor = layoutDescriptorOf(run, input)
+  const descriptor = await layoutDescriptorOf(run, input)
   const reading = await readLayout(run, descriptor)
   if (registry.get(runtime.id) !== runtime || runtime.snapshot().seq !== identity.sequence) {
     return apiError(409, 'layout_read_superseded', 'The Run changed during the layout read; acquire a complete new sample')

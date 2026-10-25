@@ -437,8 +437,8 @@ export interface PackScenarioExpansionContext {
   readonly at: IsoTimestamp
   readonly objects: ReadonlyArray<OperationalObject>
   readonly objectById: (id: ObjectId) => OperationalObject | undefined
-  /** Pure owner-described physical subjects; this never connects a runtime. */
-  readonly physicalTargetsFor?: (id: ObjectId) => PackPhysicalTargetDescription
+  /** Immutable owner model description; catalog loading never connects a runtime. */
+  readonly physicalTargetsFor?: (id: ObjectId) => PackPhysicalTargetDescription | Promise<PackPhysicalTargetDescription>
   readonly routing: RoutingAdapter
   readonly packConfigs: Record<string, unknown>
   /** The Scenario's declared sides, for a Pack whose items belong to one; empty when it declares none. */
@@ -866,14 +866,14 @@ export interface PackPhysicalTargetDescription {
   readonly objectId: string
   readonly modelRef: string
   readonly modelDigest: string
-  readonly subjects: ReadonlyArray<{ readonly id: string; readonly label: string }>
+  readonly subjects: ReadonlyArray<{ readonly id: string; readonly label: string; readonly location?: readonly [number, number] }>
 }
 
 /** Complete server-side Pack definition. World Pack views are projections of
  * this contract, never partial World Packs with fabricated schemas. */
 export interface WorldPack extends WorldPackView {
   readonly scenarioConfigSchema: z.ZodType
-  readonly physicalTargets?: (object: OperationalObject) => PackPhysicalTargetDescription
+  readonly physicalTargets?: (object: OperationalObject) => PackPhysicalTargetDescription | Promise<PackPhysicalTargetDescription>
   /**
    * Opts this Pack into Runs whose Scenario declares roles; compiling a role
    * Run with any other Pack is refused (`role_run_pack_not_role_aware`).

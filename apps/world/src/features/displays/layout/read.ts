@@ -37,7 +37,7 @@ export interface LayoutReading {
 const refuse = (code: string, message: string): never => { throw Object.assign(new Error(message), { code }) }
 
 /** Resolve the retained layout as the caller; never compile geometry or start a simulator. */
-export const layoutDescriptorOf = (run: ViewRun, input: z.infer<typeof layoutReadInputSchema>): PackPhysicalSceneDescriptor => {
+export const layoutDescriptorOf = async (run: ViewRun, input: z.infer<typeof layoutReadInputSchema>): Promise<PackPhysicalSceneDescriptor> => {
   const object = visibleObject(run, input.layoutObjectId)
   if (object === undefined) return refuse('layout_unavailable', 'This layout is not available in the current Run view')
   const pack = run.packs.find(candidate => candidate.descriptor.id === object.packId)
@@ -47,10 +47,10 @@ export const layoutDescriptorOf = (run: ViewRun, input: z.infer<typeof layoutRea
   if (!descriptor.locationValid) return refuse('layout_location_mismatch', descriptor.reason ?? 'The layout no longer agrees with its owner location')
   const owner = visibleObject(run, descriptor.targetObjectId)
   if (owner === undefined) return refuse('layout_owner_unavailable', 'The layout owner is not available in the current Run view')
-  const targets = run.packs.find(candidate => candidate.descriptor.id === owner.packId)?.physicalTargets?.(owner)
+  const targets = await run.packs.find(candidate => candidate.descriptor.id === owner.packId)?.physicalTargets?.(owner)
   if (targets === undefined || targets.modelDigest !== descriptor.modelDigest) return refuse('layout_model_mismatch', 'The retained layout does not match the current owner model')
   const ids = new Set(targets.subjects.map(subject => subject.id))
-  if (descriptor.subjectIds.length > 64 || descriptor.subjectIds.some(id => !ids.has(id))) return refuse('layout_subject_mismatch', 'The layout contains unsupported owner subjects')
+  if (descriptor.subjectIds.length > 256 || descriptor.subjectIds.some(id => !ids.has(id))) return refuse('layout_subject_mismatch', 'The layout contains unsupported owner subjects')
   return descriptor
 }
 
