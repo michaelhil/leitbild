@@ -21,6 +21,7 @@ import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric
 import { gridCloseBranchCommandKind, gridOpenBranchCommandKind } from '../src/packs/electric-grid/commands/branch.ts'
 import { processPlantActionInvokeCommandKind } from '../src/packs/process-plant/commands.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
+import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { weatherSampleSchema } from '../src/packs/weather/model.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
@@ -30,7 +31,7 @@ import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 import { scenarios,testScenarioDefinitions } from './fixtures/scenarios.ts'
 
 const simulationRunId = 'run:halden-four-unit-integration' as SimulationRunId
-const packs = [processPlantPack, electricGridPack, weatherPack]
+const packs = [processPlantPack, physicalLayoutPack, electricGridPack, weatherPack]
 const connectScenario = (scenario: CompiledScenario) => {
   const resolved = createScenarioRuntimeResolver({ packs }).resolve(scenario)
   return createRuntimeHub([
