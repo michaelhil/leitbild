@@ -7,6 +7,8 @@ import { createPhysicalSceneController, detailEligible } from '../src/ui/map/phy
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { inverse, localMercatorMatrix, multiply, transform } from '../src/ui/map/physical-scene/math.ts'
 import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
+import { physicalSceneLayerAnchorId } from '../src/ui/map/physical-scene/order.ts'
+import { referenceLayerIdPrefix } from '../src/ui/map/reference-layer-factory.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 
 const box = (id: string, min: [number, number, number], max: [number, number, number], kind = 'wall', subjectIds: string[] = []): PhysicalSceneObject => {
@@ -52,6 +54,19 @@ describe('Physical scene validation, projection and inspection fragments', () =>
     expect(detailEligible(180, true, true)).toBe(true)
     expect(detailEligible(179, true, true)).toBe(false)
     expect(detailEligible(1000, false, true)).toBe(false)
+  })
+
+  test('native operational lines and zones stay above physical geometry regardless of registration order', () => {
+    const style = { metadata: { 'leitbild:baseSources': ['base'] }, layers: [
+      { id: 'base-ground', type: 'fill', source: 'base' },
+      { id: `${referenceLayerIdPrefix}roads`, type: 'line', source: 'reference-roads' },
+      { id: 'physical-scenes:solids', type: 'custom' },
+      { id: 'live:grid:line', type: 'line', source: 'live-grid' },
+      { id: 'base-label', type: 'symbol', source: 'base' },
+    ] }
+    expect(physicalSceneLayerAnchorId(style)).toBe('live:grid:line')
+    expect(physicalSceneLayerAnchorId({ ...style, layers: style.layers.filter(layer => !layer.id.startsWith('live:')) })).toBe('base-label')
+    expect(() => physicalSceneLayerAnchorId({ layers: [] })).toThrow('source metadata')
   })
 
   test('caps a cut wall without filling its hosted access opening', () => {

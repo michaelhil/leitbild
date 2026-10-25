@@ -3,9 +3,10 @@ import { packPhysicalSceneSchema, type PackPhysicalScene } from '../../../core/p
 import { buildVisibleMeshes, type PhysicalMesh } from './geometry.ts'
 import { createPhysicalSceneLayer, type PhysicalLayerEntry } from './layer.ts'
 import { boundsCorners, localMercatorMatrix, transform } from './math.ts'
+import { physicalSceneLayerId } from './order.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneDescriptor, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle } from './types.ts'
 
-const layerId = 'physical-scenes:solids'
+const layerId = physicalSceneLayerId
 const maximumResidentScenes = 4
 interface Entry {
   source: PhysicalSceneSource
