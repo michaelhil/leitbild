@@ -56,6 +56,13 @@ export const layoutDescriptorOf = (run: ViewRun, input: z.infer<typeof layoutRea
 
 /** One bounded owner read supplies every subject; alerts use the same annunciation as process displays. */
 export const readLayout = async (run: ViewRun, descriptor: PackPhysicalSceneDescriptor): Promise<Pick<LayoutReading, 'sample' | 'subjects'>> => {
+  const port = run.port
+  run = { ...run, port: { ...port, read: async request => {
+    const result = await port.read(request)
+    if (result.refused.length > 0) return refuse('layout_observation_refused', result.refused.map(entry => entry.refused.message).join('; '))
+    if (result.unknown.length > 0) return refuse('layout_observation_unknown', 'The owner no longer supplies every requested layout reading')
+    return result
+  } } }
   const owner = visibleObject(run, descriptor.targetObjectId)!
   const declaration = await declarationOf(run, owner.id)
   if (declaration === null) return refuse('layout_not_observed', 'The layout owner supplies no readable observations')
