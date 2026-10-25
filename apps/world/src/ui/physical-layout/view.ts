@@ -1,0 +1,32 @@
+/** Client-only inspection settings. None changes physical coordinates or Run state. */
+export interface PhysicalLayoutView {
+  readonly mode: '2d' | '3d'
+  readonly levelId: string | 'all'
+  readonly separation: number
+  readonly cutaway: boolean
+  readonly detail: 'auto' | 'hidden'
+  readonly live: boolean
+}
+
+export interface PhysicalLayoutLevel {
+  readonly id: string
+  readonly label: string
+  readonly elevation: number
+}
+
+export const initialPhysicalLayoutView = (levels: ReadonlyArray<PhysicalLayoutLevel>): PhysicalLayoutView => {
+  const first = levels[0]
+  if (first === undefined) throw new Error('A physical layout needs at least one level')
+  return { mode: '2d', levelId: first.id, separation: 0, cutaway: true, detail: 'auto', live: true }
+}
+
+/** A plan has one selected level; an explicit 3D view can show all levels. */
+export const changePhysicalLayoutView = (current: PhysicalLayoutView, patch: Partial<PhysicalLayoutView>, levels: ReadonlyArray<PhysicalLayoutLevel>): PhysicalLayoutView => {
+  const next = { ...current, ...patch }
+  if (!Number.isFinite(next.separation) || next.separation < 0 || next.separation > 30) throw new Error('Level separation must be between 0 and 30 metres')
+  if (next.levelId !== 'all' && !levels.some(level => level.id === next.levelId)) throw new Error(`Unknown layout level: ${next.levelId}`)
+  if (next.mode === '2d') return { ...next, levelId: next.levelId === 'all' ? initialPhysicalLayoutView(levels).levelId : next.levelId, separation: 0 }
+  return next
+}
+
+export const levelLabel = (level: PhysicalLayoutLevel): string => `${level.label} · ${level.elevation > 0 ? '+' : ''}${level.elevation} m`

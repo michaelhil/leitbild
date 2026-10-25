@@ -31,7 +31,7 @@
   // handle: dragged, or moved by the arrow keys 8 px (Shift 24 px); the corner
   // resizes it, 280 to 520 px wide and by whole rows of readings, or
   // Shift+Alt and the arrows; Esc with focus in it unpins it.
-  let { runId, objectId, packId, elementId, name, word, title, readings, alerts, alertElements, group, related, anchor, at, avoid, zoom, room, frozen, opening, pending, pinned = null, onclose, onpin, onoverlay, ontouched, onsize, ondetail, onfaceplate }: {
+  let { runId, objectId, packId, elementId, name, word, title, readings, alerts, alertElements, group, related, anchor, at, avoid, zoom, room, frozen, opening, pending, pinned = null, canPin = true, maxWidth = FACEPLATE_WIDTH, onclose, onpin, onoverlay, ontouched, onsize, ondetail, onfaceplate }: {
     runId: SimulationRunId
     objectId: string
     packId: string
@@ -65,6 +65,10 @@
     pending: boolean
     /** Pinned: where it stands; null while it is the faceplate a press opened. */
     pinned?: PinnedOverlay | null
+    /** A map-hosted single faceplate has no overlay canvas to pin onto. */
+    canPin?: boolean
+    /** A narrow host bounds this card without scaling down its text. */
+    maxWidth?: number
     onclose: (returnFocus: boolean) => void
     /** Pins it where it stands (page px), or closes its overlay. */
     onpin: (place: { readonly x: number; readonly y: number }) => void
@@ -101,7 +105,7 @@
   const fit = $derived(shownReadings(readings?.values.length ?? 0, { rest, row: FACEPLATE_ROW, pending, rows: pinned?.rows ?? null }))
   /** Its readings as the column's lead rows read, sparklines included (D-C); frozen, the last it had, low-integrity. */
   const rows = $derived(readings === null ? [] : faceplateRows(readings, fit.shown, { title, elementId, frozen }))
-  const width = $derived(pinned?.width ?? FACEPLATE_WIDTH)
+  const width = $derived(Math.min(pinned?.width ?? FACEPLATE_WIDTH, maxWidth))
   const place = $derived(pinned !== null ? { x: pinned.x, y: pinned.y } : anchor !== null ? faceplatePlacement(anchor, { width, height }, room, zoom, avoid)
     : faceplatePlacement({ ...(at ?? { x: room.x, y: room.y }), width: 0, height: 0 }, { width, height }, room, zoom, avoid))
   const tallest = $derived(faceplateHeight(room, zoom))
@@ -248,8 +252,10 @@
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
           <obc-button class="detail" variant="flat" onclick={() => ondetail(elementId)}>{detailWord}</obc-button>
         {/if}
-        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <obc-icon-button class="pin" variant="flat" activated={pinned !== null} ariaLabel={pinned !== null ? `Unpin ${name}` : `Pin ${name} on the display`} title={pinned !== null ? 'Unpin: close the overlay' : 'Pin on the display'} onclick={() => onpin(place)}>{#if pinned !== null}<obi-pin-selected-google usecsscolor></obi-pin-selected-google>{:else}<obi-pin-google usecsscolor></obi-pin-google>{/if}</obc-icon-button>
+        {#if canPin}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <obc-icon-button class="pin" variant="flat" activated={pinned !== null} ariaLabel={pinned !== null ? `Unpin ${name}` : `Pin ${name} on the display`} title={pinned !== null ? 'Unpin: close the overlay' : 'Pin on the display'} onclick={() => onpin(place)}>{#if pinned !== null}<obi-pin-selected-google usecsscolor></obi-pin-selected-google>{:else}<obi-pin-google usecsscolor></obi-pin-google>{/if}</obc-icon-button>
+        {/if}
       </header>
       <div class="content" bind:this={contentBox}>
         {#if offer === 'actions' && Actions !== null}
