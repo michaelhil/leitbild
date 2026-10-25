@@ -74,7 +74,14 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
     if (destroyed || contextLost) return
     if (!drawable().length) { removeLayer(); return }
     if (!map.isStyleLoaded()) return
-    if (currentLayer && map.getLayer(layerId)) { map.triggerRepaint(); return }
+    if (currentLayer && map.getLayer(layerId)) {
+      const before = options.beforeId()
+      if (before && map.getLayer(before)) {
+        const layers = map.getStyle().layers
+        if (layers.findIndex(layer => layer.id === layerId) > layers.findIndex(layer => layer.id === before)) map.moveLayer(layerId, before)
+      }
+      map.triggerRepaint(); return
+    }
     if (currentLayer) removeLayer()
     currentLayer = createPhysicalSceneLayer(layerId, drawable, palette, error => {
       layerFailure = error.message
