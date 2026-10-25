@@ -3,6 +3,7 @@
   import type { ModuleCapabilityDescriptor, ModuleResourceDescriptor } from '@leitbild/contracts'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
+  import MoreMenu from './MoreMenu.svelte'
   import { jsonRequest, request } from './api.ts'
   import { catalogDeleteBody, catalogDeleteItem, catalogNoun, createCatalogRemover, type CatalogDeleteItem } from './catalog-delete.ts'
   import { createRecoverableError } from './recoverable-error.ts'
@@ -368,11 +369,18 @@
   <button bind:this={deleteButton} class="run-delete" type="button" disabled={deletableRun(resource) === null} onclick={() => askDelete(resource)} title="Delete this Run" aria-label="Delete this Run"><Icon name="trash" size={16} /></button>
   <span class="divider" aria-hidden="true"></span>
   <button type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.copy')} onclick={openCopyDialog} title="Copy this Run" aria-label="Copy this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-  <button class:active={execution?.playback === 'playing'} type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlayback} title={execution?.playback === 'playing' ? 'Playing — click to pause' : 'Paused — click to play'} aria-label={execution?.playback === 'playing' ? 'Pause simulation' : 'Play simulation'}>{#if execution?.playback === 'playing'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{/if}</button>
+  <button class="playback" class:active={execution?.playback === 'playing'} type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlayback} title={execution?.playback === 'playing' ? 'Playing — click to pause' : 'Paused — click to play'} aria-label={execution?.playback === 'playing' ? 'Pause simulation' : 'Play simulation'}>{#if execution?.playback === 'playing'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{/if}</button>
   <button class:active={execution?.pace === 'maximum'} type="button" aria-pressed={execution?.pace === 'maximum'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || (!execution.maximumPace.available && execution.pace !== 'maximum')} onclick={togglePace} title={execution?.maximumPace.available ? execution?.pace === 'maximum' ? 'Maximum pace armed — click for realtime' : 'Realtime pace — click for maximum' : execution?.maximumPace.reason ?? 'Maximum pace unavailable'} aria-label={execution?.pace === 'maximum' ? 'Maximum pace armed; switch to realtime' : 'Realtime pace; switch to maximum'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
   <span class:fast={execution?.pace === 'maximum'} class="clock" title={execution?.playback === 'playing' && execution?.pace === 'maximum' ? `Playing at ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}× measured` : execution?.pace === 'maximum' ? 'Paused with maximum pace armed' : execution?.playback === 'paused' ? 'Simulation paused' : 'Simulation playing in realtime'}>{displayTime}{#if execution?.pace === 'maximum'}<small>{execution.playback === 'playing' ? `${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×` : 'MAX armed'}</small>{/if}</span>
   <button class:active={execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false} onclick={() => timerDialog?.showModal()} title="Run at maximum pace for a fixed duration" aria-label="Run at maximum pace for a fixed duration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M12 14l3-3M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8z"/></svg></button>
   <button type="button" disabled={restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set')} onclick={openRestrictions} title="AI restrictions for this Run" aria-label="AI restrictions for this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></button>
+  <div class="run-more"><MoreMenu label="More Run actions" tone="dark" triggerClass="run-more-trigger" items={[
+    { label: 'Copy this Run', disabled: actionBusy || !capabilityAvailable('world.simulation-run.copy'), onselect: openCopyDialog },
+    { label: execution?.pace === 'maximum' ? 'Switch to realtime pace' : 'Run at maximum pace', disabled: !execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || !execution.maximumPace.available && execution.pace !== 'maximum', onselect: togglePace },
+    { label: 'Run for a fixed duration', disabled: actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false, onselect: () => timerDialog?.showModal() },
+    { label: 'AI restrictions for this Run', disabled: restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set'), onselect: openRestrictions },
+    { label: 'Delete this Run', danger: true, disabled: deletableRun(resource) === null, onselect: () => askDelete(resource) },
+  ]} /></div>
 </div>
 {#if actionError}<div class="control-error" role="alert">{actionError}</div>{/if}
 <ConfirmDialog bind:open={confirmingDelete} items={deleteTargets} noun={catalogNoun(deleteTargets)} body={catalogDeleteBody(deleteTargets)}
@@ -427,6 +435,7 @@
 
 <style>
   .run-controls { min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .35rem; color: #dfe8dc; }
+  .run-more { display: none; }
   button { min-width: 30px; min-height: 28px; padding: 0 .45rem; border: 1px solid #536157; border-radius: 6px; color: inherit; background: #243128; font: inherit; cursor: pointer; }
   button:hover { border-color: #87958a; background: #314037; } button:disabled { opacity: .45; cursor: wait; } button.active { border-color: #65a9ea; color: #b9dcff; background: #1c4261; }
   button svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -468,9 +477,12 @@
      edges fade, so a control cut off there reads as "more this way"; the padding the fades
      lie on keeps the first and last controls clear of them, and focus rings unclipped. */
   @media (max-width: 760px) {
-    .run-controls { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 4px 10px; scroll-padding-inline: 10px;
-      mask-image: linear-gradient(to right, transparent, #000 min(10px, 20%), #000 max(calc(100% - 10px), 80%), transparent); }
-    .run-controls::-webkit-scrollbar { display: none; }
+    .run-controls { overflow: visible; margin-left: 0; flex: 1; gap: 4px; }
+    .run-controls > button:not(.playback), .divider { display: none; }
+    .playback { min-width: 44px; min-height: 44px; }
+    .clock { min-width: 82px; padding: 0; }
+    .run-more { display: flex; }
+    .run-more :global(.run-more-trigger) { min-width: 44px; min-height: 44px; padding: 8px; color: inherit; background: transparent; border: 1px solid #536157; border-radius: 6px; }
     .run-controls > * { flex: none; }
   }
   .restrictions-dialog { width: min(680px, calc(100vw - 2rem)); } .object-restrictions { max-height: min(42vh, 420px); overflow: auto; display: grid; gap: .25rem; }

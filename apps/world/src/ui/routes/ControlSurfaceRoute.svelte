@@ -272,6 +272,15 @@
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
+  let surfaceShell = $state<HTMLElement | null>(null)
+  $effect(() => {
+    const element = surfaceShell
+    if (element === null) return
+    const measure = (): void => railLayout.setPaneWidth(element.getBoundingClientRect().width)
+    const observer = new ResizeObserver(measure)
+    observer.observe(element); measure()
+    return () => observer.disconnect()
+  })
   const placement = createPlacementState({
     packId: 'leitbild-control',
     defaultName: (type) => defaultName(type),
@@ -1986,12 +1995,19 @@
   <div class="boot-shell"></div>
 {:else}
   <div
+    bind:this={surfaceShell}
     class:rail-collapsed={railLayout.collapsed}
+    class:rail-drawer={railLayout.drawer}
     class:no-rail={!railVisible}
     class="app-shell"
     style={`--rail-width: ${railVisible ? railLayout.width : 0}px`}
+    style:--drawer-width={`${railLayout.panelWidth}px`}
   >
     {#if railConfig}
+      {#if railLayout.drawer}
+        {#if !railLayout.collapsed}<button class="rail-drawer-shade" type="button" aria-label="Close objects drawer" onclick={railLayout.collapse}></button>{/if}
+        <button class="rail-drawer-toggle" type="button" aria-expanded={!railLayout.collapsed} onclick={railLayout.toggleDrawer}>{railLayout.collapsed ? 'Objects' : 'Close objects'}</button>
+      {/if}
       <ControlRail
         status={mapWarnings || status}
         {systemStatusTone}

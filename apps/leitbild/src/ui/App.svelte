@@ -803,6 +803,15 @@
   .guide-back { flex: none; color: #aebbb0; font-size: .78rem; text-decoration: none; white-space: nowrap; }
   .guide-back:hover { color: white; }
   .guide-back:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; border-radius: 4px; }
+  @media (max-width: 760px) {
+    .workspace-bar { height: auto; min-height: 44px; flex-wrap: wrap; gap: 2px; padding: 2px 8px; }
+    .workspace-identity { flex: 1 0 100%; min-width: 0; }
+    .workspace-actions { width: 100%; flex-wrap: wrap; gap: 4px; }
+    .workspace-actions > :global(.run-controls) { flex: 1 1 auto; }
+    .workspace-bar :global(button), .workspace-bar :global(.workspace-actions > a) { min-height: 44px; }
+    .workspace-name { max-width: 42vw; }
+    .guide-back { overflow: hidden; text-overflow: ellipsis; }
+  }
 
   /* Workspace page body (plan v2 §6): 28 px from the bar, sections 36 px apart. */
   main.ws-page { width: 100%; max-width: calc(1200px + 2 * var(--lb-gutter)); margin: 0 auto; padding: 28px var(--lb-gutter) 64px; }
