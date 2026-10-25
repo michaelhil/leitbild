@@ -7,9 +7,36 @@ import { campusArrangementSchema, composeCampus, localPointAtAnchor } from '../s
 import { compilePhysicalObjects, physicalObjectsBounds } from '../src/packs/physical-layout/native/campus/compile-scene.ts'
 import { localMercatorMatrix, inverse, multiply, transform } from '../src/ui/map/physical-scene/math.ts'
 import { packPhysicalSceneSchema } from '../src/core/packs/scene.ts'
+import fullUnitSource from '../src/packs/physical-layout/pwr-full-unit.source.json'
+import { physicalBuildingFootprints } from '../src/packs/physical-layout/native/campus/footprints.ts'
+import { physicalSourceSchema } from '../src/packs/physical-layout/native/campus/source.ts'
 
 const authored = campusArrangementSchema.parse(arrangement)
 const data = composeCampus(authored)
+type Point = readonly [number, number]
+const cross = (a: Point, b: Point, c: Point) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+const pointSegmentDistance = (point: Point, a: Point, b: Point): number => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+  return Math.hypot(point[0] - a[0] - t * dx, point[1] - a[1] - t * dy)
+}
+const inside = (point: Point, polygon: Point[]): boolean => {
+  let answer = false
+  for (let index = 0; index < polygon.length - 1; index++) {
+    const a = polygon[index]!, b = polygon[index + 1]!
+    if ((a[1] > point[1]) !== (b[1] > point[1]) && point[0] < (b[0] - a[0]) * (point[1] - a[1]) / (b[1] - a[1]) + a[0]) answer = !answer
+  }
+  return answer
+}
+const polygonDistance = (a: Point, b: Point, polygon: Point[]): number => {
+  if (inside(a, polygon) || inside(b, polygon)) return 0
+  let distance = Infinity
+  for (let index = 0; index < polygon.length - 1; index++) {
+    const c = polygon[index]!, d = polygon[index + 1]!
+    if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return 0
+    distance = Math.min(distance, pointSegmentDistance(a, c, d), pointSegmentDistance(b, c, d), pointSegmentDistance(c, a, b), pointSegmentDistance(d, a, b))
+  }
+  return distance
+}
 
 describe('Authored shared PWR campus and graph coverage', () => {
   test('one strict authored arrangement deterministically reproduces accepted source, correspondence and coverage', () => {
@@ -84,5 +111,27 @@ describe('Authored shared PWR campus and graph coverage', () => {
     const changed = structuredClone(authored)
     changed.switchyard.circuits[0]!.supportId = 'not-authored'
     expect(() => composeCampus(changed)).toThrow('Unknown first support')
+  })
+  test('campus roads and their full widths avoid all common and unit building polygons', () => {
+    const footprints = physicalBuildingFootprints(physicalSourceSchema.parse(fullUnitSource))
+    const buildings = [...authored.units.flatMap(unit => footprints.map(footprint => ({
+      id: `${unit.role}/${footprint.id}`, polygon: footprint.ring.map(point => localPointAtAnchor(authored.siteAnchor, unit.anchor, [point[0], point[1], 0]).slice(0, 2) as [number, number]),
+    }))), ...physicalBuildingFootprints(data.source).map(footprint => ({ id: footprint.id, polygon: footprint.ring }))]
+    const overlaps = (candidate: ReturnType<typeof composeCampus>) => candidate.source.elements.filter(element => element.kind === 'road').flatMap(road => {
+      const halfWidth = road.dimensions!.width / 2
+      return road.path!.slice(1).flatMap((b, index) => buildings.filter(building => polygonDistance(road.path![index]!.slice(0, 2) as [number, number], b.slice(0, 2) as [number, number], building.polygon) < halfWidth).map(building => `${road.id}/${index}/${building.id}`))
+    })
+    expect(buildings).toHaveLength(45)
+    expect(overlaps(data)).toEqual([])
+    const planted = structuredClone(authored)
+    planted.unitServiceSetback = 100
+    expect(overlaps(composeCampus(planted)).length).toBeGreaterThan(0)
+    const throughAdministration = structuredClone(authored)
+    throughAdministration.roadPaths[2] = [[-480, -145, .04], [-310, -145, .04]]
+    expect(overlaps(composeCampus(throughAdministration))).toContain('road/common-2/0/building/administration')
+    const parking = authored.parking, northAisleCentre = parking.position[1] + parking.rows * parking.bayLength + Math.ceil(parking.rows / 2) * parking.aisle - parking.aisle / 2
+    const parkingRoad = data.source.elements.find(element => element.id === 'road/common-3')!
+    expect(parkingRoad.path!.every(point => Math.abs(point[1] - northAisleCentre) < 1e-8)).toBe(true)
+    expect(parkingRoad.dimensions!.width).toBeLessThanOrEqual(parking.aisle)
   })
 })

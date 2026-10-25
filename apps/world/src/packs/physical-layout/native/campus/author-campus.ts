@@ -9,6 +9,7 @@ export const campusArrangementSchema = z.object({
   id, title: z.string().min(1).max(300), siteAnchor: anchor,
   modelRequirement: z.object({ modelRef: id, modelDigest: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   unitTerminal: vector,
+  unitServiceSetback: positive,
   units: z.array(z.object({ role: id, label: id, anchor, subjectId: id, bayX: z.number().finite() }).strict()).min(1).max(16),
   buildings: z.array(z.object({ id, label: z.string().min(1).max(300), position: point, length: positive, width: positive, storeys: z.number().int().min(1).max(2), storeyHeight: positive, roomWidths: z.array(positive).min(1).max(32) }).strict()).min(1).max(100),
   parking: z.object({ position: point, columns: z.number().int().min(1).max(200), rows: z.number().int().min(1).max(20), bayWidth: positive, bayLength: positive, aisle: positive }).strict(),
@@ -127,14 +128,14 @@ export const composeCampus = (input: unknown) => {
   for (let path = 0; path < arrangement.roadPaths.length; path++) line(`road/common-${path}`, 'Shared campus access road', arrangement.roadPaths[path]!, 8, 'road')
 
   const units = arrangement.units.map(unit => ({ ...unit, local: geographicOffset(arrangement.siteAnchor, unit.anchor).map(round) as [number, number] }))
-  line('road/unit-spine', 'Plant service road connecting all four unit compounds', units.map(unit => [unit.local[0], unit.local[1] - 100, .04]), 9, 'road')
+  line('road/unit-spine', 'Plant service road connecting all four unit compounds', units.map(unit => [unit.local[0], unit.local[1] - arrangement.unitServiceSetback, .04]), 9, 'road')
   for (const unit of units) {
     const [x, y] = unit.local
-    line(`road/${unit.role}`, `${unit.label} service entry road`, [[x, y - 100, .04], [x + 175, y - 100, .04], [x + 175, y + 110, .04], [x + 50, y + 110, .04]], 7, 'road')
+    line(`road/${unit.role}`, `${unit.label} service entry road`, [[x, y - arrangement.unitServiceSetback, .04], [x + 175, y - arrangement.unitServiceSetback, .04], [x + 175, y + 110, .04], [x + 50, y + 110, .04]], 7, 'road')
     // The corridor is a conceptual electrical route, not a claim of qualified 420 kV cable construction.
     for (let phase = 0; phase < 3; phase++) {
       const shift = (phase - 1) * .35, [tx, ty, tz] = localPointAtAnchor(arrangement.siteAnchor, unit.anchor, arrangement.unitTerminal)
-      line(`conductor/${unit.role}-phase-${phase + 1}`, `${unit.label} 420 kV unit connection phase ${phase + 1}`, [[unit.bayX + (phase - 1) * 5, -100, 18], [unit.bayX + shift, -125, .4], [-165 + shift, -125, .4], [-165 + shift, 145, .4], [x + 175 + shift, y - 100, .4], [x + 175 + shift, y + 24, .4], [round(tx), round(ty + shift), round(tz)]], .12, 'conductor', unit.subjectId, { terminatesBeyond: false, installation: 'cable-corridor' })
+      line(`conductor/${unit.role}-phase-${phase + 1}`, `${unit.label} 420 kV unit connection phase ${phase + 1}`, [[unit.bayX + (phase - 1) * 5, -100, 18], [unit.bayX + shift, -125, .4], [-165 + shift, -125, .4], [-165 + shift, 145, .4], [x + 175 + shift, y - arrangement.unitServiceSetback, .4], [x + 175 + shift, y + 24, .4], [round(tx), round(ty + shift), round(tz)]], .12, 'conductor', unit.subjectId, { terminatesBeyond: false, installation: 'cable-corridor' })
     }
   }
   const [gateX, gateY] = arrangement.entrance.position, halfGate = arrangement.entrance.width / 2
