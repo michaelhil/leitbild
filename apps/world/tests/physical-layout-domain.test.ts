@@ -85,6 +85,7 @@ describe('Physical layout admission and retained scene', () => {
     expect(da.revision).toBe(db.revision)
     expect(da.subjectIds).toHaveLength(7)
     expect(da.levels.map(level => [level.elevation, level.cutHeight])).toEqual([[0, 1.2], [15, 16.2]])
+    expect(da.levels.map(level => level.label)).toEqual(['Lower floor', 'Turbine operating floor'])
     expect(physicalLayoutPack.runtime).toBeUndefined()
     const owner = describeProcessPlantPhysicalTargets(find(compiled.initialObjects, 'plant:a'))
     expect(owner.subjects).toHaveLength(121)
@@ -139,6 +140,20 @@ describe('Physical layout admission and retained scene', () => {
     const retained = resolvePhysicalDesign(currentPwrPhysicalDesignRef)
     retained.source.elements[0]!.pose.position[0] += 10
     expect(resolvePhysicalDesign(currentPwrPhysicalDesignRef).source).not.toEqual(retained.source)
+  })
+
+  test('retained prior source labels load without substituting the current catalog revision', async () => {
+    const compiled = await compile(source()), object = find(compiled.initialObjects, 'layout:a')
+    const data = physicalLayoutDataSchema.parse(object.packData)
+    const previous = { id: 'pwr-turbine-island', revision: 'pwr-turbine-island-20261024', digest: '3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183' }
+    data.source.levels[0]!.label = 'Lower floor · +0 m'
+    data.source.levels[1]!.label = 'Turbine operating floor · +15 m'
+    data.sourceDigest = createHash('sha256').update(canonicalPhysicalJson(data.source)).digest('hex')
+    data.design = previous
+    expect(() => resolvePhysicalDesign(previous)).toThrow('mismatched physical Design Revision')
+    const retained = await loadPhysicalLayoutScene({ ...object, packData: data })
+    expect(retained.revision).toBe(previous.digest)
+    expect(retained.levels.map(level => level.label)).toEqual(['Lower floor · +0 m', 'Turbine operating floor · +15 m'])
   })
 
   test('real Run restore and newer Scenario publication retain exact admitted source and binding', async () => {

@@ -12,7 +12,7 @@ const bindings = physicalCorrespondenceSchema.array().parse(bindingsData)
 const modelRequirement = { modelRef: 'process-plant.pwr.reference', modelDigest: '47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea' }
 const sourceDigest = hash(source), bindingDigest = hash(bindings)
 export const currentPwrPhysicalDesignRef = Object.freeze({
-  id: source.id, revision: 'pwr-turbine-island-20261024',
+  id: source.id, revision: 'pwr-turbine-island-20261024-r2',
   digest: hash({ sourceDigest, bindingDigest, modelRequirement, compiler: physicalCompilerRef }),
 })
 

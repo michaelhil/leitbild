@@ -6,13 +6,13 @@
   "levels": [
     {
       "id": "lower",
-      "label": "Lower floor \u00b7 +0 m",
+      "label": "Lower floor",
       "elevation": 0,
       "cutHeight": 1.2
     },
     {
       "id": "operating",
-      "label": "Turbine operating floor \u00b7 +15 m",
+      "label": "Turbine operating floor",
       "elevation": 15,
       "cutHeight": 1.2
     }

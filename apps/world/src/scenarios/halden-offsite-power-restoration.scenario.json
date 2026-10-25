@@ -197,8 +197,8 @@
           "label": "Halden Unit 1 turbine island",
           "design": {
             "id": "pwr-turbine-island",
-            "revision": "pwr-turbine-island-20261024",
-            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
+            "revision": "pwr-turbine-island-20261024-r2",
+            "digest": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -211,8 +211,8 @@
           "label": "Halden Unit 2 turbine island",
           "design": {
             "id": "pwr-turbine-island",
-            "revision": "pwr-turbine-island-20261024",
-            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
+            "revision": "pwr-turbine-island-20261024-r2",
+            "digest": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -225,8 +225,8 @@
           "label": "Halden Unit 3 turbine island",
           "design": {
             "id": "pwr-turbine-island",
-            "revision": "pwr-turbine-island-20261024",
-            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
+            "revision": "pwr-turbine-island-20261024-r2",
+            "digest": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -239,8 +239,8 @@
           "label": "Halden Unit 4 turbine island",
           "design": {
             "id": "pwr-turbine-island",
-            "revision": "pwr-turbine-island-20261024",
-            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
+            "revision": "pwr-turbine-island-20261024-r2",
+            "digest": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124"
           },
           "members": {
             "unit": "plant:halden-4"
