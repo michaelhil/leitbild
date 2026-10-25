@@ -34,6 +34,8 @@ import type { Actor } from '../simulation-runs/actors.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import { apiError, issuesReason, json } from './responses.ts'
+import { displayRuntimeIdentity } from './display-provenance.ts'
+import { layoutDescriptorOf, layoutReadInputSchema, readLayout } from '../../features/displays/layout/read.ts'
 
 export const VIGNETTE_VIEW_TYPE = 'display.vignette'
 const MODULE_ID = moduleIdSchema.parse('world')
@@ -62,6 +64,27 @@ export const displayRunOf = async (registry: SimulationRunRegistry, runtime: Sim
       points: runtime.recordedSeriesSamples({ seriesId, from: new Date(Date.parse(from) - recordedHoldMs).toISOString(), to, limit: 2_000 })
         .flatMap(sample => typeof sample.value === 'number' || typeof sample.value === 'boolean' ? [{ t: Date.parse(sample.simulationTime ?? sample.observedAt), v: Number(sample.value) }] : []).reverse(),
     }),
+  }
+}
+
+/** Loaded-only layout read: retained binding, owner observations and an explicit reset boundary. */
+export const handleLayoutDisplay = async (registry: SimulationRunRegistry, runtime: SimulationRunRuntime, actor: Actor, body: unknown): Promise<Response> => {
+  try {
+  const input = layoutReadInputSchema.parse(body)
+  const identity = displayRuntimeIdentity(runtime)
+  const run = await displayRunOf(registry, runtime, actor, new Set())
+  const descriptor = layoutDescriptorOf(run, input)
+  const reading = await readLayout(run, descriptor)
+  if (registry.get(runtime.id) !== runtime || runtime.snapshot().seq !== identity.sequence) {
+    return apiError(409, 'layout_read_superseded', 'The Run changed during the layout read; acquire a complete new sample')
+  }
+  return json({
+    scope: { runId: runtime.id, layoutObjectId: descriptor.id, revision: descriptor.revision, objectId: descriptor.targetObjectId, packId: visibleObject(run, descriptor.targetObjectId)!.packId, modelDigest: descriptor.modelDigest, ...identity },
+    acquiredAt: new Date().toISOString(), ...reading,
+  })
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && typeof error.code === 'string' && error.code.startsWith('layout_')) return apiError(409, error.code, error.message)
+    throw error
   }
 }
 
