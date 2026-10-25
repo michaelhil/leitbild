@@ -61,10 +61,11 @@ export const customShapes: ReadonlyArray<CustomShape> = [
     sites: [
       { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
       { file: 'ui/map/physical-scene/geometry.ts', mark: 'export const buildVisibleMeshes', drawn: 'code' },
+      { file: 'ui/map/physical-scene/overview.ts', mark: 'export const createPhysicalSceneOverview', drawn: 'code' },
     ],
     standsInFor: 'none', reason: 'A',
     evidence: 'OpenBridge has no renderer for metre-based architectural solids, hosted openings or floor cuts. These physical representations use host token roles; operational meaning remains the shared owner status and actual embedded faceplate.',
-    decision: { owner: 'approved', ref: '24 Oct 2026: owner requested native PWR map/Run integration including levels, 2D/3D and live status' },
+    decision: { owner: 'approved', ref: '24 Oct 2026 native PWR map/Run integration; 25 Oct 2026 owner requested full plant, switchyard, first pylons and campus context' },
     ends: 'kept',
   },
   // Shapes the old renderer drew that the vignette draws too (the old renderer went at the swap, P2 architecture §D).

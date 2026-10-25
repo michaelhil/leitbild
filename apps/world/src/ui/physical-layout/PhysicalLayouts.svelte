@@ -42,6 +42,7 @@
   let focusedId = $state<string | null>(null)
   let controlsOpen = $state(true)
   let componentsOpen = $state(false)
+  let componentScope = $state<{ readonly sceneId: string; readonly label: string; readonly subjectIds: ReadonlyArray<string> } | null>(null)
   let filter = $state('')
   let hover = $state<PhysicalSceneHit | null>(null)
   let inspected = $state<{ readonly sceneId: string; readonly occurrenceId: string | null; readonly elementId: string; readonly label: string } | null>(null)
@@ -107,7 +108,7 @@
   }
   const inspectHit = (hit: PhysicalSceneHit): void => {
     if (hit.subjectIds.length === 1) inspect(hit.sceneId, hit.subjectIds[0]!, hit.label, hit.occurrenceId)
-    else { focusedId = hit.sceneId; componentsOpen = true }
+    else { focusedId = hit.sceneId; componentScope = { sceneId: hit.sceneId, label: hit.label, subjectIds: hit.subjectIds }; filter = ''; componentsOpen = true }
   }
   const frameHost = createEmbeddedFrameHost({
     origin: location.origin, frame: () => inspectionFrame?.contentWindow ?? null,
@@ -227,7 +228,7 @@
   })
   const statusText = $derived(focused?.status === 'unavailable' ? focused.reason ?? 'Layout unavailable'
     : latest?.failure ?? (latest?.phase === 'inactive' ? 'Run not loaded; layout is not live' : latest?.phase === 'missing' ? 'Run missing' : latest?.latest === null || latest === null ? 'Waiting for live owner status'
-      : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${latest.latest.sample.alerts.length} plant alerts`))
+      : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${latest.latest.sample.alerts.length} total alerts`))
   const claimFocus = (): PhysicalScenePresentation | null => { if (focused !== null) focusedId = focused.descriptor.id; return focused }
   const coverRight = $derived.by(() => { void screenRevision; return map.getPadding().right ?? 0 })
   const toolsTop = $derived.by(() => { void screenRevision; return Math.max(12, clearTop - map.getContainer().getBoundingClientRect().top + 8) })
@@ -294,7 +295,7 @@
 {#if focused !== null}
   <div class="layout-tools" bind:this={toolsElement} style:--cover-right="{coverRight}px" style:top="{toolsTop}px" style:max-height="{Math.max(0, size.height - toolsTop - 24)}px">
     {#if scenes.length > 1}
-      <select aria-label="Physical layout" value={focused.descriptor.id} onchange={event => { focusedId = event.currentTarget.value; controlsOpen = true; controller.fit(focusedId) }}>
+      <select aria-label="Physical layout" value={focused.descriptor.id} onchange={event => { focusedId = event.currentTarget.value; componentScope = null; controlsOpen = true; controller.fit(focusedId) }}>
         {#each scenes as scene (scene.descriptor.id)}<option value={scene.descriptor.id}>{objects.find(object => object.id === scene.descriptor.id)?.label ?? objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId}</option>{/each}
       </select>
     {/if}
@@ -302,16 +303,20 @@
       <Controls title={focusedLabel} levels={focused.descriptor.levels} view={focused.view} status={statusText} {suspended}
         onviewchange={(view: PhysicalSceneView) => { hover = null; closeInspection(); const scene = claimFocus(); if (scene !== null) controller.setView(scene.descriptor.id, view) }}
         onfit={() => { const scene = claimFocus(); if (scene !== null) controller.fit(scene.descriptor.id) }} onreset={() => { hover = null; closeInspection(); const scene = claimFocus(); if (scene !== null) controller.reset(scene.descriptor.id) }}
-        onoverview={() => { const scene = claimFocus(); if (scene !== null) overview(scene) }} oncomponents={() => { claimFocus(); componentsOpen = !componentsOpen }} onclose={() => { controlsOpen = false; componentsOpen = false }} />
+        onoverview={() => { const scene = claimFocus(); if (scene !== null) overview(scene) }} oncomponents={() => { claimFocus(); componentScope = null; componentsOpen = !componentsOpen }} onclose={() => { controlsOpen = false; componentsOpen = false }} />
     {:else}
       <button type="button" class="layout-entry" onclick={() => { controlsOpen = true; const scene = claimFocus(); if (scene !== null) controller.fit(scene.descriptor.id) }}>Explore physical layout</button>
     {/if}
     {#if componentsOpen}
       <section class="layout-components" aria-label="Modelled layout components">
+        {#if componentScope?.sceneId === focused.descriptor.id}
+          <p>Operational subjects associated with <strong>{componentScope.label}</strong>.</p>
+          <button type="button" onclick={() => { componentScope = null; filter = '' }}>Show all components</button>
+        {/if}
         <label>Find a component <input type="search" bind:value={filter} /></label>
-        <p>{focused?.descriptor.subjectIds.length ?? 0} operational subjects are modelled in this layout. Other plant equipment remains available in Overview.</p>
-        {#if statusSummary !== null}<p>{frozen ? 'Last known: ' : ''}{statusSummary.census.total} plant alerts · {statusSummary.unlocatedAlerts} unlocated · {statusSummary.hiddenLocations} affected locations on hidden levels or outside this view.</p>{/if}
-        {#each components.filter(subject => `${subject.label} ${subject.elementId}`.toLowerCase().includes(filter.toLowerCase())) as subject (subject.elementId)}
+        <p>{focused?.descriptor.subjectIds.length ?? 0} operational subjects are modelled in this layout. Other operational subjects remain available in Overview.</p>
+        {#if statusSummary !== null}<p>{frozen ? 'Last known: ' : ''}{statusSummary.census.total} total alerts · {statusSummary.unlocatedAlerts} unlocated · {statusSummary.hiddenLocations} affected locations on hidden levels or outside this view.</p>{/if}
+        {#each components.filter(subject => (componentScope?.sceneId !== focused.descriptor.id || componentScope.subjectIds.includes(subject.elementId)) && `${subject.label} ${subject.elementId}`.toLowerCase().includes(filter.toLowerCase())) as subject (subject.elementId)}
           <button type="button" disabled={suspended} onclick={() => { if (focused !== null) inspect(focused.descriptor.id, subject.elementId, subject.label, null) }}>{subject.label}<span>Quick look ›</span></button>
         {/each}
         {#if latest?.latest === null || latest === null}<p>{statusText}</p>{/if}
