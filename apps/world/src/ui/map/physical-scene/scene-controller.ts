@@ -77,7 +77,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const rebound = { ...prepared, meshes: prepared.meshes.map(mesh => { const object = objects.get(mesh.object.id); if (!object) throw new Error('Shared physical asset occurrence identity mismatch'); return { ...mesh, object } }) }
       admitPhysicalPickAcceleration(rebound.meshes, rebound.acceleration)
       entry.preparing = false; entry.prepared = rebound; entry.meshes = filteredMeshes(entry, rebound); entry.state = entry.eligible ? 'ready' : 'distant';
-      if (pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; viewport.fitWorld(entryBounds(entry, intent.target), { padding: padding(), preservePose: intent.preservePose, mode, bearing: entry.source.descriptor.bearing }) }; reconcileRenderer(); viewport.requestRender(); emit()
+      if (pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; viewport.fitWorld(entryBounds(entry, intent.target), { padding: padding(), preservePose: intent.preservePose, mode, bearing: entry.source.descriptor.bearing + (!intent.preservePose && mode === '3d' ? -25 : 0) }) }; reconcileRenderer(); viewport.requestRender(); emit()
     } catch (error) { if (expected !== entry.viewGeneration || destroyed) return; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
   }
   const prepareOverview = async (entry: Entry): Promise<void> => {
@@ -129,7 +129,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     return worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, visible ?? (target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId)?.bounds : null) ?? entry.source.descriptor.bounds)
   }
   const fitEntry = (entry: Entry, target: PhysicalSceneFocus, preservePose: boolean): void => {
-    pendingFocus = null; viewport.fitWorld(entryBounds(entry, target), { padding: padding(), preservePose, mode, bearing: entry.source.descriptor.bearing })
+    pendingFocus = null; viewport.fitWorld(entryBounds(entry, target), { padding: padding(), preservePose, mode, bearing: entry.source.descriptor.bearing + (!preservePose && mode === '3d' ? -25 : 0) })
     if (!entry.prepared || entry.preparing) pendingFocus = { entry, source: entry.generation, view: entry.viewGeneration, target, preservePose }
   }
   cleanup.push(viewport.on('movestart', () => { pendingFocus = null }))
