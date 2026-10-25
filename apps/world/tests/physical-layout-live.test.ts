@@ -118,6 +118,7 @@ describe('layout acquisition stays inside the real owner scope', () => {
     const response = reading()
     expect(() => layoutLiveResponseSchema.parse({ ...response, subjects: [...response.subjects, ...response.subjects] })).toThrow('Duplicate layout live subject')
     expect(() => layoutLiveResponseSchema.parse({ ...response, sample: { ...response.sample, alerts: [{ ...alert('x'), packId: 'foreign-pack' }] } })).toThrow('another owner')
+    expect(() => layoutLiveResponseSchema.parse({ ...response, sample: { ...response.sample, alerts: [{ ...alert('x'), state: 'active-ack' }] } })).toThrow('owner lifecycle')
     expect(() => layoutLiveResponseSchema.parse({ ...response, extraHiddenPlant: { private: true } })).toThrow()
   })
 })

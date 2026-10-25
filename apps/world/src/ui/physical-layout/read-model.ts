@@ -41,7 +41,11 @@ const alertRowSchema = z.object({
   action: z.object({ label: text, ends: z.array(text).max(256).optional() }).strict().optional(),
   category: z.object({ id: text, label: text, order: z.number().int().nonnegative() }).strict().optional(), ownState: z.literal(true).optional(),
   acknowledge: z.object({ capabilityId: text, input: z.record(z.string(), z.union([z.string(), z.number().finite(), z.boolean()])) }).strict().optional(),
-}).strict().transform(row => row as AlertRow)
+}).strict().superRefine((row, context) => {
+  const state = row.alert.returned === true ? (row.alert.acknowledged ? null : 'returned-unack') : row.alert.acknowledged ? 'active-ack' : 'active-unack'
+  if (row.state !== state || row.priority !== (row.alert.priority ?? null) || row.group.objectId !== row.objectId
+    || row.key !== `${row.objectId}|${row.alert.id}`) context.addIssue({ code: 'custom', message: 'Layout alert presentation disagrees with its owner lifecycle' })
+}).transform(row => row as AlertRow)
 
 const sampleSchema = z.object({
   at: stampSchema.extend({ paused: z.boolean() }).strict(), observations: z.array(observationSchema).max(4096), alerts: z.array(alertRowSchema).max(8192),
