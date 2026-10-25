@@ -16,6 +16,7 @@ import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/pac
 import { physicalSourceFacts, physicalShapeFacts } from '../src/packs/physical-layout/applicability.ts'
 import { physicalLayoutDependencyFailure } from '../src/packs/physical-layout/dependencies.ts'
 import { explorerPhysicalCompilerFiles, explorerPhysicalCompilerRef } from '../src/packs/physical-layout/compiler-identity.ts'
+import { compilePhysicalSourceInWorker } from '../src/packs/physical-layout/source-loader.ts'
 
 const packs = [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack]
 const compile = (source: unknown) => compileScenarioDefinition(scenarioDefinitionSchema.parse(source), packs, { routing: createDirectRoutingAdapter() })
@@ -82,5 +83,23 @@ describe('Explicit explorer source admission', () => {
     expect(physicalLayoutDependencyFailure(campus.data, physicalRevision)).toContain('physical configuration')
     const rotated = layouts.map(layout => layout !== unit ? layout : { ...layout, data: { ...layout.data, placement: { ...layout.data.placement, bearing: 90 } } })
     expect(physicalLayoutDependencyFailure(campus.data, rotated)).toContain('physical configuration')
+  })
+
+  test('source workers compile exact geometry and placements share it without sharing ownership', async () => {
+    const compiled = await compile(normalOperation)
+    const firstObject = compiled.initialObjects.find(object => object.id === 'layout:halden-1')!, secondObject = compiled.initialObjects.find(object => object.id === 'layout:halden-2')!
+    const first = await loadPhysicalLayoutScene(firstObject), second = await loadPhysicalLayoutScene(secondObject)
+    expect(first.objects).toBe(second.objects)
+    expect(first.id).not.toBe(second.id)
+    expect(first.targetObjectId).not.toBe(second.targetObjectId)
+    expect(first.anchor).not.toEqual(second.anchor)
+    const data = explorerLayoutDataSchema.parse(firstObject.packData), worker = await compilePhysicalSourceInWorker(data)
+    expect(worker.objects).toHaveLength(first.objects.length)
+    expect(hash(physicalShapeFacts(worker.objects))).toBe(data.physicalApplicability.geometryDigest)
+    expect(worker.scopes).toEqual(data.presentation.scopes)
+    const corrupt = structuredClone(data)
+    corrupt.source.elements[0]!.pose.position[0] += 1
+    await expect(loadPhysicalLayoutScene({ ...firstObject, packData: corrupt })).rejects.toThrow('source/binding digest mismatch')
+    await expect(compilePhysicalSourceInWorker(corrupt)).rejects.toThrow('source/binding digest mismatch')
   })
 })

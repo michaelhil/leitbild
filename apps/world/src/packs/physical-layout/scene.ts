@@ -1,11 +1,11 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from '../../core/packs/scene.ts'
-import { campusLayoutDataSchema, explorerLayoutDataSchema, canonicalPhysicalJson, physicalDesignManifest, physicalLayoutDataSchema, physicalLayoutPackId, turbineIslandLayoutDataSchema, type RetainedPhysicalLayoutData } from './model.ts'
+import { physicalLayoutDataSchema, physicalLayoutPackId, type RetainedPhysicalLayoutData } from './model.ts'
 import { physicalBuildingFootprints } from './native/campus/footprints.ts'
 import { physicalRequiredConnections } from './connections.ts'
 import { physicalLayoutDependencyFailure } from './dependencies.ts'
 import { explorerBuildingFootprints } from './explorer-footprints.ts'
-import { physicalApplicabilityContent, physicalSourceFacts, physicalShapeFacts } from './applicability.ts'
+import { loadPhysicalSourceAsset } from './source-loader.ts'
 
 const parsed = new WeakMap<OperationalObject, RetainedPhysicalLayoutData>()
 const footprints = new WeakMap<OperationalObject, ReturnType<typeof physicalBuildingFootprints>>()
@@ -55,25 +55,9 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
 /** Check retained source before compiling it. A mutable library head is never read. */
 export const loadPhysicalLayoutScene = async (object: OperationalObject): Promise<PackPhysicalScene> => {
   const data = dataFor(object)
-  const hash = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPhysicalJson(value))))).map(value => value.toString(16).padStart(2, '0')).join('')
-  if (await hash(data.source) !== data.sourceDigest || await hash(data.bindings) !== data.bindingDigest) throw new Error(`Physical layout ${object.id} retained source/binding digest mismatch`)
-  if ('coverageDigest' in data && await hash(data.coverageEvidence) !== data.coverageDigest) throw new Error(`Physical layout ${object.id} retained coverage digest mismatch`)
-  const manifestDigest = await hash(physicalDesignManifest(data))
-  if (manifestDigest !== data.design.digest || data.design.id !== data.source.id) throw new Error(`Physical layout ${object.id} retained Design digest mismatch`)
-  if ('physicalApplicability' in data) {
-    if (await hash(physicalSourceFacts(data.source)) !== data.physicalApplicability.sourceDigest
-      || await hash(physicalApplicabilityContent({ ...data, modelRequirement: { modelRef: data.owner.modelRef, modelDigest: data.owner.modelDigest } })) !== data.physicalApplicability.digest
-      || await hash(data.presentation) !== data.presentationDigest) throw new Error(`Physical layout ${object.id} applicability or presentation mismatch`)
-    const { compilePhysicalScene } = await import('./native/explorer/compile-scene.ts')
-    const scene = compilePhysicalScene(object.id, explorerLayoutDataSchema.parse(data))
-    if (await hash(physicalShapeFacts(scene.objects)) !== data.physicalApplicability.geometryDigest) throw new Error(`Physical layout ${object.id} shape recipe differs from its physical applicability`)
-    if (canonicalPhysicalJson({ scopes: scene.scopes, layers: scene.layers }) !== canonicalPhysicalJson(data.presentation)) throw new Error(`Physical layout ${object.id} compiled scope manifest mismatch`)
-    return { ...scene, ...(data.group === undefined ? {} : { group: data.group }) }
-  }
-  if (data.compiler.id === 'physical-layout-native') {
-    const { compilePhysicalScene } = await import('./native/compile-scene.ts')
-    return compilePhysicalScene(object.id, turbineIslandLayoutDataSchema.parse(data))
-  }
-  const { compilePhysicalScene } = await import('./native/campus/compile-scene.ts')
-  return compilePhysicalScene(object.id, campusLayoutDataSchema.parse(data))
+  const asset = await loadPhysicalSourceAsset(data)
+  // Shared local geometry never acquires the first placement's owner/location.
+  return { ...asset, id: object.id, targetObjectId: data.owner.objectId,
+    anchor: data.placement.anchor, bearing: data.placement.bearing,
+    ...('group' in data && data.group !== undefined ? { group: data.group } : {}) }
 }
