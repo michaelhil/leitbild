@@ -1,5 +1,15 @@
 # Executed proof and corrections
 
+## Complete PWR unit, 25 October 2026
+
+`full-unit-desktop.json` records the admitted `pwr-full-unit-20261025-r1` Design (`099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a`), 466 source-derived render objects and the expanded compiler. It passed twenty mount/disposal cycles, twenty full style replacements, context recovery, shared color/depth/stencil and GL-state checks, source-triangle and operational Deck picks, status pixels without geometry uploads, equal-status idle and narrow plan/3D/separated-volume fits on Apple M2/Chrome 155/ANGLE Metal with AA enabled. It also proves native building footprints at regional scale without new detail loads and their removal when detail is ready. Source hashes match the tested production modules.
+
+The first expanded probe exposed a coarse-to-detail handoff defect: MapLibre's pending GeoJSON worker made `isStyleLoaded()` false even though the detailed interior was ready, leaving the opaque building overview above it. Existing coarse resources are now removed immediately, independently of readiness for adding new layers. Idle reconciliation and equal-palette guards cover deferred installation without creating a repaint loop. Both the focused regression and the complete GPU probe pass.
+
+This is the full unit, not a four-unit/campus throughput, WAN or constrained-device qualification. Real source-backed campus rendering, owner acquisition and card/process navigation are separate combined application checks. Shader status remains a controlled test input, not plant telemetry.
+
+## Retained turbine-island proof
+
 `desktop.json` is the successful final isolated GPU run on Apple M2, Chrome 155/ANGLE Metal, AA enabled, 1440×913 DPR 1. It uses the final `pwr-turbine-island-20261024-r2` Design with plain level names and the installed compiler digest. Its source hashes pin the actual tested production renderer/compiler/Deck files. All twenty mount cycles, twenty full style replacements and one forced context restoration pass. Shared GL state, color/depth/stencil, real owner-icon Deck picking, visible source-triangle picking, status pixels without geometry upload, immediate stale-floor pick invalidation and a deliberate-clear negative control pass. The 638×720 plan, 3D source volume and All-levels/30 m separation display envelope are recorded. Separation expands the conservative fit height from 31.2 to 61.2 m; all eight envelope corners remain inside the measured padding. These PNGs are test views; the red status is a controlled shader input and the corner rectangles are diagnostic sentinels.
 
 The initial readiness failure is retained in `initial-ready-failure.json`. A complete style replacement could leave an admitted scene ready while the style was not yet ready to register its GPU layer. The controller now reconciles at idle readiness; unchanged idle reconciliation requests no new frame. The focused regression checks this transition and absence of a self-generated repaint loop.
