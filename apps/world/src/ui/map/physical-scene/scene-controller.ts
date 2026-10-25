@@ -74,7 +74,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const prepared = await prepare(entry.scene, view, key, identity)
       if (destroyed || sourceGeneration !== entry.generation || expected !== entry.viewGeneration || entries.get(entry.source.descriptor.id) !== entry) return
       const objects = new Map(entry.scene!.objects.map(object => [object.id, object]))
-      const rebound = { ...prepared, meshes: prepared.meshes.map(mesh => { const object = objects.get(mesh.object.id); if (!object) throw new Error('Shared physical asset occurrence identity mismatch'); return { ...mesh, object } }) }
+      const rebound = { ...prepared, sourceAsset: prepared, meshes: prepared.meshes.map(mesh => { const object = objects.get(mesh.object.id); if (!object) throw new Error('Shared physical asset occurrence identity mismatch'); return { ...mesh, object } }) }
       admitPhysicalPickAcceleration(rebound.meshes, rebound.acceleration)
       entry.preparing = false; entry.prepared = rebound; entry.meshes = filteredMeshes(entry, rebound); entry.state = entry.eligible ? 'ready' : 'distant';
       if (pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; viewport.fitWorld(entryBounds(entry, intent.target), { padding: padding(), preservePose: intent.preservePose, mode, bearing: entry.source.descriptor.bearing + (!intent.preservePose && mode === '3d' ? -25 : 0) }) }; reconcileRenderer(); viewport.requestRender(); emit()

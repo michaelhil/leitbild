@@ -4,7 +4,7 @@ import { admitPhysicalPickAcceleration, preparePhysicalPickAcceleration, type Ph
 import type { PhysicalSceneView } from './types.ts'
 import { preparePhysicalRenderBuffers, type PhysicalRenderBuffers } from './render-buffers.ts'
 
-export interface PhysicalPreparedGeometry { readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers }
+export interface PhysicalPreparedGeometry { readonly sourceAsset?: PhysicalPreparedGeometry; readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers }
 export type PhysicalGeometryPreparer = (scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity?: string) => Promise<PhysicalPreparedGeometry>
 /** Shared with the module worker and explicit offline/test preparation ports. */
 export const preparePhysicalGeometry = (scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity = key): PhysicalPreparedGeometry => {

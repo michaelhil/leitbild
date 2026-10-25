@@ -37,6 +37,7 @@ test('shared render geometry preserves each placement owner and subject binding'
   expect(h.prepares()).toBe(1)
   expect(h.entries()).toHaveLength(2)
   expect(h.entries()[0]!.asset!.buffers).toBe(h.entries()[1]!.asset!.buffers)
+  expect(h.entries()[0]!.asset!.sourceAsset).toBe(h.entries()[1]!.asset!.sourceAsset)
   expect(h.entries().map(entry => entry.meshes[0]!.object.subjectIds[0])).toEqual(['a:machine', 'b:machine'])
   h.controller.destroy()
 })
