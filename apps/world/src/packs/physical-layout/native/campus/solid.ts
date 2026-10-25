@@ -2,7 +2,7 @@ import { createMesh, materialRoles, palette, type Mesh } from '../mesh.ts'
 import { solid as turbineIslandSolid, type RenderObject } from '../solid.ts'
 import type { Source as TurbineIslandSource, Element as TurbineIslandElement } from '../source.ts'
 import { campusEquipmentMesh } from './families.ts'
-import { elementWorld, turbineIslandFamilies, parameters, type Element, type Source, type V3 } from './source.ts'
+import { elementWorld, turbineIslandFamilies, parameters, physicalStairFlights, type Element, type Source, type V3 } from './source.ts'
 
 const worldPoint = (point: V3, pose: Element['pose']): V3 => {
   const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw)
@@ -63,11 +63,32 @@ const route = (mesh: Mesh, element: Element, width: number, height: number): voi
   }
 }
 
+const staircase = (mesh: Mesh, element: Element, dimensions: ReturnType<typeof parameters>): void => {
+  const recipe = element.stair!, flights = physicalStairFlights(dimensions, recipe), width = recipe.flightWidth, landing = recipe.landingDepth
+  mesh.box(.1, -.12, 0, dimensions.length - .2, .12, landing, palette.light)
+  for (const flight of flights) {
+    const x = flight.forward ? .15 : dimensions.length - .15 - width
+    for (let step = 0; step < flight.steps; step++) {
+      const z = landing + (flight.forward ? step : flight.steps - step - 1) * flight.tread
+      mesh.box(x, flight.base + (step + 1) * flight.riser - .1, z, width, .1, flight.tread, palette.light, false)
+    }
+    const bottomZ = flight.forward ? landing : dimensions.width - landing, topZ = flight.forward ? dimensions.width - landing : landing
+    const end = flight.base + flight.rise
+    mesh.box(.1, end - .12, flight.forward ? dimensions.width - landing : 0, dimensions.length - .2, .12, landing, palette.light)
+    for (const sideX of [x + .06, x + width - .06]) {
+      mesh.cylinder([sideX, flight.base + 1.05, bottomZ], [sideX, end + 1.05, topZ], .025, palette.steel, 6)
+      mesh.cylinder([sideX, flight.base - .04, bottomZ], [sideX, end - .04, topZ], .045, palette.steel, 6)
+      mesh.cylinder([sideX, flight.base, bottomZ], [sideX, flight.base + 1.05, bottomZ], .022, palette.steel, 6)
+      mesh.cylinder([sideX, end, topZ], [sideX, end + 1.05, topZ], .022, palette.steel, 6)
+    }
+  }
+}
+
 /** New profiles add shapes; inherited types use the unchanged admitted machinery implementation. */
 export const solid = (source: Source, element: Element): RenderObject | null => {
   if (['opening', 'space', 'assembly', 'building'].includes(element.kind) || element.disposition === 'removed') return null
   const originalKind = !['road', 'fence', 'conductor'].includes(element.kind)
-  if (!element.shape && originalKind && (element.kind !== 'equipment' || turbineIslandFamilies.some(family => family === element.equipmentKind))) {
+  if (!element.shape && !element.stair && originalKind && (element.kind !== 'equipment' || turbineIslandFamilies.some(family => family === element.equipmentKind))) {
     const mesh = turbineIslandSolid(source as unknown as TurbineIslandSource, element as unknown as TurbineIslandElement)
     if (mesh && element.material) mesh.materialIndices = mesh.materialIndices.map(() => materialRoles.indexOf(element.material!))
     return mesh
@@ -77,7 +98,8 @@ export const solid = (source: Source, element: Element): RenderObject | null => 
   if (element.kind === 'equipment') mesh = campusEquipmentMesh(element, dimensions)
   else {
     mesh = createMesh()
-    if (element.shape?.kind === 'elliptical-plate') plate(mesh, dimensions.length, dimensions.width, dimensions.height)
+    if (element.stair) staircase(mesh, element, dimensions)
+    else if (element.shape?.kind === 'elliptical-plate') plate(mesh, dimensions.length, dimensions.width, dimensions.height)
     else if (element.shape) ellipticalRing(mesh, dimensions.length, dimensions.width, dimensions.height, element.shape.thickness, element.shape.kind === 'dome-shell')
     else route(mesh, element, dimensions.width, dimensions.height)
   }

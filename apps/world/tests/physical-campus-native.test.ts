@@ -6,7 +6,7 @@ import { compilePhysicalObjects as originalCompile } from '../src/packs/physical
 import { physicalSourceSchema as originalSchema } from '../src/packs/physical-layout/native/source.ts'
 import { compilePhysicalObjects, physicalObjectsBounds } from '../src/packs/physical-layout/native/campus/compile-scene.ts'
 import { physicalBuildingFootprints } from '../src/packs/physical-layout/native/campus/footprints.ts'
-import { physicalSourceSchema, type Element, type Source } from '../src/packs/physical-layout/native/campus/source.ts'
+import { physicalSourceSchema, physicalStairFlights, type Element, type Source } from '../src/packs/physical-layout/native/campus/source.ts'
 
 const element = (id: string, change: Partial<Element> = {}): Element => ({ id, label: id, kind: 'context', levelId: 'site', dimensions: { length: 10, width: 8, height: 5 }, pose: { position: [0, 0, 0], yaw: 0 }, disposition: 'installed', ...change })
 const source = (elements: Element[]): Source => physicalSourceSchema.parse({ id: 'campus-test', title: 'Native campus profile test', units: 'm', axes: 'Z-up', origin: [0, 0, 0], levels: [{ id: 'admin-ground', label: 'Administration ground floor', elevation: 0, cutHeight: 1.2 }], types: [], elements, evidence: { accuracy: 'illustrative', origin: 'Bounded geometry regression fixture' } })
@@ -75,5 +75,19 @@ describe('Retained native campus source and geometry profile', () => {
     expect(meshes.find(mesh => mesh.id === 'pylon-shared')!.subjectIds).toEqual([])
     expect(meshes.find(mesh => mesh.id === 'phase-1')!.subjectIds).toEqual(['circuit-a'])
     expect(meshes.find(mesh => mesh.id === 'phase-2')!.subjectIds).toEqual(['circuit-b'])
+  })
+  test('authored stairs serve exact floors with bounded risers, treads, flights and full depth landings', () => {
+    const recipe = { landings: [0, 8, 15, 22], maxFlightRise: 2, maxRiser: .175, minTread: .28, flightWidth: 1.4, landingDepth: 1.5 }
+    const dimensions = { length: 5, width: 7, height: 22 }, flights = physicalStairFlights(dimensions, recipe)
+    for (const floor of recipe.landings.slice(1)) expect(flights.some(flight => Math.abs(flight.base + flight.rise - floor) < 1e-8)).toBe(true)
+    expect(flights.every(flight => flight.riser <= recipe.maxRiser && flight.tread >= recipe.minTread && flight.rise <= recipe.maxFlightRise)).toBe(true)
+    const stair = element('stair', { kind: 'stair', dimensions, stair: recipe })
+    const mesh = compilePhysicalObjects({ source: source([stair]), bindings: [] })[0]!
+    expect(mesh.positions.every(Number.isFinite)).toBe(true)
+    expect(mesh.positions.length / 9).toBeLessThan(5000)
+    expect(() => source([element('bad-stair', { kind: 'stair', dimensions, stair: { ...recipe, landings: [0, 21] } })])).toThrow('exact authored rise')
+    expect(() => source([element('bad-stair', { kind: 'stair', dimensions, stair: { ...recipe, landingDepth: 1.2 } })])).toThrow('at least the flight width')
+    expect(() => source([element('bad-stair', { kind: 'stair', dimensions: { ...dimensions, width: 4 }, stair: recipe })])).toThrow('below the authored minimum')
+    expect(() => source([element('bad-stair', { kind: 'context', dimensions, stair: recipe })])).toThrow('needs a stair occurrence')
   })
 })

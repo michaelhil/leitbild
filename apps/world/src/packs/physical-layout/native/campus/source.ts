@@ -5,6 +5,14 @@ const dimensions = z.object({ length: z.number().finite().positive().max(10000),
 export const turbineIslandFamilies = ['hp', 'lp', 'generator', 'exciter', 'msr', 'stop-valve', 'condenser', 'feed-pump', 'condensate-pump'] as const;
 const family = z.enum([...turbineIslandFamilies, 'reactor-vessel', 'steam-generator', 'pressurizer', 'pump', 'reactor-coolant-pump', 'tank', 'heat-exchanger', 'valve', 'diesel-generator', 'cabinet', 'battery', 'transformer', 'breaker', 'disconnector', 'bus-support', 'pylon']);
 const material = z.enum(['wall', 'floor', 'metal', 'equipment', 'pipe', 'door', 'glass', 'context', 'line']);
+const stairRecipe = z.object({
+    landings: z.array(z.number().finite().nonnegative()).min(2).max(32),
+    maxFlightRise: z.number().finite().min(.5).max(4),
+    maxRiser: z.number().finite().min(.1).max(.2),
+    minTread: z.number().finite().min(.2).max(.5),
+    flightWidth: z.number().finite().min(1).max(4),
+    landingDepth: z.number().finite().min(1.2).max(5),
+}).strict();
 const elementSchema = z.object({
     id: identifier, label: z.string().min(1).max(300),
     kind: z.enum(['equipment', 'wall', 'opening', 'door', 'assembly', 'slab', 'stair', 'roof', 'riser', 'support', 'space', 'context', 'pipe', 'building', 'road', 'fence', 'conductor']),
@@ -23,6 +31,7 @@ const elementSchema = z.object({
     spaceIds: z.array(identifier).max(64).optional(),
     disposition: z.enum(['installed', 'proposed', 'removed', 'temporary']),
     door: z.object({ swing: z.number().finite() }).strict().optional(),
+    stair: stairRecipe.optional(),
     dependsOn: z.array(identifier).max(64).optional(),
     holes: z.array(z.object({ x: z.number().finite().nonnegative(), y: z.number().finite().nonnegative(), width: z.number().finite().positive(), length: z.number().finite().positive() }).strict()).max(256).optional(),
     path: z.array(vector).min(2).max(1000).optional(),
@@ -59,6 +68,14 @@ export const physicalSourceSchema = z.object({
             issue(`Incomplete physical dimensions: ${element.id}`);
         if (element.kind === 'equipment' && (!type || element.equipmentKind !== type.kind))
             issue(`Unsupported equipment family: ${element.id}`);
+        if (element.stair) {
+            if (element.kind !== 'stair') issue(`A stair recipe needs a stair occurrence: ${element.id}`);
+            const validDimensions = dimensions.safeParse(resolved);
+            if (validDimensions.success) {
+                try { physicalStairFlights(validDimensions.data, element.stair); }
+                catch (error) { issue(`${element.id}: ${error instanceof Error ? error.message : String(error)}`); }
+            }
+        }
         if (element.path && !['pipe', 'road', 'fence', 'conductor'].includes(element.kind))
             issue(`A path must belong to an authored route: ${element.id}`);
         if (['pipe', 'road', 'fence', 'conductor'].includes(element.kind) && !element.path)
@@ -114,6 +131,36 @@ export const physicalSourceSchema = z.object({
 export type Source = z.infer<typeof physicalSourceSchema>;
 export type Element = Source['elements'][number];
 export type Parameters = z.infer<typeof dimensions>;
+export interface PhysicalStairFlight {
+    base: number;
+    rise: number;
+    steps: number;
+    riser: number;
+    tread: number;
+    forward: boolean;
+}
+/** A bounded authored recipe, not a building-code or evacuation qualification. */
+export const physicalStairFlights = (dimensions: Parameters, recipe: z.infer<typeof stairRecipe>): PhysicalStairFlight[] => {
+    if (recipe.landings[0] !== 0 || Math.abs(recipe.landings.at(-1)! - dimensions.height) > 1e-9)
+        throw new Error('Stair landing elevations must start at zero and end at the exact authored rise');
+    if (recipe.landings.some((height, index) => index > 0 && height <= recipe.landings[index - 1]!))
+        throw new Error('Stair landing elevations must increase strictly');
+    if (recipe.landingDepth < recipe.flightWidth)
+        throw new Error('Stair landing depth must be at least the flight width');
+    if (dimensions.length < recipe.flightWidth * 2 + .3 || dimensions.width <= recipe.landingDepth * 2)
+        throw new Error('Stair flights and landings do not fit their authored envelope');
+    const run = dimensions.width - recipe.landingDepth * 2, flights: PhysicalStairFlight[] = [];
+    let stepBudget = 0;
+    for (let interval = 0; interval < recipe.landings.length - 1; interval++) {
+        const base = recipe.landings[interval]!, span = recipe.landings[interval + 1]! - base;
+        const count = Math.ceil(span / recipe.maxFlightRise), rise = span / count, steps = Math.ceil(rise / recipe.maxRiser), tread = run / steps;
+        if (tread < recipe.minTread) throw new Error('Stair tread is below the authored minimum; enlarge the run or reduce flight rise');
+        stepBudget += count * steps;
+        if (flights.length + count > 128 || stepBudget > 2048) throw new Error('Stair recipe exceeds the bounded flight/step budget');
+        for (let index = 0; index < count; index++) flights.push({ base: base + index * rise, rise, steps, riser: rise / steps, tread, forward: flights.length % 2 === 0 });
+    }
+    return flights;
+};
 export type V3 = [
     number,
     number,

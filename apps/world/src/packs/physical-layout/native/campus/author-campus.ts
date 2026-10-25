@@ -108,7 +108,9 @@ export const composeCampus = (input: unknown) => {
         }
         roomX += width
       }
-      if (floor === 0 && building.storeys > 1) append(element(`${prefix}/stair`, `${building.label} internal stair`, 'stair', [x + building.length - 6, y + building.width - 9, z], dims(4.6, 7.8, building.storeyHeight), common))
+      if (floor === 0 && building.storeys > 1) append(element(`${prefix}/stair`, `${building.label} internal stair`, 'stair', [x + building.length - 6, y + building.width - 9, z], dims(4.6, 7.8, building.storeyHeight), { ...common,
+        stair: { landings: [0, building.storeyHeight], maxFlightRise: 2, maxRiser: .175, minTread: .28, flightWidth: 1.4, landingDepth: 1.5 },
+      }))
     }
     append(element(`${building.id}/roof`, `${building.label} roof`, 'roof', [x, y, totalHeight], dims(building.length, building.width, .3), { levelId: 'campus-ground', buildingId: `building/${building.id}` }))
   }

@@ -2500,7 +2500,18 @@
         "height": 4
       },
       "buildingId": "building/administration",
-      "disposition": "installed"
+      "disposition": "installed",
+      "stair": {
+        "landings": [
+          0,
+          4
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
     },
     {
       "id": "administration/1/floor",

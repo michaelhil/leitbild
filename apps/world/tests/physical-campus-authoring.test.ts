@@ -61,6 +61,7 @@ describe('Authored shared PWR campus and graph coverage', () => {
     expect(data.source.elements.filter(element => element.kind === 'building')).toHaveLength(5)
     expect(data.source.elements.some(element => element.id === 'administration/1/floor')).toBe(true)
     expect(data.source.elements.find(element => element.id === 'administration/1/floor')!.holes).toEqual([{ x: 58, y: 21, length: 4.6, width: 7.8 }])
+    expect(data.source.elements.find(element => element.id === 'administration/0/stair')!.stair?.landings).toEqual([0, 4])
     expect(data.source.elements.some(element => element.id === 'administration/1/entry-door')).toBe(false)
     expect(data.source.elements.filter(element => element.id.startsWith('parking/line-'))).toHaveLength(84)
     expect(data.source.elements.filter(element => element.kind === 'road')).toHaveLength(12)
