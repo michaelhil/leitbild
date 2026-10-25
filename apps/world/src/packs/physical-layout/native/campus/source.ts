@@ -2,8 +2,8 @@ import { z } from 'zod';
 const identifier = z.string().min(1).max(200);
 const vector = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
 const dimensions = z.object({ length: z.number().finite().positive().max(10000), width: z.number().finite().positive().max(10000), height: z.number().finite().positive().max(10000) }).strict();
-export const legacyFamily = ['hp', 'lp', 'generator', 'exciter', 'msr', 'stop-valve', 'condenser', 'feed-pump', 'condensate-pump'] as const;
-const family = z.enum([...legacyFamily, 'reactor-vessel', 'steam-generator', 'pressurizer', 'pump', 'reactor-coolant-pump', 'tank', 'heat-exchanger', 'valve', 'diesel-generator', 'cabinet', 'battery', 'transformer', 'breaker', 'disconnector', 'pylon']);
+export const turbineIslandFamilies = ['hp', 'lp', 'generator', 'exciter', 'msr', 'stop-valve', 'condenser', 'feed-pump', 'condensate-pump'] as const;
+const family = z.enum([...turbineIslandFamilies, 'reactor-vessel', 'steam-generator', 'pressurizer', 'pump', 'reactor-coolant-pump', 'tank', 'heat-exchanger', 'valve', 'diesel-generator', 'cabinet', 'battery', 'transformer', 'breaker', 'disconnector', 'bus-support', 'pylon']);
 const material = z.enum(['wall', 'floor', 'metal', 'equipment', 'pipe', 'door', 'glass', 'context', 'line']);
 const elementSchema = z.object({
     id: identifier, label: z.string().min(1).max(300),
@@ -28,6 +28,7 @@ const elementSchema = z.object({
     path: z.array(vector).min(2).max(1000).optional(),
     supportIds: z.array(identifier).min(1).max(64).optional(),
     terminatesBeyond: z.boolean().optional(),
+    installation: z.enum(['overhead', 'busbar', 'cable-corridor']).optional(),
 }).strict();
 export const physicalSourceSchema = z.object({
     id: identifier, title: z.string().min(1).max(300), units: z.literal('m'), axes: z.literal('Z-up'),
@@ -70,7 +71,7 @@ export const physicalSourceSchema = z.object({
             issue(`A building cannot be nested in another building: ${element.id}`);
         if (element.footprint && element.kind !== 'building')
             issue(`Only a building owns a footprint: ${element.id}`);
-        if ((element.supportIds || element.terminatesBeyond !== undefined) && element.kind !== 'conductor')
+        if ((element.supportIds || element.terminatesBeyond !== undefined || element.installation) && element.kind !== 'conductor')
             issue(`Only an electrical conductor names supports or continuation: ${element.id}`);
         if (element.supportIds && (new Set(element.supportIds).size !== element.supportIds.length || element.supportIds.some(id => elements.get(id)?.equipmentKind !== 'pylon')))
             issue(`A conductor needs unique authored pylon supports: ${element.id}`);

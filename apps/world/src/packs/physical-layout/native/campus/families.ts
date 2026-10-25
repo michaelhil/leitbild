@@ -133,6 +133,12 @@ export const campusEquipmentMesh = (element: Element, dimensions: Parameters): M
       }
       break
     }
+    case 'bus-support': {
+      mesh.box(.04 * l, 0, .04 * w, .92 * l, .04 * h, .92 * w, p.plinth)
+      mesh.cylinder([l / 2, .04 * h, w / 2], [l / 2, .67 * h, w / 2], .12 * Math.min(l, w), p.steel, 8)
+      insulator(mesh, l / 2, w / 2, .67 * h, .33 * h, .36 * Math.min(l, w))
+      break
+    }
     case 'pylon': {
       const radius = Math.max(.035, Math.min(l, w) * .009), stages = [0, .22, .44, .63, .8, .98]
       const corner = (stage: number, index: number): Point => {

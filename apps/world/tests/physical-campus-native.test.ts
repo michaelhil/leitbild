@@ -49,7 +49,7 @@ describe('Retained native campus source and geometry profile', () => {
     expect(physicalObjectsBounds(meshes)).toEqual({ min: [0, 0, 0], max: [20, 20, 38] })
   })
   test('all new equipment families have distinct finite bounded geometry and no invented subjects', () => {
-    const families = ['reactor-vessel', 'steam-generator', 'pressurizer', 'pump', 'reactor-coolant-pump', 'tank', 'heat-exchanger', 'valve', 'diesel-generator', 'cabinet', 'battery', 'transformer', 'breaker', 'disconnector', 'pylon'] as const
+    const families = ['reactor-vessel', 'steam-generator', 'pressurizer', 'pump', 'reactor-coolant-pump', 'tank', 'heat-exchanger', 'valve', 'diesel-generator', 'cabinet', 'battery', 'transformer', 'breaker', 'disconnector', 'bus-support', 'pylon'] as const
     const input = source([])
     input.types = families.map(kind => ({ id: `type/${kind}`, kind, parameters: { length: 8, width: 6, height: 10 } }))
     input.elements = families.map(kind => element(kind, { kind: 'equipment', typeId: `type/${kind}`, equipmentKind: kind, dimensions: undefined }))

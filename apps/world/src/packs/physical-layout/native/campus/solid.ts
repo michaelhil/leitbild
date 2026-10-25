@@ -1,8 +1,8 @@
 import { createMesh, materialRoles, palette, type Mesh } from '../mesh.ts'
-import { solid as legacySolid, type RenderObject } from '../solid.ts'
-import type { Source as LegacySource, Element as LegacyElement } from '../source.ts'
+import { solid as turbineIslandSolid, type RenderObject } from '../solid.ts'
+import type { Source as TurbineIslandSource, Element as TurbineIslandElement } from '../source.ts'
 import { campusEquipmentMesh } from './families.ts'
-import { elementWorld, legacyFamily, parameters, type Element, type Source, type V3 } from './source.ts'
+import { elementWorld, turbineIslandFamilies, parameters, type Element, type Source, type V3 } from './source.ts'
 
 const worldPoint = (point: V3, pose: Element['pose']): V3 => {
   const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw)
@@ -44,8 +44,12 @@ const route = (mesh: Mesh, element: Element, width: number, height: number): voi
       const planar = Math.hypot(b[0] - a[0], b[1] - a[1])
       if (planar <= 0) throw new Error(`A road segment must have horizontal extent: ${element.id}`)
       const dx = -(b[1] - a[1]) / planar * width / 2, dz = (b[0] - a[0]) / planar * width / 2
-      mesh.quad([a[0] - dx, a[2], a[1] - dz], [b[0] - dx, b[2], b[1] - dz], [b[0] + dx, b[2], b[1] + dz], [a[0] + dx, a[2], a[1] + dz], palette.plinth)
-      for (const side of [-1, 1]) mesh.line([a[0] + side * dx, a[2] + .005, a[1] + side * dz], [b[0] + side * dx, b[2] + .005, b[1] + side * dz])
+      const corners: [number, number, number][] = [[a[0] - dx, a[2], a[1] - dz], [b[0] - dx, b[2], b[1] - dz], [b[0] + dx, b[2], b[1] + dz], [a[0] + dx, a[2], a[1] + dz]]
+      const top = corners.map(([x, y, z]): [number, number, number] => [x, y + height, z])
+      mesh.quad(top[0]!, top[1]!, top[2]!, top[3]!, palette.plinth)
+      mesh.quad(corners[3]!, corners[2]!, corners[1]!, corners[0]!, palette.plinth)
+      for (let edge = 0; edge < 4; edge++) mesh.quad(corners[edge]!, corners[(edge + 1) % 4]!, top[(edge + 1) % 4]!, top[edge]!, palette.plinth)
+      for (const side of [-1, 1]) mesh.line([a[0] + side * dx, a[2] + height + .005, a[1] + side * dz], [b[0] + side * dx, b[2] + height + .005, b[1] + side * dz])
     } else if (element.kind === 'fence') {
       const postCount = Math.max(1, Math.ceil(distance / 6))
       for (let post = 0; post <= postCount; post++) {
@@ -63,8 +67,8 @@ const route = (mesh: Mesh, element: Element, width: number, height: number): voi
 export const solid = (source: Source, element: Element): RenderObject | null => {
   if (['opening', 'space', 'assembly', 'building'].includes(element.kind) || element.disposition === 'removed') return null
   const originalKind = !['road', 'fence', 'conductor'].includes(element.kind)
-  if (!element.shape && originalKind && (element.kind !== 'equipment' || legacyFamily.some(family => family === element.equipmentKind))) {
-    const mesh = legacySolid(source as unknown as LegacySource, element as unknown as LegacyElement)
+  if (!element.shape && originalKind && (element.kind !== 'equipment' || turbineIslandFamilies.some(family => family === element.equipmentKind))) {
+    const mesh = turbineIslandSolid(source as unknown as TurbineIslandSource, element as unknown as TurbineIslandElement)
     if (mesh && element.material) mesh.materialIndices = mesh.materialIndices.map(() => materialRoles.indexOf(element.material!))
     return mesh
   }
