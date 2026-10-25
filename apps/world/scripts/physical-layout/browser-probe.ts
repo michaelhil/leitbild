@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { scenarioDefinitionSchema } from '../../src/core/scenarios/definition.ts'
 import { compileScenarioDefinition } from '../../src/core/scenarios/compiler.ts'
 import { physicalLayoutPack } from '../../src/packs/physical-layout/pack.ts'
-import { currentPwrPhysicalDesignRef } from '../../src/packs/physical-layout/design.ts'
+import { currentPwrPhysicalDesignRef, pwrFullUnitPhysicalDesignRef } from '../../src/packs/physical-layout/design.ts'
 import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../../src/packs/physical-layout/scene.ts'
 import { processPlantPack } from '../../src/packs/process-plant/pack.ts'
 import { processPlantPresentation } from '../../src/packs/process-plant/presentation.ts'
@@ -18,11 +18,14 @@ const output = process.env.LEITBILD_PHYSICAL_SCENE_PROBE_DIR ?? await mkdtemp(jo
 await mkdir(output, { recursive: true })
 const built = join(output, 'dist')
 const require = createRequire(import.meta.url), maplibre = dirname(require.resolve('maplibre-gl/package.json'))
+const designMode = process.env.LEITBILD_PHYSICAL_SCENE_PROBE_DESIGN ?? 'turbine-island'
+if (designMode !== 'turbine-island' && designMode !== 'full-unit') throw new Error('Probe Design must be turbine-island or full-unit')
+const design = designMode === 'full-unit' ? pwrFullUnitPhysicalDesignRef : currentPwrPhysicalDesignRef
 const definition = scenarioDefinitionSchema.parse({
   id: 'physical-browser-proof', title: 'Physical browser proof',
   packs: [
     { id: 'process-plant', config: {}, items: [{ type: 'plant', id: 'plant:proof', label: 'PWR renderer proof', location: [11.47, 59.087], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] },
-    { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: 'layout:proof', label: 'Turbine island', members: { unit: 'plant:proof' }, design: currentPwrPhysicalDesignRef, bearing: 0 }] },
+    { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: 'layout:proof', label: designMode, members: { unit: 'plant:proof' }, design, bearing: 0 }] },
   ],
   world: { startsAt: '2026-10-24T00:00:00.000Z', environment: {} }, view: { map: { center: [11.47, 59.087], zoom: 19.3 } },
 })
@@ -71,8 +74,8 @@ try {
   const result = evaluated.result?.value
   if (!result || typeof result.passed !== 'boolean') { await writeFile(join(output, 'driver-failure.json'), JSON.stringify(evaluated, null, 2)); console.error(JSON.stringify(evaluated)); throw new Error(`Physical browser proof did not produce a receipt: ${output}`) }
   const hashes: Record<string, string> = {}
-  for (const file of ['src/ui/map/physical-scene/controller.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map-runtime/operational-deck-layers.ts', 'src/packs/physical-layout/native/compile-scene.ts']) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
-  result.sourceHashes = hashes; result.sceneSha256 = createHash('sha256').update(JSON.stringify(scene)).digest('hex')
+  for (const file of ['src/ui/map/physical-scene/controller.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/overview.ts', 'src/ui/map-runtime/operational-deck-layers.ts', 'src/packs/physical-layout/native/compile-scene.ts', 'src/packs/physical-layout/native/campus/compile-scene.ts']) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
+  result.sourceHashes = hashes; result.sceneSha256 = createHash('sha256').update(JSON.stringify(scene)).digest('hex'); result.designMode = designMode; result.design = design
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'final.png'), Buffer.from(shot.data, 'base64'))
   await call('Runtime.evaluate', { expression: `window.physicalProbe.view('2d','lower')`, awaitPromise: true });
   const lower = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'lower.png'), Buffer.from(lower.data, 'base64'))

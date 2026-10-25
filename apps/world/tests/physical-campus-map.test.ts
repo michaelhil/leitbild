@@ -71,9 +71,9 @@ test('coarse footprints are correctly georeferenced and replaced only by their o
 
 test('coarse layer preserves operational ordering, recovers a replaced style and removes its own resources', async () => {
   const fake = createFakeMapStyle(), errors: Error[] = []
-  let updates = 0
+  let updates = 0, styleReady = true
   const addSource = fake.map.addSource.bind(fake.map)
-  Object.assign(fake.map, { isStyleLoaded: () => true, setPaintProperty: () => {}, addSource: (id: string, specification: Parameters<typeof fake.map.addSource>[1]) => {
+  Object.assign(fake.map, { isStyleLoaded: () => styleReady, setPaintProperty: () => {}, addSource: (id: string, specification: Parameters<typeof fake.map.addSource>[1]) => {
     addSource(id, specification)
     fake.sources.get(id)!.setData = () => { updates++ }
   } })
@@ -87,7 +87,14 @@ test('coarse layer preserves operational ordering, recovers a replaced style and
   expect(updates).toBe(0)
   overview.update([presentation('loading')])
   expect(updates).toBe(0)
+  styleReady = false
   overview.update([presentation('ready')])
+  // Removing an existing coarse layer must not wait for a GeoJSON worker or
+  // map idle: its closed roof would cover the ready interior in that interval.
+  expect(fake.sources.size).toBe(0)
+  styleReady = true
+  fake.emit('idle', {})
+  await Promise.resolve()
   expect(fake.sources.size).toBe(0)
   overview.update([presentation()])
   expect(fake.sources.size).toBe(1)
@@ -101,5 +108,6 @@ test('coarse layer preserves operational ordering, recovers a replaced style and
   expect(fake.sources.size).toBe(0)
   expect(fake.map.getLayer(physicalSceneLayerId)).toBeDefined()
   expect(fake.listenerCount('style.load')).toBe(0)
+  expect(fake.listenerCount('idle')).toBe(0)
   expect(errors).toEqual([])
 })

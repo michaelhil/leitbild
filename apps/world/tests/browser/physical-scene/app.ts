@@ -5,7 +5,8 @@ import type { OperationalRenderSnapshot } from '../../../src/ui/map-runtime/type
 import { createOperationalDeckLayerFactory } from '../../../src/ui/map-runtime/operational-deck-layers.ts'
 import { emptyCatalogueSymbolAtlas } from '../../../src/ui/map-runtime/catalogue-symbol-atlas.ts'
 import { createPhysicalSceneController } from '../../../src/ui/map/physical-scene/controller.ts'
-import { physicalSceneLayerAnchorId, physicalSceneLayerId } from '../../../src/ui/map/physical-scene/order.ts'
+import { createPhysicalSceneOverview } from '../../../src/ui/map/physical-scene/overview.ts'
+import { physicalSceneLayerAnchorId, physicalSceneLayerId, physicalSceneOverviewLayerId, physicalSceneOverviewSourceId } from '../../../src/ui/map/physical-scene/order.ts'
 import { defaultPhysicalSceneView, type PhysicalScenePalette, type PhysicalScenePresentation } from '../../../src/ui/map/physical-scene/types.ts'
 import { fullGlState, sentinel, stateDifferences } from './gl-probes.ts'
 import { boundsCorners, localMercatorMatrix, multiply, transform } from '../../../src/ui/map/physical-scene/math.ts'
@@ -43,10 +44,11 @@ map.addLayer = (layer, before) => {
 map.on('error', event => errors.push(event.error.message))
 const palette: PhysicalScenePalette = { materials: { wall: [.65, .67, .66], floor: [.85, .85, .82], metal: [.35, .42, .44], equipment: [.25, .42, .34], pipe: [.5, .58, .58], door: [.23, .45, .65], glass: [.75, .83, .85], context: [.7, .72, .67], line: [.2, .22, .22] }, defaultMaterial: [.5, .55, .55], line: [.2, .22, .22] }
 let presentations: ReadonlyArray<PhysicalScenePresentation> = [], controller: ReturnType<typeof createPhysicalSceneController>
+let overview: ReturnType<typeof createPhysicalSceneOverview> | undefined
 let loadCount = 0
 let phase = 'initial'
 const source = { descriptor, load: async () => { loadCount++; return await (await fetch('/scene.json')).json() as PackPhysicalScene } }
-const createController = () => createPhysicalSceneController({ map, palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), onChange: value => { presentations = value }, reportError: error => errors.push(error.message), fitPadding: () => ({ top: 80, bottom: 110, left: 80, right: 80 }) })
+const createController = () => createPhysicalSceneController({ map, palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), onChange: value => { presentations = value; overview?.update(value) }, reportError: error => errors.push(error.message), fitPadding: () => ({ top: 80, bottom: 110, left: 80, right: 80 }) })
 const deckFactory = createOperationalDeckLayerFactory()
 const overlay = new MapboxOverlay({ interleaved: false, pickAsync: 'sync', layers: [] })
 let sentinels: CustomLayerInterface[] = []
@@ -86,6 +88,7 @@ const pixelHash = async () => {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', pixels))].map(value => value.toString(16).padStart(2, '0')).join('')
 }
 const loaded = new Promise<void>(resolve => map.on('load', async () => {
+  overview = createPhysicalSceneOverview({ map, palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => errors.push(error.message) })
   map.addControl(overlay); updateDeck(); controller = createController(); controller.setSources([source]); controller.fit(descriptor.id)
   await ready(); reorderSentinels(); await settle(3); resolve()
 }))
@@ -119,6 +122,16 @@ window.physicalProbe = {
     await loaded
     const gl = context!, extension = gl.getExtension('WEBGL_debug_renderer_info')
     const profile = { userAgent: navigator.userAgent, width: innerWidth, height: innerHeight, dpr: devicePixelRatio, renderer: extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), antialias: gl.getContextAttributes()?.antialias }
+    let coarse: { polygons: number; noDetailLoad: boolean; replacedByDetail: boolean } | null = null
+    if (descriptor.overviewFootprints?.length) {
+      const priorLoads = loadCount
+      map.jumpTo({ zoom: 13, pitch: 0, center: descriptor.anchor }); await settle(6)
+      const polygons = map.getSource(physicalSceneOverviewSourceId) ? map.querySourceFeatures(physicalSceneOverviewSourceId).length : 0
+      const noDetailLoad = loadCount === priorLoads && presentations[0]?.status === 'distant'
+      const moved = new Promise<void>(resolve => map.once('moveend', () => resolve()))
+      controller.fit(descriptor.id); await moved; await ready(); await settle(4)
+      coarse = { polygons, noDetailLoad, replacedByDetail: !map.getLayer(physicalSceneOverviewLayerId) }
+    }
     const base = await pixelHash(), uploads = controller.metrics()!.geometryUploads
     controller.setStatus(descriptor.id, new Map(descriptor.subjectIds.map(id => [id, { color: [.85, .1, .05] as const, emphasis: .65 }])))
     await settle(3)
@@ -166,8 +179,8 @@ window.physicalProbe = {
     const beforeIdle = sceneFrames; recordingRepaints = true; await new Promise(resolve => setTimeout(resolve, 350)); recordingRepaints = false; clearInterval(refresh); const idleFrames = sceneFrames - beforeIdle
     forceClear = true; await settle(2); const negative = sentinelCheck(); forceClear = false; await settle(2)
     const point = map.project(descriptor.anchor), deckPick = overlay.pickObject({ x: point.x, y: point.y, radius: 24 })
-    const passed = errors.length === 0 && glErrors.length === 0 && stateErrors.length === 0 && basic.sentinel.passed && state.uploadsBefore === state.uploadsAfter && state.changedPixels && pick !== null && statusKeepsPicks && levelChangeClearsPicks && levels.lowerAndUpperDiffer && cycles.every(cycle => cycle.disposal.disposals.every(disposal => disposal.liveBuffersAfterDisposal === 0 && disposal.liveProgramsAfterDisposal === 0)) && styles.every(value => value.sentinel.passed) && contextRestore.sentinel.passed && !negative.passed && idleFrames === 0 && deckPick !== null
+    const passed = (coarse === null || coarse.polygons > 0 && coarse.noDetailLoad && coarse.replacedByDetail) && errors.length === 0 && glErrors.length === 0 && stateErrors.length === 0 && basic.sentinel.passed && state.uploadsBefore === state.uploadsAfter && state.changedPixels && pick !== null && statusKeepsPicks && levelChangeClearsPicks && levels.lowerAndUpperDiffer && cycles.every(cycle => cycle.disposal.disposals.every(disposal => disposal.liveBuffersAfterDisposal === 0 && disposal.liveProgramsAfterDisposal === 0)) && styles.every(value => value.sentinel.passed) && contextRestore.sentinel.passed && !negative.passed && idleFrames === 0 && deckPick !== null
     document.getElementById('status')!.textContent = `${passed ? 'PASS' : 'FAIL'} · production physical renderer + operational Deck overlay · ${profile.width}×${profile.height}`
-    return { passed, profile, source: { revision: descriptor.revision, modelDigest: descriptor.modelDigest, objects: controller.scene(descriptor.id)!.objects.length }, basic, levels, cycles, styles, contextRestore, idleFrames, unchangedStateRefreshes, idleMeasurement: '350ms after500ms recoveryquiescence, with repeated equalstyle refreshes', repaintCalls: [...new Set(repaintCalls)], negativeControlDetected: !negative.passed, deckPick: deckPick ? { id: deckPick.object?.id, layer: deckPick.layer?.id } : null, stateErrors, glErrors, errors, loadCount, limits: ['Isolated desktop Chrome, not constrained hardware or WAN.', 'Empty test ground style; full PMTiles/context and app input/card/Run flow require separate integrated checks.', 'Test-controlled shader state is not operational plant status.', 'Same production native scene/controller and operational Deck layer factory; no experiment renderer imported.'] }
+    return { passed, profile, source: { revision: descriptor.revision, modelDigest: descriptor.modelDigest, objects: controller.scene(descriptor.id)!.objects.length }, coarse, basic, levels, cycles, styles, contextRestore, idleFrames, unchangedStateRefreshes, idleMeasurement: '350ms after500ms recoveryquiescence, with repeated equalstyle refreshes', repaintCalls: [...new Set(repaintCalls)], negativeControlDetected: !negative.passed, deckPick: deckPick ? { id: deckPick.object?.id, layer: deckPick.layer?.id } : null, stateErrors, glErrors, errors, loadCount, limits: ['Isolated desktop Chrome, not constrained hardware or WAN.', 'Empty test ground style; full PMTiles/context and app input/card/Run flow require separate integrated checks.', 'Test-controlled shader state is not operational plant status.', 'Same production native scene/controller and operational Deck layer factory; no experiment renderer imported.'] }
   },
 }

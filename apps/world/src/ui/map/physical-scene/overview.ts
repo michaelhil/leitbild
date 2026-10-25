@@ -40,18 +40,20 @@ export const createPhysicalSceneOverview = (options: {
   let signature = ''
   let published = ''
   let palette = options.palette
+  let paintedColor: string | null = null
   let destroyed = false
   let queued = false
   const color = (): string => `rgb(${(palette.materials.wall ?? palette.defaultMaterial).map(channel => Math.round(channel * 255)).join(' ')})`
   const reconcile = (): void => {
-    if (destroyed || !map.isStyleLoaded()) return
+    if (destroyed) return
     try {
       if (!data.features.length) {
         if (map.getLayer(physicalSceneOverviewLayerId)) map.removeLayer(physicalSceneOverviewLayerId)
         if (map.getSource(physicalSceneOverviewSourceId)) map.removeSource(physicalSceneOverviewSourceId)
-        published = ''
+        published = ''; paintedColor = null
         return
       }
+      if (!map.isStyleLoaded()) return
       let source = map.getSource(physicalSceneOverviewSourceId) as GeoJSONSource | undefined
       if (!source) {
         map.addSource(physicalSceneOverviewSourceId, { type: 'geojson', data })
@@ -59,12 +61,15 @@ export const createPhysicalSceneOverview = (options: {
         published = signature
       } else if (published !== signature) { source.setData(data); published = signature }
       const anchor = map.getLayer(physicalSceneLayerId) ? physicalSceneLayerId : options.beforeId()
-      if (!map.getLayer(physicalSceneOverviewLayerId)) map.addLayer({
+      if (!map.getLayer(physicalSceneOverviewLayerId)) {
+        paintedColor = color()
+        map.addLayer({
         id: physicalSceneOverviewLayerId, type: 'fill-extrusion', source: physicalSceneOverviewSourceId, minzoom: 11,
-        paint: { 'fill-extrusion-color': color(), 'fill-extrusion-base': ['get', 'base'], 'fill-extrusion-height': ['get', 'height'], 'fill-extrusion-opacity': 0.85 },
+        paint: { 'fill-extrusion-color': paintedColor, 'fill-extrusion-base': ['get', 'base'], 'fill-extrusion-height': ['get', 'height'], 'fill-extrusion-opacity': 0.85 },
       }, anchor && map.getLayer(anchor) ? anchor : undefined)
-      else {
-        map.setPaintProperty(physicalSceneOverviewLayerId, 'fill-extrusion-color', color())
+      } else {
+        const nextColor = color()
+        if (nextColor !== paintedColor) { map.setPaintProperty(physicalSceneOverviewLayerId, 'fill-extrusion-color', nextColor); paintedColor = nextColor }
         const order = map.getLayersOrder()
         if (anchor && order.indexOf(physicalSceneOverviewLayerId) > order.indexOf(anchor)) map.moveLayer(physicalSceneOverviewLayerId, anchor)
       }
@@ -76,6 +81,10 @@ export const createPhysicalSceneOverview = (options: {
     queueMicrotask(() => { queued = false; reconcile() })
   }
   map.on('style.load', onStyle)
+  // GeoJSON worker delivery can briefly keep isStyleLoaded false while detail
+  // becomes ready. Finish replacement when that source settles, even without
+  // another scene or full-style change.
+  map.on('idle', onStyle)
   return {
     update(scenes: ReadonlyArray<PhysicalScenePresentation>): void {
       if (destroyed) return
@@ -93,6 +102,7 @@ export const createPhysicalSceneOverview = (options: {
       if (destroyed) return
       destroyed = true
       map.off('style.load', onStyle)
+      map.off('idle', onStyle)
       if (map.getLayer(physicalSceneOverviewLayerId)) map.removeLayer(physicalSceneOverviewLayerId)
       if (map.getSource(physicalSceneOverviewSourceId)) map.removeSource(physicalSceneOverviewSourceId)
     },
