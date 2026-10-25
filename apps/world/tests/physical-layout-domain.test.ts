@@ -50,7 +50,7 @@ describe('Physical layout admission and retained scene', () => {
     const owner = { ...originalOwner, audience: ['blue'] }
     const expanded = await physicalLayoutPack.scenario!.expandItem({ ...layoutItem('layout:audience', owner.id), pack: 'physical-layout' }, {
       at: originalOwner.timestamps.createdAt, objects: [owner], objectById: id => id === owner.id ? owner : undefined,
-      routing: createDirectRoutingAdapter(), packConfigs: {}, sides: [{ id: 'blue', label: 'Blue' }, { id: 'red', label: 'Red' }],
+      routing: createDirectRoutingAdapter(), packConfigs: {}, sides: [{ id: 'blue', label: 'Blue', colour: 'blue' }, { id: 'red', label: 'Red', colour: 'red' }],
       physicalTargetsFor: () => describeProcessPlantPhysicalTargets(owner),
     })
     const layout = expanded.objects[0]!
