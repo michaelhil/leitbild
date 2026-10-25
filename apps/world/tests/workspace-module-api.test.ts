@@ -578,7 +578,7 @@ Action: Inspect «OTHER-STEP».
     )
     expect(described.body?.result.packs.find(pack => pack.id === 'fixture')?.itemTypes.length).toBeGreaterThan(0)
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.itemTypes.length).toBeGreaterThan(0)
-    expect(described.body?.result.packs.map(pack => pack.id).sort()).toEqual(['drone', 'electric-grid', 'fixture', 'process-plant', 'weather'])
+    expect(described.body?.result.packs.map(pack => pack.id).sort()).toEqual(['drone', 'electric-grid', 'fixture', 'physical-layout', 'process-plant', 'weather'])
     expect(described.body?.result.detail).toBe('catalog')
     expect(described.body?.result.packs.find(pack => pack.id === 'process-plant')?.configSchema).toBeUndefined()
 

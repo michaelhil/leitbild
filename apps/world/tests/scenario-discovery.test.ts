@@ -22,9 +22,9 @@ describe('bundled scenario discovery', () => {
       'supply-run',
     ])
     for (const id of ['halden-normal-operation', 'halden-power-complex']) {
-      expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather'])
+      expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'weather', 'physical-layout'])
     }
-    expect(builtinScenarioDefinitions.find(source => source.id === 'halden-offsite-power-restoration')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid'])
+    expect(builtinScenarioDefinitions.find(source => source.id === 'halden-offsite-power-restoration')?.packs.map(pack => pack.id)).toEqual(['process-plant', 'electric-grid', 'physical-layout'])
     for (const id of ['nordic-frequency-event', 'nordland-corridor-security', 'rogaland-black-start']) {
       expect(builtinScenarioDefinitions.find(source => source.id === id)?.packs.map(pack => pack.id)).toEqual(['electric-grid'])
     }

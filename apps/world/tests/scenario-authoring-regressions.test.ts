@@ -39,7 +39,7 @@ test('Scenario AI restrictions compile as the initial Run policy without Pack-sp
   expect(compiled.agentRestrictions).toEqual(source.agentRestrictions)
 })
 
-test('all five test Packs share one paused startup clock and preserve progress through controls and restart', async () => {
+test('five runtime Packs share one paused startup clock and retain static layouts through controls and restart', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-shared-clock-'))
   const clocks: SimulationClockReader[] = []
   const adapters = createTestPackRuntimeAdapters().map(adapter => ({
@@ -68,14 +68,14 @@ test('all five test Packs share one paused startup clock and preserve progress t
     const frozen = run.snapshot().clock!.currentTime
     expect(Date.parse(frozen)).toBeGreaterThan(Date.parse(source.world.startsAt))
     expect(clocks.every(clock => clock.read().currentTime === frozen && clock.read().paused)).toBe(true)
-    expect(run.snapshot().objects).toHaveLength(10)
+    expect(run.snapshot().objects).toHaveLength(14)
     await Bun.sleep(30)
     expect(run.snapshot().clock!.currentTime).toBe(frozen)
     await registry.close(run.id)
     clocks.length = 0
     const restored = await registry.load(run.id)
     expect(restored.snapshot().clock!.currentTime).toBe(frozen)
-    expect(restored.snapshot().objects).toHaveLength(10)
+    expect(restored.snapshot().objects).toHaveLength(14)
     expect(clocks).toHaveLength(5)
     expect(new Set(clocks).size).toBe(1)
     expect(clocks.every(clock => clock.read().currentTime === frozen && clock.read().paused)).toBe(true)
