@@ -5,12 +5,12 @@ import type { PhysicalMesh } from './geometry.ts'
 import { boundsCorners, localMercatorMatrix, transform } from './math.ts'
 import { createPhysicalGeometryPreparer, type PhysicalPreparedGeometry } from './preparation.ts'
 import { admitPhysicalPickAcceleration, derivePhysicalPickAcceleration } from './picking.ts'
-import { createPhysicalOverviewScene } from './overview-geometry.ts'
+import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from './overview-geometry.ts'
 import { visiblePhysicalBounds } from './renderer.ts'
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle } from './types.ts'
 
-interface Entry { source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean }
+interface Entry { source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean; overviewFilter?: { key: string; meshes: ReadonlyArray<PhysicalMesh> } | undefined }
 type Options = Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'>
 const worldBounds = (anchor: readonly [number, number], bearing: number, bounds: PhysicalSceneBounds): PhysicalSceneBounds => {
   const matrix = localMercatorMatrix(anchor, bearing), points = boundsCorners(bounds).map(p => transform(matrix, p))
@@ -28,8 +28,21 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const presentations = (): PhysicalScenePresentation[] => [...entries.values()].map(entry => ({ descriptor: entry.source.descriptor, view: entry.view, status: entry.state, ...(entry.reason ? { reason: entry.reason } : {}), occurrenceCount: entry.scene?.objects.length ?? 0 }))
   const emit = (): void => { const next = presentations(), signature = JSON.stringify(next); if (lastPresentation === signature) return; lastPresentation = signature; options.onChange(next) }
   const drawable = (): PhysicalLayerEntry[] => !active ? [] : [...entries.values()].flatMap(entry => {
-    if (entry.scene && entry.prepared && entry.eligible && entry.state === 'ready') return [{ scene: entry.scene, meshes: entry.meshes, asset: entry.prepared, view: entry.view, status: entry.status }]
-    return viewport.surface.kind === 'canvas' && entry.source.descriptor.locationValid && entry.view.detail !== 'hidden' && entry.overview ? [{ scene: entry.overview.scene, meshes: entry.overview.asset.meshes, asset: entry.overview.asset, view: entry.view, status: new Map() }] : []
+    const result: PhysicalLayerEntry[] = [], detailed = Boolean(entry.scene && entry.prepared && entry.eligible && entry.state === 'ready')
+    if (detailed) result.push({ scene: entry.scene!, meshes: entry.meshes, asset: entry.prepared!, view: entry.view, status: entry.status })
+    if (!entry.overview || !entry.source.descriptor.locationValid || entry.view.detail === 'hidden') return result
+    let meshes = entry.overview.asset.meshes
+    if (detailed) {
+      if (!entry.scopeId) return result
+      const key = `${entry.overview.asset.key}/${entry.scopeId}`
+      if (entry.overviewFilter?.key !== key) {
+        const filtered = physicalOverviewContextMeshes(entry.source.descriptor, meshes, entry.scopeId)
+        derivePhysicalPickAcceleration(filtered, entry.overview.asset.acceleration); entry.overviewFilter = { key, meshes: filtered }
+      }
+      meshes = entry.overviewFilter.meshes
+    } else if (viewport.surface.kind !== 'canvas') return result
+    if (meshes.length) result.push({ scene: entry.overview.scene, meshes, asset: entry.overview.asset, view: entry.view, status: new Map() })
+    return result
   })
   const removeRenderer = (): void => { if (!renderer) return; const prior = renderer; renderer = null; viewport.removeRenderer(prior); const receipt = prior.metrics(); if (receipt) disposals.push(receipt) }
   const reconcileRenderer = (): void => {
@@ -68,7 +81,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     } catch (error) { if (expected !== entry.viewGeneration || destroyed) return; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
   }
   const prepareOverview = async (entry: Entry): Promise<void> => {
-    if (entry.overview || entry.overviewPreparing || !entry.source.descriptor.overviewFootprints?.length || viewport.surface.kind !== 'canvas') return
+    if (entry.overview || entry.overviewPreparing || !entry.source.descriptor.overviewFootprints?.length || (viewport.surface.kind !== 'canvas' && !entry.scopeId)) return
     entry.overviewPreparing = true; const expected = entry.generation, requestedMode = mode, scene = createPhysicalOverviewScene(entry.source.descriptor)
     const identity = entry.source.descriptor.geometryKey ?? `private/${scene.id}/${expected}`, key = `${identity}/overview/${mode}`
     try { const asset = await prepare(scene, { ...entry.view, mode, levelId: 'all', cutaway: false, separation: 0 }, key, identity); if (destroyed || expected !== entry.generation || requestedMode !== mode || entries.get(scene.id) !== entry) return; entry.overviewPreparing = false; entry.overview = { scene, asset }; reconcileRenderer(); viewport.requestRender() }
@@ -94,7 +107,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const physicalSpan = Math.max(...d.bounds.max.map((value, axis) => value - d.bounds.min[axis]!)), pixels = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), error = d.overviewGeometricErrorMetres ?? physicalSpan
       const needsDetail = forcedId === d.id || error * pixels / Math.max(physicalSpan, Number.EPSILON) > pixelError
       entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && (mode !== '2d' || focusedId === d.id)
-      if (active && intersects && d.locationValid && !entry.eligible) void prepareOverview(entry)
+      if (active && intersects && d.locationValid && (!entry.eligible || entry.scopeId)) void prepareOverview(entry)
       if (!d.locationValid) { entry.state = 'unavailable'; entry.reason = d.reason ?? 'Layout location no longer matches its owner' }
       else if (entry.failure) { entry.state = 'unavailable'; entry.reason = entry.failure }
       else if (!active || entry.view.detail === 'hidden') entry.state = 'hidden'
