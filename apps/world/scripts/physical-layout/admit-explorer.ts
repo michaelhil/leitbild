@@ -6,7 +6,8 @@ import { physicalCoverageEvidenceSchema, physicalCoverageIssues } from '../../sr
 import { physicalExplorerRequirementsSchema } from '../../src/packs/physical-layout/requirements.ts'
 import { physicalSourceSchema } from '../../src/packs/physical-layout/native/explorer/source.ts'
 import { compilePhysicalScene } from '../../src/packs/physical-layout/native/explorer/compile-scene.ts'
-import { physicalApplicabilityContent, physicalShapeFacts, physicalSourceFacts } from '../../src/packs/physical-layout/applicability.ts'
+import { physicalApplicabilityContent, physicalSourceFacts } from '../../src/packs/physical-layout/applicability.ts'
+import { physicalSceneShapeFacts } from '../../src/packs/physical-layout/source-validation.ts'
 
 const directory = new URL('../../src/packs/physical-layout/', import.meta.url)
 const read = (name: string): Promise<unknown> => Bun.file(new URL(name, directory)).json()
@@ -33,7 +34,7 @@ for (const stem of ['pwr-full-unit-explorer', 'pwr-campus-explorer']) {
   const min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
   for (const object of scene.objects) for (let i = 0; i < object.positions.length; i++) { const axis = i % 3; min[axis] = Math.min(min[axis]!, object.positions[i]!); max[axis] = Math.max(max[axis]!, object.positions[i]!) }
   const presentation = physicalPresentationSchema.parse({ scopes: scene.scopes, layers: scene.layers })
-  const physicalApplicability = { sourceDigest: hash(physicalSourceFacts(source)), geometryDigest: hash(physicalShapeFacts(scene.objects)), digest: '' }
+  const physicalApplicability = { sourceDigest: hash(physicalSourceFacts(source)), geometryDigest: hash(physicalSceneShapeFacts(scene.objects)), digest: '' }
   const content = { profile: 'explorer' as const, sourceDigest: hash(source), bindingDigest: hash(bindings), compiler: explorerPhysicalCompilerRef, modelRequirement: coverage.modelRequirement,
     coverageDigest: hash(coverage), requirements, physicalApplicability, presentation, presentationDigest: hash(presentation) }
   physicalApplicability.digest = hash(physicalApplicabilityContent(content))

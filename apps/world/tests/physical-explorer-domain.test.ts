@@ -13,7 +13,8 @@ import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
 import { canonicalPhysicalJson, explorerLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
 import { currentPwrPhysicalDesignRef, pwrFullUnitPhysicalDesignRef, pwrCampusPhysicalDesignRef, pwrExplorerUnitPhysicalDesignRef, pwrExplorerCampusPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
 import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
-import { physicalSourceFacts, physicalShapeFacts } from '../src/packs/physical-layout/applicability.ts'
+import { physicalSourceFacts } from '../src/packs/physical-layout/applicability.ts'
+import { physicalSceneShapeFacts } from '../src/packs/physical-layout/source-validation.ts'
 import { physicalLayoutDependencyFailure } from '../src/packs/physical-layout/dependencies.ts'
 import { explorerPhysicalCompilerFiles, explorerPhysicalCompilerRef } from '../src/packs/physical-layout/compiler-identity.ts'
 import { compilePhysicalSourceInWorker } from '../src/packs/physical-layout/source-loader.ts'
@@ -60,7 +61,7 @@ describe('Explicit explorer source admission', () => {
     expect(scene.scopes).toEqual(data.presentation.scopes)
     expect(scene.group).toEqual(data.group)
     expect(scene.objects.some(object => object.featureLines?.length)).toBe(true)
-    expect(hash(physicalShapeFacts(scene.objects))).toBe(data.physicalApplicability.geometryDigest)
+    expect(hash(physicalSceneShapeFacts(scene.objects))).toBe(data.physicalApplicability.geometryDigest)
     const corrupt = structuredClone(object), changed = explorerLayoutDataSchema.parse(corrupt.packData)
     changed.presentation.scopes[0]!.label = 'Tampered scope'
     await expect(loadPhysicalLayoutScene({ ...corrupt, packData: changed })).rejects.toThrow('applicability or presentation mismatch')
@@ -95,7 +96,8 @@ describe('Explicit explorer source admission', () => {
     expect(first.anchor).not.toEqual(second.anchor)
     const data = explorerLayoutDataSchema.parse(firstObject.packData), worker = await compilePhysicalSourceInWorker(data)
     expect(worker.objects).toHaveLength(first.objects.length)
-    expect(hash(physicalShapeFacts(worker.objects))).toBe(data.physicalApplicability.geometryDigest)
+    expect(worker.objects.every(object => object.positions instanceof Float64Array)).toBe(true)
+    expect(hash(physicalSceneShapeFacts(worker.objects))).toBe(data.physicalApplicability.geometryDigest)
     expect(worker.scopes).toEqual(data.presentation.scopes)
     const corrupt = structuredClone(data)
     corrupt.source.elements[0]!.pose.position[0] += 1

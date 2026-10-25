@@ -1,5 +1,11 @@
 import { canonicalPhysicalJson, physicalDesignManifest, type RetainedPhysicalLayoutData } from './model.ts'
-import { physicalApplicabilityContent, physicalSourceFacts } from './applicability.ts'
+import type { PackPhysicalScene } from '../../core/packs/scene.ts'
+import { physicalApplicabilityContent, physicalShapeFacts, physicalSourceFacts } from './applicability.ts'
+
+/** Keep the frozen JSON fingerprint contract independent of worker transport storage. */
+export const physicalSceneShapeFacts = (objects: PackPhysicalScene['objects']) => physicalShapeFacts(objects.map(object => ({ ...object,
+  positions: Array.isArray(object.positions) ? object.positions : Array.from(object.positions),
+})))
 
 export const physicalContentHash = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPhysicalJson(value))))).map(value => value.toString(16).padStart(2, '0')).join('')
 

@@ -1,7 +1,17 @@
 import { z } from 'zod'
 
 const vector3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()])
-const coordinatesSchema = z.array(z.number().finite()).max(6_000_000)
+const coordinatesSchema = z.union([
+  z.array(z.number().finite()).max(6_000_000),
+  z.instanceof(Float64Array).superRefine((values, context) => {
+    if (values.length > 6_000_000) context.addIssue({ code: 'custom', message: 'Coordinate buffer exceeds the delivery budget' })
+    if (!values.every(Number.isFinite)) context.addIssue({ code: 'custom', message: 'Coordinates must be finite' })
+  }),
+])
+const indicesSchema = (maximum: number) => z.union([
+  z.array(z.number().int().nonnegative()).max(maximum),
+  z.instanceof(Uint32Array).refine(values => values.length <= maximum, 'Index buffer exceeds the delivery budget'),
+])
 const identifierSchema = z.string().min(1).max(200)
 
 export const physicalSceneBoundsSchema = z.object({ min: vector3Schema, max: vector3Schema }).strict()
@@ -37,13 +47,13 @@ export const physicalSceneObjectSchema = z.object({
   levelId: identifierSchema,
   /** Local right-handed coordinates: X east, Y north, Z up, in metres. */
   positions: coordinatesSchema,
-  indices: z.array(z.number().int().nonnegative()).max(6_000_000).optional(),
+  indices: indicesSchema(6_000_000).optional(),
   normals: coordinatesSchema.optional(),
   subjectIds: z.array(identifierSchema).max(256),
   /** Palette roles, resolved from the active display's tokens. Never literal colours. */
   material: identifierSchema.optional(),
   materials: z.array(identifierSchema).min(1).max(32).optional(),
-  materialIndices: z.array(z.number().int().nonnegative()).max(2_000_000).optional(),
+  materialIndices: indicesSchema(2_000_000).optional(),
   /** Physical membership and vertical applicability, not a duplicated occurrence per floor. */
   scopeIds: z.array(identifierSchema).optional(),
   levelIds: z.array(identifierSchema).optional(),

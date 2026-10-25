@@ -11,7 +11,7 @@ import { solid as retainedSolid } from '../src/packs/physical-layout/native/soli
 const source = physicalSourceSchema.parse({ ...base, rootScope: { id: 'unit', label: 'PWR unit', kind: 'unit' } })
 const objects = compilePhysicalObjects({ source, bindings })
 const byId = new Map(objects.map(object => [object.id,object]))
-const roles = (id:string) => new Set(byId.get(id)!.materialIndices!.map(index=>byId.get(id)!.materials![index]))
+const roles = (id:string) => new Set(Array.from(byId.get(id)!.materialIndices!,index=>byId.get(id)!.materials![index]))
 
 describe('Explicit explorer machinery and architectural features',()=>{
   test('the original turbine and motor assembly parts keep distinct semantic materials',()=>{
