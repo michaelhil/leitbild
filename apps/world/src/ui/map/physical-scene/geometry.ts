@@ -6,10 +6,15 @@ import type { PhysicalSceneView } from './types.ts'
 /** xyz, normal xyz, material-role index. Colours are assigned by the active token palette. */
 type Vertex = [number, number, number, number, number, number, number]
 export interface PhysicalMesh {
+  readonly assetKey?: string
+  readonly assetIndex?: number
   readonly key: string
   readonly object: PhysicalSceneObject
-  readonly vertices: ReadonlyArray<number>
-  readonly lines: ReadonlyArray<number>
+  readonly vertices: ReadonlyArray<number> | Float64Array
+  readonly lines: ReadonlyArray<number> | Float64Array
+  readonly lineMaterials?: ReadonlyArray<string>
+  readonly lineStyles?: ReadonlyArray<'feature' | 'context' | 'section'>
+  readonly levelId?: string
   readonly bounds: PhysicalSceneBounds
   readonly offset: Vector3
 }
@@ -128,7 +133,7 @@ const outline = (vertices: ReadonlyArray<number>): number[] => {
   return [...edges.values()].filter(edge => edge.count === 1 || edge.crease).flatMap(edge => [...edge.a, ...edge.b])
 }
 
-export const meshBounds = (vertices: ReadonlyArray<number>, stride = 7): PhysicalSceneBounds => {
+export const meshBounds = (vertices: ArrayLike<number>, stride = 7): PhysicalSceneBounds => {
   const min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
   for (let index = 0; index < vertices.length; index += stride) for (let axis = 0; axis < 3; axis++) { min[axis] = Math.min(min[axis]!, vertices[index + axis]!); max[axis] = Math.max(max[axis]!, vertices[index + axis]!) }
   return { min, max }
@@ -166,8 +171,12 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       }
       if (!vertices.length) continue
       appendCaps(segments, vertices)
-      const lines = outline(vertices)
-      if (view.mode === '2d') for (const line of object.planLines ?? []) {
+      const lines = object.edgePolicy === 'none' || object.edgePolicy === 'authored' ? [] : outline(vertices)
+      const lineMaterials = Array<string>(lines.length / 6).fill('line'), lineStyles: Array<'feature' | 'context' | 'section'> = Array(lines.length / 6).fill(object.kind === 'context' ? 'context' : 'feature')
+      // A true horizontal section is viewing truth even when a family suppresses
+      // illustrative edges; source floor/boolean partitions never become lines.
+      if (object.edgePolicy !== undefined) for (const [a, b] of segments) { lines.push(...position(a), ...position(b)); lineMaterials.push('line'); lineStyles.push('section') }
+      for (const line of [...(object.edgePolicy === 'none' ? [] : object.featureLines ?? []), ...(view.mode === '2d' ? object.planLines ?? [] : [])]) {
         for (let index = 0; index < line.positions.length; index += 6) {
           let a = line.positions.slice(index, index + 3) as [number, number, number], b = line.positions.slice(index + 3, index + 6) as [number, number, number]
           let visible = true
@@ -180,18 +189,18 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
               if (inA) b = point; else a = point
             }
           }
-          if (visible) lines.push(...a, ...b)
+          if (visible) { lines.push(...a, ...b); lineMaterials.push(line.material ?? 'line'); lineStyles.push(object.kind === 'context' ? 'context' : 'feature') }
         }
       }
       if (view.mode === '2d') {
         // A plan is an orthographic XY inspection representation. Small presentation-only
         // depth bands keep floors behind equipment and let the same fragments drive picks.
-        const priority = object.kind === 'slab' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
+        const priority = object.kind === 'slab' || object.kind === 'pavement' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
         for (let index = 2; index < vertices.length; index += 7) vertices[index] = priority * 0.02
         for (let index = 2; index < lines.length; index += 3) lines[index] = priority * 0.02 + 0.001
       }
       const offset: Vector3 = [0, 0, view.mode === '3d' && level && !selected ? levels.indexOf(level) * view.separation : 0]
-      output.push({ key: `${object.id}/${level?.id ?? 'all'}`, object, vertices, lines, bounds: meshBounds(vertices), offset })
+      output.push({ key: `${object.id}/${level?.id ?? 'all'}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
     }
   }
   return output

@@ -117,7 +117,7 @@ test('one camera has one projection while each layout retains its own floor, sep
   const fake = createFakeMapStyle(), pitches: number[] = []
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ width: 800, height: 600 }) })
   Object.assign(fake.map, { getCanvas: () => canvas, project: () => ({ x: 400, y: 300 }), triggerRepaint: () => {}, isStyleLoaded: () => true,
-    easeTo: (options: { pitch: number }) => pitches.push(options.pitch), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), fitBounds: () => {} })
+    easeTo: (options: { pitch: number }) => pitches.push(options.pitch), jumpTo: (options: { pitch: number }) => pitches.push(options.pitch), stop: () => {}, dragPan: { enable() {}, disable() {} }, getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), fitBounds: () => {} })
   const controller = createPhysicalSceneController({ map: fake.map, palette: { materials: {}, defaultMaterial: [0.4, 0.4, 0.4], line: [0.1, 0.1, 0.1] }, beforeId: () => undefined,
     onChange: () => {}, reportError: error => { throw error } })
   const source = (id: string, revision = 'design:retained') => ({ descriptor: { ...presentation().descriptor, id, revision }, load: async (): Promise<PackPhysicalScene> => { throw new Error('Distant sources must remain unloaded') } })

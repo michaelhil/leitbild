@@ -3,7 +3,8 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import { packPhysicalSceneSchema, type PackPhysicalScene, type PhysicalSceneObject } from '../src/core/packs/scene.ts'
 import { resolvePhysicalDesign, currentPwrPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { compilePhysicalObjects, physicalObjectsBounds } from '../src/packs/physical-layout/native/compile-scene.ts'
-import { createPhysicalSceneController, detailEligible } from '../src/ui/map/physical-scene/controller.ts'
+import { createPhysicalSceneController as createProductionPhysicalSceneController, detailEligible } from '../src/ui/map/physical-scene/controller.ts'
+import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { inverse, localMercatorMatrix, multiply, transform } from '../src/ui/map/physical-scene/math.ts'
 import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
@@ -18,6 +19,7 @@ const box = (id: string, min: [number, number, number], max: [number, number, nu
 }
 const scene = (objects: PhysicalSceneObject[]): PackPhysicalScene => ({ id: 'layout:a', revision: 'revision:a', targetObjectId: 'plant:a', anchor: [11.47, 59.087], bearing: 0, bounds: { min: [-1, -1, -1], max: [11, 2, 20] }, levels: [{ id: 'lower', label: 'Lower', elevation: 0, cutHeight: 1.2 }, { id: 'upper', label: 'Upper', elevation: 15, cutHeight: 16.2 }], objects })
 const identity = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1])
+const createPhysicalSceneController = (options: Parameters<typeof createProductionPhysicalSceneController>[0]) => createProductionPhysicalSceneController({ ...options, prepare: async (source, view, key) => preparePhysicalGeometry(source, view, key) })
 
 describe('Physical scene validation, projection and inspection fragments', () => {
   test('rejects invalid geometry, stale identity combinations and escaped bounds', () => {
@@ -49,10 +51,10 @@ describe('Physical scene validation, projection and inspection fragments', () =>
   })
 
   test('detail uses projected footprint with hysteresis and viewport culling', () => {
-    expect(detailEligible(239, true, false)).toBe(false)
-    expect(detailEligible(240, true, false)).toBe(true)
-    expect(detailEligible(180, true, true)).toBe(true)
-    expect(detailEligible(179, true, true)).toBe(false)
+    expect(detailEligible(0.9, true, false)).toBe(false)
+    expect(detailEligible(1.1, true, false)).toBe(true)
+    expect(detailEligible(1.1, true, true)).toBe(true)
+    expect(detailEligible(0.9, true, true)).toBe(false)
     expect(detailEligible(1000, false, true)).toBe(false)
   })
 
@@ -150,6 +152,7 @@ const lifecycleMap = () => {
     isStyleLoaded: () => styleReady,
     triggerRepaint() { repaints++ },
     easeTo() {},
+    stop() {}, jumpTo() {}, dragPan: { enable() {}, disable() {} },
     getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
     fitBounds() {},
   }
