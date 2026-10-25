@@ -377,7 +377,6 @@
     else { focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
   }
   const changeView = (next: PhysicalSceneView): void => {
-    if (next.mode === '2d') navigation = 'pan'
     if (suspended) return
     const scene = focused
     if (!scene) return
