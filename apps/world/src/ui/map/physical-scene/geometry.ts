@@ -6,6 +6,8 @@ import type { PhysicalSceneView } from './types.ts'
 /** xyz, normal xyz, material-role index. Colours are assigned by the active token palette. */
 type Vertex = [number, number, number, number, number, number, number]
 export interface PhysicalMesh {
+  /** Semantic Plan band; physical vertex heights are preserved. */
+  readonly planPriority?: number
   readonly assetKey?: string
   readonly assetIndex?: number
   readonly key: string
@@ -196,15 +198,14 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
           if (visible) { lines.push(...a, ...b); lineMaterials.push(line.material ?? 'line'); lineStyles.push(object.kind === 'context' ? 'context' : 'feature') }
         }
       }
+      let planPriority: number | undefined
       if (view.mode === '2d') {
-        // A plan is an orthographic XY inspection representation. Small presentation-only
-        // depth bands keep floors behind equipment and let the same fragments drive picks.
-        const priority = object.kind === 'slab' || object.kind === 'pavement' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
-        for (let index = 2; index < vertices.length; index += 7) vertices[index] = priority * 0.02
-        for (let index = 2; index < lines.length; index += 3) lines[index] = priority * 0.02 + 0.001
+        // Plan uses its own projection/depth pass. Keep authored heights intact
+        // and supply only semantic order; no physical-Z bias or material-ID rule.
+        planPriority = object.kind === 'slab' || object.kind === 'pavement' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
       }
       const offset: Vector3 = [0, 0, view.mode === '3d' && level && !selected ? levels.indexOf(level) * view.separation : 0]
-      output.push({ key: `${object.id}/${level?.id ?? 'all'}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
+      output.push({ ...(planPriority === undefined ? {} : { planPriority }), key: `${object.id}/${level?.id ?? 'all'}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
     }
   }
   return output

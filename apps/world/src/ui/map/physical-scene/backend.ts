@@ -1,3 +1,4 @@
+import type { PhysicalPlanMetrics } from './plan-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import type { PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
@@ -51,6 +52,7 @@ void main(){
 }
 `
 export interface PhysicalBackendMetrics {
+  readonly plan?: PhysicalPlanMetrics | null
   geometryUploads: number; geometryBytes: number; draws: number; buffers: number; programs: number
   textures: number; textureBytes: number; instanceBytes: number; instanceUploads: number; statusUploads: number; paletteUploads: number; evictions: number; peakRequiredBytes: number
   liveBuffersAfterDisposal: number | null; liveProgramsAfterDisposal: number | null; liveTexturesAfterDisposal: number | null
@@ -147,8 +149,9 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       for (const list of groups.values()) { const first = list[0]!; requiredBytes += first.asset.buffers.vertices.byteLength + first.asset.buffers.lines.byteLength + list.length * (17 + first.asset.meshes.length * 8) * 4 + first.asset.buffers.roles.length * 16 }
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, requiredBytes); const required = new Set(groups.keys()); evictUnused(required)
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true); gl.useProgram(ownedProgram)
-      gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1)
+      gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1)
       gl.lineWidth(palette.lineWidth ?? 1)
+      // Populate each retained asset's complete instance/status table once.
       for (const [key, list] of groups) {
         const first = list[0]!, asset = cache.get(key) ?? createAsset(first); cache.set(key, asset); asset.lastUsed = frame; updatePalette(asset)
         const objectCount = first.asset.meshes.length, allocation = resizeTexture(asset.objects, list.length * objectCount * 2)
@@ -165,9 +168,27 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
         })
         gl.bindBuffer(gl.ARRAY_BUFFER, asset.instances); gl.bufferData(gl.ARRAY_BUFFER, asset.instanceData, gl.DYNAMIC_DRAW); metrics.instanceUploads++
         gl.activeTexture(gl.TEXTURE1); if (statusChanged) { uploadTexture(asset.objects, allocation); metrics.statusUploads++ } else gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
-        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, asset.materials.texture); gl.uniform1i(uniforms.uMaterialWidth!, asset.materials.width); gl.uniform1i(uniforms.uObjectWidth!, asset.objects.width); gl.uniform1i(uniforms.uFlat!, Number(first.flat))
-        gl.disable(gl.BLEND); gl.depthFunc(gl.LESS); gl.uniform1i(uniforms.uLines!, 0); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1); gl.bindVertexArray(asset.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, asset.count, list.length); metrics.draws++
-        if (asset.lineCount) { gl.depthFunc(gl.LEQUAL); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1i(uniforms.uLines!, 1); gl.bindVertexArray(asset.lineVao); gl.drawArraysInstanced(gl.LINES, 0, asset.lineCount, list.length); metrics.draws++ }
+      }
+      // Instancing may combine contiguous placements, but must never reorder
+      // A1,B,A2 into A1,A2,B: exact coplanar identity is first-source-wins in
+      // both the depth buffer and picker. Runs share the tables uploaded above.
+      const runs: { key: string; start: number; count: number; flat: boolean }[] = [], next = new Map<string, number>()
+      for (const draw of draws) {
+        const key = draw.asset.key, start = next.get(key) ?? 0, previous = runs.at(-1); next.set(key, start + 1)
+        if (previous?.key === key && previous.flat === draw.flat) previous.count++
+        else runs.push({ key, start, count: 1, flat: draw.flat })
+      }
+      for (const run of runs) {
+        const asset = cache.get(run.key)!
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, asset.materials.texture); gl.uniform1i(uniforms.uMaterialWidth!, asset.materials.width); gl.uniform1i(uniforms.uObjectWidth!, asset.objects.width); gl.uniform1i(uniforms.uFlat!, Number(run.flat))
+        const instancesAt = (vao: WebGLVertexArrayObject): void => {
+          gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, asset.instances)
+          for (let column = 0; column < 4; column++) gl.vertexAttribPointer(5 + column, 4, gl.FLOAT, false, 17 * 4, run.start * 17 * 4 + column * 16)
+          gl.vertexAttribIPointer(9, 1, gl.UNSIGNED_INT, 17 * 4, run.start * 17 * 4 + 64)
+        }
+        gl.disable(gl.BLEND); gl.depthFunc(gl.LESS); gl.uniform1i(uniforms.uLines!, 0); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(run.flat ? 0 : 1, 1); instancesAt(asset.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, asset.count, run.count); metrics.draws++
+        if (asset.lineCount) { gl.depthFunc(gl.LEQUAL); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND); gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1i(uniforms.uLines!, 1); instancesAt(asset.lineVao); gl.drawArraysInstanced(gl.LINES, 0, asset.lineCount, run.count); metrics.draws++ }
       }
       const actualRequired = [...required].reduce((bytes, key) => { const value = cache.get(key)!; return bytes + value.geometryBytes + value.instanceData.byteLength + value.materials.data.byteLength + value.objects.data.byteLength }, 0)
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, actualRequired); evictUnused(required)

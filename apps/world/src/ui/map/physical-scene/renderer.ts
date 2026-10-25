@@ -1,5 +1,7 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import { createPhysicalBackend, type PhysicalDraw } from './backend.ts'
+import { createPhysicalPlanPass } from './plan-pass.ts'
+import { projectPhysicalPlan } from './plan-projection.ts'
 import { captureSceneGlState, restoreSceneGlState } from './gl-state.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
@@ -17,6 +19,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   const initial = captureSceneGlState(gl)
   let backend: ReturnType<typeof createPhysicalBackend>
   try { backend = createPhysicalBackend(gl, palette) } finally { restoreSceneGlState(gl, initial) }
+  let planPass: ReturnType<typeof createPhysicalPlanPass> | null = null
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
@@ -45,13 +48,19 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       const before = captureSceneGlState(gl)
       try {
         const draws: PhysicalDraw[] = []; picking = []
-        for (const entry of entries()) {
-          const matrix = multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)); picking.push({ sceneId: entry.scene.id, meshes: entry.meshes, matrix })
+        const current = entries(), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
+        const projected = plan ? projectPhysicalPlan(current, mainMatrix) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
+        for (const { entry, matrix, meshes } of projected) {
+          picking.push({ sceneId: entry.scene.id, meshes, matrix })
           const drawMatrix = new Float32Array(matrix)
           if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
-          draws.push({ asset: entry.asset, meshes: entry.meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)) })
+          draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)) })
         }
-        backend.draw(draws)
+        if (plan) {
+          const samples = gl.getParameter(gl.SAMPLES) as number
+          planPass ??= createPhysicalPlanPass(gl); planPass.begin(before.viewport[2], before.viewport[3], samples)
+          backend.draw(draws); planPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
+        } else backend.draw(draws)
       } catch (error) { failed = true; picking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
       finally { restoreSceneGlState(gl, before) }
     },
@@ -60,8 +69,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },
     setPalette: backend.setPalette,
     retainGeometryIdentities(identities: ReadonlySet<string>): void { const before = captureSceneGlState(gl); try { backend.retainGeometryIdentities(identities) } finally { restoreSceneGlState(gl, before) } },
-    metrics: () => ({ ...backend.metrics }),
-    dispose(): void { if (disposed) return; disposed = true; backend.dispose(); picking = [] },
+    metrics: () => { const owned = planPass?.metrics(), base = backend.metrics; return { ...base, programs: base.programs + (owned?.programs ?? 0), textures: base.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + (owned?.textureBytes ?? 0), plan: owned ?? null, liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (owned?.livePrograms ?? 0), liveTexturesAfterDisposal: base.liveTexturesAfterDisposal === null ? null : base.liveTexturesAfterDisposal + (owned?.liveTextures ?? 0) } },
+    dispose(): void { if (disposed) return; disposed = true; backend.dispose(); planPass?.dispose(); picking = [] },
   }
 }
 

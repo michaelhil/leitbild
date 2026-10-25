@@ -106,7 +106,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (!(pixelError > 0) || !Number.isFinite(pixelError)) throw new Error('Physical representation quality must specify a finite positive pixel error')
     for (const entry of [...entries.values()].sort((a, b) => Number(b.source.descriptor.id === focusedId) - Number(a.source.descriptor.id === focusedId))) {
       const d = entry.source.descriptor, bounds = worldBounds(d.anchor, d.bearing, d.bounds), points = boundsCorners(bounds).map(p => viewport.projectGeographic(new MercatorCoordinate(p[0], p[1]).toLngLat())), xs = points.map(p => p.x), ys = points.map(p => p.y)
-      const intersects = Math.max(...xs) >= 0 && Math.min(...xs) <= size.width && Math.max(...ys) >= 0 && Math.min(...ys) <= size.height
+      const intersects = size.width > 0 && size.height > 0 && viewport.intersectsBounds(bounds, mode)
       const physicalSpan = Math.max(...d.bounds.max.map((value, axis) => value - d.bounds.min[axis]!)), pixels = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), error = d.overviewGeometricErrorMetres ?? physicalSpan
       const inspectionPixels = intersects ? projectedInspectionFeature(d, viewport.projectGeographic) : 0
       const overviewErrorPixels = error * pixels / Math.max(physicalSpan, Number.EPSILON)
@@ -134,7 +134,9 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const padding = () => options.fitPadding?.() ?? viewport.surface.getPadding()
   const entryBounds = (entry: Entry, target: PhysicalSceneFocus = {}): PhysicalSceneBounds => {
     const visible = entry.scene && entry.meshes.length ? visiblePhysicalBounds({ scene: entry.scene, meshes: entry.meshes, view: entry.view, status: entry.status }, target) : null
-    return worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, visible ?? (target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId)?.bounds : null) ?? entry.source.descriptor.bounds)
+    const physical = visible ?? (target.occurrenceId ? entry.scene?.objects.find(object => object.id === target.occurrenceId)?.bounds : null) ?? (target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId)?.bounds : null) ?? entry.source.descriptor.bounds
+    const bounds = entry.view.mode === '2d' ? { min: [physical.min[0], physical.min[1], 0] as [number, number, number], max: [physical.max[0], physical.max[1], 0] as [number, number, number] } : physical
+    return worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, bounds)
   }
   const fitEntry = (entry: Entry, target: PhysicalSceneFocus, preservePose: boolean): void => {
     pendingFocus = null; viewport.fitWorld(entryBounds(entry, target), { padding: padding(), preservePose, mode, bearing: entry.source.descriptor.bearing + (!preservePose && mode === '3d' ? -25 : 0) })
@@ -171,7 +173,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
         if (JSON.stringify([old.mode, old.levelId, old.cutaway, old.levelId === 'all' && old.separation > 0]) !== JSON.stringify([normalized.mode, normalized.levelId, normalized.cutaway, normalized.levelId === 'all' && normalized.separation > 0])) { target.viewGeneration++; target.preparing = false; target.prepared = null; target.meshes = [] }
         else if (target.prepared) target.meshes = filteredMeshes(target, target.prepared)
       }
-      renderer?.invalidatePicks(); if (changedMode) viewport.setPose({ pitch: mode === '2d' ? 0 : 50 }); reconcile(); viewport.requestRender()
+      renderer?.invalidatePicks(); if (mode === '2d') { viewport.cancelCamera(); viewport.setNavigationTool('pan') }; if (changedMode) viewport.setPose({ pitch: mode === '2d' ? 0 : 50, ...(mode === '2d' ? { elevation: 0 } : {}) }); reconcile(); viewport.requestRender()
     },
     setStatus(sceneId: string, status: ReadonlyMap<string, PhysicalSubjectStyle>): void {
       const entry = entries.get(sceneId); if (!entry) return
@@ -182,7 +184,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     selectScope(sceneId: string, scopeId?: string): void { const entry = requireEntry(sceneId); if (scopeId && !entry.source.descriptor.scopes?.some(scope => scope.id === scopeId)) throw new Error(`Unknown physical scope: ${scopeId}`); focusedId = sceneId; forcedId = sceneId; if (entry.scopeId !== scopeId) entry.renderRevision++; entry.scopeId = scopeId; if (entry.prepared) entry.meshes = filteredMeshes(entry, entry.prepared); renderer?.invalidatePicks(); reconcile(); viewport.requestRender() },
     focus(sceneId: string, target: PhysicalSceneFocus = {}): void { this.selectScope(sceneId, target.scopeId); const entry = requireEntry(sceneId); fitEntry(entry, target, target.preservePose ?? true) },
     fit(sceneId: string): void { const entry = requireEntry(sceneId); fitEntry(entry, { scopeId: entry.scopeId }, true) },
-    fitAll(sceneIds?: ReadonlyArray<string>): void { const selected = sceneIds ? sceneIds.map(requireEntry) : [...entries.values()]; if (!selected.length) return; pendingFocus = null; focusedId = null; forcedId = null; for (const entry of entries.values()) { if (entry.scopeId !== undefined) entry.renderRevision++; entry.scopeId = undefined; if (entry.prepared) entry.meshes = filteredMeshes(entry, entry.prepared) }; viewport.fitWorld(combinedBounds(selected.map(entry => mode === '3d' ? entryBounds(entry) : worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, entry.source.descriptor.bounds))), { padding: padding(), preservePose: true, mode, bearing: 0 }); reconcile() },
+    fitAll(sceneIds?: ReadonlyArray<string>): void { const selected = sceneIds ? sceneIds.map(requireEntry) : [...entries.values()]; if (!selected.length) return; pendingFocus = null; focusedId = null; forcedId = null; for (const entry of entries.values()) { if (entry.scopeId !== undefined) entry.renderRevision++; entry.scopeId = undefined; if (entry.prepared) entry.meshes = filteredMeshes(entry, entry.prepared) }; viewport.fitWorld(combinedBounds(selected.map(entry => entryBounds(entry))), { padding: padding(), preservePose: true, mode, bearing: 0 }); reconcile() },
     home(sceneId: string, scopeId?: string): void { const entry = requireEntry(sceneId); this.selectScope(sceneId, scopeId); fitEntry(entry, { scopeId }, false) },
     reset(sceneId: string): void { const entry = requireEntry(sceneId); this.setView(sceneId, defaultPhysicalSceneView(entry.source.descriptor.levels)); this.home(sceneId) },
     cameraPose: viewport.cameraPose, zoomBy: (delta: number) => viewport.setPose({ zoom: viewport.cameraPose().zoom + delta }), tiltBy: (degrees: number) => viewport.setPose({ pitch: viewport.cameraPose().pitch + degrees }), turnBy: (degrees: number) => viewport.setPose({ bearing: viewport.cameraPose().bearing + degrees }), panBy: viewport.panBy, cancelCamera: () => { pendingFocus = null; viewport.cancelCamera() }, setNavigationTool: viewport.setNavigationTool,

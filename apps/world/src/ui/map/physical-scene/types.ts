@@ -53,7 +53,7 @@ export interface PhysicalSceneControllerOptions {
   /** Representation error in CSS pixels; display quality policy, never a scene-count cap. */
   readonly quality?: { readonly pixelError: number }
 }
-export interface PhysicalCameraPose { readonly center: readonly [number, number]; readonly pitch: number; readonly bearing: number; readonly zoom: number; readonly revision: number }
+export interface PhysicalCameraPose { readonly center: readonly [number, number]; readonly pitch: number; readonly bearing: number; readonly zoom: number; readonly revision: number; readonly elevation?: number }
 export interface PhysicalSceneSurface {
   readonly kind: 'map' | 'canvas'
   readonly element: HTMLElement

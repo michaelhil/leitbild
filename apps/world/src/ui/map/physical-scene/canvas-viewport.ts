@@ -1,4 +1,5 @@
 import { MercatorCoordinate } from 'maplibre-gl'
+import { intersectsPhysicalFrustum } from './visibility.ts'
 import { boundsCorners, inverse, multiply, transform, type Vector3 } from './math.ts'
 import { createPhysicalSceneRenderer } from './renderer.ts'
 import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer } from './viewport.ts'
@@ -56,6 +57,7 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
     const dimensions = size(), m = inverse(matrix()), a = transform(m, [x / dimensions.width * 2 - 1, 1 - y / dimensions.height * 2, -1]), b = transform(m, [x / dimensions.width * 2 - 1, 1 - y / dimensions.height * 2, 1]), dz = b[2] - a[2]
     if (Math.abs(dz) < Number.EPSILON) return null
     const t = (targetZ - a[2]) / dz
+    if (!(t >= 0) || !Number.isFinite(t)) return null
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, targetZ]
   }
   const pan = (x: number, y: number): void => {
@@ -92,17 +94,23 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
   let handle: PhysicalViewportRenderer | null = null
   const port: PhysicalViewport = {
     surface: { kind: 'canvas', element: canvas, getSize: size, getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: (event, listener) => subscribe(event === 'move' ? 'change' : event, listener) }, on: subscribe,
+    intersectsBounds(bounds, mode) { const value = mode === '2d' ? { min: [bounds.min[0], bounds.min[1], 0] as [number, number, number], max: [bounds.max[0], bounds.max[1], 0] as [number, number, number] } : bounds; return intersectsPhysicalFrustum(matrix(), value) },
     ready: () => !lost && !destroyed, projectGeographic(point) { const p = MercatorCoordinate.fromLngLat(point), projected = transform(matrix(), [p.x, p.y, 0]), dimensions = size(); return { x: (projected[0] + 1) * dimensions.width / 2, y: (1 - projected[1]) * dimensions.height / 2 } }, requestRender,
     installRenderer(getEntries, nextPalette, reportError) { entries = getEntries; palette = nextPalette; renderer = createPhysicalSceneRenderer(gl, entries, palette, size, reportError); const owned = renderer; handle = { ...owned, setPalette(value) { palette = value; owned.setPalette(value) }, dispose() { owned.dispose(); if (renderer === owned) renderer = null; requestRender() } }; return handle },
     registered: candidate => candidate === handle && renderer !== null, orderRenderer() {},
     removeRenderer(candidate) { candidate.dispose(); if (candidate === handle) handle = null },
-    cameraPose: () => ({ center, pitch, bearing, zoom, revision }),
-    setPose(patch) { if (patch.center) center = [patch.center[0], patch.center[1]]; if (patch.pitch !== undefined) pitch = Math.max(0, Math.min(85, patch.pitch)); if (patch.bearing !== undefined) bearing = patch.bearing; if (patch.zoom !== undefined) zoom = patch.zoom; changed() },
+    cameraPose: () => ({ center, pitch, bearing, zoom, revision, elevation: targetZ / MercatorCoordinate.fromLngLat(center).meterInMercatorCoordinateUnits() }),
+    setPose(patch) { if (patch.center) center = [patch.center[0], patch.center[1]]; if (patch.elevation !== undefined) targetZ = patch.elevation * MercatorCoordinate.fromLngLat(center).meterInMercatorCoordinateUnits(); if (patch.pitch !== undefined) pitch = Math.max(0, Math.min(85, patch.pitch)); if (patch.bearing !== undefined) bearing = patch.bearing; if (patch.zoom !== undefined) zoom = patch.zoom; changed() },
     fitWorld(bounds, options) {
       const midpoint = bounds.min.map((value, axis) => (value + bounds.max[axis]!) / 2), location = new MercatorCoordinate(midpoint[0]!, midpoint[1]!).toLngLat(); center = [location.lng, location.lat]; targetZ = midpoint[2]!
       if (!options.preservePose) { bearing = options.bearing; pitch = options.mode === '2d' ? 0 : 50 } else if (options.mode === '2d') pitch = 0
       const dimensions = size(), width = dimensions.width - options.padding.left - options.padding.right, height = dimensions.height - options.padding.top - options.padding.bottom, radius = Math.hypot(...bounds.max.map((value, axis) => (value - bounds.min[axis]!) / 2))
       if (!(width > 0) || !(height > 0) || !(radius > 0)) throw new Error('A physical focus requires nonempty bounds and visible viewport space')
+      if (options.mode === '2d') {
+        const angle = bearing * Math.PI / 180, points = boundsCorners(bounds).map(point => [Math.cos(angle) * (point[0] - midpoint[0]!) + Math.sin(angle) * (point[1] - midpoint[1]!), Math.sin(angle) * (point[0] - midpoint[0]!) - Math.cos(angle) * (point[1] - midpoint[1]!)])
+        const spanX = Math.max(...points.map(point => point[0]!)) - Math.min(...points.map(point => point[0]!)), spanY = Math.max(...points.map(point => point[1]!)) - Math.min(...points.map(point => point[1]!)), perPixel = Math.max(spanX / width, spanY / height)
+        targetZ = 0; zoom = Math.log2(1 / (512 * perPixel)); changed(); pan((options.padding.right - options.padding.left) / 2, (options.padding.bottom - options.padding.top) / 2); return
+      }
       const distance = radius / Math.sin(Math.atan(Math.tan(fov / 2) * Math.min(width, height) / dimensions.height)), worldHeight = 2 * distance * Math.tan(fov / 2)
       zoom = Math.log2(dimensions.height / (512 * worldHeight)); changed()
       pan((options.padding.right - options.padding.left) / 2, (options.padding.bottom - options.padding.top) / 2)

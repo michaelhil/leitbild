@@ -18,6 +18,8 @@ export interface PhysicalViewport {
   readonly surface: PhysicalSceneSurface
   readonly ready: () => boolean
   readonly on: (event: PhysicalViewportEvent, listener: () => void) => () => void
+  /** Conservative visibility includes camera-inside, height and horizon cases. */
+  readonly intersectsBounds: (bounds: PhysicalSceneBounds, mode: '2d' | '3d') => boolean
   readonly projectGeographic: (point: { lng: number; lat: number }) => { x: number; y: number }
   readonly requestRender: () => void
   readonly installRenderer: (entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void) => PhysicalViewportRenderer
@@ -25,7 +27,7 @@ export interface PhysicalViewport {
   readonly orderRenderer: () => void
   readonly removeRenderer: (renderer: PhysicalViewportRenderer) => void
   readonly cameraPose: () => PhysicalCameraPose
-  readonly setPose: (patch: Partial<Pick<PhysicalCameraPose, 'pitch' | 'bearing' | 'zoom' | 'center'>>) => void
+  readonly setPose: (patch: Partial<Pick<PhysicalCameraPose, 'pitch' | 'bearing' | 'zoom' | 'center' | 'elevation'>>) => void
   /** Bounds in normalized Mercator world coordinates, including elevation. */
   readonly fitWorld: (bounds: PhysicalSceneBounds, options: { padding: { top: number; right: number; bottom: number; left: number }; preservePose: boolean; mode: '2d' | '3d'; bearing: number }) => void
   readonly panBy: (x: number, y: number) => void

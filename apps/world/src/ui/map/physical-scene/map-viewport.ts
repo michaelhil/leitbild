@@ -1,4 +1,7 @@
 import { MercatorCoordinate, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
+import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
+import { physicalHeightFootprint, overlapsPhysicalFootprint } from './visibility.ts'
+import type { Vector3 } from './math.ts'
 import { createPhysicalSceneLayer } from './layer.ts'
 import { physicalSceneLayerId } from './order.ts'
 import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer } from './viewport.ts'
@@ -7,7 +10,13 @@ import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer 
 export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => string | undefined): PhysicalViewport => {
   const canvas = map.getCanvas(), cleanups = new Set<() => void>()
   let revision = 0, activePointer: { id: number; x: number; y: number; startX: number; startY: number; dragged: boolean } | null = null, cancelledPointer: number | null = null, tool: 'pan' | 'orbit' = 'pan'
-  const revisionChanged = (): void => { revision++ }; map.on('move', revisionChanged)
+  const revisionChanged = (): void => { revision++ }; map.on('move', revisionChanged); map.on('resize', revisionChanged)
+  let visibility: { revision: number; ground: PhysicalSceneBounds; eye?: Vector3 } | null = null
+  const footprint = () => {
+    if (visibility?.revision === revision) return visibility
+    const bounds = map.getBounds(), west = MercatorCoordinate.fromLngLat([bounds.getWest(), bounds.getNorth()]), east = MercatorCoordinate.fromLngLat([bounds.getEast(), bounds.getSouth()])
+    visibility = { revision, ground: { min: [west.x, west.y, 0], max: [east.x, east.y, 0] } }; return visibility
+  }
   const subscribe = (event: PhysicalViewportEvent, listener: () => void): (() => void) => {
     const names = event === 'change' ? ['move'] : event === 'style' ? ['style.load', 'styledata'] : [event]
     const dom = event === 'contextlost' || event === 'contextrestored'
@@ -75,12 +84,26 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
   let installed: ReturnType<typeof createPhysicalSceneLayer> | null = null
   const port: PhysicalViewport = {
     surface: { kind: 'map', element: canvas, getSize: () => { const r = canvas.getBoundingClientRect(); return { width: r.width, height: r.height } }, getPadding: () => { const p = map.getPadding(); return { top: p.top ?? 0, right: p.right ?? 0, bottom: p.bottom ?? 0, left: p.left ?? 0 } }, on: (event, listener) => subscribe(event === 'move' ? 'change' : event, listener) },
+    intersectsBounds(bounds, mode) {
+      const frame = footprint()
+      // A visible horizon has no finite ground footprint that proves exclusion.
+      if (map.getPitch() + map.getVerticalFieldOfView() / 2 >= 90) return true
+      if (mode === '2d') return overlapsPhysicalFootprint(bounds, frame.ground)
+      if (!frame.eye) {
+        const center = map.getCenter(), elevation = map.getCenterElevation(), target = MercatorCoordinate.fromLngLat(center, elevation)
+        // Calibrate distance with the installed public camera API, avoiding
+        // private transforms and assumptions about tile size, FOV or padding.
+        const reference = map.calculateCameraOptionsFromTo(center, elevation + 1, center, elevation), distance = target.meterInMercatorCoordinateUnits() * Math.pow(2, reference.zoom! - map.getZoom()), p = map.getPitch() * Math.PI / 180, b = map.getBearing() * Math.PI / 180
+        frame.eye = [target.x - distance * Math.sin(p) * Math.sin(b), target.y + distance * Math.sin(p) * Math.cos(b), target.z + distance * Math.cos(p)]
+      }
+      return overlapsPhysicalFootprint(bounds, physicalHeightFootprint(frame.ground, frame.eye, bounds.min[2], bounds.max[2]))
+    },
     on: subscribe, ready: () => Boolean(map.isStyleLoaded()), projectGeographic: point => map.project(point), requestRender: () => map.triggerRepaint(),
     installRenderer(entries, palette, reportError) { if (map.getLayer(physicalSceneLayerId)) map.removeLayer(physicalSceneLayerId); installed = createPhysicalSceneLayer(physicalSceneLayerId, entries, palette, reportError); const before = beforeId(); map.addLayer(installed.layer, before && map.getLayer(before) ? before : undefined); return installed },
     registered: renderer => renderer === installed && Boolean(map.getLayer(physicalSceneLayerId)),
     orderRenderer() { const before = beforeId(); if (before && map.getLayer(before) && map.getLayer(physicalSceneLayerId)) { const order = map.getLayersOrder(); if (order.indexOf(physicalSceneLayerId) > order.indexOf(before)) map.moveLayer(physicalSceneLayerId, before) } },
     removeRenderer(renderer) { const lost = installed?.context()?.isContextLost(); renderer.dispose(); if (renderer === installed) { if (!lost && map.getLayer(physicalSceneLayerId)) map.removeLayer(physicalSceneLayerId); installed = null } },
-    cameraPose() { const center = map.getCenter(); return { center: [center.lng, center.lat], pitch: map.getPitch(), bearing: map.getBearing(), zoom: map.getZoom(), revision } },
+    cameraPose() { const center = map.getCenter(); return { center: [center.lng, center.lat], pitch: map.getPitch(), bearing: map.getBearing(), zoom: map.getZoom(), revision, elevation: map.getCenterElevation() } },
     setPose(patch) { map.stop(); const { center, ...rest } = patch; map.jumpTo({ ...rest, ...(center ? { center: [center[0], center[1]] as [number, number] } : {}) }) },
     fitWorld(bounds, options) {
       const center = bounds.min.map((value, axis) => (value + bounds.max[axis]!) / 2), target = new MercatorCoordinate(center[0]!, center[1]!, center[2]!), geographic = target.toLngLat(), scale = MercatorCoordinate.fromLngLat(geographic).meterInMercatorCoordinateUnits()
@@ -100,7 +123,7 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     panBy: (x, y) => map.panBy([x, y], { duration: 0 }),
     setNavigationTool(value) { releasePointer(); tool = value; /* Native camera handlers retain their global contract; mousedown claims this gesture. */ },
     cancelCamera() { map.stop(); releasePointer() },
-    destroy() { for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
+    destroy() { for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
   }
   return port
 }

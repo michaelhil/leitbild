@@ -129,7 +129,8 @@ describe('Physical scene validation, projection and inspection fragments', () =>
     expect(upper.some(mesh => mesh.object.subjectIds.includes('turbine'))).toBe(true)
     expect(lower.some(mesh => mesh.object.kind === 'roof')).toBe(false)
     expect(lower.filter(mesh => mesh.object.kind === 'slab').every(mesh => mesh.object.levelId === 'lower')).toBe(true)
-    expect(lower.every(mesh => Math.abs(mesh.bounds.max[2] - mesh.bounds.min[2]) < 1e-8)).toBe(true)
+    expect(lower.every(mesh => Number.isFinite(mesh.planPriority))).toBe(true)
+    expect(lower.some(mesh => mesh.bounds.max[2] > mesh.bounds.min[2])).toBe(true)
     expect(lower.filter(mesh => mesh.object.kind === 'door').some(mesh => mesh.lines.length > 0)).toBe(true)
     expect(lower.length).not.toBe(upper.length)
     expect(JSON.stringify(real)).toBe(before)
@@ -142,9 +143,10 @@ const lifecycleMap = () => {
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ width: 1000, height: 700 }) })
   let scale = 2_000_000, adds = 0, styleReady = true, repaints = 0
   const map = {
-    getCanvas: () => canvas,
+    getCanvas: () => canvas, getPitch: () => 0, getVerticalFieldOfView: () => 45,
     on(event: string, listener: () => void) { const set = listeners.get(event) ?? new Set(); set.add(listener); listeners.set(event, set) },
     off(event: string, listener: () => void) { listeners.get(event)?.delete(listener) },
+    getBounds: () => ({ getWest: () => 11.47 - 500 / scale, getEast: () => 11.47 + 500 / scale, getSouth: () => 59.087 - 350 / scale, getNorth: () => 59.087 + 350 / scale }),
     project: (p: { lng: number; lat: number }) => ({ x: 500 + (p.lng - 11.47) * scale, y: 350 - (p.lat - 59.087) * scale }),
     getLayer: (id: string) => layers.get(id),
     addLayer(layer: { id: string }) { layers.set(layer.id, layer); adds++ },
