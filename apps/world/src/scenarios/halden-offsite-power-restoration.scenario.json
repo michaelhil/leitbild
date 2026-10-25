@@ -197,13 +197,17 @@
           "label": "Halden Unit 1 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261025-r1",
-            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+            "revision": "pwr-full-unit-20261025-r2",
+            "digest": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
           },
           "members": {
             "unit": "plant:halden-1"
           },
-          "bearing": 0
+          "bearing": 0,
+          "group": {
+            "id": "halden-pwr-site",
+            "label": "Halden PWR site"
+          }
         },
         {
           "type": "site-layout",
@@ -211,13 +215,17 @@
           "label": "Halden Unit 2 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261025-r1",
-            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+            "revision": "pwr-full-unit-20261025-r2",
+            "digest": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
           },
           "members": {
             "unit": "plant:halden-2"
           },
-          "bearing": 0
+          "bearing": 0,
+          "group": {
+            "id": "halden-pwr-site",
+            "label": "Halden PWR site"
+          }
         },
         {
           "type": "site-layout",
@@ -225,13 +233,17 @@
           "label": "Halden Unit 3 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261025-r1",
-            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+            "revision": "pwr-full-unit-20261025-r2",
+            "digest": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
           },
           "members": {
             "unit": "plant:halden-3"
           },
-          "bearing": 0
+          "bearing": 0,
+          "group": {
+            "id": "halden-pwr-site",
+            "label": "Halden PWR site"
+          }
         },
         {
           "type": "site-layout",
@@ -239,13 +251,17 @@
           "label": "Halden Unit 4 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261025-r1",
-            "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+            "revision": "pwr-full-unit-20261025-r2",
+            "digest": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
           },
           "members": {
             "unit": "plant:halden-4"
           },
-          "bearing": 0
+          "bearing": 0,
+          "group": {
+            "id": "halden-pwr-site",
+            "label": "Halden PWR site"
+          }
         },
         {
           "type": "site-layout",
@@ -253,8 +269,8 @@
           "label": "Halden shared campus and switchyard",
           "design": {
             "id": "pwr-campus",
-            "revision": "pwr-campus-20261025-r1",
-            "digest": "7525d6f9365ffc82eb440cb3dab3120600ea2e68ecdcc4b61b64899387ad129a"
+            "revision": "pwr-campus-20261025-r2",
+            "digest": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
           },
           "members": {
             "grid": "grid:halden-four-unit",
@@ -263,7 +279,11 @@
             "unit-3": "plant:halden-3",
             "unit-4": "plant:halden-4"
           },
-          "bearing": 0
+          "bearing": 0,
+          "group": {
+            "id": "halden-pwr-site",
+            "label": "Halden PWR site"
+          }
         }
       ]
     }

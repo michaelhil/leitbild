@@ -11,9 +11,10 @@ export const physicalLayoutDependencyFailure = (data: RetainedPhysicalLayoutData
     if (expected === undefined) continue
     const matches = layouts.filter(layout => layout.object.lifecycle === 'active' && layout.data.owner.objectId === member.objectId && layout.data.owner.packId === member.packId
       && layout.data.owner.modelRef === member.modelRef && layout.data.owner.modelDigest === member.modelDigest
-      && canonicalPhysicalJson(layout.data.design) === canonicalPhysicalJson(expected.design)
+      && ('design' in expected ? canonicalPhysicalJson(layout.data.design) === canonicalPhysicalJson(expected.design)
+        : 'physicalApplicability' in layout.data && layout.data.design.id === expected.physical.id && layout.data.physicalApplicability.digest === expected.physical.digest)
       && layout.data.placement.bearing === expected.bearing && canonicalPhysicalJson(layout.data.placement.anchor) === canonicalPhysicalJson(member.anchor))
-    if (matches.length !== 1) return `Physical layout dependency mismatch: ${member.role} requires exactly one matching Design, bearing and anchor`
+    if (matches.length !== 1) return `Physical layout dependency mismatch: ${member.role} requires exactly one matching physical configuration, bearing and anchor`
   }
   return null
 }

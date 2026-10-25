@@ -7,3 +7,7 @@ export const physicalCompilerRef = { id: 'physical-layout-native', digest: '89ea
 // of interpreting an old Design with a mutable current compiler.
 export const campusPhysicalCompilerFiles = [...physicalCompilerFiles, 'campus/compile-scene.ts', 'campus/families.ts', 'campus/solid.ts', 'campus/source.ts', 'campus/footprints.ts'] as const
 export const campusPhysicalCompilerRef = { id: 'physical-layout-native-campus', digest: '4d7ac76a20a7d0abf7da1503bc795d5f50fb326fa31b904745cd027b7312e854' } as const
+
+// Explicit recovered appearance/scope profile. Frozen native artifacts above stay exact.
+export const explorerPhysicalCompilerFiles = ['explorer/source.ts', 'explorer/circulation.ts', 'explorer/mesh.ts', 'explorer/turbine-families.ts', 'explorer/architecture.ts', 'explorer/families.ts', 'explorer/solid.ts', 'explorer/compile-scene.ts', 'math.ts', '../scope-manifest.ts', '../applicability.ts'] as const
+export const explorerPhysicalCompilerRef = { id: 'physical-layout-native-explorer', digest: '743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7' } as const

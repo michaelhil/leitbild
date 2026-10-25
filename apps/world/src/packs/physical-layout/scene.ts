@@ -1,9 +1,11 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from '../../core/packs/scene.ts'
-import { campusLayoutDataSchema, canonicalPhysicalJson, physicalDesignManifest, physicalLayoutDataSchema, physicalLayoutPackId, turbineIslandLayoutDataSchema, type RetainedPhysicalLayoutData } from './model.ts'
+import { campusLayoutDataSchema, explorerLayoutDataSchema, canonicalPhysicalJson, physicalDesignManifest, physicalLayoutDataSchema, physicalLayoutPackId, turbineIslandLayoutDataSchema, type RetainedPhysicalLayoutData } from './model.ts'
 import { physicalBuildingFootprints } from './native/campus/footprints.ts'
 import { physicalRequiredConnections } from './connections.ts'
 import { physicalLayoutDependencyFailure } from './dependencies.ts'
+import { explorerBuildingFootprints } from './explorer-footprints.ts'
+import { physicalApplicabilityContent, physicalSourceFacts, physicalShapeFacts } from './applicability.ts'
 
 const parsed = new WeakMap<OperationalObject, RetainedPhysicalLayoutData>()
 const footprints = new WeakMap<OperationalObject, ReturnType<typeof physicalBuildingFootprints>>()
@@ -30,7 +32,7 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
   const locationValid = attached(owner, data.placement.anchor) && invalidMember === undefined && dependencyFailure === null
   let overviewFootprints = footprints.get(object)
   if (overviewFootprints === undefined && 'requirements' in data) {
-    overviewFootprints = physicalBuildingFootprints(data.source)
+    overviewFootprints = 'physicalApplicability' in data ? explorerBuildingFootprints(data.source) : physicalBuildingFootprints(data.source)
     footprints.set(object, overviewFootprints)
   }
   return {
@@ -42,6 +44,7 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
     anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: data.bounds,
     levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
     subjectIds: data.coverage.representedSubjectIds, modelDigest: data.owner.modelDigest,
+    ...('presentation' in data ? { scopes: data.presentation.scopes, layers: data.presentation.layers, ...(data.group === undefined ? {} : { group: data.group }) } : {}),
     ...(relatedMembers.length === 0 ? {} : { relatedTargets: relatedMembers.map(member => ({ objectId: member.objectId, packId: member.packId, modelDigest: member.modelDigest })) }),
     ...('requirements' in data && data.requirements.connections.length > 0 ? { requiredConnections: physicalRequiredConnections(data) } : {}),
     ...(overviewFootprints === undefined ? {} : { overviewFootprints }),
@@ -57,6 +60,16 @@ export const loadPhysicalLayoutScene = async (object: OperationalObject): Promis
   if ('coverageDigest' in data && await hash(data.coverageEvidence) !== data.coverageDigest) throw new Error(`Physical layout ${object.id} retained coverage digest mismatch`)
   const manifestDigest = await hash(physicalDesignManifest(data))
   if (manifestDigest !== data.design.digest || data.design.id !== data.source.id) throw new Error(`Physical layout ${object.id} retained Design digest mismatch`)
+  if ('physicalApplicability' in data) {
+    if (await hash(physicalSourceFacts(data.source)) !== data.physicalApplicability.sourceDigest
+      || await hash(physicalApplicabilityContent({ ...data, modelRequirement: { modelRef: data.owner.modelRef, modelDigest: data.owner.modelDigest } })) !== data.physicalApplicability.digest
+      || await hash(data.presentation) !== data.presentationDigest) throw new Error(`Physical layout ${object.id} applicability or presentation mismatch`)
+    const { compilePhysicalScene } = await import('./native/explorer/compile-scene.ts')
+    const scene = compilePhysicalScene(object.id, explorerLayoutDataSchema.parse(data))
+    if (await hash(physicalShapeFacts(scene.objects)) !== data.physicalApplicability.geometryDigest) throw new Error(`Physical layout ${object.id} shape recipe differs from its physical applicability`)
+    if (canonicalPhysicalJson({ scopes: scene.scopes, layers: scene.layers }) !== canonicalPhysicalJson(data.presentation)) throw new Error(`Physical layout ${object.id} compiled scope manifest mismatch`)
+    return { ...scene, ...(data.group === undefined ? {} : { group: data.group }) }
+  }
   if (data.compiler.id === 'physical-layout-native') {
     const { compilePhysicalScene } = await import('./native/compile-scene.ts')
     return compilePhysicalScene(object.id, turbineIslandLayoutDataSchema.parse(data))

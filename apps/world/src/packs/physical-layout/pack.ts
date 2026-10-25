@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { objectIdSchema, packIdSchema, type OperationalObject } from '../../core/model/index.ts'
 import type { PackScenarioItemSpec, WorldPack } from '../../core/packs/protocol.ts'
 import { emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
-import { pwrFullUnitPhysicalDesignRef, resolvePhysicalDesign } from './design.ts'
-import { physicalDesignRefSchema, physicalLayoutDataSchema, physicalLayoutPackId } from './model.ts'
+import { pwrExplorerUnitPhysicalDesignRef, resolvePhysicalDesign } from './design.ts'
+import { physicalDesignRefSchema, physicalLayoutDataSchema, physicalLayoutPackId, physicalPlacementGroupSchema } from './model.ts'
 import { physicalLayoutPackView } from './ui-pack.ts'
 import { physicalCoverageIssues } from './coverage.ts'
 import { validatePhysicalConnections } from './connections.ts'
@@ -14,6 +14,7 @@ export const physicalLayoutScenarioItemSchema = z.object({
   label: z.string().min(1).max(300), design: physicalDesignRefSchema,
   members: z.record(z.string().min(1).max(200), objectIdSchema).refine(members => Object.keys(members).length <= 65, 'Design member roles must be bounded'),
   bearing: z.number().finite().min(-360).max(360),
+  group: physicalPlacementGroupSchema.optional(),
 }).strict()
 
 export const physicalLayoutPack: WorldPack = {
@@ -23,13 +24,19 @@ export const physicalLayoutPack: WorldPack = {
   authoring: { itemTypes: [{
     id: 'site-layout', label: 'Physical site layout',
     description: 'An exact retained physical Design Revision bound to its declared owner and related member roles. Existing Runs keep their admitted revision.',
-    idPrefix: 'layout', defaultItem: { design: pwrFullUnitPhysicalDesignRef, members: {}, bearing: 0 },
+    idPrefix: 'layout', defaultItem: { design: pwrExplorerUnitPhysicalDesignRef, members: {}, bearing: 0 },
     fields: [{ path: ['members', 'unit'], label: 'Owner unit', description: 'Required by a unit Design. Exact member roles are checked when the Scenario is admitted.', control: { kind: 'reference', itemTypes: ['plant'] } }, { path: ['bearing'], label: 'Local north bearing (degrees)', control: { kind: 'number', min: -360, max: 360 } }],
   }] },
   scenario: {
     validateInitialObjects: (objects, _config, _at, _sides, connections) => {
       const layouts = objects.filter(object => object.packId === physicalLayoutPackId).map(object => ({ object, data: physicalLayoutDataSchema.parse(object.packData) }))
+      const groups = new Map<string, string>()
       for (const { data } of layouts) {
+        if ('group' in data && data.group !== undefined) {
+          const label = groups.get(data.group.id)
+          if (label !== undefined && label !== data.group.label) throw new Error('Physical placement group labels must agree')
+          groups.set(data.group.id, data.group.label)
+        }
         validatePhysicalConnections(data, connections)
         const failure = physicalLayoutDependencyFailure(data, layouts)
         if (failure !== null) throw new Error(failure)
@@ -40,7 +47,8 @@ export const physicalLayoutPack: WorldPack = {
     expandItem: async (spec: PackScenarioItemSpec, context) => {
       const item = physicalLayoutScenarioItemSchema.parse(spec)
       const retained = await resolvePhysicalDesign(item.design)
-      const requirements = retained.profile === 'campus' ? retained.requirements : { ownerRole: 'unit', ownerPackId: 'process-plant', relatedMembers: [] }
+      const requirements = retained.profile !== 'turbine-island' ? retained.requirements : { ownerRole: 'unit', ownerPackId: 'process-plant', relatedMembers: [] }
+      if (item.group !== undefined && retained.profile !== 'explorer') throw new Error('A placement group requires an admitted explorer profile')
       const roles = [requirements.ownerRole, ...requirements.relatedMembers.map(member => member.role)]
       if (Object.keys(item.members).length !== roles.length || roles.some(role => item.members[role] === undefined)) throw new Error('Physical layout members must match the exact Design roles')
       const ownerId = item.members[requirements.ownerRole]!
@@ -71,7 +79,7 @@ export const physicalLayoutPack: WorldPack = {
       const subjectIds = new Set(targets.subjects.map(subject => subject.id))
       const representedSubjectIds = [...new Set(retained.bindings.map(binding => binding.elementId))].sort()
       for (const id of representedSubjectIds) if (!subjectIds.has(id)) throw new Error(`Physical-layout correspondence names an unknown owner subject: ${id}`)
-      if (retained.profile === 'campus') {
+      if (retained.profile !== 'turbine-island') {
         const issues = physicalCoverageIssues({ evidence: retained.coverageEvidence, physicalIds: retained.source.elements.map(element => element.id), ownerSubjectIds: targets.subjects.map(subject => subject.id), bindings: retained.bindings })
         if (issues.length) throw new Error(`Physical coverage admission failed: ${issues.join('; ')}`)
       }
@@ -81,7 +89,8 @@ export const physicalLayoutPack: WorldPack = {
         owner: { objectId: owner.id, packId: owner.packId, modelRef: targets.modelRef, modelDigest: targets.modelDigest },
         placement: { anchor: [point[0], point[1]], bearing: item.bearing }, bounds: retained.bounds,
         coverage: { representedSubjectIds, unplacedSubjectIds: targets.subjects.filter(subject => !representedSubjectIds.includes(subject.id)).map(subject => subject.id).sort(), totalSubjects: targets.subjects.length },
-        ...(retained.profile === 'campus' ? { coverageDigest: retained.coverageDigest, coverageEvidence: retained.coverageEvidence, requirements: retained.requirements, relatedMembers: resolvedMembers } : {}),
+        ...(retained.profile !== 'turbine-island' ? { coverageDigest: retained.coverageDigest, coverageEvidence: retained.coverageEvidence, requirements: retained.requirements, relatedMembers: resolvedMembers } : {}),
+        ...(retained.profile === 'explorer' ? { physicalApplicability: retained.physicalApplicability, presentation: retained.presentation, presentationDigest: retained.presentationDigest, ...(item.group === undefined ? {} : { group: item.group }) } : {}),
       })
       const object: OperationalObject = {
         id: item.id, label: item.label, kind: 'facility', packId: packIdSchema.parse(physicalLayoutPackId), lifecycle: 'active', revision: 0,

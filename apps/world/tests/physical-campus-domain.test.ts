@@ -30,7 +30,16 @@ import { physicalLayoutStatusSummary } from '../src/ui/physical-layout/status.ts
 import { subjectOf } from '../src/features/displays/alerts/rows.ts'
 
 const packs = [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack]
-const source = () => scenarioDefinitionSchema.parse(normalOperation)
+// These regressions deliberately retain the r1 compiler/source/profile. Current
+// bundled r2 admission and scopes have their own explorer suite.
+const source = () => {
+  const value = scenarioDefinitionSchema.parse(normalOperation)
+  for (const item of value.packs.find(pack => pack.id === 'physical-layout')!.items) {
+    item.design = item.id === 'layout:halden-campus' ? pwrCampusPhysicalDesignRef : pwrFullUnitPhysicalDesignRef
+    delete item.group
+  }
+  return value
+}
 const compile = (value: unknown) => compileScenarioDefinition(value, packs, { routing: createDirectRoutingAdapter() })
 const objectFor = (objects: ReadonlyArray<OperationalObject>, id: string): OperationalObject => objects.find(object => object.id === id) ?? (() => { throw new Error(`Missing test object ${id}`) })()
 const withRun = async (work: (registry: SimulationRunRegistry, run: SimulationRunRuntime) => Promise<void>) => {
@@ -49,7 +58,7 @@ const read = async (registry: SimulationRunRegistry, run: SimulationRunRuntime, 
 }
 
 describe('Full PWR and shared campus admission', () => {
-  test('the actual bundled Scenario carries four reusable full units and one geographically separate shared site', async () => {
+  test('the retained r1 Scenario carries four reusable full units and one geographically separate shared site', async () => {
     const compiled = await compile(source())
     expect(compiled.initialObjects.filter(object => object.packId === 'physical-layout')).toHaveLength(5)
     for (const unit of [1, 2, 3, 4]) {
