@@ -8,7 +8,8 @@
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
   import { createPhysicalCanvasController } from '../map/physical-scene/canvas-controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
-  import { explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
+  import { explorerEntryTarget, explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice, type PhysicalExplorerTarget } from './explorer-model.ts'
+  import { physicalExplorerFitPadding } from './explorer-viewport.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
@@ -24,12 +25,11 @@
   import { sparseLayoutBadges } from './badges.ts'
   import { physicalLayoutPalette } from './palette.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { map = null, host = 'map', active = true, initialFocusId = null, initialGroupId = null, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
+  let { map = null, host = 'map', active = true, initialTarget = { sceneId: null }, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
     map?: MapLibreMap | null
     host?: 'map' | 'browser'
     active?: boolean
-    initialFocusId?: string | null
-    initialGroupId?: string | null
+    initialTarget?: PhysicalExplorerTarget
     objects: ReadonlyArray<OperationalObject>
     bindings: ReadonlyArray<PhysicalLayoutBinding>
     hiddenCategoryIds: ReadonlyArray<string>
@@ -44,14 +44,14 @@
     onopen: (listing: EmbeddedViewListing) => void
     onerror: (message: string) => void
     onconnect?: (interaction: PhysicalLayoutMapInteraction | null) => void
-    onbrowser?: ((sceneId: string | null, groupId?: string) => void) | undefined
+    onbrowser?: ((target: PhysicalExplorerTarget) => void) | undefined
     onback?: (() => void) | undefined
   } = $props()
 
   let scenes = $state.raw<ReadonlyArray<PhysicalScenePresentation>>([])
-  let focusedId = $state<string | null>(untrack(() => initialFocusId))
-  let focusedScopeId = $state<string | null>(null)
-  let focusedGroupId = $state<string | null>(untrack(() => initialGroupId))
+  let focusedId = $state<string | null>(untrack(() => initialTarget.sceneId))
+  let focusedScopeId = $state<string | null>(untrack(() => initialTarget.scopeId ?? null))
+  let focusedGroupId = $state<string | null>(untrack(() => initialTarget.groupId ?? null))
   let navigation = $state<'pan' | 'orbit'>('pan')
   let canvas = $state<HTMLCanvasElement | null>(null)
   let controls = $state<{ dismiss: () => boolean } | null>(null)
@@ -107,9 +107,10 @@
   const fitPadding = () => {
     const padding = controller?.surface.getPadding() ?? { top: 0, bottom: 0, left: 0, right: 0 }
     const surface = controller?.surface.element.getBoundingClientRect(), tools = toolsElement?.getBoundingClientRect(), camera = cameraElement?.getBoundingClientRect()
-    const top = surface && controlsOpen && tools ? tools.bottom - surface.top + 12 : padding.top + 20
-    const bottom = surface && camera ? surface.bottom - camera.top + 12 : padding.bottom + 24
-    return { top: Math.max(padding.top, top), bottom: Math.max(padding.bottom, bottom), left: padding.left + 20, right: padding.right + 20 }
+    if (!surface) return padding
+    const covers = [tools, camera].filter((cover): cover is DOMRect => cover !== undefined).map(cover => ({ x: cover.left - surface.left, y: cover.top - surface.top, width: cover.width, height: cover.height }))
+    if (inspected !== null) covers.push({ ...cardPoint, width: Math.min(360, size.width - 16), height: inspectionHeight })
+    return physicalExplorerFitPadding(surface, { ...padding, top: Math.max(padding.top, clearTop > surface.top ? clearTop - surface.top + 8 : 0) }, covers)
   }
   const afterPanels = async (work: () => void): Promise<void> => {
     const generation = ++focusGeneration
@@ -130,10 +131,10 @@
     return result
   })
   const choices = $derived.by((): ReadonlyArray<ExplorerScopeChoice> => [
-    ...[...groups.values()].map(group => ({ key: `group:${group.id}`, sceneId: null, groupId: group.id, sceneIds: group.sceneIds, label: group.label, path: group.label, depth: 0, kind: 'site group' })),
+    ...[...groups.values()].map(group => ({ key: explorerGroupKey(group.id), sceneId: null, groupId: group.id, sceneIds: group.sceneIds, label: group.label, path: group.label, depth: 0, kind: 'site group' })),
     ...scenes.flatMap(scene => explorerScopeChoices(scene.descriptor, objects.find(object => object.id === scene.descriptor.id)?.label ?? scene.descriptor.targetObjectId)),
   ])
-  const scopeKey = $derived(focusedId === null ? focusedGroupId === null ? null : `group:${focusedGroupId}` : focusedScopeId === null ? focusedId : `${focusedId}/${focusedScopeId}`)
+  const scopeKey = $derived(focusedId === null ? focusedGroupId === null ? null : explorerGroupKey(focusedGroupId) : explorerLayoutKey(focusedId, focusedScopeId ?? undefined))
   const activeScope = $derived(focused?.descriptor.scopes?.find(scope => scope.id === focusedScopeId) ?? null)
   const scopeTitle = $derived(focusedId === null ? groups.get(focusedGroupId ?? '')?.label ?? 'All layouts' : activeScope?.label ?? focusedLabel)
   const scopePath = $derived(choices.find(choice => choice.key === scopeKey)?.path ?? 'All admitted layouts')
@@ -207,9 +208,11 @@
   $effect(() => {
     const current = controller
     if (host !== 'browser' || !current) return
+    const mode = scenes.find(scene => initializedBrowserSources.has(scene.descriptor.id))?.view.mode ?? initialTarget.view?.mode ?? '3d'
     for (const scene of scenes) if (!initializedBrowserSources.has(scene.descriptor.id)) {
       initializedBrowserSources.add(scene.descriptor.id)
-      untrack(() => current.setView(scene.descriptor.id, { ...scene.view, mode: '3d', levelId: 'all' }))
+      const view = scene.descriptor.id === initialTarget.sceneId && initialTarget.view !== undefined ? initialTarget.view : { ...scene.view, mode, levelId: mode === '3d' ? 'all' : scene.view.levelId }
+      untrack(() => current.setView(scene.descriptor.id, view))
     }
   })
   $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }) })
@@ -356,7 +359,7 @@
       : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
   const chooseScope = (key: string | null, chosenLevel?: string): void => {
     if (suspended) return
-    closeInspection(); hover = null; componentScope = null; focusLocations = null; floorChoice = null; scopeFloorChoice = null; pendingFocus = null; pendingCameraFocus = null
+    closeInspection(); hover = null; componentsOpen = false; componentScope = null; focusLocations = null; floorChoice = null; scopeFloorChoice = null; pendingFocus = null; pendingCameraFocus = null
     const choice = choices.find(candidate => candidate.key === key)
     if (choice?.sceneId) {
       const sceneId = choice.sceneId, scene = scenes.find(scene => scene.descriptor.id === sceneId)
@@ -382,8 +385,8 @@
     if (next.mode === '2d' && scene.view.levelId === 'all') next = { ...next, levelId: rememberedPlanFloor.get(scene.descriptor.id) ?? scopeLevels[0]?.id ?? scene.descriptor.levels[0]!.id }
     controller?.setView(scene.descriptor.id, next)
   }
-  const fit = (): void => { if (suspended) return; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
-  const home = (): void => { if (suspended) return; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.home(sceneId, scopeId ?? undefined) }) }
+  const fit = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
+  const home = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.home(sceneId, scopeId ?? undefined) }) }
   const focusOccurrence = (sceneId: string, occurrenceId: string, chosenLevel?: string): void => {
     if (suspended) return
     const scene = scenes.find(value => value.descriptor.id === sceneId), occurrence = controller?.scene(sceneId)?.objects.find(value => value.id === occurrenceId)
@@ -476,7 +479,7 @@
       size = next.surface.getSize(); screenRevision += 1
       if (host === 'browser' && !initialFit && scenes.length > 0) {
         initialFit = true
-        if (initialFocusId === null) next.fitAll(groups.get(initialGroupId ?? '')?.sceneIds); else next.focus(initialFocusId, { preservePose: false })
+        if (initialTarget.sceneId === null) next.fitAll(groups.get(initialTarget.groupId ?? '')?.sceneIds); else next.focus(initialTarget.sceneId, { scopeId: initialTarget.scopeId, preservePose: false })
       }
     }
     const pointAt = (event: PointerEvent | MouseEvent) => { const box = next.surface.element.getBoundingClientRect(); return { x: event.clientX - box.left, y: event.clientY - box.top } }
@@ -559,9 +562,9 @@
       {#if controlsOpen}
         <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focused.descriptor.layers ?? []} view={focused.view} status={statusText} {host} {suspended}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
-          onbrowser={onbrowser === undefined ? undefined : (sceneId, groupId) => { if (!suspended) onbrowser?.(sceneId, groupId) }} {onback} onclose={() => { controlsOpen = false; componentsOpen = false }} />
+          onbrowser={onbrowser === undefined ? undefined : target => { if (!suspended) onbrowser?.(target) }} {onback} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {:else}
-        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button>{#if host === 'map' && onbrowser}<button type="button" disabled={suspended} onclick={() => onbrowser?.(focusedId, focusedGroupId ?? undefined)}>Open layout browser</button>{:else if host === 'browser'}<button type="button" onclick={onback}>Back to map</button>{/if}</div>
+        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button>{#if host === 'map' && onbrowser}<button type="button" disabled={suspended} onclick={() => onbrowser?.(explorerEntryTarget(choices.find(choice => choice.key === scopeKey), focused.view))}>Open layout browser</button>{:else if host === 'browser'}<button type="button" onclick={onback}>Back to map</button>{/if}</div>
       {/if}
       {#if componentsOpen}
         <section class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
@@ -598,7 +601,7 @@
 <style>
   .layout-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; outline-offset: -3px; }
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
-  .layout-tools { position: absolute; z-index: 5; width: min(520px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; color: var(--text); }
+  .layout-tools { position: absolute; z-index: 5; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; color: var(--text); }
   .entry-actions { display: flex; gap: 6px; }.entry-actions button { flex: 1; }
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout-components { display: grid; gap: 6px; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }

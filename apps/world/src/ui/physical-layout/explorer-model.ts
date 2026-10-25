@@ -1,5 +1,6 @@
 import type { PhysicalSceneObject, PhysicalSceneScope } from '../../core/packs/scene.ts'
 import type { PhysicalSceneDescriptor, PhysicalSceneView } from '../map/physical-scene/types.ts'
+import { levelLabel } from './view.ts'
 
 export interface ExplorerScopeChoice {
   readonly key: string
@@ -7,11 +8,25 @@ export interface ExplorerScopeChoice {
   readonly groupId?: string
   readonly sceneIds?: ReadonlyArray<string>
   readonly scopeId?: string
+  readonly parentKey?: string
+  readonly levelContext?: string
   readonly label: string
   readonly path: string
   readonly depth: number
   readonly kind: string
 }
+
+/** Ephemeral UI navigation only; it never changes the physical source or Run. */
+export interface PhysicalExplorerTarget {
+  readonly sceneId: string | null
+  readonly groupId?: string
+  readonly scopeId?: string
+  readonly view?: PhysicalSceneView
+}
+
+// Namespace tuple keys avoid collisions between arbitrary source, scope and group IDs.
+export const explorerLayoutKey = (sceneId: string, scopeId?: string): string => JSON.stringify(scopeId === undefined ? ['layout', sceneId] : ['scope', sceneId, scopeId])
+export const explorerGroupKey = (groupId: string): string => JSON.stringify(['group', groupId])
 
 /** Authored hierarchy only: membership is never guessed from a label or mesh shape. */
 export const explorerScopeChoices = (descriptor: PhysicalSceneDescriptor, label: string): ReadonlyArray<ExplorerScopeChoice> => {
@@ -27,10 +42,68 @@ export const explorerScopeChoices = (descriptor: PhysicalSceneDescriptor, label:
     }
     return labels[0] === label ? labels : [label, ...labels]
   }
-  return [{ key: descriptor.id, sceneId: descriptor.id, label, path: label, depth: 0, kind: 'layout' }, ...scopes.map(scope => {
+  return [{ key: explorerLayoutKey(descriptor.id), sceneId: descriptor.id, label, path: label, depth: 0, kind: 'layout', ...(descriptor.group ? { parentKey: explorerGroupKey(descriptor.group.id), groupId: descriptor.group.id } : {}) }, ...scopes.map(scope => {
     const path = pathOf(scope)
-    return { key: `${descriptor.id}/${scope.id}`, sceneId: descriptor.id, scopeId: scope.id, label: scope.label, path: path.join(' / '), depth: path.length - 1, kind: scope.kind }
+    const levels = descriptor.levels.filter(level => scope.levelIds.includes(level.id))
+    return { key: explorerLayoutKey(descriptor.id, scope.id), sceneId: descriptor.id, scopeId: scope.id,
+      ...(descriptor.group ? { groupId: descriptor.group.id } : {}),
+      parentKey: scope.parentId === undefined ? explorerLayoutKey(descriptor.id) : explorerLayoutKey(descriptor.id, scope.parentId),
+      ...(scope.kind === 'space' && levels.length > 0 ? { levelContext: levels.map(levelLabel).join(' · ') } : {}),
+      label: scope.label, path: path.join(' / '), depth: path.length - 1, kind: scope.kind }
   })]
+}
+
+/** Keep area, section and information-layer context when changing viewport hosts. */
+export const explorerEntryTarget = (choice: ExplorerScopeChoice | undefined, view: PhysicalSceneView): PhysicalExplorerTarget => ({
+  sceneId: choice?.sceneId ?? null,
+  ...(choice?.groupId === undefined ? {} : { groupId: choice.groupId }),
+  ...(choice?.scopeId === undefined ? {} : { scopeId: choice.scopeId }),
+  ...(choice?.sceneId ? { view: { ...view } } : {}),
+})
+
+export interface ExplorerScopeBranch {
+  readonly choice: ExplorerScopeChoice
+  readonly hasChildren: boolean
+  readonly expanded: boolean
+  readonly children: ReadonlyArray<ExplorerScopeBranch>
+}
+
+/** Only expanded descendants enter the DOM. Search reveals matches with their authored ancestry. */
+export const explorerScopeBranches = (choices: ReadonlyArray<ExplorerScopeChoice>, expanded: ReadonlySet<string>, query = ''): ReadonlyArray<ExplorerScopeBranch> => {
+  const byKey = new Map(choices.map(choice => [choice.key, choice]))
+  const children = new Map<string | undefined, ExplorerScopeChoice[]>()
+  for (const choice of choices) {
+    const ancestors = new Set([choice.key]); let parent = choice.parentKey
+    while (parent !== undefined) {
+      if (ancestors.has(parent)) throw new Error(`Physical area hierarchy contains a cycle at ${choice.label}`)
+      ancestors.add(parent); parent = byKey.get(parent)?.parentKey
+    }
+    if (choice.parentKey !== undefined && !byKey.has(choice.parentKey)) throw new Error(`Physical area parent is unavailable: ${choice.parentKey}`)
+    const siblings = children.get(choice.parentKey)
+    if (siblings) siblings.push(choice); else children.set(choice.parentKey, [choice])
+  }
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+  const retained = new Set<string>()
+  if (words.length > 0) for (const choice of choices) {
+    const text = `${choice.label} ${choice.path} ${choice.levelContext ?? ''} ${choice.kind}`.toLocaleLowerCase()
+    if (!words.every(word => text.includes(word))) continue
+    let current: ExplorerScopeChoice | undefined = choice
+    while (current) { retained.add(current.key); current = current.parentKey === undefined ? undefined : byKey.get(current.parentKey) }
+  }
+  const branch = (choice: ExplorerScopeChoice): ExplorerScopeBranch => {
+    const descendants = children.get(choice.key) ?? []
+    const open = words.length > 0 || expanded.has(choice.key)
+    return { choice, hasChildren: descendants.length > 0, expanded: open,
+      children: open ? descendants.filter(child => words.length === 0 || retained.has(child.key)).map(branch) : [] }
+  }
+  return (children.get(undefined) ?? []).filter(choice => words.length === 0 || retained.has(choice.key)).map(branch)
+}
+
+export const explorerScopeAncestors = (choices: ReadonlyArray<ExplorerScopeChoice>, key: string): ReadonlyArray<string> => {
+  const byKey = new Map(choices.map(choice => [choice.key, choice])), ancestors: string[] = [], seen = new Set<string>()
+  let current: string | undefined = key
+  while (current !== undefined && !seen.has(current)) { seen.add(current); ancestors.push(current); current = byKey.get(current)?.parentKey }
+  return ancestors
 }
 
 export const physicalOccurrenceInScope = (object: Pick<PhysicalSceneObject, 'scopeIds'>, scopeId: string | null, scopes: ReadonlyArray<PhysicalSceneScope>): boolean => {

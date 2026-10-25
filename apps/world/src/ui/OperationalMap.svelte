@@ -3,6 +3,7 @@
   import { untrack } from 'svelte'
   import type { EmbeddedViewListing } from '@leitbild/contracts'
   import type { PhysicalLayoutBinding, PhysicalLayoutMapInteraction } from './physical-layout/sources.ts'
+  import type { PhysicalExplorerTarget } from './physical-layout/explorer-model.ts'
   import type {
     GeoJsonPoint,
     GeoJsonPolygon,
@@ -108,7 +109,7 @@
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
-    readonly onOpenLayoutBrowser?: (sceneId: string | null, groupId?: string) => void
+    readonly onOpenLayoutBrowser?: (target: PhysicalExplorerTarget) => void
     readonly physicalLayoutActive?: boolean
     readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>

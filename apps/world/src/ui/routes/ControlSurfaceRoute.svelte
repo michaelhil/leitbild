@@ -25,6 +25,7 @@
   import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
   import type { PhysicalLayoutBinding } from '../physical-layout/sources.ts'
+  import type { PhysicalExplorerTarget } from '../physical-layout/explorer-model.ts'
   import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
     fetchScenario,
@@ -272,11 +273,11 @@
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
-  let layoutBrowser = $state<{ readonly initialFocusId: string | null; readonly initialGroupId: string | null } | null>(null)
+  let layoutBrowser = $state<PhysicalExplorerTarget | null>(null)
   let layoutBrowserOrigin: HTMLElement | null = null
-  const openLayoutBrowser = (initialFocusId: string | null, groupId?: string): void => {
+  const openLayoutBrowser = (target: PhysicalExplorerTarget): void => {
     layoutBrowserOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    layoutBrowser = { initialFocusId, initialGroupId: groupId ?? null }
+    layoutBrowser = target
   }
   const closeLayoutBrowser = async (): Promise<void> => {
     layoutBrowser = null
@@ -2220,7 +2221,7 @@
     <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="status">Opening layout browser…</p></section>
   {:then { default: LayoutBrowser }}
   <LayoutBrowser objects={objects} bindings={activePhysicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds} presentationFor={mapPresentationFor}
-    runId={simulationRunId} {perspectiveEpoch} {theme} clearTop={alarmStripBottom} initialFocusId={layoutBrowser.initialFocusId} initialGroupId={layoutBrowser.initialGroupId}
+    runId={simulationRunId} {perspectiveEpoch} {theme} clearTop={alarmStripBottom} initialTarget={layoutBrowser}
     suspended={placementMode !== null || mapAssignment !== null || targetPickingWanted(mapClickContext)} onconnect={() => {}}
     onoverview={selectObject} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={closeLayoutBrowser} />
   {:catch error}
