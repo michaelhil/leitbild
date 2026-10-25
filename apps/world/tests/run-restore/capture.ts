@@ -4,11 +4,21 @@
 import { mkdir, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { FIXTURE_ROOT } from './fixture-runs.ts'
+import { workspaceIdSchema } from '@leitbild/contracts'
+import { createLocalScenarioLibrary, scenarioRevisionIdSchema } from '../../src/core/scenarios/library.ts'
+import { simulationRunManifestSchema } from '../../src/core/simulation-runs/manifest.ts'
+import { worldWorkspacePaths } from '../../src/core/workspaces/paths.ts'
 
 const [dataDir, workspaceId, runId, name, scenarioId, commit, how] = Bun.argv.slice(2)
 if (!dataDir || !workspaceId || !runId || !name || !scenarioId || !commit || !how) throw new Error('Usage: capture.ts <world data dir> <workspaceId> <runId> <name> <scenarioId> <commit> "<how>"')
 const source = join(dataDir, 'workspaces', workspaceId, 'world', 'simulation-runs', runId)
 const target = join(FIXTURE_ROOT, name)
+const manifest = simulationRunManifestSchema.parse(await Bun.file(join(source, 'manifest.json')).json())
+if (manifest.id !== runId || manifest.workspaceId !== workspaceId || manifest.scenario.id !== scenarioId) throw new Error('Capture arguments do not match the retained Run manifest')
+const id = workspaceIdSchema.parse(workspaceId)
+const library = createLocalScenarioLibrary({ workspaceId: id, rootDir: worldWorkspacePaths(dataDir, id).scenarios })
+const revision = await library.getRevision(scenarioRevisionIdSchema.parse(manifest.scenario.revisionId))
+if (revision?.definitionId !== scenarioId || revision.digest !== manifest.scenario.digest) throw new Error('Capture requires the exact Scenario Definition Revision retained by the Run')
 let bytes = 0
 for (const entry of await readdir(source, { recursive: true, withFileTypes: true })) {
   if (!entry.isFile() || entry.name.startsWith('history.sqlite')) continue
@@ -18,5 +28,6 @@ for (const entry of await readdir(source, { recursive: true, withFileTypes: true
   await Bun.write(join(target, 'run', `${relative}.gz`), zipped)
   bytes += zipped.byteLength
 }
+await Bun.write(join(target, 'scenario-definition.json'), `${JSON.stringify(revision.document, null, 2)}\n`)
 await Bun.write(join(target, 'meta.json'), JSON.stringify({ workspaceId, runId, scenarioId, capturedAt: new Date().toISOString(), commit, how }, null, 2) + '\n')
 console.log(`Captured ${runId} as ${name}: ${bytes} bytes gzipped`)

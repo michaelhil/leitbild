@@ -3,11 +3,17 @@
  * meta.json names its commit), restored by today's code. A fixture is a Run directory as World
  * persisted it, every file gzipped, without its Historian database (Historian
  * v1 is frozen; restore is about the Run's own state). meta.json names the
- * Workspace and Run the files belong to.
+ * Workspace and Run the files belong to. scenario-definition.json retains
+ * the exact historical Definition dependency; it is not today's builtin.
  */
 import { mkdir, mkdtemp, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { workspaceIdSchema } from '@leitbild/contracts'
+import { createLocalScenarioLibrary, scenarioRevisionIdSchema } from '../../src/core/scenarios/library.ts'
+import { scenarioDefinitionSchema } from '../../src/core/scenarios/definition.ts'
+import { simulationRunManifestSchema } from '../../src/core/simulation-runs/manifest.ts'
+import { worldWorkspacePaths } from '../../src/core/workspaces/paths.ts'
 
 export interface FixtureRunMeta {
   readonly workspaceId: string
@@ -34,5 +40,15 @@ export const unpackFixtureRun = async (name: string): Promise<{ readonly dataDir
     await mkdir(join(runDir, relative, '..'), { recursive: true })
     await Bun.write(join(runDir, relative), Bun.gunzipSync(new Uint8Array(await Bun.file(join(entry.parentPath, entry.name)).arrayBuffer())))
   }
+  // The Run manifest pins a Definition Revision stored outside its directory.
+  // Materialize that exact fixture dependency through the real library, then
+  // let today's registry seed advance the catalog while retaining this file.
+  const workspaceId = workspaceIdSchema.parse(meta.workspaceId)
+  const manifest = simulationRunManifestSchema.parse(await Bun.file(join(runDir, 'manifest.json')).json())
+  const definition = scenarioDefinitionSchema.parse(await Bun.file(join(FIXTURE_ROOT, name, 'scenario-definition.json')).json())
+  const library = createLocalScenarioLibrary({ workspaceId, rootDir: worldWorkspacePaths(dataDir, workspaceId).scenarios })
+  await library.seed([definition])
+  const revision = await library.getRevision(scenarioRevisionIdSchema.parse(manifest.scenario.revisionId))
+  if (revision?.definitionId !== manifest.scenario.id || revision.digest !== manifest.scenario.digest) throw new Error(`Restore fixture ${name} does not retain its exact historical Scenario Definition dependency`)
   return { dataDir, runDir, meta }
 }

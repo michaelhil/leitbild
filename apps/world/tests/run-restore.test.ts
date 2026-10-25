@@ -14,6 +14,10 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { processPlantRuntimeStateSchema } from '../src/packs/process-plant/sim/runtime-state.ts'
 import { unpackFixtureRun } from './run-restore/fixture-runs.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
+import { workspaceIdSchema } from '@leitbild/contracts'
+import { createLocalScenarioLibrary, scenarioRevisionIdSchema } from '../src/core/scenarios/library.ts'
+import { simulationRunManifestSchema } from '../src/core/simulation-runs/manifest.ts'
+import { worldWorkspacePaths } from '../src/core/workspaces/paths.ts'
 
 guardPlantTests()
 
@@ -60,6 +64,25 @@ const query = async (run: Awaited<ReturnType<typeof restore>>['run'], capability
 }
 
 describe('T03: saved Runs restore', () => {
+  test('today\'s bundled seed advances the head while retaining the exact historical Scenario dependency', async () => {
+    const { dataDir, runDir, meta } = await unpackFixtureRun('halden-loop')
+    try {
+      const workspaceId = workspaceIdSchema.parse(meta.workspaceId)
+      const library = createLocalScenarioLibrary({ workspaceId, rootDir: worldWorkspacePaths(dataDir, workspaceId).scenarios })
+      const manifest = simulationRunManifestSchema.parse(await Bun.file(join(runDir, 'manifest.json')).json())
+      const requiredId = scenarioRevisionIdSchema.parse(manifest.scenario.revisionId)
+      const historical = await library.getRevision(requiredId)
+      expect(historical?.digest).toBe(manifest.scenario.digest)
+      expect((await library.currentRevision(meta.scenarioId))?.id).toBe(requiredId)
+      await library.seed(builtinScenarioDefinitions)
+      const current = await library.currentRevision(meta.scenarioId)
+      expect(current?.id).not.toBe(requiredId)
+      expect(current?.document.packs.some(pack => pack.id === 'physical-layout')).toBe(true)
+      expect(await library.getRevision(requiredId)).toEqual(historical)
+      expect(historical?.document.packs.some(pack => pack.id === 'physical-layout')).toBe(false)
+    } finally { await rm(dataDir, { recursive: true, force: true }) }
+  })
+
   test('the four-unit Halden loss of offsite power restores its objects, clock, journal and plant state v1', async () => {
     const { run, runDir, saved } = await restore('halden-loop')
     const snapshot = run.snapshot()
