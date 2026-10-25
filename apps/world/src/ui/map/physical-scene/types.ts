@@ -1,11 +1,14 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
-import type { PackPhysicalScene, PackPhysicalSceneDescriptor, PhysicalSceneLevel } from '../../../core/packs/scene.ts'
+import type { PackPhysicalScene, PackPhysicalSceneDescriptor, PhysicalSceneBounds, PhysicalSceneLevel } from '../../../core/packs/scene.ts'
 
 export type Color = readonly [number, number, number]
 export interface PhysicalScenePalette {
   readonly materials: Readonly<Record<string, Color>>
   readonly defaultMaterial: Color
   readonly line: Color
+  readonly lineOpacity?: number
+  readonly contextLineOpacity?: number
+  readonly lineWidth?: number
 }
 export interface PhysicalSceneView {
   readonly mode: '2d' | '3d'
@@ -43,4 +46,15 @@ export interface PhysicalSceneControllerOptions {
   /** Full measured map padding including controls/rails; otherwise the map's current padding plus a small margin. */
   readonly fitPadding?: () => { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
 }
+export interface PhysicalCameraPose { readonly center: readonly [number, number]; readonly pitch: number; readonly bearing: number; readonly zoom: number; readonly revision: number }
+export interface PhysicalSceneSurface {
+  readonly kind: 'map' | 'canvas'
+  readonly element: HTMLElement
+  readonly getSize: () => { readonly width: number; readonly height: number }
+  readonly getPadding: () => { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
+  readonly on: (event: 'move' | 'render' | 'resize' | 'movestart', listener: () => void) => () => void
+}
+export interface PhysicalSceneFocus { readonly scopeId?: string; readonly occurrenceId?: string; readonly levelId?: string; readonly preservePose?: boolean }
+export interface PhysicalProjectedPoint { readonly x: number; readonly y: number; readonly depth: number; readonly visible: boolean }
+export interface PhysicalCanvasControllerOptions extends Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'> { readonly canvas: HTMLCanvasElement }
 export const defaultPhysicalSceneView = (levels: ReadonlyArray<PhysicalSceneLevel>): PhysicalSceneView => ({ mode: '2d', levelId: levels[0]?.id ?? 'all', cutaway: true, separation: 0, detail: 'auto', live: true })
