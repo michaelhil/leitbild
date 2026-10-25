@@ -35,6 +35,10 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
   }
   return {
     id: object.id, revision: data.design.digest, targetObjectId: data.owner.objectId,
+    geometryKey: `${physicalLayoutPackId}/${data.design.digest}`,
+    // The whole admitted diagonal safely bounds omitted overview detail. A
+    // representation-specific tighter bound can be admitted with that asset.
+    overviewGeometricErrorMetres: Math.hypot(...data.bounds.max.map((value, axis) => value - data.bounds.min[axis]!)),
     anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: data.bounds,
     levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
     subjectIds: data.coverage.representedSubjectIds, modelDigest: data.owner.modelDigest,

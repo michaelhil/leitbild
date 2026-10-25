@@ -134,6 +134,10 @@ export type PhysicalOverviewFootprint = z.infer<typeof physicalOverviewFootprint
 
 /** Cheap placement/LOD/owner metadata; obtaining it never compiles triangle geometry. */
 export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'objects'> {
+  /** Exact Pack-qualified reusable render identity, separate from placement/owner. */
+  readonly geometryKey?: string
+  /** Conservative physical error of the overview representation, in metres. */
+  readonly overviewGeometricErrorMetres?: number
   readonly locationValid: boolean
   readonly reason?: string
   readonly subjectIds: ReadonlyArray<string>
