@@ -23,11 +23,13 @@ const harness = () => {
     installRenderer(entries) { getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
     cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose() {}, fitWorld(_bounds, options) { fits.push(options) }, panBy() {}, setNavigationTool() {}, cancelCamera() {}, destroy() {},
   }
+  let waitForPreparation: Promise<void> | null = null
+  const hold = () => { let release!: () => void; waitForPreparation = new Promise<void>(resolve => { release = resolve }); return () => { waitForPreparation = null; release() } }
   const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>()
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { throw error },
-    prepare: async (value, view, key, identity) => { const prior = cache.get(key); if (prior) return prior; prepares++; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
+    prepare: async (value, view, key, identity) => { const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, fits, hold, entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -75,4 +77,12 @@ test('Home requests the same authored-relative oblique 3D view in either real ho
   h.controller.home('a'); expect(h.fits.at(-1)).toMatchObject({ bearing: 15, preservePose: false, mode: '3d' })
   h.controller.fit('a'); expect(h.fits.at(-1)?.preservePose).toBe(true)
   h.controller.setView('a', defaultPhysicalSceneView(value.levels)); h.controller.home('a'); expect(h.fits.at(-1)).toMatchObject({ bearing: 40, preservePose: false, mode: '2d' }); h.controller.destroy()
+})
+
+test('cancelled or suspended hosts cannot apply a late deferred camera fit', async () => {
+  for (const suspend of [false, true]) {
+    const h = harness(), release = h.hold(), value = scene('a'); h.controller.setSources([h.source(value)]); h.controller.focus('a', { scopeId: 'a' }); const before = h.fits.length
+    if (suspend) h.controller.setActive(false); else h.controller.cancelCamera()
+    release(); await settled(); expect(h.fits).toHaveLength(before); if (suspend) expect(h.controller.presentations()[0]!.status).toBe('hidden'); h.controller.destroy()
+  }
 })
