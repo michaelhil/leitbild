@@ -51,6 +51,8 @@ export const physicalSceneObjectSchema = z.object({
   /** Intentional 3D illustration features; section contours are derived separately. */
   featureLines: z.array(physicalFeatureStrokeSchema).optional(),
   edgePolicy: z.enum(['authored', 'crease', 'none']).optional(),
+  /** Named representation layer, separate from operational status or source disposition. */
+  layerId: identifierSchema.optional(),
   /** Authored plan strokes such as door swings; consecutive xyz pairs are independent segments. */
   planLines: z.array(z.object({ positions: coordinatesSchema, material: identifierSchema.optional() }).strict()).max(1000).optional(),
 }).strict().superRefine((object, context) => {
@@ -76,6 +78,7 @@ export const packPhysicalSceneSchema = z.object({
   bounds: physicalSceneBoundsSchema,
   levels: z.array(physicalSceneLevelSchema).min(1).max(128),
   scopes: z.array(physicalSceneScopeSchema).optional(),
+  layers: z.array(z.object({ id: identifierSchema, label: z.string().min(1).max(200), defaultVisible: z.boolean() }).strict()).optional(),
   /** Authored placement grouping; a reusable geometry template has no site owner. */
   group: z.object({ id: identifierSchema, label: z.string().min(1).max(300) }).strict().optional(),
   objects: z.array(physicalSceneObjectSchema).max(20_000),
@@ -83,6 +86,8 @@ export const packPhysicalSceneSchema = z.object({
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
   const levelIds = new Set(scene.levels.map(level => level.id))
   const scopes = new Map((scene.scopes ?? []).map(scope => [scope.id, scope]))
+  const layers = new Set((scene.layers ?? []).map(layer => layer.id))
+  if (layers.size !== (scene.layers?.length ?? 0)) issue('Physical representation layer IDs must be unique')
   if (scopes.size !== (scene.scopes?.length ?? 0)) issue('Scope IDs must be unique')
   for (const scope of scopes.values()) {
     if (new Set(scope.levelIds).size !== scope.levelIds.length || scope.levelIds.some(id => !levelIds.has(id))) issue(`Invalid scope levels: ${scope.id}`)
@@ -103,6 +108,7 @@ export const packPhysicalSceneSchema = z.object({
     if (object.levelId !== 'site' && !levelIds.has(object.levelId)) issue(`Unknown level: ${object.levelId}`)
     coordinateCount += object.positions.length
     if (object.scopeIds && (new Set(object.scopeIds).size !== object.scopeIds.length || object.scopeIds.some(id => !scopes.has(id)))) issue(`Unknown or duplicate occurrence scope: ${object.id}`)
+    if (object.layerId !== undefined && !layers.has(object.layerId)) issue(`Unknown physical representation layer: ${object.id}`)
     if (object.levelIds && (new Set(object.levelIds).size !== object.levelIds.length || object.levelIds.some(id => id !== 'site' && !levelIds.has(id)))) issue(`Invalid occurrence levels: ${object.id}`)
     for (const line of object.featureLines ?? []) coordinateCount += line.positions.length
     for (let index = 0; index < object.positions.length; index++) {

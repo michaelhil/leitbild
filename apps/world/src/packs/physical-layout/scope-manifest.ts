@@ -9,7 +9,7 @@ interface ScopeElement {
   readonly pose: { readonly position: V3; readonly yaw: number }
   readonly dimensions?: Dimensions | undefined
   readonly typeId?: string | undefined
-  readonly override?: Partial<Dimensions> | undefined
+  readonly override?: { readonly length?: number | undefined; readonly width?: number | undefined; readonly height?: number | undefined } | undefined
   readonly buildingId?: string | undefined
   readonly spaceIds?: readonly string[] | undefined
   readonly assemblyId?: string | undefined
