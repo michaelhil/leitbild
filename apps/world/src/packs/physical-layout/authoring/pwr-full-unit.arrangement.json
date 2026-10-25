@@ -807,7 +807,7 @@
           "length": 58,
           "yaw": 0,
           "height": 7,
-          "doorAt": 27,
+          "doorAt": 12,
           "doorWidth": 2.4
         },
         {
@@ -821,7 +821,7 @@
           "length": 58,
           "yaw": 0,
           "height": 7,
-          "doorAt": 27,
+          "doorAt": 12,
           "doorWidth": 2.4
         },
         {
@@ -863,7 +863,7 @@
           "length": 58,
           "yaw": 0,
           "height": 7,
-          "doorAt": 27,
+          "doorAt": 12,
           "doorWidth": 2.4
         },
         {
@@ -877,7 +877,7 @@
           "length": 58,
           "yaw": 0,
           "height": 7,
-          "doorAt": 27,
+          "doorAt": 12,
           "doorWidth": 2.4
         },
         {
@@ -919,7 +919,7 @@
           "length": 58,
           "yaw": 0,
           "height": 7,
-          "doorAt": 27,
+          "doorAt": 12,
           "doorWidth": 2.4
         },
         {
@@ -933,7 +933,7 @@
           "length": 58,
           "yaw": 0,
           "height": 7,
-          "doorAt": 27,
+          "doorAt": 12,
           "doorWidth": 2.4
         },
         {
@@ -1004,7 +1004,8 @@
           }
         }
       ],
-      "partitions": []
+      "partitions": [],
+      "enclosure": "authored"
     },
     {
       "id": "building/steam-gallery",
@@ -1062,7 +1063,10 @@
           }
         }
       ],
-      "partitions": []
+      "partitions": [],
+      "entranceOffsets": {
+        "west": 5.235791556375065
+      }
     },
     {
       "id": "building/diesel-a",
@@ -1463,7 +1467,7 @@
       "levelId": "lower",
       "position": [
         -72,
-        9,
+        12,
         0
       ],
       "dimensions": {
@@ -2434,7 +2438,7 @@
     {
       "id": "equipment/offsiteBreakerA",
       "label": "Offsite supply breaker A",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         16,
@@ -2459,7 +2463,7 @@
     {
       "id": "equipment/unitBusBreakerA",
       "label": "Unit bus supply breaker A",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         16,
@@ -2484,7 +2488,7 @@
     {
       "id": "equipment/dieselBreakerA",
       "label": "Diesel incoming breaker A",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         22,
@@ -2609,7 +2613,7 @@
     {
       "id": "equipment/reactorTripBreakerA",
       "label": "Reactor trip breaker cabinet A",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "operating",
       "position": [
         20,
@@ -2859,7 +2863,7 @@
     {
       "id": "equipment/offsiteBreakerB",
       "label": "Offsite supply breaker B",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         45,
@@ -2884,7 +2888,7 @@
     {
       "id": "equipment/unitBusBreakerB",
       "label": "Unit bus supply breaker B",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         45,
@@ -2909,7 +2913,7 @@
     {
       "id": "equipment/dieselBreakerB",
       "label": "Diesel incoming breaker B",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         51,
@@ -3034,7 +3038,7 @@
     {
       "id": "equipment/reactorTripBreakerB",
       "label": "Reactor trip breaker cabinet B",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "operating",
       "position": [
         49,
@@ -3524,7 +3528,7 @@
     {
       "id": "equipment/pressurizerBackupHeaterBreakerA",
       "label": "Pressurizer backup-heater breaker",
-      "family": "breaker",
+      "family": "cabinet",
       "levelId": "lower",
       "position": [
         22,
@@ -4513,363 +4517,6 @@
       "buildingId": "building/feedwater-annex"
     },
     {
-      "id": "stair/aux",
-      "label": "aux protected stair context",
-      "kind": "stair",
-      "levelId": "lower",
-      "pose": {
-        "position": [
-          -51,
-          93,
-          0
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 5,
-        "width": 7,
-        "height": 8
-      },
-      "disposition": "installed",
-      "buildingId": "building/auxiliary"
-    },
-    {
-      "id": "stair/electrical",
-      "label": "electrical protected stair context",
-      "kind": "stair",
-      "levelId": "lower",
-      "pose": {
-        "position": [
-          48,
-          98,
-          0
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 5,
-        "width": 7,
-        "height": 15
-      },
-      "disposition": "installed",
-      "buildingId": "building/electrical-control"
-    },
-    {
-      "id": "stair/gallery",
-      "label": "gallery protected stair context",
-      "kind": "stair",
-      "levelId": "lower",
-      "pose": {
-        "position": [
-          -19,
-          28,
-          0
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 5,
-        "width": 7,
-        "height": 15
-      },
-      "disposition": "installed",
-      "buildingId": "building/steam-gallery"
-    },
-    {
-      "id": "stair/containment",
-      "label": "containment protected stair context",
-      "kind": "stair",
-      "levelId": "lower",
-      "pose": {
-        "position": [
-          -74,
-          14,
-          0
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 5,
-        "width": 7,
-        "height": 22
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "stair/fuel",
-      "label": "fuel protected stair context",
-      "kind": "stair",
-      "levelId": "lower",
-      "pose": {
-        "position": [
-          -139,
-          90,
-          0
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 5,
-        "width": 7,
-        "height": 8
-      },
-      "disposition": "installed",
-      "buildingId": "building/fuel-service"
-    },
-    {
-      "id": "platform/containment/service/west",
-      "label": "Containment service perimeter access platform",
-      "kind": "slab",
-      "levelId": "service",
-      "pose": {
-        "position": [
-          -73,
-          -9,
-          7.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 4,
-        "width": 34,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/service/east",
-      "label": "Containment service perimeter access platform",
-      "kind": "slab",
-      "levelId": "service",
-      "pose": {
-        "position": [
-          -31,
-          -9,
-          7.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 4,
-        "width": 34,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/service/north",
-      "label": "Containment service perimeter access platform",
-      "kind": "slab",
-      "levelId": "service",
-      "pose": {
-        "position": [
-          -63,
-          28,
-          7.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 26,
-        "width": 3,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/service/south",
-      "label": "Containment service perimeter access platform",
-      "kind": "slab",
-      "levelId": "service",
-      "pose": {
-        "position": [
-          -63,
-          -15,
-          7.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 26,
-        "width": 3,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/operating/west",
-      "label": "Containment operating perimeter access platform",
-      "kind": "slab",
-      "levelId": "operating",
-      "pose": {
-        "position": [
-          -73,
-          -9,
-          14.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 4,
-        "width": 34,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/operating/east",
-      "label": "Containment operating perimeter access platform",
-      "kind": "slab",
-      "levelId": "operating",
-      "pose": {
-        "position": [
-          -31,
-          -9,
-          14.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 4,
-        "width": 34,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/operating/north",
-      "label": "Containment operating perimeter access platform",
-      "kind": "slab",
-      "levelId": "operating",
-      "pose": {
-        "position": [
-          -63,
-          28,
-          14.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 26,
-        "width": 3,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/operating/south",
-      "label": "Containment operating perimeter access platform",
-      "kind": "slab",
-      "levelId": "operating",
-      "pose": {
-        "position": [
-          -63,
-          -15,
-          14.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 26,
-        "width": 3,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/refuelling/west",
-      "label": "Containment refuelling perimeter access platform",
-      "kind": "slab",
-      "levelId": "refuelling",
-      "pose": {
-        "position": [
-          -73,
-          -9,
-          21.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 4,
-        "width": 34,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/refuelling/east",
-      "label": "Containment refuelling perimeter access platform",
-      "kind": "slab",
-      "levelId": "refuelling",
-      "pose": {
-        "position": [
-          -31,
-          -9,
-          21.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 4,
-        "width": 34,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/refuelling/north",
-      "label": "Containment refuelling perimeter access platform",
-      "kind": "slab",
-      "levelId": "refuelling",
-      "pose": {
-        "position": [
-          -63,
-          28,
-          21.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 26,
-        "width": 3,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
-      "id": "platform/containment/refuelling/south",
-      "label": "Containment refuelling perimeter access platform",
-      "kind": "slab",
-      "levelId": "refuelling",
-      "pose": {
-        "position": [
-          -63,
-          -15,
-          21.7
-        ],
-        "yaw": 0
-      },
-      "dimensions": {
-        "length": 26,
-        "width": 3,
-        "height": 0.3
-      },
-      "disposition": "installed",
-      "buildingId": "building/containment"
-    },
-    {
       "id": "support/containment/-71/-8",
       "label": "Containment access-platform support",
       "kind": "support",
@@ -5233,17 +4880,3366 @@
         "height": 0.3
       },
       "disposition": "installed"
+    },
+    {
+      "id": "wall/containment/facet-00",
+      "label": "Containment wall facet 1",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -21.13964292650629,
+          5.157502930442742,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 5.684994139114515,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-01",
+      "label": "Containment wall facet 2",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -21.13964292650629,
+          10.842497069557258,
+          0
+        ],
+        "yaw": 1.7671458676442586
+      },
+      "dimensions": {
+        "length": 5.6849941391145125,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-02",
+      "label": "Containment wall facet 3",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -22.248730263765943,
+          16.418255640379407,
+          0
+        ],
+        "yaw": 1.963495408493621
+      },
+      "dimensions": {
+        "length": 5.684994139114515,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-03",
+      "label": "Containment wall facet 4",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -24.424283333897705,
+          21.67050536795393,
+          0
+        ],
+        "yaw": 2.159844949342982
+      },
+      "dimensions": {
+        "length": 5.684994139114516,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-04",
+      "label": "Containment wall facet 5",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -27.582696852480627,
+          26.39740524074572,
+          0
+        ],
+        "yaw": 2.356194490192345
+      },
+      "dimensions": {
+        "length": 5.684994139114517,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-05",
+      "label": "Containment wall facet 6",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.60259475925428,
+          30.417303147519373,
+          0
+        ],
+        "yaw": 2.5525440310417067
+      },
+      "dimensions": {
+        "length": 5.68499413911451,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-06",
+      "label": "Containment wall facet 7",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -36.329494632046064,
+          33.575716666102295,
+          0
+        ],
+        "yaw": 2.7488935718910694
+      },
+      "dimensions": {
+        "length": 5.684994139114521,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-07",
+      "label": "Containment wall facet 8",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -41.58174435962059,
+          35.75126973623406,
+          0
+        ],
+        "yaw": 2.9452431127404313
+      },
+      "dimensions": {
+        "length": 5.684994139114509,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-08",
+      "label": "Containment wall facet 9",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -47.15750293044274,
+          36.86035707349371,
+          0
+        ],
+        "yaw": 3.141592653589793
+      },
+      "dimensions": {
+        "length": 5.684994139114522,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-09",
+      "label": "Containment wall facet 10",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -52.84249706955726,
+          36.86035707349371,
+          0
+        ],
+        "yaw": -2.945243112740431
+      },
+      "dimensions": {
+        "length": 5.684994139114503,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-10",
+      "label": "Containment wall facet 11",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -58.4182556403794,
+          35.75126973623406,
+          0
+        ],
+        "yaw": -2.74889357189107
+      },
+      "dimensions": {
+        "length": 5.684994139114528,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-11",
+      "label": "Containment wall facet 12",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -63.670505367953936,
+          33.575716666102295,
+          0
+        ],
+        "yaw": -2.5525440310417067
+      },
+      "dimensions": {
+        "length": 5.684994139114503,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-12",
+      "label": "Containment wall facet 13",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -68.39740524074571,
+          30.417303147519377,
+          0
+        ],
+        "yaw": -2.3561944901923457
+      },
+      "dimensions": {
+        "length": 5.684994139114527,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-13",
+      "label": "Containment wall facet 14",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -72.41730314751938,
+          26.39740524074572,
+          0
+        ],
+        "yaw": -2.1598449493429825
+      },
+      "dimensions": {
+        "length": 5.684994139114508,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-14",
+      "label": "Containment wall facet 15",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -75.5757166661023,
+          21.670505367953936,
+          0
+        ],
+        "yaw": -1.9634954084936218
+      },
+      "dimensions": {
+        "length": 5.684994139114524,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-15",
+      "label": "Containment wall facet 16",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -77.75126973623406,
+          16.418255640379407,
+          0
+        ],
+        "yaw": -1.7671458676442564
+      },
+      "dimensions": {
+        "length": 5.684994139114503,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-16",
+      "label": "Containment wall facet 17",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -78.8603570734937,
+          10.842497069557265,
+          0
+        ],
+        "yaw": -1.5707963267948966
+      },
+      "dimensions": {
+        "length": 5.684994139114522,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-17",
+      "label": "Containment wall facet 18",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -78.8603570734937,
+          5.157502930442742,
+          0
+        ],
+        "yaw": -1.374446785945537
+      },
+      "dimensions": {
+        "length": 5.6849941391145045,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-18",
+      "label": "Containment wall facet 19",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -77.75126973623406,
+          -0.41825564037940133,
+          0
+        ],
+        "yaw": -1.1780972450961715
+      },
+      "dimensions": {
+        "length": 5.684994139114524,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-19",
+      "label": "Containment wall facet 20",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -75.5757166661023,
+          -5.670505367953931,
+          0
+        ],
+        "yaw": -0.9817477042468106
+      },
+      "dimensions": {
+        "length": 5.684994139114507,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-20",
+      "label": "Containment wall facet 21",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -72.41730314751938,
+          -10.397405240745712,
+          0
+        ],
+        "yaw": -0.7853981633974483
+      },
+      "dimensions": {
+        "length": 5.684994139114512,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-21",
+      "label": "Containment wall facet 22",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -68.39740524074573,
+          -14.417303147519362,
+          0
+        ],
+        "yaw": -0.5890486225480872
+      },
+      "dimensions": {
+        "length": 5.684994139114521,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-22",
+      "label": "Containment wall facet 23",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -63.670505367953936,
+          -17.575716666102295,
+          0
+        ],
+        "yaw": -0.3926990816987244
+      },
+      "dimensions": {
+        "length": 5.684994139114515,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-23",
+      "label": "Containment wall facet 24",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -58.418255640379414,
+          -19.751269736234057,
+          0
+        ],
+        "yaw": -0.24543692606170234
+      },
+      "dimensions": {
+        "length": 2.845925110990237,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-24",
+      "label": "Containment wall facet 25",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -55.65761933846773,
+          -20.44277313169368,
+          0
+        ],
+        "yaw": -3.139760265103569e-16
+      },
+      "dimensions": {
+        "length": 11.31523867693545,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "opening/containment/equipment-hatch",
+      "label": "Containment equipment hatch void",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          2.1576193384677254,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 7,
+        "width": 1.1,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "hostId": "wall/containment/facet-24"
+    },
+    {
+      "id": "door/containment/equipment-hatch",
+      "label": "Containment equipment hatch closure",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -53.50000000000001,
+          -19.34277313169368,
+          0
+        ],
+        "yaw": -3.139760265103569e-16
+      },
+      "dimensions": {
+        "length": 7,
+        "width": 0.18,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "fillsId": "opening/containment/equipment-hatch",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "wall/containment/facet-25",
+      "label": "Containment wall facet 26",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -44.34238066153228,
+          -20.442773131693684,
+          0
+        ],
+        "yaw": 0.24543692606170353
+      },
+      "dimensions": {
+        "length": 2.8459251109902377,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-26",
+      "label": "Containment wall facet 27",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -41.5817443596206,
+          -19.751269736234057,
+          0
+        ],
+        "yaw": 0.3926990816987239
+      },
+      "dimensions": {
+        "length": 5.684994139114521,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-27",
+      "label": "Containment wall facet 28",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -36.32949463204607,
+          -17.575716666102295,
+          0
+        ],
+        "yaw": 0.5890486225480859
+      },
+      "dimensions": {
+        "length": 5.6849941391145205,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-28",
+      "label": "Containment wall facet 29",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.602594759254277,
+          -14.41730314751937,
+          0
+        ],
+        "yaw": 0.7853981633974478
+      },
+      "dimensions": {
+        "length": 5.684994139114494,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "opening/containment/personnel",
+      "label": "Containment personnel access void",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          1.942497069557247,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.8,
+        "width": 1.1,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "hostId": "wall/containment/facet-28"
+    },
+    {
+      "id": "door/containment/personnel",
+      "label": "Containment personnel pressure-door context",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.00685936824055,
+          -12.265932837895242,
+          0
+        ],
+        "yaw": 0.7853981633974478
+      },
+      "dimensions": {
+        "length": 1.8,
+        "width": 0.1,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "fillsId": "opening/containment/personnel",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "wall/containment/facet-29",
+      "label": "Containment wall facet 30",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -27.582696852480638,
+          -10.397405240745734,
+          0
+        ],
+        "yaw": 0.9817477042468101
+      },
+      "dimensions": {
+        "length": 5.684994139114521,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-30",
+      "label": "Containment wall facet 31",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -24.42428333389771,
+          -5.6705053679539414,
+          0
+        ],
+        "yaw": 1.1780972450961722
+      },
+      "dimensions": {
+        "length": 5.684994139114522,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "wall/containment/facet-31",
+      "label": "Containment wall facet 32",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -22.248730263765943,
+          -0.418255640379412,
+          0
+        ],
+        "yaw": 1.374446785945535
+      },
+      "dimensions": {
+        "length": 5.6849941391145205,
+        "width": 1.1,
+        "height": 36
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "building/containment-personnel-vestibule",
+      "label": "East containment personnel vestibule",
+      "kind": "building",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.360412758833824,
+          -14.17512114709892,
+          0
+        ],
+        "yaw": 5.497787143782138
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 5,
+        "height": 3.5
+      },
+      "disposition": "installed",
+      "footprint": "rectangle"
+    },
+    {
+      "id": "space/containment-personnel-vestibule",
+      "label": "Containment personnel access vestibule",
+      "kind": "space",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.006859368240548,
+          -14.17512114709892,
+          0
+        ],
+        "yaw": 5.497787143782138
+      },
+      "dimensions": {
+        "length": 7.5,
+        "width": 4.5,
+        "height": 3.2
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule"
+    },
+    {
+      "id": "slab/containment-personnel-vestibule",
+      "label": "Personnel vestibule floor",
+      "kind": "slab",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.360412758833824,
+          -14.17512114709892,
+          -0.3
+        ],
+        "yaw": 5.497787143782138
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 5,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule"
+    },
+    {
+      "id": "roof/containment-personnel-vestibule",
+      "label": "Personnel vestibule roof",
+      "kind": "roof",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.360412758833824,
+          -14.17512114709892,
+          3.5
+        ],
+        "yaw": 5.497787143782138
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 5,
+        "height": 0.25
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule"
+    },
+    {
+      "id": "wall/vestibule/side-1",
+      "label": "Personnel vestibule side wall",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -31.360412758833824,
+          -14.17512114709892,
+          0
+        ],
+        "yaw": 5.497787143782138
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 0.25,
+        "height": 3.5
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule"
+    },
+    {
+      "id": "wall/vestibule/side-2",
+      "label": "Personnel vestibule side wall",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -22.168024603408707,
+          -16.296441490658566,
+          0
+        ],
+        "yaw": 8.63937979737193
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 0.25,
+        "height": 3.5
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule"
+    },
+    {
+      "id": "wall/vestibule/outer",
+      "label": "Personnel vestibule outer wall",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -25.703558509341445,
+          -19.831975396591304,
+          0
+        ],
+        "yaw": 7.0685834705770345
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 0.25,
+        "height": 3.5
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule"
+    },
+    {
+      "id": "opening/vestibule/outer",
+      "label": "Personnel vestibule outer doorway",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          1.6,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.8,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule",
+      "hostId": "wall/vestibule/outer"
+    },
+    {
+      "id": "door/vestibule/outer",
+      "label": "Personnel vestibule outer door",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -24.748964354739606,
+          -18.523827851396188,
+          0
+        ],
+        "yaw": 7.0685834705770345
+      },
+      "dimensions": {
+        "length": 1.8,
+        "width": 0.08,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment-personnel-vestibule",
+      "fillsId": "opening/vestibule/outer",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "access/containment-to-gallery",
+      "label": "Personnel approach to valve-gallery corridor",
+      "kind": "slab",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -23.935791556375076,
+          -19.264208443624934,
+          -0.1
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 3.935791556375076,
+        "width": 2.4,
+        "height": 0.1
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "access/containment-equipment-hatch",
+      "label": "Containment equipment-hatch approach and laydown",
+      "kind": "slab",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -60,
+          -34,
+          -0.1
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 20,
+        "width": 14.1,
+        "height": 0.1
+      },
+      "disposition": "installed"
+    },
+    {
+      "id": "stair/aux",
+      "label": "Auxiliary service stair 0 to 8m",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -51,
+          93,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/auxiliary",
+      "stair": {
+        "landings": [
+          0,
+          8
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/electrical-lower",
+      "label": "Electrical stair 0 to 8m",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          48,
+          98,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control",
+      "stair": {
+        "landings": [
+          0,
+          8
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/electrical-upper",
+      "label": "Electrical stair 8 to 15m",
+      "kind": "stair",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          48,
+          98,
+          8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 7
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control",
+      "stair": {
+        "landings": [
+          0,
+          7
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/gallery",
+      "label": "Valve-gallery stair 0 to 15m",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -19,
+          27.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 15
+      },
+      "disposition": "installed",
+      "buildingId": "building/steam-gallery",
+      "stair": {
+        "landings": [
+          0,
+          15
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/fuel",
+      "label": "Fuel-service stair 0 to 8m",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -139,
+          90,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/fuel-service",
+      "stair": {
+        "landings": [
+          0,
+          8
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/containment-lower",
+      "label": "Containment service stair 0 to 8m",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -76,
+          4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 8
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "stair": {
+        "landings": [
+          0,
+          8
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/containment-middle",
+      "label": "Containment service stair 8 to 15m",
+      "kind": "stair",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -76,
+          4,
+          8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 7
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "stair": {
+        "landings": [
+          0,
+          7
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "stair/containment-upper",
+      "label": "Containment service stair 15 to 22m",
+      "kind": "stair",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -76,
+          4,
+          15
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5,
+        "width": 7,
+        "height": 7
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment",
+      "stair": {
+        "landings": [
+          0,
+          7
+        ],
+        "maxFlightRise": 2,
+        "maxRiser": 0.175,
+        "minTread": 0.28,
+        "flightWidth": 1.4,
+        "landingDepth": 1.5
+      }
+    },
+    {
+      "id": "platform/containment/service/ring-00",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -24.107268597354718,
+          2.849615498774215,
+          7.7
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 10.30076900245157,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-01",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -24.107268597354718,
+          13.150384501225785,
+          7.7
+        ],
+        "yaw": 1.9634954084936207
+      },
+      "dimensions": {
+        "length": 10.300769002451572,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-02",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -28.049202235212807,
+          22.667054151717497,
+          7.7
+        ],
+        "yaw": 2.356194490192345
+      },
+      "dimensions": {
+        "length": 10.30076900245157,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-03",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -35.3329458482825,
+          29.950797764787193,
+          7.7
+        ],
+        "yaw": 2.7488935718910694
+      },
+      "dimensions": {
+        "length": 10.300769002451574,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-04",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -44.84961549877421,
+          33.89273140264528,
+          7.7
+        ],
+        "yaw": 3.141592653589793
+      },
+      "dimensions": {
+        "length": 10.300769002451574,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-05",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -55.15038450122579,
+          33.89273140264528,
+          7.7
+        ],
+        "yaw": -2.7488935718910694
+      },
+      "dimensions": {
+        "length": 10.300769002451565,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-06",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -64.6670541517175,
+          29.950797764787197,
+          7.7
+        ],
+        "yaw": -2.3561944901923453
+      },
+      "dimensions": {
+        "length": 10.30076900245158,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-07",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -71.9507977647872,
+          22.667054151717497,
+          7.7
+        ],
+        "yaw": -1.9634954084936207
+      },
+      "dimensions": {
+        "length": 10.300769002451561,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-08",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -75.89273140264528,
+          13.150384501225794,
+          7.7
+        ],
+        "yaw": -1.5707963267948966
+      },
+      "dimensions": {
+        "length": 10.300769002451583,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-09",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -75.89273140264528,
+          2.8496154987742113,
+          7.7
+        ],
+        "yaw": -1.1780972450961724
+      },
+      "dimensions": {
+        "length": 10.300769002451561,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-10",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -71.9507977647872,
+          -6.66705415171749,
+          7.7
+        ],
+        "yaw": -0.7853981633974483
+      },
+      "dimensions": {
+        "length": 10.300769002451583,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-11",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -64.6670541517175,
+          -13.950797764787193,
+          7.7
+        ],
+        "yaw": -0.39269908169872425
+      },
+      "dimensions": {
+        "length": 10.30076900245156,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-12",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -55.150384501225794,
+          -17.89273140264528,
+          7.7
+        ],
+        "yaw": -3.4489790790910423e-16
+      },
+      "dimensions": {
+        "length": 10.300769002451581,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-13",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -44.84961549877421,
+          -17.892731402645282,
+          7.7
+        ],
+        "yaw": 0.3926990816987239
+      },
+      "dimensions": {
+        "length": 10.300769002451558,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-14",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -35.33294584828251,
+          -13.9507977647872,
+          7.7
+        ],
+        "yaw": 0.7853981633974481
+      },
+      "dimensions": {
+        "length": 10.300769002451586,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/ring-15",
+      "label": "Containment service connected perimeter platform",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -28.049202235212807,
+          -6.6670541517174975,
+          7.7
+        ],
+        "yaw": 1.1780972450961724
+      },
+      "dimensions": {
+        "length": 10.30076900245156,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/stair-south-landing",
+      "label": "Containment stair south landing connection",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -76.4,
+          2,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 2,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/stair-north-landing",
+      "label": "Containment stair north landing connection",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -76.4,
+          11,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 2,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/service/stair-inner-bypass",
+      "label": "Containment stairwell inner passage",
+      "kind": "slab",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -70.4,
+          4,
+          7.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2,
+        "width": 7,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-00",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -24.107268597354718,
+          2.849615498774215,
+          14.7
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 10.30076900245157,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-01",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -24.107268597354718,
+          13.150384501225785,
+          14.7
+        ],
+        "yaw": 1.9634954084936207
+      },
+      "dimensions": {
+        "length": 10.300769002451572,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-02",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -28.049202235212807,
+          22.667054151717497,
+          14.7
+        ],
+        "yaw": 2.356194490192345
+      },
+      "dimensions": {
+        "length": 10.30076900245157,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-03",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -35.3329458482825,
+          29.950797764787193,
+          14.7
+        ],
+        "yaw": 2.7488935718910694
+      },
+      "dimensions": {
+        "length": 10.300769002451574,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-04",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -44.84961549877421,
+          33.89273140264528,
+          14.7
+        ],
+        "yaw": 3.141592653589793
+      },
+      "dimensions": {
+        "length": 10.300769002451574,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-05",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -55.15038450122579,
+          33.89273140264528,
+          14.7
+        ],
+        "yaw": -2.7488935718910694
+      },
+      "dimensions": {
+        "length": 10.300769002451565,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-06",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -64.6670541517175,
+          29.950797764787197,
+          14.7
+        ],
+        "yaw": -2.3561944901923453
+      },
+      "dimensions": {
+        "length": 10.30076900245158,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-07",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -71.9507977647872,
+          22.667054151717497,
+          14.7
+        ],
+        "yaw": -1.9634954084936207
+      },
+      "dimensions": {
+        "length": 10.300769002451561,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-08",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -75.89273140264528,
+          13.150384501225794,
+          14.7
+        ],
+        "yaw": -1.5707963267948966
+      },
+      "dimensions": {
+        "length": 10.300769002451583,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-09",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -75.89273140264528,
+          2.8496154987742113,
+          14.7
+        ],
+        "yaw": -1.1780972450961724
+      },
+      "dimensions": {
+        "length": 10.300769002451561,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-10",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -71.9507977647872,
+          -6.66705415171749,
+          14.7
+        ],
+        "yaw": -0.7853981633974483
+      },
+      "dimensions": {
+        "length": 10.300769002451583,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-11",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -64.6670541517175,
+          -13.950797764787193,
+          14.7
+        ],
+        "yaw": -0.39269908169872425
+      },
+      "dimensions": {
+        "length": 10.30076900245156,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-12",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -55.150384501225794,
+          -17.89273140264528,
+          14.7
+        ],
+        "yaw": -3.4489790790910423e-16
+      },
+      "dimensions": {
+        "length": 10.300769002451581,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-13",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -44.84961549877421,
+          -17.892731402645282,
+          14.7
+        ],
+        "yaw": 0.3926990816987239
+      },
+      "dimensions": {
+        "length": 10.300769002451558,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-14",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -35.33294584828251,
+          -13.9507977647872,
+          14.7
+        ],
+        "yaw": 0.7853981633974481
+      },
+      "dimensions": {
+        "length": 10.300769002451586,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/ring-15",
+      "label": "Containment operating connected perimeter platform",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -28.049202235212807,
+          -6.6670541517174975,
+          14.7
+        ],
+        "yaw": 1.1780972450961724
+      },
+      "dimensions": {
+        "length": 10.30076900245156,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/stair-south-landing",
+      "label": "Containment stair south landing connection",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -76.4,
+          2,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 2,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/stair-north-landing",
+      "label": "Containment stair north landing connection",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -76.4,
+          11,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 2,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/operating/stair-inner-bypass",
+      "label": "Containment stairwell inner passage",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          -70.4,
+          4,
+          14.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2,
+        "width": 7,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-00",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -24.107268597354718,
+          2.849615498774215,
+          21.7
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 10.30076900245157,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-01",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -24.107268597354718,
+          13.150384501225785,
+          21.7
+        ],
+        "yaw": 1.9634954084936207
+      },
+      "dimensions": {
+        "length": 10.300769002451572,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-02",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -28.049202235212807,
+          22.667054151717497,
+          21.7
+        ],
+        "yaw": 2.356194490192345
+      },
+      "dimensions": {
+        "length": 10.30076900245157,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-03",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -35.3329458482825,
+          29.950797764787193,
+          21.7
+        ],
+        "yaw": 2.7488935718910694
+      },
+      "dimensions": {
+        "length": 10.300769002451574,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-04",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -44.84961549877421,
+          33.89273140264528,
+          21.7
+        ],
+        "yaw": 3.141592653589793
+      },
+      "dimensions": {
+        "length": 10.300769002451574,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-05",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -55.15038450122579,
+          33.89273140264528,
+          21.7
+        ],
+        "yaw": -2.7488935718910694
+      },
+      "dimensions": {
+        "length": 10.300769002451565,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-06",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -64.6670541517175,
+          29.950797764787197,
+          21.7
+        ],
+        "yaw": -2.3561944901923453
+      },
+      "dimensions": {
+        "length": 10.30076900245158,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-07",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -71.9507977647872,
+          22.667054151717497,
+          21.7
+        ],
+        "yaw": -1.9634954084936207
+      },
+      "dimensions": {
+        "length": 10.300769002451561,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-08",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -75.89273140264528,
+          13.150384501225794,
+          21.7
+        ],
+        "yaw": -1.5707963267948966
+      },
+      "dimensions": {
+        "length": 10.300769002451583,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-09",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -75.89273140264528,
+          2.8496154987742113,
+          21.7
+        ],
+        "yaw": -1.1780972450961724
+      },
+      "dimensions": {
+        "length": 10.300769002451561,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-10",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -71.9507977647872,
+          -6.66705415171749,
+          21.7
+        ],
+        "yaw": -0.7853981633974483
+      },
+      "dimensions": {
+        "length": 10.300769002451583,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-11",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -64.6670541517175,
+          -13.950797764787193,
+          21.7
+        ],
+        "yaw": -0.39269908169872425
+      },
+      "dimensions": {
+        "length": 10.30076900245156,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-12",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -55.150384501225794,
+          -17.89273140264528,
+          21.7
+        ],
+        "yaw": -3.4489790790910423e-16
+      },
+      "dimensions": {
+        "length": 10.300769002451581,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-13",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -44.84961549877421,
+          -17.892731402645282,
+          21.7
+        ],
+        "yaw": 0.3926990816987239
+      },
+      "dimensions": {
+        "length": 10.300769002451558,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-14",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -35.33294584828251,
+          -13.9507977647872,
+          21.7
+        ],
+        "yaw": 0.7853981633974481
+      },
+      "dimensions": {
+        "length": 10.300769002451586,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/ring-15",
+      "label": "Containment refuelling connected perimeter platform",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -28.049202235212807,
+          -6.6670541517174975,
+          21.7
+        ],
+        "yaw": 1.1780972450961724
+      },
+      "dimensions": {
+        "length": 10.30076900245156,
+        "width": 2.4,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/stair-south-landing",
+      "label": "Containment stair south landing connection",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -76.4,
+          2,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 2,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/stair-north-landing",
+      "label": "Containment stair north landing connection",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -76.4,
+          11,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 2,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "platform/containment/refuelling/stair-inner-bypass",
+      "label": "Containment stairwell inner passage",
+      "kind": "slab",
+      "levelId": "refuelling",
+      "pose": {
+        "position": [
+          -70.4,
+          4,
+          21.7
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2,
+        "width": 7,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "buildingId": "building/containment"
+    },
+    {
+      "id": "opening/aux-lower--52.25-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          28,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-lower-corridor--52.25",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-lower--52.25-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -52.5,
+          71,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-lower--52.25-cooling",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-lower--52.25-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          47,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-lower-corridor--52.25",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-lower--52.25-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -52.5,
+          90,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-lower--52.25-chemistry",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-lower--45-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          28,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-lower-corridor--45",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-lower--45-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -45.25,
+          71,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-lower--45-cooling",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-lower--45-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          47,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-lower-corridor--45",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-lower--45-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          -45.25,
+          90,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-lower--45-chemistry",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-service--52.25-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          28,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-service-corridor--52.25",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-service--52.25-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -52.5,
+          71,
+          8
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-service--52.25-cooling",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-service--52.25-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          47,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-service-corridor--52.25",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-service--52.25-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -52.5,
+          90,
+          8
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-service--52.25-chemistry",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-service--45-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          28,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-service-corridor--45",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-service--45-cooling",
+      "label": "Auxiliary cooling room access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -45.25,
+          71,
+          8
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-service--45-cooling",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/aux-service--45-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          47,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/aux-service-corridor--45",
+      "buildingId": "building/auxiliary"
+    },
+    {
+      "id": "door/aux-service--45-chemistry",
+      "label": "Auxiliary chemistry room access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          -45.25,
+          90,
+          8
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/aux-service--45-chemistry",
+      "buildingId": "building/auxiliary",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-lower-south-b",
+      "label": "Electrical train B room access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          42,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/electrical-lower-corridor-south",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-lower-south-b",
+      "label": "Electrical train B room access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          42,
+          82.25,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-lower-south-b",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-lower-north-b",
+      "label": "Electrical train B room access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          42,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/electrical-lower-corridor-north",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-lower-north-b",
+      "label": "Electrical train B room access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          42,
+          87.75,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-lower-north-b",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-service-south-b",
+      "label": "Electrical train B room access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          42,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/electrical-service-corridor-south",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-service-south-b",
+      "label": "Electrical train B room access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          42,
+          82.25,
+          8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-service-south-b",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-service-north-b",
+      "label": "Electrical train B room access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          42,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/electrical-service-corridor-north",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-service-north-b",
+      "label": "Electrical train B room access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          42,
+          87.75,
+          8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-service-north-b",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-operating-south-b",
+      "label": "Electrical train B room access",
+      "kind": "opening",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          42,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/electrical-operating-corridor-south",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-operating-south-b",
+      "label": "Electrical train B room access",
+      "kind": "door",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          42,
+          82.25,
+          15
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-operating-south-b",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-operating-north-b",
+      "label": "Electrical train B room access",
+      "kind": "opening",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          42,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/electrical-operating-corridor-north",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-operating-north-b",
+      "label": "Electrical train B room access",
+      "kind": "door",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          42,
+          87.75,
+          15
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-operating-north-b",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "space/stairwell-electrical",
+      "label": "Electrical stairwell",
+      "kind": "space",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          47.5,
+          97.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 6,
+        "width": 8,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "wall/stairwell-electrical/south",
+      "label": "Electrical stairwell partition",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          47.5,
+          97.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 6,
+        "width": 0.25,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "wall/stairwell-electrical/north",
+      "label": "Electrical stairwell partition",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          47.5,
+          105.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 6,
+        "width": 0.25,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "wall/stairwell-electrical/west",
+      "label": "Electrical stairwell partition",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          47.5,
+          97.5,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 0.25,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "wall/stairwell-electrical/east",
+      "label": "Electrical stairwell partition",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          53.5,
+          97.5,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 0.25,
+        "height": 22
+      },
+      "disposition": "installed",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "opening/electrical-stair-lower",
+      "label": "Electrical stair landing access",
+      "kind": "opening",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          1.2,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/stairwell-electrical/south",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-stair-lower",
+      "label": "Electrical stair landing access",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          48.7,
+          97.75,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-stair-lower",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-stair-service",
+      "label": "Electrical stair landing access",
+      "kind": "opening",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          1.2,
+          0,
+          8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/stairwell-electrical/south",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-stair-service",
+      "label": "Electrical stair landing access",
+      "kind": "door",
+      "levelId": "service",
+      "pose": {
+        "position": [
+          48.7,
+          97.75,
+          8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-stair-service",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
+    },
+    {
+      "id": "opening/electrical-stair-operating",
+      "label": "Electrical stair landing access",
+      "kind": "opening",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          1.2,
+          0,
+          15
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.25,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "hostId": "wall/stairwell-electrical/south",
+      "buildingId": "building/electrical-control"
+    },
+    {
+      "id": "door/electrical-stair-operating",
+      "label": "Electrical stair landing access",
+      "kind": "door",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          48.7,
+          97.75,
+          15
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "fillsId": "opening/electrical-stair-operating",
+      "buildingId": "building/electrical-control",
+      "door": {
+        "swing": 1.5707963267948966
+      }
     }
   ],
   "unplaced": [
-    {
-      "subjectId": "core",
-      "disposition": "internal",
-      "reason": "The core is inside the reactor vessel. A separate exposed machine or independently locatable core mesh would misstate its physical identity; the vessel occurrence supplies housing context.",
-      "physicalElementIds": [
-        "equipment/vessel"
-      ]
-    },
     {
       "subjectId": "atmosphere",
       "disposition": "boundary",
@@ -5351,14 +8347,14 @@
   },
   "evidence": {
     "accuracy": "illustrative",
-    "origin": "Conceptual full-unit arrangement for the current four-loop executable PWR, authored 25 October 2026 from its exact component graph and NRC generic PWR system/building relationships. Accepted turbine geometry retained. Civil dimensions, levels, access, nozzle positions and routing are authored illustration, not surveyed, as-built, maintenance or safety qualification."
+    "origin": "Conceptual full-unit arrangement for the exact four-loop executable PWR, authored 25 October 2026. Accepted turbine geometry retained; system/building relationships follow generic nuclear-plant references. The containment uses 32 closed, ordinary wall facets with real personnel/hatch voids, approximating its ellipse within 0.56m. Civil dimensions, access, nozzle positions and routing remain authored illustration, not surveyed, as-built, maintenance or safety qualification."
   },
   "bindings": [
     {
-      "physicalElementId": "building/containment/shell",
-      "elementId": "containment",
-      "relation": "partOf",
-      "reason": "The concrete shell locates the modeled containment region; it does not make the civil shell a separate pressure/temperature state."
+      "physicalElementId": "equipment/vessel",
+      "elementId": "core",
+      "relation": "houses",
+      "reason": "The reactor core is physically located inside the reactor pressure vessel. This housing relation localizes the exact core subject and its alarms at that vessel; it does not equate core and vessel, create an exposed core machine, or invent an independently measured vessel state."
     },
     {
       "physicalElementId": "basin/ultimateHeatSink",
@@ -5371,6 +8367,198 @@
       "elementId": "coolingWaterDischarge",
       "relation": "partOf",
       "reason": "Illustrative discharge-channel context locates the modeled cooling-water discharge boundary; no additional receiving-water state is invented."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-00",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-01",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-02",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-03",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-04",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-05",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-06",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-07",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-08",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-09",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-10",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-11",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-12",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-13",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-14",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-15",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-16",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-17",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-18",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-19",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-20",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-21",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-22",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-23",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-24",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-25",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-26",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-27",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-28",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-29",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-30",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
+    },
+    {
+      "physicalElementId": "wall/containment/facet-31",
+      "elementId": "containment",
+      "relation": "partOf",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids."
     }
   ]
 }

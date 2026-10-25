@@ -555,9 +555,9 @@
     "relation": "represents"
   },
   {
-    "physicalElementId": "building/containment/shell",
-    "elementId": "containment",
-    "relation": "partOf"
+    "physicalElementId": "equipment/vessel",
+    "elementId": "core",
+    "relation": "houses"
   },
   {
     "physicalElementId": "basin/ultimateHeatSink",
@@ -567,6 +567,166 @@
   {
     "physicalElementId": "basin/coolingWaterDischarge",
     "elementId": "coolingWaterDischarge",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-00",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-01",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-02",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-03",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-04",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-05",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-06",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-07",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-08",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-09",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-10",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-11",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-12",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-13",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-14",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-15",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-16",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-17",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-18",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-19",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-20",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-21",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-22",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-23",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-24",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-25",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-26",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-27",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-28",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-29",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-30",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-31",
+    "elementId": "containment",
     "relation": "partOf"
   }
 ]

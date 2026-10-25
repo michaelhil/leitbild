@@ -2,8 +2,8 @@ import type { Source, Element } from '../native/campus/source.ts'
 
 type V3 = [number, number, number]
 type Dimensions = { length: number; width: number; height: number }
-export type Binding = { physicalElementId: string; elementId: string; relation: 'represents' | 'partOf' }
-export type CoverageDisposition = { subjectId: string; disposition: 'direct' | 'assembly' | 'internal' | 'functional' | 'boundary' | 'unresolved'; reason: string; physicalElementIds: string[] }
+export type Binding = { physicalElementId: string; elementId: string; relation: 'represents' | 'partOf' | 'houses' }
+export type CoverageDisposition = { subjectId: string; disposition: 'direct' | 'assembly' | 'housed' | 'internal' | 'functional' | 'boundary' | 'unresolved'; reason: string; physicalElementIds: string[] }
 export type ContextElement = { physicalElementId: string; reason: string }
 type Kind = Element['kind']
 
@@ -31,6 +31,8 @@ export interface BuildingSpec {
   position: V3
   dimensions: Dimensions
   footprint?: 'ellipse' | 'rectangle' | undefined
+  enclosure?: 'continuous' | 'authored' | undefined
+  entranceOffsets?: { south?: number | undefined; east?: number | undefined; north?: number | undefined; west?: number | undefined } | undefined
   floors: Array<{ levelId: string; elevation: number }>
   rooms: RoomSpec[]
   partitions: PartitionSpec[]
@@ -88,13 +90,13 @@ export const createPhysicalComposition = (initial: Source, initialBindings: read
     const { id, label, levelId, position, dimensions: d } = spec
     add(element(id, label, 'building', levelId, position, d, { footprint: spec.footprint ?? 'rectangle' }), 'Physical building container; operational components bind to installed equipment rather than the building identity.')
     if (spec.footprint === 'ellipse') {
-      add(element(`${id}/shell`, `${label} concrete shell`, 'wall', levelId, position, { ...d, height: d.height - 12 }, { buildingId: id, shape: { kind: 'cylindrical-shell', thickness: 1.1 } }), 'Illustrative containment enclosure; civil dimensions are authored, not recovered from the process graph.')
+      if (spec.enclosure !== 'authored') add(element(`${id}/shell`, `${label} concrete shell`, 'wall', levelId, position, { ...d, height: d.height - 12 }, { buildingId: id, shape: { kind: 'cylindrical-shell', thickness: 1.1 } }), 'Illustrative containment enclosure; civil dimensions are authored, not recovered from the process graph.')
       add(element(`${id}/roof`, `${label} dome`, 'roof', levelId, [position[0], position[1], position[2] + d.height - 12], { ...d, height: 12 }, { buildingId: id, shape: { kind: 'dome-shell', thickness: 0.8 } }), 'Illustrative containment dome, shown when cutaway is disabled.')
     } else {
-      wall(`${id}/south`, `${label} south wall`, levelId, position, d.length, d.height, 0, id, 3, 2.4)
-      wall(`${id}/east`, `${label} east wall`, levelId, [position[0] + d.length, position[1], position[2]], d.width, d.height, Math.PI / 2, id, Math.max(3, d.width / 2), 2.4)
-      wall(`${id}/north`, `${label} north wall`, levelId, [position[0], position[1] + d.width, position[2]], d.length, d.height, 0, id, Math.max(3, d.length / 2), 2.4)
-      wall(`${id}/west`, `${label} west wall`, levelId, position, d.width, d.height, Math.PI / 2, id, 3, 1.4)
+      wall(`${id}/south`, `${label} south wall`, levelId, position, d.length, d.height, 0, id, spec.entranceOffsets?.south ?? 3, 2.4)
+      wall(`${id}/east`, `${label} east wall`, levelId, [position[0] + d.length, position[1], position[2]], d.width, d.height, Math.PI / 2, id, spec.entranceOffsets?.east ?? Math.max(3, d.width / 2), 2.4)
+      wall(`${id}/north`, `${label} north wall`, levelId, [position[0], position[1] + d.width, position[2]], d.length, d.height, 0, id, spec.entranceOffsets?.north ?? Math.max(3, d.length / 2), 2.4)
+      wall(`${id}/west`, `${label} west wall`, levelId, position, d.width, d.height, Math.PI / 2, id, spec.entranceOffsets?.west ?? 3, 1.4)
       add(element(`${id}/roof`, `${label} roof`, 'roof', levelId, [position[0], position[1], position[2] + d.height], { ...d, height: 0.3 }, { buildingId: id }), 'Authored roof, omitted by the cutaway view.')
     }
     for (const floor of spec.floors) add(element(`${id}/floor/${floor.levelId}`, `${label} ${floor.levelId} floor`, 'slab', floor.levelId, [position[0], position[1], floor.elevation - 0.35], { length: d.length, width: d.width, height: 0.35 }, {

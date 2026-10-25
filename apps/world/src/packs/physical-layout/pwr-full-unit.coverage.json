@@ -184,9 +184,40 @@
     {
       "subjectId": "containment",
       "disposition": "assembly",
-      "reason": "The concrete shell locates the modeled containment region; it does not make the civil shell a separate pressure/temperature state.",
+      "reason": "One part of a 32-facet authored containment boundary. It localizes the modeled containment region without equating a concrete wall with an independent pressure/temperature state. The polygon approximates the ellipse and has real hosted access voids.",
       "physicalElementIds": [
-        "building/containment/shell"
+        "wall/containment/facet-00",
+        "wall/containment/facet-01",
+        "wall/containment/facet-02",
+        "wall/containment/facet-03",
+        "wall/containment/facet-04",
+        "wall/containment/facet-05",
+        "wall/containment/facet-06",
+        "wall/containment/facet-07",
+        "wall/containment/facet-08",
+        "wall/containment/facet-09",
+        "wall/containment/facet-10",
+        "wall/containment/facet-11",
+        "wall/containment/facet-12",
+        "wall/containment/facet-13",
+        "wall/containment/facet-14",
+        "wall/containment/facet-15",
+        "wall/containment/facet-16",
+        "wall/containment/facet-17",
+        "wall/containment/facet-18",
+        "wall/containment/facet-19",
+        "wall/containment/facet-20",
+        "wall/containment/facet-21",
+        "wall/containment/facet-22",
+        "wall/containment/facet-23",
+        "wall/containment/facet-24",
+        "wall/containment/facet-25",
+        "wall/containment/facet-26",
+        "wall/containment/facet-27",
+        "wall/containment/facet-28",
+        "wall/containment/facet-29",
+        "wall/containment/facet-30",
+        "wall/containment/facet-31"
       ]
     },
     {
@@ -247,8 +278,8 @@
     },
     {
       "subjectId": "core",
-      "disposition": "internal",
-      "reason": "The core is inside the reactor vessel. A separate exposed machine or independently locatable core mesh would misstate its physical identity; the vessel occurrence supplies housing context.",
+      "disposition": "housed",
+      "reason": "The reactor core is physically located inside the reactor pressure vessel. This housing relation localizes the exact core subject and its alarms at that vessel; it does not equate core and vessel, create an exposed core machine, or invent an independently measured vessel state.",
       "physicalElementIds": [
         "equipment/vessel"
       ]
@@ -2291,74 +2322,6 @@
       "reason": "Architectural or site context, with no independent operational subject in the current graph."
     },
     {
-      "physicalElementId": "stair/aux",
-      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
-    },
-    {
-      "physicalElementId": "stair/electrical",
-      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
-    },
-    {
-      "physicalElementId": "stair/gallery",
-      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
-    },
-    {
-      "physicalElementId": "stair/containment",
-      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
-    },
-    {
-      "physicalElementId": "stair/fuel",
-      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
-    },
-    {
-      "physicalElementId": "platform/containment/service/west",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/service/east",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/service/north",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/service/south",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/operating/west",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/operating/east",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/operating/north",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/operating/south",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/refuelling/west",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/refuelling/east",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/refuelling/north",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
-      "physicalElementId": "platform/containment/refuelling/south",
-      "reason": "Architectural or site context, with no independent operational subject in the current graph."
-    },
-    {
       "physicalElementId": "support/containment/-71/-8",
       "reason": "Architectural or site context, with no independent operational subject in the current graph."
     },
@@ -2421,10 +2384,486 @@
     {
       "physicalElementId": "pad/transformer",
       "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/containment/equipment-hatch",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/containment/equipment-hatch",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/containment/personnel",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/containment/personnel",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "building/containment-personnel-vestibule",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "space/containment-personnel-vestibule",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "slab/containment-personnel-vestibule",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "roof/containment-personnel-vestibule",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/vestibule/side-1",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/vestibule/side-2",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/vestibule/outer",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/vestibule/outer",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/vestibule/outer",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "access/containment-to-gallery",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "access/containment-equipment-hatch",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "stair/aux",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/electrical-lower",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/electrical-upper",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/gallery",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/fuel",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/containment-lower",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/containment-middle",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "stair/containment-upper",
+      "reason": "Conceptual inter-level access. Dimensions are illustrative and do not qualify evacuation or equipment handling."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-00",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-01",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-02",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-03",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-04",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-05",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-06",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-07",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-08",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-09",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-10",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-11",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-12",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-13",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-14",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/ring-15",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/stair-south-landing",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/stair-north-landing",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/service/stair-inner-bypass",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-00",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-01",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-02",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-03",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-04",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-05",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-06",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-07",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-08",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-09",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-10",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-11",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-12",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-13",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-14",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/ring-15",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/stair-south-landing",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/stair-north-landing",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/operating/stair-inner-bypass",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-00",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-01",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-02",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-03",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-04",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-05",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-06",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-07",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-08",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-09",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-10",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-11",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-12",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-13",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-14",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/ring-15",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/stair-south-landing",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/stair-north-landing",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "platform/containment/refuelling/stair-inner-bypass",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-lower--52.25-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-lower--52.25-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-lower--52.25-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-lower--52.25-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-lower--45-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-lower--45-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-lower--45-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-lower--45-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-service--52.25-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-service--52.25-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-service--52.25-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-service--52.25-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-service--45-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-service--45-cooling",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/aux-service--45-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/aux-service--45-chemistry",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-lower-south-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-lower-south-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-lower-north-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-lower-north-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-service-south-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-service-south-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-service-north-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-service-north-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-operating-south-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-operating-south-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-operating-north-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-operating-north-b",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "space/stairwell-electrical",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/stairwell-electrical/south",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/stairwell-electrical/north",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/stairwell-electrical/west",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "wall/stairwell-electrical/east",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-stair-lower",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-stair-lower",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-stair-service",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-stair-service",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "opening/electrical-stair-operating",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
+    },
+    {
+      "physicalElementId": "door/electrical-stair-operating",
+      "reason": "Architectural or site context, with no independent operational subject in the current graph."
     }
   ],
   "evidence": {
     "accuracy": "illustrative",
-    "origin": "Conceptual full-unit arrangement for the current four-loop executable PWR, authored 25 October 2026 from its exact component graph and NRC generic PWR system/building relationships. Accepted turbine geometry retained. Civil dimensions, levels, access, nozzle positions and routing are authored illustration, not surveyed, as-built, maintenance or safety qualification."
+    "origin": "Conceptual full-unit arrangement for the exact four-loop executable PWR, authored 25 October 2026. Accepted turbine geometry retained; system/building relationships follow generic nuclear-plant references. The containment uses 32 closed, ordinary wall facets with real personnel/hatch voids, approximating its ellipse within 0.56m. Civil dimensions, access, nozzle positions and routing remain authored illustration, not surveyed, as-built, maintenance or safety qualification."
   }
 }
