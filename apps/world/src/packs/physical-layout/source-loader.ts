@@ -29,7 +29,7 @@ export const loadPhysicalSourceAsset = async (data: RetainedPhysicalLayoutData):
   else {
     loading = (async () => {
       try {
-        const scene = typeof document === 'undefined'
+        const scene = !('document' in globalThis)
           ? await (await import('./source-compile.ts')).compileRetainedPhysicalSource(data)
           : await compilePhysicalSourceInWorker(data)
         assets.set(key, new WeakRef(scene.objects))
