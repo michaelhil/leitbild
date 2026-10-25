@@ -1,4 +1,4 @@
-import { MercatorCoordinate, type Map as MapLibreMap } from 'maplibre-gl'
+import { MercatorCoordinate, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
 import { createPhysicalSceneLayer } from './layer.ts'
 import { physicalSceneLayerId } from './order.ts'
 import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer } from './viewport.ts'
@@ -6,7 +6,7 @@ import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer 
 /** Real MapLibre camera/custom-layer adapter. Canvas mode implements this port independently. */
 export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => string | undefined): PhysicalViewport => {
   const canvas = map.getCanvas(), cleanups = new Set<() => void>()
-  let revision = 0, activePointer: { id: number; x: number; y: number } | null = null, tool: 'pan' | 'orbit' = 'pan'
+  let revision = 0, activePointer: { id: number; x: number; y: number; startX: number; startY: number; dragged: boolean } | null = null, cancelledPointer: number | null = null, tool: 'pan' | 'orbit' = 'pan'
   const revisionChanged = (): void => { revision++ }; map.on('move', revisionChanged)
   const subscribe = (event: PhysicalViewportEvent, listener: () => void): (() => void) => {
     const names = event === 'change' ? ['move'] : event === 'style' ? ['style.load', 'styledata'] : [event]
@@ -16,15 +16,62 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     const cleanup = (): void => { if (dom) canvas.removeEventListener(event === 'contextlost' ? 'webglcontextlost' : 'webglcontextrestored', listener); else for (const name of names) map.off(name as 'move', listener); cleanups.delete(cleanup) }
     cleanups.add(cleanup); return cleanup
   }
-  const pointerDown = (event: PointerEvent): void => { if (tool !== 'orbit' || event.button !== 0) return; event.preventDefault(); activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY }; canvas.setPointerCapture(event.pointerId) }
-  const pointerMove = (event: PointerEvent): void => {
-    if (!activePointer || activePointer.id !== event.pointerId) return
-    const size = canvas.getBoundingClientRect(), dx = event.clientX - activePointer.x, dy = event.clientY - activePointer.y
-    activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY }
-    map.jumpTo({ bearing: map.getBearing() - dx / size.width * 360, pitch: Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() + dy / size.height * 180)) })
+  // A custom Orbit owns its primary mouse gesture through activation, not just
+  // camera deltas. Four CSS pixels is click slop, matching the explorer's
+  // activation gesture; it is unrelated to scene/annotation admission.
+  const dragSlop = 4
+  const endTarget = canvas.ownerDocument?.defaultView ?? canvas
+  let suppressClickPointer: number | null = null, clickTurn: ReturnType<typeof setTimeout> | null = null
+  const clearClickGuard = (): void => { if (clickTurn !== null) clearTimeout(clickTurn); clickTurn = null; suppressClickPointer = null }
+  const guardCompletedDrag = (id: number): void => {
+    clearClickGuard(); suppressClickPointer = id
+    // MapLibre's native drag handlers use the same event-turn boundary. A
+    // pointer release can produce click/dblclick after pointerup listeners.
+    clickTurn = setTimeout(clearClickGuard, 0)
   }
-  const releasePointer = (): void => { if (activePointer && canvas.hasPointerCapture(activePointer.id)) canvas.releasePointerCapture(activePointer.id); activePointer = null }
-  canvas.addEventListener('pointerdown', pointerDown); canvas.addEventListener('pointermove', pointerMove); canvas.addEventListener('pointerup', releasePointer); canvas.addEventListener('pointercancel', releasePointer)
+  const click = (event: MouseEvent): void => {
+    if (suppressClickPointer === null || event.detail === 0) return
+    if ('pointerId' in event && typeof event.pointerId === 'number' && event.pointerId > 0 && event.pointerId !== suppressClickPointer) return
+    event.preventDefault(); event.stopImmediatePropagation()
+  }
+  const releasePointer = (): void => {
+    const owned = activePointer; activePointer = null
+    if (owned) { cancelledPointer = owned.id; if (canvas.hasPointerCapture(owned.id)) canvas.releasePointerCapture(owned.id) }
+  }
+  const pointerDown = (event: PointerEvent): void => {
+    clearClickGuard(); cancelledPointer = null
+    if (tool !== 'orbit' || event.button !== 0 || event.defaultPrevented || event.pointerType === 'touch' || activePointer) return
+    activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, dragged: false }
+    canvas.setPointerCapture(event.pointerId)
+    // Do not cancel pointerdown: compatibility mousedown must reach MapLibre
+    // so its ordinary click records the current press position.
+  }
+  const mouseDown = (event: MapMouseEvent): void => {
+    if (tool === 'orbit' && activePointer && event.originalEvent.button === 0 && !event.defaultPrevented) event.preventDefault()
+  }
+  const pointerMove = (event: PointerEvent): void => {
+    const owned = activePointer
+    if (!owned || owned.id !== event.pointerId || event.defaultPrevented) return
+    if (!owned.dragged && Math.hypot(event.clientX - owned.startX, event.clientY - owned.startY) < dragSlop) return
+    owned.dragged = true; event.preventDefault()
+    const size = canvas.getBoundingClientRect(), dx = event.clientX - owned.x, dy = event.clientY - owned.y
+    owned.x = event.clientX; owned.y = event.clientY
+    map.jumpTo({ bearing: map.getBearing() - dx / size.width * 360, pitch: Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() + dy / size.height * 180)) }, { originalEvent: event })
+  }
+  const pointerEnd = (event: PointerEvent): void => {
+    const owned = activePointer
+    if (owned?.id === event.pointerId) {
+      const consumed = owned.dragged || event.type === 'pointercancel'
+      activePointer = null; if (canvas.hasPointerCapture(owned.id)) canvas.releasePointerCapture(owned.id)
+      if (consumed) guardCompletedDrag(owned.id)
+    } else if (cancelledPointer === event.pointerId) guardCompletedDrag(event.pointerId)
+    if (cancelledPointer === event.pointerId) cancelledPointer = null
+  }
+  const pointerLost = (event: PointerEvent): void => { if (activePointer?.id === event.pointerId) releasePointer() }
+  map.on('mousedown', mouseDown)
+  canvas.addEventListener('pointerdown', pointerDown); canvas.addEventListener('pointermove', pointerMove); canvas.addEventListener('lostpointercapture', pointerLost)
+  endTarget.addEventListener('pointerup', pointerEnd as EventListener, true); endTarget.addEventListener('pointercancel', pointerEnd as EventListener, true)
+  canvas.addEventListener('click', click, true); canvas.addEventListener('dblclick', click, true)
   let installed: ReturnType<typeof createPhysicalSceneLayer> | null = null
   const port: PhysicalViewport = {
     surface: { kind: 'map', element: canvas, getSize: () => { const r = canvas.getBoundingClientRect(); return { width: r.width, height: r.height } }, getPadding: () => { const p = map.getPadding(); return { top: p.top ?? 0, right: p.right ?? 0, bottom: p.bottom ?? 0, left: p.left ?? 0 } }, on: (event, listener) => subscribe(event === 'move' ? 'change' : event, listener) },
@@ -51,9 +98,9 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
       map.easeTo({ ...camera, bearing, pitch, offset, duration: 0 })
     },
     panBy: (x, y) => map.panBy([x, y], { duration: 0 }),
-    setNavigationTool(value) { releasePointer(); tool = value; if (tool === 'orbit') map.dragPan.disable(); else map.dragPan.enable() },
+    setNavigationTool(value) { releasePointer(); tool = value; /* Native camera handlers retain their global contract; mousedown claims this gesture. */ },
     cancelCamera() { map.stop(); releasePointer() },
-    destroy() { for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); releasePointer(); map.dragPan.enable(); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('pointerup', releasePointer); canvas.removeEventListener('pointercancel', releasePointer) },
+    destroy() { for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
   }
   return port
 }

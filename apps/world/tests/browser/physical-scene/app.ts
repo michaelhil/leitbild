@@ -12,7 +12,7 @@ import { fullGlState, sentinel, stateDifferences } from './gl-probes.ts'
 import { buildVisibleMeshes } from '../../../src/ui/map/physical-scene/geometry.ts'
 import { boundsCorners, localMercatorMatrix, multiply, transform } from '../../../src/ui/map/physical-scene/math.ts'
 
-declare global { interface Window { physicalProbe: { ready: Promise<void>; run: () => Promise<unknown>; view: (mode: '2d' | '3d', level: string) => Promise<void>; responsive: () => Promise<unknown>; responsive3d: (separation?: number) => Promise<unknown> } } }
+declare global { interface Window { physicalProbe: { ready: Promise<void>; run: () => Promise<unknown>; view: (mode: '2d' | '3d', level: string) => Promise<void>; responsive: () => Promise<unknown>; responsive3d: (separation?: number) => Promise<unknown>; navigationTool: (tool: 'pan' | 'orbit') => void; gestureState: () => unknown; cancelNavigation: () => void; resetNavigationProbe: () => void } } }
 setWorkerUrl('/worker.mjs')
 const errors: string[] = [], stateErrors: string[][] = [], glErrors: number[] = []
 const descriptor = await (await fetch('/descriptor.json')).json() as PackPhysicalSceneDescriptor
@@ -42,6 +42,8 @@ map.addLayer = (layer, before) => {
   }
   return addLayer(layer, before)
 }
+let nativeMapClicks = 0
+map.on('click', () => { nativeMapClicks++ })
 map.on('error', event => errors.push(event.error.message))
 const palette: PhysicalScenePalette = { materials: { wall: [.65, .67, .66], floor: [.85, .85, .82], metal: [.35, .42, .44], equipment: [.25, .42, .34], pipe: [.5, .58, .58], door: [.23, .45, .65], glass: [.75, .83, .85], context: [.7, .72, .67], line: [.2, .22, .22] }, defaultMaterial: [.5, .55, .55], line: [.2, .22, .22] }
 let presentations: ReadonlyArray<PhysicalScenePresentation> = [], controller: ReturnType<typeof createPhysicalSceneController>
@@ -98,6 +100,10 @@ map.on('moveend', updateDeck)
 
 window.physicalProbe = {
   ready: loaded,
+  navigationTool(tool) { controller.setNavigationTool(tool) },
+  gestureState: () => ({ clicks: nativeMapClicks, pose: controller.cameraPose(), nativePanEnabled: map.dragPan.isEnabled() }),
+  cancelNavigation() { controller.cancelCamera(); controller.setNavigationTool('pan') },
+  resetNavigationProbe() { controller.setNavigationTool('pan'); map.jumpTo({ bearing: 0, pitch: 0 }) },
   async view(mode, level) { controller.setView(descriptor.id, { ...defaultPhysicalSceneView(descriptor.levels), mode, levelId: level }); map.jumpTo({ pitch: mode === '2d' ? 0 : 50 }); await ready(); await settle(4) },
   async responsive() {
     map.resize(); await this.view('2d', descriptor.levels[0]!.id)

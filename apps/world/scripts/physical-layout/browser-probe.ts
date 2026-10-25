@@ -81,8 +81,29 @@ try {
   await writeFile(join(output, 'driver-evaluation.json'), JSON.stringify(evaluated, null, 2))
   const result = evaluated.result?.value
   if (!result || typeof result.passed !== 'boolean') { await writeFile(join(output, 'driver-failure.json'), JSON.stringify(evaluated, null, 2)); console.error(JSON.stringify(evaluated)); throw new Error(`Physical browser proof did not produce a receipt: ${output}`) }
+  const evaluate = async (expression: string) => (await call('Runtime.evaluate', { expression, returnByValue: true })).result.value
+  const gesture = async (tool: 'pan' | 'orbit', button: 'left' | 'right', moving: boolean, cancel = false) => {
+    await evaluate(`window.physicalProbe.navigationTool('${tool}')`)
+    const before = await evaluate('window.physicalProbe.gestureState()'), x = 388, y = 420, buttons = button === 'left' ? 1 : 2
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, buttons: 0 })
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, buttons, clickCount: 1 })
+    if (moving) for (let step = 1; step <= 120; step++) {
+      const angle = step / 120 * Math.PI * 2
+      await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + Math.sin(angle) * 65, y: y + Math.sin(angle * 2) * 22, buttons })
+      if (cancel && step === 30) await evaluate('window.physicalProbe.cancelNavigation()')
+    }
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, buttons: 0, clickCount: 1 })
+    const after = await evaluate('window.physicalProbe.gestureState()')
+    return { tool, button, moving, cancel, clickDelta: after.clicks - before.clicks, cameraRevisions: after.pose.revision - before.pose.revision, nativePanEnabled: after.nativePanEnabled }
+  }
+  result.gestures = { closedLoopOrbit: await gesture('orbit', 'left', true), ordinaryOrbitClick: await gesture('orbit', 'left', false), nativePanLoop: await gesture('pan', 'left', true), nativeSecondaryLoop: await gesture('orbit', 'right', true), cancelledOrbit: await gesture('orbit', 'left', true, true), followingPanClick: await gesture('pan', 'left', false) }
+  result.gesturesPassed = Object.values(result.gestures).every((value: any) => value.nativePanEnabled && value.clickDelta === (value.moving ? 0 : 1)) && result.gestures.closedLoopOrbit.cameraRevisions > 0
+  result.passed &&= result.gesturesPassed
+  // Gesture scenarios may change native camera pose; existing fit scenarios
+  // begin from their own declared baseline rather than inheriting that state.
+  await evaluate('window.physicalProbe.resetNavigationProbe()')
   const hashes: Record<string, string> = {}
-  for (const file of ['src/ui/map/physical-scene/controller.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/overview.ts', 'src/ui/map-runtime/operational-deck-layers.ts', 'src/packs/physical-layout/native/compile-scene.ts', 'src/packs/physical-layout/native/campus/compile-scene.ts']) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
+  for (const file of ['src/ui/map/physical-scene/controller.ts', 'src/ui/map/physical-scene/map-viewport.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/overview.ts', 'src/ui/map-runtime/operational-deck-layers.ts', 'src/packs/physical-layout/native/compile-scene.ts', 'src/packs/physical-layout/native/campus/compile-scene.ts']) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
   result.sourceHashes = hashes; result.sceneSha256 = createHash('sha256').update(JSON.stringify(scene)).digest('hex'); result.designMode = designMode; result.design = design
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'final.png'), Buffer.from(shot.data, 'base64'))
   await call('Runtime.evaluate', { expression: `window.physicalProbe.view('2d','lower')`, awaitPromise: true });
@@ -103,6 +124,6 @@ try {
   result.passed &&= result.responsiveSeparated?.inside === true
   const separateShot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'narrow-separated.png'), Buffer.from(separateShot.data, 'base64'))
   await writeFile(join(output, 'receipt.json'), JSON.stringify(result, null, 2))
-  console.log(JSON.stringify({ output, passed: result.passed, profile: result.profile, errors: result.errors, stateErrors: result.stateErrors, glErrors: result.glErrors, basic: result.basic, lifecycle: { mountCycles: result.cycles.length, styleCycles: result.styles.length, contextRestored: result.contextRestore.sentinel.passed }, idleFrames: result.idleFrames, unchangedStateRefreshes: result.unchangedStateRefreshes, responsive: result.responsive, responsive3d: result.responsive3d, responsiveSeparated: result.responsiveSeparated, negativeControlDetected: result.negativeControlDetected, deckPick: result.deckPick }, null, 2))
+  console.log(JSON.stringify({ output, passed: result.passed, profile: result.profile, gestures: result.gestures, gesturesPassed: result.gesturesPassed, errors: result.errors, stateErrors: result.stateErrors, glErrors: result.glErrors, basic: result.basic, lifecycle: { mountCycles: result.cycles.length, styleCycles: result.styles.length, contextRestored: result.contextRestore.sentinel.passed }, idleFrames: result.idleFrames, unchangedStateRefreshes: result.unchangedStateRefreshes, responsive: result.responsive, responsive3d: result.responsive3d, responsiveSeparated: result.responsiveSeparated, negativeControlDetected: result.negativeControlDetected, deckPick: result.deckPick }, null, 2))
   if (!result.passed) process.exitCode = 1
 } finally { socket?.close(); chrome.kill(); await chrome.exited; server.stop(true); await rm(profile, { recursive: true, force: true }) }
