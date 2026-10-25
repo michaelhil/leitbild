@@ -55,6 +55,18 @@ export interface CustomShape {
 const APPROVED = { owner: 'approved', ref: 'Q11 (21 Oct): approved as recommended' } as const
 
 export const customShapes: ReadonlyArray<CustomShape> = [
+  {
+    id: 'physical-layout-solids-and-plan',
+    draws: 'Model-derived architecture, shaped physical equipment, cut fragments and architectural plan strokes in the geographic map.',
+    sites: [
+      { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
+      { file: 'ui/map/physical-scene/geometry.ts', mark: 'export const buildVisibleMeshes', drawn: 'code' },
+    ],
+    standsInFor: 'none', reason: 'A',
+    evidence: 'OpenBridge has no renderer for metre-based architectural solids, hosted openings or floor cuts. These physical representations use host token roles; operational meaning remains the shared owner status and actual embedded faceplate.',
+    decision: { owner: 'approved', ref: '24 Oct 2026: owner requested native PWR map/Run integration including levels, 2D/3D and live status' },
+    ends: 'kept',
+  },
   // Shapes the old renderer drew that the vignette draws too (the old renderer went at the swap, P2 architecture §D).
   {
     id: 'reactor-vessel',

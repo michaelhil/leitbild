@@ -3,7 +3,6 @@ import { embeddedViewFragment, workspaceIdSchema } from '@leitbild/contracts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import type { ProcedureTagValidation, ProcedureTagValue } from '../src/ui/procedures/procedure-client.ts'
 import {
-  createTagFrameHost,
   procedureTagBindingLine,
   procedureTagDeclared,
   procedureTagDisplayPlan,
@@ -11,6 +10,7 @@ import {
   procedureTagReadingText,
 } from '../src/ui/procedures/procedure-tag-display.ts'
 import { defaultDisplayEnvelope } from '../src/ui/process-display/default-display.ts'
+import { createEmbeddedFrameHost } from '../src/ui/process-display/embedded-frame-host.ts'
 
 const workspaceId = workspaceIdSchema.parse('11111111-1111-4111-8111-111111111111')
 const runId = 'run-test' as SimulationRunId
@@ -96,7 +96,7 @@ describe('the tag dialog hosts its frame as the chat page does', () => {
   const host = () => {
     const posted: Array<{ readonly to: unknown; readonly message: unknown }> = []
     const opened: unknown[] = []
-    const frameHost = createTagFrameHost({ origin, frame: () => frame, post: (to, message) => { posted.push({ to, message }) }, open: listing => { opened.push(listing) } })
+    const frameHost = createEmbeddedFrameHost({ origin, frame: () => frame, post: (to, message) => { posted.push({ to, message }) }, open: listing => { opened.push(listing) } })
     return { frameHost, posted, opened }
   }
 
@@ -123,7 +123,7 @@ describe('the tag dialog hosts its frame as the chat page does', () => {
       { origin, source: { name: 'another frame' }, data: { type: 'world:display-frame-ready' } },
     ]) frameHost.receive(event)
     expect([posted, opened]).toEqual([[], []])
-    const unloaded = createTagFrameHost({ origin, frame: () => null, post: () => { throw new Error('posted') }, open: () => { throw new Error('opened') } })
+    const unloaded = createEmbeddedFrameHost({ origin, frame: () => null, post: () => { throw new Error('posted') }, open: () => { throw new Error('opened') } })
     unloaded.receive({ origin, source: null, data: { type: 'world:display-frame-ready' } })
   })
 })

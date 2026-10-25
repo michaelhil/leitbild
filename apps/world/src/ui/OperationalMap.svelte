@@ -1,10 +1,13 @@
 <script lang="ts">
   import 'maplibre-gl/dist/maplibre-gl.css'
   import { untrack } from 'svelte'
+  import type { EmbeddedViewListing } from '@leitbild/contracts'
+  import type { PhysicalLayoutBinding, PhysicalLayoutMapInteraction } from './physical-layout/sources.ts'
   import type {
     GeoJsonPoint,
     GeoJsonPolygon,
     IsoTimestamp,
+    SimulationRunId,
     OperationalObject,
     SimulationClockState,
     MapLayerId,
@@ -103,6 +106,9 @@
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceStyles?: ReadonlyArray<PackReferenceDatasetStyle>
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
+    readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
+    readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
+    readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
     /** The selected item per surface panel; live map layers highlight it. */
     readonly packSelections?: Readonly<Record<string, string | null>>
@@ -182,6 +188,9 @@
     mapLayerGroupVisibility = {},
     referenceStyles = [],
     liveMapLayers = [],
+    physicalLayoutBindings = [],
+    onPhysicalDisplay = () => {},
+    layoutClearTop = 0,
     queryLiveMapLayer = async () => { throw new Error('live map layers need a capability query') },
     packSelections = {},
     packFeatureLayers = [],
@@ -273,6 +282,16 @@
   }
 
   const promptController = createMapPromptController({ getMap: () => runtime?.map ?? null })
+  let physicalLayoutInteraction: PhysicalLayoutMapInteraction | null = null
+  let detailedLayoutOwnerIds = $state.raw<ReadonlySet<string>>(new Set())
+  const physicalMapPresentation = (object: OperationalObject): PackObjectPresentation => {
+    const presentation = presentationFor(object)
+    return detailedLayoutOwnerIds.has(object.id) ? { ...presentation, mapIconVisible: false } : presentation
+  }
+  const setDetailedLayoutOwners = (ids: ReadonlyArray<string>): void => {
+    const next = new Set(ids)
+    if (next.size !== detailedLayoutOwnerIds.size || [...next].some(id => !detailedLayoutOwnerIds.has(id))) detailedLayoutOwnerIds = next
+  }
   const stackChooser = createMapStackChooser({ getMap: () => runtime?.map ?? null })
 
   /** An object a click picked, or the one chosen from a stack: an assignment's target, or a selection. */
@@ -340,10 +359,10 @@
       assignmentInteraction: assignmentInteraction(),
       disksPick: disksPickFor(targetPicking, pickingRadius),
       diskClicks: pickingRadius === 0 ? takesDiskClicks : null,
-      presentationKey,
+      presentationKey: `${presentationKey}|physical:${[...detailedLayoutOwnerIds].sort().join(',')}`,
     }),
     hasNewInfo: object => hasNewInfo(object),
-    presentationFor: object => presentationFor(object),
+    presentationFor: object => physicalMapPresentation(object),
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
@@ -585,10 +604,15 @@
             clickHandled = false
             objectTookClick = false
             featureSelection = null
+            if (outcome === 'handled') physicalLayoutInteraction?.dismiss()
             if (feature !== null && !placementMode) onPackFeatureSelected(feature)
             if (outcome === 'suppressed') suppressBackgroundClick = false
             else if (outcome === 'assignment-cancel') onAssignmentCancelled()
-            else if (outcome === 'ground') onGroundSelected?.(point)
+            else if (outcome === 'ground') {
+              const captured = placementMode !== null || targetPicking || selectedControllerId !== null
+              if (!captured && physicalLayoutInteraction?.activate(lastPointerScreen)) return
+              onGroundSelected?.(point)
+            }
           })
         },
         onMoveStart: event => {
@@ -726,6 +750,7 @@
 
   $effect(() => {
     objects
+    detailedLayoutOwnerIds
     selectedControllerId
     highlightedObjectIds
     mutedObjectIds
@@ -886,6 +911,20 @@
   style:--map-cover-left={`${cameraPadding.left}px`}
   bind:this={mapElement}
 ></div>
+{#if runtime !== null && simulationRunId !== null && physicalLayoutBindings.length > 0}
+  {#key runtime.map}
+  {#key simulationRunId}
+  {#await import('./physical-layout/PhysicalLayouts.svelte') then { default: PhysicalLayouts }}
+    <PhysicalLayouts map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+      {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} onDetailedOwners={setDetailedLayoutOwners}
+      suspended={placementMode !== null || assignmentActive || targetPicking || selectedControllerId !== null}
+      onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />
+  {:catch error}
+    <p role="alert">Physical layouts cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
+  {/await}
+  {/key}
+  {/key}
+{/if}
 {#if debugMapInput}
   <aside class="map-input-debug" aria-live="polite">
     <strong>Map Input Trace</strong>

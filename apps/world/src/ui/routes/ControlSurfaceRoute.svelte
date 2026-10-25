@@ -24,6 +24,7 @@
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
   import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
+  import type { PhysicalLayoutBinding } from '../physical-layout/sources.ts'
   import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
     fetchScenario,
@@ -458,6 +459,9 @@
   const activeLiveMapLayers = $derived(activePack
     ? activePack.packs.flatMap(pack => (pack.presentation.liveMapLayers ?? []).map(layer => ({ packId: pack.descriptor.id, layer })))
     : emptyLiveMapLayers)
+  const activePhysicalLayoutBindings = $derived<ReadonlyArray<PhysicalLayoutBinding>>(activePack?.packs.flatMap(pack => pack.physicalScenes === undefined ? [] : [{ packId: pack.descriptor.id, contribution: pack.physicalScenes }]) ?? [])
+  let alarmStripBottom = $state(0)
+  const setAlarmStripBounds = (box: { readonly bottom: number } | null): void => { alarmStripBottom = box?.bottom ?? 0 }
   const queryLiveMapLayer = async (request: PackMapFeatureQuery, signal: AbortSignal): Promise<unknown> => {
     const runId = simulationRunId
     if (!runId) throw new Error('live map layers query a Simulation Run, and none is joined')
@@ -2072,6 +2076,9 @@
           {mapLayerGroupVisibility}
           referenceStyles={activeReferenceStyles}
           liveMapLayers={activeLiveMapLayers}
+          physicalLayoutBindings={activePhysicalLayoutBindings}
+          layoutClearTop={alarmStripBottom}
+          onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           {queryLiveMapLayer}
           packSelections={packPanelSelections}
           packFeatureLayers={activePackFeatureLayers}
@@ -2125,7 +2132,7 @@
         </section>
       {/if}
       {#if activePack}
-        <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+        <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
       {/if}
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} />
       {#if runRoles && heldRoleIds}

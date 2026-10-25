@@ -7,7 +7,6 @@
   import { activeWorkspaceId } from '../workspace-context.ts'
   import { readProcedureTagValue, type ProcedureTagValidation, type ProcedureTagValue } from './procedure-client.ts'
   import {
-    createTagFrameHost,
     procedureTagBindingLine,
     procedureTagDeclared,
     procedureTagDisplayPlan,
@@ -15,6 +14,7 @@
     procedureTagReadingText,
   } from './procedure-tag-display.ts'
   import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
+  import { createEmbeddedFrameHost } from '../process-display/embedded-frame-host.ts'
 
   // A clicked procedure tag: World's live default display of the equipment the
   // tag is measured on, framed read-only over the procedure, with the tag's
@@ -62,7 +62,7 @@
   let frameBox = $state<HTMLElement | null>(null)
   let frame = $state<HTMLIFrameElement | null>(null)
   // The frame learns that this page relays what it opens; what it asks to open goes to the display window.
-  const frameHost = createTagFrameHost({
+  const frameHost = createEmbeddedFrameHost({
     origin: location.origin,
     frame: () => frame?.contentWindow ?? null,
     post: (target, message) => { (target as Window).postMessage(message, location.origin) },

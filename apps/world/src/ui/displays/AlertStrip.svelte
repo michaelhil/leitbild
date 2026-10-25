@@ -14,7 +14,7 @@
   // display with its first-out selected (W2.8). It acknowledges,
   // shelves and suppresses nothing. Whether the viewer keeps it folded is that
   // viewer's own convenience, in browser storage.
-  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear }: {
+  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear, onBounds = () => {} }: {
     objects: ReadonlyArray<OperationalObject>
     categoryOf: (object: OperationalObject) => string
     /** What opens an object's process display, selecting this element of it; undefined where it has none. */
@@ -25,7 +25,20 @@
     railWidth: number
     /** What the strip keeps clear of: the map covers open surface panels declare on either side, and the briefing card's bottom edge above it. */
     clear: { readonly left: number; readonly right: number; readonly top: number }
+    /** Actual viewport cover, so map inspection controls can stand below the alarm strip. */
+    onBounds?: (box: { readonly bottom: number } | null) => void
   } = $props()
+  let stripElement = $state<HTMLElement | null>(null)
+  $effect(() => {
+    void clear.top; void belowRoles
+    const element = stripElement
+    if (element === null) { onBounds(null); return }
+    const report = (): void => onBounds({ bottom: element.getBoundingClientRect().bottom })
+    const observer = new ResizeObserver(report)
+    observer.observe(element); report(); queueMicrotask(report)
+    window.addEventListener('resize', report)
+    return () => { observer.disconnect(); window.removeEventListener('resize', report); onBounds(null) }
+  })
 
   const foldedKey = 'leitbild.alert-strip.folded'
   const readFolded = (): boolean => { try { return localStorage.getItem(foldedKey) === 'true' } catch { return false } }
@@ -59,7 +72,7 @@
 <svelte:window bind:innerHeight bind:innerWidth />
 
 {#if strip.groups.length > 0}
-  <section class="alert-strip" class:below={belowRoles} style:left={`${span.left}px`} style:width={`${span.width}px`} style:--clear-top={`${clear.top}px`} aria-label="Alarms">
+  <section bind:this={stripElement} class="alert-strip" class:below={belowRoles} style:left={`${span.left}px`} style:width={`${span.width}px`} style:--clear-top={`${clear.top}px`} aria-label="Alarms">
     <header title={rule}>
       <span>Alarms · {strip.groups.length} {strip.groups.length === 1 ? 'group' : 'groups'} · {unack} unacknowledged</span>
       <button type="button" aria-expanded={!folded} onclick={fold}>{folded ? 'Show' : 'Fold'}</button>
