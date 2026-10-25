@@ -12,7 +12,7 @@ import { createSimulationRunRegistry } from '../src/core/simulation-runs/registr
 import { geoPointFromLonLat, objectIdSchema, type OperationalObject } from '../src/core/model/index.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
 import { currentPwrPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
-import { canonicalPhysicalJson, physicalLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
+import { canonicalPhysicalJson, physicalLayoutDataSchema, turbineIslandLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
 import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
 import { physicalSourceSchema } from '../src/packs/physical-layout/native/source.ts'
 import { wallCells } from '../src/packs/physical-layout/native/solid.ts'
@@ -20,7 +20,7 @@ import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { describeProcessPlantPhysicalTargets } from '../src/packs/process-plant/physical-targets.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { physicalCompilerFiles, physicalCompilerRef } from '../src/packs/physical-layout/compiler-identity.ts'
+import { campusPhysicalCompilerFiles, campusPhysicalCompilerRef, physicalCompilerFiles, physicalCompilerRef } from '../src/packs/physical-layout/compiler-identity.ts'
 import { sideViewOfSnapshot } from '../src/core/simulation-runs/side-view.ts'
 import type { SimulationRunStateSnapshot } from '../src/core/simulation-runs/state-store.ts'
 
@@ -44,6 +44,13 @@ const find = (objects: ReadonlyArray<OperationalObject>, id: string): Operationa
 }
 
 describe('Physical layout admission and retained scene', () => {
+  test('the expanded compiler is a separately pinned artifact with its full dependency closure', async () => {
+    const hash = createHash('sha256')
+    for (const name of campusPhysicalCompilerFiles) hash.update(name).update('\0').update(new Uint8Array(await Bun.file(new URL(`../src/packs/physical-layout/native/${name}`, import.meta.url)).arrayBuffer()))
+    expect(hash.digest('hex')).toBe(campusPhysicalCompilerRef.digest)
+    expect(campusPhysicalCompilerFiles.slice(0, physicalCompilerFiles.length)).toEqual([...physicalCompilerFiles])
+    expect(campusPhysicalCompilerRef.id).not.toBe(physicalCompilerRef.id)
+  })
   test('retained physical source inherits its owner audience before any side-view delivery', async () => {
     const compiled = await compile(source())
     const originalOwner = find(compiled.initialObjects, 'plant:a')
@@ -117,7 +124,7 @@ describe('Physical layout admission and retained scene', () => {
     expect(pump.normals?.length).toBe(pump.positions.length)
     expect(pump.materialIndices?.length).toBe(pump.positions.length / 3)
     expect(scene.objects.some(object => object.kind === 'door' && (object.planLines?.length ?? 0) > 0)).toBe(true)
-    const data = physicalLayoutDataSchema.parse(object.packData)
+    const data = turbineIslandLayoutDataSchema.parse(object.packData)
     const opening = data.source.elements.find(element => element.kind === 'opening')!
     const host = data.source.elements.find(element => element.id === opening.hostId)!
     const midpoint = [opening.pose.position[0] + opening.dimensions!.length / 2, opening.pose.position[2] + opening.dimensions!.height / 2]
@@ -137,9 +144,9 @@ describe('Physical layout admission and retained scene', () => {
     expect(descriptor.reason).toContain('Location mismatch')
     expect(describePhysicalLayoutScene(layout, compiled.initialObjects)!.locationValid).toBe(true)
     expect(canonicalPhysicalJson(layout.packData)).toBe(before)
-    const retained = resolvePhysicalDesign(currentPwrPhysicalDesignRef)
+    const retained = await resolvePhysicalDesign(currentPwrPhysicalDesignRef)
     retained.source.elements[0]!.pose.position[0] += 10
-    expect(resolvePhysicalDesign(currentPwrPhysicalDesignRef).source).not.toEqual(retained.source)
+    expect((await resolvePhysicalDesign(currentPwrPhysicalDesignRef)).source).not.toEqual(retained.source)
   })
 
   test('retained prior source labels load without substituting the current catalog revision', async () => {
@@ -150,7 +157,7 @@ describe('Physical layout admission and retained scene', () => {
     data.source.levels[1]!.label = 'Turbine operating floor · +15 m'
     data.sourceDigest = createHash('sha256').update(canonicalPhysicalJson(data.source)).digest('hex')
     data.design = previous
-    expect(() => resolvePhysicalDesign(previous)).toThrow('mismatched physical Design Revision')
+    await expect(resolvePhysicalDesign(previous)).rejects.toThrow('mismatched physical Design Revision')
     const retained = await loadPhysicalLayoutScene({ ...object, packData: data })
     expect(retained.revision).toBe(previous.digest)
     expect(retained.levels.map(level => level.label)).toEqual(['Lower floor · +0 m', 'Turbine operating floor · +15 m'])

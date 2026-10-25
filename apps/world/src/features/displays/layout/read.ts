@@ -48,7 +48,15 @@ export const layoutDescriptorOf = async (run: ViewRun, input: z.infer<typeof lay
   const owner = visibleObject(run, descriptor.targetObjectId)
   if (owner === undefined) return refuse('layout_owner_unavailable', 'The layout owner is not available in the current Run view')
   const targets = await run.packs.find(candidate => candidate.descriptor.id === owner.packId)?.physicalTargets?.(owner)
-  if (targets === undefined || targets.modelDigest !== descriptor.modelDigest) return refuse('layout_model_mismatch', 'The retained layout does not match the current owner model')
+  if (targets === undefined || targets.objectId !== owner.id || targets.modelDigest !== descriptor.modelDigest) return refuse('layout_model_mismatch', 'The retained layout does not match the current owner model')
+  const related = descriptor.relatedTargets ?? []
+  if (related.length > 64 || new Set(related.map(target => target.objectId)).size !== related.length) return refuse('layout_member_mismatch', 'The layout has an invalid related owner set')
+  await Promise.all(related.map(async target => {
+    const member = visibleObject(run, target.objectId)
+    if (member === undefined || member.packId !== target.packId) return refuse('layout_member_unavailable', 'A related layout member is unavailable in the current Run view')
+    const description = await run.packs.find(pack => pack.descriptor.id === member.packId)?.physicalTargets?.(member)
+    if (description === undefined || description.objectId !== member.id || description.modelDigest !== target.modelDigest) return refuse('layout_member_mismatch', 'A related layout member no longer satisfies the retained model requirement')
+  }))
   const ids = new Set(targets.subjects.map(subject => subject.id))
   if (descriptor.subjectIds.length > 256 || descriptor.subjectIds.some(id => !ids.has(id))) return refuse('layout_subject_mismatch', 'The layout contains unsupported owner subjects')
   return descriptor

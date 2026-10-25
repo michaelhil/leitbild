@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import oldSource from '../src/packs/physical-layout/pwr-turbine-island.source.json'
 import oldBindings from '../src/packs/physical-layout/pwr-turbine-island.bindings.json'
-import { physicalCorrespondenceSchema } from '../src/packs/physical-layout/model.ts'
+import { turbineIslandCorrespondenceSchema } from '../src/packs/physical-layout/model.ts'
 import { compilePhysicalObjects as originalCompile } from '../src/packs/physical-layout/native/compile-scene.ts'
 import { physicalSourceSchema as originalSchema } from '../src/packs/physical-layout/native/source.ts'
 import { compilePhysicalObjects, physicalObjectsBounds } from '../src/packs/physical-layout/native/campus/compile-scene.ts'
@@ -13,7 +13,7 @@ const source = (elements: Element[]): Source => physicalSourceSchema.parse({ id:
 
 describe('Retained native campus source and geometry profile', () => {
   test('inherited accepted source produces byte-identical delivery without changing old compiler files', () => {
-    const original = originalCompile({ source: originalSchema.parse(oldSource), bindings: oldBindings.map(binding => physicalCorrespondenceSchema.parse(binding)) })
+    const original = originalCompile({ source: originalSchema.parse(oldSource), bindings: oldBindings.map(binding => turbineIslandCorrespondenceSchema.parse(binding)) })
     const expanded = compilePhysicalObjects({ source: physicalSourceSchema.parse(oldSource), bindings: oldBindings })
     expect(expanded).toEqual(original)
   })

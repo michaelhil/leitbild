@@ -1,0 +1,36 @@
+{
+  "design": {
+    "id": "pwr-full-unit",
+    "revision": "pwr-full-unit-20261025-r1",
+    "digest": "eb3711e5c4c920f15f78df173177122ae6bbdfa860cc98a73c893c9e1b6176c7"
+  },
+  "sourceDigest": "bdb869d221a628825dc83864ffc21b290cba6e61a1d9b341df144d6259d4f8ff",
+  "bindingDigest": "3528660d71d440ca4469d99e4c5c50010c7691ec5002ff528e2a35202c4ef3b3",
+  "modelRequirement": {
+    "modelRef": "process-plant.pwr.reference",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+  },
+  "bounds": {
+    "min": [
+      -186.72,
+      -60,
+      -0.4
+    ],
+    "max": [
+      105.9,
+      109.32,
+      48
+    ]
+  },
+  "profile": "campus",
+  "compiler": {
+    "id": "physical-layout-native-campus",
+    "digest": "4d7ac76a20a7d0abf7da1503bc795d5f50fb326fa31b904745cd027b7312e854"
+  },
+  "coverageDigest": "390392e4d1ae64f38ea6a39b8fbe3a09956b22a04c7dfb6e021eb15ac34205b7",
+  "requirements": {
+    "ownerRole": "unit",
+    "ownerPackId": "process-plant",
+    "relatedMembers": []
+  }
+}

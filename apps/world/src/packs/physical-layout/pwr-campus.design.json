@@ -1,0 +1,85 @@
+{
+  "design": {
+    "id": "pwr-campus",
+    "revision": "pwr-campus-20261025-r1",
+    "digest": "1f66130632e8695d09efbee1daa7d0f43d3fe6bcad9fa2400faf50977ce9b901"
+  },
+  "sourceDigest": "7a3722e46dd03612ab848c659482cb3d85c03e72fa36c863d8014381ccf8e160",
+  "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
+  "modelRequirement": {
+    "modelRef": "electric-grid.halden.four-unit",
+    "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+  },
+  "bounds": {
+    "min": [
+      -835,
+      -320.05196152422707,
+      -0.2
+    ],
+    "max": [
+      900.06,
+      1010.0519615242271,
+      44.126071980926035
+    ]
+  },
+  "profile": "campus",
+  "compiler": {
+    "id": "physical-layout-native-campus",
+    "digest": "4d7ac76a20a7d0abf7da1503bc795d5f50fb326fa31b904745cd027b7312e854"
+  },
+  "coverageDigest": "118541c154f7f4b442223f16a2454f5b6817e439f7afbd51f27ab25f7d8a5ba2",
+  "requirements": {
+    "ownerRole": "grid",
+    "ownerPackId": "electric-grid",
+    "placement": {
+      "anchor": [
+        11.48,
+        59.08
+      ],
+      "bearing": 0,
+      "subjectId": "bus:curated-halden-pwr-switchyard@420"
+    },
+    "relatedMembers": [
+      {
+        "role": "unit-1",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.47,
+          59.087
+        ]
+      },
+      {
+        "role": "unit-2",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.477,
+          59.085
+        ]
+      },
+      {
+        "role": "unit-3",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.484,
+          59.083
+        ]
+      },
+      {
+        "role": "unit-4",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.491,
+          59.081
+        ]
+      }
+    ]
+  }
+}

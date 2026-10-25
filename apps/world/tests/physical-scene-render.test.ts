@@ -118,8 +118,8 @@ describe('Physical scene validation, projection and inspection fragments', () =>
     expect(pickPhysicalMesh(entries, { x: 95, y: 50 }, 100, 100)?.sceneId).toBe('layout:b')
   })
 
-  test('the real saved PWR delivery produces distinct credible lower and operating plans without source mutation', () => {
-    const data = resolvePhysicalDesign(currentPwrPhysicalDesignRef), objects = compilePhysicalObjects(data)
+  test('the real saved PWR delivery produces distinct credible lower and operating plans without source mutation', async () => {
+    const data = await resolvePhysicalDesign(currentPwrPhysicalDesignRef), objects = compilePhysicalObjects(data)
     const real: PackPhysicalScene = { ...scene(objects), bounds: physicalObjectsBounds(objects), levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })) }
     const before = JSON.stringify(real)
     const lower = buildVisibleMeshes(real, defaultPhysicalSceneView(real.levels)), upper = buildVisibleMeshes(real, { ...defaultPhysicalSceneView(real.levels), levelId: 'operating' })

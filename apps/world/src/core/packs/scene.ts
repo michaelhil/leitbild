@@ -95,5 +95,7 @@ export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'ob
   readonly reason?: string
   readonly subjectIds: ReadonlyArray<string>
   readonly modelDigest: string
+  /** Additional immutable owner requirements; these do not create another live-state authority. */
+  readonly relatedTargets?: ReadonlyArray<{ readonly objectId: string; readonly packId: string; readonly modelDigest: string }>
   readonly overviewFootprints?: ReadonlyArray<PhysicalOverviewFootprint>
 }

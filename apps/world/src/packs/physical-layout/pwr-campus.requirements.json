@@ -1,0 +1,15 @@
+{
+  "ownerRole": "grid",
+  "ownerPackId": "electric-grid",
+  "placement": {
+    "anchor": [11.48, 59.08],
+    "bearing": 0,
+    "subjectId": "bus:curated-halden-pwr-switchyard@420"
+  },
+  "relatedMembers": [
+    {"role": "unit-1", "packId": "process-plant", "modelRef": "process-plant.pwr.reference", "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea", "anchor": [11.47, 59.087]},
+    {"role": "unit-2", "packId": "process-plant", "modelRef": "process-plant.pwr.reference", "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea", "anchor": [11.477, 59.085]},
+    {"role": "unit-3", "packId": "process-plant", "modelRef": "process-plant.pwr.reference", "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea", "anchor": [11.484, 59.083]},
+    {"role": "unit-4", "packId": "process-plant", "modelRef": "process-plant.pwr.reference", "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea", "anchor": [11.491, 59.081]}
+  ]
+}
