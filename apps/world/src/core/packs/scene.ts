@@ -75,3 +75,11 @@ export type PackPhysicalScene = z.infer<typeof packPhysicalSceneSchema>
 export type PhysicalSceneObject = z.infer<typeof physicalSceneObjectSchema>
 export type PhysicalSceneLevel = z.infer<typeof physicalSceneLevelSchema>
 export type PhysicalSceneBounds = z.infer<typeof physicalSceneBoundsSchema>
+
+/** Cheap placement/LOD/owner metadata; obtaining it never compiles triangle geometry. */
+export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'objects'> {
+  readonly locationValid: boolean
+  readonly reason?: string
+  readonly subjectIds: ReadonlyArray<string>
+  readonly modelDigest: string
+}

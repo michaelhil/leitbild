@@ -22,6 +22,7 @@ import { processPlantRecordingProfiles, recordedPlantVariables } from './recordi
 import { processPlantObservationCapabilityIds } from './observation/query.ts'
 import { processPlantSimAdapterId } from './sim/constants.ts'
 import { processPlantPackView } from './ui-pack.ts'
+import { describeProcessPlantPhysicalTargets } from './physical-targets.ts'
 
 const processPlantScenarioItemSchema = z.object({
   pack: z.literal('process-plant'),
@@ -123,6 +124,7 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
 export const processPlantPack: WorldPack = {
   ...processPlantPackView,
   scenarioConfigSchema: processPlantPackConfigSchema,
+  physicalTargets: describeProcessPlantPhysicalTargets,
   authoring: {
     itemTypes: [{
       id: 'plant',

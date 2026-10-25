@@ -9,6 +9,7 @@ import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLay
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
 import type { PackMapAppearance,PackMapLegend,PackMapLegendSwatch,PackReferenceDatasetStyle } from './reference-style.ts'
+import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from './scene.ts'
 
 export type WorldPackDescriptor = PackDescriptor & { readonly description: string }
 export const packDataChangedSchema = z.object({ packId: z.string().min(1), revision: z.number().int().nonnegative() }).strict()
@@ -436,6 +437,8 @@ export interface PackScenarioExpansionContext {
   readonly at: IsoTimestamp
   readonly objects: ReadonlyArray<OperationalObject>
   readonly objectById: (id: ObjectId) => OperationalObject | undefined
+  /** Pure owner-described physical subjects; this never connects a runtime. */
+  readonly physicalTargetsFor?: (id: ObjectId) => PackPhysicalTargetDescription
   readonly routing: RoutingAdapter
   readonly packConfigs: Record<string, unknown>
   /** The Scenario's declared sides, for a Pack whose items belong to one; empty when it declares none. */
@@ -852,12 +855,25 @@ export interface WorldPackView {
   readonly ui?: PackUiContribution
   readonly procedures?: PackProcedureContribution
   readonly roles?: PackRoleContribution
+  readonly physicalScenes?: {
+    readonly describe: (object: OperationalObject, objects: ReadonlyArray<OperationalObject>) => PackPhysicalSceneDescriptor | null
+    readonly load: (object: OperationalObject) => Promise<PackPhysicalScene>
+  }
+}
+
+/** Compile-time operational correspondence, owned by the target Pack. */
+export interface PackPhysicalTargetDescription {
+  readonly objectId: string
+  readonly modelRef: string
+  readonly modelDigest: string
+  readonly subjects: ReadonlyArray<{ readonly id: string; readonly label: string }>
 }
 
 /** Complete server-side Pack definition. World Pack views are projections of
  * this contract, never partial World Packs with fabricated schemas. */
 export interface WorldPack extends WorldPackView {
   readonly scenarioConfigSchema: z.ZodType
+  readonly physicalTargets?: (object: OperationalObject) => PackPhysicalTargetDescription
   /**
    * Opts this Pack into Runs whose Scenario declares roles; compiling a role
    * Run with any other Pack is refused (`role_run_pack_not_role_aware`).
