@@ -1,0 +1,62 @@
+{
+  "id": "pwr-campus",
+  "title": "Halden shared plant campus and 420 kV switchyard",
+  "siteAnchor": [11.48, 59.08],
+  "modelRequirement": {
+    "modelRef": "electric-grid.halden.four-unit",
+    "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+  },
+  "unitTerminal": [65.6, 24, 7],
+  "units": [
+    { "role": "unit-1", "label": "Unit 1", "anchor": [11.47, 59.087], "subjectId": "unit-1-420kv", "bayX": -105 },
+    { "role": "unit-2", "label": "Unit 2", "anchor": [11.477, 59.085], "subjectId": "unit-2-420kv", "bayX": -35 },
+    { "role": "unit-3", "label": "Unit 3", "anchor": [11.484, 59.083], "subjectId": "unit-3-420kv", "bayX": 35 },
+    { "role": "unit-4", "label": "Unit 4", "anchor": [11.491, 59.081], "subjectId": "unit-4-420kv", "bayX": 105 }
+  ],
+  "buildings": [
+    { "id": "administration", "label": "Administration and visitor reception", "position": [-430, -165], "length": 64, "width": 30, "storeys": 2, "storeyHeight": 4, "roomWidths": [10, 10, 10, 10, 10, 12] },
+    { "id": "training", "label": "Training and engineering offices", "position": [-430, -100], "length": 56, "width": 28, "storeys": 1, "storeyHeight": 4, "roomWidths": [18, 18, 16] },
+    { "id": "workshop", "label": "Central maintenance workshop and stores", "position": [-305, -170], "length": 80, "width": 42, "storeys": 1, "storeyHeight": 8, "roomWidths": [26, 26, 24] },
+    { "id": "security", "label": "Gatehouse and site access control", "position": [-778, -195], "length": 22, "width": 12, "storeys": 1, "storeyHeight": 4, "roomWidths": [10, 8] },
+    { "id": "yard-control", "label": "Switchyard protection and control house", "position": [-190, -20], "length": 28, "width": 18, "storeys": 1, "storeyHeight": 4, "roomWidths": [12, 12] }
+  ],
+  "parking": { "position": [-450, -285], "columns": 20, "rows": 4, "bayWidth": 2.7, "bayLength": 5.4, "aisle": 7 },
+  "switchyard": {
+    "busSubjectId": "bus:curated-halden-pwr-switchyard@420",
+    "position": [-150, -110], "length": 300, "width": 225,
+    "firstSupports": [
+      { "id": "hasle-double", "label": "Hasle circuits 1 and 2 first shared support", "position": [-240, 210], "length": 24, "width": 12, "height": 45 },
+      { "id": "hasle-single", "label": "Hasle circuit 3 first support", "position": [-130, 255], "length": 24, "width": 12, "height": 45 },
+      { "id": "tegneby-double", "label": "Tegneby circuits 1 and 2 first shared support", "position": [180, 160], "length": 24, "width": 12, "height": 45 },
+      { "id": "tegneby-single", "label": "Tegneby circuit 3 first support", "position": [290, 130], "length": 24, "width": 12, "height": 45 }
+    ],
+    "circuits": [
+      { "id": "hasle-1", "label": "Hasle circuit 1", "subjectId": "branch:curated-halden-pwr-hasle-1", "bayX": -120, "supportId": "hasle-double", "side": "left" },
+      { "id": "hasle-2", "label": "Hasle circuit 2", "subjectId": "branch:curated-halden-pwr-hasle-2", "bayX": -72, "supportId": "hasle-double", "side": "right" },
+      { "id": "hasle-3", "label": "Hasle circuit 3", "subjectId": "branch:curated-halden-pwr-hasle-3", "bayX": -24, "supportId": "hasle-single", "side": "left" },
+      { "id": "tegneby-1", "label": "Tegneby circuit 1", "subjectId": "branch:curated-halden-pwr-tegneby-1", "bayX": 24, "supportId": "tegneby-double", "side": "left" },
+      { "id": "tegneby-2", "label": "Tegneby circuit 2", "subjectId": "branch:curated-halden-pwr-tegneby-2", "bayX": 72, "supportId": "tegneby-double", "side": "right" },
+      { "id": "tegneby-3", "label": "Tegneby circuit 3", "subjectId": "branch:curated-halden-pwr-tegneby-3", "bayX": 120, "supportId": "tegneby-single", "side": "left" }
+    ]
+  },
+  "roadPaths": [
+    [[-835, -205, 0.04], [-480, -205, 0.04], [-480, -25, 0.04], [-215, -25, 0.04]],
+    [[-480, -120, 0.04], [-450, -120, 0.04]],
+    [[-480, -145, 0.04], [-310, -145, 0.04]],
+    [[-480, -255, 0.04], [-380, -255, 0.04]],
+    [[-480, -25, 0.04], [-480, 130, 0.04], [-180, 360, 0.04], [30, 360, 0.04]],
+    [[0, 110, 0.04], [0, 360, 0.04]]
+  ],
+  "siteBoundary": [[-790, -320, 0], [900, -320, 0], [900, 1010, 0], [-790, 1010, 0], [-790, -320, 0]],
+  "entrance": { "position": [-790, -205], "width": 16 },
+  "evidence": {
+    "accuracy": "illustrative",
+    "origin": "Conceptual shared campus authored 25 October 2026 around retained four-unit and switchyard anchors. Building dimensions, bay arrangement, circuit support sharing, conductor sag and access geometry are illustrative; no surveyed or electrical-clearance qualification."
+  },
+  "references": [
+    "https://www.nrc.gov/reading-rm/doc-collections/nuregs/staff/sr1437/v1/fig018.html",
+    "https://www.nrc.gov/sites/default/files/doc_library/cdn/legacy/reading-rm/basic-ref/students/for-educators/01.pdf",
+    "https://www.hitachienergy.com/us/en/products-and-solutions/substations/ais-substations",
+    "https://www.nationalgrid.com/electricity-transmission/who-we-are/running-our-network/substations-pylons-and-overhead-lines"
+  ]
+}
