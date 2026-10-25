@@ -4,6 +4,7 @@ import { actorIdSchema, deleteObjectCommandKind, type SimulationRunEvent, type S
 import type { Actor } from '../src/core/simulation-runs/actors.ts'
 import { createSimulationRunRealtimeManager } from '../src/core/api/realtime.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
+import { displayRuntimeIdentity } from '../src/core/api/display-provenance.ts'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import type { SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { deepCopy } from '../src/ui/scenario-builder-model.ts'
@@ -323,7 +324,14 @@ describe('Role Run gates on World-direct REST', () => {
       expect(Object.keys(joined.body.snapshot.scenario).sort()).toEqual(['agentRestrictions', 'highlightedObjectIds', 'scenarioId'])
       expect('roles' in joined.body.scenario || 'rolePresets' in joined.body.scenario).toBe(false)
       const presence = await callRoute<Record<string, unknown>>(registry, runPath(run.id, '/presence'))
-      expect(Object.keys(presence.body).sort()).toEqual(['execution', 'loaded', 'simulationRunId', 'title'])
+      expect(Object.keys(presence.body).sort()).toEqual(['displayEpoch', 'execution', 'loaded', 'simulationRunId', 'snapshotSeq', 'title'])
+      expect(presence.status).toBe(200)
+      expect(presence.body.loaded).toBe(true)
+      expect(typeof presence.body.displayEpoch).toBe('string')
+      expect(presence.body.displayEpoch).toMatch(/\S/)
+      expect(presence.body.displayEpoch).toBe(displayRuntimeIdentity(run).epoch)
+      expect(Number.isSafeInteger(presence.body.snapshotSeq)).toBe(true)
+      expect(presence.body.snapshotSeq).toBe(run.snapshot().seq)
       const assigned = await callRoute<{ result: { ok: boolean } }>(registry, invokePath(run.id, fixtureCommandIds.assign), post({ input: { unitId: 'unit:one', taskId: 'task:one' } }))
       expect(assigned.body.result.ok).toBe(true)
       const deleted = await callRoute<{ result: { ok: boolean } }>(registry, invokePath(run.id, deleteObjectCommandKind), post({ input: { objectId: 'unit:two' } }))

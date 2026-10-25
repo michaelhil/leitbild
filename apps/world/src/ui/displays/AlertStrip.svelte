@@ -5,6 +5,7 @@
   import { alertStrip, alertStripSpan, type StripGroup } from '../../features/displays/alerts/strip.ts'
   import AlertList, { type AlertLine } from './AlertList.svelte'
   import { severityStyle } from './severity.ts'
+  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
 
   // The read-only alarm strip above the operational map (plan v3.1 §2.7; lead
   // ruling R14), shown while the Run has active or returned-unacknowledged
@@ -29,6 +30,11 @@
     onBounds?: (box: { readonly bottom: number } | null) => void
   } = $props()
   let stripElement = $state<HTMLElement | null>(null)
+  const reportBounds = (): void => onBounds(stripElement === null ? null : { bottom: stripElement.getBoundingClientRect().bottom })
+  runOnMount(() => {
+    window.addEventListener('resize', reportBounds)
+    return () => window.removeEventListener('resize', reportBounds)
+  })
   $effect(() => {
     void clear.top; void belowRoles
     const element = stripElement
@@ -36,8 +42,7 @@
     const report = (): void => onBounds({ bottom: element.getBoundingClientRect().bottom })
     const observer = new ResizeObserver(report)
     observer.observe(element); report(); queueMicrotask(report)
-    window.addEventListener('resize', report)
-    return () => { observer.disconnect(); window.removeEventListener('resize', report); onBounds(null) }
+    return () => { observer.disconnect(); onBounds(null) }
   })
 
   const foldedKey = 'leitbild.alert-strip.folded'
