@@ -16,7 +16,7 @@ import type {
   SimulationRunEvent,
   SimulationRunId,
 } from '../src/core/model/index.ts'
-import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
+import { deleteObjectCommandKind, geoPointFromLonLat, objectIdSchema } from '../src/core/model/index.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
@@ -25,6 +25,9 @@ import { fixturePackId, fixtureRuntimeId } from './fixtures/fixture-pack.ts'
 import { fixtureCommandIds, fixtureQueryIds } from './fixtures/fixture-runtime.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
+import { campusLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
+import { physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
+import { pwrCampusPhysicalDesignRef, pwrFullUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -232,21 +235,37 @@ describe('Simulation Run API', () => {
   })
   test('fetches the complete Scenario Definition needed by an active Run UI', async () => {
     const registry = await createTestRegistry()
-    const fetched = await callRoute<{
-      readonly scenario: {
-        readonly id: string
-        readonly packs: readonly string[]
-        readonly initialObjects: ReadonlyArray<{ readonly packId: string }>
-      }
-      readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
-    }>(registry, '/scenarios/halden-power-complex')
-    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid', 'weather', 'physical-layout'])
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'weather')).toHaveLength(3)
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'physical-layout')).toHaveLength(4)
-    const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
-    expect(processPlant?.config).toEqual({})
-    expect(processPlant?.items).toHaveLength(4)
+    try {
+      const fetched = await callRoute<{
+        readonly scenario: {
+          readonly id: string
+          readonly packs: readonly string[]
+          readonly initialObjects: ReadonlyArray<OperationalObject>
+        }
+        readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
+      }>(registry, '/scenarios/halden-power-complex')
+      expect(fetched.status).toBe(200)
+      expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid', 'weather', 'physical-layout'])
+      expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'weather')).toHaveLength(3)
+      expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
+      const layouts = fetched.body.scenario.initialObjects.filter(object => object.packId === 'physical-layout')
+      expect(layouts.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
+      const campus = campusLayoutDataSchema.parse(layouts.find(object => object.id === 'layout:halden-campus')!.packData)
+      expect(campus.design).toEqual(pwrCampusPhysicalDesignRef)
+      expect(campus.owner).toMatchObject({ objectId: 'grid:halden-four-unit', packId: 'electric-grid' })
+      expect(campus.coverage.representedSubjectIds).toHaveLength(11)
+      expect(campus.relatedMembers).toHaveLength(4)
+      const physicalSource = fetched.body.source.packs.find(pack => pack.id === 'physical-layout')!
+      const items = physicalSource.items.map(item => physicalLayoutScenarioItemSchema.parse({ ...(item as Record<string, unknown>), pack: 'physical-layout' }))
+      expect(items).toHaveLength(5)
+      const sharedItem = items.find(item => item.id === 'layout:halden-campus')!
+      expect(sharedItem.design).toEqual(campus.design)
+      expect(sharedItem.members).toEqual({ [campus.requirements.ownerRole]: objectIdSchema.parse(campus.owner.objectId), ...Object.fromEntries(campus.relatedMembers.map(member => [member.role, objectIdSchema.parse(member.objectId)])) })
+      expect(items.filter(item => item.id !== sharedItem.id).every(item => item.design.digest === pwrFullUnitPhysicalDesignRef.digest)).toBe(true)
+      const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
+      expect(processPlant?.config).toEqual({})
+      expect(processPlant?.items).toHaveLength(4)
+    } finally { await registry.shutdown() }
   })
 
   test('joins only existing runs and exposes their objects and capabilities', async () => {
