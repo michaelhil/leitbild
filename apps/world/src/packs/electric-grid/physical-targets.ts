@@ -18,7 +18,8 @@ export const describeElectricGridPhysicalTargets = async (object: OperationalObj
     const subjects = [
       ...model.buses, ...model.branches, ...model.hvdcLinks, ...model.externalSystems,
       ...model.generators, ...model.loads, ...model.shunts, ...model.storage, ...model.connectionPoints,
-    ].map(subject => Object.freeze({ id: subject.id, label: subject.label, ...('location' in subject ? { location: subject.location } : {}) }))
+    ].map(subject => Object.freeze({ id: subject.id, label: 'label' in subject ? subject.label : subject.id,
+      ...('location' in subject ? { location: Object.freeze([...subject.location]) as readonly [number, number] } : {}) }))
     if (new Set(subjects.map(subject => subject.id)).size !== subjects.length) throw new Error(`Grid physical targets have duplicate identities: ${selection.ref}`)
     description = Object.freeze({ modelRef: model.id, modelDigest: createHash('sha256').update(JSON.stringify(model)).digest('hex'), subjects: Object.freeze(subjects) })
     descriptions.set(selection.ref, description)
