@@ -7,13 +7,13 @@ interface ScopeElement {
   readonly label: string
   readonly kind: string
   readonly pose: { readonly position: V3; readonly yaw: number }
-  readonly dimensions?: Dimensions
-  readonly typeId?: string
-  readonly override?: Partial<Dimensions>
-  readonly buildingId?: string
-  readonly spaceIds?: readonly string[]
-  readonly assemblyId?: string
-  readonly hostId?: string
+  readonly dimensions?: Dimensions | undefined
+  readonly typeId?: string | undefined
+  readonly override?: Partial<Dimensions> | undefined
+  readonly buildingId?: string | undefined
+  readonly spaceIds?: readonly string[] | undefined
+  readonly assemblyId?: string | undefined
+  readonly hostId?: string | undefined
 }
 export interface PhysicalScopeSource {
   readonly id: string
