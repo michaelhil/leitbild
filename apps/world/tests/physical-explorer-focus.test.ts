@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { PhysicalSceneScope } from '../src/core/packs/scene.ts'
-import { levelForPhysicalFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel } from '../src/ui/physical-layout/explorer-model.ts'
+import { levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel } from '../src/ui/physical-layout/explorer-model.ts'
 import { initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
 
 const scopes: PhysicalSceneScope[] = [
@@ -22,4 +22,12 @@ test('focus preserves an intersecting floor for spanning machinery and requests 
   expect(levelForPhysicalFocus(equipment, { ...view, levelId: 'outside' })).toBeNull()
   expect(levelForPhysicalFocus(equipment, { ...view, mode: '3d', levelId: 'all' })).toBe('all')
   expect(physicalOccurrenceOnLevel({ levelId: 'site' }, 'service')).toBe(true)
+})
+test('area focus preserves a valid section, selects a unique floor and asks before changing a multi-floor area', () => {
+  const current = initialPhysicalLayoutView([{ id: 'ground', label: 'Ground', elevation: 0 }])
+  expect(levelForScopeFocus(['ground', 'upper'], current)).toBe('ground')
+  expect(levelForScopeFocus(['admin'], current)).toBe('admin')
+  expect(levelForScopeFocus(['lower', 'upper'], current)).toBeNull()
+  expect(levelForScopeFocus([], current)).toBe('ground')
+  expect(levelForScopeFocus(['lower', 'upper'], { ...current, mode: '3d', levelId: 'all' })).toBe('all')
 })

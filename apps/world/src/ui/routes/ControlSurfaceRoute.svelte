@@ -273,6 +273,17 @@
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   let layoutBrowser = $state<{ readonly initialFocusId: string | null; readonly initialGroupId: string | null } | null>(null)
+  let layoutBrowserOrigin: HTMLElement | null = null
+  const openLayoutBrowser = (initialFocusId: string | null, groupId?: string): void => {
+    layoutBrowserOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    layoutBrowser = { initialFocusId, initialGroupId: groupId ?? null }
+  }
+  const closeLayoutBrowser = async (): Promise<void> => {
+    layoutBrowser = null
+    const origin = layoutBrowserOrigin; layoutBrowserOrigin = null
+    await tick()
+    if (origin?.isConnected) origin.focus({ preventScroll: true })
+  }
   $effect(() => { if (placementMode !== null || mapAssignment !== null) layoutBrowser = null })
   let surfaceShell = $state<HTMLElement | null>(null)
   $effect(() => {
@@ -2097,7 +2108,7 @@
           physicalLayoutBindings={activePhysicalLayoutBindings}
           layoutClearTop={alarmStripBottom}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
-          onOpenLayoutBrowser={(initialFocusId, groupId) => { layoutBrowser = { initialFocusId, initialGroupId: groupId ?? null } }}
+          onOpenLayoutBrowser={openLayoutBrowser}
           physicalLayoutActive={layoutBrowser === null}
           {queryLiveMapLayer}
           packSelections={packPanelSelections}
@@ -2206,14 +2217,14 @@
 
 {#if layoutBrowser !== null && simulationRunId !== null}
   {#await import('../physical-layout/LayoutBrowser.svelte')}
-    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={() => layoutBrowser = null}>Back to map</button><p role="status">Opening layout browser…</p></section>
+    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="status">Opening layout browser…</p></section>
   {:then { default: LayoutBrowser }}
   <LayoutBrowser objects={objects} bindings={activePhysicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds} presentationFor={mapPresentationFor}
     runId={simulationRunId} {perspectiveEpoch} {theme} clearTop={alarmStripBottom} initialFocusId={layoutBrowser.initialFocusId} initialGroupId={layoutBrowser.initialGroupId}
     suspended={placementMode !== null || mapAssignment !== null || targetPickingWanted(mapClickContext)} onconnect={() => {}}
-    onoverview={selectObject} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={() => layoutBrowser = null} />
+    onoverview={selectObject} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={closeLayoutBrowser} />
   {:catch error}
-    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={() => layoutBrowser = null}>Back to map</button><p role="alert">The layout browser could not open: {error instanceof Error ? error.message : String(error)}</p></section>
+    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="alert">The layout browser could not open: {error instanceof Error ? error.message : String(error)}</p></section>
   {/await}
 {/if}
 

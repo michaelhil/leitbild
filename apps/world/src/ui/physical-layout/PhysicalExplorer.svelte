@@ -8,7 +8,7 @@
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
   import { createPhysicalCanvasController } from '../map/physical-scene/canvas-controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
-  import { explorerScopeChoices, levelForPhysicalFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
+  import { explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
@@ -76,9 +76,11 @@
   let cameraBox = $state<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null>(null)
   let focusLocations = $state<{ readonly sceneId: string; readonly subjectId: string; readonly label: string; readonly occurrenceIds: ReadonlyArray<string> } | null>(null)
   let floorChoice = $state<{ readonly sceneId: string; readonly occurrenceId: string; readonly label: string; readonly levelIds: ReadonlyArray<string> } | null>(null)
+  let scopeFloorChoice = $state<{ readonly key: string; readonly sceneId: string; readonly label: string; readonly levelIds: ReadonlyArray<string> } | null>(null)
   let pendingFocus = $state<{ readonly sceneId: string; readonly subjectId: string; readonly label: string } | null>(null)
   let pendingCameraFocus = $state<{ readonly sceneId: string; readonly occurrenceId: string; readonly levelId: string; readonly mode: PhysicalSceneView['mode'] } | null>(null)
   const rememberedPlanFloor = new Map<string, string>()
+  const initializedBrowserSources = new Set<string>()
   let snapshots = $state.raw<ReadonlyMap<string, LayoutLiveSnapshot>>(new Map())
   let wallNow = $state(Date.now())
   let documentVisible = $state(!document.hidden)
@@ -112,7 +114,7 @@
   const afterPanels = async (work: () => void): Promise<void> => {
     const generation = ++focusGeneration
     await tick()
-    if (generation !== focusGeneration || !active || suspended) return
+    if (generation !== focusGeneration || !active || suspended || !documentVisible) return
     try { work() } catch (error) { onerror(error instanceof Error ? error.message : String(error)) }
   }
   const focused = $derived(scenes.find(scene => scene.descriptor.id === focusedId) ?? scenes.find(scene => scene.status === 'ready') ?? scenes[0] ?? null)
@@ -162,6 +164,7 @@
     if (returnFocus) controller?.surface.element.focus({ preventScroll: true })
   }
   const overview = (scene: PhysicalScenePresentation): void => {
+    if (suspended) return
     closeInspection(); hover = null
     const owner = objects.find(object => object.id === scene.descriptor.targetObjectId)
     if (owner !== undefined) onoverview(owner)
@@ -200,6 +203,14 @@
     const current = controller
     const sources = physicalLayoutSources({ bindings, objects, hiddenCategoryIds, presentationFor })
     untrack(() => current?.setSources(sources))
+  })
+  $effect(() => {
+    const current = controller
+    if (host !== 'browser' || !current) return
+    for (const scene of scenes) if (!initializedBrowserSources.has(scene.descriptor.id)) {
+      initializedBrowserSources.add(scene.descriptor.id)
+      untrack(() => current.setView(scene.descriptor.id, { ...scene.view, mode: '3d', levelId: 'all' }))
+    }
   })
   $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }) })
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })
@@ -254,11 +265,14 @@
   $effect(() => {
     const changedPerspective = inspectionPerspective !== perspectiveEpoch
     inspectionPerspective = perspectiveEpoch
-    if (changedPerspective) snapshots = new Map()
+    if (changedPerspective) {
+      snapshots = new Map(); focusGeneration++; pendingFocus = null; pendingCameraFocus = null
+      focusLocations = null; floorChoice = null; scopeFloorChoice = null; componentScope = null; componentsOpen = false; filter = ''
+    }
     if (changedPerspective || !active || suspended || !documentVisible || (inspected !== null && activeInspection?.status !== 'ready')) { closeInspection(); hover = null; controller?.cancelCamera() }
   })
 
-  $effect(() => { controller?.setActive(active && documentVisible); if (!active || suspended) { focusGeneration++; pendingFocus = null; pendingCameraFocus = null; controller?.cancelCamera(); controller?.setNavigationTool('pan'); navigation = 'pan' } })
+  $effect(() => { controller?.setActive(active && documentVisible); if (!active || suspended || !documentVisible) { focusGeneration++; pendingFocus = null; pendingCameraFocus = null; scopeFloorChoice = null; controller?.cancelCamera(); controller?.setNavigationTool('pan'); navigation = 'pan' } })
 
   const scopedOccurrences = $derived(scenes.filter(scene => scene.status === 'ready').flatMap(scene => (controller?.scene(scene.descriptor.id)?.objects ?? []).filter(occurrence =>
     (focusedId === null || focusedId === scene.descriptor.id) && (focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) && physicalOccurrenceInScope(occurrence, focusedScopeId, scene.descriptor.scopes ?? []) && physicalOccurrenceOnLevel(occurrence, scene.view.levelId) && (occurrence.layerId === undefined || !(scene.view.hiddenLayerIds ?? scene.descriptor.layers?.filter(layer => !layer.defaultVisible).map(layer => layer.id) ?? []).includes(occurrence.layerId)),
@@ -339,15 +353,23 @@
     : focused?.status === 'hidden' ? 'Physical detail hidden by view settings'
     : focused?.status === 'unavailable' ? focused.reason ?? 'Layout unavailable'
     : latest?.failure ?? (latest?.phase === 'inactive' ? 'Run not loaded; layout is not live' : latest?.phase === 'missing' ? 'Run missing' : latest?.latest === null || latest === null ? 'Waiting for live owner status'
-      : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${latest.latest.sample.alerts.length} total alerts`))
-  const chooseScope = (key: string | null): void => {
+      : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
+  const chooseScope = (key: string | null, chosenLevel?: string): void => {
     if (suspended) return
-    closeInspection(); hover = null; componentScope = null; focusLocations = null; floorChoice = null; pendingFocus = null; pendingCameraFocus = null
+    closeInspection(); hover = null; componentScope = null; focusLocations = null; floorChoice = null; scopeFloorChoice = null; pendingFocus = null; pendingCameraFocus = null
     const choice = choices.find(candidate => candidate.key === key)
-    focusedId = choice?.sceneId ?? null; focusedScopeId = choice?.scopeId ?? null
-    focusedGroupId = choice?.groupId ?? (choice?.sceneId ? scenes.find(scene => scene.descriptor.id === choice.sceneId)?.descriptor.group?.id ?? null : null)
-    if (choice?.sceneId) { const sceneId = choice.sceneId; controller?.selectScope(sceneId, choice.scopeId); void afterPanels(() => controller?.focus(sceneId, { scopeId: choice.scopeId, preservePose: true })) }
-    else void afterPanels(() => controller?.fitAll(choice?.sceneIds))
+    if (choice?.sceneId) {
+      const sceneId = choice.sceneId, scene = scenes.find(scene => scene.descriptor.id === sceneId)
+      if (!scene) return
+      const levels = choice.scopeId === undefined ? scene.descriptor.levels.map(level => level.id) : scene.descriptor.scopes?.find(scope => scope.id === choice.scopeId)?.levelIds ?? []
+      const levelId = chosenLevel ?? levelForScopeFocus(levels, scene.view)
+      if (levelId === null) { scopeFloorChoice = { key: choice.key, sceneId, label: choice.label, levelIds: levels }; return }
+      focusedId = sceneId; focusedScopeId = choice.scopeId ?? null; focusedGroupId = scene.descriptor.group?.id ?? null
+      controller?.selectScope(sceneId, choice.scopeId)
+      if (scene.view.levelId !== levelId) controller?.setView(sceneId, { ...scene.view, mode: levelId === 'all' ? '3d' : scene.view.mode, levelId })
+      void afterPanels(() => controller?.focus(sceneId, { scopeId: choice.scopeId, levelId, preservePose: true }))
+    }
+    else { focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
   }
   const changeView = (next: PhysicalSceneView): void => {
     if (suspended) return
@@ -438,11 +460,12 @@
       return
     }
     controller = next
+    if (host === 'browser') next.surface.element.focus({ preventScroll: true })
     size = next.surface.getSize()
     if (map !== null && host === 'map') overviewLayer = createPhysicalSceneOverview({ map, palette: options.palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical overview: ${error.message}`) })
     annotationScheduler = createPhysicalAnnotationScheduler<Badge>({ test: value => next.visibleAt(value.sceneId, value.occurrenceId, value.point), onChange: value => { testedBadges = value.visible; pendingBadges = value.pending } })
     let hoverTimer: ReturnType<typeof setTimeout> | null = null
-    let pressed: { x: number; y: number; pointerId: number } | null = null
+    let pressed: { x: number; y: number; pointerId: number; moved: boolean } | null = null
     let initialFit = false
     const changed = (): void => {
       const pose = next.cameraPose()
@@ -453,8 +476,6 @@
       size = next.surface.getSize(); screenRevision += 1
       if (host === 'browser' && !initialFit && scenes.length > 0) {
         initialFit = true
-        const target = initialFocusId === null ? scenes[0] : scenes.find(scene => scene.descriptor.id === initialFocusId)
-        if (target) next.setView(target.descriptor.id, { ...target.view, mode: '3d', levelId: 'all' })
         if (initialFocusId === null) next.fitAll(groups.get(initialGroupId ?? '')?.sceneIds); else next.focus(initialFocusId, { preservePose: false })
       }
     }
@@ -463,6 +484,10 @@
     const moving = (): void => { leave(); overlayDirty = true }
     const move = (event: PointerEvent): void => {
       retainHover()
+      if (pressed?.pointerId === event.pointerId) {
+        const point = pointAt(event)
+        if (Math.hypot(point.x - pressed.x, point.y - pressed.y) >= 4) pressed.moved = true
+      }
       if (!active || suspended || event.buttons !== 0 || inspected !== null) { leave(); return }
       if (hoverTimer !== null) clearTimeout(hoverTimer)
       const point = pointAt(event)
@@ -476,11 +501,11 @@
       if (!scene) return false
       overview(scene); return true
     }
-    const down = (event: PointerEvent): void => { if (event.button === 0) pressed = { ...pointAt(event), pointerId: event.pointerId } }
+    const down = (event: PointerEvent): void => { if (active && !suspended && event.button === 0) pressed = { ...pointAt(event), pointerId: event.pointerId, moved: false } }
     const up = (event: PointerEvent): void => {
       if (pressed?.pointerId !== event.pointerId) return
       const before = pressed; pressed = null; const point = pointAt(event)
-      if (Math.hypot(point.x - before.x, point.y - before.y) < 4 && host === 'browser') activate(point)
+      if (!before.moved && Math.hypot(point.x - before.x, point.y - before.y) < 4 && host === 'browser') activate(point)
     }
     const cancel = (): void => { pressed = null; leave() }
     const visibility = (): void => { documentVisible = !document.hidden }
@@ -497,12 +522,13 @@
       if (!active || suspended || event.defaultPrevented) return
       if (event.target === next.surface.element) {
         if (event.key === 'Home') { home(); event.preventDefault(); return }
+        if (event.key === '+' || event.key === '=' || event.key === '-' || event.key === '_') { next.zoomBy(event.key === '+' || event.key === '=' ? 1 : -1); event.preventDefault(); return }
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { const delta = event.key === 'ArrowLeft' ? -1 : 1; if (event.shiftKey) next.turnBy(delta * 10); else next.panBy(delta * 40, 0); event.preventDefault(); return }
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { const delta = event.key === 'ArrowUp' ? -1 : 1; if (event.shiftKey) next.tiltBy(-delta * 10); else next.panBy(0, delta * 40); event.preventDefault(); return }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { const delta = event.key === 'ArrowUp' ? -1 : 1; if (event.shiftKey && focused?.view.mode === '3d') next.tiltBy(-delta * 10); else next.panBy(0, delta * 40); event.preventDefault(); return }
       }
       if (event.key !== 'Escape') return
       if (inspected !== null) closeInspection(true)
-      else if (focusLocations !== null || floorChoice !== null) { focusLocations = null; floorChoice = null }
+      else if (focusLocations !== null || floorChoice !== null || scopeFloorChoice !== null) { focusLocations = null; floorChoice = null; scopeFloorChoice = null }
       else if (componentsOpen) componentsOpen = false
       else if (controls?.dismiss() || cameraControls?.dismiss()) { /* the active disclosure consumed Escape */ }
       else if (host === 'browser') onback?.()
@@ -533,9 +559,9 @@
       {#if controlsOpen}
         <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focused.descriptor.layers ?? []} view={focused.view} status={statusText} {host} {suspended}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
-          {onbrowser} {onback} onclose={() => { controlsOpen = false; componentsOpen = false }} />
+          onbrowser={onbrowser === undefined ? undefined : (sceneId, groupId) => { if (!suspended) onbrowser?.(sceneId, groupId) }} {onback} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {:else}
-        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button>{#if host === 'map' && onbrowser}<button type="button" onclick={() => onbrowser?.(focusedId, focusedGroupId ?? undefined)}>Open layout browser</button>{:else if host === 'browser'}<button type="button" onclick={onback}>Back to map</button>{/if}</div>
+        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button>{#if host === 'map' && onbrowser}<button type="button" disabled={suspended} onclick={() => onbrowser?.(focusedId, focusedGroupId ?? undefined)}>Open layout browser</button>{:else if host === 'browser'}<button type="button" onclick={onback}>Back to map</button>{/if}</div>
       {/if}
       {#if componentsOpen}
         <section class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
@@ -555,9 +581,10 @@
           {#if focusLocations.occurrenceIds.length === 0}<p>No admitted physical placement. The component remains available in its process display.</p>{:else}<p>Choose the physical part or housing to focus.</p>{#each focusLocations.occurrenceIds as occurrenceId (occurrenceId)}<button type="button" onclick={() => { if (focusLocations) focusOccurrence(focusLocations.sceneId, occurrenceId) }}>{controller?.scene(focusLocations.sceneId)?.objects.find(value => value.id === occurrenceId)?.label ?? occurrenceId}</button>{/each}{/if}
         </section>
       {/if}
-      {#if floorChoice}<section class="layout-components" aria-label="Choose physical focus floor"><header><strong>{floorChoice.label}</strong><button type="button" aria-label="Close focus floor choice" onclick={() => floorChoice = null}>×</button></header><p>This equipment spans more than one floor. Choose a view.</p><button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, 'all') }}>Show in 3D context</button>{#each floorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, levelId) }}>{focused.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
+      {#if floorChoice}<section class="layout-components" aria-label="Choose physical focus floor"><header><strong>{floorChoice.label}</strong><button type="button" aria-label="Close focus floor choice" onclick={() => floorChoice = null}>×</button></header><p>This equipment spans more than one floor. Choose a view.</p><button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, 'all') }}>Show in 3D context</button>{#each floorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, levelId) }}>{scenes.find(scene => scene.descriptor.id === floorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
+      {#if scopeFloorChoice}<section class="layout-components" aria-label="Choose area floor"><header><strong>{scopeFloorChoice.label}</strong><button type="button" aria-label="Close area floor choice" onclick={() => scopeFloorChoice = null}>×</button></header><p>The current floor does not intersect this area. Choose a floor or show its whole 3D context.</p><button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, 'all') }}>Show whole area in 3D</button>{#each scopeFloorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, levelId) }}>{scenes.find(scene => scene.descriptor.id === scopeFloorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
     </div>
-    {#if controlsOpen && focused.view.mode === '3d'}<CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onfit={fit} onhome={home} />{/if}
+    {#if controlsOpen && focused.view.mode === '3d'}<CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />{/if}
   {:else if host === 'browser'}
     <div class="layout-tools empty-browser" style:top={`${toolsTop}px`}><button type="button" onclick={onback}>Back to map</button><p role={viewportFailure === null ? 'status' : 'alert'}>{viewportFailure ?? 'No physical layouts are available in the current Run and visible categories.'}</p></div>
   {/if}

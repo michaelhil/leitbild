@@ -56,3 +56,9 @@ export const levelForPhysicalFocus = (object: Pick<PhysicalSceneObject, 'levelId
   const levels = object.levelIds ?? (object.levelId === 'site' ? [] : [object.levelId])
   return levels.length === 1 ? levels[0]! : null
 }
+
+/** Preserve a valid section; a multi-floor area requires the user's choice. */
+export const levelForScopeFocus = (levelIds: ReadonlyArray<string>, current: PhysicalSceneView): string | null => {
+  if (current.mode === '3d' && current.levelId === 'all' || levelIds.length === 0 || levelIds.includes(current.levelId)) return current.levelId
+  return levelIds.length === 1 ? levelIds[0]! : null
+}
