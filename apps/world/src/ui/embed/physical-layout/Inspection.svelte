@@ -76,7 +76,7 @@
     const unsubscribe = host.subscribeOpening(next => { where = next })
     const unlisten = host.listen()
     window.addEventListener('resize', resize)
-    const tick = setInterval(() => { wallNow = Date.now() }, 1_000)
+    const tick = setInterval(() => { wallNow = Date.now() }, 250)
     live.start()
     return () => { live.close(); session = null; clearInterval(tick); untrack(); unlisten(); unsubscribe(); stop(); window.removeEventListener('resize', resize) }
   })

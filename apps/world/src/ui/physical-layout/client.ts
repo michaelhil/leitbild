@@ -91,7 +91,9 @@ export const createLayoutLiveSession = (config: {
         // its new epoch through presence, then acquire a whole fresh sample.
         confirmedEpoch = null
         update({ phase: 'connecting', failure: 'Run changed; confirming a fresh sample' })
-        delay = 0
+        // Even a persistently inconsistent owner must not turn this bounded
+        // reader into an immediate presence/read loop.
+        delay = 1_000
         return
       }
       const stamp: PhysicalLiveStamp = { scope: response.scope, epoch: response.scope.epoch, sequence: response.scope.sequence, receivedWallMs: now() }
