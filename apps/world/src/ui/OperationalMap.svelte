@@ -111,6 +111,7 @@
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
     readonly onOpenLayoutBrowser?: (target: PhysicalExplorerTarget) => void
     readonly physicalLayoutActive?: boolean
+    readonly physicalLayoutSuspended: boolean
     readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
     /** The selected item per surface panel; live map layers highlight it. */
@@ -195,6 +196,7 @@
     onPhysicalDisplay = () => {},
     onOpenLayoutBrowser,
     physicalLayoutActive = true,
+    physicalLayoutSuspended,
     layoutClearTop = 0,
     queryLiveMapLayer = async () => { throw new Error('live map layers need a capability query') },
     packSelections = {},
@@ -922,7 +924,7 @@
   {#await import('./physical-layout/PhysicalLayouts.svelte') then { default: PhysicalLayouts }}
     <PhysicalLayouts map={runtime.map} active={physicalLayoutActive} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} onDetailedOwners={setDetailedLayoutOwners}
-      suspended={placementMode !== null || assignmentActive || targetPicking || selectedControllerId !== null}
+      suspended={physicalLayoutSuspended}
       onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onbrowser={onOpenLayoutBrowser} onconnect={interaction => physicalLayoutInteraction = interaction} />
   {:catch error}
     <p role="alert">Physical layouts cannot be shown: {error instanceof Error ? error.message : String(error)}</p>

@@ -10,6 +10,7 @@
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
   import { explorerEntryTarget, explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice, type PhysicalExplorerTarget } from './explorer-model.ts'
   import { physicalExplorerFitPadding } from './explorer-viewport.ts'
+  import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
@@ -57,6 +58,7 @@
   let controls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraElement = $state<HTMLElement | null>(null)
+  let overlayElement = $state<HTMLElement | null>(null)
   let controller = $state.raw<PhysicalSceneController | null>(null)
   let viewportFailure = $state<string | null>(null)
   let controlsOpen = $state(true)
@@ -219,7 +221,7 @@
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })
   $effect(() => { onDetailedOwners(!active || suspended ? [] : scenes.filter(scene => scene.status === 'ready').map(scene => scene.descriptor.targetObjectId)) })
   $effect(() => {
-    void scenes; void objects; void runId; void perspectiveEpoch; void suspended; void documentVisible; void active
+    void scenes; void objects; void runId; void perspectiveEpoch; void suspended; void documentVisible; void active; void inspected
     untrack(() => {
     const needed = new Set<string>()
     for (const [id, snapshot] of snapshots) {
@@ -227,7 +229,7 @@
       if (descriptor === undefined || snapshot.latest !== null && (snapshot.latest.scope.revision !== descriptor.revision || snapshot.latest.scope.modelDigest !== descriptor.modelDigest)) snapshots = new Map([...snapshots].filter(([key]) => key !== id))
     }
     for (const scene of scenes) {
-      if (!active || scene.status !== 'ready' || !scene.view.live || suspended || !documentVisible) continue
+      if (!physicalExplorerNeedsLive({ active, documentVisible, suspended, ready: scene.status === 'ready', statusLayer: scene.view.live, sceneId: scene.descriptor.id, inspectedSceneId: inspected?.sceneId ?? null })) continue
       const owner = objects.find(object => object.id === scene.descriptor.targetObjectId)
       if (owner === undefined) continue
       const expected = { runId, layoutObjectId: objectIdSchema.parse(scene.descriptor.id), revision: scene.descriptor.revision, objectId: owner.id, packId: owner.packId, modelDigest: scene.descriptor.modelDigest }
@@ -522,8 +524,12 @@
       else inspectionHeight = Math.min(message.data.height, Math.max(120, size.height - 16))
     }
     const key = (event: KeyboardEvent): void => {
-      if (!active || suspended || event.defaultPrevented) return
-      if (event.target === next.surface.element) {
+      if (!active || suspended) return
+      const path = event.composedPath()
+      const route = physicalExplorerKeyboardRoute({ path, surface: next.surface.element, overlay: overlayElement, defaultPrevented: event.defaultPrevented, composing: event.isComposing,
+        descendantOwnsKeys: path.some(node => node instanceof Element && node.matches('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], dialog, [role="dialog"], [role="alertdialog"]')) })
+      if (route === null) return
+      if (route === 'surface') {
         if (event.key === 'Home') { home(); event.preventDefault(); return }
         if (event.key === '+' || event.key === '=' || event.key === '-' || event.key === '_') { next.zoomBy(event.key === '+' || event.key === '=' ? 1 : -1); event.preventDefault(); return }
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { const delta = event.key === 'ArrowLeft' ? -1 : 1; if (event.shiftKey) next.turnBy(delta * 10); else next.panBy(delta * 40, 0); event.preventDefault(); return }
@@ -556,7 +562,7 @@
 </script>
 
 {#if host === 'browser'}<canvas class="layout-canvas" bind:this={canvas} tabindex="0" aria-label="Interactive physical layout browser"></canvas>{/if}
-<div class="explorer-overlay" class:inactive={!active} aria-hidden={!active} inert={!active}>
+<div class="explorer-overlay" bind:this={overlayElement} class:inactive={!active} aria-hidden={!active} inert={!active}>
   {#if scenes.length > 0 && focused !== null}
     <div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
       {#if controlsOpen}

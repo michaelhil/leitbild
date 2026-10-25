@@ -26,6 +26,7 @@
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
   import type { PhysicalLayoutBinding } from '../physical-layout/sources.ts'
   import type { PhysicalExplorerTarget } from '../physical-layout/explorer-model.ts'
+  import { physicalExplorerOperationalCapture } from '../physical-layout/explorer-interaction.ts'
   import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
     fetchScenario,
@@ -276,6 +277,7 @@
   let layoutBrowser = $state<PhysicalExplorerTarget | null>(null)
   let layoutBrowserOrigin: HTMLElement | null = null
   const openLayoutBrowser = (target: PhysicalExplorerTarget): void => {
+    if (physicalOperationalCapture) return
     layoutBrowserOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null
     layoutBrowser = target
   }
@@ -285,7 +287,7 @@
     await tick()
     if (origin?.isConnected) origin.focus({ preventScroll: true })
   }
-  $effect(() => { if (placementMode !== null || mapAssignment !== null) layoutBrowser = null })
+  $effect(() => { if (physicalOperationalCapture) { layoutBrowser = null; layoutBrowserOrigin = null } })
   let surfaceShell = $state<HTMLElement | null>(null)
   $effect(() => {
     const element = surfaceShell
@@ -367,6 +369,7 @@
   })
   const mapCameraInteraction = $derived(mapCameraInteractionFor(activePack?.packs ?? []))
   const mapClickContext = $derived<MapClickContext>({ controller: selectedControllerObject, targeting: activePack?.targeting, context: targetContext, panel: mapTargetPanel, opensDisplay })
+  const physicalOperationalCapture = $derived(physicalExplorerOperationalCapture({ placement: placementMode !== null, assignment: mapAssignment !== null, targetPicking: targetPickingWanted(mapClickContext), controllerSelected: selectedControllerId !== null }))
   const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
   const displayRunJoin = $derived.by<DeckRunJoin>(() => {
     if (simulationRunId !== null) return { state: 'joined' }
@@ -2111,6 +2114,7 @@
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           onOpenLayoutBrowser={openLayoutBrowser}
           physicalLayoutActive={layoutBrowser === null}
+          physicalLayoutSuspended={physicalOperationalCapture}
           {queryLiveMapLayer}
           packSelections={packPanelSelections}
           packFeatureLayers={activePackFeatureLayers}
@@ -2216,14 +2220,14 @@
   {/each}
 {/if}
 
-{#if layoutBrowser !== null && simulationRunId !== null}
+{#if layoutBrowser !== null && simulationRunId !== null && !physicalOperationalCapture}
   {#await import('../physical-layout/LayoutBrowser.svelte')}
     <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="status">Opening layout browser…</p></section>
   {:then { default: LayoutBrowser }}
   <LayoutBrowser objects={objects} bindings={activePhysicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds} presentationFor={mapPresentationFor}
     runId={simulationRunId} {perspectiveEpoch} {theme} clearTop={alarmStripBottom} initialTarget={layoutBrowser}
-    suspended={placementMode !== null || mapAssignment !== null || targetPickingWanted(mapClickContext)} onconnect={() => {}}
-    onoverview={selectObject} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={closeLayoutBrowser} />
+    suspended={physicalOperationalCapture} onconnect={() => {}}
+    onoverview={object => { if (!physicalOperationalCapture) selectObject(object) }} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={closeLayoutBrowser} />
   {:catch error}
     <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="alert">The layout browser could not open: {error instanceof Error ? error.message : String(error)}</p></section>
   {/await}
