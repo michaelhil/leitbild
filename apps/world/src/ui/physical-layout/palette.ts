@@ -1,4 +1,5 @@
 import type { Color, PhysicalScenePalette } from '../map/physical-scene/types.ts'
+import './materials.css'
 
 /** Resolve the host's actual theme tokens; geometry carries roles, never operational colours. */
 export const physicalLayoutPalette = (container: HTMLElement): PhysicalScenePalette => {
@@ -13,7 +14,9 @@ export const physicalLayoutPalette = (container: HTMLElement): PhysicalScenePale
     return [channels[0]! / 255, channels[1]! / 255, channels[2]! / 255]
   }
   try {
-    const metal = token('--muted'), floor = token('--panel-strong'), wall = token('--border'), line = token('--text')
-    return { materials: { metal, equipment: metal, wall, floor, door: token('--accent'), pipe: metal, glass: floor, context: wall, line }, defaultMaterial: metal, line }
+    const names = ['floor', 'wall', 'steel', 'dark', 'machine', 'hood', 'motor', 'light', 'plinth', 'pipe', 'steam', 'crane', 'access', 'outage', 'waterbox', 'ground', 'glass', 'line', 'pavement', 'marking'] as const
+    const roles = Object.fromEntries(names.map(name => [name, token(`--physical-${name}`)])) as Record<typeof names[number], Color>
+    const palette = { materials: { ...roles, metal: roles.steel, equipment: roles.machine, door: roles.crane, context: roles.ground }, defaultMaterial: roles.machine, line: roles.line, lineOpacity: .26, contextLineOpacity: .10 }
+    return palette
   } finally { probe.remove() }
 }

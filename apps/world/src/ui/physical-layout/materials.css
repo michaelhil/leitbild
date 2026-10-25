@@ -1,0 +1,46 @@
+/* Physical illustration materials, independent of process status and alert severity.
+   These preserve the accepted native browser study's quiet machinery palette. */
+:root {
+  --physical-floor: #d7d8ca;
+  --physical-wall: #e0e3d7;
+  --physical-steel: #637d72;
+  --physical-dark: #4f665e;
+  --physical-machine: #8fae9d;
+  --physical-hood: #acbfaa;
+  --physical-motor: #91b0b0;
+  --physical-light: #cad5c7;
+  --physical-plinth: #afb8a5;
+  --physical-pipe: #7c9d9f;
+  --physical-steam: #b5a389;
+  --physical-crane: #b39b65;
+  --physical-access: #a4c3a6;
+  --physical-outage: #c5b388;
+  --physical-waterbox: #92afa6;
+  --physical-ground: #e6e9df;
+  --physical-glass: #c3d6d2;
+  --physical-line: #475e4a;
+  --physical-pavement: #a6aca5;
+  --physical-marking: #ebeee2;
+}
+:root.dark {
+  --physical-floor: #667568;
+  --physical-wall: #7c8a7b;
+  --physical-steel: #829c90;
+  --physical-dark: #4c635c;
+  --physical-machine: #85aa99;
+  --physical-hood: #a0b69e;
+  --physical-motor: #81aaa9;
+  --physical-light: #b5c5b5;
+  --physical-plinth: #7d8976;
+  --physical-pipe: #83aaae;
+  --physical-steam: #af9e85;
+  --physical-crane: #ac9360;
+  --physical-access: #779c7a;
+  --physical-outage: #b6a57d;
+  --physical-waterbox: #86a69c;
+  --physical-ground: #38493e;
+  --physical-glass: #728f8c;
+  --physical-line: #b8c7b9;
+  --physical-pavement: #59635d;
+  --physical-marking: #bac8b8;
+}
