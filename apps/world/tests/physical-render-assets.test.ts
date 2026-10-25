@@ -20,16 +20,18 @@ const harness = () => {
     surface: { kind: 'canvas', element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
     projectGeographic: point => ({ x: 400 + point.lng * 1_000_000, y: 300 + point.lat * 1_000_000 }), requestRender() {}, registered: () => true, orderRenderer() {}, removeRenderer() {},
-    installRenderer(entries) { getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
+    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
     cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose() {}, fitWorld(_bounds, options) { fits.push(options) }, panBy() {}, setNavigationTool() {}, cancelCamera() {}, destroy() {},
   }
+  let failPreparation = false, rendererError: ((error: Error) => void) | null = null
+  const errors: Error[] = []
   let waitForPreparation: Promise<void> | null = null
   const hold = () => { let release!: () => void; waitForPreparation = new Promise<void>(resolve => { release = resolve }); return () => { waitForPreparation = null; release() } }
   const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>()
-  const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { throw error },
-    prepare: async (value, view, key, identity) => { const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
+  const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
+    prepare: async (value, view, key, identity) => { if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, hold, entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, fits, hold, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -85,4 +87,11 @@ test('cancelled or suspended hosts cannot apply a late deferred camera fit', asy
     if (suspend) h.controller.setActive(false); else h.controller.cancelCamera()
     release(); await settled(); expect(h.fits).toHaveLength(before); if (suspend) expect(h.controller.presentations()[0]!.status).toBe('hidden'); h.controller.destroy()
   }
+})
+
+test('failed preparation and GPU admission remain unavailable until an explicit retry can recover', async () => {
+  const h = harness(), value = scene('a'); h.failPreparation(); h.controller.setSources([h.source(value)]); await settled(); expect(h.controller.presentations()[0]!.status).toBe('unavailable')
+  h.controller.retry('a'); await settled(); expect(h.controller.presentations()[0]!.status).toBe('ready')
+  h.failRenderer(); await settled(); expect(h.controller.presentations()[0]!.status).toBe('unavailable')
+  h.controller.retry('a'); await settled(); expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(h.errors.map(error => error.message)).toEqual(['Preparation rejected', 'Renderer rejected']); h.controller.destroy()
 })

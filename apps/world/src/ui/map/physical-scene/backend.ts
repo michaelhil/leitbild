@@ -11,7 +11,7 @@ layout(location=2) in float materialIndex;
 layout(location=3) in float objectIndex;
 layout(location=4) in float strokeStyle;
 layout(location=5) in mat4 instanceMatrix;
-layout(location=9) in float instanceData;
+layout(location=9) in uint instanceData;
 uniform sampler2D uObjects;
 uniform int uObjectWidth;
 out vec3 vNormal;
@@ -66,7 +66,7 @@ interface Texture { readonly texture: WebGLTexture; width: number; height: numbe
 interface Asset {
   readonly identity: string; readonly solid: WebGLBuffer; readonly lines: WebGLBuffer; readonly instances: WebGLBuffer; readonly vao: WebGLVertexArrayObject; readonly lineVao: WebGLVertexArrayObject
   readonly count: number; readonly lineCount: number; readonly geometryBytes: number; readonly materials: Texture; readonly objects: Texture
-  instanceData: Float32Array; lastUsed: number; roles: ReadonlyArray<string>; paletteSignature: string
+  instanceData: Float32Array; instanceWords: Uint32Array; lastUsed: number; roles: ReadonlyArray<string>; paletteSignature: string
 }
 
 /** Retained local buffers, instanced placements and separate palette/status tables. */
@@ -111,7 +111,10 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
   const createAsset = (draw: PhysicalDraw): Asset => {
     const solid = gl.createBuffer(), lines = gl.createBuffer(), instances = gl.createBuffer(), vao = gl.createVertexArray(), lineVao = gl.createVertexArray()
     if (!solid || !lines || !instances || !vao || !lineVao) { for (const buffer of [solid, lines, instances]) if (buffer) gl.deleteBuffer(buffer); for (const array of [vao, lineVao]) if (array) gl.deleteVertexArray(array); throw new Error('Unable to allocate physical render buffers') }
-    const setupInstances = (): void => { gl.bindBuffer(gl.ARRAY_BUFFER, instances); for (let column = 0; column < 4; column++) { const location = 5 + column; gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, 4, gl.FLOAT, false, 17 * 4, column * 16); gl.vertexAttribDivisor(location, 1) }; gl.enableVertexAttribArray(9); gl.vertexAttribPointer(9, 1, gl.FLOAT, false, 17 * 4, 64); gl.vertexAttribDivisor(9, 1) }
+    let materials: Texture | null = null, objects: Texture | null = null
+    try {
+    materials = texture(); objects = texture()
+    const setupInstances = (): void => { gl.bindBuffer(gl.ARRAY_BUFFER, instances); for (let column = 0; column < 4; column++) { const location = 5 + column; gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, 4, gl.FLOAT, false, 17 * 4, column * 16); gl.vertexAttribDivisor(location, 1) }; gl.enableVertexAttribArray(9); gl.vertexAttribIPointer(9, 1, gl.UNSIGNED_INT, 17 * 4, 64); gl.vertexAttribDivisor(9, 1) }
     gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, solid); gl.bufferData(gl.ARRAY_BUFFER, draw.asset.buffers.vertices, gl.STATIC_DRAW)
     for (const [location, components, offset] of [[0, 3, 0], [1, 3, 12], [2, 1, 24], [3, 1, 28]] as const) { gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, components, gl.FLOAT, false, 32, offset) }
     gl.disableVertexAttribArray(4); setupInstances()
@@ -119,8 +122,9 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     for (const [location, components, offset] of [[0, 3, 0], [2, 1, 12], [3, 1, 16], [4, 1, 20]] as const) { gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, components, gl.FLOAT, false, 24, offset) }
     gl.disableVertexAttribArray(1); setupInstances()
     const geometryBytes = draw.asset.buffers.vertices.byteLength + draw.asset.buffers.lines.byteLength
-    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials: texture(), objects: texture(), instanceData: new Float32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
+    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials, objects, instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
     metrics.geometryUploads++; metrics.geometryBytes += geometryBytes; metrics.buffers += 3; return value
+    } catch (error) { for (const buffer of [solid, lines, instances]) gl.deleteBuffer(buffer); gl.deleteVertexArray(vao); gl.deleteVertexArray(lineVao); for (const table of [materials, objects]) if (table) { gl.deleteTexture(table.texture); metrics.textures-- }; throw error }
   }
   const setObject = (data: Float32Array, at: number, values: ReadonlyArray<number>): boolean => { let changed = false; for (let component = 0; component < values.length; component++) if (data[at + component] !== Math.fround(values[component]!)) { data[at + component] = values[component]!; changed = true }; return changed }
   const ownedBytes = () => metrics.geometryBytes + metrics.instanceBytes + metrics.textureBytes
@@ -149,9 +153,9 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
         const first = list[0]!, asset = cache.get(key) ?? createAsset(first); cache.set(key, asset); asset.lastUsed = frame; updatePalette(asset)
         const objectCount = first.asset.meshes.length, allocation = resizeTexture(asset.objects, list.length * objectCount * 2)
         let statusChanged = allocation
-        if (asset.instanceData.length !== list.length * 17) { metrics.instanceBytes -= asset.instanceData.byteLength; asset.instanceData = new Float32Array(list.length * 17); metrics.instanceBytes += asset.instanceData.byteLength }
+        if (asset.instanceData.length !== list.length * 17) { metrics.instanceBytes -= asset.instanceData.byteLength; asset.instanceData = new Float32Array(list.length * 17); asset.instanceWords = new Uint32Array(asset.instanceData.buffer); metrics.instanceBytes += asset.instanceData.byteLength }
         list.forEach((draw, instanceIndex) => {
-          asset.instanceData.set(draw.matrix, instanceIndex * 17); asset.instanceData[instanceIndex * 17 + 16] = instanceIndex * objectCount * 2
+          asset.instanceData.set(draw.matrix, instanceIndex * 17); asset.instanceWords[instanceIndex * 17 + 16] = instanceIndex * objectCount * 2
           const shown = new Map(draw.meshes.map(mesh => [mesh.assetIndex ?? first.asset.meshes.indexOf(mesh), mesh]))
           first.asset.meshes.forEach((mesh, objectIndex) => {
             const displayed = shown.get(objectIndex), style = draw.styles[objectIndex], at = (instanceIndex * objectCount + objectIndex) * 8, color = style?.color ?? palette.defaultMaterial

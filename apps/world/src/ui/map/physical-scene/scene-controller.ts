@@ -52,7 +52,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (!viewport.ready()) return
     if (renderer && viewport.registered(renderer)) { viewport.orderRenderer(); return }
     if (renderer) removeRenderer()
-    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.state = 'unavailable'; entry.reason = error.message }; options.reportError(error); emit() }); viewport.requestRender() }
+    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }); viewport.requestRender() }
     catch (error) { options.reportError(error instanceof Error ? error : new Error(String(error))) }
   }
   const filteredMeshes = (entry: Entry, prepared: PhysicalPreparedGeometry): ReadonlyArray<PhysicalMesh> => {
@@ -78,7 +78,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       admitPhysicalPickAcceleration(rebound.meshes, rebound.acceleration)
       entry.renderRevision++; entry.preparing = false; entry.prepared = rebound; entry.meshes = filteredMeshes(entry, rebound); entry.state = !active ? 'hidden' : entry.eligible ? 'ready' : 'distant';
       if (active && pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; viewport.fitWorld(entryBounds(entry, intent.target), { padding: padding(), preservePose: intent.preservePose, mode, bearing: entry.source.descriptor.bearing + (!intent.preservePose && mode === '3d' ? -25 : 0) }) }; reconcileRenderer(); viewport.requestRender(); emit()
-    } catch (error) { if (expected !== entry.viewGeneration || destroyed) return; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
+    } catch (error) { if (expected !== entry.viewGeneration || destroyed) return; entry.preparing = false; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
   }
   const prepareOverview = async (entry: Entry): Promise<void> => {
     if (entry.overview || entry.overviewPreparing || !entry.source.descriptor.overviewFootprints?.length || (viewport.surface.kind !== 'canvas' && !entry.scopeId)) return
@@ -185,7 +185,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => active && (renderer?.visibleAt(sceneId, occurrenceId, point) ?? false),
     project: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.project(sceneId, occurrenceId, levelId) ?? null : null,
     presentations, scene: (sceneId: string) => entries.get(sceneId)?.scene ?? null,
-    retry(sceneId: string): void { const entry = requireEntry(sceneId); entry.failure = undefined; entry.reason = undefined; entry.scene = null; entry.prepared = null; entry.meshes = []; reconcile() },
+    retry(sceneId: string): void { const entry = requireEntry(sceneId); entry.generation = ++generation; entry.viewGeneration++; entry.loading = false; entry.preparing = false; entry.failure = undefined; entry.reason = undefined; entry.scene = null; entry.prepared = null; entry.meshes = []; reconcile() },
     metrics: () => renderer?.metrics() ?? null,
     diagnostics: () => ({ current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
     destroy(): void { if (destroyed) return; destroyed = true; pendingFocus = null; for (const entry of entries.values()) { entry.generation = ++generation; entry.viewGeneration++ }; entries.clear(); for (const remove of cleanup) remove(); removeRenderer(); viewport.destroy() },
