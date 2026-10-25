@@ -70,13 +70,19 @@ export const readLayout = async (run: ViewRun, descriptor: PackPhysicalSceneDesc
     ?? refuse('layout_subject_not_observed', `The owner does not declare layout subject ${id}`))
   const plans = await Promise.all(elements.map(element => planLead(run, { objectId: owner.id, element: element.id }, 8)))
   const reading = await readLeads(run, plans)
-  const declared = await declaredRefs(run, reading.led.flatMap(lead => lead.refs))
+  // A lead plan may describe its entire ordered pool, while its acquisition is
+  // bounded to the requested eight rows. Do not advertise unacquired values as
+  // bad-quality readings, or expand a whole-unit read into every owner signal.
+  const selected = reading.led.map(lead => lead.refs.slice(0, 8))
+  const declared = await declaredRefs(run, selected.flat())
+  const acquired = new Set(reading.observations.map(observation => observation.ref))
+  if (selected.flat().some(ref => !declared.has(ref) || !acquired.has(ref))) return refuse('layout_observation_missing', 'The owner did not supply every selected layout reading')
   const sample = await sampleVignette(run, { title: 'Physical layout', at: { at: new Date().toISOString(), clock: 'wall' }, views: [{ kind: 'alerts', objectIds: [owner.id], rows: 1 }] })
   return {
     sample: { ...sample, observations: reading.observations },
     subjects: elements.map((element, index) => ({
       elementId: element.id, label: element.label,
-      values: reading.led[index]!.refs.flatMap(ref => declared.has(ref) ? [valueOf(declared.get(ref)!)] : []),
+      values: selected[index]!.map(ref => valueOf(declared.get(ref)!)),
       // A layout does not invent a running state for a casing or a group.
       word: null,
       devices: declaration.elements.filter(candidate => candidate.parent === element.id).map(({ lead: _lead, stopped: _stopped, criteria: _criteria, table: _table, ...device }) => device),
