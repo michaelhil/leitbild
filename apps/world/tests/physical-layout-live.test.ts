@@ -7,7 +7,7 @@ import type { Observation } from '../src/core/observation/model.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { createLayoutLiveSession, layoutLiveFrozen, type LayoutLiveRoutes, type LayoutLiveSnapshot } from '../src/ui/physical-layout/client.ts'
-import { layoutInspectionEnvelope, layoutInspectionExpected, layoutInspectionMessageSchema } from '../src/ui/physical-layout/inspection.ts'
+import { layoutInspectionEnvelope, layoutInspectionExpected, layoutInspectionMessageSchema, layoutInspectionSampleMessage, layoutInspectionStateSchema, readHostedLayoutInspectionSample } from '../src/ui/physical-layout/inspection.ts'
 import { layoutLiveExpectedSchema, layoutLiveResponseSchema, type LayoutLiveResponse } from '../src/ui/physical-layout/read-model.ts'
 import { admitPhysicalLiveStamp, physicalLayoutStatusSummary, physicalSubjectKey, physicalSubjectStatus, physicalSubjectStyle, type PhysicalLayoutSubject } from '../src/ui/physical-layout/status.ts'
 import { changePhysicalLayoutView, initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
@@ -244,5 +244,27 @@ describe('physical inspection and local view controls', () => {
     expect(() => layoutInspectionExpected(embeddedViewEnvelopeSchema.parse({ ...envelope, subject: { ...envelope.subject, type: 'world.object' } }))).toThrow('Simulation Run')
     expect(layoutInspectionMessageSchema.safeParse({ type: 'world:layout-inspection-size', layoutObjectId: expected.layoutObjectId, elementId: 'pump', height: 400 }).success).toBe(true)
     expect(layoutInspectionMessageSchema.safeParse({ type: 'world:layout-inspection-close', layoutObjectId: expected.layoutObjectId, elementId: 'pump', returnFocus: true, operate: true }).success).toBe(false)
+  })
+
+  test('hosted inspection shares the acquired subject without another read or a renewed freshness stamp', () => {
+    const { runId: _runId, ...scope } = expected
+    const state = layoutInspectionStateSchema.parse({ ...scope, elementId: 'pump', label: 'Feed pump', delivery: 'host', channel: crypto.randomUUID() })
+    const base = reading()
+    const second = { ...value, ref: 'plant:one#valve' }
+    const latest: LayoutLiveResponse = { ...base,
+      subjects: [...base.subjects, { elementId: 'valve', label: 'Valve', values: [second], word: null, devices: [] }],
+      sample: { ...base.sample, observations: [...base.sample.observations, { ...observation, ref: second.ref }] },
+    }
+    const snapshot: LayoutLiveSnapshot = { phase: 'live', latest, stamp: { scope: expected, epoch: latest.scope.epoch, sequence: latest.scope.sequence, receivedWallMs: 100 }, failure: null }
+    const message = layoutInspectionSampleMessage(state, snapshot)
+    const forwarded = readHostedLayoutInspectionSample(state, expected, message)
+    expect(forwarded.latest?.subjects.map(subject => subject.elementId)).toEqual(['pump'])
+    expect(forwarded.latest?.sample.observations.map(value => value.ref)).toEqual([value.ref])
+    expect(forwarded.stamp?.receivedWallMs).toBe(100)
+    expect(layoutLiveFrozen(forwarded, 5_101)).toBe(true)
+    expect(() => readHostedLayoutInspectionSample({ ...state, channel: crypto.randomUUID() }, expected, message)).toThrow('channel')
+    expect(() => readHostedLayoutInspectionSample(state, { ...expected, objectId: objectIdSchema.parse('plant:other') }, message)).toThrow('another Run')
+    expect(() => readHostedLayoutInspectionSample(state, expected, { ...message, snapshot: { ...message.snapshot, stamp: { ...message.snapshot.stamp, sequence: 999 } } })).toThrow('disagree')
+    expect(() => layoutInspectionStateSchema.parse({ ...scope, elementId: 'pump', label: 'Feed pump', delivery: 'host' })).toThrow('channel')
   })
 })

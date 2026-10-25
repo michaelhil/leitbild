@@ -3,9 +3,10 @@
   import { simulationRunIdSchema } from '../../../core/model/ids.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { createLayoutLiveSession, layoutLiveFrozen, layoutLiveRoutes, type LayoutLiveSession, type LayoutLiveSnapshot } from '../../physical-layout/client.ts'
-  import { layoutInspectionExpected, type LayoutInspectionState } from '../../physical-layout/inspection.ts'
+  import { layoutInspectionExpected, readHostedLayoutInspectionSample, type LayoutInspectionState } from '../../physical-layout/inspection.ts'
   import type { LayoutLiveExpected } from '../../physical-layout/read-model.ts'
   import { physicalSubjectStatus } from '../../physical-layout/status.ts'
+  import { admitPhysicalLiveStamp } from '../../physical-layout/status.ts'
   import { createPageVisibility, embeddedDisplayFrame, trackVisibility, type DisplayOpening } from '../view-host.ts'
   import Faceplate from '../vignette/Faceplate.svelte'
   import type { FaceplateReadings } from '../vignette/faceplate.ts'
@@ -57,7 +58,9 @@
       failure = error instanceof Error ? error.message : String(error)
       return stop
     }
-    const live = createLayoutLiveSession({ expected: parsed.expected, requiredSubjectId: parsed.state.elementId, routes: layoutLiveRoutes, onChange: next => {
+    const hosted = parsed.state.delivery === 'host'
+    if (hosted && window.parent === window) { failure = 'This inspection requires its authorized layout host'; return stop }
+    const live = hosted ? null : createLayoutLiveSession({ expected: parsed.expected, requiredSubjectId: parsed.state.elementId, routes: layoutLiveRoutes, onChange: next => {
       snapshot = next; wallNow = Date.now()
       if (next.phase === 'failed' && next.latest === null) hostMessage({ type: 'world:layout-inspection-size', height: 160 })
     } })
@@ -75,13 +78,24 @@
         return () => observer.disconnect()
       },
     })
-    const untrack = trackVisibility({ host, documentVisible: page.visible, onDocumentVisibility: page.listen, setVisible: visible => live.setVisible(visible && !closed) })
+    const untrack = trackVisibility({ host, documentVisible: page.visible, onDocumentVisibility: page.listen, setVisible: visible => live?.setVisible(visible && !closed) })
     const unsubscribe = host.subscribeOpening(next => { where = next })
     const unlisten = host.listen()
     window.addEventListener('resize', resize)
     const tick = setInterval(() => { wallNow = Date.now() }, 250)
-    live.start()
-    return () => { live.close(); session = null; clearInterval(tick); untrack(); unlisten(); unsubscribe(); stop(); window.removeEventListener('resize', resize) }
+    const receive = (event: MessageEvent): void => {
+      if (!hosted || closed || event.source !== window.parent || event.origin !== location.origin || parsed === null || event.data?.type !== 'world:layout-inspection-sample') return
+      try {
+        const next = readHostedLayoutInspectionSample(parsed.state, parsed.expected, event.data)
+        if (next.stamp !== null) admitPhysicalLiveStamp(parsed.expected, next.stamp.epoch, snapshot.stamp, next.stamp)
+        snapshot = next; wallNow = Date.now()
+      } catch (error) { snapshot = { ...snapshot, phase: 'failed', failure: error instanceof Error ? error.message : String(error) } }
+    }
+    if (hosted) {
+      window.addEventListener('message', receive)
+      window.parent.postMessage({ type: 'world:layout-inspection-ready', layoutObjectId: parsed.state.layoutObjectId, elementId: parsed.state.elementId, channel: parsed.state.channel }, location.origin)
+    } else live!.start()
+    return () => { live?.close(); session = null; clearInterval(tick); untrack(); unlisten(); unsubscribe(); stop(); window.removeEventListener('resize', resize); window.removeEventListener('message', receive) }
   })
 </script>
 
