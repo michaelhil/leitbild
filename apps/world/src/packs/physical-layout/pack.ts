@@ -51,6 +51,7 @@ export const physicalLayoutPack: WorldPack = {
         spatial: { frame: { kind: 'wgs84' } },
         operational: { status: 'available', priority: 'normal', mode: 'simulated' },
         alerts: [], provenance: { source: 'import', externalId: retained.design.digest },
+        ...(owner.audience === undefined ? {} : { audience: owner.audience }),
         timestamps: { createdAt: context.at, updatedAt: context.at }, packData: data,
       }
       return { objects: [object] }

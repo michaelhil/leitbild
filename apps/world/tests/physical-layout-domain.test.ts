@@ -21,6 +21,8 @@ import { describeProcessPlantPhysicalTargets } from '../src/packs/process-plant/
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { physicalCompilerFiles, physicalCompilerRef } from '../src/packs/physical-layout/compiler-identity.ts'
+import { sideViewOfSnapshot } from '../src/core/simulation-runs/side-view.ts'
+import type { SimulationRunStateSnapshot } from '../src/core/simulation-runs/state-store.ts'
 
 const packs = [physicalLayoutPack, processPlantPack]
 const ownerItem = (id: string, location = [11.47, 59.087]) => ({ type: 'plant', id, label: 'Same unit label', location, model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } })
@@ -42,6 +44,23 @@ const find = (objects: ReadonlyArray<OperationalObject>, id: string): Operationa
 }
 
 describe('Physical layout admission and retained scene', () => {
+  test('retained physical source inherits its owner audience before any side-view delivery', async () => {
+    const compiled = await compile(source())
+    const originalOwner = find(compiled.initialObjects, 'plant:a')
+    const owner = { ...originalOwner, audience: ['blue'] }
+    const expanded = await physicalLayoutPack.scenario!.expandItem({ ...layoutItem('layout:audience', owner.id), pack: 'physical-layout' }, {
+      at: originalOwner.timestamps.createdAt, objects: [owner], objectById: id => id === owner.id ? owner : undefined,
+      routing: createDirectRoutingAdapter(), packConfigs: {}, sides: [{ id: 'blue', label: 'Blue' }, { id: 'red', label: 'Red' }],
+      physicalTargetsFor: () => describeProcessPlantPhysicalTargets(owner),
+    })
+    const layout = expanded.objects[0]!
+    expect(layout.audience).toEqual(owner.audience)
+    const snapshot = { seq: 0, objects: [owner, layout] } as SimulationRunStateSnapshot
+    expect(sideViewOfSnapshot(snapshot, ['red']).objects).toEqual([])
+    expect(sideViewOfSnapshot(snapshot, ['blue']).objects.map(object => object.id)).toEqual([owner.id, layout.id])
+    expect(sideViewOfSnapshot(snapshot, ['blue']).objects[1]!.packData).toEqual(layout.packData)
+    expect(JSON.stringify(sideViewOfSnapshot(snapshot, ['red']))).not.toContain('pwr-turbine-island')
+  })
   test('pins the exact installed geometry compiler instead of silently rebuilding old Runs with new code', async () => {
     const hash = createHash('sha256')
     for (const name of physicalCompilerFiles) {
