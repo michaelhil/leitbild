@@ -15,6 +15,21 @@ export const physicalSceneLevelSchema = z.object({
   cutHeight: z.number().finite(),
 }).strict().refine(level => level.cutHeight > level.elevation, 'A level cut must be above its floor')
 
+const physicalFeatureStrokeSchema = z.object({
+  positions: coordinatesSchema,
+  material: identifierSchema.optional(),
+}).strict().refine(line => line.positions.length % 6 === 0, 'Feature strokes must contain xyz segment pairs')
+
+/** Source-derived navigation structure, independent of runtime ownership. */
+export const physicalSceneScopeSchema = z.object({
+  id: identifierSchema,
+  label: z.string().min(1).max(300),
+  kind: z.enum(['site', 'unit', 'building', 'space', 'assembly']),
+  parentId: identifierSchema.optional(),
+  bounds: physicalSceneBoundsSchema,
+  levelIds: z.array(identifierSchema),
+}).strict()
+
 export const physicalSceneObjectSchema = z.object({
   id: identifierSchema,
   label: z.string().min(1).max(300),
@@ -29,6 +44,13 @@ export const physicalSceneObjectSchema = z.object({
   material: identifierSchema.optional(),
   materials: z.array(identifierSchema).min(1).max(32).optional(),
   materialIndices: z.array(z.number().int().nonnegative()).max(2_000_000).optional(),
+  /** Physical membership and vertical applicability, not a duplicated occurrence per floor. */
+  scopeIds: z.array(identifierSchema).optional(),
+  levelIds: z.array(identifierSchema).optional(),
+  bounds: physicalSceneBoundsSchema.optional(),
+  /** Intentional 3D illustration features; section contours are derived separately. */
+  featureLines: z.array(physicalFeatureStrokeSchema).optional(),
+  edgePolicy: z.enum(['authored', 'crease', 'none']).optional(),
   /** Authored plan strokes such as door swings; consecutive xyz pairs are independent segments. */
   planLines: z.array(z.object({ positions: coordinatesSchema, material: identifierSchema.optional() }).strict()).max(1000).optional(),
 }).strict().superRefine((object, context) => {
@@ -53,16 +75,36 @@ export const packPhysicalSceneSchema = z.object({
   bearing: z.number().finite(),
   bounds: physicalSceneBoundsSchema,
   levels: z.array(physicalSceneLevelSchema).min(1).max(128),
+  scopes: z.array(physicalSceneScopeSchema).optional(),
+  /** Authored placement grouping; a reusable geometry template has no site owner. */
+  group: z.object({ id: identifierSchema, label: z.string().min(1).max(300) }).strict().optional(),
   objects: z.array(physicalSceneObjectSchema).max(20_000),
 }).strict().superRefine((scene, context) => {
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
   const levelIds = new Set(scene.levels.map(level => level.id))
+  const scopes = new Map((scene.scopes ?? []).map(scope => [scope.id, scope]))
+  if (scopes.size !== (scene.scopes?.length ?? 0)) issue('Scope IDs must be unique')
+  for (const scope of scopes.values()) {
+    if (new Set(scope.levelIds).size !== scope.levelIds.length || scope.levelIds.some(id => !levelIds.has(id))) issue(`Invalid scope levels: ${scope.id}`)
+    const ancestors = new Set([scope.id])
+    let parent = scope.parentId
+    while (parent !== undefined) {
+      if (ancestors.has(parent)) { issue(`Cyclic physical scope: ${scope.id}`); break }
+      ancestors.add(parent)
+      const next = scopes.get(parent)
+      if (next === undefined) { issue(`Unknown physical scope parent: ${scope.id}`); break }
+      parent = next.parentId
+    }
+  }
   if (levelIds.size !== scene.levels.length) issue('Level IDs must be unique')
   if (new Set(scene.objects.map(object => object.id)).size !== scene.objects.length) issue('Occurrence IDs must be unique')
   let coordinateCount = 0
   for (const object of scene.objects) {
     if (object.levelId !== 'site' && !levelIds.has(object.levelId)) issue(`Unknown level: ${object.levelId}`)
     coordinateCount += object.positions.length
+    if (object.scopeIds && (new Set(object.scopeIds).size !== object.scopeIds.length || object.scopeIds.some(id => !scopes.has(id)))) issue(`Unknown or duplicate occurrence scope: ${object.id}`)
+    if (object.levelIds && (new Set(object.levelIds).size !== object.levelIds.length || object.levelIds.some(id => id !== 'site' && !levelIds.has(id)))) issue(`Invalid occurrence levels: ${object.id}`)
+    for (const line of object.featureLines ?? []) coordinateCount += line.positions.length
     for (let index = 0; index < object.positions.length; index++) {
       const axis = index % 3
       if (object.positions[index]! < scene.bounds.min[axis]! - 0.001 || object.positions[index]! > scene.bounds.max[axis]! + 0.001) { issue(`Occurrence outside declared bounds: ${object.id}`); break }
@@ -75,6 +117,7 @@ export type PackPhysicalScene = z.infer<typeof packPhysicalSceneSchema>
 export type PhysicalSceneObject = z.infer<typeof physicalSceneObjectSchema>
 export type PhysicalSceneLevel = z.infer<typeof physicalSceneLevelSchema>
 export type PhysicalSceneBounds = z.infer<typeof physicalSceneBoundsSchema>
+export type PhysicalSceneScope = z.infer<typeof physicalSceneScopeSchema>
 
 /** Small authored building outlines, available before triangle geometry is loaded. */
 export const physicalOverviewFootprintSchema = z.object({
