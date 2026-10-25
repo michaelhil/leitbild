@@ -145,6 +145,28 @@ const committedUpsert = (object: OperationalObject, seq: number): SimulationRunE
 }) as SimulationRunEvent
 
 describe('createRuntimeHub', () => {
+  test('retains static Pack canonical objects beside runtime objects, including restored updates and committed deletion', async () => {
+    const initial = testObject('static-layout', 1), restored = testObject('static-layout', 4), runtimeObject = testObject('active-pack', 8)
+    let observed: ReadonlyArray<OperationalObject> = []
+    const adapter = withConnection(createStubAdapter('active.runtime', 'active-pack', 'world.active.command'), (connection, config) => ({
+      ...connection,
+      getSnapshot: async () => ({ simulationRunId: config.simulationRunId, objects: [runtimeObject], capturedAt: '2026-01-01T00:00:00Z' as IsoTimestamp }),
+      observeInitialSnapshot: async objects => { observed = objects },
+    }))
+    const config = connectionConfig(['active.runtime'])
+    const connection = await createRuntimeHub([adapter]).connect({ ...config, scenario: { ...config.scenario, initialObjects: [initial] }, initialObjects: [restored] })
+    try {
+      expect(observed).toEqual([restored, runtimeObject])
+      expect((await connection.getSnapshot()).objects).toEqual([restored, runtimeObject])
+      const updated = testObject('static-layout', 5)
+      await connection.observeCommittedEvents([committedUpsert(updated, 1)])
+      expect((await connection.getSnapshot()).objects).toEqual([updated, runtimeObject])
+      const deletion = simulationRunEventSchema.parse({ id: 'event:2', seq: 2, simulationRunId: 'run-test', type: 'object.deleted', objectId: restored.id, at: '2026-01-01T00:00:00Z', provenance: { source: 'operator' } }) as SimulationRunEvent
+      await connection.observeCommittedEvents([deletion])
+      expect((await connection.getSnapshot()).objects).toEqual([runtimeObject])
+    } finally { await connection.close() }
+  })
+
   test('connects only scenario-declared runtimes', async () => {
     const active = createStubAdapter('active.runtime', 'active-pack', 'world.active.command')
     const inactive = createStubAdapter('inactive.runtime', 'inactive-pack', 'world.inactive.command')
