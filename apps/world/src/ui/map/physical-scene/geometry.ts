@@ -176,7 +176,11 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       // A true horizontal section is viewing truth even when a family suppresses
       // illustrative edges; source floor/boolean partitions never become lines.
       if (object.edgePolicy !== undefined) for (const [a, b] of segments) { lines.push(...position(a), ...position(b)); lineMaterials.push('line'); lineStyles.push('section') }
-      for (const line of [...(object.edgePolicy === 'none' ? [] : object.featureLines ?? []), ...(view.mode === '2d' ? object.planLines ?? [] : [])]) {
+      // Authored Plan is a complete stroke representation, not a second overlay
+      // of the 3D feature set. Reuse features only when no Plan is authored.
+      const features = object.edgePolicy === 'none' ? [] : object.featureLines ?? []
+      const authoredLines = view.mode === '2d' ? object.planLines ?? features : features
+      for (const line of authoredLines) {
         for (let index = 0; index < line.positions.length; index += 6) {
           let a = line.positions.slice(index, index + 3) as [number, number, number], b = line.positions.slice(index + 3, index + 6) as [number, number, number]
           let visible = true

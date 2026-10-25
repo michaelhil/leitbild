@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { PackPhysicalScene } from '../src/core/packs/scene.ts'
 import { createPhysicalSceneControllerForViewport } from '../src/ui/map/physical-scene/scene-controller.ts'
 import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
+import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import type { PhysicalViewport } from '../src/ui/map/physical-scene/viewport.ts'
 import type { PhysicalLayerEntry } from '../src/ui/map/physical-scene/layer.ts'
@@ -50,4 +51,10 @@ test('offset magnitude, layers, scope and palette preserve immutable base buffer
   h.controller.selectScope('a', 'a'); h.controller.fitAll(); expect(h.entries()[0]!.meshes).toHaveLength(2)
   h.controller.setPalette({ materials: {}, defaultMaterial: [.6, .6, .6], line: [0, 0, 0] }); expect(h.paletteUpdates()).toBe(1); expect(h.prepares()).toBe(count)
   h.controller.destroy()
+})
+
+test('authored Plan strokes replace the 3D stroke representation without drawing duplicate features', () => {
+  const value = scene('a'); value.objects = [{ ...value.objects[0]!, edgePolicy: 'authored', featureLines: [{ positions: [0, 0, 1, 1, 0, 1] }], planLines: [{ positions: [0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1] }] }]
+  expect(buildVisibleMeshes(value, { ...defaultPhysicalSceneView(value.levels), mode: '2d' })[0]!.lines.length).toBe(12)
+  expect(buildVisibleMeshes(value, { ...defaultPhysicalSceneView(value.levels), mode: '3d' })[0]!.lines.length).toBe(6)
 })

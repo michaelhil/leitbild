@@ -46,7 +46,7 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height }
       if (!width || !height) return
       gl.viewport(0, 0, width, height)
-      const background = palette?.materials.background ?? palette?.materials.floor ?? palette?.defaultMaterial ?? [1, 1, 1]
+      const background = palette?.materials.background ?? palette?.materials.ground ?? palette?.materials.floor ?? palette?.defaultMaterial ?? [1, 1, 1]
       gl.clearColor(background[0]!, background[1]!, background[2]!, 1); gl.depthMask(true); gl.stencilMask(0xff); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
       renderer?.render(matrix()); emit('render'); emit('idle')
     })
