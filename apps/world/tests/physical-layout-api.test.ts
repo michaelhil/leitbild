@@ -19,6 +19,7 @@ import { physicalSubjectStatus } from '../src/ui/physical-layout/status.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import type { ObservationPort } from '../src/features/displays/observation/port.ts'
 import { createRoleRunRegistry } from './fixtures/role-runs.ts'
+import { actorIdSchema, type IsoTimestamp } from '../src/core/model/index.ts'
 
 const packs = [processPlantPack, physicalLayoutPack]
 const definition = scenarioDefinitionSchema.parse({ id: 'layout-api-proof', title: 'Layout API proof', packs: [
@@ -127,6 +128,32 @@ describe('Real PWR layout display boundary', () => {
       expect(status.quality).toBe('stale')
       expect(status.word).toBeNull()
     } finally { observations.mockRestore() }
+  }))
+
+  test('a real turbine trip and acknowledgement reach the layout through the shared owner alarm lifecycle', async () => withRun(async (registry, run) => {
+    const operator = { id: actorIdSchema.parse('actor:layout-alarm-proof'), label: 'Layout alarm proof', role: 'operator' as const }
+    const before = layoutLiveResponseSchema.parse((await route(registry, run.id)).body)
+    expect(before.sample.alerts).toHaveLength(0)
+    const outcome = await run.invokeCapability(operator, { capabilityId: 'world.process-plant.action.invoke', input: { plantId: 'plant:proof', actionId: 'turbine-trip', parameters: {} } })
+    expect(outcome.kind).toBe('command')
+    if (outcome.kind !== 'command') throw new Error('Turbine trip did not issue a command')
+    expect(outcome.result.ok).toBe(true)
+    const target = new Date(Date.parse(run.snapshot().clock!.currentTime) + 2_000).toISOString() as IsoTimestamp
+    await run.runMaximumPace(target, { shouldStop: () => false, onProgress: () => undefined })
+    await run.setClock({ paused: true })
+    const tripped = layoutLiveResponseSchema.parse((await route(registry, run.id)).body)
+    expect(tripped.sample.alerts.length).toBeGreaterThan(0)
+    expect(tripped.scope.sequence).toBeGreaterThan(before.scope.sequence)
+    expect(tripped.scope.epoch).toBe(before.scope.epoch)
+    const row = tripped.sample.alerts.find(row => row.state === 'active-unack' && row.acknowledge !== undefined)
+    if (!row?.acknowledge) throw new Error('Trip produced no acknowledgeable owner alarm')
+    const acknowledged = await run.invokeCapability(operator, { capabilityId: row.acknowledge.capabilityId, input: row.acknowledge.input })
+    expect(acknowledged.kind).toBe('command')
+    const after = layoutLiveResponseSchema.parse((await route(registry, run.id)).body)
+    expect(after.sample.alerts.find(candidate => candidate.key === row.key)?.state).toBe('active-ack')
+    expect(after.sample.alerts).toHaveLength(tripped.sample.alerts.length)
+    const owner = run.snapshot().objects.find(object => object.id === 'plant:proof')!
+    expect(new Set(after.sample.alerts.map(row => row.alert.id))).toEqual(new Set(owner.alerts.map(alert => alert.id)))
   }))
 
   test('a mid-acquisition owner refusal does not become a successful partial status sample', async () => withRun(async (registry, run) => {
