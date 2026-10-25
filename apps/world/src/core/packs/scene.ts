@@ -147,6 +147,9 @@ export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'ob
   readonly geometryKey?: string
   /** Conservative physical error of the overview representation, in metres. */
   readonly overviewGeometricErrorMetres?: number
+  /** Authored inspection-feature size for automatic legibility demand, not geometric error.
+   * Missing metadata leaves automatic inspection unsupported; explicit focus still works. */
+  readonly inspectionFeatureMetres?: number
   readonly locationValid: boolean
   readonly reason?: string
   readonly subjectIds: ReadonlyArray<string>

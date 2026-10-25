@@ -6,6 +6,7 @@ import { physicalRequiredConnections } from './connections.ts'
 import { physicalLayoutDependencyFailure } from './dependencies.ts'
 import { explorerBuildingFootprints } from './explorer-footprints.ts'
 import { loadPhysicalSourceAsset } from './source-loader.ts'
+import { physicalInspectionFeatureMetres } from './inspection-feature.ts'
 
 const parsed = new WeakMap<OperationalObject, RetainedPhysicalLayoutData>()
 const footprints = new WeakMap<OperationalObject, ReturnType<typeof physicalBuildingFootprints>>()
@@ -35,12 +36,14 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
     overviewFootprints = 'physicalApplicability' in data ? explorerBuildingFootprints(data.source) : physicalBuildingFootprints(data.source)
     footprints.set(object, overviewFootprints)
   }
+  const inspectionFeatureMetres = physicalInspectionFeatureMetres(data.source)
   return {
     id: object.id, revision: data.design.digest, targetObjectId: data.owner.objectId,
     geometryKey: `${physicalLayoutPackId}/${data.design.digest}`,
     // The whole admitted diagonal safely bounds omitted overview detail. A
     // representation-specific tighter bound can be admitted with that asset.
     overviewGeometricErrorMetres: Math.hypot(...data.bounds.max.map((value, axis) => value - data.bounds.min[axis]!)),
+    ...(inspectionFeatureMetres === undefined ? {} : { inspectionFeatureMetres }),
     anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: data.bounds,
     levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
     subjectIds: data.coverage.representedSubjectIds, modelDigest: data.owner.modelDigest,
