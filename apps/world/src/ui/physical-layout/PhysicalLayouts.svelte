@@ -284,7 +284,7 @@
 </script>
 
 {#if focused !== null}
-  <div class="layout-tools" bind:this={toolsElement} style:--cover-right="{coverRight}px" style:top="{toolsTop}px">
+  <div class="layout-tools" bind:this={toolsElement} style:--cover-right="{coverRight}px" style:top="{toolsTop}px" style:max-height="{Math.max(0, size.height - toolsTop - 24)}px">
     {#if scenes.length > 1}
       <select aria-label="Plant physical layout" value={focused.descriptor.id} onchange={event => { focusedId = event.currentTarget.value; controlsOpen = true; controller.fit(focusedId) }}>
         {#each scenes as scene (scene.descriptor.id)}<option value={scene.descriptor.id}>{objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId}</option>{/each}
@@ -326,7 +326,7 @@
 {/if}
 
 <style>
-  .layout-tools { position: absolute; z-index: 5; top: 12px; right: calc(var(--cover-right, 0px) + 54px); display: grid; gap: 5px; max-width: calc(100% - 28px); pointer-events: auto; }
+  .layout-tools { position: absolute; z-index: 5; top: 12px; right: calc(var(--cover-right, 0px) + 54px); display: grid; gap: 5px; max-width: calc(100% - 28px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
   .layout-tools > select, .layout-entry, .layout-components { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; padding: 8px; }
   .layout-tools > select, button, input { min-height: 44px; }
   button { cursor: pointer; }
