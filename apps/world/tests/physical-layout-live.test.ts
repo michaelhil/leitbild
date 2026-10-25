@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { embeddedViewEnvelopeSchema, newWorkspaceId } from '@leitbild/contracts'
 import { objectIdSchema } from '../src/core/model/ids.ts'
 import { isoTimestampSchema } from '../src/core/model/time.ts'
@@ -10,6 +11,7 @@ import { layoutInspectionEnvelope, layoutInspectionExpected, layoutInspectionMes
 import { layoutLiveExpectedSchema, layoutLiveResponseSchema, type LayoutLiveResponse } from '../src/ui/physical-layout/read-model.ts'
 import { admitPhysicalLiveStamp, physicalLayoutStatusSummary, physicalSubjectKey, physicalSubjectStatus, physicalSubjectStyle, type PhysicalLayoutSubject } from '../src/ui/physical-layout/status.ts'
 import { changePhysicalLayoutView, initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
+import { valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 
 const expected = layoutLiveExpectedSchema.parse({ runId: 'run-layout', layoutObjectId: 'layout:one', objectId: 'plant:one', packId: 'process-plant', modelDigest: 'a'.repeat(64), revision: 'physical-two-room-r1' })
 const at = isoTimestampSchema.parse('2026-10-24T12:00:00.000Z')
@@ -192,6 +194,27 @@ describe('layout status is the owner display meaning, not another alarm system',
 })
 
 describe('physical inspection and local view controls', () => {
+  test('unrequested map history leaves the owner record declaration intact and never mounts its absence claim', () => {
+    const recorded: VignetteValue = { ...value, quantity: 'flow', unit: 'kg/s', valueType: 'number', series: { seriesId: 'feed-flow-record', intervalMs: 1000 } }
+    const response = reading()
+    const parsed = layoutLiveResponseSchema.parse({ ...response, subjects: [{ ...response.subjects[0]!, values: [recorded] }] })
+    const rows = valueRows({ values: parsed.subjects[0]!.values, observations: [{ ...observation, value: 400 }], series: new Map(), now: Date.parse(at), title: 'Feed pump', frozen: false })
+    expect(parsed.subjects[0]!.values[0]!.series).toEqual(recorded.series)
+    expect(rows[0]?.recorded).toBe(true)
+    expect(rows[0]?.series).toBeUndefined()
+    // Shared UI usage guards: current-only is a surface choice, not rewritten
+    // historian metadata; existing process cards keep history by default.
+    const inspection = readFileSync(new URL('../src/ui/embed/physical-layout/Inspection.svelte', import.meta.url), 'utf8')
+    const faceplate = readFileSync(new URL('../src/ui/embed/vignette/Faceplate.svelte', import.meta.url), 'utf8')
+    const view = readFileSync(new URL('../src/ui/embed/vignette/ValueRows.svelte', import.meta.url), 'utf8')
+    expect(inspection).toContain('showHistory={false}')
+    expect(faceplate).toContain('showHistory = true')
+    expect(faceplate).toContain('<ValueRows {rows} now={readings.now} {showHistory}')
+    expect(view).toContain('showHistory = true')
+    expect(view).toContain('{#if showHistory && row.recorded}<Sparkline')
+    expect(view).toContain('{#if showHistory}<span class="rate"')
+  })
+
   test('a 2D plan returns to a real level and separation changes only the view', () => {
     const levels = [{ id: 'lower', label: 'Condenser floor', elevation: 0 }, { id: 'operating', label: 'Operating floor', elevation: 15 }]
     const initial = initialPhysicalLayoutView(levels)

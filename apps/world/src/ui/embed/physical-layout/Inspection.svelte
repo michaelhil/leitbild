@@ -97,7 +97,7 @@
     alerts={snapshot.latest?.sample.alerts ?? []} alertElements={[activeElement]} group={false}
     related={subject === undefined || subject.devices.length === 0 ? null : { heading: 'Devices', entries: subject.devices.map(device => ({ element: device.id, name: device.label })) }}
     anchor={null} at={{ x: 0, y: 44 }} avoid={[]} zoom={1} room={{ x: 0, y: 44, width: viewport.width, height: Math.max(0, viewport.height - 44) }}
-    {frozen} opening={where} pending={false} canPin={false} maxWidth={Math.max(240, viewport.width - 16)}
+    {frozen} opening={where} pending={false} canPin={false} showHistory={false} maxWidth={Math.max(240, viewport.width - 16)}
     onclose={close} onpin={() => { throw new Error('This map faceplate has no pin canvas') }} onoverlay={() => { throw new Error('This map faceplate has no overlay canvas') }}
     ontouched={() => {}} onsize={height => hostMessage({ type: 'world:layout-inspection-size', height: Math.min(960, Math.max(120, Math.ceil(height + 60))) })}
     ondetail={detail} onfaceplate={inspect} />

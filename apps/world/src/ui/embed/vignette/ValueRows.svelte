@@ -19,12 +19,14 @@
   // span (a grid line's loading) draws its span bar there instead. The list
   // re-aligns after each sample: it
   // only sees its rows' attributes change, and these are properties.
-  let { rows, now, heading }: {
+  let { rows, now, heading, showHistory = true }: {
     rows: ReadonlyArray<ValueRow>
     /** The latest sample's Run time: where each sparkline ends. */
     now: number
     /** A window default's lead rows stand under their heading, which names the sparklines' window over their column. */
     heading?: string
+    /** A current-value-only surface must not turn unrequested history into a missing-record claim. */
+    showHistory?: boolean
   } = $props()
 
   /** OpenBridge's alert type for each priority drawn in colour; emergency is its critical level. */
@@ -52,7 +54,7 @@
 </script>
 
 {#if heading !== undefined}
-  <h2 class="row head" style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}><span>{heading}</span><span></span><span></span><span></span><span class="unit" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span></h2>
+  <h2 class="row head" style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}><span>{heading}</span><span></span><span></span><span></span>{#if showHistory}<span class="unit" title="Each sparkline: the reading's last 10 min, scaled to its own range">10 min</span>{:else}<span></span>{/if}</h2>
 {/if}
 <obc-readout-list class="rows" use:aligned={rows} style:--chip={chipChars === 0 ? '0px' : `calc(${chipChars}ch + 10px)`}>
   {#each rows as row (row.ref)}
@@ -83,8 +85,8 @@
           <!-- Outside its validity: what it waits for, beside its "—", over the rate's and the sparkline's room (W4.4). -->
           <span class="reason" title={look.reason} use:wholeWords={`(${look.reason})`}></span>
         {:else}
-          <span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>
-          {#if row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />
+          {#if showHistory}<span class="rate" title={row.rate === null ? undefined : `${row.rate.startsWith('▲') ? 'Rising' : 'Falling'} ${row.rate.slice(2).replace('/min', '')} ${row.look.unit} a minute: the last 30 s and the last 2 min agree`}>{row.rate ?? ''}</span>{:else}<span></span>{/if}
+          {#if showHistory && row.recorded}<Sparkline series={row.series} {now} windowMs={SPARK_WINDOW_MS} size={SPARK} tone={look.tone} text={sparkText(row)} doubtful={look.doubtful} />
           {:else if row.bar !== null}
             <!-- No record to draw: where it stands in its declared span, a tick at each alarm and trip limit (OpenBridge's bar). -->
             <span class="span" role="img" aria-label={`${row.label}: ${look.text} ${look.unit} in its span ${row.bar.min} to ${row.bar.max}`.replace('  ', ' ')}>

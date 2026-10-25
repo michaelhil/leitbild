@@ -31,7 +31,7 @@
   // handle: dragged, or moved by the arrow keys 8 px (Shift 24 px); the corner
   // resizes it, 280 to 520 px wide and by whole rows of readings, or
   // Shift+Alt and the arrows; Esc with focus in it unpins it.
-  let { runId, objectId, packId, elementId, name, word, title, readings, alerts, alertElements, group, related, anchor, at, avoid, zoom, room, frozen, opening, pending, pinned = null, canPin = true, maxWidth = FACEPLATE_WIDTH, onclose, onpin, onoverlay, ontouched, onsize, ondetail, onfaceplate }: {
+  let { runId, objectId, packId, elementId, name, word, title, readings, alerts, alertElements, group, related, anchor, at, avoid, zoom, room, frozen, opening, pending, pinned = null, canPin = true, maxWidth = FACEPLATE_WIDTH, showHistory = true, onclose, onpin, onoverlay, ontouched, onsize, ondetail, onfaceplate }: {
     runId: SimulationRunId
     objectId: string
     packId: string
@@ -69,6 +69,8 @@
     canPin?: boolean
     /** A narrow host bounds this card without scaling down its text. */
     maxWidth?: number
+    /** False where this surface deliberately reads current values without requesting records. */
+    showHistory?: boolean
     onclose: (returnFocus: boolean) => void
     /** Pins it where it stands (page px), or closes its overlay. */
     onpin: (place: { readonly x: number; readonly y: number }) => void
@@ -269,7 +271,7 @@
         {:else}
           <!-- Its readings, one row each, as the column's lead rows: its 10-min sparkline at the row's right (D-C). -->
           <div class="readings" bind:this={readingsBox}>
-            <ValueRows {rows} now={readings.now} />
+            <ValueRows {rows} now={readings.now} {showHistory} />
             {#if fit.more > 0}
               {#if offer === 'nothing'}<p class="more">+{fit.more} more in its detail</p>
               {:else}<button type="button" class="more" onclick={() => ondetail(elementId)}>+{fit.more} more in its detail ›</button>{/if}

@@ -297,7 +297,7 @@ describe('what a faceplate reads', () => {
     const source = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Faceplate.svelte'), 'utf8')
     // Its rows are the column's (value-rows.ts), which a frozen display marks doubtful: low-integrity, last values kept.
     expect(source).toContain('const rows = $derived(readings === null ? [] : faceplateRows(readings, fit.shown, { title, elementId, frozen }))')
-    expect(source).toContain('<ValueRows {rows} now={readings.now} />')
+    expect(source).toContain('<ValueRows {rows} now={readings.now} {showHistory} />')
     // Its header says no state word while frozen: the drawing's word is then "?" ("RCP A ?").
     expect(source).toContain('const stateWord = $derived(frozen ? null : word)')
     expect(source).toContain('{#if stateWord !== null}<span class="word">{stateWord}</span>{/if}')
