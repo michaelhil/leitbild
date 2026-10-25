@@ -173,6 +173,19 @@ describe('layout status is the owner display meaning, not another alarm system',
     expect(physicalSubjectStatus({ subject, values: [numeric], observations: [observation] }, [], false).word).toBeNull()
   })
 
+  test('standalone status requires an owner word, not an unlabelled boolean or arbitrary enum value', () => {
+    const { states: _states, ...unlabelled } = value
+    expect(physicalSubjectStatus({ subject, values: [unlabelled], observations: [observation] }, [], false).word).toBeNull()
+    expect(physicalSubjectStatus({ subject, values: [unlabelled], observations: [{ ...observation, value: false }] }, [], false).word).toBeNull()
+    const operation: VignetteValue = { ...value, ref: 'plant:one#operation', valueType: 'enum', states: [{ value: 'run', label: 'RUN' }, { value: 'stop', label: 'STOP' }] }
+    const running: Observation = { ...observation, ref: operation.ref, value: 'run' }
+    expect(physicalSubjectStatus({ subject, values: [unlabelled, operation], observations: [observation, running] }, [], false).word).toBe('RUN')
+    expect(physicalSubjectStatus({ subject, values: [operation], observations: [{ ...running, value: 'unknown-state' }] }, [], false).word).toBeNull()
+    const { states: _operationStates, ...openState } = operation
+    expect(physicalSubjectStatus({ subject, values: [openState], observations: [{ ...running, value: 'RUN' }] }, [], false).word).toBe('RUN')
+    expect(physicalSubjectStatus({ subject, values: [{ ...openState, quantity: 'count', unit: '1' }], observations: [running] }, [], false).word).toBeNull()
+  })
+
   test('counts one owner lifecycle separately from many casings and keeps hidden/unlocated alarms', () => {
     const rows = [alert('one'), alert('one'), alert('two', 'unplaced')]
     const summary = physicalLayoutStatusSummary({ owners: [subject], alerts: rows, occurrences: [

@@ -75,11 +75,19 @@ export const physicalSubjectStatus = (reading: PhysicalSubjectReading, rows: Rea
     ...own.filter(row => countedAs(row) === 'news').map(row => row.priority),
   ]
   const priority = priorities.reduce<Priority | null>((best, value) => priorityRank(value) > priorityRank(best) ? value : best, 'none')
-  const state = reading.values.find(value => value.valueType === 'boolean' || value.valueType === 'enum' || value.quantity === 'state')
-  const observation = state === undefined ? undefined : observations.find(value => value.ref === state.ref)
-  const raw = observation?.quality === 'good' ? observation.value : null
-  const word = state === undefined || raw === null || raw === undefined ? null
-    : state.states?.find(entry => entry.value === String(raw))?.label ?? (typeof raw === 'boolean' ? (raw ? 'yes' : 'no') : String(raw))
+  let word: string | null = null
+  for (const value of reading.values) {
+    if (value.valueType !== 'boolean' && value.valueType !== 'enum' && value.quantity !== 'state') continue
+    const observation = observations.find(observation => observation.ref === value.ref)
+    const raw = observation?.quality === 'good' ? observation.value : null
+    if (raw === null || raw === undefined) continue
+    const declared = value.states?.find(entry => entry.value === String(raw))?.label
+    if (declared !== undefined) { word = declared; break }
+    // An unlabelled boolean could mean permissive, selection or demand; a
+    // stand-alone yes/no would falsely present it as the equipment's state.
+    // An open enum explicitly declared as state already supplies its words.
+    if (!(value.states?.length) && value.quantity === 'state' && value.valueType === 'enum' && typeof raw === 'string') { word = raw; break }
+  }
   return {
     subject: reading.subject, priority: frozen ? null : priority, quality: frozen ? 'stale' : quality, word: frozen ? null : word,
     active: own.filter(row => row.state !== 'returned-unack').length,
