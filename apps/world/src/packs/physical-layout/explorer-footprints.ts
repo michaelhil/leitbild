@@ -8,5 +8,5 @@ export const explorerBuildingFootprints = (source: Source) => source.elements.fi
     : [[0, 0], [dimensions.length, 0], [dimensions.length, dimensions.width], [0, dimensions.width], [0, 0]]
   const ring = local.map(([x, y]): [number, number] => [pose.position[0] + c * x - s * y - source.origin[0], pose.position[1] + s * x + c * y - source.origin[1]])
   ring[ring.length - 1] = [...ring[0]!]
-  return { id: element.id, label: element.label, ring, base: pose.position[2] - source.origin[2], height: dimensions.height }
+  return { id: element.id, scopeId: element.id, label: element.label, ring, base: pose.position[2] - source.origin[2], height: dimensions.height }
 })

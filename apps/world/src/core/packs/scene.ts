@@ -53,7 +53,8 @@ export const physicalSceneObjectSchema = z.object({
   edgePolicy: z.enum(['authored', 'crease', 'none']).optional(),
   /** Named representation layer, separate from operational status or source disposition. */
   layerId: identifierSchema.optional(),
-  /** Authored plan strokes such as door swings; consecutive xyz pairs are independent segments. */
+  /** Complete authored 2D stroke representation; xyz pairs are independent segments.
+   * When present it replaces 3D feature strokes in Plan, rather than adding them again. */
   planLines: z.array(z.object({ positions: coordinatesSchema, material: identifierSchema.optional() }).strict()).max(1000).optional(),
 }).strict().superRefine((object, context) => {
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
@@ -128,6 +129,8 @@ export type PhysicalSceneScope = z.infer<typeof physicalSceneScopeSchema>
 /** Small authored building outlines, available before triangle geometry is loaded. */
 export const physicalOverviewFootprintSchema = z.object({
   id: identifierSchema,
+  /** Declared hierarchy membership; renderers never infer it from the footprint ID. */
+  scopeId: identifierSchema.optional(),
   label: z.string().min(1).max(300),
   ring: z.array(z.tuple([z.number().finite(), z.number().finite()])).min(4).max(1024),
   base: z.number().finite(),
