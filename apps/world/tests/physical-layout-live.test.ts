@@ -28,7 +28,7 @@ const alert = (id: string, element = 'pump', state: AlertRow['state'] = 'active-
 })
 const settle = async (): Promise<void> => { for (let index = 0; index < 20; index += 1) await Promise.resolve() }
 
-const harness = (overrides: Partial<LayoutLiveRoutes> = {}) => {
+const harness = (overrides: Partial<LayoutLiveRoutes> = {}, demand: { readonly subjectIds?: ReadonlyArray<string>; readonly requiredSubjectId?: string } = {}) => {
   let wall = 0
   const scheduled: Array<{ delay: number; callback: () => void; cancelled: boolean }> = []
   const calls: string[] = []
@@ -36,7 +36,7 @@ const harness = (overrides: Partial<LayoutLiveRoutes> = {}) => {
   let nextReading = reading()
   let epoch = 'owner-epoch-1'
   const session = createLayoutLiveSession({
-    expected, onChange: state => states.push(state), wallNow: () => wall,
+    expected, ...demand, onChange: state => states.push(state), wallNow: () => wall,
     routes: {
       presence: async () => { calls.push('presence'); return { loaded: true, displayEpoch: epoch, snapshotSeq: 10 } },
       read: async () => { calls.push('read'); return nextReading }, ...overrides,
@@ -120,6 +120,31 @@ describe('layout acquisition stays inside the real owner scope', () => {
     expect(() => layoutLiveResponseSchema.parse({ ...response, sample: { ...response.sample, alerts: [{ ...alert('x'), packId: 'foreign-pack' }] } })).toThrow('another owner')
     expect(() => layoutLiveResponseSchema.parse({ ...response, sample: { ...response.sample, alerts: [{ ...alert('x'), state: 'active-ack' }] } })).toThrow('owner lifecycle')
     expect(() => layoutLiveResponseSchema.parse({ ...response, extraHiddenPlant: { private: true } })).toThrow()
+  })
+
+  test('a partial or extra subject set cannot pass as a live map, and a missing requested card refuses explicitly', async () => {
+    const incomplete = harness({}, { subjectIds: ['pump', 'turbine'] })
+    incomplete.session.start(); await settle()
+    expect(incomplete.last().phase).toBe('failed')
+    expect(incomplete.last().failure).toContain('complete admitted subject set')
+    expect(incomplete.last().latest).toBeNull()
+    incomplete.session.close()
+    const extra = harness({}, { subjectIds: ['pump'] })
+    const response = reading()
+    extra.setReading({ ...response, subjects: [...response.subjects, { ...response.subjects[0]!, elementId: 'turbine' }] })
+    extra.session.start(); await settle()
+    expect(extra.last().phase).toBe('failed')
+    expect(extra.last().failure).toContain('complete admitted subject set')
+    extra.session.close()
+    const card = harness({}, { requiredSubjectId: 'turbine' })
+    card.session.start(); await settle()
+    expect(card.last().failure).toContain('requested component is absent')
+    expect(card.last().latest).toBeNull()
+    card.session.close()
+    const complete = harness({}, { subjectIds: ['pump'], requiredSubjectId: 'pump' })
+    complete.session.start(); await settle()
+    expect(complete.last().phase).toBe('live')
+    complete.session.close()
   })
 })
 

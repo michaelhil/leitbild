@@ -57,7 +57,10 @@
       failure = error instanceof Error ? error.message : String(error)
       return stop
     }
-    const live = createLayoutLiveSession({ expected: parsed.expected, routes: layoutLiveRoutes, onChange: next => { snapshot = next; wallNow = Date.now() } })
+    const live = createLayoutLiveSession({ expected: parsed.expected, requiredSubjectId: parsed.state.elementId, routes: layoutLiveRoutes, onChange: next => {
+      snapshot = next; wallNow = Date.now()
+      if (next.phase === 'failed' && next.latest === null) hostMessage({ type: 'world:layout-inspection-size', height: 160 })
+    } })
     session = live
     const resize = (): void => { viewport = { width: window.innerWidth, height: window.innerHeight } }
     const host = embeddedDisplayFrame()
@@ -86,6 +89,9 @@
   <div class="state" role="status">{failure ?? snapshot.failure ?? (snapshot.phase === 'inactive' ? 'Not live · the Run is not loaded' : snapshot.phase === 'missing' ? 'Not live · the Run no longer exists' : frozen ? 'Not live · waiting for a fresh owner sample' : snapshot.latest?.sample.at.paused ? 'Paused · readings fresh' : 'Live owner readings')}</div>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <obc-button class="close" variant="flat" title="Close layout quick look" onclick={() => close(true)}>Close</obc-button>
+  {#if snapshot.phase === 'failed' && snapshot.latest === null}
+    <p class="failure" role="alert">No current owner sample is available. This quick look will retry while visible.</p>
+  {:else}
   <Faceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
     name={subject?.label ?? parsed.state.label} {word} title={envelope.title} {readings}
     alerts={snapshot.latest?.sample.alerts ?? []} alertElements={[activeElement]} group={false}
@@ -95,6 +101,7 @@
     onclose={close} onpin={() => { throw new Error('This map faceplate has no pin canvas') }} onoverlay={() => { throw new Error('This map faceplate has no overlay canvas') }}
     ontouched={() => {}} onsize={height => hostMessage({ type: 'world:layout-inspection-size', height: Math.min(960, Math.max(120, Math.ceil(height + 60))) })}
     ondetail={detail} onfaceplate={inspect} />
+  {/if}
 {:else if failure !== null}
   <p class="failure" role="alert">This quick look cannot be shown: {failure}</p>
 {/if}
@@ -103,5 +110,5 @@
   .state { position: fixed; left: 10px; top: 7px; right: 64px; min-height: 32px; display: flex; align-items: center; color: var(--element-neutral-color); font-size: 11px; line-height: 1.3; }
   .close { position: fixed; right: 8px; top: 0; min-width: 52px; min-height: 44px; padding: 6px; border: none; background: transparent; color: var(--element-active-color); font: inherit; font-size: 12px; cursor: pointer; }
   .close:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: -2px; }
-  .failure { margin: 12px; color: var(--element-active-color); }
+  .failure { margin: 12px; padding-top: 44px; color: var(--element-active-color); font-size: 12px; line-height: 1.5; }
 </style>

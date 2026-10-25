@@ -37,6 +37,10 @@ const timer: Timer = (callback, delayMs) => { const id = setTimeout(callback, de
  */
 export const createLayoutLiveSession = (config: {
   readonly expected: LayoutLiveExpected
+  /** The complete admitted subject set when the map holds its descriptor. */
+  readonly subjectIds?: ReadonlyArray<string>
+  /** A single card's demand, even when the card does not hold the whole descriptor. */
+  readonly requiredSubjectId?: string
   readonly routes: LayoutLiveRoutes
   readonly onChange: (snapshot: LayoutLiveSnapshot) => void
   readonly schedule?: Timer
@@ -44,6 +48,8 @@ export const createLayoutLiveSession = (config: {
 }) => {
   const schedule = config.schedule ?? timer
   const now = config.wallNow ?? Date.now
+  const subjectIds = config.subjectIds === undefined ? null : new Set(config.subjectIds)
+  if (subjectIds !== null && (subjectIds.size === 0 || subjectIds.size !== config.subjectIds!.length)) throw new Error('A layout read needs a unique, nonempty admitted subject set')
   let snapshot: LayoutLiveSnapshot = { phase: 'connecting', latest: null, stamp: null, failure: null }
   let closed = false
   let visible = true
@@ -86,6 +92,9 @@ export const createLayoutLiveSession = (config: {
       if (!current()) return
       if (now() - requestedWallMs > 5_000) throw new Error('Layout acquisition took over five seconds; its evidence is not current')
       if ((Object.keys(config.expected) as ReadonlyArray<keyof LayoutLiveExpected>).some(key => config.expected[key] !== response.scope[key])) throw new Error('The layout response belongs to a different Run, model or binding')
+      const receivedSubjects = new Set(response.subjects.map(subject => subject.elementId))
+      if (subjectIds !== null && (receivedSubjects.size !== subjectIds.size || [...receivedSubjects].some(id => !subjectIds.has(id)))) throw new Error('The layout response does not contain the complete admitted subject set')
+      if (config.requiredSubjectId !== undefined && !receivedSubjects.has(config.requiredSubjectId)) throw new Error('The requested component is absent from the layout owner response')
       if (response.scope.epoch !== confirmedEpoch) {
         // The owner may have reset while this request was in flight. Confirm
         // its new epoch through presence, then acquire a whole fresh sample.
