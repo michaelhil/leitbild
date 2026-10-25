@@ -121,7 +121,9 @@ describe('Authored shared PWR campus and graph coverage', () => {
       const halfWidth = road.dimensions!.width / 2
       return road.path!.slice(1).flatMap((b, index) => buildings.filter(building => polygonDistance(road.path![index]!.slice(0, 2) as [number, number], b.slice(0, 2) as [number, number], building.polygon) < halfWidth).map(building => `${road.id}/${index}/${building.id}`))
     })
-    expect(buildings).toHaveLength(45)
+    expect(footprints).toHaveLength(11)
+    expect(buildings).toHaveLength(authored.units.length * footprints.length + authored.buildings.length)
+    expect(new Set(buildings.map(building => building.id)).size).toBe(buildings.length)
     expect(overlaps(data)).toEqual([])
     const planted = structuredClone(authored)
     planted.unitServiceSetback = 100
