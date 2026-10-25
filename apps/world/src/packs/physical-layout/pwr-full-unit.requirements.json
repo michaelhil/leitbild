@@ -1,5 +1,6 @@
 {
   "ownerRole": "unit",
   "ownerPackId": "process-plant",
-  "relatedMembers": []
+  "relatedMembers": [],
+  "connections": []
 }

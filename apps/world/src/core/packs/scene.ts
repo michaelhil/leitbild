@@ -97,5 +97,10 @@ export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'ob
   readonly modelDigest: string
   /** Additional immutable owner requirements; these do not create another live-state authority. */
   readonly relatedTargets?: ReadonlyArray<{ readonly objectId: string; readonly packId: string; readonly modelDigest: string }>
+  /** Exact topology required by authored physical routing; IDs and labels are not endpoint correspondence. */
+  readonly requiredConnections?: ReadonlyArray<{
+    readonly system: { readonly objectId: string; readonly portId: string }
+    readonly network: { readonly objectId: string; readonly portId: string }
+  }>
   readonly overviewFootprints?: ReadonlyArray<PhysicalOverviewFootprint>
 }

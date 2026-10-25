@@ -6,6 +6,7 @@ import { pwrFullUnitPhysicalDesignRef, resolvePhysicalDesign } from './design.ts
 import { physicalDesignRefSchema, physicalLayoutDataSchema, physicalLayoutPackId } from './model.ts'
 import { physicalLayoutPackView } from './ui-pack.ts'
 import { physicalCoverageIssues } from './coverage.ts'
+import { validatePhysicalConnections } from './connections.ts'
 
 export const physicalLayoutScenarioItemSchema = z.object({
   pack: z.literal(physicalLayoutPackId), type: z.literal('site-layout'), id: objectIdSchema,
@@ -25,6 +26,9 @@ export const physicalLayoutPack: WorldPack = {
     fields: [{ path: ['members', 'unit'], label: 'Owner unit', description: 'Required by a unit Design. Exact member roles are checked when the Scenario is admitted.', control: { kind: 'reference', itemTypes: ['plant'] } }, { path: ['bearing'], label: 'Local north bearing (degrees)', control: { kind: 'number', min: -360, max: 360 } }],
   }] },
   scenario: {
+    validateInitialObjects: (objects, _config, _at, _sides, connections) => {
+      for (const object of objects.filter(object => object.packId === physicalLayoutPackId)) validatePhysicalConnections(physicalLayoutDataSchema.parse(object.packData), connections)
+    },
     itemSchemas: { 'site-layout': physicalLayoutScenarioItemSchema },
     referencedObjects: spec => Object.values(physicalLayoutScenarioItemSchema.parse(spec).members),
     expandItem: async (spec: PackScenarioItemSpec, context) => {

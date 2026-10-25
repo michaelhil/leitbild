@@ -98,6 +98,17 @@ describe('Full PWR and shared campus admission', () => {
     await expect(compileScenarioDefinition(source(), [processPlantPack, badGraph, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() })).rejects.toThrow('site geography differs')
   })
 
+  test('physical unit feeders require the actual role-qualified Scenario endpoint pairs', async () => {
+    const swapped = source()
+    const first = swapped.connections[0]!, second = swapped.connections[1]!
+    const port = first.network.portId
+    first.network.portId = second.network.portId; second.network.portId = port
+    await expect(compile(swapped)).rejects.toThrow('Physical layout connection mismatch')
+    const missing = source()
+    missing.connections.splice(0, 1)
+    await expect(compile(missing)).rejects.toThrow('Physical layout connection mismatch')
+  })
+
   test('related member movement or disappearance invalidates the shared attachment without moving any source', async () => {
     const compiled = await compile(source()), campus = objectFor(compiled.initialObjects, 'layout:halden-campus')
     const before = canonicalPhysicalJson(campus.packData)
@@ -126,6 +137,30 @@ describe('Full PWR and shared campus admission', () => {
 })
 
 describe('Real full-plant and shared-yard acquisition', () => {
+  test('restore retains canonical topology and layout pins, while a mismatched loaded connection picture is refused before observation', async () => withRun(async (registry, run) => {
+    const before = registry.loadedCompiledScenario(run.id).connections
+    const sourceBefore = canonicalPhysicalJson(objectFor(run.snapshot().objects, 'layout:halden-campus').packData)
+    await registry.close(run.id)
+    const restored = await registry.load(run.id)
+    await restored.setClock({ paused: true })
+    expect(registry.loadedCompiledScenario(restored.id).connections).toEqual(before)
+    expect(canonicalPhysicalJson(objectFor(restored.snapshot().objects, 'layout:halden-campus').packData)).toBe(sourceBefore)
+    expect((await read(registry, restored, 'layout:halden-campus', pwrCampusPhysicalDesignRef.digest)).status).toBe(200)
+    const originalScenario = registry.loadedCompiledScenario.bind(registry)
+    const changed = before.map((connection, index) => ({ ...connection, network: { ...connection.network,
+      portId: index === 0 ? before[1]!.network.portId : index === 1 ? before[0]!.network.portId : connection.network.portId } }))
+    const scenarioSpy = spyOn(registry, 'loadedCompiledScenario').mockImplementation(id => ({ ...originalScenario(id), connections: changed }))
+    const originalObservations = restored.observations.bind(restored)
+    let reads = 0
+    const observationSpy = spyOn(restored, 'observations').mockImplementation(actor => { const port = originalObservations(actor); return { ...port, read: async input => { reads++; return port.read(input) } } })
+    try {
+      const result = await read(registry, restored, 'layout:halden-campus', pwrCampusPhysicalDesignRef.digest)
+      expect(result.status).toBe(409)
+      expect(result.body).toMatchObject({ error: { code: 'layout_connection_mismatch' } })
+      expect(reads).toBe(0)
+    } finally { observationSpy.mockRestore(); scenarioSpy.mockRestore() }
+  }), 30_000)
+
   test('full unit and Grid bindings read complete bounded owner samples, and internal core alarms locate at their housing', async () => withRun(async (registry, run) => {
     const elapsed: number[] = []
     const retainedSubjects = campusLayoutDataSchema.parse(objectFor(run.snapshot().objects, 'layout:halden-1').packData).coverage.representedSubjectIds

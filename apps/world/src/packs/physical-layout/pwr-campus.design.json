@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261025-r1",
-    "digest": "1f66130632e8695d09efbee1daa7d0f43d3fe6bcad9fa2400faf50977ce9b901"
+    "digest": "ebce67d2064e71309e1aff7641cbdfd16961efe840f52b020940d350d0639c73"
   },
   "sourceDigest": "7a3722e46dd03612ab848c659482cb3d85c03e72fa36c863d8014381ccf8e160",
   "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
@@ -79,6 +79,48 @@
           11.491,
           59.081
         ]
+      }
+    ],
+    "connections": [
+      {
+        "system": {
+          "role": "unit-1",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-1-420kv"
+        }
+      },
+      {
+        "system": {
+          "role": "unit-2",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-2-420kv"
+        }
+      },
+      {
+        "system": {
+          "role": "unit-3",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-3-420kv"
+        }
+      },
+      {
+        "system": {
+          "role": "unit-4",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-4-420kv"
+        }
       }
     ]
   }

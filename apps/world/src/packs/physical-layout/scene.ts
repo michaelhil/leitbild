@@ -2,6 +2,7 @@ import type { OperationalObject } from '../../core/model/index.ts'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from '../../core/packs/scene.ts'
 import { campusLayoutDataSchema, canonicalPhysicalJson, physicalDesignManifest, physicalLayoutDataSchema, physicalLayoutPackId, turbineIslandLayoutDataSchema, type RetainedPhysicalLayoutData } from './model.ts'
 import { physicalBuildingFootprints } from './native/campus/footprints.ts'
+import { physicalRequiredConnections } from './connections.ts'
 
 const parsed = new WeakMap<OperationalObject, RetainedPhysicalLayoutData>()
 const footprints = new WeakMap<OperationalObject, ReturnType<typeof physicalBuildingFootprints>>()
@@ -35,6 +36,7 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
     levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
     subjectIds: data.coverage.representedSubjectIds, modelDigest: data.owner.modelDigest,
     ...(relatedMembers.length === 0 ? {} : { relatedTargets: relatedMembers.map(member => ({ objectId: member.objectId, packId: member.packId, modelDigest: member.modelDigest })) }),
+    ...('requirements' in data && data.requirements.connections.length > 0 ? { requiredConnections: physicalRequiredConnections(data) } : {}),
     ...(overviewFootprints === undefined ? {} : { overviewFootprints }),
     locationValid, ...(locationValid ? {} : { reason: invalidMember ? `Location mismatch: related member ${invalidMember.role} moved or is unavailable` : owner ? 'Location mismatch: the owner moved after layout admission' : 'Layout owner is unavailable' }),
   }

@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261025-r1",
-    "digest": "eb3711e5c4c920f15f78df173177122ae6bbdfa860cc98a73c893c9e1b6176c7"
+    "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
   },
   "sourceDigest": "bdb869d221a628825dc83864ffc21b290cba6e61a1d9b341df144d6259d4f8ff",
   "bindingDigest": "3528660d71d440ca4469d99e4c5c50010c7691ec5002ff528e2a35202c4ef3b3",
@@ -31,6 +31,7 @@
   "requirements": {
     "ownerRole": "unit",
     "ownerPackId": "process-plant",
-    "relatedMembers": []
+    "relatedMembers": [],
+    "connections": []
   }
 }

@@ -5,7 +5,7 @@ import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { MapView } from '../../ui/map-view.ts'
 import type { SurfacePanelProps } from '../../ui/surface-panel-interaction.ts'
-import type { GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureId,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide,SimulationRunId } from '../model/index.ts'
+import type { ElectricalConnectionDefinition,GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureId,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide,SimulationRunId } from '../model/index.ts'
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
 import type { PackMapAppearance,PackMapLegend,PackMapLegendSwatch,PackReferenceDatasetStyle } from './reference-style.ts'
@@ -457,6 +457,8 @@ export interface PackScenarioSupport {
     at: IsoTimestamp,
     /** As PackScenarioExpansionContext.sides. */
     sides: ReadonlyArray<ScenarioSide>,
+    /** Canonical resolved initial topology; validation must not construct or advance a runtime. */
+    connections?: ReadonlyArray<ElectricalConnectionDefinition>,
   ) => void
   readonly itemSchemas: Readonly<Record<string, z.ZodType>>
   readonly expandItem: (
