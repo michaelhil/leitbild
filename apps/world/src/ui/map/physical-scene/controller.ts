@@ -184,8 +184,9 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       // not remain flattened plans inside a 3D view; their other settings stay local.
       for (const target of entries.values()) {
         const old = target.view
-        const next = target === entry ? { ...view } : modeChanged ? { ...old, mode: sharedMode,
+        const desired = target === entry ? { ...view } : modeChanged ? { ...old, mode: sharedMode,
           levelId: sharedMode === '2d' && old.levelId === 'all' ? target.source.descriptor.levels[0]!.id : old.levelId } : old
+        const next = desired.mode === '2d' && desired.levelId === 'all' ? { ...desired, levelId: target.source.descriptor.levels[0]!.id } : desired
         if (next === old) continue
         target.view = next
         const geometryChanged = old.levelId !== next.levelId || old.cutaway !== next.cutaway || old.separation !== next.separation || old.mode !== next.mode
