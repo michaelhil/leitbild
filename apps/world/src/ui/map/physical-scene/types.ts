@@ -36,6 +36,8 @@ export interface PhysicalScenePresentation {
   readonly view: PhysicalSceneView
   readonly status: 'distant' | 'loading' | 'ready' | 'hidden' | 'unavailable'
   readonly reason?: string
+  /** Display geometry generation; it is independent of immutable source revision. */
+  readonly renderRevision?: number
   readonly occurrenceCount: number
 }
 export interface PhysicalSceneControllerOptions {
