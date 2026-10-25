@@ -5,6 +5,7 @@ import { emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
 import { currentPwrPhysicalDesignRef, resolvePhysicalDesign } from './design.ts'
 import { physicalDesignRefSchema, physicalLayoutDataSchema, physicalLayoutPackId } from './model.ts'
 import { physicalLayoutPackView } from './ui-pack.ts'
+import { physicalCompilerRef } from './compiler-identity.ts'
 
 export const physicalLayoutScenarioItemSchema = z.object({
   pack: z.literal(physicalLayoutPackId), type: z.literal('site-layout'), id: objectIdSchema,
@@ -40,7 +41,7 @@ export const physicalLayoutPack: WorldPack = {
       const point = owner.spatial.position.point.coordinates
       const data = physicalLayoutDataSchema.parse({
         type: physicalLayoutPackId, design: retained.design, sourceDigest: retained.sourceDigest, bindingDigest: retained.bindingDigest,
-        compiler: 'physical-layout-native', source: retained.source, bindings: retained.bindings,
+        compiler: physicalCompilerRef, source: retained.source, bindings: retained.bindings,
         owner: { objectId: owner.id, packId: owner.packId, modelRef: targets.modelRef, modelDigest: targets.modelDigest },
         placement: { anchor: [point[0], point[1]], bearing: item.bearing }, bounds: retained.bounds,
         coverage: { representedSubjectIds, unplacedSubjectIds: targets.subjects.filter(subject => !representedSubjectIds.includes(subject.id)).map(subject => subject.id).sort(), totalSubjects: targets.subjects.length },

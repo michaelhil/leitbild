@@ -4,6 +4,7 @@ import bindingsData from './pwr-turbine-island.bindings.json'
 import { canonicalPhysicalJson, physicalCorrespondenceSchema, physicalDesignRefSchema } from './model.ts'
 import { physicalSourceSchema } from './native/source.ts'
 import { compilePhysicalObjects, physicalObjectsBounds } from './native/compile-scene.ts'
+import { physicalCompilerRef } from './compiler-identity.ts'
 
 const hash = (value: unknown): string => createHash('sha256').update(canonicalPhysicalJson(value)).digest('hex')
 const source = physicalSourceSchema.parse(sourceData)
@@ -12,7 +13,7 @@ const modelRequirement = { modelRef: 'process-plant.pwr.reference', modelDigest:
 const sourceDigest = hash(source), bindingDigest = hash(bindings)
 export const currentPwrPhysicalDesignRef = Object.freeze({
   id: source.id, revision: 'pwr-turbine-island-20261024',
-  digest: hash({ sourceDigest, bindingDigest, modelRequirement, compiler: 'physical-layout-native' }),
+  digest: hash({ sourceDigest, bindingDigest, modelRequirement, compiler: physicalCompilerRef }),
 })
 
 let bounds: ReturnType<typeof physicalObjectsBounds> | undefined

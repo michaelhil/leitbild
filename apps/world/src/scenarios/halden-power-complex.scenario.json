@@ -289,7 +289,7 @@
           "design": {
             "id": "pwr-turbine-island",
             "revision": "pwr-turbine-island-20261024",
-            "digest": "864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee"
+            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -303,7 +303,7 @@
           "design": {
             "id": "pwr-turbine-island",
             "revision": "pwr-turbine-island-20261024",
-            "digest": "864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee"
+            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -317,7 +317,7 @@
           "design": {
             "id": "pwr-turbine-island",
             "revision": "pwr-turbine-island-20261024",
-            "digest": "864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee"
+            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -331,7 +331,7 @@
           "design": {
             "id": "pwr-turbine-island",
             "revision": "pwr-turbine-island-20261024",
-            "digest": "864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee"
+            "digest": "3f57c3116e270755590c905d428e984263172094f02dec0fdc7ab8dfe48b9183"
           },
           "members": {
             "unit": "plant:halden-4"

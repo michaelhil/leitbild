@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { physicalSceneBoundsSchema } from '../../core/packs/scene.ts'
 import { physicalSourceSchema } from './native/source.ts'
+import { physicalCompilerRef } from './compiler-identity.ts'
 
 export const physicalLayoutPackId = 'physical-layout' as const
 const id = z.string().min(1).max(200)
@@ -12,7 +13,7 @@ export const physicalLayoutDataSchema = z.object({
   design: physicalDesignRefSchema,
   sourceDigest: digest,
   bindingDigest: digest,
-  compiler: z.literal('physical-layout-native'),
+  compiler: z.object({ id: z.literal(physicalCompilerRef.id), digest: z.literal(physicalCompilerRef.digest) }).strict(),
   source: physicalSourceSchema,
   bindings: z.array(physicalCorrespondenceSchema).max(10_000),
   owner: z.object({ objectId: id, packId: id, modelRef: id, modelDigest: digest }).strict(),

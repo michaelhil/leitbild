@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
@@ -19,6 +20,7 @@ import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { describeProcessPlantPhysicalTargets } from '../src/packs/process-plant/physical-targets.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { physicalCompilerFiles, physicalCompilerRef } from '../src/packs/physical-layout/compiler-identity.ts'
 
 const packs = [physicalLayoutPack, processPlantPack]
 const ownerItem = (id: string, location = [11.47, 59.087]) => ({ type: 'plant', id, label: 'Same unit label', location, model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } })
@@ -40,6 +42,18 @@ const find = (objects: ReadonlyArray<OperationalObject>, id: string): Operationa
 }
 
 describe('Physical layout admission and retained scene', () => {
+  test('pins the exact installed geometry compiler instead of silently rebuilding old Runs with new code', async () => {
+    const hash = createHash('sha256')
+    for (const name of physicalCompilerFiles) {
+      hash.update(name).update('\0').update(new Uint8Array(await Bun.file(new URL(`../src/packs/physical-layout/native/${name}`, import.meta.url)).arrayBuffer()))
+    }
+    expect(hash.digest('hex')).toBe(physicalCompilerRef.digest)
+    const compiled = await compile(source()), object = find(compiled.initialObjects, 'layout:a')
+    const data = physicalLayoutDataSchema.parse(object.packData)
+    expect(data.compiler).toEqual(physicalCompilerRef)
+    const incompatible = { ...object, packData: { ...data, compiler: { id: physicalCompilerRef.id, digest: '0'.repeat(64) } } }
+    await expect(loadPhysicalLayoutScene(incompatible)).rejects.toThrow()
+  })
   test('compiles owner dependencies first and qualifies identical design identities by owner', async () => {
     const compiled = await compile(source())
     const a = find(compiled.initialObjects, 'layout:a'), b = find(compiled.initialObjects, 'layout:b')
