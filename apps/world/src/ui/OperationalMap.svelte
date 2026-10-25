@@ -108,6 +108,8 @@
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
+    readonly onOpenLayoutBrowser?: (sceneId: string | null, groupId?: string) => void
+    readonly physicalLayoutActive?: boolean
     readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
     /** The selected item per surface panel; live map layers highlight it. */
@@ -190,6 +192,8 @@
     liveMapLayers = [],
     physicalLayoutBindings = [],
     onPhysicalDisplay = () => {},
+    onOpenLayoutBrowser,
+    physicalLayoutActive = true,
     layoutClearTop = 0,
     queryLiveMapLayer = async () => { throw new Error('live map layers need a capability query') },
     packSelections = {},
@@ -915,10 +919,10 @@
   {#key runtime.map}
   {#key simulationRunId}
   {#await import('./physical-layout/PhysicalLayouts.svelte') then { default: PhysicalLayouts }}
-    <PhysicalLayouts map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+    <PhysicalLayouts map={runtime.map} active={physicalLayoutActive} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} onDetailedOwners={setDetailedLayoutOwners}
       suspended={placementMode !== null || assignmentActive || targetPicking || selectedControllerId !== null}
-      onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />
+      onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onbrowser={onOpenLayoutBrowser} onconnect={interaction => physicalLayoutInteraction = interaction} />
   {:catch error}
     <p role="alert">Physical layouts cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
   {/await}

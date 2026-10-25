@@ -272,6 +272,8 @@
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
+  let layoutBrowser = $state<{ readonly initialFocusId: string | null; readonly initialGroupId: string | null } | null>(null)
+  $effect(() => { if (placementMode !== null || mapAssignment !== null) layoutBrowser = null })
   let surfaceShell = $state<HTMLElement | null>(null)
   $effect(() => {
     const element = surfaceShell
@@ -2095,6 +2097,8 @@
           physicalLayoutBindings={activePhysicalLayoutBindings}
           layoutClearTop={alarmStripBottom}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
+          onOpenLayoutBrowser={(initialFocusId, groupId) => { layoutBrowser = { initialFocusId, initialGroupId: groupId ?? null } }}
+          physicalLayoutActive={layoutBrowser === null}
           {queryLiveMapLayer}
           packSelections={packPanelSelections}
           packFeatureLayers={activePackFeatureLayers}
@@ -2198,6 +2202,19 @@
       close={() => closeDroneControl(windowEntry.id)}
     />
   {/each}
+{/if}
+
+{#if layoutBrowser !== null && simulationRunId !== null}
+  {#await import('../physical-layout/LayoutBrowser.svelte')}
+    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={() => layoutBrowser = null}>Back to map</button><p role="status">Opening layout browser…</p></section>
+  {:then { default: LayoutBrowser }}
+  <LayoutBrowser objects={objects} bindings={activePhysicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds} presentationFor={mapPresentationFor}
+    runId={simulationRunId} {perspectiveEpoch} {theme} clearTop={alarmStripBottom} initialFocusId={layoutBrowser.initialFocusId} initialGroupId={layoutBrowser.initialGroupId}
+    suspended={placementMode !== null || mapAssignment !== null || targetPickingWanted(mapClickContext)} onconnect={() => {}}
+    onoverview={selectObject} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={() => layoutBrowser = null} />
+  {:catch error}
+    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={() => layoutBrowser = null}>Back to map</button><p role="alert">The layout browser could not open: {error instanceof Error ? error.message : String(error)}</p></section>
+  {/await}
 {/if}
 
 {#if DroneProfileEditorModal && simulationRunId}
@@ -2308,3 +2325,8 @@
     resetScenario={controllerControls ? resetScenario : null}
   />
 {/if}
+
+<style>
+  .layout-browser-state { position: fixed; inset: 0; z-index: 10; box-sizing: border-box; padding: 16px; color: var(--text); background: var(--panel); }
+  .layout-browser-state button { min-height: 44px; min-width: 44px; padding: 8px 12px; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; }
+</style>

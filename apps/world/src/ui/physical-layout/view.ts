@@ -6,6 +6,7 @@ export interface PhysicalLayoutView {
   readonly cutaway: boolean
   readonly detail: 'auto' | 'hidden'
   readonly live: boolean
+  readonly hiddenLayerIds?: ReadonlyArray<string>
 }
 
 export interface PhysicalLayoutLevel {
@@ -23,7 +24,7 @@ export const initialPhysicalLayoutView = (levels: ReadonlyArray<PhysicalLayoutLe
 /** A plan has one selected level; an explicit 3D view can show all levels. */
 export const changePhysicalLayoutView = (current: PhysicalLayoutView, patch: Partial<PhysicalLayoutView>, levels: ReadonlyArray<PhysicalLayoutLevel>): PhysicalLayoutView => {
   const next = { ...current, ...patch }
-  if (!Number.isFinite(next.separation) || next.separation < 0 || next.separation > 30) throw new Error('Level separation must be between 0 and 30 metres')
+  if (!Number.isFinite(next.separation) || next.separation < 0) throw new Error('Level separation must be a finite, non-negative distance')
   if (next.levelId !== 'all' && !levels.some(level => level.id === next.levelId)) throw new Error(`Unknown layout level: ${next.levelId}`)
   if (next.mode === '2d') return { ...next, levelId: next.levelId === 'all' ? initialPhysicalLayoutView(levels).levelId : next.levelId, separation: 0 }
   return next

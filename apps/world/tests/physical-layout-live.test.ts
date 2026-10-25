@@ -234,7 +234,9 @@ describe('physical inspection and local view controls', () => {
     const all = changePhysicalLayoutView(initial, { mode: '3d', levelId: 'all', separation: 15 }, levels)
     expect(changePhysicalLayoutView(all, { mode: '2d' }, levels)).toEqual({ ...initial })
     expect(() => changePhysicalLayoutView(initial, { levelId: 'unknown' }, levels)).toThrow('Unknown layout level')
-    expect(() => changePhysicalLayoutView(initial, { separation: -1 }, levels)).toThrow('between 0 and 30')
+    expect(changePhysicalLayoutView(all, { separation: 75 }, levels).separation).toBe(75)
+    expect(() => changePhysicalLayoutView(initial, { separation: -1 }, levels)).toThrow('non-negative')
+    expect(() => changePhysicalLayoutView(initial, { separation: Infinity }, levels)).toThrow('finite')
   })
 
   test('the faceplate envelope retains exact owner/model/layout scope and validates close/size messages', () => {
