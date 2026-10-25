@@ -203,7 +203,24 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       const desired = options.fitPadding?.() ?? { top: (inherited.top ?? 0) + 24, right: (inherited.right ?? 0) + 24, bottom: (inherited.bottom ?? 0) + 24, left: (inherited.left ?? 0) + 24 }
       const xScale = Math.min(1, canvas.width * 0.55 / Math.max(1, desired.left + desired.right)), yScale = Math.min(1, canvas.height * 0.55 / Math.max(1, desired.top + desired.bottom))
       const padding = { top: Math.max(0, desired.top * yScale), right: Math.max(0, desired.right * xScale), bottom: Math.max(0, desired.bottom * yScale), left: Math.max(0, desired.left * xScale) }
-      map.fitBounds([[west, south], [east, north]], { padding, bearing: entry.source.descriptor.bearing, pitch: entry.view.mode === '2d' ? 0 : 50, maxZoom: 21, duration: duration() })
+      if (entry.view.mode === '2d') {
+        map.fitBounds([[west, south], [east, north]], { padding, bearing: entry.source.descriptor.bearing, pitch: 0, maxZoom: 21, duration: duration() })
+      } else {
+        // Fit a sphere around the real local volume, not its flat footprint. Public
+        // camera/FOV APIs avoid depending on MapLibre's transform internals or tile size.
+        const bounds = entry.source.descriptor.bounds, x = (bounds.min[0] + bounds.max[0]) / 2, y = (bounds.min[1] + bounds.max[1]) / 2
+        const separation = entry.view.levelId === 'all' ? (entry.source.descriptor.levels.length - 1) * entry.view.separation : 0
+        const radius = Math.hypot((bounds.max[0] - bounds.min[0]) / 2, (bounds.max[1] - bounds.min[1]) / 2, Math.max(Math.abs(bounds.min[2]), Math.abs(bounds.max[2] + separation)))
+        if (!(radius > 0)) throw new Error('Cannot fit an empty physical volume')
+        const tangent = Math.tan(map.getVerticalFieldOfView() * Math.PI / 360)
+        const available = Math.min(canvas.width - padding.left - padding.right, canvas.height - padding.top - padding.bottom)
+        const halfAngle = Math.atan(tangent * available / canvas.height), distance = radius / Math.sin(halfAngle), pitch = 50 * Math.PI / 180
+        const matrix = localMercatorMatrix(entry.source.descriptor.anchor, entry.source.descriptor.bearing)
+        const target = transform(matrix, [x, y, 0]), from = transform(matrix, [x, y - distance * Math.sin(pitch), 0])
+        const camera = map.calculateCameraOptionsFromTo(new MercatorCoordinate(from[0], from[1]).toLngLat(), distance * Math.cos(pitch), new MercatorCoordinate(target[0], target[1]).toLngLat(), 0)
+        const offset: [number, number] = [(padding.left - padding.right - (inherited.left ?? 0) + (inherited.right ?? 0)) / 2, (padding.top - padding.bottom - (inherited.top ?? 0) + (inherited.bottom ?? 0)) / 2]
+        map.easeTo({ ...camera, bearing: entry.source.descriptor.bearing, pitch: 50, offset, duration: duration() })
+      }
     },
     reset(sceneId: string): void { const entry = requireEntry(sceneId); this.setView(sceneId, defaultPhysicalSceneView(entry.source.descriptor.levels)); this.fit(sceneId) },
     pick(point: { x: number; y: number }) { return currentLayer?.pick(point) ?? null },
