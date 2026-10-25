@@ -72,7 +72,7 @@ describe('Physical scene validation, projection and inspection fragments', () =>
   test('caps a cut wall without filling its hosted access opening', () => {
     const left = box('left', [0, 0, 0], [4, 0.5, 3]), right = box('right', [6, 0, 0], [10, 0.5, 3])
     const openingWall = { ...left, id: 'door-wall', positions: [...left.positions, ...right.positions] }
-    const source = scene([openingWall]), meshes = buildVisibleMeshes(source, defaultPhysicalSceneView(source.levels))
+    const source = scene([openingWall]), meshes = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), mode: '3d' })
     let capArea = 0
     for (const mesh of meshes) for (let index = 0; index < mesh.vertices.length; index += 21) {
       const v = mesh.vertices
@@ -87,11 +87,11 @@ describe('Physical scene validation, projection and inspection fragments', () =>
 
   test('floor fragments and display separation preserve one physical occurrence identity', () => {
     const source = scene([box('spanning-wall', [0, 0, 0], [1, 0.5, 19]), box('lower-pump', [2, 0, 0], [3, 1, 2], 'equipment', ['pump'])])
-    const upper = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), levelId: 'upper' })
+    const upper = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), mode: '3d', levelId: 'upper' })
     expect(upper.map(mesh => mesh.object.id)).toEqual(['spanning-wall'])
     expect(upper[0]!.bounds.min[2]).toBeCloseTo(14.99, 5)
     expect(upper[0]!.bounds.max[2]).toBeCloseTo(16.2, 5)
-    const separated = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), levelId: 'all', separation: 8 })
+    const separated = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), mode: '3d', levelId: 'all', separation: 8 })
     const fragments = separated.filter(mesh => mesh.object.id === 'spanning-wall')
     expect(fragments).toHaveLength(2)
     expect(fragments[0]!.object).toBe(fragments[1]!.object)
@@ -103,7 +103,7 @@ describe('Physical scene validation, projection and inspection fragments', () =>
     const pump = box('pump', [-0.3, -0.3, 0], [0.3, 0.3, 0.5], 'equipment', ['pump'])
     const source = scene([floor, pump])
     source.levels[1] = { id: 'upper', label: 'Upper', elevation: 0.7, cutHeight: 1.2 }
-    const all = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), levelId: 'all', cutaway: false })
+    const all = buildVisibleMeshes(source, { ...defaultPhysicalSceneView(source.levels), mode: '3d', levelId: 'all', cutaway: false })
     expect(pickPhysicalMesh([{ sceneId: source.id, meshes: all, matrix: identity }], { x: 50, y: 50 }, 100, 100)?.mesh.object.id).toBe('deck')
     const lower = buildVisibleMeshes(source, defaultPhysicalSceneView(source.levels))
     expect(pickPhysicalMesh([{ sceneId: source.id, meshes: lower, matrix: identity }], { x: 50, y: 50 }, 100, 100)?.mesh.object.id).toBe('pump')
@@ -126,6 +126,8 @@ describe('Physical scene validation, projection and inspection fragments', () =>
     expect(lower.some(mesh => mesh.object.subjectIds.includes('condenser'))).toBe(true)
     expect(upper.some(mesh => mesh.object.subjectIds.includes('turbine'))).toBe(true)
     expect(lower.some(mesh => mesh.object.kind === 'roof')).toBe(false)
+    expect(lower.filter(mesh => mesh.object.kind === 'slab').every(mesh => mesh.object.levelId === 'lower')).toBe(true)
+    expect(lower.every(mesh => Math.abs(mesh.bounds.max[2] - mesh.bounds.min[2]) < 1e-8)).toBe(true)
     expect(lower.filter(mesh => mesh.object.kind === 'door').some(mesh => mesh.lines.length > 0)).toBe(true)
     expect(lower.length).not.toBe(upper.length)
     expect(JSON.stringify(real)).toBe(before)
@@ -136,7 +138,7 @@ describe('Physical scene validation, projection and inspection fragments', () =>
 const lifecycleMap = () => {
   const listeners = new Map<string, Set<() => void>>(), layers = new Map<string, unknown>()
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ width: 1000, height: 700 }) })
-  let scale = 2_000_000, adds = 0
+  let scale = 2_000_000, adds = 0, styleReady = true, repaints = 0
   const map = {
     getCanvas: () => canvas,
     on(event: string, listener: () => void) { const set = listeners.get(event) ?? new Set(); set.add(listener); listeners.set(event, set) },
@@ -145,8 +147,8 @@ const lifecycleMap = () => {
     getLayer: (id: string) => layers.get(id),
     addLayer(layer: { id: string }) { layers.set(layer.id, layer); adds++ },
     removeLayer: (id: string) => layers.delete(id),
-    isStyleLoaded: () => true,
-    triggerRepaint() {},
+    isStyleLoaded: () => styleReady,
+    triggerRepaint() { repaints++ },
     easeTo() {},
     getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
     fitBounds() {},
@@ -158,6 +160,8 @@ const lifecycleMap = () => {
     replaceStyle: () => { layers.clear(); for (const listener of listeners.get('style.load') ?? []) listener() },
     layerCount: () => layers.size,
     adds: () => adds,
+    styleReady: (ready: boolean) => { styleReady = ready },
+    repaints: () => repaints,
     listenerCount: () => [...listeners.values()].reduce((count, set) => count + set.size, 0),
   }
 }
@@ -166,6 +170,31 @@ const descriptorFor = (value: PackPhysicalScene) => ({ ...value, locationValid: 
 const palette = { materials: {}, defaultMaterial: [0.5, 0.5, 0.5] as const, line: [0.2, 0.2, 0.2] as const }
 
 describe('Physical scene load and shared-map lifecycle boundaries', () => {
+  test('equal owner styles do not repaint a paused scene; a changed style does', async () => {
+    const fake = lifecycleMap(), value = scene([box('pump', [0, 0, 0], [10, 0.5, 3], 'equipment', ['pump'])])
+    const controller = createPhysicalSceneController({ map: fake.map, palette, beforeId: () => undefined, onChange() {}, reportError: error => { throw error } })
+    controller.setSources([{ descriptor: descriptorFor(value), load: async () => value }]); await flush()
+    controller.setStatus(value.id, new Map([['pump', { color: [0.8, 0.1, 0.2], emphasis: 0.65 }]]))
+    const count = fake.repaints()
+    for (let tick = 0; tick < 4; tick++) controller.setStatus(value.id, new Map([['pump', { color: [0.8, 0.1, 0.2], emphasis: 0.65 }]]))
+    expect(fake.repaints()).toBe(count)
+    controller.setStatus(value.id, new Map([['pump', { color: null, emphasis: 0 }]]))
+    expect(fake.repaints()).toBe(count + 1)
+    controller.destroy()
+  })
+  test('admitted geometry waits for style readiness and an idle recovery never creates a repaint loop', async () => {
+    const fake = lifecycleMap(), value = scene([box('wall', [0, 0, 0], [10, 0.5, 3])])
+    fake.styleReady(false)
+    const controller = createPhysicalSceneController({ map: fake.map, palette, beforeId: () => undefined, onChange() {}, reportError: error => { throw error } })
+    controller.setSources([{ descriptor: descriptorFor(value), load: async () => value }]); await flush()
+    expect(fake.layerCount()).toBe(0)
+    fake.styleReady(true); fake.emit('idle'); await flush()
+    expect(fake.layerCount()).toBe(1)
+    const paints = fake.repaints()
+    fake.emit('idle'); await flush()
+    expect(fake.repaints()).toBe(paints)
+    controller.destroy()
+  })
   test('does not load distant/hidden geometry, coalesces pending detail and removes all listeners', async () => {
     const fake = lifecycleMap(), value = scene([box('wall', [0, 0, 0], [10, 0.5, 3])]), errors: Error[] = []
     let resolve!: (value: PackPhysicalScene) => void, calls = 0

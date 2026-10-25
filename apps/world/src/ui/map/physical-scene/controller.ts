@@ -15,6 +15,7 @@ interface Entry {
   meshes: PhysicalMesh[]
   view: PhysicalSceneView
   status: ReadonlyMap<string, PhysicalSubjectStyle>
+  statusSignature: string
   state: PhysicalScenePresentation['status']
   reason: string | undefined
   loading: boolean
@@ -77,10 +78,10 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
     if (currentLayer && map.getLayer(layerId)) {
       const before = options.beforeId()
       if (before && map.getLayer(before)) {
-        const layers = map.getStyle().layers
-        if (layers.findIndex(layer => layer.id === layerId) > layers.findIndex(layer => layer.id === before)) map.moveLayer(layerId, before)
+        const layers = map.getLayersOrder()
+        if (layers.indexOf(layerId) > layers.indexOf(before)) map.moveLayer(layerId, before)
       }
-      map.triggerRepaint(); return
+      return
     }
     if (currentLayer) removeLayer()
     currentLayer = createPhysicalSceneLayer(layerId, drawable, palette, error => {
@@ -115,7 +116,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       if (scene.id !== descriptor.id || scene.revision !== descriptor.revision || scene.targetObjectId !== descriptor.targetObjectId || JSON.stringify(scene.anchor) !== JSON.stringify(descriptor.anchor) || scene.bearing !== descriptor.bearing || JSON.stringify(scene.bounds) !== JSON.stringify(descriptor.bounds) || JSON.stringify(scene.levels) !== JSON.stringify(descriptor.levels)) throw new Error('Physical scene delivery does not match its retained descriptor')
       entry.loading = false; entry.scene = scene; entry.lastUsed = performance.now(); entry.meshes = buildVisibleMeshes(scene, entry.view)
       entry.state = entry.eligible ? 'ready' : entry.view.detail === 'hidden' ? 'hidden' : 'distant'
-      unloadDistant(); reconcileLayer(); emit()
+      unloadDistant(); reconcileLayer(); map.triggerRepaint(); emit()
     } catch (error) {
       if (destroyed || expected !== entry.generation) return
       const failure = error instanceof Error ? error : new Error(String(error))
@@ -151,7 +152,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
   const onStyle = (): void => { if (currentLayer && !map.getLayer(layerId)) removeLayer(); queueReconcile() }
   const onLost = (): void => { contextLost = true; removeLayer() }
   const onRestored = (): void => { contextLost = false; layerFailure = null; if (map.getLayer(layerId)) map.removeLayer(layerId); queueReconcile() }
-  map.on('move', queueReconcile); map.on('resize', queueReconcile); map.on('style.load', onStyle); map.on('styledata', onStyle)
+  map.on('move', queueReconcile); map.on('resize', queueReconcile); map.on('style.load', onStyle); map.on('styledata', onStyle); map.on('idle', queueReconcile)
   map.getCanvas().addEventListener('webglcontextlost', onLost); map.getCanvas().addEventListener('webglcontextrestored', onRestored)
   const duration = (): number => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250
   const requireEntry = (id: string): Entry => { const entry = entries.get(id); if (!entry) throw new Error(`Unknown physical scene: ${id}`); return entry }
@@ -167,10 +168,10 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
         if (previous && JSON.stringify(previous.source.descriptor) === JSON.stringify(source.descriptor)) { previous.source = source; continue }
         if (previous) previous.generation = ++generation
         changed = true
-        entries.set(source.descriptor.id, { source, generation: ++generation, scene: null, meshes: [], view: previous?.view ?? defaultPhysicalSceneView(source.descriptor.levels), status: previous?.status ?? new Map(), state: 'distant', eligible: false, lastUsed: 0, reason: undefined, loading: false, loadError: undefined })
+        entries.set(source.descriptor.id, { source, generation: ++generation, scene: null, meshes: [], view: previous?.view ?? defaultPhysicalSceneView(source.descriptor.levels), status: new Map(), statusSignature: '[]', state: 'distant', eligible: false, lastUsed: 0, reason: undefined, loading: false, loadError: undefined })
       }
       if (changed) layerFailure = null
-      reconcile()
+      reconcile(); map.triggerRepaint()
     },
     setView(sceneId: string, view: PhysicalSceneView): void {
       const entry = requireEntry(sceneId)
@@ -181,12 +182,15 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
       const geometryChanged = old.levelId !== view.levelId || old.cutaway !== view.cutaway || old.separation !== view.separation || old.mode !== view.mode
       if (geometryChanged && entry.scene) entry.meshes = buildVisibleMeshes(entry.scene, view)
       if (old.mode !== view.mode) map.easeTo({ pitch: view.mode === '2d' ? 0 : 50, duration: duration() })
-      reconcile()
+      reconcile(); map.triggerRepaint()
     },
     setStatus(sceneId: string, status: ReadonlyMap<string, PhysicalSubjectStyle>): void {
       const entry = entries.get(sceneId)
       if (!entry) return
       for (const style of status.values()) if (!Number.isFinite(style.emphasis) || style.emphasis < 0 || style.emphasis > 1 || style.color?.some(value => !Number.isFinite(value) || value < 0 || value > 1)) throw new Error('Invalid physical status presentation')
+      const signature = JSON.stringify([...status].sort(([a], [b]) => a.localeCompare(b)))
+      if (signature === entry.statusSignature) return
+      entry.statusSignature = signature
       entry.status = status
       if (entry.eligible && entry.view.live) map.triggerRepaint()
     },
@@ -212,7 +216,7 @@ export const createPhysicalSceneController = (options: PhysicalSceneControllerOp
     destroy(): void {
       if (destroyed) return
       destroyed = true; generation++
-      map.off('move', queueReconcile); map.off('resize', queueReconcile); map.off('style.load', onStyle); map.off('styledata', onStyle)
+      map.off('move', queueReconcile); map.off('resize', queueReconcile); map.off('style.load', onStyle); map.off('styledata', onStyle); map.off('idle', queueReconcile)
       map.getCanvas().removeEventListener('webglcontextlost', onLost); map.getCanvas().removeEventListener('webglcontextrestored', onRestored)
       for (const entry of entries.values()) entry.generation = generation
       entries.clear(); removeLayer()

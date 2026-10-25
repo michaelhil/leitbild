@@ -124,6 +124,8 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
     if (object.kind === 'space' || object.kind === 'opening' || object.kind === 'assembly' || (view.cutaway && object.kind === 'roof')) continue
     const bands = selected ? [selected] : view.separation > 0 && object.levelId !== 'site' ? levels : [null]
     for (const level of bands) {
+      // A deck belongs to the floor it supports, even when its thickness extends below that elevation.
+      if (level && object.kind === 'slab' && object.levelId !== 'site' && object.levelId !== level.id) continue
       const next = level ? levels.find(candidate => candidate.elevation > level.elevation) : undefined
       const low = level ? level.elevation - (object.kind === 'slab' && object.levelId === level.id ? 1 : 0.01) : -Infinity
       const upper = next ? next.elevation - 0.001 : Infinity
@@ -145,10 +147,28 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       const lines = outline(vertices)
       if (view.mode === '2d') for (const line of object.planLines ?? []) {
         for (let index = 0; index < line.positions.length; index += 6) {
-          if (line.positions[index + 2]! >= low && line.positions[index + 2]! <= upper) lines.push(...line.positions.slice(index, index + 6))
+          let a = line.positions.slice(index, index + 3) as [number, number, number], b = line.positions.slice(index + 3, index + 6) as [number, number, number]
+          let visible = true
+          for (const [height, above] of [[low, true], [high, false]] as Array<[number, boolean]>) {
+            if (!Number.isFinite(height)) continue
+            const inA = above ? a[2] >= height : a[2] <= height, inB = above ? b[2] >= height : b[2] <= height
+            if (!inA && !inB) { visible = false; break }
+            if (inA !== inB) {
+              const ratio = (height - a[2]) / (b[2] - a[2]), point = a.map((value, axis) => value + (b[axis]! - value) * ratio) as [number, number, number]
+              if (inA) b = point; else a = point
+            }
+          }
+          if (visible) lines.push(...a, ...b)
         }
       }
-      const offset: Vector3 = [0, 0, level && !selected ? levels.indexOf(level) * view.separation : 0]
+      if (view.mode === '2d') {
+        // A plan is an orthographic XY inspection representation. Small presentation-only
+        // depth bands keep floors behind equipment and let the same fragments drive picks.
+        const priority = object.kind === 'slab' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
+        for (let index = 2; index < vertices.length; index += 7) vertices[index] = priority * 0.02
+        for (let index = 2; index < lines.length; index += 3) lines[index] = priority * 0.02 + 0.001
+      }
+      const offset: Vector3 = [0, 0, view.mode === '3d' && level && !selected ? levels.indexOf(level) * view.separation : 0]
       output.push({ key: `${object.id}/${level?.id ?? 'all'}`, object, vertices, lines, bounds: meshBounds(vertices), offset })
     }
   }
