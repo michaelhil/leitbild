@@ -31,6 +31,11 @@ export const admitPhysicalPickAcceleration = (meshes: ReadonlyArray<PhysicalMesh
   if (acceleration.triangles.length !== meshes.length) throw new Error('Physical pick acceleration does not match its mesh array')
   sceneIndices.set(meshes, acceleration); meshes.forEach((mesh, index) => meshIndices.set(mesh, acceleration.triangles[index]!))
 }
+// Display-only offsets and filters reuse triangle trees and rebuild only their small broad phase.
+export const derivePhysicalPickAcceleration = (meshes: ReadonlyArray<PhysicalMesh>, source: PhysicalPickAcceleration): void => {
+  for (const mesh of meshes) { const index = mesh.assetIndex; if (index === undefined || !source.triangles[index]) throw new Error('Filtered physical fragment lost its source index'); meshIndices.set(mesh, source.triangles[index]!) }
+  preparePhysicalPickAcceleration(meshes)
+}
 /** Explicit pointer intent only. It tests exactly the same cut fragments that draw. */
 export const pickPhysicalMesh = (entries: ReadonlyArray<PhysicalPickEntry>, point: { x: number; y: number }, width: number, height: number): { sceneId: string; mesh: PhysicalMesh; position: Vector3; depth: number } | null => {
   if (width <= 0 || height <= 0 || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null

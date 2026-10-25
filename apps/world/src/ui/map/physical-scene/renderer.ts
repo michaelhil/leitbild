@@ -18,6 +18,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let backend: ReturnType<typeof createPhysicalBackend>
   try { backend = createPhysicalBackend(gl, palette) } finally { restoreSceneGlState(gl, initial) }
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
+  const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
     if (disposed || failed) return null
     const rectangle = size(), hit = pickPhysicalMesh(picking, point, rectangle.width, rectangle.height)
@@ -29,7 +30,9 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     const entry = picking.find(candidate => candidate.sceneId === sceneId)
     if (!entry || disposed || failed) return null
     const rectangle = size()
-    const points = entry.meshes.filter(mesh => mesh.object.id === occurrenceId && (levelId === undefined || mesh.levelId === levelId)).map(mesh => {
+    let roster = occurrenceMeshes.get(entry.meshes)
+    if (!roster) { roster = new Map(); for (const mesh of entry.meshes) { const previous = roster.get(mesh.object.id) ?? []; roster.set(mesh.object.id, [...previous, mesh]) }; occurrenceMeshes.set(entry.meshes, roster) }
+    const points = (roster.get(occurrenceId) ?? []).filter(mesh => levelId === undefined || mesh.levelId === levelId).map(mesh => {
       const center: Vector3 = [0, 1, 2].map(axis => (mesh.bounds.min[axis]! + mesh.bounds.max[axis]!) / 2 + mesh.offset[axis]!) as unknown as Vector3
       const p = transform(entry.matrix, center)
       return { x: (p[0] + 1) * rectangle.width / 2, y: (1 - p[1]) * rectangle.height / 2, depth: p[2], visible: Math.abs(p[0]) <= 1 && Math.abs(p[1]) <= 1 && Math.abs(p[2]) <= 1 }
@@ -45,7 +48,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         for (const entry of entries()) {
           const matrix = multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)); picking.push({ sceneId: entry.scene.id, meshes: entry.meshes, matrix })
           const drawMatrix = new Float32Array(matrix)
-          for (const mesh of entry.meshes) draws.push({ mesh, matrix: drawMatrix, flat: entry.view.mode === '2d', style: styleFor(entry, mesh.object.subjectIds) })
+          if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
+          draws.push({ asset: entry.asset, meshes: entry.meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)) })
         }
         backend.draw(draws)
       } catch (error) { failed = true; picking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
@@ -54,6 +58,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     invalidatePicks(): void { picking = [] }, pick, cheapProject,
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },
+    setPalette: backend.setPalette,
+    retainGeometryIdentities(identities: ReadonlySet<string>): void { const before = captureSceneGlState(gl); try { backend.retainGeometryIdentities(identities) } finally { restoreSceneGlState(gl, before) } },
     metrics: () => ({ ...backend.metrics }),
     dispose(): void { if (disposed) return; disposed = true; backend.dispose(); picking = [] },
   }

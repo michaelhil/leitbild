@@ -35,12 +35,17 @@ const descriptor = describePhysicalLayoutScene(layout, scenario.initialObjects)!
 const operational = createMapFeatureStore().update({ objects: [owner], selectedControllerId: null, highlightedObjectIds: [], hiddenObjectCategoryIds: [], placementPoints: [], packFeatures: [], hasNewInfo: () => false, presentationFor: object => processPlantPresentation.presentObject(object, { objects: [owner] }), alertPalette: 'day' })
 const bundle = await Bun.build({ entrypoints: [join(root, 'tests/browser/physical-scene/app.ts')], outdir: built, target: 'browser', format: 'esm', splitting: true, minify: true, naming: { entry: 'app.js', chunk: '[name]-[hash].[ext]' } })
 if (!bundle.success) throw new AggregateError(bundle.logs, 'Physical browser proof build failed')
+const workerBundle = await Bun.build({ entrypoints: [join(root, 'src/ui/map/physical-scene/preparation-worker.ts')], outdir: built, target: 'browser', format: 'esm', minify: true, naming: { entry: 'preparation-worker.js' } })
+if (!workerBundle.success) throw new AggregateError(workerBundle.logs, 'Physical preparation worker build failed')
 const html = '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/maplibre.css"><style>html,body,#map{width:100%;height:100%;margin:0}#status{position:absolute;top:8px;left:8px;font:14px sans-serif;background:white;padding:8px;z-index:20}</style></head><body><div id="map"></div><div id="status">GPU test in progress · isolated test fixture</div><script type="module" src="/app.js"></script></body></html>'
 const files = new Map<string, string>(bundle.outputs.map(file => [`/${relative(built, file.path)}`, file.path]))
+// Bun's test bundler leaves new URL worker modules relative to the entry file; Vite handles this in the application build.
+files.set('/preparation-worker.ts', workerBundle.outputs[0]!.path); files.set('/preparation-worker.js', workerBundle.outputs[0]!.path)
 files.set('/worker.mjs', join(maplibre, 'dist/maplibre-gl-worker.mjs')); files.set('/maplibre.css', join(maplibre, 'dist/maplibre-gl.css'))
 const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
   const path = new URL(request.url).pathname
   if (path === '/') return new Response(html, { headers: { 'content-type': 'text/html', 'cache-control': 'no-store' } })
+  if (path === '/preparation-worker.ts' || path === '/preparation-worker.js') return new Response(Bun.file(workerBundle.outputs[0]!.path), { headers: { 'content-type': 'text/javascript', 'cache-control': 'no-store' } })
   if (path === '/scene.json') return Response.json(scene)
   if (path === '/descriptor.json') return Response.json(descriptor)
   if (path === '/operational.json') return Response.json(operational)
@@ -61,14 +66,17 @@ try {
     await Bun.sleep(100)
   }
   if (!port) throw new Error('Isolated Chrome did not start')
-  const target = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(`http://127.0.0.1:${server.port}/`)}`, { method: 'PUT' })).json() as { webSocketDebuggerUrl: string }
+  const target = await (await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent('about:blank')}`, { method: 'PUT' })).json() as { webSocketDebuggerUrl: string }
   socket = new WebSocket(target.webSocketDebuggerUrl)
   await new Promise<void>((resolve, reject) => { socket!.onopen = () => resolve(); socket!.onerror = reject })
   let id = 0
   const pending = new Map<number, { resolve: (value: any) => void; reject: (error: unknown) => void }>()
-  socket.onmessage = event => { const message = JSON.parse(String(event.data)); const promise = pending.get(message.id); if (!promise) return; pending.delete(message.id); if (message.error) promise.reject(message.error); else promise.resolve(message.result) }
+  const events = new Map<string, Set<() => void>>()
+  socket.onmessage = event => { const message = JSON.parse(String(event.data)); if (message.method) for (const listener of events.get(message.method) ?? []) listener(); const promise = pending.get(message.id); if (!promise) return; pending.delete(message.id); if (message.error) promise.reject(message.error); else promise.resolve(message.result) }
   const call = (method: string, params: unknown = {}): Promise<any> => new Promise((resolve, reject) => { const next = ++id; pending.set(next, { resolve, reject }); socket!.send(JSON.stringify({ id: next, method, params })) })
   await call('Runtime.enable'); await call('Page.enable')
+  const pageLoaded = new Promise<void>(resolve => events.set('Page.loadEventFired', new Set([resolve])))
+  await call('Page.navigate', { url: `http://127.0.0.1:${server.port}/` }); await pageLoaded
   const evaluated = await call('Runtime.evaluate', { expression: `new Promise((resolve,reject)=>{let tries=0;const timer=setInterval(()=>{if(window.physicalProbe){clearInterval(timer);window.physicalProbe.ready.then(()=>window.physicalProbe.run()).then(resolve,reject)}else if(++tries>400){clearInterval(timer);reject(Error('Browser fixture did not initialize'))}},25)})`, awaitPromise: true, returnByValue: true, timeout: 180_000 })
   await writeFile(join(output, 'driver-evaluation.json'), JSON.stringify(evaluated, null, 2))
   const result = evaluated.result?.value

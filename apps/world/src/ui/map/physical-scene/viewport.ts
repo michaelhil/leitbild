@@ -4,6 +4,8 @@ import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, Phys
 import type { PhysicalBackendMetrics } from './backend.ts'
 export type PhysicalViewportEvent = 'change' | 'resize' | 'render' | 'movestart' | 'style' | 'idle' | 'contextlost' | 'contextrestored'
 export interface PhysicalViewportRenderer {
+  readonly setPalette: (palette: PhysicalScenePalette) => void
+  readonly retainGeometryIdentities: (identities: ReadonlySet<string>) => void
   readonly dispose: () => void
   readonly invalidatePicks: () => void
   readonly metrics: () => PhysicalBackendMetrics | null

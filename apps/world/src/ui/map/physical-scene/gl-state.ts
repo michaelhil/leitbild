@@ -1,7 +1,12 @@
 type GL = WebGL2RenderingContext
 
 /** Only the state this renderer changes; it never clears or replaces MapLibre's render target. */
-export const captureSceneGlState = (gl: GL) => ({
+export const captureSceneGlState = (gl: GL) => {
+  const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
+  gl.activeTexture(gl.TEXTURE0); const texture0 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null
+  gl.activeTexture(gl.TEXTURE1); const texture1 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null
+  gl.activeTexture(activeTexture)
+  return { activeTexture, texture0, texture1,
   program: gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null,
   vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null,
   arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
@@ -9,13 +14,16 @@ export const captureSceneGlState = (gl: GL) => ({
   depthFunction: gl.getParameter(gl.DEPTH_FUNC) as number,
   depthMask: gl.getParameter(gl.DEPTH_WRITEMASK) as boolean,
   blend: gl.isEnabled(gl.BLEND),
+  blendSrcRgb: gl.getParameter(gl.BLEND_SRC_RGB) as number, blendDstRgb: gl.getParameter(gl.BLEND_DST_RGB) as number,
+  blendSrcAlpha: gl.getParameter(gl.BLEND_SRC_ALPHA) as number, blendDstAlpha: gl.getParameter(gl.BLEND_DST_ALPHA) as number,
+  lineWidth: gl.getParameter(gl.LINE_WIDTH) as number,
   cull: gl.isEnabled(gl.CULL_FACE),
   stencil: gl.isEnabled(gl.STENCIL_TEST),
   polygonOffset: gl.isEnabled(gl.POLYGON_OFFSET_FILL),
   polygonFactor: gl.getParameter(gl.POLYGON_OFFSET_FACTOR) as number,
   polygonUnits: gl.getParameter(gl.POLYGON_OFFSET_UNITS) as number,
   colorMask: gl.getParameter(gl.COLOR_WRITEMASK) as [boolean, boolean, boolean, boolean],
-})
+} }
 export const restoreSceneGlState = (gl: GL, state: ReturnType<typeof captureSceneGlState>): void => {
   const toggle = (capability: number, enabled: boolean): void => enabled ? gl.enable(capability) : gl.disable(capability)
   gl.useProgram(state.program)
@@ -25,6 +33,11 @@ export const restoreSceneGlState = (gl: GL, state: ReturnType<typeof captureScen
   gl.depthFunc(state.depthFunction)
   gl.depthMask(state.depthMask)
   toggle(gl.BLEND, state.blend)
+  gl.blendFuncSeparate(state.blendSrcRgb, state.blendDstRgb, state.blendSrcAlpha, state.blendDstAlpha)
+  gl.lineWidth(state.lineWidth)
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, state.texture0)
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, state.texture1)
+  gl.activeTexture(state.activeTexture)
   toggle(gl.CULL_FACE, state.cull)
   toggle(gl.STENCIL_TEST, state.stencil)
   toggle(gl.POLYGON_OFFSET_FILL, state.polygonOffset)

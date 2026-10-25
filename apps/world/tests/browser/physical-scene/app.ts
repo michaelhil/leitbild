@@ -9,6 +9,7 @@ import { createPhysicalSceneOverview } from '../../../src/ui/map/physical-scene/
 import { physicalSceneLayerAnchorId, physicalSceneLayerId, physicalSceneOverviewLayerId, physicalSceneOverviewSourceId } from '../../../src/ui/map/physical-scene/order.ts'
 import { defaultPhysicalSceneView, type PhysicalScenePalette, type PhysicalScenePresentation } from '../../../src/ui/map/physical-scene/types.ts'
 import { fullGlState, sentinel, stateDifferences } from './gl-probes.ts'
+import { buildVisibleMeshes } from '../../../src/ui/map/physical-scene/geometry.ts'
 import { boundsCorners, localMercatorMatrix, multiply, transform } from '../../../src/ui/map/physical-scene/math.ts'
 
 declare global { interface Window { physicalProbe: { ready: Promise<void>; run: () => Promise<unknown>; view: (mode: '2d' | '3d', level: string) => Promise<void>; responsive: () => Promise<unknown>; responsive3d: (separation?: number) => Promise<unknown> } } }
@@ -97,7 +98,7 @@ map.on('moveend', updateDeck)
 
 window.physicalProbe = {
   ready: loaded,
-  async view(mode, level) { controller.setView(descriptor.id, { ...defaultPhysicalSceneView(descriptor.levels), mode, levelId: level }); map.jumpTo({ pitch: mode === '2d' ? 0 : 50 }); await settle(4) },
+  async view(mode, level) { controller.setView(descriptor.id, { ...defaultPhysicalSceneView(descriptor.levels), mode, levelId: level }); map.jumpTo({ pitch: mode === '2d' ? 0 : 50 }); await ready(); await settle(4) },
   async responsive() {
     map.resize(); await this.view('2d', descriptor.levels[0]!.id)
     const moved = new Promise<void>(resolve => map.once('moveend', () => resolve()))
@@ -110,10 +111,12 @@ window.physicalProbe = {
   async responsive3d(separation = 0) {
     await this.view('3d', 'all')
     controller.setView(descriptor.id, { ...defaultPhysicalSceneView(descriptor.levels), mode: '3d', levelId: 'all', separation })
+    await ready()
     const moved = new Promise<void>(resolve => map.once('moveend', () => resolve()))
     controller.fit(descriptor.id); await moved; await settle(4)
     const matrix = multiply(lastProjection!, localMercatorMatrix(descriptor.anchor, descriptor.bearing))
-    const displayBounds = { min: descriptor.bounds.min, max: [descriptor.bounds.max[0], descriptor.bounds.max[1], descriptor.bounds.max[2] + (descriptor.levels.length - 1) * separation] as [number, number, number] }
+    const meshes = buildVisibleMeshes(controller.scene(descriptor.id)!, presentations[0]!.view)
+    const displayBounds = { min: [0, 1, 2].map(axis => Math.min(...meshes.map(mesh => mesh.bounds.min[axis]! + mesh.offset[axis]!))) as [number, number, number], max: [0, 1, 2].map(axis => Math.max(...meshes.map(mesh => mesh.bounds.max[axis]! + mesh.offset[axis]!))) as [number, number, number] }
     const points = boundsCorners(displayBounds).map(point => transform(matrix, point)).map(point => ({ x: (point[0] + 1) * innerWidth / 2, y: (1 - point[1]) * innerHeight / 2 }))
     const bounds = { left: Math.min(...points.map(p => p.x)), right: Math.max(...points.map(p => p.x)), top: Math.min(...points.map(p => p.y)), bottom: Math.max(...points.map(p => p.y)) }
     return { width: innerWidth, height: innerHeight, separation, displayBounds, bounds, inside: bounds.left >= 79.99 && bounds.top >= 79.99 && bounds.right <= innerWidth - 79.99 && bounds.bottom <= innerHeight - 109.99 }

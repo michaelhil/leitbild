@@ -93,7 +93,7 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
   const port: PhysicalViewport = {
     surface: { kind: 'canvas', element: canvas, getSize: size, getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: (event, listener) => subscribe(event === 'move' ? 'change' : event, listener) }, on: subscribe,
     ready: () => !lost && !destroyed, projectGeographic(point) { const p = MercatorCoordinate.fromLngLat(point), projected = transform(matrix(), [p.x, p.y, 0]), dimensions = size(); return { x: (projected[0] + 1) * dimensions.width / 2, y: (1 - projected[1]) * dimensions.height / 2 } }, requestRender,
-    installRenderer(getEntries, nextPalette, reportError) { entries = getEntries; palette = nextPalette; renderer = createPhysicalSceneRenderer(gl, entries, palette, size, reportError); handle = { ...renderer, dispose() { renderer?.dispose(); renderer = null; requestRender() } }; return handle },
+    installRenderer(getEntries, nextPalette, reportError) { entries = getEntries; palette = nextPalette; renderer = createPhysicalSceneRenderer(gl, entries, palette, size, reportError); const owned = renderer; handle = { ...owned, setPalette(value) { palette = value; owned.setPalette(value) }, dispose() { owned.dispose(); if (renderer === owned) renderer = null; requestRender() } }; return handle },
     registered: candidate => candidate === handle && renderer !== null, orderRenderer() {},
     removeRenderer(candidate) { candidate.dispose(); if (candidate === handle) handle = null },
     cameraPose: () => ({ center, pitch, bearing, zoom, revision }),

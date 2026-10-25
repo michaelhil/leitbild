@@ -57,8 +57,9 @@ const APPROVED = { owner: 'approved', ref: 'Q11 (21 Oct): approved as recommende
 export const customShapes: ReadonlyArray<CustomShape> = [
   {
     id: 'physical-layout-solids-and-plan',
-    draws: 'Model-derived architecture, shaped physical equipment, cut fragments and architectural plan strokes in the geographic map.',
+    draws: 'Model-derived architecture, shaped physical equipment, cut fragments and architectural plan strokes in the geographic map and dedicated layout canvas.',
     sites: [
+      { file: 'ui/map/physical-scene/canvas-viewport.ts', mark: "canvas.getContext('webgl2'", drawn: 'code' },
       { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
       { file: 'ui/map/physical-scene/geometry.ts', mark: 'export const buildVisibleMeshes', drawn: 'code' },
       { file: 'ui/map/physical-scene/overview.ts', mark: 'export const createPhysicalSceneOverview', drawn: 'code' },

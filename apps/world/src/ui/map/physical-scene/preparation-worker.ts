@@ -4,11 +4,12 @@ const scope = self as unknown as { onmessage: (event: MessageEvent<PhysicalPrepa
 scope.onmessage = (event: MessageEvent<PhysicalPreparationRequest>) => {
   const request = event.data
   try {
-    const scene = packPhysicalSceneSchema.parse(request.scene), prepared = preparePhysicalGeometry(scene, request.view, request.key), byId = new Map(scene.objects.map((object, index) => [object.id, index]))
+    const scene = packPhysicalSceneSchema.parse(request.scene), prepared = preparePhysicalGeometry(scene, request.view, request.key, request.identity), byId = new Map(scene.objects.map((object, index) => [object.id, index]))
     const meshes = prepared.meshes.map(({ object, ...mesh }) => ({ ...mesh, objectIndex: byId.get(object.id)! }))
     const transfers: Transferable[] = []
     for (const mesh of meshes) { if (mesh.vertices instanceof Float64Array) transfers.push(mesh.vertices.buffer); if (mesh.lines instanceof Float64Array) transfers.push(mesh.lines.buffer) }
     for (const index of [prepared.acceleration.meshes, ...prepared.acceleration.triangles.map(item => item.triangles)]) transfers.push(index.bounds.buffer, index.children.buffer, index.ranges.buffer, index.order.buffer)
-    scope.postMessage({ id: request.id, key: request.key, meshes, acceleration: prepared.acceleration } satisfies PhysicalPreparationResponse, transfers)
+    transfers.push(prepared.buffers.vertices.buffer, prepared.buffers.lines.buffer)
+    scope.postMessage({ id: request.id, key: request.key, identity: prepared.identity, meshes, acceleration: prepared.acceleration, buffers: prepared.buffers } satisfies PhysicalPreparationResponse, transfers)
   } catch (error) { scope.postMessage({ id: request.id, key: request.key, error: error instanceof Error ? error.message : String(error) } satisfies PhysicalPreparationResponse) }
 }
