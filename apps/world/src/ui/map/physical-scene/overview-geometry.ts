@@ -1,6 +1,7 @@
 import type { PhysicalMesh } from './geometry.ts'
 import earcut from 'earcut'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor, PhysicalSceneObject } from '../../../core/packs/scene.ts'
+import { physicalScopeMembers } from './scopes.ts'
 
 /** Source-authored context shared by the dedicated host; it invents no equipment. */
 export const createPhysicalOverviewScene = (descriptor: PackPhysicalSceneDescriptor): PackPhysicalScene => {
@@ -21,6 +22,10 @@ export const createPhysicalOverviewScene = (descriptor: PackPhysicalSceneDescrip
 /** A focused building keeps its siblings as context without covering its own interior. */
 export const physicalOverviewContextMeshes = (descriptor: PackPhysicalSceneDescriptor, meshes: ReadonlyArray<PhysicalMesh>, scopeId: string): ReadonlyArray<PhysicalMesh> => {
   const scopes = new Map((descriptor.scopes ?? []).map(scope => [scope.id, scope]))
+  if (scopes.get(scopeId)?.kind === 'area') {
+    const members = physicalScopeMembers(descriptor.scopes ?? [], scopeId)
+    return meshes.filter(mesh => !mesh.object.scopeIds?.some(id => members.has(id)))
+  }
   let current: string | undefined = scopeId, building: string | undefined
   while (current !== undefined) { const scope = scopes.get(current); if (scope?.kind === 'building') { building = scope.id; break }; current = scope?.parentId }
   if (building === undefined) return []

@@ -57,10 +57,14 @@ const physicalFeatureStrokeSchema = z.object({
 export const physicalSceneScopeSchema = z.object({
   id: identifierSchema,
   label: z.string().min(1).max(300),
-  kind: z.enum(['site', 'unit', 'building', 'space', 'assembly']),
+  kind: z.enum(['site', 'unit', 'building', 'space', 'assembly', 'area']),
   parentId: identifierSchema.optional(),
   bounds: physicalSceneBoundsSchema,
   levelIds: z.array(identifierSchema),
+  /** Composite inspection area; members retain their physical hierarchy. */
+  members: z.array(identifierSchema).min(1).optional(),
+  /** Preferred Home orientation relative to local north; target is scene-local metres. */
+  inspectionView: z.object({ bearing: z.number().finite(), pitch: z.number().finite().min(0).lt(90), target: vector3Schema.optional() }).strict().optional(),
 }).strict()
 
 export const physicalSceneObjectSchema = z.object({
@@ -133,6 +137,15 @@ export const packPhysicalSceneSchema = z.object({
   if (scopes.size !== (scene.scopes?.length ?? 0)) issue('Scope IDs must be unique')
   for (const scope of scopes.values()) {
     if (new Set(scope.levelIds).size !== scope.levelIds.length || scope.levelIds.some(id => !levelIds.has(id))) issue(`Invalid scope levels: ${scope.id}`)
+    if (scope.kind === 'area') {
+      const members = scope.members?.map(id => scopes.get(id)) ?? []
+      if (!members.length || new Set(scope.members).size !== members.length || members.some(member => !member || member.kind === 'area' || member.id === scope.id)) issue(`Invalid inspection area members: ${scope.id}`)
+      else {
+        const unionLevels = new Set(members.flatMap(member => member!.levelIds))
+        if (unionLevels.size !== scope.levelIds.length || scope.levelIds.some(id => !unionLevels.has(id))) issue(`Inspection area must derive its levels from its members: ${scope.id}`)
+        if ([0, 1, 2].some(axis => scope.bounds.min[axis] !== Math.min(...members.map(member => member!.bounds.min[axis]!)) || scope.bounds.max[axis] !== Math.max(...members.map(member => member!.bounds.max[axis]!)))) issue(`Inspection area must derive its bounds from its members: ${scope.id}`)
+      }
+    } else if (scope.members !== undefined) issue(`Only an inspection area has members: ${scope.id}`)
     const ancestors = new Set([scope.id])
     let parent = scope.parentId
     while (parent !== undefined) {
@@ -161,6 +174,7 @@ export const packPhysicalSceneSchema = z.object({
     if (object.levelId !== 'site' && !levelIds.has(object.levelId)) issue(`Unknown level: ${object.levelId}`)
     coordinateCount += object.positions.length
     if (object.scopeIds && (new Set(object.scopeIds).size !== object.scopeIds.length || object.scopeIds.some(id => !scopes.has(id)))) issue(`Unknown or duplicate occurrence scope: ${object.id}`)
+    if (object.scopeIds?.some(id => scopes.get(id)?.kind === 'area')) issue(`Occurrence physical membership cannot use an inspection area: ${object.id}`)
     if (object.layerId !== undefined && !layers.has(object.layerId)) issue(`Unknown physical representation layer: ${object.id}`)
     if (object.levelIds && (new Set(object.levelIds).size !== object.levelIds.length || object.levelIds.some(id => id !== 'site' && !levelIds.has(id)))) issue(`Invalid occurrence levels: ${object.id}`)
     if (object.inspectionLevels && (new Set(object.inspectionLevels.map(value => value.levelId)).size !== object.inspectionLevels.length || object.inspectionLevels.some(value => !levelIds.has(value.levelId)))) issue(`Invalid authored inspection floor volumes: ${object.id}`)

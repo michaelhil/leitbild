@@ -1,6 +1,7 @@
 import type { PackPhysicalScene, PhysicalPlanAnnotation, PhysicalSceneBounds } from '../../core/packs/scene.ts'
 import type { PhysicalSceneView } from '../map/physical-scene/types.ts'
 import type { ExplorerViewportRect } from './explorer-viewport.ts'
+import { physicalScopeMembers } from '../map/physical-scene/scopes.ts'
 
 type Point = { readonly x: number; readonly y: number }
 type Position = readonly [number, number, number]
@@ -11,14 +12,9 @@ export const physicalPlanDimensionText = (annotation: Extract<PhysicalPlanAnnota
 export const visiblePhysicalPlanAnnotations = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null): ReadonlyArray<PhysicalPlanAnnotation> => {
   if (view.mode !== '2d') return []
   const hidden = new Set(view.hiddenLayerIds ?? scene.layers?.filter(layer => !layer.defaultVisible).map(layer => layer.id) ?? [])
-  const scopes = new Map(scene.scopes?.map(scope => [scope.id, scope]))
-  const inScope = (id: string): boolean => {
-    let current: string | undefined = id
-    while (current !== undefined) { if (current === scopeId) return true; current = scopes.get(current)?.parentId }
-    return false
-  }
+  const members = scopeId === null ? null : physicalScopeMembers(scene.scopes ?? [], scopeId)
   return (scene.planAnnotations ?? []).filter(annotation => (annotation.levelIds.includes('site') || annotation.levelIds.includes(view.levelId)) &&
-    (annotation.layerId === undefined || !hidden.has(annotation.layerId)) && (scopeId === null || annotation.scopeIds.some(inScope)))
+    (annotation.layerId === undefined || !hidden.has(annotation.layerId)) && (members === null || annotation.scopeIds.some(id => members.has(id))))
 }
 
 const box = (points: ReadonlyArray<Point>): ExplorerViewportRect => {

@@ -1,6 +1,7 @@
 import type { PhysicalSceneObject, PhysicalSceneScope } from '../../core/packs/scene.ts'
 import type { PhysicalSceneDescriptor, PhysicalSceneView } from '../map/physical-scene/types.ts'
 import { levelLabel } from './view.ts'
+import { physicalScopeMembers } from '../map/physical-scene/scopes.ts'
 
 export interface ExplorerScopeChoice {
   readonly key: string
@@ -108,16 +109,8 @@ export const explorerScopeAncestors = (choices: ReadonlyArray<ExplorerScopeChoic
 
 export const physicalOccurrenceInScope = (object: Pick<PhysicalSceneObject, 'scopeIds'>, scopeId: string | null, scopes: ReadonlyArray<PhysicalSceneScope>): boolean => {
   if (scopeId === null) return true
-  const byId = new Map(scopes.map(scope => [scope.id, scope]))
-  return (object.scopeIds ?? []).some(id => {
-    const seen = new Set<string>()
-    let current: string | undefined = id
-    while (current !== undefined && !seen.has(current)) {
-      if (current === scopeId) return true
-      seen.add(current); current = byId.get(current)?.parentId
-    }
-    return false
-  })
+  const members = physicalScopeMembers(scopes, scopeId)
+  return (object.scopeIds ?? []).some(id => members.has(id))
 }
 
 /** A spanning assembly can remain on any declared intersecting floor. */

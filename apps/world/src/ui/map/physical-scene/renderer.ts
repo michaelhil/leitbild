@@ -7,6 +7,7 @@ import { physicalPerspectiveNear } from './depth-projection.ts'
 import { visiblePhysicalInspectionBoundaries } from './inspection-cutaway.ts'
 import { captureSceneGlState, restoreSceneGlState } from './gl-state.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
+import { physicalScopeMembers } from './scopes.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
@@ -85,9 +86,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
 
 /** Focus uses actual displayed fragment bounds, including level separation offsets. */
 export const visiblePhysicalBounds = (entry: PhysicalLayerEntry, target: PhysicalSceneFocus = {}): PhysicalSceneBounds | null => {
-  const scopes = new Map((entry.scene.scopes ?? []).map(scope => [scope.id, scope]))
-  const inScope = (id: string): boolean => { let current: string | undefined = id; while (current !== undefined) { if (current === target.scopeId) return true; current = scopes.get(current)?.parentId } return false }
-  const meshes = entry.meshes.filter(mesh => (target.occurrenceId === undefined || mesh.object.id === target.occurrenceId) && (target.levelId === undefined || mesh.levelId === target.levelId) && (target.scopeId === undefined || mesh.object.scopeIds?.some(inScope)))
+  const members = target.scopeId === undefined ? null : physicalScopeMembers(entry.scene.scopes ?? [], target.scopeId)
+  const meshes = entry.meshes.filter(mesh => (target.occurrenceId === undefined || mesh.object.id === target.occurrenceId) && (target.levelId === undefined || mesh.levelId === target.levelId) && (members === null || mesh.object.scopeIds?.some(id => members.has(id))))
   if (!meshes.length) return null
   const min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
   for (const mesh of meshes) for (let axis = 0; axis < 3; axis++) { min[axis] = Math.min(min[axis]!, mesh.bounds.min[axis]! + mesh.offset[axis]!); max[axis] = Math.max(max[axis]!, mesh.bounds.max[axis]! + mesh.offset[axis]!) }
