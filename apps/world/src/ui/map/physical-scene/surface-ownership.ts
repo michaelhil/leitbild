@@ -21,11 +21,12 @@ const vertex = (values: ArrayLike<number>, at: number): Vertex => [values[at]!, 
 
 /** orient3d's forward-error bound depends on its products, not a metric epsilon. */
 const onPlane = (triangle: readonly Vertex[], p: Vertex): boolean => {
-  const a = subtract(point(triangle[0]!), point(p)), b = subtract(point(triangle[1]!), point(p)), c = subtract(point(triangle[2]!), point(p))
-  const products = [b[0] * c[1], c[0] * b[1], c[0] * a[1], a[0] * c[1], a[0] * b[1], b[0] * a[1]]
-  const determinant = a[2] * (products[0]! - products[1]!) + b[2] * (products[2]! - products[3]!) + c[2] * (products[4]! - products[5]!)
-  const permanent = Math.abs(a[2]) * (Math.abs(products[0]!) + Math.abs(products[1]!)) + Math.abs(b[2]) * (Math.abs(products[2]!) + Math.abs(products[3]!)) + Math.abs(c[2]) * (Math.abs(products[4]!) + Math.abs(products[5]!))
-  return Math.abs(determinant) <= (7 + 56 * Number.EPSILON) * Number.EPSILON * permanent
+  const a = triangle[0]!, b = triangle[1]!, c = triangle[2]!
+  const ax = a[0]-p[0], ay = a[1]-p[1], az = a[2]-p[2], bx = b[0]-p[0], by = b[1]-p[1], bz = b[2]-p[2], cx = c[0]-p[0], cy = c[1]-p[1], cz = c[2]-p[2]
+  const p0=bx*cy, p1=cx*by, p2=cx*ay, p3=ax*cy, p4=ax*by, p5=bx*ay
+  const determinant = az*(p0-p1)+bz*(p2-p3)+cz*(p4-p5)
+  const permanent = Math.abs(az)*(Math.abs(p0)+Math.abs(p1))+Math.abs(bz)*(Math.abs(p2)+Math.abs(p3))+Math.abs(cz)*(Math.abs(p4)+Math.abs(p5))
+  return Math.abs(determinant) <= (7+56*Number.EPSILON)*Number.EPSILON*permanent
 }
 const distance = (a: Vertex, b: Vertex, p: Vertex, axes: readonly [number, number]): number => {
   const [x, y] = axes, left = (b[x]! - a[x]!) * (p[y]! - a[y]!), right = (b[y]! - a[y]!) * (p[x]! - a[x]!), value = left - right
@@ -54,7 +55,7 @@ const split = (polygon: readonly Vertex[], a: Vertex, b: Vertex, axes: readonly 
 }
 const partition = (region: Region, cover: Face, owner: string): { regions: readonly Region[]; overlap: number } => {
   if (region.coveredBy.includes(owner)) return { regions: [region], overlap: 0 }
-  const axes = cover.axes, orientation = Math.sign(distance(cover.vertices[0]!, cover.vertices[1]!, cover.vertices[2]!, axes)), pieces: Region[] = []
+  const axes = cover.axes, orientation = Math.sign(cover.normal[3 - axes[0] - axes[1]]!), pieces: Region[] = []
   let remaining = region.vertices
   for (let edge = 0; edge < 3 && remaining.length; edge++) {
     const result = split(remaining, cover.vertices[edge]!, cover.vertices[(edge + 1) % 3]!, axes, orientation)
@@ -85,10 +86,14 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
   for (const faces of cohorts.values()) {
     const index = createPhysicalSpatialIndex(faces.map(face => face.bounds))
     faces.forEach((face, faceIndex) => {
-      const candidates: number[] = []; visitPhysicalSpatialBounds(index, face.bounds, candidate => { if (candidate < faceIndex) candidates.push(candidate) }); candidates.sort((a, b) => a - b); broadPhaseCandidates += candidates.length
+      const candidates: number[] = []; visitPhysicalSpatialBounds(index, face.bounds, candidate => { if (candidate < faceIndex) candidates.push(candidate) }); candidates.sort((a,b)=>a-b); broadPhaseCandidates += candidates.length
       let regions: readonly Region[] = [{ vertices: face.vertices, coveredBy: [] }]
       for (const candidate of candidates) {
         const cover = faces[candidate]!
+        // Positive surface overlap needs positive area in the cover's dominant
+        // projection. Reject disjoint/touching boxes before plane arithmetic;
+        // this is an exact geometric test, not a feature-count shortcut.
+        if (cover.axes.some(axis => Math.min(face.bounds.max[axis]!,cover.bounds.max[axis]!) <= Math.max(face.bounds.min[axis]!,cover.bounds.min[axis]!))) continue
         if (!cover.vertices.every(value => onPlane(face.vertices, value))) continue
         coplanarCandidates++
         const owner = meshes[cover.mesh]!.key, next: Region[] = []

@@ -51,3 +51,8 @@ test('numerical coplanarity does not merge representably separated planes at lar
  for(const object of[first,later])object.positions=Array.from(object.positions,value=>value+1e6)
  const asset=prepared(source([first,later]));expect(asset.surfaceOwnership.coincidentPairs.filter(pair=>pair.first!==pair.later)).toEqual([])
 })
+
+test('a numerically thin triangle cannot become an unbounded occluder when its turn is uncertain',()=>{
+ const thin={...quad('thin',0,0,1,1),positions:[0,0,0,1,1,0,1+2**-51,1,0]},asset=prepared(source([thin,quad('behind',.1,.1,.9,.9)])),visible=visiblePhysicalSurfaceOwners(asset.meshes,asset.acceleration)
+ expect(pick(visible,.5,.2)).toBe('behind');expect(area(visible,'behind')).toBeCloseTo(.64,12)
+})

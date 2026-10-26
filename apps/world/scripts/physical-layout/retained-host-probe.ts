@@ -9,7 +9,7 @@ const rendererRoot = join(import.meta.dir, '../..'), sourceRoot = process.env.LE
 const output = await mkdtemp(join(tmpdir(), 'leitbild-retained-host-proof-')), built = join(output, 'dist')
 await mkdir(built, { recursive: true })
 const sourceHashes: Record<string, string> = {}
-for (const file of ['src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/scene-controller.ts', 'src/ui/map/physical-scene/preparation.ts', 'src/ui/map/physical-scene/renderer.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/canvas-viewport.ts', 'tests/browser/physical-scene/retained-host-app.ts']) sourceHashes[file] = createHash('sha256').update(await readFile(join(rendererRoot, file))).digest('hex')
+for (const file of ['src/ui/map/physical-scene/surface-ownership.ts', 'src/ui/map/physical-scene/spatial-index.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/scene-controller.ts', 'src/ui/map/physical-scene/preparation.ts', 'src/ui/map/physical-scene/renderer.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/canvas-viewport.ts', 'tests/browser/physical-scene/retained-host-app.ts']) sourceHashes[file] = createHash('sha256').update(await readFile(join(rendererRoot, file))).digest('hex')
 const commitAt = (cwd: string) => Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd }).stdout.toString().trim()
 const rendererCommit = commitAt(rendererRoot), sourceCommit = commitAt(sourceRoot)
 const load = (path: string) => import(join(sourceRoot, 'src', path))
