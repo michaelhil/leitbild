@@ -1,0 +1,24 @@
+{
+  "source": "c96432d9e41d4c6fe7c329be595616de0caeec21",
+  "method": "Manual IAB/CUA test of the freshly built real Inspection/Faceplate embed, with a loopback protocol parent and one actual read-only paused-Run acquisition",
+  "fixture": "apps/world/scripts/physical-layout/inspection-sizing-fixture.ts",
+  "firstSampleWasWithheldUntilHeaderSettled": true,
+  "ownerReads": 1,
+  "ownerWrites": 0,
+  "ownerSampleReceivedAt": "2026-10-26T15:54:14.554Z",
+  "sequence": [
+    { "phase": "settled before sample", "availableHeight": 534, "intrinsicHeight": 134, "allocatedHeight": 134 },
+    { "phase": "first actual sample delivered", "availableHeight": 534, "intrinsicHeight": 254, "allocatedHeight": 254, "allSixReadoutsVisible": true },
+    { "phase": "host space shrunk", "availableHeight": 142, "intrinsicHeight": 142, "allocatedHeight": 142 },
+    { "phase": "host space restored", "availableHeight": 534, "intrinsicHeight": 254, "allocatedHeight": 254, "allSixReadoutsVisible": true }
+  ],
+  "visibleValues": ["1162 MW", "100.0 %", "1500 rpm", "Output breaker ON LINE", "Steam availability 1.00", "State ON LINE"],
+  "resizeRenewedReceiptStamp": false,
+  "consoleWarningsOrErrors": [],
+  "artifacts": "Owner research workspace remediation-audit/final-product/inspection-delayed-{before,after,shrink,grown}.png and the corresponding AX receipts",
+  "limits": [
+    "The real child is production code; the parent is a protocol harness, not the actual map/browser explorer",
+    "One desktop viewport; this is not device or human-usability qualification",
+    "The held single sample correctly becomes Not live during a long manual inspection; resize never refreshes evidence"
+  ]
+}

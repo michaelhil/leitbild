@@ -7,6 +7,11 @@
       "sha256": "c3ed72d5cbbd5a32778752c6c7d47a5cb572e2ca9630b8dd23a3d281890b1a1b"
     },
     {
+      "file": "inspection-delayed-content.json",
+      "bytes": 1683,
+      "sha256": "4e5772fa43a232260de1ba0fb9646558091ba308ebb7e6a87dd77f36dae9f12d"
+    },
+    {
       "file": "orbit-gesture.json",
       "bytes": 52820,
       "sha256": "99bc9fe8ac0b347664d093035b0a7896045992586db601032cb203e38846c8fb"
@@ -55,6 +60,16 @@
       "file": "renderer-resource-summary.json",
       "bytes": 8595,
       "sha256": "0a62e991b2b969447ba83f992277dac81c767abee318280768fc055e91683c0c"
+    },
+    {
+      "file": "weather-public-readonly-comparison.json",
+      "bytes": 14931,
+      "sha256": "07685b753c14477fd78c5d28601e5815661be52a1be75a415d0ae51f80515e17"
+    },
+    {
+      "file": "weather-public-readonly-latency.json",
+      "bytes": 2313,
+      "sha256": "2c0270933f77d01adeb9d6f4da865ad1d1d9d7c8bd3ae54cd1bdd229486db9bf"
     }
   ]
 }
