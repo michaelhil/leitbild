@@ -5,6 +5,7 @@ import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 
 const scene = (): PackPhysicalScene => ({ id: 'a', targetObjectId: 'owner:a', revision: 'same-exact-source', anchor: [0, 0], bearing: 0, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, levels: [{ id: 'floor', label: 'Floor', elevation: 0, cutHeight: 2 }], objects: [{ id: 'machine', label: 'Machine', kind: 'equipment', levelId: 'floor', subjectIds: ['component'], positions: new Float64Array([0, 0, 0, 1, 0, 0, 0, 1, 1]), indices: new Uint32Array([0, 1, 2]) }] })
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+const refused = (task: Promise<unknown>) => task.then(() => { throw Error('Expected cancellation') }, error => error as Error)
 /** Explicit worker test double models transfer ownership, registration and held jobs. */
 const workerDouble = () => {
   const sources = new Map<string, PackPhysicalScene>(), messages: { kind: string; sourceKey: string; hasScene: boolean; transferCount: number; bytes: number }[] = []
@@ -47,13 +48,15 @@ test('one immutable registration serves new view jobs and two host leases withou
   b.destroy!(); expect(worker.terminations()).toBe(1); expect(pool.diagnostics().workerAlive).toBe(false)
 })
 
-test('in-flight jobs pin their source until completion; last lease release then unregisters and stops the worker', async () => {
+test('one host leaving cancels only its result while running work remains pinned for another source owner', async () => {
   const worker = workerDouble(); worker.holdViews()
-  const pool = createPhysicalPreparationPool(() => worker.port), owner = pool.createPreparer(), source = scene()
-  const pending = owner(source, defaultPhysicalSceneView(source.levels), 'plan', 'geometry', 'detail'); await settle(); owner.destroy!()
+  const pool = createPhysicalPreparationPool(() => worker.port), owner = pool.createPreparer(), remaining = pool.createPreparer(), source = scene()
+  remaining.retainIdentities!(new Set(['geometry']))
+  const pending = refused(owner(source, defaultPhysicalSceneView(source.levels), 'plan', 'geometry', 'detail')); await settle(); owner.destroy!()
+  expect((await pending).name).toBe('AbortError')
   expect(pool.diagnostics().pinnedSources).toBe(1); expect(worker.sources.size).toBe(1); expect(worker.terminations()).toBe(0)
-  worker.flush(); expect((await pending).meshes.length).toBeGreaterThan(0); await settle()
-  expect(pool.diagnostics().registeredSources).toBe(0); expect(worker.sources.size).toBe(0); expect(worker.terminations()).toBe(1)
+  worker.flush(); await settle(); expect(pool.diagnostics().pinnedSources).toBe(0); expect(pool.diagnostics().registeredSources).toBe(1)
+  remaining.destroy!(); expect(pool.diagnostics().registeredSources).toBe(0); expect(worker.sources.size).toBe(0); expect(worker.terminations()).toBe(1)
 })
 
 test('releasing the last lease during registration skips an obsolete view without breaking a later owner', async () => {
@@ -107,7 +110,6 @@ test('resident view discovery reports reuse and releases accounting with the las
   fresh.destroy!()
 })
 
-const refused = (task: Promise<unknown>) => task.then(() => { throw Error('Expected cancellation') }, error => error as Error)
 test('superseded queued views never enter the worker, while the latest demand waits for the running view', async () => {
   const worker = workerDouble(); worker.holdViews()
   const pool = createPhysicalPreparationPool(() => worker.port), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
@@ -172,4 +174,48 @@ test('last-owner disposal removes queued work and its source pin without interru
   expect(pool.diagnostics().queuedViews).toBe(0); expect(pool.diagnostics().registeredSources).toBe(1); expect(pool.diagnostics().viewRequests).toBe(1)
   worker.flush(); await running; a.destroy!(); await settle()
   expect(pool.diagnostics().inFlightJobs).toBe(0); expect(pool.diagnostics().registeredBytes).toBe(0); expect(worker.terminations()).toBe(1)
+})
+
+test('client lifetime revokes its signal-free queued demand even when another client owns the same source family', async () => {
+  for (const withdrawal of ['destroy', 'retain'] as const) {
+    const worker = workerDouble(); worker.holdViews()
+    const pool = createPhysicalPreparationPool(() => worker.port), a = pool.createPreparer(), b = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+    a.retainIdentities!(new Set(['geometry'])); b.retainIdentities!(new Set(['geometry']))
+    const running = b(source, view, 'b-running', 'geometry', 'detail'); await settle()
+    const obsolete = refused(a(source, view, 'a-queued', 'geometry', 'detail')); await settle()
+    if (withdrawal === 'destroy') a.destroy!(); else a.retainIdentities!(new Set())
+    expect((await obsolete).name).toBe('AbortError'); expect(pool.diagnostics().queuedViews).toBe(0)
+    worker.flush(); expect((await running).key).toBe('b-running'); await settle()
+    expect(pool.diagnostics().viewRequests).toBe(1); expect(pool.diagnostics().skippedViews).toBe(1)
+    expect(pool.diagnostics().leases).toBe(1); a.destroy!(); b.destroy!(); expect(worker.terminations()).toBe(1)
+  }
+})
+
+test('client lifetime withdraws only its demand on a shared queued view, not the other client demand', async () => {
+  const worker = workerDouble(); worker.holdViews()
+  const pool = createPhysicalPreparationPool(() => worker.port), a = pool.createPreparer(), b = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+  const blocker = b(source, view, 'running', 'geometry', 'detail'); await settle()
+  const abandoned = refused(a(source, view, 'shared', 'geometry', 'detail')), current = b(source, view, 'shared', 'geometry', 'detail'); await settle()
+  a.destroy!(); expect((await abandoned).name).toBe('AbortError'); expect(pool.diagnostics().queuedViews).toBe(1)
+  worker.flush(); await blocker; await settle(); worker.flush(); expect((await current).key).toBe('shared')
+  expect(pool.diagnostics().viewRequests).toBe(2); b.destroy!()
+})
+
+test('last-client close terminates an unresponsive worker and immediate same-key recreation cannot join old work', async () => {
+  for (const blocked of ['registration', 'view'] as const) {
+    const workers = [workerDouble(), workerDouble()]; if (blocked === 'registration') workers[0]!.holdRegistration(); else workers[0]!.holdViews()
+    let created = 0
+    const pool = createPhysicalPreparationPool(() => workers[created++]!.port), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+    const old = refused(owner(source, view, 'same-key', 'geometry', 'detail')); await settle()
+    const staleReceive = workers[0]!.port.onmessage!
+    owner.destroy!()
+    expect(workers[0]!.terminations()).toBe(1)
+    expect(pool.diagnostics()).toMatchObject({ workerAlive: false, clients: 0, registeredSources: 0, registeredBytes: 0, retainedViews: 0, retainedViewBytes: 0, inFlightJobs: 0, pinnedSources: 0, queuedViews: 0 })
+    const fresh = pool.createPreparer(), next = fresh(source, view, 'same-key', 'geometry', 'detail')
+    expect((await old).name).toBe('AbortError')
+    staleReceive(new MessageEvent<PhysicalPreparationResponse>('message', { data: { kind: 'error', id: 1, message: 'Late obsolete worker callback' } }))
+    expect((await next).key).toBe('same-key'); expect(created).toBe(2)
+    expect(pool.diagnostics().registeredSources).toBe(1); expect(pool.diagnostics().leases).toBe(1)
+    fresh.destroy!(); expect(workers[1]!.terminations()).toBe(1)
+  }
 })

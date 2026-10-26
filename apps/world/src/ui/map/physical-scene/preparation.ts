@@ -35,7 +35,7 @@ interface WorkerPort {
   readonly terminate: () => void
 }
 interface Source { readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly owners: Set<number>; pins: number; registered: boolean; registration: Promise<void> | null; bytes: number }
-interface Client { readonly identities: Set<string>; explicit: boolean }
+interface Client { readonly identities: Set<string>; readonly requests: Set<{ readonly identity: string; readonly cancel: () => void }>; explicit: boolean }
 type Job = { readonly source: Source; readonly reject: (error: Error) => void } & (
   | { readonly kind: 'registration'; readonly resolve: () => void }
   | { readonly kind: 'view'; readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly view: PhysicalSceneView; readonly demands: Set<symbol>; readonly resolve: (value: PhysicalPreparedGeometry) => void }
@@ -92,11 +92,12 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
       catch (error) { activeView = null; jobs.delete(id); forgetPending(job); job.reject(error instanceof Error ? error : new Error(String(error))) }
     }
   }
-  const demand = (key: string, request: PendingView, signal?: AbortSignal): Promise<PhysicalPreparedGeometry> => {
+  const demand = (client: Client, key: string, request: PendingView, signal?: AbortSignal): Promise<PhysicalPreparedGeometry> => {
     if (signal?.aborted) return Promise.reject(released())
     const token = Symbol(); request.demands.add(token)
     return new Promise((resolve, reject) => {
-      const cleanup = (): void => { signal?.removeEventListener('abort', abort); request.demands.delete(token) }
+      const lease = { identity: request.identity, cancel: () => abort() }
+      const cleanup = (): void => { signal?.removeEventListener('abort', abort); request.demands.delete(token); client.requests.delete(lease) }
       const abort = (): void => {
         cleanup(); reject(released()); cancelUnneededQueued()
         // Registration can outlive its caller. Forget only an obsolete request,
@@ -104,9 +105,20 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
         const running = activeView === null ? null : jobs.get(activeView)
         if (!request.demands.size && !(running?.kind === 'view' && running.demands === request.demands) && pending.get(key) === request) pending.delete(key)
       }
+      client.requests.add(lease)
       signal?.addEventListener('abort', abort, { once: true })
       void request.task.then(value => { cleanup(); resolve(value) }, error => { cleanup(); reject(error) })
     })
+  }
+  const stopLastClient = (): void => {
+    const owned = worker; worker = null; activeView = null; viewQueue.length = 0
+    if (owned) { owned.onmessage = null; owned.onerror = null; owned.terminate() }
+    const abandoned = [...jobs.values()]
+    // Clear synchronously before promise finalizers run. A new host can then
+    // acquire the same keys without joining a dead request or registration.
+    for (const source of sources.values()) source.owners.clear()
+    jobs.clear(); sources.clear(); shared.clear(); pending.clear()
+    for (const job of abandoned) job.reject(released())
   }
   const requireWorker = (): WorkerPort => {
     if (worker) return worker
@@ -169,7 +181,7 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
   }
   return {
     createPreparer(): PhysicalGeometryPreparer {
-      const owner = ++clientSequence, client: Client = { identities: new Set(), explicit: false }; clients.set(owner, client)
+      const owner = ++clientSequence, client: Client = { identities: new Set(), requests: new Set(), explicit: false }; clients.set(owner, client)
       let destroyed = false
       const prepare: PhysicalGeometryPreparer = (scene, view, key, identity = key, sourceKey = identity, signal) => {
         if (destroyed || signal?.aborted) return Promise.reject(released())
@@ -178,9 +190,9 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
         const source = sourceFor(scene, identity, sourceKey); source.owners.add(owner)
         for (const [name, value] of shared) if (!value.value.deref() && !pending.has(name)) shared.delete(name)
         const cached = shared.get(key), cachedValue = cached?.value.deref()
-        if (cachedValue) { if (cached!.sourceKey !== sourceKey || cached!.identity !== identity) return Promise.reject(new Error('Physical prepared key reused by a different source')); cacheHits++; return Promise.resolve(cachedValue) }
+        if (cachedValue) { if (cached!.sourceKey !== sourceKey || cached!.identity !== identity) return Promise.reject(new Error('Physical prepared key reused by a different source')); cacheHits++; return demand(client, key, { sourceKey, identity, demands: new Set(), task: Promise.resolve(cachedValue) }, signal) }
         const existing = pending.get(key)
-        if (existing) { if (existing.sourceKey !== sourceKey || existing.identity !== identity) return Promise.reject(new Error('Physical pending key reused by a different source')); return demand(key, existing, signal) }
+        if (existing) { if (existing.sourceKey !== sourceKey || existing.identity !== identity) return Promise.reject(new Error('Physical pending key reused by a different source')); return demand(client, key, existing, signal) }
         source.pins++
         const demands = new Set<symbol>()
         const task = (async () => {
@@ -196,16 +208,24 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
         pending.set(key, request)
         const clear = (): void => { if (pending.get(key) === request) pending.delete(key) }
         void task.then(clear, clear)
-        return demand(key, request, signal)
+        return demand(client, key, request, signal)
       }
       return Object.assign(prepare, { diagnostics,
         retainIdentities(identities: ReadonlySet<string>): void {
           if (destroyed) return
           client.explicit = true; client.identities.clear(); for (const identity of identities) client.identities.add(identity)
+          for (const request of [...client.requests]) if (!identities.has(request.identity)) request.cancel()
           for (const source of sources.values()) { if (identities.has(source.identity)) source.owners.add(owner); else source.owners.delete(owner); releaseSource(source) }
           cancelUnneededQueued()
         },
-        destroy(): void { if (destroyed) return; destroyed = true; clients.delete(owner); for (const source of sources.values()) { source.owners.delete(owner); releaseSource(source) }; cancelUnneededQueued(); stopIfUnused() },
+        destroy(): void {
+          if (destroyed) return
+          destroyed = true; clients.delete(owner)
+          for (const request of [...client.requests]) request.cancel()
+          if (!clients.size) { stopLastClient(); return }
+          for (const source of sources.values()) { source.owners.delete(owner); releaseSource(source) }
+          cancelUnneededQueued(); stopIfUnused()
+        },
       })
     },
     diagnostics,
