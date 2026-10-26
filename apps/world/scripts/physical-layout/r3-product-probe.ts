@@ -48,6 +48,7 @@ const movement=async(name:string,selector:string,orbit:boolean,playing:boolean)=
     const required=['HP','LP 1','GEN','TURBINE HALL']
     if(!value.fillTextCalls||required.some(text=>!value.drawnTexts.includes(text)))throw Error(`Room Plan ${name} did not draw the authored legible captions: ${required.filter(text=>!value.drawnTexts.includes(text)).join(', ')}`)
   }
+  if(name.includes('plan')&&value.drawnTextAngles.some((text:any)=>text.min < -Math.PI/2||text.max > Math.PI/2))throw Error(`Plan ${name} painted upside-down text`)
   if(!value.ownedPhysicalTargets.length||value.ownedPhysicalTargets.some((target:any)=>target.depthBytes<=0))throw Error(`${name} lacks the actual floating physical target`)
   phases.push({name,playing,moves,processWindows,...value});console.log(name,JSON.stringify({p95:value.rafP95Ms,frames:value.frames,longTasks:value.longTasks.length,texts:value.drawnTexts.length,targets:value.ownedPhysicalTargets,drafting:value.draftingCanvases}));await writeFile(join(folder,'partial.json'),JSON.stringify({phases},null,2))
   if(profileThis&&process.env.LEITBILD_R3_PROFILE_ONLY==='1')throw Error('Requested diagnostic-only CPU profile completed; this run does not issue a qualification verdict')

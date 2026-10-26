@@ -30,6 +30,9 @@ TURBINE HALL captions to be actually painted. Whole-site Plan requires all five
 ready layouts and an applicable drafting backing; its much smaller building
 envelopes may legitimately reject all text. Font-dependent collision packing
 may hide other captions; receipts and screenshots retain the visible set.
+The spy also records the actual Canvas2D transform angle at every text paint;
+all painted Plan text must stay within the upright half-turn. Its measured
+observer time includes this transform read and primitive metadata collection.
 
 Weak GL resource keys and primitive allocation metadata identify owned depth32F
 targets, observed MSAA sample counts, color renderbuffers and resolve textures.
