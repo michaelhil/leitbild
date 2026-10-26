@@ -106,3 +106,70 @@ test('resident view discovery reports reuse and releases accounting with the las
   expect(pool.diagnostics().viewRequests).toBe(3)
   fresh.destroy!()
 })
+
+const refused = (task: Promise<unknown>) => task.then(() => { throw Error('Expected cancellation') }, error => error as Error)
+test('superseded queued views never enter the worker, while the latest demand waits for the running view', async () => {
+  const worker = workerDouble(); worker.holdViews()
+  const pool = createPhysicalPreparationPool(() => worker.port), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+  const a = new AbortController(), b = new AbortController(), c = new AbortController()
+  const first = refused(owner(source, view, 'first', 'geometry', 'detail', a.signal)); await settle()
+  const obsolete = refused(owner(source, view, 'obsolete', 'geometry', 'detail', b.signal))
+  const latest = owner(source, { ...view, mode: '3d' }, 'latest', 'geometry', 'detail', c.signal); await settle()
+  expect(pool.diagnostics().viewRequests).toBe(1); expect(pool.diagnostics().queuedViews).toBe(2)
+  a.abort(); b.abort()
+  expect((await first).name).toBe('AbortError'); expect((await obsolete).name).toBe('AbortError')
+  expect(pool.diagnostics().viewRequests).toBe(1); expect(pool.diagnostics().queuedViews).toBe(1); expect(pool.diagnostics().skippedViews).toBe(1)
+  worker.flush(); await settle()
+  expect(pool.diagnostics().viewRequests).toBe(2); expect(pool.diagnostics().queuedViews).toBe(0)
+  worker.flush(); expect((await latest).key).toBe('latest'); owner.destroy!(); await settle()
+  expect(pool.diagnostics().inFlightJobs).toBe(0); expect(worker.terminations()).toBe(1)
+})
+
+test('cancelling one host cannot cancel another host shared queued demand', async () => {
+  const worker = workerDouble(); worker.holdViews()
+  const pool = createPhysicalPreparationPool(() => worker.port), a = pool.createPreparer(), b = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+  const blocker = a(source, view, 'running', 'geometry', 'detail'); await settle()
+  const stop = new AbortController(), abandoned = refused(a(source, view, 'shared', 'geometry', 'detail', stop.signal)), remaining = b(source, view, 'shared', 'geometry', 'detail'); await settle()
+  stop.abort(); expect((await abandoned).name).toBe('AbortError'); expect(pool.diagnostics().queuedViews).toBe(1)
+  worker.flush(); await blocker; await settle(); worker.flush()
+  expect((await remaining).key).toBe('shared'); expect(pool.diagnostics().viewRequests).toBe(2); expect(pool.diagnostics().skippedViews).toBe(0)
+  a.destroy!(); b.destroy!()
+})
+
+test('a selected view can rejoin its still-running work after earlier demand was cancelled', async () => {
+  const worker = workerDouble(); worker.holdViews()
+  const pool = createPhysicalPreparationPool(() => worker.port), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels), stop = new AbortController()
+  const old = refused(owner(source, view, 'return', 'geometry', 'detail', stop.signal)); await settle(); stop.abort(); expect((await old).name).toBe('AbortError')
+  const current = owner(source, view, 'return', 'geometry', 'detail'); worker.flush()
+  expect((await current).key).toBe('return'); expect(pool.diagnostics().viewRequests).toBe(1); owner.destroy!()
+})
+
+test('an immediate same-key selection after registration cancellation owns a fresh demand without duplicating transport', async () => {
+  const worker = workerDouble(); worker.holdRegistration()
+  const pool = createPhysicalPreparationPool(() => worker.port), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels), stop = new AbortController()
+  const old = refused(owner(source, view, 'selected', 'geometry', 'detail', stop.signal)); stop.abort()
+  const latest = owner(source, view, 'selected', 'geometry', 'detail'); worker.flush()
+  expect((await old).name).toBe('AbortError'); expect((await latest).key).toBe('selected')
+  expect(pool.diagnostics().registrations).toBe(1); expect(pool.diagnostics().viewRequests).toBe(1); owner.destroy!()
+})
+
+test('worker failure rejects both running and queued views and does not poison later same-key demand', async () => {
+  const workers = [workerDouble(), workerDouble()]; workers[0]!.holdViews(); let next = 0
+  const pool = createPhysicalPreparationPool(() => workers[next++]!.port), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+  const running = refused(owner(source, view, 'running', 'geometry', 'detail')); await settle()
+  const queued = refused(owner(source, view, 'queued', 'geometry', 'detail')); await settle(); workers[0]!.crash()
+  expect((await running).message).toContain('diagnostic crash'); expect((await queued).message).toContain('diagnostic crash'); await settle()
+  expect(pool.diagnostics().queuedViews).toBe(0)
+  expect((await owner(source, view, 'queued', 'geometry', 'detail')).key).toBe('queued'); expect(next).toBe(2); owner.destroy!()
+})
+
+test('last-owner disposal removes queued work and its source pin without interrupting another leased source', async () => {
+  const worker = workerDouble(); worker.holdViews()
+  const pool = createPhysicalPreparationPool(() => worker.port), a = pool.createPreparer(), b = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+  const running = a(source, view, 'running', 'first-family', 'first-detail'); await settle()
+  const queued = refused(b(source, view, 'queued', 'second-family', 'second-detail')); await settle(); b.destroy!()
+  expect((await queued).name).toBe('AbortError'); await settle()
+  expect(pool.diagnostics().queuedViews).toBe(0); expect(pool.diagnostics().registeredSources).toBe(1); expect(pool.diagnostics().viewRequests).toBe(1)
+  worker.flush(); await running; a.destroy!(); await settle()
+  expect(pool.diagnostics().inFlightJobs).toBe(0); expect(pool.diagnostics().registeredBytes).toBe(0); expect(worker.terminations()).toBe(1)
+})

@@ -17,7 +17,7 @@ const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObj
 const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   let projectScale = 1_000_000
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
-  const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = []
+  const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = []
   const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = []
   const viewport: PhysicalViewport = {
     surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
@@ -33,9 +33,9 @@ const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   const hold = () => { let release!: () => void; waitForPreparation = new Promise<void>(resolve => { release = resolve }); return () => { waitForPreparation = null; release() } }
   const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>()
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
-    prepare: async (value, view, key, identity) => { if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
+    prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, tools, poses, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, fits, tools, poses, signals, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -91,6 +91,20 @@ test('cancelled or suspended hosts cannot apply a late deferred camera fit', asy
     if (suspend) h.controller.setActive(false); else h.controller.cancelCamera()
     release(); await settled(); expect(h.fits).toHaveLength(before); if (suspend) expect(h.controller.presentations()[0]!.status).toBe('hidden'); h.controller.destroy()
   }
+})
+
+test('rapid floor choices cancel obsolete demand and stale completions cannot replace the selected floor', async () => {
+  const h = harness(), release = h.hold(), value = scene('a'), base = defaultPhysicalSceneView(value.levels)
+  h.controller.setSources([h.source(value)]); h.controller.selectScope('a'); await settled()
+  h.controller.setView('a', { ...base, levelId: 'upper' }); await settled()
+  h.controller.setView('a', { ...base, levelId: 'lower' }); await settled()
+  expect(h.signals.length).toBeGreaterThanOrEqual(3)
+  expect(h.signals.slice(0, -1).every(signal => signal?.aborted)).toBe(true)
+  expect(h.signals.at(-1)?.aborted).toBe(false)
+  release(); await settled()
+  expect(h.controller.presentations()[0]?.view.levelId).toBe('lower'); expect(h.controller.presentations()[0]?.status).toBe('ready')
+  expect(h.entries()[0]?.meshes.every(mesh => mesh.levelId === 'lower')).toBe(true); expect(h.errors).toEqual([])
+  h.controller.destroy!(); expect(h.signals.every(signal => signal?.aborted || signal === h.signals.at(-1))).toBe(true)
 })
 
 test('failed preparation and GPU admission remain unavailable until an explicit retry can recover', async () => {
