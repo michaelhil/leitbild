@@ -1,5 +1,6 @@
 import { MercatorCoordinate } from 'maplibre-gl'
 import { intersectsPhysicalFrustum } from './visibility.ts'
+import { createPhysicalGroundProjector } from './ground-projection.ts'
 import { fitPhysicalPerspective } from './perspective-fit.ts'
 import { boundsCorners, inverse, localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { createPhysicalSceneRenderer } from './renderer.ts'
@@ -27,8 +28,8 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
   // this is a camera coordinate unit, not a scene/object admission threshold.
   const worldUnitsPerPixel = () => Math.pow(2, -zoom) / 512
   const fov = Math.PI / 4
-  const matrix = (): Float64Array => {
-    const surface = size(), target = MercatorCoordinate.fromLngLat(center), worldHeight = surface.height * worldUnitsPerPixel(), distance = worldHeight / (2 * Math.tan(fov / 2)), b = bearing * Math.PI / 180, p = pitch * Math.PI / 180
+  const matrix = (surface = size()): Float64Array => {
+    const target = MercatorCoordinate.fromLngLat(center), worldHeight = surface.height * worldUnitsPerPixel(), distance = worldHeight / (2 * Math.tan(fov / 2)), b = bearing * Math.PI / 180, p = pitch * Math.PI / 180
     const right: Vector3 = [Math.cos(b), Math.sin(b), 0], up: Vector3 = [Math.sin(b) * Math.cos(p), -Math.cos(b) * Math.cos(p), Math.sin(p)], back: Vector3 = [-Math.sin(b) * Math.sin(p), Math.cos(b) * Math.sin(p), Math.cos(p)]
     const eye: Vector3 = [target.x + back[0] * distance, target.y + back[1] * distance, targetZ + back[2] * distance]
     const view = new Float64Array([right[0], up[0], back[0], 0, right[1], up[1], back[1], 0, right[2], up[2], back[2], 0,
@@ -41,6 +42,7 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
     const near = Math.max(Number.EPSILON, Math.min(distance / 2, worldUnitsPerPixel()))
     return multiply(perspective(fov, Math.max(Number.EPSILON, surface.width / surface.height), near, far + worldHeight), view)
   }
+  const projectGround = createPhysicalGroundProjector(() => { const dimensions = size(); return { matrix: matrix(dimensions), ...dimensions } })
   const requestRender = (): void => {
     if (destroyed || lost || queued !== null) return
     queued = requestAnimationFrame(() => {
@@ -96,7 +98,7 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
   const port: PhysicalViewport = {
     surface: { kind: 'canvas', element: canvas, getSize: size, getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: (event, listener) => subscribe(event === 'move' ? 'change' : event, listener) }, on: subscribe,
     intersectsBounds(bounds, mode) { const value = mode === '2d' ? { min: [bounds.min[0], bounds.min[1], 0] as [number, number, number], max: [bounds.max[0], bounds.max[1], 0] as [number, number, number] } : bounds; return intersectsPhysicalFrustum(matrix(), value) },
-    ready: () => !lost && !destroyed, projectGeographic(point) { const p = MercatorCoordinate.fromLngLat(point), projected = transform(matrix(), [p.x, p.y, 0]), dimensions = size(); return { x: (projected[0] + 1) * dimensions.width / 2, y: (1 - projected[1]) * dimensions.height / 2 } }, requestRender,
+    ready: () => !lost && !destroyed, projectGeographic(point) { return projectGround(revision, MercatorCoordinate.fromLngLat(point)) }, requestRender,
     installRenderer(getEntries, nextPalette, reportError) { entries = getEntries; palette = nextPalette; renderer = createPhysicalSceneRenderer(gl, entries, palette, size, reportError); const owned = renderer; handle = { ...owned, setPalette(value) { palette = value; owned.setPalette(value) }, dispose() { owned.dispose(); if (renderer === owned) renderer = null; requestRender() } }; return handle },
     registered: candidate => candidate === handle && renderer !== null, orderRenderer() {},
     removeRenderer(candidate) { candidate.dispose(); if (candidate === handle) handle = null },
