@@ -6,6 +6,8 @@ import type { PhysicalSceneView } from './types.ts'
 /** xyz, normal xyz, material-role index. Colours are assigned by the active token palette. */
 type Vertex = [number, number, number, number, number, number, number]
 export interface PhysicalMesh {
+  /** Complementary view variants of an authored enclosure boundary. */
+  readonly inspectionPart?: 'full' | 'cut'
   /** Earlier visible mesh keys that own this coincident display candidate. */
   readonly occludedBy?: readonly string[]
   /** Semantic Plan band; physical vertex heights are preserved. */
@@ -152,16 +154,24 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
     if (object.kind === 'space' || object.kind === 'opening' || object.kind === 'assembly' || (view.cutaway && object.kind === 'roof')) continue
     const bands = selected ? [selected] : view.separation > 0 && object.levelId !== 'site' ? levels : [null]
     for (const level of bands) {
+      const authoredVolume = level ? object.inspectionLevels?.find(volume => volume.levelId === level.id) : undefined
+      if (level && object.inspectionLevels && !authoredVolume) continue
       // A deck belongs to the floor it supports, even when its thickness extends below that elevation.
       if (level && object.kind === 'slab' && object.levelId !== 'site' && object.levelId !== level.id) continue
       // Outdoor containment is independent of indoor level views. A pylon or
       // site road must not be cut at an administration building's next floor.
       const clipLevel = object.levelId === 'site' ? null : level
       const next = clipLevel ? levels.find(candidate => candidate.elevation > clipLevel.elevation) : undefined
-      const low = clipLevel ? clipLevel.elevation - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
-      const upper = next ? next.elevation - 0.001 : Infinity
-      const cut = view.cutaway && object.kind === 'wall' && object.levelId !== 'site' ? clipLevel?.cutHeight ?? levels.at(-1)!.cutHeight : Infinity
-      const high = Math.min(upper, cut)
+      const low = clipLevel ? (authoredVolume?.low ?? clipLevel.elevation) - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
+      const upper = authoredVolume?.high ?? (next ? next.elevation - 0.001 : Infinity)
+      const boundary = object.inspectionBoundary !== undefined && view.mode === '3d' && view.cutaway && object.levelId !== 'site'
+      const cut = view.cutaway && (object.kind === 'wall' || object.inspectionBoundary !== undefined) && object.levelId !== 'site' ? clipLevel?.cutHeight ?? (boundary ? levels[0]!.cutHeight : levels.at(-1)!.cutHeight) : Infinity
+      // Camera-aware boundaries keep both exact representations resident. The
+      // renderer chooses full rear walls or capped foreground walls; camera
+      // movement never rebuilds source geometry or leaves a false section seam.
+      const variants: ReadonlyArray<{ high: number; part?: 'full' | 'cut' }> = boundary && cut < upper ? [{ high: upper, part: 'full' }, { high: Math.min(upper, cut), part: 'cut' }] : [{ high: Math.min(upper, cut) }]
+      for (const variant of variants) {
+      const high = variant.high
       const vertices: number[] = [], segments: Array<[Vertex, Vertex]> = []
       const count = object.indices?.length ?? object.positions.length / 3
       for (let index = 0; index < count; index += 3) {
@@ -171,7 +181,7 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
         const triangle = ids.map(id => vertexAt(object, id, normal))
         let polygon = clipPolygon(clipPolygon(triangle, low, true), high, false)
         for (let corner = 1; corner < polygon.length - 1; corner++) vertices.push(...polygon[0]!, ...polygon[corner]!, ...polygon[corner + 1]!)
-        if (object.kind === 'wall' && Number.isFinite(high)) { const segment = sectionSegment(triangle, high); if (segment) segments.push(segment) }
+        if ((object.kind === 'wall' || object.inspectionBoundary !== undefined) && Number.isFinite(high)) { const segment = sectionSegment(triangle, high); if (segment) segments.push(segment) }
       }
       if (!vertices.length) continue
       appendCaps(segments, vertices)
@@ -207,7 +217,8 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
         planPriority = object.kind === 'slab' || object.kind === 'pavement' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
       }
       const offset: Vector3 = [0, 0, view.mode === '3d' && level && !selected ? levels.indexOf(level) * view.separation : 0]
-      output.push({ ...(planPriority === undefined ? {} : { planPriority }), key: `${object.id}/${level?.id ?? 'all'}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
+      output.push({ ...(variant.part === undefined ? {} : { inspectionPart: variant.part }), ...(planPriority === undefined ? {} : { planPriority }), key: `${object.id}/${level?.id ?? 'all'}${variant.part === undefined ? '' : `/inspection-${variant.part}`}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
+      }
     }
   }
   return output
