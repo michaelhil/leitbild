@@ -931,7 +931,7 @@
   {#key simulationRunId}
   {#await import('./physical-layout/PhysicalLayouts.svelte') then { default: PhysicalLayouts }}
     <PhysicalLayouts map={runtime.map} active={viewportActive} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
-      {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} onDetailedOwners={setDetailedLayoutOwners}
+      {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} reservedPadding={cameraPadding} onDetailedOwners={setDetailedLayoutOwners}
       suspended={physicalLayoutSuspended}
       onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onbrowser={onOpenLayoutBrowser} onconnect={interaction => physicalLayoutInteraction = interaction} />
   {:catch error}

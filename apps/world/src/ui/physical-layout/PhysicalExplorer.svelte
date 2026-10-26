@@ -9,7 +9,7 @@
   import { createPhysicalCanvasController } from '../map/physical-scene/canvas-controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
   import { explorerEntryTarget, explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice, type PhysicalExplorerTarget } from './explorer-model.ts'
-  import { physicalExplorerFitPadding } from './explorer-viewport.ts'
+  import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
@@ -26,7 +26,7 @@
   import { sparseLayoutBadges } from './badges.ts'
   import { physicalLayoutPalette } from './palette.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { map = null, host = 'map', active = true, initialTarget = { sceneId: null }, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
+  let { map = null, host = 'map', active = true, initialTarget = { sceneId: null }, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
     map?: MapLibreMap | null
     host?: 'map' | 'browser'
     active?: boolean
@@ -40,6 +40,8 @@
     suspended: boolean
     theme: 'light' | 'dark'
     clearTop?: number
+    /** Actual host UI covers, independent of the camera's current composition. */
+    reservedPadding?: ExplorerViewportPadding
     onDetailedOwners?: (ids: ReadonlyArray<string>) => void
     onoverview: (object: OperationalObject) => void
     onopen: (listing: EmbeddedViewListing) => void
@@ -107,7 +109,7 @@
   let cameraSignature = ''
   let focusGeneration = 0
   const fitPadding = () => {
-    const padding = controller?.surface.getPadding() ?? { top: 0, bottom: 0, left: 0, right: 0 }
+    const padding = reservedPadding
     const surface = controller?.surface.element.getBoundingClientRect(), tools = toolsElement?.getBoundingClientRect(), camera = cameraElement?.getBoundingClientRect()
     if (!surface) return padding
     const covers = [tools, camera].filter((cover): cover is DOMRect => cover !== undefined).map(cover => ({ x: cover.left - surface.left, y: cover.top - surface.top, width: cover.width, height: cover.height }))
@@ -203,9 +205,8 @@
   $effect(() => { void snapshots; void inspectionState; void inspectionReady; void inspectionFrame; untrack(publishInspection) })
   const inspectionRoom = $derived.by(() => {
     void screenRevision
-    const padding = controller?.surface.getPadding() ?? { top: 0, right: 0, bottom: 0, left: 0 }
     const surfaceTop = controller?.surface.element.getBoundingClientRect().top ?? 0
-    return layoutInspectionHostRoom(size, padding, clearTop - surfaceTop)
+    return layoutInspectionHostRoom(size, reservedPadding, clearTop - surfaceTop)
   })
   const inspectionWidth = $derived(Math.min(360, inspectionRoom.width))
   const allocatedInspectionHeight = $derived(Math.min(inspectionHeight ?? inspectionRoom.height, inspectionRoom.height))
@@ -435,7 +436,7 @@
     pendingCameraFocus = null
     untrack(() => { void afterPanels(() => controller?.focus(pending.sceneId, { occurrenceId: pending.occurrenceId, levelId: pending.levelId, preservePose: true })) })
   })
-  const coverRight = $derived.by(() => { void screenRevision; return controller?.surface.getPadding().right ?? 0 })
+  const coverRight = $derived(reservedPadding.right)
   const toolsTop = $derived.by(() => { void screenRevision; return Math.max(8, clearTop - (controller?.surface.element.getBoundingClientRect().top ?? 0) + 8) })
   $effect(() => {
     const element = toolsElement

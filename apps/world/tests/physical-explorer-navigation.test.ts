@@ -2,6 +2,9 @@ import { expect, test } from 'bun:test'
 import { explorerEntryTarget, explorerGroupKey, explorerLayoutKey, explorerScopeAncestors, explorerScopeBranches, explorerScopeChoices, type ExplorerScopeBranch, type ExplorerScopeChoice } from '../src/ui/physical-layout/explorer-model.ts'
 import { physicalExplorerFitPadding, physicalExplorerFitRect } from '../src/ui/physical-layout/explorer-viewport.ts'
 import type { PhysicalSceneDescriptor } from '../src/ui/map/physical-scene/types.ts'
+import { Map as MapLibreMap } from 'maplibre-gl'
+import { createMapPhysicalViewport } from '../src/ui/map/physical-scene/map-viewport.ts'
+import { createFakeMapStyle } from './helpers/fake-map-style.ts'
 
 const all = (branches: ReadonlyArray<ExplorerScopeBranch>): string[] => branches.flatMap(branch => [branch.choice.key, ...all(branch.children)])
 const choices = (): ExplorerScopeChoice[] => [
@@ -97,4 +100,26 @@ test('external operational padding and occluding inspectors are preserved by phy
   expect(rect.y).toBeGreaterThanOrEqual(92)
   expect(rect.x).toBeGreaterThanOrEqual(384)
   expect(rect.x + rect.width).toBeLessThanOrEqual(1168)
+})
+
+test('the real Plan adapter and pinned MapLibre fit do not retain camera-fit padding as a UI cover', () => {
+  const fake = createFakeMapStyle(), reserved = { top: 80, right: 100, bottom: 0, left: 0 }
+  const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ width: 1280, height: 720 }) })
+  const moves: Array<Record<string, unknown>> = []
+  // Use the installed library's actual fitBounds/_fitInternal implementation.
+  // Only geographic camera calculation and final animation are test doubles.
+  Object.setPrototypeOf(fake.map, MapLibreMap.prototype)
+  Object.assign(fake.map, {
+    getCanvas: () => canvas, getBearing: () => 0, getPadding: () => reserved,
+    cameraForBounds: () => ({ center: [11.47, 59.087], zoom: 18, bearing: 0 }),
+    flyTo: (options: Record<string, unknown>) => { moves.push(options); return fake.map },
+  })
+  const viewport = createMapPhysicalViewport(fake.map, () => undefined)
+  const fit = physicalExplorerFitPadding({ width: 1280, height: 720 }, reserved, [{ x: 12, y: 100, width: 360, height: 420 }])
+  expect(fit.left).toBeGreaterThan(reserved.left)
+  for (let repeat = 0; repeat < 3; repeat++) viewport.fitWorld({ min: [.53, .29, 0], max: [.531, .291, 0] }, { padding: fit, preservePose: false, mode: '2d', bearing: 0 })
+  expect(moves).toHaveLength(3)
+  for (const move of moves) expect(move).not.toHaveProperty('padding')
+  expect(viewport.surface.getPadding()).toEqual(reserved)
+  viewport.destroy()
 })

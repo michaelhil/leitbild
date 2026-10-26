@@ -7,7 +7,7 @@ import type { LayoutLiveSnapshot } from './client.ts'
 /** Map-hosted faceplate only; component detail remains the existing vignette. */
 export const LAYOUT_INSPECTION_VIEW_TYPE = 'physical-layout.inspection'
 
-/** The host owns available space; current intrinsic/allocated card height is not an input. */
+/** Only actual reserved UI geometry constrains space, never camera-fit padding or current card size. */
 export const layoutInspectionHostRoom = (size: { readonly width: number; readonly height: number }, padding: { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }, clearTop: number) => {
   const x = Math.max(8, padding.left), y = Math.max(8, padding.top, clearTop + 8)
   return { x, y, width: Math.max(0, size.width - x - Math.max(8, padding.right)), height: Math.max(0, size.height - y - Math.max(8, padding.bottom)) }

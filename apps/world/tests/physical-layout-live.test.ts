@@ -13,6 +13,7 @@ import { admitPhysicalLiveStamp, physicalLayoutStatusSummary, physicalSubjectKey
 import { changePhysicalLayoutView, initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
 import { valueRows } from '../src/ui/embed/vignette/value-rows.ts'
 import { faceplateHeight } from '../src/ui/embed/vignette/popover.ts'
+import { physicalExplorerFitPadding } from '../src/ui/physical-layout/explorer-viewport.ts'
 
 const expected = layoutLiveExpectedSchema.parse({ runId: 'run-layout', layoutObjectId: 'layout:one', objectId: 'plant:one', packId: 'process-plant', modelDigest: 'a'.repeat(64), revision: 'physical-two-room-r1' })
 const at = isoTimestampSchema.parse('2026-10-24T12:00:00.000Z')
@@ -309,5 +310,30 @@ describe('physical inspection and local view controls', () => {
     expect(() => layoutInspectionSpaceMessage(state, Infinity)).toThrow()
     expect(() => layoutInspectionSpaceMessage(state, -1)).toThrow()
     live.session.close()
+  })
+
+  test('fitting around a Quick look changes camera composition without redefining actual inspection space', () => {
+    const viewport = { width: 1280, height: 720 }, reserved = { top: 80, right: 100, bottom: 0, left: 0 }
+    const room = layoutInspectionHostRoom(viewport, reserved, 80)
+    const short = { x: 12, y: 100, width: 360, height: 120 }, expanded = { ...short, height: 420 }
+    const shortFit = physicalExplorerFitPadding(viewport, reserved, [short])
+    const expandedFit = physicalExplorerFitPadding(viewport, reserved, [expanded])
+    expect(shortFit).not.toEqual(reserved)
+    expect(expandedFit).not.toEqual(reserved)
+    // Camera composition may exclude a whole strip to fit the model beside a
+    // floating card. That strip is not an external UI cover for the next card.
+    expect(expandedFit.left).toBeGreaterThan(reserved.left)
+    expect(layoutInspectionHostRoom(viewport, reserved, 80)).toEqual(room)
+    expect(layoutInspectionHostRoom(viewport, { ...reserved, bottom: 160 }, 80).height).toBe(room.height - 152)
+    expect(layoutInspectionHostRoom({ width: 319, height: 180 }, { top: 80, right: 360, bottom: 200, left: 0 }, 80)).toMatchObject({ width: 0, height: 0 })
+    expect(layoutInspectionHostRoom(viewport, { top: 0, right: 0, bottom: 0, left: 0 }, 0)).toEqual({ x: 8, y: 8, width: 1264, height: 704 })
+
+    // The actual shared Svelte host receives panel reports, rather than reading
+    // an imperative camera state which can also be mid-animation.
+    const explorer = readFileSync(new URL('../src/ui/physical-layout/PhysicalExplorer.svelte', import.meta.url), 'utf8')
+    const map = readFileSync(new URL('../src/ui/OperationalMap.svelte', import.meta.url), 'utf8')
+    expect(map).toContain('reservedPadding={cameraPadding}')
+    expect(explorer).toContain('layoutInspectionHostRoom(size, reservedPadding, clearTop - surfaceTop)')
+    expect(explorer).not.toContain('surface.getPadding()')
   })
 })
