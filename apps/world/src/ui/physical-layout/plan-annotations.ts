@@ -6,6 +6,11 @@ import { physicalScopeMembers } from '../map/physical-scene/scopes.ts'
 type Point = { readonly x: number; readonly y: number }
 type Position = readonly [number, number, number]
 const metric = new Intl.NumberFormat('en', { maximumFractionDigits: 2 })
+/** Drafting reads from the lower/right side even when the viewer rotates. */
+export const physicalPlanUprightAngle = (angle: number): number => {
+  const value = Math.atan2(Math.sin(angle), Math.cos(angle))
+  return value > Math.PI / 2 ? value - Math.PI : value < -Math.PI / 2 ? value + Math.PI : value
+}
 export const physicalPlanDimensionText = (annotation: Extract<PhysicalPlanAnnotation, { kind: 'dimension' }>): string =>
   `${metric.format(Math.hypot(...annotation.to.map((value, axis) => value - annotation.from[axis]!)))} m`
 
@@ -83,14 +88,14 @@ export const drawPhysicalPlanAnnotations = (context: CanvasRenderingContext2D, i
     const tickX = (dx - dy) / length * gap, tickY = (dy + dx) / length * gap
     for (const point of [c, d]) { path([{ x: point.x - tickX, y: point.y - tickY }, { x: point.x + tickX, y: point.y + tickY }]); context.stroke() }
     context.globalAlpha = 1
-    let angle = Math.atan2(dy, dx); if (angle > Math.PI / 2) angle -= Math.PI; else if (angle < -Math.PI / 2) angle += Math.PI
+    const angle = physicalPlanUprightAngle(Math.atan2(dy, dx))
     label(text, { x: (c.x + d.x) / 2 + dy / length * height, y: (c.y + d.y) / 2 - dx / length * height }, angle)
   }
   for (const annotation of annotations) if (annotation.kind === 'label') {
     const angle = annotation.rotation * Math.PI / 180, points = input.project([annotation.anchor, [annotation.anchor[0] + Math.cos(angle), annotation.anchor[1] + Math.sin(angle), annotation.anchor[2]]]); if (points.length !== 2) continue
     const bound = envelopes.get(annotation.id)
     const projected = bound ? input.project(corners(bound)) : []
-    label(annotation.text, points[0]!, Math.atan2(points[1]!.y - points[0]!.y, points[1]!.x - points[0]!.x), projected.length ? box(projected) : undefined)
+    label(annotation.text, points[0]!, physicalPlanUprightAngle(Math.atan2(points[1]!.y - points[0]!.y, points[1]!.x - points[0]!.x)), projected.length ? box(projected) : undefined)
   }
   context.restore()
 }

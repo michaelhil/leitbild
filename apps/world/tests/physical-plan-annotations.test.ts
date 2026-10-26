@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { packPhysicalSceneSchema, type PackPhysicalScene, type PhysicalPlanAnnotation } from '../src/core/packs/scene.ts'
-import { visiblePhysicalPlanAnnotations, physicalPlanDimensionText } from '../src/ui/physical-layout/plan-annotations.ts'
+import { visiblePhysicalPlanAnnotations, physicalPlanDimensionText, physicalPlanUprightAngle } from '../src/ui/physical-layout/plan-annotations.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 
 const annotation: PhysicalPlanAnnotation = { id: 'room-name', kind: 'label', role: 'space', text: 'Turbine hall', anchor: [5, 4, 0], rotation: 0, levelIds: ['ground'], scopeIds: ['hall'], layerId: 'drafting' }
@@ -24,6 +24,13 @@ test('a dimension value is derived from its source witnesses, including a rotate
   const dimension = { id: 'width', kind: 'dimension' as const, levelIds: ['ground'], scopeIds: ['hall'], from: [1, 2, 0] as [number, number, number], to: [4, 6, 0] as [number, number, number], offset: [0, 1, 0] as [number, number, number], unit: 'm' as const }
   expect(physicalPlanDimensionText(dimension)).toBe('5 m')
   expect(physicalPlanDimensionText({ ...dimension, to: [7, 10, 0] })).toBe('10 m')
+})
+test('rotated drafting remains upright while retaining its intended baseline', () => {
+  for (const angle of [0, .6, 2.4, -2.4, 5.8, -7.2]) {
+    const upright = physicalPlanUprightAngle(angle)
+    expect(Math.abs(upright)).toBeLessThanOrEqual(Math.PI / 2)
+    expect(Math.abs(Math.sin(upright - angle))).toBeLessThan(1e-12)
+  }
 })
 test('the scene boundary rejects drafting with unknown authority or invalid illustrative geometry', () => {
   expect(packPhysicalSceneSchema.safeParse(scene).success).toBe(true)

@@ -194,7 +194,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
         if (JSON.stringify([old.mode, old.levelId, old.cutaway, old.levelId === 'all' && old.separation > 0]) !== JSON.stringify([normalized.mode, normalized.levelId, normalized.cutaway, normalized.levelId === 'all' && normalized.separation > 0])) { cancelPreparation(target); target.prepared = null; target.meshes = [] }
         else if (target.prepared) target.meshes = filteredMeshes(target, target.prepared)
       }
-      renderer?.invalidatePicks(); if (mode === '2d') { viewport.cancelCamera(); viewport.setNavigationTool('pan') }; if (changedMode) viewport.setPose({ pitch: mode === '2d' ? 0 : 50, ...(mode === '2d' ? { elevation: 0 } : {}) }); reconcile(); viewport.requestRender()
+      renderer?.invalidatePicks(); if (mode === '2d') { viewport.cancelCamera(); viewport.setNavigationTool('pan') }; if (changedMode) viewport.setPose({ pitch: mode === '2d' ? 0 : 50, ...(mode === '2d' ? { elevation: 0, bearing: focusedId === null ? 0 : requireEntry(focusedId).source.descriptor.bearing } : {}) }); reconcile(); viewport.requestRender()
     },
     setStatus(sceneId: string, status: ReadonlyMap<string, PhysicalSubjectStyle>): void {
       const entry = entries.get(sceneId); if (!entry) return

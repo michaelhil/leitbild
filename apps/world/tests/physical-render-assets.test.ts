@@ -153,7 +153,14 @@ test('sources without an explicit reusable geometry key remain private to each h
 
 test('the core Plan transition cancels Orbit and restores ground-level top view for non-UI callers', async () => {
   const h = harness(), value = scene('a'); h.controller.setSources([h.source(value)]); h.controller.setView('a', { ...defaultPhysicalSceneView(value.levels), mode: '3d' }); await settled()
-  h.controller.setNavigationTool('orbit'); h.controller.setView('a', defaultPhysicalSceneView(value.levels)); expect(h.tools.at(-1)).toBe('pan'); expect(h.poses.at(-1)).toEqual({ pitch: 0, elevation: 0 }); h.controller.destroy()
+  h.controller.setNavigationTool('orbit'); h.controller.setView('a', defaultPhysicalSceneView(value.levels)); expect(h.tools.at(-1)).toBe('pan'); expect(h.poses.at(-1)).toEqual({ pitch: 0, elevation: 0, bearing: 0 }); h.controller.destroy()
+})
+
+test('Plan entry aligns the selected drawing to its authored placement rather than inheriting an oblique Home bearing', async () => {
+  const h = harness(), value = { ...scene('a'), bearing: 37 }
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', { ...defaultPhysicalSceneView(value.levels), mode: '3d' }); await settled()
+  h.controller.selectScope('a', 'a'); h.controller.setView('a', defaultPhysicalSceneView(value.levels))
+  expect(h.poses.at(-1)).toEqual({ pitch: 0, elevation: 0, bearing: 37 }); h.controller.destroy()
 })
 
 test('hiding a first coplanar owner reveals the retained alternative for exact picking without re-preparing buffers', async () => {
