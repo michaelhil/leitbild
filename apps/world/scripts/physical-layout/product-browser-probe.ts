@@ -69,6 +69,7 @@ try {
     const settled = async () => {
       await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
       await until(`return w.__productProof.pending===0 && !/\\b[1-9]\\d* loading\\b/.test(d.querySelector('.explorer-controls .evidence')?.textContent??'')`,'physical worker responses and visible loading settled')
+      await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
     }
     const transition = async (name: string, action: () => Promise<unknown>) => {
       const before = await inWorld('return w.__productProof.responses.length'), start = Date.now()
