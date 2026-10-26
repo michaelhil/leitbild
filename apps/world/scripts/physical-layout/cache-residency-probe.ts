@@ -58,7 +58,7 @@ try {
   result.provenance = { rendererRoot, sourceRoot, rendererCommit, sourceCommit, fixtureDeliveryBytes: JSON.stringify({ scenes, descriptors }).length, fixtureSha256: createHash('sha256').update(JSON.stringify({ scenes, descriptors })).digest('hex'), definitions: descriptors.map((descriptor: { id: string; revision: string; geometryKey?: string }) => ({ id: descriptor.id, revision: descriptor.revision, geometryKey: descriptor.geometryKey })), sources: sourceHashes }
   await writeFile(join(output, 'receipt.json'), JSON.stringify(result, null, 2))
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'canvas-final.png'), Buffer.from(shot.data, 'base64'))
-  console.log(JSON.stringify({ output, passed: result.passed, phases: result.phases, closed: result.closed, ownerHit: result.ownerHit, errors: result.errors }, null, 2))
+  console.log(JSON.stringify({ output, passed: result.passed, phases: result.phases.map((phase: any) => ({ name: phase.name, current: phase.metrics.current, preparation: phase.metrics.preparation })), reuse: result.reuse, closed: result.closed, ownerHit: result.ownerHit, errors: result.errors }, null, 2))
   if (!result.passed) process.exitCode = 1
 
 } finally { socket?.close(); chrome.kill(); await chrome.exited; server.stop(true); await rm(profile, { recursive: true, force: true }) }
