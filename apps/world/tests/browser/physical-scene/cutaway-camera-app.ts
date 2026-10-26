@@ -1,11 +1,11 @@
-import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
+import { Map as MapLibreMap, MercatorCoordinate, setWorkerUrl } from 'maplibre-gl'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from '../../../src/core/packs/scene.ts'
 import { createMapPhysicalViewport } from '../../../src/ui/map/physical-scene/map-viewport.ts'
 import { createCanvasPhysicalViewport } from '../../../src/ui/map/physical-scene/canvas-viewport.ts'
 import { createPhysicalSceneControllerForViewport } from '../../../src/ui/map/physical-scene/scene-controller.ts'
 import { createPhysicalGeometryPreparer, type PhysicalGeometryPreparer, type PhysicalPreparedGeometry } from '../../../src/ui/map/physical-scene/preparation.ts'
 import { visiblePhysicalInspectionBoundaries } from '../../../src/ui/map/physical-scene/inspection-cutaway.ts'
-import { inverse, transform } from '../../../src/ui/map/physical-scene/math.ts'
+import { inverse, localMercatorMatrix, transform } from '../../../src/ui/map/physical-scene/math.ts'
 import type { PhysicalViewport } from '../../../src/ui/map/physical-scene/viewport.ts'
 import type { PhysicalScenePalette } from '../../../src/ui/map/physical-scene/types.ts'
 
@@ -36,16 +36,17 @@ let viewport: PhysicalViewport | null = null, controller: ReturnType<typeof crea
 const walls = ['wall/hall-north', 'wall/hall-south', 'wall/hall-west', 'wall/hall-east']
 const capture = () => {
   if (!drawMatrix || !drawObjects || !prepared || !viewport) throw Error('Actual physical draw did not provide its matrix/table')
-  const matrix = drawMatrix, inv = inverse(matrix), eye = [inv[8]! / inv[11]!, inv[9]! / inv[11]!, inv[10]! / inv[11]!], selected = visiblePhysicalInspectionBoundaries(prepared.meshes, matrix)
-  return { pose: viewport.cameraPose(), matrix, eye, walls: walls.map(id => {
-    const object = scene.objects.find(object => object.id === id)!, n = object.inspectionBoundary!.outward, b = object.bounds!, p = b.min.map((value, axis) => (value + b.max[axis]!) / 2) as [number, number, number]
+  const matrix = drawMatrix, inv = inverse(matrix), eye = [inv[8]! / inv[11]!, inv[9]! / inv[11]!, inv[10]! / inv[11]!], selected = visiblePhysicalInspectionBoundaries(prepared.meshes, matrix), pose = viewport.cameraPose()
+  const target = MercatorCoordinate.fromLngLat(pose.center as [number, number], pose.elevation), reference = transform(inverse(localMercatorMatrix(scene.anchor, scene.bearing)), [target.x, target.y, target.z])
+  return { pose, matrix, eye, reference, walls: walls.map(id => {
+    const object = scene.objects.find(object => object.id === id)!, n = object.inspectionBoundary!.outward, b = object.bounds!, center = b.min.map((value, axis) => (value + b.max[axis]!) / 2) as [number, number, number], p = reference
     // Independent facing oracle uses only forward projection of an oriented
     // wall tangent basis. It does not extract/invert a camera position.
     const a = transform(matrix, p), u = transform(matrix, [p[0] - n[1], p[1] + n[0], p[2]]), v = transform(matrix, [p[0], p[1], p[2] + 1])
     const area = (u[0] - a[0]) * (v[1] - a[1]) - (u[1] - a[1]) * (v[0] - a[0])
     const helper = [...new Set(selected.filter(mesh => mesh.object.id === id).map(mesh => mesh.inspectionPart))]
     const gpu = [...new Set(prepared!.meshes.filter((mesh, index) => mesh.object.id === id && drawObjects![index * 8 + 7]! > .5).map(mesh => mesh.inspectionPart))]
-    return { id, outward: n, center: p, area, expected: area > 0 ? 'cut' : 'full', helper, gpu }
+    return { id, outward: n, center, area, expected: area > 0 ? 'cut' : 'full', helper, gpu }
   }) }
 }
 ;(window as any).cutawayCameraProbe = {

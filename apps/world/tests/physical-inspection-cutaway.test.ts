@@ -18,7 +18,8 @@ const scene: PackPhysicalScene = {
 }
 const camera = (y: number) => {
   const near = 1, far = 100, projection = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0])
-  return multiply(projection, new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -y, -40, 1]))
+  const length = Math.hypot(y, 40), by = y / length, bz = 40 / length
+  return multiply(projection, new Float64Array([1, 0, 0, 0, 0, bz, by, 0, 0, -by, bz, 0, 0, 0, -length, 1]))
 }
 test('an authored high bay keeps its actual ceiling rather than another building’s global floor', () => {
   const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'operating' }
