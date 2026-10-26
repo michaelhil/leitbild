@@ -7,7 +7,7 @@ import type { PhysicalSceneView } from './types.ts'
 import { preparePhysicalRenderBuffers, type PhysicalRenderBuffers } from './render-buffers.ts'
 
 export interface PhysicalPreparedGeometry { readonly sourceAsset?: PhysicalPreparedGeometry; readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers; readonly surfaceOwnership: PhysicalSurfaceOwnershipDiagnostics }
-export interface PhysicalPreparationPoolMetrics { readonly workerAlive: boolean; readonly clients: number; readonly registeredSources: number; readonly registeredBytes: number; readonly leases: number; readonly inFlightJobs: number; readonly pinnedSources: number; readonly registrations: number; readonly viewRequests: number; readonly transferredBytes: number; readonly retainedViews: number; readonly retainedViewBytes: number; readonly cacheHits: number; readonly queuedViews: number; readonly skippedViews: number }
+export interface PhysicalPreparationPoolMetrics { readonly workerAlive: boolean; readonly workerCount: number; readonly workerBudget: number; readonly activeWorkers: number; readonly clients: number; readonly registeredSources: number; readonly registeredBytes: number; readonly leases: number; readonly inFlightJobs: number; readonly pinnedSources: number; readonly registrations: number; readonly viewRequests: number; readonly transferredBytes: number; readonly retainedViews: number; readonly retainedViewBytes: number; readonly cacheHits: number; readonly queuedViews: number; readonly skippedViews: number }
 export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity?: string, sourceKey?: string, signal?: AbortSignal) => Promise<PhysicalPreparedGeometry>) & {
   /** Real worker ports retain exact source families; pure offline/test ports own no worker. */
   readonly retainIdentities?: (identities: ReadonlySet<string>) => void
@@ -34,9 +34,10 @@ interface WorkerPort {
   readonly postMessage: (message: PhysicalPreparationRequest, transfer: Transferable[]) => void
   readonly terminate: () => void
 }
-interface Source { readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly owners: Set<number>; pins: number; registered: boolean; registration: Promise<void> | null; bytes: number }
+interface WorkerSlot { readonly port: WorkerPort; readonly sources: Set<Source>; activeView: number | null }
+interface Source { readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly owners: Set<number>; pins: number; registered: boolean; registration: Promise<void> | null; bytes: number; worker: WorkerSlot | null }
 interface Client { readonly identities: Set<string>; readonly requests: Set<{ readonly identity: string; readonly cancel: () => void }>; explicit: boolean }
-type Job = { readonly source: Source; readonly reject: (error: Error) => void } & (
+type Job = { readonly source: Source; readonly worker: WorkerSlot; readonly reject: (error: Error) => void } & (
   | { readonly kind: 'registration'; readonly resolve: () => void }
   | { readonly kind: 'view'; readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly view: PhysicalSceneView; readonly demands: Set<symbol>; readonly resolve: (value: PhysicalPreparedGeometry) => void }
 )
@@ -52,22 +53,36 @@ const preparedBuffers = (value: PhysicalPreparedGeometry): ReadonlySet<ArrayBuff
 }
 export const physicalPreparedGeometryBytes = (value: PhysicalPreparedGeometry): number => [...preparedBuffers(value)].reduce((bytes, buffer) => bytes + buffer.byteLength, 0)
 
-/** One shared real worker, immutable source registrations and independent host leases. */
+/** Reserve one reported logical CPU for the UI; no model-count or arbitrary worker cap. */
+export const physicalPreparationWorkerBudget = (reported?: number): number => {
+  if (reported === undefined) return 1 // No evidence for safe parallelism: retain real serial execution.
+  if (!Number.isInteger(reported) || reported < 1) throw new Error('Physical preparation requires a positive reported logical CPU count')
+  return Math.max(1,reported-1)
+}
+
+/** Shared exact view jobs, source-family worker affinity and independent host leases. */
 export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = () => {
   if (typeof Worker === 'undefined') throw new Error('Physical layout preparation requires a module Worker')
   return new Worker(new URL('./preparation-worker.ts', import.meta.url), { type: 'module' })
-}) => {
+}, hardwareConcurrency: () => number | undefined = () => typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency) => {
   const sources = new Map<string, Source>(), clients = new Map<number, Client>(), jobs = new Map<number, Job>()
+  const workers = new Set<WorkerSlot>(), affinity = new Map<string, WorkerSlot>(), workerBudget = physicalPreparationWorkerBudget(hardwareConcurrency())
   // Active views and resident GPU assets own the strong CPU lease. The pool
   // only discovers those assets; eviction can collect unused view variants.
   const shared = new Map<string, { readonly sourceKey: string; readonly identity: string; readonly value: WeakRef<PhysicalPreparedGeometry> }>()
   const pending = new Map<string, PendingView>(), viewQueue: number[] = []
-  let worker: WorkerPort | null = null, activeView: number | null = null, sequence = 0, clientSequence = 0, registrations = 0, viewRequests = 0, transferredBytes = 0, cacheHits = 0, skippedViews = 0
-  const stopIfUnused = (): void => { if (!clients.size && !sources.size && !jobs.size && worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); worker = null } }
+  let sequence = 0, clientSequence = 0, registrations = 0, viewRequests = 0, transferredBytes = 0, cacheHits = 0, skippedViews = 0
+  const stopWorker = (worker: WorkerSlot): void => {
+    workers.delete(worker); worker.port.onmessage = null; worker.port.onerror = null; worker.port.terminate()
+    for (const [identity, assigned] of affinity) if (assigned === worker) affinity.delete(identity)
+  }
+  const stopIfUnused = (): void => { for (const worker of workers) if (!worker.sources.size && ![...jobs.values()].some(job => job.worker === worker)) stopWorker(worker) }
   const releaseSource = (source: Source): void => {
     if (source.owners.size || source.pins || sources.get(source.key) !== source) return
-    if (source.registered) worker?.postMessage({ kind: 'release', sourceKey: source.key }, [])
+    if (source.registered) source.worker?.port.postMessage({ kind: 'release', sourceKey: source.key }, [])
+    const worker = source.worker; worker?.sources.delete(source); source.worker = null
     sources.delete(source.key)
+    if (worker && ![...worker.sources].some(candidate => candidate.identity === source.identity)) affinity.delete(source.identity)
     for (const [key, entry] of shared) if (entry.sourceKey === source.key) shared.delete(key)
     stopIfUnused()
   }
@@ -83,13 +98,13 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
   // superseded caller demand can be removed before it enters the worker FIFO.
   const dispatchView = (): void => {
     cancelUnneededQueued()
-    if (activeView !== null) return
-    while (viewQueue.length) {
-      const id = viewQueue.shift()!, job = jobs.get(id)
-      if (job?.kind !== 'view') continue
-      activeView = id
-      try { requireWorker().postMessage({ kind: 'prepare', id, sourceKey: job.source.key, key: job.key, identity: job.identity, view: job.view }, []); viewRequests++; return }
-      catch (error) { activeView = null; jobs.delete(id); forgetPending(job); job.reject(error instanceof Error ? error : new Error(String(error))) }
+    for (let at = 0; at < viewQueue.length;) {
+      const id = viewQueue[at]!, job = jobs.get(id)
+      if (job?.kind !== 'view') { viewQueue.splice(at,1); continue }
+      if (job.worker.activeView !== null) { at++; continue }
+      viewQueue.splice(at,1); job.worker.activeView = id
+      try { job.worker.port.postMessage({ kind: 'prepare', id, sourceKey: job.source.key, key: job.key, identity: job.identity, view: job.view }, []); viewRequests++ }
+      catch (error) { job.worker.activeView = null; jobs.delete(id); forgetPending(job); job.reject(error instanceof Error ? error : new Error(String(error))) }
     }
   }
   const demand = (client: Client, key: string, request: PendingView, signal?: AbortSignal): Promise<PhysicalPreparedGeometry> => {
@@ -102,8 +117,8 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
         cleanup(); reject(released()); cancelUnneededQueued()
         // Registration can outlive its caller. Forget only an obsolete request,
         // never another caller's shared demand or an already running view.
-        const running = activeView === null ? null : jobs.get(activeView)
-        if (!request.demands.size && !(running?.kind === 'view' && running.demands === request.demands) && pending.get(key) === request) pending.delete(key)
+        const running = [...workers].some(worker => { const job = worker.activeView === null ? null : jobs.get(worker.activeView); return job?.kind === 'view' && job.demands === request.demands })
+        if (!request.demands.size && !running && pending.get(key) === request) pending.delete(key)
       }
       client.requests.add(lease)
       signal?.addEventListener('abort', abort, { once: true })
@@ -111,8 +126,8 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
     })
   }
   const stopLastClient = (): void => {
-    const owned = worker; worker = null; activeView = null; viewQueue.length = 0
-    if (owned) { owned.onmessage = null; owned.onerror = null; owned.terminate() }
+    for (const worker of workers) stopWorker(worker)
+    viewQueue.length = 0
     const abandoned = [...jobs.values()]
     // Clear synchronously before promise finalizers run. A new host can then
     // acquire the same keys without joining a dead request or registration.
@@ -120,15 +135,14 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
     jobs.clear(); sources.clear(); shared.clear(); pending.clear()
     for (const job of abandoned) job.reject(released())
   }
-  const requireWorker = (): WorkerPort => {
-    if (worker) return worker
-    const owned = workerFactory(); worker = owned
+  const createWorker = (): WorkerSlot => {
+    const owned = workerFactory(), worker: WorkerSlot = { port: owned, sources: new Set(), activeView: null }; workers.add(worker)
     owned.onmessage = (event: MessageEvent<PhysicalPreparationResponse>) => {
-      if (worker !== owned) return
+      if (!workers.has(worker)) return
       const result = event.data, job = jobs.get(result.id)
-      if (!job) return
+      if (!job || job.worker !== worker) return
       jobs.delete(result.id)
-      if (job.kind === 'view') activeView = null
+      if (job.kind === 'view') worker.activeView = null
       try {
         if (result.kind === 'error') throw new Error(result.message)
         if (job.kind === 'registration') {
@@ -144,23 +158,39 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
       finally { dispatchView() }
     }
     owned.onerror = event => {
-      if (worker !== owned) return
-      worker = null; activeView = null; viewQueue.length = 0; owned.onmessage = null; owned.onerror = null; owned.terminate()
-      for (const source of sources.values()) { source.registered = false; source.registration = null }
+      if (!workers.has(worker)) return
+      stopWorker(worker)
+      for (const source of worker.sources) { source.registered = false; source.registration = null; source.worker = null; source.bytes = 0 }
+      worker.sources.clear()
       const error = new Error(`Physical preparation worker failed: ${event.message}`)
-      for (const job of jobs.values()) job.reject(error)
-      jobs.clear()
+      for (const [id, job] of jobs) if (job.worker === worker) { jobs.delete(id); if (job.kind === 'view') forgetPending(job); job.reject(error) }
+      for (let at = viewQueue.length-1; at >= 0; at--) if (!jobs.has(viewQueue[at]!)) viewQueue.splice(at,1)
+      dispatchView()
     }
-    return owned
+    return worker
+  }
+  const requireWorker = (source: Source): WorkerSlot => {
+    if (source.worker) return source.worker
+    let worker = affinity.get(source.identity)
+    if (!worker) {
+      // Demand is bounded by reported CPU capacity and source families, never
+      // by an authored feature count. At capacity, preserve per-family affinity
+      // on the least occupied registered-source working set.
+      if (workers.size < workerBudget) worker = createWorker()
+      else worker = [...workers].reduce((best,candidate) => candidate.sources.size < best.sources.size ? candidate : best)
+      affinity.set(source.identity,worker)
+    }
+    worker.sources.add(source); source.worker = worker; return worker
   }
   const register = (source: Source): Promise<void> => {
     if (source.registration) return source.registration
     const task = new Promise<void>((resolve, reject) => {
       const id = ++sequence
-      jobs.set(id, { kind: 'registration', source, resolve, reject })
       try {
+        const worker = requireWorker(source)
+        jobs.set(id, { kind: 'registration', source, worker, resolve, reject })
         const packed = copyPhysicalSceneForTransfer(source.scene), bytes = packed.transfers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
-        requireWorker().postMessage({ kind: 'register', id, sourceKey: source.key, scene: packed.scene }, packed.transfers)
+        worker.port.postMessage({ kind: 'register', id, sourceKey: source.key, scene: packed.scene }, packed.transfers)
         source.bytes = bytes; registrations++; transferredBytes += bytes
       } catch (error) { jobs.delete(id); reject(error instanceof Error ? error : new Error(String(error))) }
     })
@@ -171,13 +201,13 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
   const sourceFor = (scene: PackPhysicalScene, identity: string, sourceKey: string): Source => {
     let source = sources.get(sourceKey)
     if (source) { if (source.identity !== identity) throw new Error('Physical source registration key reused by a different geometry identity'); return source }
-    source = { key: sourceKey, identity, scene, owners: new Set([...clients].filter(([, client]) => client.identities.has(identity)).map(([id]) => id)), pins: 0, registered: false, registration: null, bytes: 0 }
+    source = { key: sourceKey, identity, scene, owners: new Set([...clients].filter(([, client]) => client.identities.has(identity)).map(([id]) => id)), pins: 0, registered: false, registration: null, bytes: 0, worker: null }
     sources.set(sourceKey, source); return source
   }
   const diagnostics = (): PhysicalPreparationPoolMetrics => {
     const retained = [...shared.values()].flatMap(entry => { const value = entry.value.deref(); return value ? [value] : [] })
     const buffers = new Set(retained.flatMap(value => [...preparedBuffers(value)]))
-    return { workerAlive: worker !== null, clients: clients.size, registeredSources: [...sources.values()].filter(source => source.registered).length, registeredBytes: [...sources.values()].reduce((bytes, source) => bytes + source.bytes, 0), leases: [...sources.values()].reduce((sum, source) => sum + source.owners.size, 0), inFlightJobs: jobs.size, pinnedSources: [...sources.values()].filter(source => source.pins > 0).length, registrations, viewRequests, transferredBytes, retainedViews: retained.length, retainedViewBytes: [...buffers].reduce((bytes, buffer) => bytes + buffer.byteLength, 0), cacheHits, queuedViews: viewQueue.length, skippedViews }
+    return { workerAlive: workers.size > 0, workerCount: workers.size, workerBudget, activeWorkers: [...workers].filter(worker => worker.activeView !== null).length, clients: clients.size, registeredSources: [...sources.values()].filter(source => source.registered).length, registeredBytes: [...sources.values()].reduce((bytes, source) => bytes + source.bytes, 0), leases: [...sources.values()].reduce((sum, source) => sum + source.owners.size, 0), inFlightJobs: jobs.size, pinnedSources: [...sources.values()].filter(source => source.pins > 0).length, registrations, viewRequests, transferredBytes, retainedViews: retained.length, retainedViewBytes: [...buffers].reduce((bytes, buffer) => bytes + buffer.byteLength, 0), cacheHits, queuedViews: viewQueue.length, skippedViews }
   }
   return {
     createPreparer(): PhysicalGeometryPreparer {
@@ -200,7 +230,9 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
             await register(source)
             if (!source.owners.size || !demands.size) throw released()
             return await new Promise<PhysicalPreparedGeometry>((resolve, reject) => {
-              const id = ++sequence; jobs.set(id, { kind: 'view', source, scene, key, identity, view, demands, resolve, reject }); viewQueue.push(id); dispatchView()
+              const worker = source.worker
+              if (!worker) { reject(new Error('Registered physical source has no preparation worker')); return }
+              const id = ++sequence; jobs.set(id, { kind: 'view', source, worker, scene, key, identity, view, demands, resolve, reject }); viewQueue.push(id); dispatchView()
             })
           } finally { source.pins--; releaseSource(source) }
         })()
