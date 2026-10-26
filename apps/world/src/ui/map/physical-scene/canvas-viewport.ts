@@ -11,7 +11,7 @@ const perspective = (angle: number, aspect: number, near: number, far: number): 
 }
 /** Dedicated real WebGL canvas and camera; it implements no pretend MapLibre methods. */
 export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): PhysicalViewport => {
-  const gl = canvas.getContext('webgl2', { antialias: true, alpha: false })
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false })
   if (!gl) throw new Error('The physical layout browser requires WebGL 2')
   const listeners = new Map<PhysicalViewportEvent, Set<() => void>>()
   let center: [number, number] = [0, 0], targetZ = 0, pitch = 0, bearing = 0, zoom = 0, revision = 0, queued: number | null = null, destroyed = false, lost = false

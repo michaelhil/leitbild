@@ -21,7 +21,7 @@ const loaded = new Promise<void>(resolve => map.once('load', () => resolve()))
 const palette: PhysicalScenePalette = { materials: { plinth: [1,1,1], pavement: [.03,.1,.95], background: [.2,.2,.2] }, defaultMaterial: [.03, .7, .08], line: [1, 0, 1], lineOpacity: .26, contextLineOpacity: .1 }
 const tick = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 type Controller = ReturnType<typeof createPhysicalSceneControllerForViewport>
-interface Host { viewport: PhysicalViewport; controller: Controller; gl: WebGL2RenderingContext; matrices: number[][]; solidsOnly: boolean; suppressedLines: number }
+interface Host { viewport: PhysicalViewport; controller: Controller; gl: WebGL2RenderingContext; matrices: number[][]; solidsOnly: boolean; suppressedLines: number; drawState?: {depthBits:number;samples:number} }
 const hosts = new globalThis.Map<string, Host>()
 let active: Host | null = null
 const rendered = (host: Host) => new Promise<void>(resolve => { const off = host.viewport.surface.on('render', () => { off(); resolve() }); host.viewport.requestRender() })
@@ -35,7 +35,7 @@ const startHost = (name: string): Host => {
     if (target === gl.ARRAY_BUFFER && usage === gl.DYNAMIC_DRAW && data instanceof Float32Array && data.length === 17) result.matrices.push([...data.subarray(0, 16)])
     ;(bufferData as (...args: unknown[]) => void)(target, data, usage, ...rest)
   }) as typeof gl.bufferData
-  gl.drawArraysInstanced = (mode, first, count, instances) => { if (result.solidsOnly && mode === gl.LINES) { result.suppressedLines++; return }; draw(mode, first, count, instances) }
+  gl.drawArraysInstanced = (mode, first, count, instances) => { if(mode===gl.TRIANGLES&&!result.drawState)result.drawState={depthBits:gl.getParameter(gl.DEPTH_BITS),samples:gl.getParameter(gl.SAMPLES)}; if (result.solidsOnly && mode === gl.LINES) { result.suppressedLines++; return }; draw(mode, first, count, instances) }
   result.controller = createPhysicalSceneControllerForViewport(viewport, { palette, onChange() {}, reportError: error => errors.push(error.message), fitPadding: () => ({ top: 40, bottom: 40, left: 40, right: 40 }) })
   result.controller.setSources([{ descriptor, load: async () => scene }]); return result
 }
@@ -52,7 +52,7 @@ window.yardDepthProbe = {
   async phase(name, solidsOnly, scale) {
     await loaded; active?.controller.setActive(false); mapElement.hidden = name !== 'map'; canvas.hidden = name !== 'canvas'
     let host = hosts.get(name); if (!host) { host = startHost(name); hosts.set(name, host) }
-    active = host; host.solidsOnly = solidsOnly; host.controller.setActive(true); if (name === 'map') map.resize()
+    active = host; delete host.drawState; host.solidsOnly = solidsOnly; host.controller.setActive(true); if (name === 'map') map.resize()
     host.controller.setView(scene.id, { ...host.controller.presentations()[0]!.view, mode: '3d', levelId: 'all', cutaway: true, live: false, separation: 0 })
     const target = scale === 'yard' ? { occurrenceId: baseObject.id, preservePose: false } : { preservePose: false }
     host.controller.focus(scene.id, target); await ready(host); host.controller.focus(scene.id, target); await rendered(host)
@@ -83,7 +83,7 @@ window.yardDepthProbe = {
     }
     const eligible=new Set([...byPoint.keys()].filter(point=>{const values=(frames as Array<{samples:any[]}>).flatMap(frame=>frame.samples).filter(sample=>sample.point===point);return values.length===13&&values.every(sample=>sample.gray)}))
     const tracks=[...byPoint].filter(([point])=>eligible.has(point)).map(([point,values])=>({point,values,flips:values.slice(1).reduce((sum,value,i)=>sum+Number(value!==values[i]),0)})), all=(frames as Array<{samples:any[]}>).flatMap(frame=>frame.samples).filter(sample=>eligible.has(sample.point)),gpuInfo=gl.getExtension('WEBGL_debug_renderer_info')
-    return {host:name,scale,solidsOnly,baseBounds:b,expectedNormal:[0,0,1],eligiblePoints:[...eligible],sampled:all.length,correctPainted:all.filter(s=>s.painted==='top').length,underside:all.filter(s=>s.painted==='underside').length,other:all.filter(s=>s.painted==='other').length,tracks,frames,glDepthBits:gl.getParameter(gl.DEPTH_BITS),samples:gl.getParameter(gl.SAMPLES),dpr:devicePixelRatio,viewport:{width:box.width,height:box.height,bufferWidth:gl.drawingBufferWidth,bufferHeight:gl.drawingBufferHeight},gpu:gpuInfo?gl.getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),metrics:host.controller.diagnostics(),glError:gl.getError()}
+    return {host:name,scale,solidsOnly,drawState:host.drawState,baseBounds:b,expectedNormal:[0,0,1],eligiblePoints:[...eligible],sampled:all.length,correctPainted:all.filter(s=>s.painted==='top').length,underside:all.filter(s=>s.painted==='underside').length,other:all.filter(s=>s.painted==='other').length,tracks,frames,glDepthBits:gl.getParameter(gl.DEPTH_BITS),samples:gl.getParameter(gl.SAMPLES),dpr:devicePixelRatio,viewport:{width:box.width,height:box.height,bufferWidth:gl.drawingBufferWidth,bufferHeight:gl.drawingBufferHeight},gpu:gpuInfo?gl.getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),metrics:host.controller.diagnostics(),glError:gl.getError()}
   },
   finish(){for(const host of hosts.values())host.controller.destroy();return{errors}},
 }

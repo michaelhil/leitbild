@@ -1,6 +1,6 @@
 type GL = WebGL2RenderingContext
 
-/** State changed by physical drawing and its owned Plan pass; the host target is never cleared. */
+/** State changed by physical drawing and its owned colour/depth pass; the host target is never cleared. */
 export const captureSceneGlState = (gl: GL) => {
   const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
   gl.activeTexture(gl.TEXTURE0); const texture0 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null; const sampler0 = gl.getParameter(gl.SAMPLER_BINDING) as WebGLSampler | null

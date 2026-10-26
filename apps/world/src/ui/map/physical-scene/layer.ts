@@ -11,7 +11,8 @@ export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArra
   let finalMetrics: ReturnType<ReturnType<typeof createPhysicalSceneRenderer>['metrics']> | null = null
   const dispose = (): void => { if (!renderer) return; renderer.dispose(); finalMetrics = renderer.metrics(); renderer = null }
   const layer: CustomLayerInterface = {
-    id, type: 'custom', renderingMode: '3d',
+    // The physical model owns depth; MapLibre receives only the colour overlay.
+    id, type: 'custom', renderingMode: '2d',
     onAdd(map: MapLibreMap, context) { gl = context; try { renderer = createPhysicalSceneRenderer(context, entries, palette, () => map.getCanvas().getBoundingClientRect(), reportError) } catch (error) { reportError(error instanceof Error ? error : new Error(String(error))) } },
     render(_context, input) { renderer?.render(input.defaultProjectionData.mainMatrix) }, onRemove: dispose,
   }
