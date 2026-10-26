@@ -1,0 +1,392 @@
+{
+  "at": "2026-10-26T20:43:05.156Z",
+  "bun": "1.4.0",
+  "gitRevision": "2606471572c46e42104913638c69e77263338fc4",
+  "worldRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-layout-cache-lifecycle-20261026/apps/world",
+  "codeHashes": [
+    {
+      "file": "preparation.ts",
+      "sha256": "1a254b6aa6a3b4546dac24e55ed2bd12314bf5921705bd7b64810aca7630537b"
+    },
+    {
+      "file": "surface-ownership.ts",
+      "sha256": "396df497db8efdd2ab9725fc4cb0501db37690ad11ab89930bc6758752f8c37c"
+    },
+    {
+      "file": "spatial-index.ts",
+      "sha256": "ba202fbaca8f0099f50f53201eddd3f7e928b5e8076ae232b1ff069f157867f5"
+    },
+    {
+      "file": "geometry.ts",
+      "sha256": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd"
+    },
+    {
+      "file": "render-buffers.ts",
+      "sha256": "cd4da318b99cc8b27d86f73a54bb3961a171d42ec3ac716389371d06ad9556f0"
+    },
+    {
+      "file": "picking.ts",
+      "sha256": "6c8aa7685592b2c8feadae7ddf544bfc0111a777f8a3bfa1b62bda09bb48d41f"
+    }
+  ],
+  "hypotheticalAllMatricesUniqueCpuBuffers": 192684,
+  "hypotheticalAllMatricesTypedCpuBytes": 891825276,
+  "hypotheticalAllMatricesGpuGeometryBytes": 290177664,
+  "matrices": [
+    {
+      "source": "pwr-full-unit-explorer",
+      "sourceSha256": "edcb2564b2eb7fb9c6a6976ed52d5c95f050aae149757f5b20014610ed4154df",
+      "authoredLevels": [
+        "lower",
+        "service",
+        "operating",
+        "refuelling"
+      ],
+      "variantCount": 20,
+      "hypotheticalAllVariantsTypedCpuBytes": 343574120,
+      "hypotheticalAllVariantsGpuGeometryBytes": 110037408,
+      "records": [
+        {
+          "mode": "2d",
+          "cutaway": true,
+          "levelId": "lower",
+          "separation": 0,
+          "preparedFragments": 526,
+          "typedCpuBuffers": 3162,
+          "typedCpuBytes": 21166080,
+          "packedGpuGeometryBytes": 6883296
+        },
+        {
+          "mode": "2d",
+          "cutaway": true,
+          "levelId": "service",
+          "separation": 0,
+          "preparedFragments": 397,
+          "typedCpuBuffers": 2388,
+          "typedCpuBytes": 8156956,
+          "packedGpuGeometryBytes": 2611296
+        },
+        {
+          "mode": "2d",
+          "cutaway": true,
+          "levelId": "operating",
+          "separation": 0,
+          "preparedFragments": 374,
+          "typedCpuBuffers": 2250,
+          "typedCpuBytes": 10491756,
+          "packedGpuGeometryBytes": 3341616
+        },
+        {
+          "mode": "2d",
+          "cutaway": true,
+          "levelId": "refuelling",
+          "separation": 0,
+          "preparedFragments": 250,
+          "typedCpuBuffers": 1506,
+          "typedCpuBytes": 2764556,
+          "packedGpuGeometryBytes": 888960
+        },
+        {
+          "mode": "2d",
+          "cutaway": false,
+          "levelId": "lower",
+          "separation": 0,
+          "preparedFragments": 581,
+          "typedCpuBuffers": 3492,
+          "typedCpuBytes": 22369244,
+          "packedGpuGeometryBytes": 7249824
+        },
+        {
+          "mode": "2d",
+          "cutaway": false,
+          "levelId": "service",
+          "separation": 0,
+          "preparedFragments": 418,
+          "typedCpuBuffers": 2514,
+          "typedCpuBytes": 8714256,
+          "packedGpuGeometryBytes": 2786784
+        },
+        {
+          "mode": "2d",
+          "cutaway": false,
+          "levelId": "operating",
+          "separation": 0,
+          "preparedFragments": 387,
+          "typedCpuBuffers": 2328,
+          "typedCpuBytes": 10692184,
+          "packedGpuGeometryBytes": 3420336
+        },
+        {
+          "mode": "2d",
+          "cutaway": false,
+          "levelId": "refuelling",
+          "separation": 0,
+          "preparedFragments": 255,
+          "typedCpuBuffers": 1536,
+          "typedCpuBytes": 3656336,
+          "packedGpuGeometryBytes": 1153728
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "lower",
+          "separation": 0,
+          "preparedFragments": 872,
+          "typedCpuBuffers": 5238,
+          "typedCpuBytes": 21699924,
+          "packedGpuGeometryBytes": 7007808
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "service",
+          "separation": 0,
+          "preparedFragments": 516,
+          "typedCpuBuffers": 3102,
+          "typedCpuBytes": 8651004,
+          "packedGpuGeometryBytes": 2747904
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "operating",
+          "separation": 0,
+          "preparedFragments": 485,
+          "typedCpuBuffers": 2916,
+          "typedCpuBytes": 11163376,
+          "packedGpuGeometryBytes": 3538416
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "refuelling",
+          "separation": 0,
+          "preparedFragments": 294,
+          "typedCpuBuffers": 1770,
+          "typedCpuBytes": 2919068,
+          "packedGpuGeometryBytes": 935808
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "all",
+          "separation": 0,
+          "preparedFragments": 1417,
+          "typedCpuBuffers": 8508,
+          "typedCpuBytes": 36775952,
+          "packedGpuGeometryBytes": 11783520
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "all",
+          "separation": 1,
+          "preparedFragments": 2074,
+          "typedCpuBuffers": 12450,
+          "typedCpuBytes": 42081976,
+          "packedGpuGeometryBytes": 13483728
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "lower",
+          "separation": 0,
+          "preparedFragments": 945,
+          "typedCpuBuffers": 5676,
+          "typedCpuBytes": 23041920,
+          "packedGpuGeometryBytes": 7413312
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "service",
+          "separation": 0,
+          "preparedFragments": 546,
+          "typedCpuBuffers": 3282,
+          "typedCpuBytes": 9193704,
+          "packedGpuGeometryBytes": 2922528
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "operating",
+          "separation": 0,
+          "preparedFragments": 514,
+          "typedCpuBuffers": 3090,
+          "typedCpuBytes": 11458876,
+          "packedGpuGeometryBytes": 3640944
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "refuelling",
+          "separation": 0,
+          "preparedFragments": 453,
+          "typedCpuBuffers": 2724,
+          "typedCpuBytes": 4434000,
+          "packedGpuGeometryBytes": 1376256
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "all",
+          "separation": 0,
+          "preparedFragments": 1611,
+          "typedCpuBuffers": 9672,
+          "typedCpuBytes": 38384280,
+          "packedGpuGeometryBytes": 12244512
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "all",
+          "separation": 1,
+          "preparedFragments": 2365,
+          "typedCpuBuffers": 14196,
+          "typedCpuBytes": 45758672,
+          "packedGpuGeometryBytes": 14606832
+        }
+      ]
+    },
+    {
+      "source": "pwr-campus-explorer",
+      "sourceSha256": "8da02c5408ababed931f5007240fed1a610e8d6b763e15f32c0827bfaedfdc0c",
+      "authoredLevels": [
+        "campus-ground",
+        "admin-upper"
+      ],
+      "variantCount": 12,
+      "hypotheticalAllVariantsTypedCpuBytes": 548251156,
+      "hypotheticalAllVariantsGpuGeometryBytes": 180140256,
+      "records": [
+        {
+          "mode": "2d",
+          "cutaway": true,
+          "levelId": "campus-ground",
+          "separation": 0,
+          "preparedFragments": 1070,
+          "typedCpuBuffers": 6426,
+          "typedCpuBytes": 42988268,
+          "packedGpuGeometryBytes": 14225232
+        },
+        {
+          "mode": "2d",
+          "cutaway": true,
+          "levelId": "admin-upper",
+          "separation": 0,
+          "preparedFragments": 1011,
+          "typedCpuBuffers": 6072,
+          "typedCpuBytes": 43193420,
+          "packedGpuGeometryBytes": 14173008
+        },
+        {
+          "mode": "2d",
+          "cutaway": false,
+          "levelId": "campus-ground",
+          "separation": 0,
+          "preparedFragments": 1077,
+          "typedCpuBuffers": 6468,
+          "typedCpuBytes": 45976068,
+          "packedGpuGeometryBytes": 15131952
+        },
+        {
+          "mode": "2d",
+          "cutaway": false,
+          "levelId": "admin-upper",
+          "separation": 0,
+          "preparedFragments": 1016,
+          "typedCpuBuffers": 6102,
+          "typedCpuBytes": 43101500,
+          "packedGpuGeometryBytes": 14157936
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "campus-ground",
+          "separation": 0,
+          "preparedFragments": 1507,
+          "typedCpuBuffers": 9048,
+          "typedCpuBytes": 44176236,
+          "packedGpuGeometryBytes": 14555184
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "admin-upper",
+          "separation": 0,
+          "preparedFragments": 1206,
+          "typedCpuBuffers": 7242,
+          "typedCpuBytes": 43964808,
+          "packedGpuGeometryBytes": 14394576
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "all",
+          "separation": 0,
+          "preparedFragments": 1707,
+          "typedCpuBuffers": 10248,
+          "typedCpuBytes": 47100936,
+          "packedGpuGeometryBytes": 15482064
+        },
+        {
+          "mode": "3d",
+          "cutaway": true,
+          "levelId": "all",
+          "separation": 1,
+          "preparedFragments": 1818,
+          "typedCpuBuffers": 10914,
+          "typedCpuBytes": 48624948,
+          "packedGpuGeometryBytes": 15954096
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "campus-ground",
+          "separation": 0,
+          "preparedFragments": 1508,
+          "typedCpuBuffers": 9054,
+          "typedCpuBytes": 46680148,
+          "packedGpuGeometryBytes": 15341904
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "admin-upper",
+          "separation": 0,
+          "preparedFragments": 1256,
+          "typedCpuBuffers": 7542,
+          "typedCpuBytes": 44021112,
+          "packedGpuGeometryBytes": 14428752
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "all",
+          "separation": 0,
+          "preparedFragments": 1757,
+          "typedCpuBuffers": 10548,
+          "typedCpuBytes": 47232276,
+          "packedGpuGeometryBytes": 15520560
+        },
+        {
+          "mode": "3d",
+          "cutaway": false,
+          "levelId": "all",
+          "separation": 1,
+          "preparedFragments": 1869,
+          "typedCpuBuffers": 11220,
+          "typedCpuBytes": 51191436,
+          "packedGpuGeometryBytes": 16774992
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "CPU-only storage census, not a latency, frame-rate, peak-memory or GPU measurement.",
+    "Each physical authored floor in Plan/3D, cut/uncut, and All/Stack preparation state is enumerated; Plan-All and nonzero Stack magnitudes normalize to existing semantic variants.",
+    "CPU counts unique underlying typed buffers for prepared vertices/strokes, packed upload geometry and picking indices. Source geometry arrays, JavaScript metadata/heap, worker copies, GL tables/driver allocation and Plan framebuffers are excluded.",
+    "Hypothetical whole-matrix sums use weak identity bookkeeping and do not make the product retain all visited views. Actual residency follows current controllers and the existing GPU working-set policy.",
+    "Bindings are empty for this geometry-only diagnostic; no operational readings, source pins or plant ownership are changed."
+  ]
+}

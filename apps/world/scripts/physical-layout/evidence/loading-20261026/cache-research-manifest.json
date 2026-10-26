@@ -1,0 +1,10 @@
+{
+  "receipt.raw.json": {
+    "bytes": 5298452,
+    "sha256": "dc44f0c08253d65b7a962f25007839e4a9f94b0d331aa95ed1669e43dfc55e97"
+  },
+  "summary.json": {
+    "bytes": 38895,
+    "sha256": "109af3bbec8567ee846734eb9e0ec7d57e347841aec358fd9b087bfccd9bed92"
+  }
+}

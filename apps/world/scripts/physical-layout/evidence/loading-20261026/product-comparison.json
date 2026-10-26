@@ -1,0 +1,549 @@
+{
+  "baselineApp": "4f309c67c7a1bd69a7eb9cac7363f8f2979e3f4b",
+  "candidateApp": "54de577804561968133b8904699c7687da618be2",
+  "productionSourceTree": "a4ce7c9ba8ac7da30b09a2cfc98c12fbaa1c7079",
+  "observerHashEqual": true,
+  "instrumentationSha256": "3b8b7035ba3d8b27c65f39083fac57d3d266593d8b5fd946be509d6f4816d011",
+  "pairedRuns": 1,
+  "sameRun": true,
+  "milestoneSemantics": {
+    "firstDraw": "Actual draw of requested semantic key.",
+    "gpuCheckpoint": "All observed physical jobs drained plus GPU fence; site cases also require five layouts ready. Not first target-frame completion.",
+    "ownerFresh": "First checked validated freshness after the settled checkpoint; upper bound, not first fresh arrival."
+  },
+  "actions": [
+    {
+      "name": "open-browser-cold",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "readyCount": 5
+      },
+      "before": {
+        "actionToFirstDrawMs": 1864,
+        "actionToGpuCompletedMs": 3689.2999999523163,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 1643.5,
+        "actionToGpuCompletedMs": 2855.7999999523163,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        }
+      },
+      "beforePrepares": 4,
+      "candidatePrepares": 2
+    },
+    {
+      "name": "site-3d",
+      "expected": {
+        "mode": "3d",
+        "readyCount": 5
+      },
+      "before": {
+        "actionToFirstDrawMs": 22.899999856948853,
+        "actionToGpuCompletedMs": 42.09999990463257,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 23.09999990463257,
+        "actionToGpuCompletedMs": 31,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        }
+      },
+      "beforePrepares": 0,
+      "candidatePrepares": 0
+    },
+    {
+      "name": "first-turbine-hall-focus",
+      "expected": {
+        "mode": "3d"
+      },
+      "before": {
+        "actionToFirstDrawMs": 17.90000009536743,
+        "actionToGpuCompletedMs": 29,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5389.799999952316,
+          "actionToFreshMs": 32.60000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 20.600000143051147,
+        "actionToGpuCompletedMs": 28.700000047683716,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4269.5,
+          "actionToFreshMs": 32,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 2,
+      "candidatePrepares": 2
+    },
+    {
+      "name": "first-operating-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "operating"
+      },
+      "before": {
+        "actionToFirstDrawMs": 313.40000009536743,
+        "actionToGpuCompletedMs": 338.40000009536743,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5732.899999856949,
+          "actionToFreshMs": 341.7000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 264,
+        "actionToGpuCompletedMs": 278.60000014305115,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4550.400000095367,
+          "actionToFreshMs": 279.40000009536743,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 1,
+      "candidatePrepares": 1
+    },
+    {
+      "name": "first-stack-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all"
+      },
+      "before": {
+        "actionToFirstDrawMs": 22.100000143051147,
+        "actionToGpuCompletedMs": 35.700000047683716,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5786.799999952316,
+          "actionToFreshMs": 52.90000009536743,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 21.600000143051147,
+        "actionToGpuCompletedMs": 31.800000190734863,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4583.5,
+          "actionToFreshMs": 32.5,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 0,
+      "candidatePrepares": 0
+    },
+    {
+      "name": "gc-return-operating-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "operating"
+      },
+      "before": {
+        "actionToFirstDrawMs": 287,
+        "actionToGpuCompletedMs": 299,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6193.399999856949,
+          "actionToFreshMs": 339.5,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 251.60000014305115,
+        "actionToGpuCompletedMs": 267.2000000476837,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4918.900000095367,
+          "actionToFreshMs": 268.7000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 1,
+      "candidatePrepares": 1
+    },
+    {
+      "name": "gc-return-stack-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all"
+      },
+      "before": {
+        "actionToFirstDrawMs": 26.700000047683716,
+        "actionToGpuCompletedMs": 32.80000019073486,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6313.899999856949,
+          "actionToFreshMs": 60.700000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 25.200000047683716,
+        "actionToGpuCompletedMs": 32.5,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5016.800000190735,
+          "actionToFreshMs": 33.10000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 0,
+      "candidatePrepares": 0
+    },
+    {
+      "name": "first-uncut-stack",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": false
+      },
+      "before": {
+        "actionToFirstDrawMs": 1119,
+        "actionToGpuCompletedMs": 1132.4000000953674,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7477.899999856949,
+          "actionToFreshMs": 1157.7000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 919.8999998569489,
+        "actionToGpuCompletedMs": 930.6999998092651,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5950.300000190735,
+          "actionToFreshMs": 931.5,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 1,
+      "candidatePrepares": 1
+    },
+    {
+      "name": "gc-return-cutaway-stack",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true
+      },
+      "before": {
+        "actionToFirstDrawMs": 27.800000190734863,
+        "actionToGpuCompletedMs": 35.80000019073486,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7596.399999856949,
+          "actionToFreshMs": 62.700000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 25.100000143051147,
+        "actionToGpuCompletedMs": 31.40000009536743,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6032.800000190735,
+          "actionToFreshMs": 32.200000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 0,
+      "candidatePrepares": 0
+    },
+    {
+      "name": "first-plan",
+      "expected": {
+        "mode": "2d"
+      },
+      "before": {
+        "actionToFirstDrawMs": 514.8000001907349,
+        "actionToGpuCompletedMs": 542.1000001430511,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 8152.799999952316,
+          "actionToFreshMs": 545.6000001430511,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 439.2000000476837,
+        "actionToGpuCompletedMs": 448.60000014305115,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6485.400000095367,
+          "actionToFreshMs": 451.2000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 3,
+      "candidatePrepares": 3
+    },
+    {
+      "name": "first-plan-operating",
+      "expected": {
+        "mode": "2d",
+        "levelId": "operating"
+      },
+      "before": {
+        "actionToFirstDrawMs": 232.29999995231628,
+        "actionToGpuCompletedMs": 259.2999999523163,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 8417,
+          "actionToFreshMs": 262.10000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 197.90000009536743,
+        "actionToGpuCompletedMs": 212.79999995231628,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6700.200000047684,
+          "actionToFreshMs": 213.60000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 1,
+      "candidatePrepares": 1
+    },
+    {
+      "name": "first-plan-lower",
+      "expected": {
+        "mode": "2d",
+        "levelId": "lower"
+      },
+      "before": {
+        "actionToFirstDrawMs": 5.800000190734863,
+        "actionToGpuCompletedMs": 17.90000009536743,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 8453.599999904633,
+          "actionToFreshMs": 35.40000009536743,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 16.40000009536743,
+        "actionToGpuCompletedMs": 31.5,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6733.400000095367,
+          "actionToFreshMs": 32.200000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 0,
+      "candidatePrepares": 0
+    },
+    {
+      "name": "gc-return-plan-operating",
+      "expected": {
+        "mode": "2d",
+        "levelId": "operating"
+      },
+      "before": {
+        "actionToFirstDrawMs": 235.09999990463257,
+        "actionToGpuCompletedMs": 259.5,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 8782.199999809265,
+          "actionToFreshMs": 262.69999980926514,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 17.59999990463257,
+        "actionToGpuCompletedMs": 32.59999990463257,
+        "gpuBufferFromPriorResponse": true,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6816.700000047684,
+          "actionToFreshMs": 33.299999952316284,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 1,
+      "candidatePrepares": 0
+    },
+    {
+      "name": "return-3d-operating",
+      "expected": {
+        "mode": "3d",
+        "levelId": "operating"
+      },
+      "before": {
+        "actionToFirstDrawMs": 301.59999990463257,
+        "actionToGpuCompletedMs": 1767.2000000476837,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 10556,
+          "actionToFreshMs": 1769.9000000953674,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 233.90000009536743,
+        "actionToGpuCompletedMs": 1315.4000000953674,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 8133.600000143051,
+          "actionToFreshMs": 1316.2000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      },
+      "beforePrepares": 3,
+      "candidatePrepares": 2
+    },
+    {
+      "name": "gc-fresh-browser-owner",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "readyCount": 5
+      },
+      "before": {
+        "actionToFirstDrawMs": 1110.0999999046326,
+        "actionToGpuCompletedMs": 2714.9000000953674,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        }
+      },
+      "candidate": {
+        "actionToFirstDrawMs": 934.5,
+        "actionToGpuCompletedMs": 2041.2000000476837,
+        "gpuBufferFromPriorResponse": false,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        }
+      },
+      "beforePrepares": 4,
+      "candidatePrepares": 2
+    }
+  ],
+  "ownerRequests": {
+    "before": {
+      "allPresence": 23,
+      "allLayoutReads": 34,
+      "selectedPhasePresence": 10
+    },
+    "candidate": {
+      "allPresence": 13,
+      "allLayoutReads": 28,
+      "selectedPhasePresence": 0
+    }
+  },
+  "visual": {
+    "primary-dpr1": {
+      "passed": true,
+      "phases": 12,
+      "sampled": 7634,
+      "correctPainted": 7634,
+      "exactTargetPicks": 7634,
+      "unstableTracks": 0,
+      "fixtureEqualToPriorFinal95c": true,
+      "uploadedMatricesEqualToPriorFinal95c": true,
+      "rendererCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+      "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e"
+    },
+    "primary-dpr2": {
+      "passed": true,
+      "phases": 12,
+      "sampled": 7634,
+      "correctPainted": 7634,
+      "exactTargetPicks": 7634,
+      "unstableTracks": 0,
+      "fixtureEqualToPriorFinal95c": true,
+      "uploadedMatricesEqualToPriorFinal95c": true,
+      "rendererCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+      "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e"
+    },
+    "real-gap-dpr1": {
+      "passed": true,
+      "phases": 4,
+      "sampled": 220,
+      "correctPainted": 220,
+      "exactTargetPicks": 220,
+      "unstableTracks": 0,
+      "fixtureEqualToPriorFinal95c": true,
+      "uploadedMatricesEqualToPriorFinal95c": true,
+      "rendererCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+      "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200"
+    },
+    "real-gap-dpr2": {
+      "passed": true,
+      "phases": 4,
+      "sampled": 220,
+      "correctPainted": 220,
+      "exactTargetPicks": 220,
+      "unstableTracks": 0,
+      "fixtureEqualToPriorFinal95c": true,
+      "uploadedMatricesEqualToPriorFinal95c": true,
+      "rendererCommit": "b8e2544e5081e9321c7b5ea3a8b1f892df1995f4",
+      "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200"
+    }
+  },
+  "cacheResource": {
+    "passed": true,
+    "reuse": [
+      {
+        "name": "3d",
+        "geometryUploadsDelta": 0,
+        "viewRequestsDelta": 0
+      },
+      {
+        "name": "plan",
+        "geometryUploadsDelta": 0,
+        "viewRequestsDelta": 0
+      }
+    ],
+    "ownerCorrect": true
+  }
+}

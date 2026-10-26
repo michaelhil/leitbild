@@ -1,0 +1,50 @@
+{
+  "primary-dpr1": {
+    "passed": true,
+    "phases": 12,
+    "sampled": 7634,
+    "correctPainted": 7634,
+    "exactTargetPicks": 7634,
+    "unstableTracks": 0,
+    "fixtureEqualToPriorFinal95c": true,
+    "uploadedMatricesEqualToPriorFinal95c": true,
+    "rendererCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+    "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e"
+  },
+  "primary-dpr2": {
+    "passed": true,
+    "phases": 12,
+    "sampled": 7634,
+    "correctPainted": 7634,
+    "exactTargetPicks": 7634,
+    "unstableTracks": 0,
+    "fixtureEqualToPriorFinal95c": true,
+    "uploadedMatricesEqualToPriorFinal95c": true,
+    "rendererCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+    "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e"
+  },
+  "real-gap-dpr1": {
+    "passed": true,
+    "phases": 4,
+    "sampled": 220,
+    "correctPainted": 220,
+    "exactTargetPicks": 220,
+    "unstableTracks": 0,
+    "fixtureEqualToPriorFinal95c": true,
+    "uploadedMatricesEqualToPriorFinal95c": true,
+    "rendererCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+    "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200"
+  },
+  "real-gap-dpr2": {
+    "passed": true,
+    "phases": 4,
+    "sampled": 220,
+    "correctPainted": 220,
+    "exactTargetPicks": 220,
+    "unstableTracks": 0,
+    "fixtureEqualToPriorFinal95c": true,
+    "uploadedMatricesEqualToPriorFinal95c": true,
+    "rendererCommit": "b8e2544e5081e9321c7b5ea3a8b1f892df1995f4",
+    "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200"
+  }
+}

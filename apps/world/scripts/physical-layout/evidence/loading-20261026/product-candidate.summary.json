@@ -1,0 +1,1469 @@
+{
+  "runnerCommit": "7fb179c86177a3e404727a7458e565aa600be417",
+  "testedAppCommit": "54de577804561968133b8904699c7687da618be2",
+  "instrumentationSha256": "3b8b7035ba3d8b27c65f39083fac57d3d266593d8b5fd946be509d6f4816d011",
+  "mounted": {
+    "navigationToControlsMs": 1423.701167,
+    "world": {
+      "at": 1278.1000001430511,
+      "pending": 0,
+      "jobs": 0,
+      "sources": 0
+    }
+  },
+  "gc": [
+    {
+      "name": "before-operating-return",
+      "before": {
+        "jobs": 9,
+        "sources": 2,
+        "at": 4584.300000190735
+      },
+      "after": {
+        "jobs": 9,
+        "sources": 2,
+        "at": 4649.900000095367
+      }
+    },
+    {
+      "name": "before-stack-return",
+      "before": {
+        "jobs": 10,
+        "sources": 2,
+        "at": 4919.700000047684
+      },
+      "after": {
+        "jobs": 10,
+        "sources": 2,
+        "at": 4983.400000095367
+      }
+    },
+    {
+      "name": "before-cutaway-return",
+      "before": {
+        "jobs": 11,
+        "sources": 2,
+        "at": 5951.400000095367
+      },
+      "after": {
+        "jobs": 11,
+        "sources": 2,
+        "at": 5998.900000095367
+      }
+    },
+    {
+      "name": "before-plan-return",
+      "before": {
+        "jobs": 15,
+        "sources": 2,
+        "at": 6734
+      },
+      "after": {
+        "jobs": 15,
+        "sources": 2,
+        "at": 6783.100000143051
+      }
+    },
+    {
+      "name": "before-fresh-browser-owner",
+      "before": {
+        "jobs": 17,
+        "sources": 2,
+        "at": 8141.400000095367
+      },
+      "after": {
+        "jobs": 17,
+        "sources": 2,
+        "at": 8205.800000190735
+      }
+    }
+  ],
+  "ownerBoundary": {
+    "at": 8141.200000047684,
+    "evidence": "0 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+    "pending": 0
+  },
+  "ownerRequests": [
+    {
+      "id": "78467.171",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974067.087763,
+      "wallTime": 1793047538.185869,
+      "response": 1974067.093782,
+      "status": 200,
+      "finished": 1974067.093673,
+      "startedWorldMs": 1870.768798828125,
+      "phase": "open-browser-cold",
+      "responseMs": 6.0189999639987946
+    },
+    {
+      "id": "78467.172",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974067.087915,
+      "wallTime": 1793047538.186004,
+      "response": 1974067.098578,
+      "status": 200,
+      "finished": 1974067.098763,
+      "startedWorldMs": 1870.90380859375,
+      "phase": "open-browser-cold",
+      "responseMs": 10.66299993544817
+    },
+    {
+      "id": "78467.173",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974067.088011,
+      "wallTime": 1793047538.186096,
+      "response": 1974067.574547,
+      "status": 200,
+      "finished": 1974067.567438,
+      "startedWorldMs": 1870.995849609375,
+      "phase": "open-browser-cold",
+      "responseMs": 486.5359999239445
+    },
+    {
+      "id": "78467.174",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974067.08808,
+      "wallTime": 1793047538.186163,
+      "response": 1974067.574713,
+      "status": 200,
+      "finished": 1974067.570361,
+      "startedWorldMs": 1871.062744140625,
+      "phase": "open-browser-cold",
+      "responseMs": 486.63300019688904
+    },
+    {
+      "id": "78467.175",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974067.094545,
+      "wallTime": 1793047538.192628,
+      "response": 1974067.382705,
+      "status": 200,
+      "finished": 1974067.383733,
+      "startedWorldMs": 1877.52783203125,
+      "phase": "open-browser-cold",
+      "responseMs": 288.1599999964237
+    },
+    {
+      "id": "78467.176",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-2\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974067.09915,
+      "wallTime": 1793047538.197238,
+      "response": 1974067.556114,
+      "status": 200,
+      "finished": 1974067.556089,
+      "startedWorldMs": 1882.137939453125,
+      "phase": "open-browser-cold",
+      "responseMs": 456.9640001282096
+    },
+    {
+      "id": "78467.178",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974067.227082,
+      "wallTime": 1793047538.325193,
+      "response": 1974067.574791,
+      "status": 200,
+      "finished": 1974067.572497,
+      "startedWorldMs": 2010.0927734375,
+      "phase": "open-browser-cold",
+      "responseMs": 347.7089998777956
+    },
+    {
+      "id": "78467.180",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-3\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974067.575944,
+      "wallTime": 1793047538.674039,
+      "response": 1974067.71533,
+      "status": 200,
+      "finished": 1974067.71535,
+      "startedWorldMs": 2358.938720703125,
+      "phase": "open-browser-cold",
+      "responseMs": 139.3860001116991
+    },
+    {
+      "id": "78467.181",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-4\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974067.576217,
+      "wallTime": 1793047538.674303,
+      "response": 1974067.892368,
+      "status": 200,
+      "finished": 1974067.892561,
+      "startedWorldMs": 2359.202880859375,
+      "phase": "open-browser-cold",
+      "responseMs": 316.1510000936687
+    },
+    {
+      "id": "78467.182",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974067.576374,
+      "wallTime": 1793047538.67445,
+      "response": 1974067.920351,
+      "status": 200,
+      "finished": 1974067.920305,
+      "startedWorldMs": 2359.349853515625,
+      "phase": "open-browser-cold",
+      "responseMs": 343.9770000986755
+    },
+    {
+      "id": "78467.184",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974068.40604,
+      "wallTime": 1793047539.504147,
+      "response": 1974068.44259,
+      "status": 200,
+      "finished": 1974068.442674,
+      "startedWorldMs": 3189.046875,
+      "phase": "open-browser-cold",
+      "responseMs": 36.55000007711351
+    },
+    {
+      "id": "78467.186",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-2\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974068.572873,
+      "wallTime": 1793047539.670982,
+      "response": 1974068.613329,
+      "status": 200,
+      "finished": 1974068.613311,
+      "startedWorldMs": 3355.8818359375,
+      "phase": "open-browser-cold",
+      "responseMs": 40.456000017002225
+    },
+    {
+      "id": "78467.187",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-3\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974068.734599,
+      "wallTime": 1793047539.832701,
+      "response": 1974068.769425,
+      "status": 200,
+      "finished": 1974068.769416,
+      "startedWorldMs": 3517.600830078125,
+      "phase": "open-browser-cold",
+      "responseMs": 34.825999988242984
+    },
+    {
+      "id": "78467.188",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-4\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974068.908021,
+      "wallTime": 1793047540.006122,
+      "response": 1974068.946682,
+      "status": 200,
+      "finished": 1974068.946654,
+      "startedWorldMs": 3691.02197265625,
+      "phase": "open-browser-cold",
+      "responseMs": 38.6610000859946
+    },
+    {
+      "id": "78467.189",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974068.924706,
+      "wallTime": 1793047540.022814,
+      "response": 1974068.969762,
+      "status": 200,
+      "finished": 1974068.96971,
+      "startedWorldMs": 3707.7138671875,
+      "phase": "open-browser-cold",
+      "responseMs": 45.05600011907518
+    },
+    {
+      "id": "78467.191",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974069.472764,
+      "wallTime": 1793047540.570901,
+      "response": 1974069.479538,
+      "status": 200,
+      "finished": 1974069.475554,
+      "startedWorldMs": 4255.80078125,
+      "phase": "first-turbine-hall-focus",
+      "responseMs": 6.773999892175198
+    },
+    {
+      "id": "78467.192",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974069.479228,
+      "wallTime": 1793047540.577333,
+      "response": 1974069.524067,
+      "status": 200,
+      "finished": 1974069.524193,
+      "startedWorldMs": 4262.23291015625,
+      "phase": "first-turbine-hall-focus",
+      "responseMs": 44.83900009654462
+    },
+    {
+      "id": "78467.194",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974069.481586,
+      "wallTime": 1793047540.579671,
+      "response": 1974069.537451,
+      "status": 200,
+      "finished": 1974069.536824,
+      "startedWorldMs": 4264.57080078125,
+      "phase": "first-turbine-hall-focus",
+      "responseMs": 55.86500000208616
+    },
+    {
+      "id": "78467.197",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974070.536836,
+      "wallTime": 1793047541.634944,
+      "response": 1974070.551917,
+      "status": 200,
+      "finished": 1974070.55206,
+      "startedWorldMs": 5319.84375,
+      "phase": "first-uncut-stack",
+      "responseMs": 15.081000048667192
+    },
+    {
+      "id": "78467.198",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974070.539392,
+      "wallTime": 1793047541.637491,
+      "response": 1974070.570848,
+      "status": 200,
+      "finished": 1974070.561757,
+      "startedWorldMs": 5322.390869140625,
+      "phase": "first-uncut-stack",
+      "responseMs": 31.45599993877113
+    },
+    {
+      "id": "78467.201",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974071.568693,
+      "wallTime": 1793047542.666805,
+      "response": 1974071.582364,
+      "status": 200,
+      "finished": 1974071.582363,
+      "startedWorldMs": 6351.704833984375,
+      "phase": "first-plan",
+      "responseMs": 13.671000022441149
+    },
+    {
+      "id": "78467.202",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974072.036605,
+      "wallTime": 1793047543.134729,
+      "response": 1974072.039029,
+      "status": 200,
+      "finished": 1974072.039025,
+      "startedWorldMs": 6819.62890625,
+      "phase": "return-3d-operating",
+      "responseMs": 2.4240000639110804
+    },
+    {
+      "id": "78467.203",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974072.040099,
+      "wallTime": 1793047543.138203,
+      "response": 1974072.048937,
+      "status": 200,
+      "finished": 1974072.048864,
+      "startedWorldMs": 6823.102783203125,
+      "phase": "return-3d-operating",
+      "responseMs": 8.838000008836389
+    },
+    {
+      "id": "78467.206",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974072.599968,
+      "wallTime": 1793047543.698079,
+      "response": 1974072.601641,
+      "status": 200,
+      "finished": 1974072.601541,
+      "startedWorldMs": 7382.97900390625,
+      "phase": "return-3d-operating",
+      "responseMs": 1.6729999333620071
+    },
+    {
+      "id": "78467.207",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974072.602032,
+      "wallTime": 1793047543.700134,
+      "response": 1974072.615786,
+      "status": 200,
+      "finished": 1974072.615771,
+      "startedWorldMs": 7385.033935546875,
+      "phase": "return-3d-operating",
+      "responseMs": 13.753999955952168
+    },
+    {
+      "id": "78467.208",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974073.05225,
+      "wallTime": 1793047544.150367,
+      "response": 1974073.060607,
+      "status": 200,
+      "finished": 1974073.060555,
+      "startedWorldMs": 7835.266845703125,
+      "phase": "return-3d-operating",
+      "responseMs": 8.357000071555376
+    },
+    {
+      "id": "78467.211",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974073.465212,
+      "wallTime": 1793047544.563343,
+      "response": 1974073.479184,
+      "status": 200,
+      "finished": 1974073.468533,
+      "startedWorldMs": 8248.242919921875,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 13.971999986097217
+    },
+    {
+      "id": "78467.212",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974073.465363,
+      "wallTime": 1793047544.563478,
+      "response": 1974073.479834,
+      "status": 200,
+      "finished": 1974073.470588,
+      "startedWorldMs": 8248.3779296875,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 14.47100006043911
+    },
+    {
+      "id": "78467.213",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974073.465462,
+      "wallTime": 1793047544.563573,
+      "response": 1974073.479971,
+      "status": 200,
+      "finished": 1974073.473154,
+      "startedWorldMs": 8248.472900390625,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 14.50899988412857
+    },
+    {
+      "id": "78467.214",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974073.465534,
+      "wallTime": 1793047544.56364,
+      "response": 1974073.483922,
+      "status": 200,
+      "finished": 1974073.496194,
+      "startedWorldMs": 8248.5400390625,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 18.388000084087253
+    },
+    {
+      "id": "78467.215",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/presence",
+      "method": "GET",
+      "start": 1974073.465595,
+      "wallTime": 1793047544.563702,
+      "response": 1974073.699014,
+      "status": 200,
+      "finished": 1974073.69891,
+      "startedWorldMs": 8248.60205078125,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 233.4189999382943
+    },
+    {
+      "id": "78467.217",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974073.487272,
+      "wallTime": 1793047544.585382,
+      "response": 1974073.653441,
+      "status": 200,
+      "finished": 1974073.653445,
+      "startedWorldMs": 8270.281982421875,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 166.1690000910312
+    },
+    {
+      "id": "78467.218",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-2\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974073.48783,
+      "wallTime": 1793047544.585936,
+      "response": 1974073.549055,
+      "status": 200,
+      "finished": 1974073.549293,
+      "startedWorldMs": 8270.8359375,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 61.22500007040799
+    },
+    {
+      "id": "78467.219",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-3\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974073.488047,
+      "wallTime": 1793047544.586148,
+      "response": 1974073.614737,
+      "status": 200,
+      "finished": 1974073.614732,
+      "startedWorldMs": 8271.0478515625,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 126.6900000628084
+    },
+    {
+      "id": "78467.220",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-4\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974073.496644,
+      "wallTime": 1793047544.594759,
+      "response": 1974073.697698,
+      "status": 200,
+      "finished": 1974073.697681,
+      "startedWorldMs": 8279.658935546875,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 201.05399983003736
+    },
+    {
+      "id": "78467.221",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974073.716403,
+      "wallTime": 1793047544.814523,
+      "response": 1974073.734692,
+      "status": 200,
+      "finished": 1974073.734336,
+      "startedWorldMs": 8499.4228515625,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 18.28900002874434
+    },
+    {
+      "id": "78467.224",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-2\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974074.569574,
+      "wallTime": 1793047545.667695,
+      "response": 1974074.608428,
+      "status": 200,
+      "finished": 1974074.60841,
+      "startedWorldMs": 9352.594970703125,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 38.853999925777316
+    },
+    {
+      "id": "78467.225",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-3\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974074.631977,
+      "wallTime": 1793047545.730105,
+      "response": 1974074.668152,
+      "status": 200,
+      "finished": 1974074.668406,
+      "startedWorldMs": 9415.0048828125,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 36.17500001564622
+    },
+    {
+      "id": "78467.226",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-1\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974074.667799,
+      "wallTime": 1793047545.765931,
+      "response": 1974074.705956,
+      "status": 200,
+      "finished": 1974074.705923,
+      "startedWorldMs": 9450.830810546875,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 38.15699997358024
+    },
+    {
+      "id": "78467.227",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-4\",\"expectedRevision\":\"58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f\"}",
+      "start": 1974074.719998,
+      "wallTime": 1793047545.81812,
+      "response": 1974074.759199,
+      "status": 200,
+      "finished": 1974074.759343,
+      "startedWorldMs": 9503.02001953125,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 39.201000006869435
+    },
+    {
+      "id": "78467.228",
+      "url": "http://127.0.0.1:43130/api/workspaces/ff25008c-36db-4dc9-9d8d-0cc858799a2e/world/simulation-runs/run-c77bfbfe-f417-433f-9b6f-f53476a4f159/displays/layout",
+      "method": "POST",
+      "postData": "{\"layoutObjectId\":\"layout:halden-campus\",\"expectedRevision\":\"8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15\"}",
+      "start": 1974074.73782,
+      "wallTime": 1793047545.835956,
+      "response": 1974074.779191,
+      "status": 200,
+      "finished": 1974074.779134,
+      "startedWorldMs": 9520.85595703125,
+      "phase": "gc-fresh-browser-owner",
+      "responseMs": 41.37099999934435
+    }
+  ],
+  "exceptions": [],
+  "milestoneSemantics": {
+    "actionToFirstDrawMs": "First actual TRIANGLES draw matching the requested semantic view key.",
+    "actionToGpuCompletedMs": "All observed physical jobs drained (plus five-layout readiness at site gates) and a completed GPU fence; not first target-frame completion.",
+    "ownerFresh": "First validated freshness check after the settled checkpoint; an observed-by upper bound, not first fresh arrival."
+  },
+  "actions": [
+    {
+      "name": "open-browser-cold",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "readyCount": 5
+      },
+      "actionToFirstDrawMs": 1643.5,
+      "actionToGpuCompletedMs": 2855.7999999523163,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 1608.2999999523163,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "overheadMs": 0.09999990463256836,
+      "glError": 0,
+      "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+      "prepareJobs": 2,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+        "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]"
+      ]
+    },
+    {
+      "name": "site-3d",
+      "expected": {
+        "mode": "3d",
+        "readyCount": 5
+      },
+      "actionToFirstDrawMs": 23.09999990463257,
+      "actionToGpuCompletedMs": 31,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+      "prepareJobs": 0,
+      "keys": []
+    },
+    {
+      "name": "first-turbine-hall-focus",
+      "expected": {
+        "mode": "3d"
+      },
+      "actionToFirstDrawMs": 20.600000143051147,
+      "actionToGpuCompletedMs": 28.700000047683716,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4269.5,
+        "actionToFreshMs": 32,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 2,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+        "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d"
+      ]
+    },
+    {
+      "name": "first-operating-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "operating"
+      },
+      "actionToFirstDrawMs": 264,
+      "actionToGpuCompletedMs": 278.60000014305115,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 256.2000000476837,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4550.400000095367,
+        "actionToFreshMs": 279.40000009536743,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0.20000004768371582,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 1,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]"
+      ]
+    },
+    {
+      "name": "first-stack-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all"
+      },
+      "actionToFirstDrawMs": 21.600000143051147,
+      "actionToGpuCompletedMs": 31.800000190734863,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4583.5,
+        "actionToFreshMs": 32.5,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 0,
+      "keys": []
+    },
+    {
+      "name": "gc-return-operating-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "operating"
+      },
+      "actionToFirstDrawMs": 251.60000014305115,
+      "actionToGpuCompletedMs": 267.2000000476837,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 242.90000009536743,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4918.900000095367,
+        "actionToFreshMs": 268.7000000476837,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 1,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]"
+      ]
+    },
+    {
+      "name": "gc-return-stack-3d",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all"
+      },
+      "actionToFirstDrawMs": 25.200000047683716,
+      "actionToGpuCompletedMs": 32.5,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 5016.800000190735,
+        "actionToFreshMs": 33.10000014305115,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 0,
+      "keys": []
+    },
+    {
+      "name": "first-uncut-stack",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": false
+      },
+      "actionToFirstDrawMs": 919.8999998569489,
+      "actionToGpuCompletedMs": 930.6999998092651,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 910.7999999523163,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 5950.300000190735,
+        "actionToFreshMs": 931.5,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 1,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",false,0]"
+      ]
+    },
+    {
+      "name": "gc-return-cutaway-stack",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true
+      },
+      "actionToFirstDrawMs": 25.100000143051147,
+      "actionToGpuCompletedMs": 31.40000009536743,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6032.800000190735,
+        "actionToFreshMs": 32.200000047683716,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 0,
+      "keys": []
+    },
+    {
+      "name": "first-plan",
+      "expected": {
+        "mode": "2d"
+      },
+      "actionToFirstDrawMs": 439.2000000476837,
+      "actionToGpuCompletedMs": 448.60000014305115,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 433,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6485.400000095367,
+        "actionToFreshMs": 451.2000000476837,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0.09999990463256836,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 3,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"lower\",true,0]",
+        "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d"
+      ]
+    },
+    {
+      "name": "first-plan-operating",
+      "expected": {
+        "mode": "2d",
+        "levelId": "operating"
+      },
+      "actionToFirstDrawMs": 197.90000009536743,
+      "actionToGpuCompletedMs": 212.79999995231628,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 192.29999995231628,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6700.200000047684,
+        "actionToFreshMs": 213.60000014305115,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 1,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"operating\",true,0]"
+      ]
+    },
+    {
+      "name": "first-plan-lower",
+      "expected": {
+        "mode": "2d",
+        "levelId": "lower"
+      },
+      "actionToFirstDrawMs": 16.40000009536743,
+      "actionToGpuCompletedMs": 31.5,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6733.400000095367,
+        "actionToFreshMs": 32.200000047683716,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 0,
+      "keys": []
+    },
+    {
+      "name": "gc-return-plan-operating",
+      "expected": {
+        "mode": "2d",
+        "levelId": "operating"
+      },
+      "actionToFirstDrawMs": 17.59999990463257,
+      "actionToGpuCompletedMs": 32.59999990463257,
+      "preparedAfterAction": false,
+      "preparedResponseMs": null,
+      "gpuBufferFromPriorResponse": true,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6816.700000047684,
+        "actionToFreshMs": 33.299999952316284,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0.10000014305114746,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 0,
+      "keys": []
+    },
+    {
+      "name": "return-3d-operating",
+      "expected": {
+        "mode": "3d",
+        "levelId": "operating"
+      },
+      "actionToFirstDrawMs": 233.90000009536743,
+      "actionToGpuCompletedMs": 1315.4000000953674,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 219.79999995231628,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 8133.600000143051,
+        "actionToFreshMs": 1316.2000000476837,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "overheadMs": 0,
+      "glError": 0,
+      "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts",
+      "prepareJobs": 2,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+        "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"campus-ground\",true,0]"
+      ]
+    },
+    {
+      "name": "gc-fresh-browser-owner",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "readyCount": 5
+      },
+      "actionToFirstDrawMs": 934.5,
+      "actionToGpuCompletedMs": 2041.2000000476837,
+      "preparedAfterAction": true,
+      "preparedResponseMs": 903.0999999046326,
+      "gpuBufferFromPriorResponse": false,
+      "ownerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "overheadMs": 0.20000004768371582,
+      "glError": 0,
+      "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+      "prepareJobs": 2,
+      "keys": [
+        "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+        "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]"
+      ]
+    }
+  ],
+  "sourceJobs": [
+    {
+      "worker": 2,
+      "design": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+      "compiler": "743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7",
+      "started": 1364.6000001430511,
+      "postMs": 0.7000000476837158,
+      "transferBytes": 0,
+      "responseAt": 1859.7000000476837,
+      "responseMs": 495.09999990463257,
+      "ok": true,
+      "occurrences": 466,
+      "terminatedAt": 1859.8000001907349
+    },
+    {
+      "worker": 3,
+      "design": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+      "compiler": "743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7",
+      "started": 1374.7000000476837,
+      "postMs": 1.2000000476837158,
+      "transferBytes": 0,
+      "responseAt": 1999.7000000476837,
+      "responseMs": 625,
+      "ok": true,
+      "occurrences": 508,
+      "terminatedAt": 1999.7000000476837
+    }
+  ],
+  "physicalJobs": [
+    {
+      "worker": 1,
+      "id": 1,
+      "kind": "register",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "started": 1361.6000001430511,
+      "postMs": 0,
+      "transferBytes": 20880,
+      "responseAt": 1462.7000000476837,
+      "responseMs": 101.09999990463257,
+      "responseKind": "registered"
+    },
+    {
+      "worker": 1,
+      "id": 2,
+      "kind": "register",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "started": 1362.4000000953674,
+      "postMs": 0,
+      "transferBytes": 5520,
+      "responseAt": 1462.9000000953674,
+      "responseMs": 100.5,
+      "responseKind": "registered"
+    },
+    {
+      "worker": 1,
+      "id": 3,
+      "kind": "register",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "started": 1866.1000001430511,
+      "postMs": 3,
+      "transferBytes": 18361536,
+      "responseAt": 1912.5,
+      "responseMs": 46.39999985694885,
+      "responseKind": "registered"
+    },
+    {
+      "worker": 1,
+      "id": 4,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 1912.6000001430511,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 2952.100000143051,
+      "responseMs": 1039.5,
+      "responseKind": "prepared",
+      "meshes": 1416,
+      "renderBytes": 11783808
+    },
+    {
+      "worker": 1,
+      "id": 5,
+      "kind": "register",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "started": 2006.1000001430511,
+      "postMs": 3.1000001430511475,
+      "transferBytes": 22970652,
+      "responseAt": 2998.4000000953674,
+      "responseMs": 992.2999999523163,
+      "responseKind": "registered"
+    },
+    {
+      "worker": 1,
+      "id": 6,
+      "kind": "prepare",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 2998.4000000953674,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 4172,
+      "responseMs": 1173.5999999046326,
+      "responseKind": "prepared",
+      "meshes": 1744,
+      "renderBytes": 15541104
+    },
+    {
+      "worker": 1,
+      "id": 7,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": false,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 4247.900000095367,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 4259.800000190735,
+      "responseMs": 11.900000095367432,
+      "responseKind": "prepared",
+      "meshes": 12,
+      "renderBytes": 25536
+    },
+    {
+      "worker": 1,
+      "id": 8,
+      "kind": "prepare",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": false,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 4259.800000190735,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 4262.600000143051,
+      "responseMs": 2.799999952316284,
+      "responseKind": "prepared",
+      "meshes": 5,
+      "renderBytes": 6720
+    },
+    {
+      "worker": 1,
+      "id": 9,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "operating",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 4286.300000190735,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 4527.200000047684,
+      "responseMs": 240.89999985694885,
+      "responseKind": "prepared",
+      "meshes": 485,
+      "renderBytes": 3538416
+    },
+    {
+      "worker": 1,
+      "id": 10,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "operating",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 4668.700000047684,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 4893.100000143051,
+      "responseMs": 224.40000009536743,
+      "responseKind": "prepared",
+      "meshes": 485,
+      "renderBytes": 3538416
+    },
+    {
+      "worker": 1,
+      "id": 11,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",false,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": false,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 5034.5,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 5929.600000143051,
+      "responseMs": 895.1000001430511,
+      "responseKind": "prepared",
+      "meshes": 1608,
+      "renderBytes": 12246624
+    },
+    {
+      "worker": 1,
+      "id": 12,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "view": {
+        "mode": "2d",
+        "levelId": "all",
+        "cutaway": false,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 6035.700000047684,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 6037.5,
+      "responseMs": 1.7999999523162842,
+      "responseKind": "prepared",
+      "meshes": 12,
+      "renderBytes": 25536
+    },
+    {
+      "worker": 1,
+      "id": 13,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"lower\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "2d",
+        "levelId": "lower",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 6037.5,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 6467.200000047684,
+      "responseMs": 429.7000000476837,
+      "responseKind": "prepared",
+      "meshes": 526,
+      "renderBytes": 6883296
+    },
+    {
+      "worker": 1,
+      "id": 14,
+      "kind": "prepare",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "view": {
+        "mode": "2d",
+        "levelId": "all",
+        "cutaway": false,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 6467.900000095367,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 6475.200000047684,
+      "responseMs": 7.299999952316284,
+      "responseKind": "prepared",
+      "meshes": 5,
+      "renderBytes": 6720
+    },
+    {
+      "worker": 1,
+      "id": 15,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"operating\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "2d",
+        "levelId": "operating",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 6488.400000095367,
+      "postMs": 0.09999990463256836,
+      "transferBytes": 0,
+      "responseAt": 6679,
+      "responseMs": 190.59999990463257,
+      "responseKind": "prepared",
+      "meshes": 374,
+      "renderBytes": 3341616
+    },
+    {
+      "worker": 1,
+      "id": 16,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "operating",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 6820,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 7037.200000047684,
+      "responseMs": 217.20000004768372,
+      "responseKind": "prepared",
+      "meshes": 485,
+      "renderBytes": 3538416
+    },
+    {
+      "worker": 1,
+      "id": 17,
+      "kind": "prepare",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"campus-ground\",true,0]",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "campus-ground",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 7037.400000095367,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 8108.600000143051,
+      "responseMs": 1071.2000000476837,
+      "responseKind": "prepared",
+      "meshes": 1544,
+      "renderBytes": 14614224
+    },
+    {
+      "worker": 1,
+      "id": 18,
+      "kind": "prepare",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 8248.600000143051,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 9111.200000047684,
+      "responseMs": 862.5999999046326,
+      "responseKind": "prepared",
+      "meshes": 1416,
+      "renderBytes": 11783808
+    },
+    {
+      "worker": 1,
+      "id": 19,
+      "kind": "prepare",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true
+      },
+      "started": 9111.800000190735,
+      "postMs": 0,
+      "transferBytes": 0,
+      "responseAt": 10224.700000047684,
+      "responseMs": 1112.8999998569489,
+      "responseKind": "prepared",
+      "meshes": 1744,
+      "renderBytes": 15541104
+    }
+  ],
+  "instrumentedDrawCount": 62,
+  "errors": [],
+  "pending": 0,
+  "limits": [
+    "Real built loopback Host/World, paused isolated Run, production workers/viewports; no production instrumentation or model changes.",
+    "Dispatch and milestones use World performance.now. Exact prepared typed-array -> VBO/VAO -> requested semantic view draw is observed, then a microtask fence includes Plan composition. GPU completion is not a physical-monitor presentation timestamp.",
+    "Prepared response includes queue/worker/transfer; no controller-ready timestamp is claimed without a product hook. First matching draw proves admission occurred by that point.",
+    "WeakMap tags and primitive-only logs do not retain prepared arrays across forced GC. Instrumentation adds overhead; draw-wrapper diagnostic cost is reported separately and does not include every wrapper.",
+    "No fixed settlement sleeps. Initial controls mount is separate from layout completion. One GPU/profile/device and local services; full-product and isolated-engine timings are not interchangeable."
+  ],
+  "allFiveDetailDraws": {
+    "open-browser-cold": {
+      "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail": 4,
+      "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail": 1
+    },
+    "site-3d": {
+      "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail": 4,
+      "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail": 1
+    },
+    "gc-fresh-browser-owner": {
+      "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail": 4,
+      "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail": 1
+    }
+  }
+}
