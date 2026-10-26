@@ -11,3 +11,7 @@ export const campusPhysicalCompilerRef = { id: 'physical-layout-native-campus', 
 // Explicit recovered appearance/scope profile. Frozen native artifacts above stay exact.
 export const explorerPhysicalCompilerFiles = ['explorer/source.ts', 'explorer/circulation.ts', 'explorer/mesh.ts', 'explorer/turbine-families.ts', 'explorer/architecture.ts', 'explorer/families.ts', 'explorer/solid.ts', 'explorer/compile-scene.ts', 'math.ts', '../scope-manifest.ts', '../applicability.ts'] as const
 export const explorerPhysicalCompilerRef = { id: 'physical-layout-native-explorer', digest: '743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7' } as const
+
+// New architecture recipes and drafting presentation keep every earlier closure exact.
+export const architecturePhysicalCompilerFiles = [...explorerPhysicalCompilerFiles, 'architecture/source.ts', 'architecture/solid.ts', 'architecture/compile-scene.ts'] as const
+export const architecturePhysicalCompilerRef = { id: 'physical-layout-native-architecture', digest: 'ee87a8a56fbd2b72a9cb8cceabb71be35c8ab3730cd4b716117a6e0ce1620f05' } as const

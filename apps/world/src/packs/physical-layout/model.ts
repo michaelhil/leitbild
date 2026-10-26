@@ -3,7 +3,8 @@ import { physicalSceneBoundsSchema, physicalSceneScopeSchema } from '../../core/
 import { physicalSourceSchema } from './native/source.ts'
 import { physicalSourceSchema as campusPhysicalSourceSchema } from './native/campus/source.ts'
 import { physicalSourceSchema as explorerPhysicalSourceSchema } from './native/explorer/source.ts'
-import { campusPhysicalCompilerRef, explorerPhysicalCompilerRef, physicalCompilerRef } from './compiler-identity.ts'
+import { physicalSourceSchema as architecturePhysicalSourceSchema } from './native/architecture/source.ts'
+import { architecturePhysicalCompilerRef, campusPhysicalCompilerRef, explorerPhysicalCompilerRef, physicalCompilerRef } from './compiler-identity.ts'
 import { physicalCoverageEvidenceSchema, physicalCoverageIssues } from './coverage.ts'
 import { physicalDesignRequirementsSchema, physicalResolvedMemberSchema, physicalExplorerRequirementsSchema, physicalExplorerResolvedMemberSchema } from './requirements.ts'
 
@@ -80,15 +81,7 @@ export type CampusPhysicalLayoutData = z.infer<typeof campusLayoutDataSchema>
 export const physicalApplicabilitySchema = z.object({ sourceDigest: digest, geometryDigest: digest, digest }).strict()
 export const physicalPresentationSchema = z.object({ scopes: z.array(physicalSceneScopeSchema), layers: z.array(z.object({ id, label: z.string().min(1).max(300), defaultVisible: z.boolean() }).strict()) }).strict()
 export const physicalPlacementGroupSchema = z.object({ id, label: z.string().min(1).max(300) }).strict()
-export const explorerLayoutDataSchema = z.object({ ...layoutShape,
-  compiler: z.object({ id: z.literal(explorerPhysicalCompilerRef.id), digest: z.literal(explorerPhysicalCompilerRef.digest) }).strict(),
-  source: explorerPhysicalSourceSchema,
-  coverageDigest: digest, coverageEvidence: physicalCoverageEvidenceSchema,
-  requirements: physicalExplorerRequirementsSchema, relatedMembers: z.array(physicalExplorerResolvedMemberSchema).max(64),
-  physicalApplicability: physicalApplicabilitySchema,
-  presentation: physicalPresentationSchema, presentationDigest: digest,
-  group: physicalPlacementGroupSchema.optional(),
-}).strict().superRefine((data, context) => {
+const validateExplorer = (data: Omit<z.infer<typeof explorerLayoutShape>, 'compiler'>, context: z.core.$RefinementCtx): void => {
   validateCoverage(data, context)
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
   if (data.owner.packId !== data.requirements.ownerPackId) issue('The retained owner Pack differs from the Design requirement')
@@ -119,16 +112,28 @@ export const explorerLayoutDataSchema = z.object({ ...layoutShape,
       ancestors.add(parent); parent = scopes.get(parent)?.parentId
     }
   }
-})
+}
+const explorerLayoutShape = z.object({ ...layoutShape,
+  compiler: z.object({ id: z.literal(explorerPhysicalCompilerRef.id), digest: z.literal(explorerPhysicalCompilerRef.digest) }).strict(),
+  source: explorerPhysicalSourceSchema,
+  coverageDigest: digest, coverageEvidence: physicalCoverageEvidenceSchema,
+  requirements: physicalExplorerRequirementsSchema, relatedMembers: z.array(physicalExplorerResolvedMemberSchema).max(64),
+  physicalApplicability: physicalApplicabilitySchema,
+  presentation: physicalPresentationSchema, presentationDigest: digest,
+  group: physicalPlacementGroupSchema.optional(),
+}).strict()
+export const explorerLayoutDataSchema = explorerLayoutShape.superRefine(validateExplorer)
 export type ExplorerPhysicalLayoutData = z.infer<typeof explorerLayoutDataSchema>
-export type RetainedPhysicalLayoutData = PhysicalLayoutData | CampusPhysicalLayoutData | ExplorerPhysicalLayoutData
-const compilerMarkerSchema = z.object({ compiler: z.object({ id: z.enum([physicalCompilerRef.id, campusPhysicalCompilerRef.id, explorerPhysicalCompilerRef.id]) }).passthrough() }).passthrough()
+export const architectureLayoutDataSchema = explorerLayoutShape.extend({ compiler: z.object({ id: z.literal(architecturePhysicalCompilerRef.id), digest: z.literal(architecturePhysicalCompilerRef.digest) }).strict(), source: architecturePhysicalSourceSchema }).superRefine(validateExplorer)
+export type ArchitecturePhysicalLayoutData = z.infer<typeof architectureLayoutDataSchema>
+export type RetainedPhysicalLayoutData = PhysicalLayoutData | CampusPhysicalLayoutData | ExplorerPhysicalLayoutData | ArchitecturePhysicalLayoutData
+const compilerMarkerSchema = z.object({ compiler: z.object({ id: z.enum([physicalCompilerRef.id, campusPhysicalCompilerRef.id, explorerPhysicalCompilerRef.id, architecturePhysicalCompilerRef.id]) }).passthrough() }).passthrough()
 /** Select a known artifact before walking a large source; an unknown compiler never falls through. */
 export const physicalLayoutDataSchema = z.unknown().transform((input, context): RetainedPhysicalLayoutData => {
   const marker = compilerMarkerSchema.safeParse(input)
   if (!marker.success) { for (const issue of marker.error.issues) context.addIssue({ code: 'custom', path: issue.path, message: issue.message }); return z.NEVER }
   const result = marker.data.compiler.id === physicalCompilerRef.id ? turbineIslandLayoutDataSchema.safeParse(input)
-    : marker.data.compiler.id === campusPhysicalCompilerRef.id ? campusLayoutDataSchema.safeParse(input) : explorerLayoutDataSchema.safeParse(input)
+    : marker.data.compiler.id === campusPhysicalCompilerRef.id ? campusLayoutDataSchema.safeParse(input) : marker.data.compiler.id === architecturePhysicalCompilerRef.id ? architectureLayoutDataSchema.safeParse(input) : explorerLayoutDataSchema.safeParse(input)
   if (!result.success) { for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path, message: issue.message }); return z.NEVER }
   return result.data
 })

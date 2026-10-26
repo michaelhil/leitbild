@@ -4,13 +4,16 @@ import { physicalContentHash, physicalSceneShapeFacts, validateRetainedPhysicalS
 import { compilePhysicalScene as compileExplorer } from './native/explorer/compile-scene.ts'
 import { compilePhysicalScene as compileOriginal } from './native/compile-scene.ts'
 import { compilePhysicalScene as compileCampus } from './native/campus/compile-scene.ts'
+import { compilePhysicalScene as compileArchitecture } from './native/architecture/compile-scene.ts'
+import { architectureLayoutDataSchema } from './model.ts'
+import { architecturePhysicalCompilerRef } from './compiler-identity.ts'
 
 /** Runs in the browser's source worker; non-browser authoring/tests use the same real compiler. */
 export const compileRetainedPhysicalSource = async (input: unknown): Promise<PackPhysicalScene> => {
   const data = physicalLayoutDataSchema.parse(input)
   await validateRetainedPhysicalSource(data)
   if ('physicalApplicability' in data) {
-    const scene = compileExplorer(data.design.id, data)
+    const scene = data.compiler.id === architecturePhysicalCompilerRef.id ? compileArchitecture(data.design.id, architectureLayoutDataSchema.parse(data)) : compileExplorer(data.design.id, data)
     if (await physicalContentHash(physicalSceneShapeFacts(scene.objects)) !== data.physicalApplicability.geometryDigest) throw new Error(`Physical layout ${data.design.id} shape recipe differs from its physical applicability`)
     if (canonicalPhysicalJson({ scopes: scene.scopes, layers: scene.layers }) !== canonicalPhysicalJson(data.presentation)) throw new Error(`Physical layout ${data.design.id} compiled scope manifest mismatch`)
     return scene

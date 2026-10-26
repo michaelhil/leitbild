@@ -48,7 +48,7 @@ export const physicalLayoutPack: WorldPack = {
       const item = physicalLayoutScenarioItemSchema.parse(spec)
       const retained = await resolvePhysicalDesign(item.design)
       const requirements = retained.profile !== 'turbine-island' ? retained.requirements : { ownerRole: 'unit', ownerPackId: 'process-plant', relatedMembers: [] }
-      if (item.group !== undefined && retained.profile !== 'explorer') throw new Error('A placement group requires an admitted explorer profile')
+      if (item.group !== undefined && !('physicalApplicability' in retained)) throw new Error('A placement group requires an admitted explorer profile')
       const roles = [requirements.ownerRole, ...requirements.relatedMembers.map(member => member.role)]
       if (Object.keys(item.members).length !== roles.length || roles.some(role => item.members[role] === undefined)) throw new Error('Physical layout members must match the exact Design roles')
       const ownerId = item.members[requirements.ownerRole]!
@@ -90,7 +90,7 @@ export const physicalLayoutPack: WorldPack = {
         placement: { anchor: [point[0], point[1]], bearing: item.bearing }, bounds: retained.bounds,
         coverage: { representedSubjectIds, unplacedSubjectIds: targets.subjects.filter(subject => !representedSubjectIds.includes(subject.id)).map(subject => subject.id).sort(), totalSubjects: targets.subjects.length },
         ...(retained.profile !== 'turbine-island' ? { coverageDigest: retained.coverageDigest, coverageEvidence: retained.coverageEvidence, requirements: retained.requirements, relatedMembers: resolvedMembers } : {}),
-        ...(retained.profile === 'explorer' ? { physicalApplicability: retained.physicalApplicability, presentation: retained.presentation, presentationDigest: retained.presentationDigest, ...(item.group === undefined ? {} : { group: item.group }) } : {}),
+        ...('physicalApplicability' in retained ? { physicalApplicability: retained.physicalApplicability, presentation: retained.presentation, presentationDigest: retained.presentationDigest, ...(item.group === undefined ? {} : { group: item.group }) } : {}),
       })
       const object: OperationalObject = {
         id: item.id, label: item.label, kind: 'facility', packId: packIdSchema.parse(physicalLayoutPackId), lifecycle: 'active', revision: 0,

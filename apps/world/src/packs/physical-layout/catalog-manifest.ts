@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { physicalSceneBoundsSchema } from '../../core/packs/scene.ts'
-import { campusPhysicalCompilerRef, explorerPhysicalCompilerRef, physicalCompilerRef } from './compiler-identity.ts'
+import { architecturePhysicalCompilerRef, campusPhysicalCompilerRef, explorerPhysicalCompilerRef, physicalCompilerRef } from './compiler-identity.ts'
 import { physicalDesignRequirementsSchema, physicalExplorerRequirementsSchema } from './requirements.ts'
 import { physicalApplicabilitySchema, physicalPresentationSchema } from './model.ts'
 
@@ -13,6 +13,8 @@ export const physicalCatalogManifestSchema = z.discriminatedUnion('profile', [
   z.object({ ...common, profile: z.literal('turbine-island'), compiler: z.object({ id: z.literal(physicalCompilerRef.id), digest: z.literal(physicalCompilerRef.digest) }).strict() }).strict(),
   z.object({ ...common, profile: z.literal('campus'), compiler: z.object({ id: z.literal(campusPhysicalCompilerRef.id), digest: z.literal(campusPhysicalCompilerRef.digest) }).strict(), coverageDigest: digest, requirements: physicalDesignRequirementsSchema }).strict(),
   z.object({ ...common, profile: z.literal('explorer'), compiler: z.object({ id: z.literal(explorerPhysicalCompilerRef.id), digest: z.literal(explorerPhysicalCompilerRef.digest) }).strict(), coverageDigest: digest, requirements: physicalExplorerRequirementsSchema,
+    physicalApplicability: physicalApplicabilitySchema, presentation: physicalPresentationSchema, presentationDigest: digest }).strict(),
+  z.object({ ...common, profile: z.literal('architecture'), compiler: z.object({ id: z.literal(architecturePhysicalCompilerRef.id), digest: z.literal(architecturePhysicalCompilerRef.digest) }).strict(), coverageDigest: digest, requirements: physicalExplorerRequirementsSchema,
     physicalApplicability: physicalApplicabilitySchema, presentation: physicalPresentationSchema, presentationDigest: digest }).strict(),
 ])
 export type PhysicalCatalogManifest = z.infer<typeof physicalCatalogManifestSchema>

@@ -1,6 +1,8 @@
 import { canonicalPhysicalJson, physicalDesignManifest, type RetainedPhysicalLayoutData } from './model.ts'
 import type { PackPhysicalScene } from '../../core/packs/scene.ts'
 import { physicalApplicabilityContent, physicalShapeFacts, physicalSourceFacts } from './applicability.ts'
+import { physicalSourceFacts as architectureSourceFacts } from './native/architecture/source.ts'
+import { architecturePhysicalCompilerRef } from './compiler-identity.ts'
 
 /** Keep the frozen JSON fingerprint contract independent of worker transport storage. */
 export const physicalSceneShapeFacts = (objects: PackPhysicalScene['objects']) => physicalShapeFacts(objects.map(object => ({ ...object,
@@ -15,7 +17,7 @@ export const validateRetainedPhysicalSource = async (data: RetainedPhysicalLayou
   if (await hash(data.source) !== data.sourceDigest || await hash(data.bindings) !== data.bindingDigest) throw new Error(`Physical layout ${data.design.id} retained source/binding digest mismatch`)
   if ('coverageDigest' in data && await hash(data.coverageEvidence) !== data.coverageDigest) throw new Error(`Physical layout ${data.design.id} retained coverage digest mismatch`)
   if (await hash(physicalDesignManifest(data)) !== data.design.digest || data.design.id !== data.source.id) throw new Error(`Physical layout ${data.design.id} retained Design digest mismatch`)
-  if ('physicalApplicability' in data && (await hash(physicalSourceFacts(data.source)) !== data.physicalApplicability.sourceDigest
+  if ('physicalApplicability' in data && (await hash(data.compiler.id === architecturePhysicalCompilerRef.id ? architectureSourceFacts(data.source as Parameters<typeof architectureSourceFacts>[0]) : physicalSourceFacts(data.source)) !== data.physicalApplicability.sourceDigest
     || await hash(physicalApplicabilityContent({ ...data, modelRequirement: { modelRef: data.owner.modelRef, modelDigest: data.owner.modelDigest } })) !== data.physicalApplicability.digest
     || await hash(data.presentation) !== data.presentationDigest)) throw new Error(`Physical layout ${data.design.id} applicability or presentation mismatch`)
 }
