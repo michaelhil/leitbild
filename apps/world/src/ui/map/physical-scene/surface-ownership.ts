@@ -94,8 +94,9 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
         const cover = faces[candidate]!
         // These predicates depend only on immutable faces. Apply them before
         // storing/sorting candidates; only the surviving faces need source order.
-        if (cover.axes.some(axis => Math.min(face.bounds.max[axis]!,cover.bounds.max[axis]!) <= Math.max(face.bounds.min[axis]!,cover.bounds.min[axis]!))) return
-        if (!cover.vertices.every(value => onPlane(face.vertices, value))) return
+        const x=cover.axes[0], y=cover.axes[1]
+        if (Math.min(face.bounds.max[x]!,cover.bounds.max[x]!) <= Math.max(face.bounds.min[x]!,cover.bounds.min[x]!) || Math.min(face.bounds.max[y]!,cover.bounds.max[y]!) <= Math.max(face.bounds.min[y]!,cover.bounds.min[y]!)) return
+        if (!onPlane(face.vertices,cover.vertices[0]!) || !onPlane(face.vertices,cover.vertices[1]!) || !onPlane(face.vertices,cover.vertices[2]!)) return
         candidates.push(candidate)
       })
       broadPhaseCandidates += earlierCandidates

@@ -11,17 +11,19 @@ const union = (values: ReadonlyArray<PhysicalSceneBounds>, ids: ReadonlyArray<nu
 }
 export const createPhysicalSpatialIndex = (values: ReadonlyArray<PhysicalSceneBounds>): PhysicalSpatialIndex => {
   const nodes: Array<{ bounds: PhysicalSceneBounds; left: number; right: number; first: number; count: number }> = [], order: number[] = []
-  const build = (ids: number[]): number => {
-    const bounds = union(values, ids), index = nodes.length, node = { bounds, left: -1, right: -1, first: 0, count: 0 }; nodes.push(node)
+  const build = (ids: number[], bounds = union(values,ids)): number => {
+    const index = nodes.length, node = { bounds, left: -1, right: -1, first: 0, count: 0 }; nodes.push(node)
     const parentArea = area(bounds)
     if (ids.length > 1 && parentArea > 0) {
       const spans = bounds.max.map((value, axis) => value - bounds.min[axis]!), axis = spans.indexOf(Math.max(...spans))
       ids.sort((a, b) => values[a]!.min[axis]! + values[a]!.max[axis]! - values[b]!.min[axis]! - values[b]!.max[axis]! || a - b)
-      const middle = Math.floor(ids.length / 2), left = ids.slice(0, middle), right = ids.slice(middle)
+      const middle = Math.floor(ids.length / 2), left = ids.slice(0, middle), right = ids.slice(middle), leftBounds=union(values,left), rightBounds=union(values,right)
       // Standard SAH normalized to a primitive test: one traversal plus expected
       // child tests. The unit cost is not a maximum leaf or candidate count.
-      const splitCost = 1 + (area(union(values, left)) * left.length + area(union(values, right)) * right.length) / parentArea
-      if (splitCost < ids.length) { node.left = build(left); node.right = build(right); return index }
+      const splitCost = 1 + (area(leftBounds) * left.length + area(rightBounds) * right.length) / parentArea
+      // These exact bounds already paid for the SAH decision also belong to
+      // the children; do not rescan their primitives on recursive entry.
+      if (splitCost < ids.length) { node.left = build(left,leftBounds); node.right = build(right,rightBounds); return index }
     }
     node.first = order.length; node.count = ids.length; order.push(...ids.sort((a, b) => a - b)); return index
   }
