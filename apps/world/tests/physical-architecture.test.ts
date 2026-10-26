@@ -18,6 +18,9 @@ import { createPwrArchitectureUnitArtifacts } from '../src/packs/physical-layout
 import { physicalSourceSchema, physicalSourceFacts } from '../src/packs/physical-layout/native/architecture/source.ts'
 import { compilePhysicalObjects, compilePlanAnnotations, compilePhysicalScene } from '../src/packs/physical-layout/native/architecture/compile-scene.ts'
 import { solid } from '../src/packs/physical-layout/native/architecture/solid.ts'
+import { physicalSceneShapeFacts } from '../src/packs/physical-layout/source-validation.ts'
+import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
+import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import { compileRetainedPhysicalSource } from '../src/packs/physical-layout/source-compile.ts'
 import { compilePhysicalSourceInWorker } from '../src/packs/physical-layout/source-loader.ts'
 import { physicalLayoutDependencyFailure } from '../src/packs/physical-layout/dependencies.ts'
@@ -90,6 +93,23 @@ describe('Model-driven native architecture restoration', () => {
     expect(objects.get('structure/shaftline')!.subjectIds).toEqual(['turbine'])
     expect(objects.get('structure/crane/trolley')!.subjectIds).toEqual([])
     expect(new Set(artifacts.bindings.map(binding => binding.elementId)).size).toBe(108)
+  })
+
+  test('Plan cuts a filled I section and presentation choices leave physical fingerprints unchanged', () => {
+    const source = structuredClone(artifacts.source), before = hash(physicalSourceFacts(source)), objects = compilePhysicalObjects({ ...artifacts, source })
+    const shape = hash(physicalSceneShapeFacts(objects)), column = source.elements.find(element => element.id === 'column/0/0.4')!
+    column.planDisplay = 'projection'
+    column.inspectionBoundary = { outward: [0, -1, 0] }
+    expect(hash(physicalSourceFacts(source))).toBe(before)
+    expect(hash(physicalSceneShapeFacts(compilePhysicalObjects({ ...artifacts, source })))).toBe(shape)
+    const value = scene(), object = value.objects.find(object => object.id === column.id)!
+    const mesh = buildVisibleMeshes({ ...value, objects: [object] }, { ...defaultPhysicalSceneView(value.levels), levelId: 'operating' })[0]!
+    let capArea = 0
+    for (let index = 0; index < mesh.vertices.length; index += 21) {
+      const a = mesh.vertices.slice(index, index + 3), b = mesh.vertices.slice(index + 7, index + 10), c = mesh.vertices.slice(index + 14, index + 17)
+      if ([a, b, c].every(point => Math.abs(point[2]! - 16.2) < 1e-8)) capArea += Math.abs((b[0]! - a[0]!) * (c[1]! - a[1]!) - (b[1]! - a[1]!) * (c[0]! - a[0]!)) / 2
+    }
+    expect(capArea).toBeCloseTo(2 * .8 * .12 + (.8 - 2 * .12) * .12, 6)
   })
 
   test('high bay uses authored floor volumes, not an unrelated refuelling deck height', () => {

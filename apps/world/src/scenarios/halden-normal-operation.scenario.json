@@ -291,7 +291,7 @@
           "design": {
             "id": "pwr-full-unit",
             "revision": "pwr-full-unit-20261026-r3",
-            "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
+            "digest": "5cb016ce8719cced510f2f8d5bc11a4e0fac035294795d91ea94ad47d70a3baa"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -309,7 +309,7 @@
           "design": {
             "id": "pwr-full-unit",
             "revision": "pwr-full-unit-20261026-r3",
-            "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
+            "digest": "5cb016ce8719cced510f2f8d5bc11a4e0fac035294795d91ea94ad47d70a3baa"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -327,7 +327,7 @@
           "design": {
             "id": "pwr-full-unit",
             "revision": "pwr-full-unit-20261026-r3",
-            "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
+            "digest": "5cb016ce8719cced510f2f8d5bc11a4e0fac035294795d91ea94ad47d70a3baa"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -345,7 +345,7 @@
           "design": {
             "id": "pwr-full-unit",
             "revision": "pwr-full-unit-20261026-r3",
-            "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
+            "digest": "5cb016ce8719cced510f2f8d5bc11a4e0fac035294795d91ea94ad47d70a3baa"
           },
           "members": {
             "unit": "plant:halden-4"
@@ -363,7 +363,7 @@
           "design": {
             "id": "pwr-campus",
             "revision": "pwr-campus-20261026-r3",
-            "digest": "abc681b1112f6ea1c76c5b62498711aa52ecddb97e2aee1f8dfbdcf185516cfc"
+            "digest": "31123304895fc533d293b5555f1fd942dc4fd8d8bc14599e2a62170ea9623c84"
           },
           "members": {
             "grid": "grid:halden-four-unit",

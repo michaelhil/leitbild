@@ -11,6 +11,7 @@ import { physicalStairFlights } from '../native/explorer/source.ts'
  * Dimensions remain illustrative; no structural, access or lifting qualification is implied. */
 export const createPwrArchitectureUnitArtifacts = () => {
   const source = physicalSourceSchema.parse(structuredClone(unitSource)), bindings = structuredClone(unitBindings), coverage = structuredClone(unitCoverage)
+  for (const element of source.elements) if (element.kind === 'support') element.planDisplay = 'section'
   const hallId = 'building/turbine-hall', hallSpace = 'space/turbine-hall'
   // Capture each enclosure's actual authored slabs/platforms. Global level
   // names shared across the site do not create floors in unrelated buildings.
@@ -27,12 +28,13 @@ export const createPwrArchitectureUnitArtifacts = () => {
     const authored: Element = { disposition: 'installed', buildingId: hallId, ...element }
     source.elements.push(authored); return authored
   }
-  const box = (id: string, label: string, position: V3, size: V3, material: Element['material'] = 'steel', levelId = 'operating', extra: Partial<Element> = {}): Element => add({ id, label, kind: 'support', levelId, pose: { position, yaw: 0 }, dimensions: { length: size[0], width: size[1], height: size[2] }, material, ...extra })
+  const box = (id: string, label: string, position: V3, size: V3, material: Element['material'] = 'steel', levelId = 'operating', extra: Partial<Element> = {}): Element => add({ id, label, kind: 'support', levelId, pose: { position, yaw: 0 }, dimensions: { length: size[0], width: size[1], height: size[2] }, material, planDisplay: 'section', ...extra })
   const tube = (id: string, label: string, points: V3[], radius: number, material: Element['material'] = 'steel', extra: Partial<Element> = {}): Element => {
     const min = [0, 1, 2].map(axis => Math.min(...points.map(point => point[axis]!))) as V3, max = [0, 1, 2].map(axis => Math.max(...points.map(point => point[axis]!))) as V3
-    return box(id, label, min, max.map((value, axis) => Math.max(radius * 2, value - min[axis]!)) as V3, material, 'operating', { member: { kind: 'tube', points: points.map(point => point.map((value, axis) => value - min[axis]!) as V3), radius }, ...extra })
+    return box(id, label, min, max.map((value, axis) => Math.max(radius * 2, value - min[axis]!)) as V3, material, 'operating', { member: { kind: 'tube', points: points.map(point => point.map((value, axis) => value - min[axis]!) as V3), radius }, planDisplay: 'projection', ...extra })
   }
   const bindTurbine = (element: Element): void => {
+    element.planDisplay = 'projection'
     bindings.push({ physicalElementId: element.id, elementId: 'turbine', relation: 'partOf' })
     coverage.dispositions.find(disposition => disposition.subjectId === 'turbine')!.physicalElementIds.push(element.id)
   }
@@ -60,8 +62,8 @@ export const createPwrArchitectureUnitArtifacts = () => {
   add({ id: craneId, label: 'Illustrative overhead bridge crane', kind: 'assembly', levelId: 'operating', pose: { position: [79.7, 2.5, 23.4], yaw: 0 }, dimensions: { length: 2.2, width: 31.7, height: 6.9 } })
   for (const x of [80, 81.1]) box(`structure/crane/bridge-${x}`, 'Bridge crane girder', [x, 2.5, 28.4], [.3, 31.7, 1.1], 'crane', 'operating', { assemblyId: craneId, member: { kind: 'i-section', axis: 'y', flange: .12, web: .08 } })
   box('structure/crane/trolley', 'Bridge crane trolley', [79.7, 17, 29.5], [2.2, 2.8, .8], 'dark', 'operating', { assemblyId: craneId })
-  tube('structure/crane/hoist', 'Bridge crane hoist cable', [[80.7, 18.4, 29.5], [80.7, 18.4, 24]], .045, 'dark', { assemblyId: craneId })
-  tube('structure/crane/hook', 'Bridge crane hook block', [[80.7, 18.4, 24], [80.7, 18.4, 23.4]], .18, 'crane', { assemblyId: craneId })
+  tube('structure/crane/hoist', 'Bridge crane hoist cable', [[80.7, 18.4, 29.5], [80.7, 18.4, 24]], .045, 'dark', { assemblyId: craneId, planDisplay: 'section' })
+  tube('structure/crane/hook', 'Bridge crane hook block', [[80.7, 18.4, 24], [80.7, 18.4, 23.4]], .18, 'crane', { assemblyId: craneId, planDisplay: 'section' })
   bindTurbine(tube('structure/shaftline', 'Common turbine-generator shaft', [[8.3, 18.4, 17.2], [75.7, 18.4, 17.2]], .23, 'dark', { spaceIds: [hallSpace] }))
   for (const x of [8.6, 18.4, 30, 41, 52.6, 69, 75.7]) {
     bindTurbine(box(`structure/bearing/${x}/base`, 'Turbine-generator bearing pedestal base', [x - .6, 17.5, 15], [1.2, 1.8, .35], 'plinth'))
@@ -124,10 +126,13 @@ export const createPwrArchitectureUnitArtifacts = () => {
 
 const createAnnotations = (source: Source): NonNullable<Source['planAnnotations']> => {
   const annotations: NonNullable<Source['planAnnotations']> = []
+  // Authored drawing designations from the accepted conventional-island study.
+  // These label physical parts; they do not create graph aliases or I&C tags.
+  const designations: Readonly<Record<string, string>> = { 'tg-hp': 'HP', 'tg-lp-1': 'LP 1', 'tg-lp-2': 'LP 2', 'tg-lp-3': 'LP 3', 'tg-generator': 'GEN', 'tg-exciter': 'EXC', 'msr-1': 'MSR 1', 'msr-2': 'MSR 2', 'stop-valve': 'TSV', 'condenser-1': 'COND 1', 'condenser-2': 'COND 2', 'condenser-3': 'COND 3', 'cp-a': 'CP A', 'cp-b': 'CP B' }
   const membership = (element: Element) => ({ levelIds: element.inspectionLevels?.map(value => value.levelId) ?? [element.levelId], scopeIds: [source.rootScope.id, ...(element.buildingId ? [element.buildingId] : []), ...(element.kind === 'space' ? [element.id] : element.spaceIds ?? [])] })
   for (const element of source.elements.filter(element => element.kind === 'space' || element.kind === 'equipment')) {
     const d = parameters(source, element), room = element.kind === 'space'
-    annotations.push({ id: `annotation/label/${element.id}`, kind: 'label', role: room ? 'space' : 'equipment', ...membership(element), ...(room ? {} : { occurrenceId: element.id }), layerId: 'plan-labels', anchor: { elementId: element.id, local: [d.length / 2, room ? d.width * .15 : d.width / 2, room ? 0 : d.height] }, rotation: element.pose.yaw * 180 / Math.PI })
+    annotations.push({ id: `annotation/label/${element.id}`, kind: 'label', role: room ? 'space' : 'equipment', ...membership(element), ...(room ? {} : { occurrenceId: element.id }), ...(designations[element.id] ? { text: designations[element.id] } : {}), layerId: 'plan-labels', anchor: { elementId: element.id, local: [d.length / 2, room ? d.width * .15 : d.width / 2, room ? 0 : d.height] }, rotation: element.pose.yaw * 180 / Math.PI })
     if (room) for (const axis of ['length', 'width'] as const) annotations.push({ id: `annotation/dimension/${element.id}/${axis}`, kind: 'dimension', ...membership(element), layerId: 'plan-dimensions', measure: { elementId: element.id, axis, start: [0, 0, 0] }, offset: axis === 'length' ? [0, -1, 0] : [-1, 0, 0], unit: 'm' })
   }
   const hatch = (id: string, label: string, role: 'laydown' | 'withdrawal', x: number, y: number, length: number, width: number, levelId: string): void => {

@@ -55,3 +55,10 @@ test('new inspection volumes use exact floor boundaries and the full actual thic
   expect(lower.every(mesh => mesh.bounds.min[2] === 0)).toBe(true)
   expect(packPhysicalSceneSchema.safeParse({ ...scene, objects: [{ ...wall, inspectionLevels: [] }] }).success).toBe(false)
 })
+test('authored structural Plan sections omit overhead framing while machinery projections keep their full silhouette', () => {
+  const overhead: PhysicalSceneObject = { ...wall, id: 'roof-beam', kind: 'support', inspectionBoundary: undefined, planDisplay: 'section', positions: [0, 0, 28, 10, 0, 28, 10, .4, 29] }
+  const machine: PhysicalSceneObject = { ...overhead, id: 'machine-fitting', planDisplay: 'projection' }
+  const value = { ...scene, objects: [overhead, machine] }, plan = { ...defaultPhysicalSceneView(scene.levels), levelId: 'operating' }
+  expect(buildVisibleMeshes(value, plan).map(mesh => mesh.object.id)).toEqual(['machine-fitting'])
+  expect(buildVisibleMeshes(value, { ...plan, mode: '3d' }).map(mesh => mesh.object.id)).toEqual(['roof-beam', 'machine-fitting'])
+})

@@ -5,7 +5,7 @@ import { physicalSourceFacts as architectureSourceFacts } from './native/archite
 import { architecturePhysicalCompilerRef } from './compiler-identity.ts'
 
 /** Keep the frozen JSON fingerprint contract independent of worker transport storage. */
-export const physicalSceneShapeFacts = (objects: PackPhysicalScene['objects']) => physicalShapeFacts(objects.map(object => ({ ...object,
+export const physicalSceneShapeFacts = (objects: PackPhysicalScene['objects']) => physicalShapeFacts(objects.map(({ inspectionBoundary: _boundary, planDisplay: _plan, ...object }) => ({ ...object,
   positions: Array.isArray(object.positions) ? object.positions : Array.from(object.positions),
 })))
 

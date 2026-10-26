@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261026-r3",
-    "digest": "abc681b1112f6ea1c76c5b62498711aa52ecddb97e2aee1f8dfbdcf185516cfc"
+    "digest": "31123304895fc533d293b5555f1fd942dc4fd8d8bc14599e2a62170ea9623c84"
   },
   "sourceDigest": "0931830694900f541281efb9c90a317b378d7c379391c6f83ed0792649d5e76c",
   "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
@@ -25,7 +25,7 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "5aa45af40e0a39e895405dc40eca1442c6fd42a2fe89c5adcfec4f32979f3395"
+    "digest": "394069f31d2c7773ae449dd761ed17ea2ccaf4cd5565356662fa51ac550735b6"
   },
   "coverageDigest": "9cafb704ff9e51894a438fa5f5ead40a3b2d758fa14e0a1c0ed7712da1ff867b",
   "requirements": {

@@ -18,6 +18,7 @@ const memberSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('transition'), topLength: z.number().positive().finite(), topWidth: z.number().positive().finite() }).strict(),
 ])
 const elementSchema = explorerSourceSchema.shape.elements.element.extend({
+  planDisplay: z.enum(['section', 'projection']).optional(),
   member: memberSchema.optional(),
   inspectionBoundary: z.object({ outward: z.tuple([z.number().finite(), z.number().finite(), z.literal(0)]) }).strict().optional(),
   inspectionLevels: z.array(z.object({ levelId: id, low: z.number().finite(), high: z.number().finite() }).strict()).min(1).optional(),
@@ -76,4 +77,4 @@ export const physicalSourceFacts = (source: Source): unknown => {
   return stripMaterial(physical)
 }
 const stripMaterial = (value: unknown): unknown => Array.isArray(value) ? value.map(stripMaterial) : value !== null && typeof value === 'object'
-  ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'material' && key !== 'inspectionBoundary').map(([key, child]) => [key, stripMaterial(child)])) : value
+  ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'material' && key !== 'inspectionBoundary' && key !== 'planDisplay').map(([key, child]) => [key, stripMaterial(child)])) : value

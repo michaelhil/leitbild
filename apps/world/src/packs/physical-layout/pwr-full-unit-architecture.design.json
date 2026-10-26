@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261026-r3",
-    "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
+    "digest": "5cb016ce8719cced510f2f8d5bc11a4e0fac035294795d91ea94ad47d70a3baa"
   },
-  "sourceDigest": "27d44939bd87b73ac218ffc39b3659522d2f71944fd7e0dc69a92357d9608cf1",
+  "sourceDigest": "894086fd77429c5810c9ad1347c39111b34f6fd10c380183b51c3f7f36ccca52",
   "bindingDigest": "32122fb7b371c124844edf6eaa2c6e3f7c4829e2ec4bbd3b53aca33a9eb5f4f8",
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
@@ -25,7 +25,7 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "5aa45af40e0a39e895405dc40eca1442c6fd42a2fe89c5adcfec4f32979f3395"
+    "digest": "394069f31d2c7773ae449dd761ed17ea2ccaf4cd5565356662fa51ac550735b6"
   },
   "coverageDigest": "ab0460b385be739166785496947488026dd12ce81ba76260aeeae456926723cc",
   "requirements": {

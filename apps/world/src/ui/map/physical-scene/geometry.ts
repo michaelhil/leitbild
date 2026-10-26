@@ -169,7 +169,8 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       const boundary = object.inspectionBoundary !== undefined && view.mode === '3d' && view.cutaway && object.levelId !== 'site'
       const firstVolume = boundary && !clipLevel ? object.inspectionLevels?.reduce((first, volume) => volume.low < first.low ? volume : first) : undefined
       const cutLevel = clipLevel ?? (boundary ? levels.find(level => level.id === firstVolume?.levelId) ?? levels[0]! : levels.at(-1)!)
-      const cut = view.cutaway && (object.kind === 'wall' || object.inspectionBoundary !== undefined) && object.levelId !== 'site' ? authoredVolume ? authoredVolume.low + cutLevel.cutHeight - cutLevel.elevation : firstVolume ? firstVolume.low + cutLevel.cutHeight - cutLevel.elevation : cutLevel.cutHeight : Infinity
+      const sectioned = object.kind === 'wall' || object.inspectionBoundary !== undefined || view.mode === '2d' && object.planDisplay === 'section'
+      const cut = view.cutaway && sectioned && object.levelId !== 'site' ? authoredVolume ? authoredVolume.low + cutLevel.cutHeight - cutLevel.elevation : firstVolume ? firstVolume.low + cutLevel.cutHeight - cutLevel.elevation : cutLevel.cutHeight : Infinity
       // Camera-aware boundaries keep both exact representations resident. The
       // renderer chooses full rear walls or capped foreground walls; camera
       // movement never rebuilds source geometry or leaves a false section seam.
@@ -185,7 +186,7 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
         const triangle = ids.map(id => vertexAt(object, id, normal))
         let polygon = clipPolygon(clipPolygon(triangle, low, true), high, false)
         for (let corner = 1; corner < polygon.length - 1; corner++) vertices.push(...polygon[0]!, ...polygon[corner]!, ...polygon[corner + 1]!)
-        if ((object.kind === 'wall' || object.inspectionBoundary !== undefined) && Number.isFinite(high)) { const segment = sectionSegment(triangle, high); if (segment) segments.push(segment) }
+        if (sectioned && Number.isFinite(high)) { const segment = sectionSegment(triangle, high); if (segment) segments.push(segment) }
       }
       if (!vertices.length) continue
       appendCaps(segments, vertices)

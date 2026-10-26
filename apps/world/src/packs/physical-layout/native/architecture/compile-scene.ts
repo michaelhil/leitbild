@@ -42,6 +42,7 @@ export const compilePhysicalObjects = (data: PhysicalCompilerInput): PackPhysica
     scopeIds: [data.source.rootScope.id, element.buildingId, ...(element.spaceIds ?? []), element.assemblyId].filter((id): id is string => id !== undefined),
     ...(element.kind === 'conductor' && element.installation === 'cable-corridor' ? { layerId: 'utility-routes' } : {}),
     ...(element.inspectionBoundary ? { inspectionBoundary: element.inspectionBoundary } : {}),
+    ...(element.planDisplay ? { planDisplay: element.planDisplay } : {}),
   }]
 })
 

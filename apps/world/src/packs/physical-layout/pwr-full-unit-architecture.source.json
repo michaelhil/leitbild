@@ -1631,6 +1631,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1659,6 +1660,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1687,6 +1689,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1715,6 +1718,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1743,6 +1747,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1771,6 +1776,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1799,6 +1805,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1827,6 +1834,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1855,6 +1863,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1883,6 +1892,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1911,6 +1921,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1939,6 +1950,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1967,6 +1979,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -1995,6 +2008,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -2023,6 +2037,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -2051,6 +2066,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -2079,6 +2095,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -2107,6 +2124,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "z",
@@ -2134,7 +2152,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/18.4/26.7",
@@ -2156,7 +2175,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/29.4/8",
@@ -2178,7 +2198,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/29.4/26.7",
@@ -2200,7 +2221,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/40.4/8",
@@ -2222,7 +2244,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/40.4/26.7",
@@ -2244,7 +2267,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/51.4/8",
@@ -2266,7 +2290,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "pier/51.4/26.7",
@@ -2288,7 +2313,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "main-steam-route",
@@ -11462,7 +11488,8 @@
         "height": 22
       },
       "buildingId": "building/containment",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "support/containment/-29/-8",
@@ -11483,7 +11510,8 @@
         "height": 22
       },
       "buildingId": "building/containment",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "support/containment/-71/24",
@@ -11504,7 +11532,8 @@
         "height": 22
       },
       "buildingId": "building/containment",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "support/containment/-29/24",
@@ -11525,7 +11554,8 @@
         "height": 22
       },
       "buildingId": "building/containment",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "platform/deaerator",
@@ -15494,7 +15524,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/0/36.4",
@@ -15516,7 +15547,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/1/0.4",
@@ -15538,7 +15570,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/1/36.4",
@@ -15560,7 +15593,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/2/0.4",
@@ -15582,7 +15616,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/2/36.4",
@@ -15604,7 +15639,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/3/0.4",
@@ -15626,7 +15662,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/3/36.4",
@@ -15648,7 +15685,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/4/0.4",
@@ -15670,7 +15708,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/4/36.4",
@@ -15692,7 +15731,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/5/0.4",
@@ -15714,7 +15754,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/5/36.4",
@@ -15736,7 +15777,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/6/0.4",
@@ -15758,7 +15800,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/6/36.4",
@@ -15780,7 +15823,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/7/0.4",
@@ -15802,7 +15846,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/7/36.4",
@@ -15824,7 +15869,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/8/0.4",
@@ -15846,7 +15892,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/base/column/8/36.4",
@@ -15868,7 +15915,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/runway/2.5",
@@ -15891,6 +15939,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "x",
@@ -15926,6 +15975,7 @@
       "buildingId": "building/turbine-hall",
       "material": "dark",
       "disposition": "installed",
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -15955,6 +16005,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "x",
@@ -15990,6 +16041,7 @@
       "buildingId": "building/turbine-hall",
       "material": "dark",
       "disposition": "installed",
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -16019,6 +16071,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16047,6 +16100,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16075,6 +16129,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16103,6 +16158,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16131,6 +16187,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16159,6 +16216,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16187,6 +16245,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16215,6 +16274,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16243,6 +16303,7 @@
       "buildingId": "building/turbine-hall",
       "material": "steel",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16293,6 +16354,7 @@
       "material": "crane",
       "assemblyId": "assembly/turbine-hall-crane",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16322,6 +16384,7 @@
       "material": "crane",
       "assemblyId": "assembly/turbine-hall-crane",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "i-section",
         "axis": "y",
@@ -16350,7 +16413,8 @@
       "buildingId": "building/turbine-hall",
       "material": "dark",
       "assemblyId": "assembly/turbine-hall-crane",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "section"
     },
     {
       "id": "structure/crane/hoist",
@@ -16374,6 +16438,7 @@
       "material": "dark",
       "assemblyId": "assembly/turbine-hall-crane",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "tube",
         "points": [
@@ -16413,6 +16478,7 @@
       "material": "crane",
       "assemblyId": "assembly/turbine-hall-crane",
       "disposition": "installed",
+      "planDisplay": "section",
       "member": {
         "kind": "tube",
         "points": [
@@ -16454,6 +16520,7 @@
         "space/turbine-hall"
       ],
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16491,7 +16558,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/8.6/pedestal",
@@ -16513,7 +16581,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/8.6/housing",
@@ -16536,6 +16605,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16573,7 +16643,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/18.4/pedestal",
@@ -16595,7 +16666,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/18.4/housing",
@@ -16618,6 +16690,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16655,7 +16728,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/30/pedestal",
@@ -16677,7 +16751,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/30/housing",
@@ -16700,6 +16775,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16737,7 +16813,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/41/pedestal",
@@ -16759,7 +16836,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/41/housing",
@@ -16782,6 +16860,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16819,7 +16898,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/52.6/pedestal",
@@ -16841,7 +16921,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/52.6/housing",
@@ -16864,6 +16945,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16901,7 +16983,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/69/pedestal",
@@ -16923,7 +17006,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/69/housing",
@@ -16946,6 +17030,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -16983,7 +17068,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "plinth",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/75.7/pedestal",
@@ -17005,7 +17091,8 @@
       },
       "buildingId": "building/turbine-hall",
       "material": "dark",
-      "disposition": "installed"
+      "disposition": "installed",
+      "planDisplay": "projection"
     },
     {
       "id": "structure/bearing/75.7/housing",
@@ -17028,6 +17115,7 @@
       "buildingId": "building/turbine-hall",
       "material": "light",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "tube",
         "points": [
@@ -17066,6 +17154,7 @@
       "buildingId": "building/turbine-hall",
       "material": "hood",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "transition",
         "topLength": 5.8,
@@ -17093,6 +17182,7 @@
       "buildingId": "building/turbine-hall",
       "material": "hood",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "transition",
         "topLength": 5.8,
@@ -17120,6 +17210,7 @@
       "buildingId": "building/turbine-hall",
       "material": "hood",
       "disposition": "installed",
+      "planDisplay": "projection",
       "member": {
         "kind": "transition",
         "topLength": 5.8,
@@ -17150,6 +17241,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17194,6 +17286,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17238,6 +17331,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17282,6 +17376,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17326,6 +17421,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17370,6 +17466,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17414,6 +17511,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17458,6 +17556,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17502,6 +17601,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17546,6 +17646,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17590,6 +17691,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17634,6 +17736,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17678,6 +17781,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17722,6 +17826,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17766,6 +17871,7 @@
       "dependsOn": [
         "stair/main"
       ],
+      "planDisplay": "section",
       "member": {
         "kind": "guardrail",
         "points": [
@@ -17810,6 +17916,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -17842,6 +17949,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -17874,6 +17982,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -17906,6 +18015,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -17938,6 +18048,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -17970,6 +18081,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18002,6 +18114,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18034,6 +18147,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18066,6 +18180,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18098,6 +18213,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18130,6 +18246,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18162,6 +18279,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18194,6 +18312,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-1/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18226,6 +18345,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18258,6 +18378,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18290,6 +18411,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18322,6 +18444,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18354,6 +18477,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18386,6 +18510,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18418,6 +18543,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18450,6 +18576,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18482,6 +18609,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18514,6 +18642,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18546,6 +18675,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18578,6 +18708,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18610,6 +18741,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-2/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18642,6 +18774,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18674,6 +18807,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18706,6 +18840,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18738,6 +18873,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18770,6 +18906,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18802,6 +18939,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18834,6 +18972,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18866,6 +19005,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18898,6 +19038,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18930,6 +19071,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18962,6 +19104,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -18994,6 +19137,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -19026,6 +19170,7 @@
       "dependsOn": [
         "opening/wall/hall-north/W-3/operating"
       ],
+      "planDisplay": "section",
       "inspectionBoundary": {
         "outward": [
           0,
@@ -19069,7 +19214,8 @@
           10.4,
           23
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-admission-24.5-10.4",
@@ -19111,7 +19257,8 @@
           12.8,
           19.6
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-admission-35.5-10.4",
@@ -19153,7 +19300,8 @@
           12.8,
           19.6
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-admission-46.5-10.4",
@@ -19195,7 +19343,8 @@
           12.8,
           19.6
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-reheat-26.6",
@@ -19232,7 +19381,8 @@
           26.6,
           23
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-admission-24.5-26.6",
@@ -19274,7 +19424,8 @@
           24,
           19.6
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-admission-35.5-26.6",
@@ -19316,7 +19467,8 @@
           24,
           19.6
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     },
     {
       "id": "route/turbine-admission-46.5-26.6",
@@ -19358,7 +19510,8 @@
           24,
           19.6
         ]
-      ]
+      ],
+      "planDisplay": "projection"
     }
   ],
   "evidence": {
@@ -19385,6 +19538,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "HP",
       "anchor": {
         "elementId": "tg-hp",
         "local": [
@@ -19409,6 +19563,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "LP 1",
       "anchor": {
         "elementId": "tg-lp-1",
         "local": [
@@ -19433,6 +19588,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "LP 2",
       "anchor": {
         "elementId": "tg-lp-2",
         "local": [
@@ -19457,6 +19613,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "LP 3",
       "anchor": {
         "elementId": "tg-lp-3",
         "local": [
@@ -19481,6 +19638,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "GEN",
       "anchor": {
         "elementId": "tg-generator",
         "local": [
@@ -19505,6 +19663,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "EXC",
       "anchor": {
         "elementId": "tg-exciter",
         "local": [
@@ -19529,6 +19688,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "MSR 1",
       "anchor": {
         "elementId": "msr-1",
         "local": [
@@ -19553,6 +19713,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "MSR 2",
       "anchor": {
         "elementId": "msr-2",
         "local": [
@@ -19577,6 +19738,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "TSV",
       "anchor": {
         "elementId": "stop-valve",
         "local": [
@@ -19601,6 +19763,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "COND 1",
       "anchor": {
         "elementId": "condenser-1",
         "local": [
@@ -19625,6 +19788,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "COND 2",
       "anchor": {
         "elementId": "condenser-2",
         "local": [
@@ -19649,6 +19813,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "COND 3",
       "anchor": {
         "elementId": "condenser-3",
         "local": [
@@ -19673,6 +19838,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "CP A",
       "anchor": {
         "elementId": "cp-a",
         "local": [
@@ -19697,6 +19863,7 @@
       "layerId": "plan-labels",
       "kind": "label",
       "role": "equipment",
+      "text": "CP B",
       "anchor": {
         "elementId": "cp-b",
         "local": [
