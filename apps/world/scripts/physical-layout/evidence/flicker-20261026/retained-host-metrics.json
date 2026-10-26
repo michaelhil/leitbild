@@ -1,0 +1,403 @@
+{
+  "errors": [],
+  "coldMs": 3273.7999999523163,
+  "canvasColdMs": 71.10000014305115,
+  "coldInventories": {
+    "map": [
+      [
+        "layout:halden-1",
+        "ready"
+      ],
+      [
+        "layout:halden-2",
+        "ready"
+      ],
+      [
+        "layout:halden-3",
+        "distant"
+      ],
+      [
+        "layout:halden-4",
+        "distant"
+      ],
+      [
+        "layout:halden-campus",
+        "ready"
+      ]
+    ],
+    "canvas": [
+      [
+        "layout:halden-1",
+        "ready"
+      ],
+      [
+        "layout:halden-2",
+        "ready"
+      ],
+      [
+        "layout:halden-3",
+        "ready"
+      ],
+      [
+        "layout:halden-4",
+        "ready"
+      ],
+      [
+        "layout:halden-campus",
+        "ready"
+      ]
+    ]
+  },
+  "phases": [
+    {
+      "name": "map-idle",
+      "geometryUploadDelta": 0,
+      "statusUploadDelta": 0,
+      "beforeInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "distant"
+        ],
+        [
+          "layout:halden-4",
+          "distant"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "afterInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "distant"
+        ],
+        [
+          "layout:halden-4",
+          "distant"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "rafP95": 16.800000000000182
+    },
+    {
+      "name": "map-moving-paused",
+      "geometryUploadDelta": 0,
+      "statusUploadDelta": 0,
+      "beforeInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "distant"
+        ],
+        [
+          "layout:halden-4",
+          "distant"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "afterInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "distant"
+        ],
+        [
+          "layout:halden-4",
+          "distant"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "rafP95": 16.800000000000182
+    },
+    {
+      "name": "map-moving-status",
+      "geometryUploadDelta": 0,
+      "statusUploadDelta": 200,
+      "beforeInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "distant"
+        ],
+        [
+          "layout:halden-4",
+          "distant"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "afterInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "distant"
+        ],
+        [
+          "layout:halden-4",
+          "distant"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "rafP95": 16.799999999999272
+    },
+    {
+      "name": "canvas-idle",
+      "geometryUploadDelta": 0,
+      "statusUploadDelta": 0,
+      "beforeInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "ready"
+        ],
+        [
+          "layout:halden-4",
+          "ready"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "afterInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "ready"
+        ],
+        [
+          "layout:halden-4",
+          "ready"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "rafP95": 16.799999999999272
+    },
+    {
+      "name": "canvas-moving-paused",
+      "geometryUploadDelta": 0,
+      "statusUploadDelta": 0,
+      "beforeInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "ready"
+        ],
+        [
+          "layout:halden-4",
+          "ready"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "afterInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "ready"
+        ],
+        [
+          "layout:halden-4",
+          "ready"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "rafP95": 16.700000000000728
+    },
+    {
+      "name": "canvas-moving-status",
+      "geometryUploadDelta": 0,
+      "statusUploadDelta": 200,
+      "beforeInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "ready"
+        ],
+        [
+          "layout:halden-4",
+          "ready"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "afterInventory": [
+        [
+          "layout:halden-1",
+          "ready"
+        ],
+        [
+          "layout:halden-2",
+          "ready"
+        ],
+        [
+          "layout:halden-3",
+          "ready"
+        ],
+        [
+          "layout:halden-4",
+          "ready"
+        ],
+        [
+          "layout:halden-campus",
+          "ready"
+        ]
+      ],
+      "rafP95": 16.700000000000728
+    }
+  ],
+  "disposals": {
+    "map": {
+      "current": null,
+      "liveCounts": [
+        {
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0
+        }
+      ],
+      "preparation": {
+        "workerAlive": false,
+        "clients": 0,
+        "registeredSources": 0,
+        "registeredBytes": 0,
+        "leases": 0,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 4,
+        "viewRequests": 9,
+        "transferredBytes": 41358588
+      }
+    },
+    "canvas": {
+      "current": null,
+      "liveCounts": [
+        {
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0
+        }
+      ],
+      "preparation": {
+        "workerAlive": false,
+        "clients": 0,
+        "registeredSources": 0,
+        "registeredBytes": 0,
+        "leases": 0,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 4,
+        "viewRequests": 9,
+        "transferredBytes": 41358588
+      }
+    }
+  },
+  "separationGeometryUploads": [
+    7,
+    7
+  ]
+}

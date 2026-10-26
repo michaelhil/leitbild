@@ -3,8 +3,8 @@
   "files": [
     {
       "file": "README.md",
-      "bytes": 3612,
-      "sha256": "011561a59126083ba001545c36df8113f2bb992dedb4460de28eaea95a1bb925"
+      "bytes": 4354,
+      "sha256": "356ef0ac2f96bafdd0f0049bf84069babcf73c5ee46ea8955afe3ad56c12b921"
     },
     {
       "file": "baseline-dpr1.summary.json",
@@ -45,6 +45,11 @@
       "file": "parking.json",
       "bytes": 1146697,
       "sha256": "64e4f0192e799c56b1aa8a70f05f19028e4203698a731ecd78dc8aeb55ecefda"
+    },
+    {
+      "file": "parking.summary.json",
+      "bytes": 170768,
+      "sha256": "cf0330c4fefb2db589c52b3dcc5483129138b9b8833ddd3afbfdda8f2900b329"
     },
     {
       "file": "primary-dpr1.summary.json",
@@ -93,8 +98,18 @@
     },
     {
       "file": "renderer-summary.json",
-      "bytes": 2594,
-      "sha256": "582c189c1548003f72ef64d3cca9d3cc1c369abf9c3a82519471d3e18cab0347"
+      "bytes": 3004,
+      "sha256": "450c152588ea6d812af3259ff2333493101970886741d6d3a0e312cdc5f130bf"
+    },
+    {
+      "file": "retained-host-compact.json",
+      "bytes": 507138,
+      "sha256": "3aed2c5e6687978e5d0aee642737943b939dd9c26658f5082dc2f9df13ccd3e9"
+    },
+    {
+      "file": "retained-host-metrics.json",
+      "bytes": 7368,
+      "sha256": "9c99f426ee78e0d8e3c741334a8b8a135535c829a06f3f0cd0179d4506407062"
     },
     {
       "file": "source-audit-summary.json",

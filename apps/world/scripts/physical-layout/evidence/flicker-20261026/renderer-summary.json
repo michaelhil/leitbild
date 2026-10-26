@@ -56,5 +56,23 @@
     "gl": [],
     "state": []
   },
-  "retainedHost": "Incomplete: timed out while awaiting every source ready; whole-map all-detail assumption is incompatible with automatic semantic legibility. Not a passing warm resource or camera/status benchmark."
+  "retainedHost": {
+    "initialAttempt": "Incomplete; original all-detailed Map-at-whole-site precondition timed out. Raw failure log preserved.",
+    "qualifiedAttempt": "Complete; same production policy, explicit unit focus and ready/distant inventory.",
+    "raw": "retained-host-raw.json",
+    "compact": "retained-host-compact.json",
+    "geometryUploadDeltas": {
+      "map-idle": 0,
+      "map-moving-paused": 0,
+      "map-moving-status": 0,
+      "canvas-idle": 0,
+      "canvas-moving-paused": 0,
+      "canvas-moving-status": 0
+    },
+    "separationGeometryUploads": [
+      7,
+      7
+    ],
+    "errors": []
+  }
 }
