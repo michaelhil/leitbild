@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { PackPhysicalScene } from '../src/core/packs/scene.ts'
 import { createPhysicalSceneControllerForViewport } from '../src/ui/map/physical-scene/scene-controller.ts'
 import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
+import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from '../src/ui/map/physical-scene/overview-geometry.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
@@ -123,4 +124,14 @@ test('sources without an explicit reusable geometry key remain private to each h
 test('the core Plan transition cancels Orbit and restores ground-level top view for non-UI callers', async () => {
   const h = harness(), value = scene('a'); h.controller.setSources([h.source(value)]); h.controller.setView('a', { ...defaultPhysicalSceneView(value.levels), mode: '3d' }); await settled()
   h.controller.setNavigationTool('orbit'); h.controller.setView('a', defaultPhysicalSceneView(value.levels)); expect(h.tools.at(-1)).toBe('pan'); expect(h.poses.at(-1)).toEqual({ pitch: 0, elevation: 0 }); h.controller.destroy()
+})
+
+test('hiding a first coplanar owner reveals the retained alternative for exact picking without re-preparing buffers', async () => {
+  const h = harness(), value = scene('a'), positions = [-.8,-.8,0,.8,-.8,0,.8,.8,0,-.8,-.8,0,.8,.8,0,-.8,.8,0]
+  value.objects = value.objects.map((object, index) => ({ ...object, positions, levelId: 'site', ...(index === 0 ? { layerId: 'utilities' } : { layerId: undefined }) }))
+  h.controller.setSources([h.source(value)]); const view = { ...defaultPhysicalSceneView(value.levels), mode: '3d' as const, levelId: 'all' }; h.controller.setView('a', view); await settled()
+  const matrix = new Float64Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]), target = () => pickPhysicalMesh([{ sceneId: 'a', meshes: h.entries()[0]!.meshes, matrix }], {x:400,y:300}, 800,600)?.mesh.object.id
+  expect(target()).toBe('machine'); const before = h.prepares(), buffers = h.entries()[0]!.asset!.buffers
+  h.controller.setView('a', { ...view, hiddenLayerIds: ['utilities'] }); expect(target()).toBe('utility'); expect(h.prepares()).toBe(before); expect(h.entries()[0]!.asset!.buffers).toBe(buffers)
+  h.controller.setView('a', view); expect(target()).toBe('machine'); h.controller.selectScope('a','b'); expect(target()).toBe('utility'); h.controller.destroy()
 })

@@ -1,11 +1,12 @@
 import type { PackPhysicalScene } from '../../../core/packs/scene.ts'
 import { copyPhysicalSceneForTransfer } from '../../../core/packs/scene-transfer.ts'
+import { preparePhysicalSurfaceOwnership, type PhysicalSurfaceOwnershipDiagnostics } from './surface-ownership.ts'
 import { buildVisibleMeshes, type PhysicalMesh } from './geometry.ts'
 import { admitPhysicalPickAcceleration, preparePhysicalPickAcceleration, type PhysicalPickAcceleration } from './picking.ts'
 import type { PhysicalSceneView } from './types.ts'
 import { preparePhysicalRenderBuffers, type PhysicalRenderBuffers } from './render-buffers.ts'
 
-export interface PhysicalPreparedGeometry { readonly sourceAsset?: PhysicalPreparedGeometry; readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers }
+export interface PhysicalPreparedGeometry { readonly sourceAsset?: PhysicalPreparedGeometry; readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers; readonly surfaceOwnership: PhysicalSurfaceOwnershipDiagnostics }
 export interface PhysicalPreparationPoolMetrics { readonly workerAlive: boolean; readonly clients: number; readonly registeredSources: number; readonly registeredBytes: number; readonly leases: number; readonly inFlightJobs: number; readonly pinnedSources: number; readonly registrations: number; readonly viewRequests: number; readonly transferredBytes: number }
 export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity?: string, sourceKey?: string) => Promise<PhysicalPreparedGeometry>) & {
   /** Real worker ports retain exact source families; pure offline/test ports own no worker. */
@@ -15,8 +16,8 @@ export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: Physica
 }
 /** Shared with the module worker and explicit offline/test preparation ports. */
 export const preparePhysicalGeometry = (scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity = key): PhysicalPreparedGeometry => {
-  const meshes = buildVisibleMeshes(scene, view).map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
-  return { key, identity, meshes, acceleration: preparePhysicalPickAcceleration(meshes), buffers: preparePhysicalRenderBuffers(meshes) }
+  const owned = preparePhysicalSurfaceOwnership(buildVisibleMeshes(scene, view)), meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
+  return { key, identity, meshes, acceleration: preparePhysicalPickAcceleration(meshes), buffers: preparePhysicalRenderBuffers(meshes), surfaceOwnership: owned.diagnostics }
 }
 type WireMesh = Omit<PhysicalMesh, 'object'> & { readonly objectIndex: number }
 export type PhysicalPreparationRequest =
@@ -25,7 +26,7 @@ export type PhysicalPreparationRequest =
   | { readonly kind: 'release'; readonly sourceKey: string }
 export type PhysicalPreparationResponse =
   | { readonly kind: 'registered'; readonly id: number; readonly sourceKey: string }
-  | { readonly kind: 'prepared'; readonly id: number; readonly key: string; readonly identity: string; readonly sourceKey: string; readonly meshes: ReadonlyArray<WireMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers }
+  | { readonly kind: 'prepared'; readonly id: number; readonly key: string; readonly identity: string; readonly sourceKey: string; readonly meshes: ReadonlyArray<WireMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers; readonly surfaceOwnership: PhysicalSurfaceOwnershipDiagnostics }
   | { readonly kind: 'error'; readonly id: number; readonly message: string }
 interface WorkerPort {
   onmessage: ((event: MessageEvent<PhysicalPreparationResponse>) => void) | null
@@ -75,7 +76,7 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
       try {
         const meshes = result.meshes.map(({ objectIndex, ...mesh }) => { const object = job.scene.objects[objectIndex]; if (!object) throw new Error('Prepared fragment names an unknown occurrence'); return { ...mesh, object } })
         admitPhysicalPickAcceleration(meshes, result.acceleration)
-        const value = { key: job.key, identity: job.identity, meshes, acceleration: result.acceleration, buffers: result.buffers }
+        const value = { key: job.key, identity: job.identity, meshes, acceleration: result.acceleration, buffers: result.buffers, surfaceOwnership: result.surfaceOwnership }
         shared.set(job.key, { sourceKey: job.source.key, identity: job.identity, value: new WeakRef(value) }); job.resolve(value)
       } catch (error) { job.reject(error instanceof Error ? error : new Error(String(error))) }
     }

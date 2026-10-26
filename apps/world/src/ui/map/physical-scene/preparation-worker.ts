@@ -18,6 +18,6 @@ scope.onmessage = (event: MessageEvent<PhysicalPreparationRequest>) => {
     for (const mesh of meshes) { if (mesh.vertices instanceof Float64Array) transfers.push(mesh.vertices.buffer); if (mesh.lines instanceof Float64Array) transfers.push(mesh.lines.buffer) }
     for (const index of [prepared.acceleration.meshes, ...prepared.acceleration.triangles.map(item => item.triangles)]) transfers.push(index.bounds.buffer, index.children.buffer, index.ranges.buffer, index.order.buffer)
     transfers.push(prepared.buffers.vertices.buffer, prepared.buffers.lines.buffer)
-    scope.postMessage({ kind: 'prepared', id: request.id, key: request.key, sourceKey: request.sourceKey, identity: prepared.identity, meshes, acceleration: prepared.acceleration, buffers: prepared.buffers }, transfers)
+    scope.postMessage({ kind: 'prepared', id: request.id, key: request.key, sourceKey: request.sourceKey, identity: prepared.identity, meshes, acceleration: prepared.acceleration, buffers: prepared.buffers, surfaceOwnership: prepared.surfaceOwnership }, transfers)
   } catch (error) { scope.postMessage({ kind: 'error', id: request.id, message: error instanceof Error ? error.message : String(error) }) }
 }

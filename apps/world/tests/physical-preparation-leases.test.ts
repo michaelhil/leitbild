@@ -28,7 +28,7 @@ const workerDouble = () => {
     if (request.kind === 'register') { port.onmessage?.(new MessageEvent<PhysicalPreparationResponse>('message', { data: { kind: 'registered', id: request.id, sourceKey: request.sourceKey } })); return }
     const source = sources.get(request.sourceKey)!, prepared = preparePhysicalGeometry(source, request.view, request.key, request.identity)
     const meshes = prepared.meshes.map(({ object, ...mesh }) => ({ ...mesh, objectIndex: source.objects.indexOf(object) }))
-    port.onmessage?.(new MessageEvent<PhysicalPreparationResponse>('message', { data: { kind: 'prepared', id: request.id, sourceKey: request.sourceKey, key: request.key, identity: request.identity, meshes, acceleration: prepared.acceleration, buffers: prepared.buffers } }))
+    port.onmessage?.(new MessageEvent<PhysicalPreparationResponse>('message', { data: { kind: 'prepared', id: request.id, sourceKey: request.sourceKey, key: request.key, identity: request.identity, meshes, acceleration: prepared.acceleration, buffers: prepared.buffers, surfaceOwnership: prepared.surfaceOwnership } }))
   }
   return { port, sources, messages, holdRegistration: () => { holdRegistration = true }, holdViews: () => { holdViews = true }, flush: () => { for (const request of delayed.splice(0)) respond(request) }, crash: () => port.onerror?.({ message: 'diagnostic crash' } as ErrorEvent), terminations: () => terminations }
 }

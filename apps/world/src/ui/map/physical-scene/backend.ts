@@ -1,3 +1,4 @@
+import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import type { PhysicalPlanMetrics } from './plan-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
@@ -144,6 +145,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       if (disposed) throw new Error('Physical scene renderer has been disposed')
       frame++
       const groups = new Map<string, PhysicalDraw[]>()
+      draws = draws.map(draw => ({ ...draw, meshes: visiblePhysicalSurfaceOwners(draw.meshes) }))
       for (const draw of draws) { const list = groups.get(draw.asset.key) ?? []; list.push(draw); groups.set(draw.asset.key, list) }
       let requiredBytes = 0
       for (const list of groups.values()) { const first = list[0]!; requiredBytes += first.asset.buffers.vertices.byteLength + first.asset.buffers.lines.byteLength + list.length * (17 + first.asset.meshes.length * 8) * 4 + first.asset.buffers.roles.length * 16 }

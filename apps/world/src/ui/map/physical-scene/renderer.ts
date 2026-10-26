@@ -1,6 +1,7 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import { createPhysicalBackend, type PhysicalDraw } from './backend.ts'
 import { createPhysicalPlanPass } from './plan-pass.ts'
+import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import { projectPhysicalPlan } from './plan-projection.ts'
 import { captureSceneGlState, restoreSceneGlState } from './gl-state.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
@@ -48,7 +49,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       const before = captureSceneGlState(gl)
       try {
         const draws: PhysicalDraw[] = []; picking = []
-        const current = entries(), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
+        const current = entries().map(entry => ({ ...entry, meshes: visiblePhysicalSurfaceOwners(entry.meshes, entry.asset?.acceleration) })), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
         const projected = plan ? projectPhysicalPlan(current, mainMatrix) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
         for (const { entry, matrix, meshes } of projected) {
           picking.push({ sceneId: entry.scene.id, meshes, matrix })

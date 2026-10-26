@@ -50,3 +50,22 @@ export const visitPhysicalSpatialRay = (index: PhysicalSpatialIndex, origin: Vec
     }
   }
 }
+
+/** Conservative overlap query used during immutable surface preparation. */
+export const visitPhysicalSpatialBounds = (index: PhysicalSpatialIndex, bounds: PhysicalSceneBounds, visit: (primitive: number) => void): void => {
+  if (!index.order.length) return
+  const pending = [0]
+  while (pending.length) {
+    const node = pending.pop()!, at = node * 6
+    let overlaps = true
+    for (let axis = 0; axis < 3; axis++) {
+      const low = index.bounds[at + axis]!, high = index.bounds[at + axis + 3]!, scale = Math.max(1, Math.abs(low), Math.abs(high), Math.abs(bounds.min[axis]!), Math.abs(bounds.max[axis]!))
+      const error = scale * Number.EPSILON * 8
+      if (high < bounds.min[axis]! - error || low > bounds.max[axis]! + error) { overlaps = false; break }
+    }
+    if (!overlaps) continue
+    const left = index.children[node * 2]!, right = index.children[node * 2 + 1]!
+    if (left < 0) { const first = index.ranges[node * 2]!, count = index.ranges[node * 2 + 1]!; for (let offset = first; offset < first + count; offset++) visit(index.order[offset]!) }
+    else pending.push(right, left)
+  }
+}

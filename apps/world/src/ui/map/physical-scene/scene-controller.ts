@@ -8,6 +8,7 @@ import { admitPhysicalPickAcceleration, derivePhysicalPickAcceleration } from '.
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from './overview-geometry.ts'
 import { projectedInspectionFeature, automaticInspectionDemand } from './inspection-demand.ts'
 import { visiblePhysicalBounds } from './renderer.ts'
+import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle } from './types.ts'
 
@@ -34,7 +35,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const result: PhysicalLayerEntry[] = [], detailed = Boolean(entry.scene && entry.prepared && entry.eligible && entry.state === 'ready')
     if (detailed) result.push({ scene: entry.scene!, meshes: entry.meshes, asset: entry.prepared!, view: entry.view, status: entry.status })
     if (!entry.overview || !entry.source.descriptor.locationValid || entry.view.detail === 'hidden') return result
-    let meshes = entry.overview.asset.meshes
+    let meshes = visiblePhysicalSurfaceOwners(entry.overview.asset.meshes, entry.overview.asset.acceleration)
     if (detailed) {
       if (!entry.scopeId) return result
       const key = `${entry.overview.asset.key}/${entry.scopeId}`
@@ -66,7 +67,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const meshes = separated ? prepared.meshes.map(mesh => ({ ...mesh, offset: mesh.offset.map(value => value * entry.view.separation) as unknown as readonly [number, number, number] })) : prepared.meshes
     const filtered = !hidden.size && !entry.scopeId ? meshes : meshes.filter(mesh => !(mesh.object.layerId && hidden.has(mesh.object.layerId)) && (!entry.scopeId || mesh.object.scopeIds?.some(inScope)))
     if (filtered !== prepared.meshes) derivePhysicalPickAcceleration(filtered, prepared.acceleration)
-    return filtered
+    return visiblePhysicalSurfaceOwners(filtered, prepared.acceleration)
   }
   const prepareView = async (entry: Entry): Promise<void> => {
     if (!entry.scene) return
@@ -196,7 +197,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     presentations, scene: (sceneId: string) => entries.get(sceneId)?.scene ?? null,
     retry(sceneId: string): void { const entry = requireEntry(sceneId); entry.generation = ++generation; entry.viewGeneration++; entry.loading = false; entry.preparing = false; entry.failure = undefined; entry.reason = undefined; entry.scene = null; entry.prepared = null; entry.meshes = []; prepare.retainIdentities?.(new Set([...entries.values()].map(entry => identityFor(entry)))); reconcile() },
     metrics: () => renderer?.metrics() ?? null,
-    diagnostics: () => ({ preparation: prepare.diagnostics?.() ?? null, current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
+    diagnostics: () => ({ surfaceOwnership: [...entries.values()].filter(entry => entry.prepared).map(entry => ({ sceneId: entry.source.descriptor.id, key: entry.prepared!.key, ...entry.prepared!.surfaceOwnership })), preparation: prepare.diagnostics?.() ?? null, current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
     destroy(): void { if (destroyed) return; destroyed = true; pendingFocus = null; for (const entry of entries.values()) { entry.generation = ++generation; entry.viewGeneration++ }; entries.clear(); prepare.destroy?.(); for (const remove of cleanup) remove(); removeRenderer(); viewport.destroy() },
   }
 }

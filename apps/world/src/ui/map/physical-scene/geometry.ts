@@ -6,6 +6,8 @@ import type { PhysicalSceneView } from './types.ts'
 /** xyz, normal xyz, material-role index. Colours are assigned by the active token palette. */
 type Vertex = [number, number, number, number, number, number, number]
 export interface PhysicalMesh {
+  /** Earlier visible mesh keys that own this coincident display candidate. */
+  readonly occludedBy?: readonly string[]
   /** Semantic Plan band; physical vertex heights are preserved. */
   readonly planPriority?: number
   readonly assetKey?: string
