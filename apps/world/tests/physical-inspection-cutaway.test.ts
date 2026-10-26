@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { PackPhysicalScene, PhysicalSceneObject } from '../src/core/packs/scene.ts'
+import { packPhysicalSceneSchema, type PackPhysicalScene, type PhysicalSceneObject } from '../src/core/packs/scene.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { visiblePhysicalInspectionBoundaries } from '../src/ui/map/physical-scene/inspection-cutaway.ts'
 import { multiply } from '../src/ui/map/physical-scene/math.ts'
@@ -53,4 +53,5 @@ test('new inspection volumes use exact floor boundaries and the full actual thic
   expect(meshes.filter(mesh => mesh.object.id === wall.id).every(mesh => mesh.bounds.min[2] === 15)).toBe(true)
   const lower = buildVisibleMeshes(scene, { ...view, levelId: 'ground' })
   expect(lower.every(mesh => mesh.bounds.min[2] === 0)).toBe(true)
+  expect(packPhysicalSceneSchema.safeParse({ ...scene, objects: [{ ...wall, inspectionLevels: [] }] }).success).toBe(false)
 })

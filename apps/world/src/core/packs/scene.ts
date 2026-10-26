@@ -81,7 +81,7 @@ export const physicalSceneObjectSchema = z.object({
   scopeIds: z.array(identifierSchema).optional(),
   levelIds: z.array(identifierSchema).optional(),
   /** Actual authored floor volumes; a high bay need not end at another building's level. */
-  inspectionLevels: z.array(z.object({ levelId: identifierSchema, low: z.number().finite(), high: z.number().finite() }).strict().refine(value => value.high > value.low, 'An inspection floor volume must have positive height')).optional(),
+  inspectionLevels: z.array(z.object({ levelId: identifierSchema, low: z.number().finite(), high: z.number().finite() }).strict().refine(value => value.high > value.low, 'An inspection floor volume must have positive height')).min(1).optional(),
   bounds: physicalSceneBoundsSchema.optional(),
   /** Intentional 3D illustration features; section contours are derived separately. */
   featureLines: z.array(physicalFeatureStrokeSchema).optional(),
