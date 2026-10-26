@@ -25,8 +25,11 @@ scope selection. This proof has no fixed settlement sleep. It timestamps the
 actual event dispatch in the World frame, follows prepared-response typed-array
 identity through `bufferData`, attribute-0 VBO/VAO and a real TRIANGLES draw of
 the requested semantic key. A microtask fence follows the rendering task, so
-Plan composition precedes it. It reports first matching draw and observed GPU
-completion separately. These are not physical-monitor presentation timestamps.
+Plan composition precedes it. It reports first matching draw separately from a **settled GPU checkpoint**.
+The raw `actionToGpuCompletedMs` field waits for all observed physical jobs to
+drain (and the five-layout readiness gate for site cases), then observes the
+fence. It is not the first target-frame GPU completion time; unrelated mode
+preparations can delay it after the requested floor has already drawn. These are not physical-monitor presentation timestamps.
 
 Worker source post/first-result/termination and preparation post/result are
 recorded separately. Preparation response includes queue, CPU and transfer;
@@ -39,8 +42,9 @@ not pin typed arrays during forced GC. Draw-wrapper overhead is reported; other
 wrappers also add some overhead. Baseline and candidate must use the identical
 observer hash, dimensions, browser/GPU and retained source/workload. HTTP presence
 and layout-read starts/responses/failures are passively recorded through CDP.
-Selected-owner freshness is checked separately after geometry completion from
-the product's validated live-status text, not inferred from geometry readiness.
+Selected-owner freshness is checked only after that settled checkpoint from
+the product's validated live-status text. It is a 'fresh observed by' upper
+bound, not the first fresh arrival or an exact live-session restart latency.
 
 Reject a result on missing/mismatched view draw, failed/unfinished physical
 worker/source job, GL error, exception, missing owner freshness or failed all-site
