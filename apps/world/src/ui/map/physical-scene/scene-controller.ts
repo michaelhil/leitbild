@@ -117,10 +117,12 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const physicalSpan = Math.max(...d.bounds.max.map((value, axis) => value - d.bounds.min[axis]!)), pixels = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), error = d.overviewGeometricErrorMetres ?? physicalSpan
       const inspectionPixels = intersects ? projectedInspectionFeature(d, viewport.projectGeographic) : 0
       const overviewErrorPixels = error * pixels / Math.max(physicalSpan, Number.EPSILON)
-      const explicitDetail = forcedId === d.id || (viewport.surface.kind === 'canvas' && mode === '3d' && focusedId === null)
+      // Opening the dedicated browser is an explicit inspection request in
+      // either representation. Plan must not silently become an overview-only
+      // host when its selected scope contains several layouts.
+      const explicitDetail = forcedId === d.id || (viewport.surface.kind === 'canvas' && focusedId === null)
       const needsDetail = explicitDetail || automaticInspectionDemand(inspectionPixels, overviewErrorPixels, pixelError)
-      const planAllowsDetail = mode !== '2d' || focusedId === d.id || (viewport.surface.kind === 'map' && focusedId === null)
-      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && planAllowsDetail
+      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail
       if (d.locationValid && !entry.failure) entry.reason = undefined
       if (active && intersects && d.locationValid && (!entry.eligible || entry.scopeId)) void prepareOverview(entry)
       if (!d.locationValid) { entry.state = 'unavailable'; entry.reason = d.reason ?? 'Layout location no longer matches its owner' }
