@@ -8,6 +8,7 @@ import { admitPhysicalPickAcceleration, derivePhysicalPickAcceleration } from '.
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from './overview-geometry.ts'
 import { projectedInspectionFeature, automaticInspectionDemand } from './inspection-demand.ts'
 import { visiblePhysicalBounds } from './renderer.ts'
+import { physicalScopeMembers } from './scopes.ts'
 import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle } from './types.ts'
@@ -62,11 +63,10 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   }
   const filteredMeshes = (entry: Entry, prepared: PhysicalPreparedGeometry): ReadonlyArray<PhysicalMesh> => {
     const hidden = new Set(entry.view.hiddenLayerIds ?? entry.scene?.layers?.filter(layer => !layer.defaultVisible).map(layer => layer.id) ?? [])
-    const scopes = new Map((entry.scene?.scopes ?? []).map(scope => [scope.id, scope]))
-    const inScope = (id: string): boolean => { let current: string | undefined = id; while (current !== undefined) { if (current === entry.scopeId) return true; current = scopes.get(current)?.parentId } return false }
+    const members = entry.scopeId ? physicalScopeMembers(entry.scene?.scopes ?? [], entry.scopeId) : null
     const separated = entry.view.levelId === 'all' && entry.view.separation > 0
     const meshes = separated ? prepared.meshes.map(mesh => ({ ...mesh, offset: mesh.offset.map(value => value * entry.view.separation) as unknown as readonly [number, number, number] })) : prepared.meshes
-    const filtered = !hidden.size && !entry.scopeId ? meshes : meshes.filter(mesh => !(mesh.object.layerId && hidden.has(mesh.object.layerId)) && (!entry.scopeId || mesh.object.scopeIds?.some(inScope)))
+    const filtered = !hidden.size && !entry.scopeId ? meshes : meshes.filter(mesh => !(mesh.object.layerId && hidden.has(mesh.object.layerId)) && (!entry.scopeId || mesh.object.scopeIds?.some(id => members!.has(id))))
     if (filtered !== prepared.meshes) derivePhysicalPickAcceleration(filtered, prepared.acceleration)
     // Authored full/cut boundary alternatives must reach the camera-facing
     // selector together. Only then can coincident display owners be chosen.
@@ -87,7 +87,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const rebound = { ...prepared, sourceAsset: prepared, meshes: prepared.meshes.map(mesh => { const object = objects.get(mesh.object.id); if (!object) throw new Error('Shared physical asset occurrence identity mismatch'); return { ...mesh, object } }) }
       admitPhysicalPickAcceleration(rebound.meshes, rebound.acceleration)
       entry.renderRevision++; entry.preparing = false; entry.prepared = rebound; entry.meshes = filteredMeshes(entry, rebound); entry.state = !active ? 'hidden' : entry.eligible ? 'ready' : 'distant';
-      if (active && pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; viewport.fitWorld(entryBounds(entry, intent.target), { padding: padding(), preservePose: intent.preservePose, mode, bearing: entry.source.descriptor.bearing + (!intent.preservePose && mode === '3d' ? -25 : 0) }) }; reconcileRenderer(); viewport.requestRender(); emit()
+      if (active && pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; applyFit(entry, intent.target, intent.preservePose) }; reconcileRenderer(); viewport.requestRender(); emit()
     } catch (error) { if (request.signal.aborted || expected !== entry.viewGeneration || sourceGeneration !== entry.generation || destroyed || entries.get(entry.source.descriptor.id) !== entry) return; entry.preparing = false; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
     finally { if (entry.preparationAbort === request) entry.preparationAbort = undefined }
   }
@@ -151,8 +151,14 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const bounds = entry.view.mode === '2d' ? { min: [physical.min[0], physical.min[1], 0] as [number, number, number], max: [physical.max[0], physical.max[1], 0] as [number, number, number] } : physical
     return worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, bounds)
   }
+  const applyFit = (entry: Entry, target: PhysicalSceneFocus, preservePose: boolean): void => {
+    const scope = !target.occurrenceId && target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId) : undefined
+    const preferred = mode === '3d' ? scope?.inspectionView : undefined
+    const placement = preferred?.target ? transform(localMercatorMatrix(entry.source.descriptor.anchor, entry.source.descriptor.bearing), preferred.target) : undefined
+    viewport.fitWorld(entryBounds(entry, target), { padding: padding(), preservePose, mode, bearing: entry.source.descriptor.bearing + (preferred?.bearing ?? (mode === '3d' ? -25 : 0)), ...(preferred ? { pitch: preferred.pitch } : {}), ...(placement ? { target: placement } : {}) })
+  }
   const fitEntry = (entry: Entry, target: PhysicalSceneFocus, preservePose: boolean): void => {
-    pendingFocus = null; viewport.fitWorld(entryBounds(entry, target), { padding: padding(), preservePose, mode, bearing: entry.source.descriptor.bearing + (!preservePose && mode === '3d' ? -25 : 0) })
+    pendingFocus = null; applyFit(entry, target, preservePose)
     if (!entry.prepared || entry.preparing) pendingFocus = { entry, source: entry.generation, view: entry.viewGeneration, target, preservePose }
   }
   cleanup.push(viewport.on('movestart', () => { pendingFocus = null }))
@@ -201,7 +207,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     home(sceneId: string, scopeId?: string): void { const entry = requireEntry(sceneId); this.selectScope(sceneId, scopeId); fitEntry(entry, { scopeId }, false) },
     reset(sceneId: string): void { const entry = requireEntry(sceneId); this.setView(sceneId, defaultPhysicalSceneView(entry.source.descriptor.levels)); this.home(sceneId) },
     cameraPose: viewport.cameraPose, zoomBy: (delta: number) => viewport.setPose({ zoom: viewport.cameraPose().zoom + delta }), tiltBy: (degrees: number) => viewport.setPose({ pitch: viewport.cameraPose().pitch + degrees }), turnBy: (degrees: number) => viewport.setPose({ bearing: viewport.cameraPose().bearing + degrees }), panBy: viewport.panBy, cancelCamera: () => { pendingFocus = null; viewport.cancelCamera() }, setNavigationTool: viewport.setNavigationTool,
-    setActive(value: boolean): void { if (active === value || destroyed) return; active = value; if (!active) { pendingFocus = null; for (const entry of entries.values()) { cancelPreparation(entry); cancelOverview(entry) }; viewport.cancelCamera(); renderer?.invalidatePicks() }; reconcile(); viewport.requestRender() },
+    setActive(value: boolean): void { if (active === value || destroyed) return; active = value; viewport.setActive?.(value); if (!active) { pendingFocus = null; for (const entry of entries.values()) { cancelPreparation(entry); cancelOverview(entry) }; viewport.cancelCamera(); renderer?.invalidatePicks() }; reconcile(); viewport.requestRender() },
     pick: (point: { x: number; y: number }) => active ? renderer?.pick(point) ?? null : null,
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null : null,
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => active && (renderer?.visibleAt(sceneId, occurrenceId, point) ?? false),

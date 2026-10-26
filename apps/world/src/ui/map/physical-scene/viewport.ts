@@ -1,3 +1,4 @@
+import type { Vector3 } from './math.ts'
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
 import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, PhysicalScenePalette, PhysicalSceneSurface } from './types.ts'
@@ -27,9 +28,11 @@ export interface PhysicalViewport {
   readonly orderRenderer: () => void
   readonly removeRenderer: (renderer: PhysicalViewportRenderer) => void
   readonly cameraPose: () => PhysicalCameraPose
+  /** Suspend host-specific camera ownership without discarding the user's pose. */
+  readonly setActive?: (active: boolean) => void
   readonly setPose: (patch: Partial<Pick<PhysicalCameraPose, 'pitch' | 'bearing' | 'zoom' | 'center' | 'elevation'>>) => void
   /** Bounds in normalized Mercator world coordinates, including elevation. */
-  readonly fitWorld: (bounds: PhysicalSceneBounds, options: { padding: { top: number; right: number; bottom: number; left: number }; preservePose: boolean; mode: '2d' | '3d'; bearing: number }) => void
+  readonly fitWorld: (bounds: PhysicalSceneBounds, options: { padding: { top: number; right: number; bottom: number; left: number }; preservePose: boolean; mode: '2d' | '3d'; bearing: number; pitch?: number; target?: Vector3 }) => void
   readonly panBy: (x: number, y: number) => void
   readonly setNavigationTool: (tool: 'pan' | 'orbit') => void
   readonly cancelCamera: () => void

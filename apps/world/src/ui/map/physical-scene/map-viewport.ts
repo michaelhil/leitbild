@@ -1,3 +1,4 @@
+import { fitPhysicalPerspective } from './perspective-fit.ts'
 import { MercatorCoordinate, type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl'
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import { physicalHeightFootprint, overlapsPhysicalFootprint } from './visibility.ts'
@@ -11,6 +12,13 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
   const canvas = map.getCanvas(), cleanups = new Set<() => void>()
   let revision = 0, activePointer: { id: number; x: number; y: number; startX: number; startY: number; dragged: boolean } | null = null, cancelledPointer: number | null = null, tool: 'pan' | 'orbit' = 'pan'
   const revisionChanged = (): void => { revision++ }; map.on('move', revisionChanged); map.on('resize', revisionChanged)
+  let active = true, elevatedInspection = false, priorClamp: boolean | null = null
+  type PausedPose = { center: readonly [number, number]; bearing: number; pitch: number; zoom: number; elevation: number }
+  let pausedPose: PausedPose | null = null
+  const currentPose = (): PausedPose => { const point = map.getCenter(); return { center: [point.lng, point.lat], bearing: map.getBearing(), pitch: map.getPitch(), zoom: map.getZoom(), elevation: map.getCenterElevation() } }
+  const acquireElevation = (): void => { if (!active || !elevatedInspection) return; if (priorClamp === null) priorClamp = map.getCenterClampedToGround(); map.setCenterClampedToGround(false) }
+  const releaseElevation = (): void => { if (priorClamp === null) return; if (!map.getCenterClampedToGround()) map.setCenterClampedToGround(priorClamp); priorClamp = null }
+  const leaveElevation = (): void => { elevatedInspection = false; pausedPose = null; releaseElevation() }
   let visibility: { revision: number; ground: PhysicalSceneBounds; eye?: Vector3 } | null = null
   const footprint = () => {
     if (visibility?.revision === revision) return visibility
@@ -104,26 +112,41 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     orderRenderer() { const before = beforeId(); if (before && map.getLayer(before) && map.getLayer(physicalSceneLayerId)) { const order = map.getLayersOrder(); if (order.indexOf(physicalSceneLayerId) > order.indexOf(before)) map.moveLayer(physicalSceneLayerId, before) } },
     removeRenderer(renderer) { const lost = installed?.context()?.isContextLost(); renderer.dispose(); if (renderer === installed) { if (!lost && map.getLayer(physicalSceneLayerId)) map.removeLayer(physicalSceneLayerId); installed = null } },
     cameraPose() { const center = map.getCenter(); return { center: [center.lng, center.lat], pitch: map.getPitch(), bearing: map.getBearing(), zoom: map.getZoom(), revision, elevation: map.getCenterElevation() } },
-    setPose(patch) { map.stop(); const { center, ...rest } = patch; map.jumpTo({ ...rest, ...(center ? { center: [center[0], center[1]] as [number, number] } : {}) }) },
+    setPose(patch) {
+      if (patch.pitch === 0 && patch.elevation === 0) leaveElevation()
+      else if (patch.elevation !== undefined) { elevatedInspection = true; acquireElevation() }
+      map.stop(); const { center, ...rest } = patch; map.jumpTo({ ...rest, ...(center ? { center: [center[0], center[1]] as [number, number] } : {}) })
+      if (!active && elevatedInspection && patch.elevation !== undefined) pausedPose = { ...currentPose(), elevation: patch.elevation }
+    },
+    setActive(value) {
+      if (active === value) return
+      if (!value) { if (elevatedInspection) pausedPose = currentPose(); active = false; releaseElevation(); return }
+      active = true; acquireElevation()
+      if (pausedPose) { const now = currentPose(); if (now.bearing === pausedPose.bearing && now.pitch === pausedPose.pitch && now.zoom === pausedPose.zoom && now.center[0] === pausedPose.center[0] && now.center[1] === pausedPose.center[1]) map.setCenterElevation(pausedPose.elevation); pausedPose = null }
+    },
     fitWorld(bounds, options) {
-      const center = bounds.min.map((value, axis) => (value + bounds.max[axis]!) / 2), target = new MercatorCoordinate(center[0]!, center[1]!, center[2]!), geographic = target.toLngLat(), scale = MercatorCoordinate.fromLngLat(geographic).meterInMercatorCoordinateUnits()
-      const bearing = options.preservePose ? map.getBearing() : options.bearing, pitch = options.mode === '2d' ? 0 : options.preservePose ? map.getPitch() : 50
+      const bearing = options.preservePose ? map.getBearing() : options.bearing, pitch = options.mode === '2d' ? 0 : options.preservePose ? map.getPitch() : options.pitch ?? 50
       if (options.mode === '2d') {
+        leaveElevation()
+        if (map.getCenterElevation() !== 0) map.jumpTo({ elevation: 0 })
         const west = new MercatorCoordinate(bounds.min[0], bounds.max[1]).toLngLat(), east = new MercatorCoordinate(bounds.max[0], bounds.min[1]).toLngLat()
         map.fitBounds([[west.lng, west.lat], [east.lng, east.lat]], { padding: options.padding, bearing, pitch, duration: 0 }); return
       }
-      const size = canvas.getBoundingClientRect(), available = Math.min(size.width - options.padding.left - options.padding.right, size.height - options.padding.top - options.padding.bottom), radius = Math.hypot(...bounds.max.map((value, axis) => (value - bounds.min[axis]!) / 2)) / scale
-      if (!(radius > 0) || !(available > 0)) throw new Error('A physical focus requires nonempty bounds and visible viewport space')
-      const angle = Math.atan(Math.tan(map.getVerticalFieldOfView() * Math.PI / 360) * available / size.height), distance = radius / Math.sin(angle), p = pitch * Math.PI / 180, b = bearing * Math.PI / 180
-      const eye = new MercatorCoordinate(target.x - distance * Math.sin(p) * Math.sin(b) * scale, target.y + distance * Math.sin(p) * Math.cos(b) * scale).toLngLat()
-      const camera = map.calculateCameraOptionsFromTo(eye, target.z / scale + distance * Math.cos(p), geographic, target.z / scale)
-      const inherited = map.getPadding(), offset: [number, number] = [(options.padding.left - options.padding.right - (inherited.left ?? 0) + (inherited.right ?? 0)) / 2, (options.padding.top - options.padding.bottom - (inherited.top ?? 0) + (inherited.bottom ?? 0)) / 2]
-      map.easeTo({ ...camera, bearing, pitch, offset, duration: 0 })
+      elevatedInspection = true; acquireElevation()
+      const size = canvas.getBoundingClientRect(), inherited = map.getPadding()
+      // Read the pinned host's public typed projection quantities. Native near
+      // clipping is part of fitting, not a guessed ratio or a depth workaround.
+      const fit = fitPhysicalPerspective({ bounds, ...(options.target ? { target: options.target } : {}), width: size.width, height: size.height, padding: options.padding, verticalFieldOfView: map.getVerticalFieldOfView() * Math.PI / 180, bearing, pitch, projectionOffset: { x: ((inherited.left ?? 0) - (inherited.right ?? 0)) / size.width, y: ((inherited.bottom ?? 0) - (inherited.top ?? 0)) / size.height }, nearRatio: map.transform.nearZ / map.transform.cameraToCenterDistance })
+      const optical = new MercatorCoordinate(...fit.target), eye = new MercatorCoordinate(...fit.eye), destination = optical.toLngLat(), from = eye.toLngLat()
+      const destinationScale = MercatorCoordinate.fromLngLat(destination).meterInMercatorCoordinateUnits(), eyeScale = MercatorCoordinate.fromLngLat(from).meterInMercatorCoordinateUnits()
+      const camera = map.calculateCameraOptionsFromTo(from, eye.z / eyeScale, destination, optical.z / destinationScale)
+      map.stop(); map.jumpTo({ ...camera, bearing, pitch })
+      if (!active) pausedPose = { ...currentPose(), elevation: camera.elevation! }
     },
     panBy: (x, y) => map.panBy([x, y], { duration: 0 }),
     setNavigationTool(value) { releasePointer(); tool = value; /* Native camera handlers retain their global contract; mousedown claims this gesture. */ },
     cancelCamera() { map.stop(); releasePointer() },
-    destroy() { for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
+    destroy() { leaveElevation(); for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
   }
   return port
 }

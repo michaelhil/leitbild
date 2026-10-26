@@ -1,6 +1,7 @@
 import { MercatorCoordinate } from 'maplibre-gl'
 import { intersectsPhysicalFrustum } from './visibility.ts'
-import { boundsCorners, inverse, multiply, transform, type Vector3 } from './math.ts'
+import { fitPhysicalPerspective } from './perspective-fit.ts'
+import { boundsCorners, inverse, localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { createPhysicalSceneRenderer } from './renderer.ts'
 import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer } from './viewport.ts'
 import type { PhysicalScenePalette } from './types.ts'
@@ -33,9 +34,9 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
     const view = new Float64Array([right[0], up[0], back[0], 0, right[1], up[1], back[1], 0, right[2], up[2], back[2], 0,
       -(right[0] * eye[0] + right[1] * eye[1] + right[2] * eye[2]), -(up[0] * eye[0] + up[1] * eye[1] + up[2] * eye[2]), -(back[0] * eye[0] + back[1] * eye[1] + back[2] * eye[2]), 1])
     let far = distance + worldHeight
-    for (const entry of entries()) for (const point of boundsCorners(entry.scene.bounds)) {
-      const local = MercatorCoordinate.fromLngLat(entry.scene.anchor), scale = local.meterInMercatorCoordinateUnits()
-      far = Math.max(far, Math.hypot(local.x + point[0] * scale - eye[0], local.y - point[1] * scale - eye[1], point[2] * scale - eye[2]))
+    for (const entry of entries()) {
+      const placement = localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)
+      for (const point of boundsCorners(entry.scene.bounds)) { const world = transform(placement, point); far = Math.max(far, Math.hypot(world[0] - eye[0], world[1] - eye[1], world[2] - eye[2])) }
     }
     const near = Math.max(Number.EPSILON, Math.min(distance / 2, worldUnitsPerPixel()))
     return multiply(perspective(fov, Math.max(Number.EPSILON, surface.width / surface.height), near, far + worldHeight), view)
@@ -103,7 +104,7 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
     setPose(patch) { if (patch.center) center = [patch.center[0], patch.center[1]]; if (patch.elevation !== undefined) targetZ = patch.elevation * MercatorCoordinate.fromLngLat(center).meterInMercatorCoordinateUnits(); if (patch.pitch !== undefined) pitch = Math.max(0, Math.min(85, patch.pitch)); if (patch.bearing !== undefined) bearing = patch.bearing; if (patch.zoom !== undefined) zoom = patch.zoom; changed() },
     fitWorld(bounds, options) {
       const midpoint = bounds.min.map((value, axis) => (value + bounds.max[axis]!) / 2), location = new MercatorCoordinate(midpoint[0]!, midpoint[1]!).toLngLat(); center = [location.lng, location.lat]; targetZ = midpoint[2]!
-      if (!options.preservePose) { bearing = options.bearing; pitch = options.mode === '2d' ? 0 : 50 } else if (options.mode === '2d') pitch = 0
+      if (!options.preservePose) { bearing = options.bearing; pitch = options.mode === '2d' ? 0 : options.pitch ?? 50 } else if (options.mode === '2d') pitch = 0
       const dimensions = size(), width = dimensions.width - options.padding.left - options.padding.right, height = dimensions.height - options.padding.top - options.padding.bottom, radius = Math.hypot(...bounds.max.map((value, axis) => (value - bounds.min[axis]!) / 2))
       if (!(width > 0) || !(height > 0) || !(radius > 0)) throw new Error('A physical focus requires nonempty bounds and visible viewport space')
       if (options.mode === '2d') {
@@ -111,9 +112,10 @@ export const createCanvasPhysicalViewport = (canvas: HTMLCanvasElement): Physica
         const spanX = Math.max(...points.map(point => point[0]!)) - Math.min(...points.map(point => point[0]!)), spanY = Math.max(...points.map(point => point[1]!)) - Math.min(...points.map(point => point[1]!)), perPixel = Math.max(spanX / width, spanY / height)
         targetZ = 0; zoom = Math.log2(1 / (512 * perPixel)); changed(); pan((options.padding.right - options.padding.left) / 2, (options.padding.bottom - options.padding.top) / 2); return
       }
-      const distance = radius / Math.sin(Math.atan(Math.tan(fov / 2) * Math.min(width, height) / dimensions.height)), worldHeight = 2 * distance * Math.tan(fov / 2)
+      const fit = fitPhysicalPerspective({ bounds, ...(options.target ? { target: options.target } : {}), width: dimensions.width, height: dimensions.height, padding: options.padding, verticalFieldOfView: fov, bearing, pitch, nearRatio: Math.min(.5, 2 * Math.tan(fov / 2) / dimensions.height) })
+      const opticalLocation = new MercatorCoordinate(fit.target[0], fit.target[1]).toLngLat(); center = [opticalLocation.lng, opticalLocation.lat]; targetZ = fit.target[2]
+      const worldHeight = 2 * fit.distance * Math.tan(fov / 2)
       zoom = Math.log2(dimensions.height / (512 * worldHeight)); changed()
-      pan((options.padding.right - options.padding.left) / 2, (options.padding.bottom - options.padding.top) / 2)
     },
     panBy: pan, setNavigationTool(value) { releasePointers(); tool = value }, cancelCamera: releasePointers,
     destroy() { if (destroyed) return; destroyed = true; if (queued !== null) cancelAnimationFrame(queued); observer.disconnect(); releasePointers(); renderer?.dispose(); renderer = null; listeners.clear(); canvas.style.touchAction = oldTouchAction; canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up); canvas.removeEventListener('wheel', wheel); canvas.removeEventListener('contextmenu', contextMenu); canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored) },
