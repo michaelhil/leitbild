@@ -1,0 +1,295 @@
+{
+  "productionCommit": "d8ebc139f35399d8ae99dc10b241e9c14d488b96",
+  "productionSourceTree": "61e2024817edd52e1177a02e92481610dbf68f02",
+  "researchRoot": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026",
+  "receipts": {
+    "yard-dpr1": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/yard-dpr1/receipt.json",
+      "rawSha256": "d9c9436293e1eb73e17f703e344e9e21aecdbba8df2397a6a2993bb88b9388ce",
+      "summaryPath": "final-yard-dpr1.summary.json",
+      "summarySha256": "5b1c51488289c61d1174803ac08004a3586e531677aabe2471ceea4ee5f81b4a",
+      "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSourceCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSha256": "496b94589fb595fa65d39d2c982e57cb6a7fc69086f67ebe16c815ab7ddec4ed",
+      "definitions": [
+        {
+          "id": "layout:halden-campus",
+          "revision": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6",
+          "geometryKey": "physical-layout/e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+        }
+      ],
+      "phases": 8,
+      "observations": 5876
+    },
+    "yard-dpr2": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/yard-dpr2/receipt.json",
+      "rawSha256": "b6bafcc3cb2d5518b3885f25b8f43ae477cfed6dbbd2496617656e3fc9d139d4",
+      "summaryPath": "final-yard-dpr2.summary.json",
+      "summarySha256": "87151f857c573742936799bf7c3c6910b2df92125478a112e5b15b7f779914ac",
+      "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSourceCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSha256": "496b94589fb595fa65d39d2c982e57cb6a7fc69086f67ebe16c815ab7ddec4ed",
+      "definitions": [
+        {
+          "id": "layout:halden-campus",
+          "revision": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6",
+          "geometryKey": "physical-layout/e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+        }
+      ],
+      "phases": 8,
+      "observations": 6812
+    },
+    "unit-r2-dpr1": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/unit-r2-dpr1/receipt.json",
+      "rawSha256": "dead4bd935c11eaeed3fe7bacd2ec534b704c80ea53faa95736c7b2dc7ed421a",
+      "summaryPath": "final-unit-r2-dpr1.summary.json",
+      "summarySha256": "7732417beb434a460349bbbfc538f0f065d682f1aee4cc5a2891889c42444ec9",
+      "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSourceCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+      "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e",
+      "definitions": [
+        {
+          "id": "layout:halden-1",
+          "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+          "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+        }
+      ],
+      "phases": 12,
+      "observations": 6776
+    },
+    "unit-r2-dpr2": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/unit-r2-dpr2/receipt.json",
+      "rawSha256": "7acd395da3b1aead9dbc5fd626473f597ae1268bd77c76b2d0e678eac13b03d1",
+      "summaryPath": "final-unit-r2-dpr2.summary.json",
+      "summarySha256": "967d836870c3878634819153822914634069f629db1539fb9f964eca00d5739b",
+      "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSourceCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+      "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e",
+      "definitions": [
+        {
+          "id": "layout:halden-1",
+          "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+          "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+        }
+      ],
+      "phases": 12,
+      "observations": 6780
+    },
+    "gap-r2-dpr1": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/gap-r2-dpr1/receipt.json",
+      "rawSha256": "6ff2de95dc3c382ff2c915ce55cc61901b75ef603301a374e9fe5634321e5c4a",
+      "summaryPath": "final-gap-r2-dpr1.summary.json",
+      "summarySha256": "733a8659b3529cfbc8caaeed4e9fee680ecf70dc0bf9863f2217687327f82af9",
+      "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSourceCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+      "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+      "definitions": [
+        {
+          "id": "layout:halden-campus",
+          "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+          "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+        }
+      ],
+      "phases": 4,
+      "observations": 220
+    },
+    "gap-r2-dpr2": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/gap-r2-dpr2/receipt.json",
+      "rawSha256": "4d510a516fb15489d62eaa9d518c029b48629e02d343fdb6566fc19c693658f4",
+      "summaryPath": "final-gap-r2-dpr2.summary.json",
+      "summarySha256": "924ed7a9957d97a00e5c35b00ec699119949622030dfa88181a62c509472a543",
+      "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+      "fixtureSourceCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+      "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+      "definitions": [
+        {
+          "id": "layout:halden-campus",
+          "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+          "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+        }
+      ],
+      "phases": 4,
+      "observations": 220
+    },
+    "gl-state": {
+      "passed": true,
+      "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/depth/final-d8/gl-state/receipt.json",
+      "rawSha256": "a863c8a5c89b6bb56ae01e24a4caee0f862f5d356fa417d7879debe87f9cd306",
+      "summarySha256": "9edd86061100f0af8d5f68fca1e8bb6c32c69b15a1841de9370d59440236aa5b",
+      "mountCycles": 20,
+      "styleCycles": 20,
+      "stateErrors": [],
+      "glErrors": []
+    }
+  },
+  "productionModules": {
+    "src/ui/map/physical-scene/backend.ts": "e48ca0fd201d04dd9e41ad8eef21fffcebceb76e49c82f8f0594906de522694f",
+    "src/ui/map/physical-scene/render-pass.ts": "b21f7ccbc570c79eda1473e1a84be5afca5427813899aec1bb47ef22614d8a86",
+    "src/ui/map/physical-scene/depth-projection.ts": "6c6cf6832bff20c42f28919a56970f35602358448bcf627e90b8bf62476b075d",
+    "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+    "src/ui/map/physical-scene/gl-state.ts": "42e05a9999413e095ea1367cb32842ac3c8b96e6482432b76e5cf1605ef1cac0",
+    "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+    "src/ui/map/physical-scene/map-viewport.ts": "85fdb747796a59cd96a8a4af082097ce4e79bd8bdb9e6f2fe43e7115d7a8342b",
+    "src/ui/map/physical-scene/scene-controller.ts": "9eeec6074e725e455323ff284e2d0ee7081e84052a3461dd21f3ab2c53a72f2b",
+    "src/ui/map/physical-scene/preparation.ts": "168ab7305f3c0c0517bbcd6c840c4c41382325f6ab88d2acd109e5a56969d750",
+    "src/ui/map/physical-scene/renderer.ts": "d1906e92c1e4c5a002495acb5bd2102579fecca3cdaee7659aa72f26e6e05273",
+    "src/ui/map/physical-scene/perspective-fit.ts": "9c10e299974f75abc7e568624c437aa408be0c4a5b3793ec881052d2d081b913",
+    "src/ui/map/physical-scene/ground-projection.ts": "8f4eeef5cdc38b3408565125bee5d4f0def8d8758e679ff0be1faa0ab4d5214d",
+    "src/ui/map/physical-scene/scopes.ts": "bba966609d7cc42d027fe366cf9d6a0b349b221c7d99dcfb45584e2540626e25",
+    "src/ui/map/physical-scene/layer.ts": "e803a8d07abf95ed509ba78ce49d60358fbfff51d892f8a415449156c1a52e6d",
+    "src/ui/map/physical-scene/inspection-cutaway.ts": "c62b49e25617a267ef885fa47a19e9aca62e18bc1a4ed20a3d2d15b136e1fb36",
+    "src/ui/map/physical-scene/geometry.ts": "a1717259667358839ece13ba5a5f830c4752aa4936f7ad21f6beb42d7a3177e9",
+    "src/ui/map/physical-scene/canvas-viewport.ts": "8af81b828011d8e3839b5a5b2c7644f47d4570e8634c2131d13791ecd55da08b",
+    "src/ui/map/physical-scene/surface-ownership.ts": "042d26984038994d79418a05c0c4fd6b8dd6fac1ee9795377b04287ea8753a6f",
+    "src/ui/map/physical-scene/spatial-index.ts": "82d4758e6b0956b7fbc9465693ecdb41873b6d36dc82ec33457e7ead55012a25",
+    "src/ui/map/physical-scene/preparation-worker.ts": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa"
+  },
+  "sourcePins": {
+    "pwr-full-unit-architecture": {
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261026-r3",
+        "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+      },
+      "sourceDigest": "7aa1603f251a1c956b7bf736aca1b84429bb86061f04dc6749ba91a8b26dfe7a"
+    },
+    "pwr-campus-architecture": {
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261026-r3",
+        "digest": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+      },
+      "sourceDigest": "8f344fefe90243b52c5db24adce0edfa3f77d88d527024e97b4fe78a323dbf42"
+    }
+  },
+  "boundaries": [
+    "Current Map host is a colour-composited architectural overlay on flat vector geography; native terrain/other3Ddepth is not qualified.",
+    "Controlled original comparison uses a legacy Y/Z reflection; native139.893degreeHome is preserved and judged in the actual product, not claimed original-pose equivalence.",
+    "Engine source-grounded pixel/pick tests and actual product runtime tests are complementary.",
+    "Retained r2 fixtures are compatibility controls, not relabelled r3; existing user Runs are not hot-swapped."
+  ],
+  "visuals": {
+    "controlledReceipt": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/cold-quality-20261026/visual-comparison/final-source/receipt.json",
+      "sha256": "598bdee891f4883ca4b6e98aa6a16ff6c94df8056c2ef1ead71fbe8222865c4e",
+      "note": "Legacy reflected-projection drawing fidelity control; not native Home pose equivalence."
+    },
+    "nativeProduct": {
+      "path": "images/native-product.png",
+      "sha256": "383bd24059d226bea030f843b6f2faa32064e7d4032a2e5cde6707cc2f85b7e9",
+      "note": "Actual native product accepted by root after context removal at72f2; finald8 changes only Plan readability. Native source139.893degreeview and machinery ordering are deliberately preserved."
+    }
+  },
+  "files": {
+    "qualification.md": {
+      "bytes": 5336,
+      "sha256": "cb0d926b1bb0a94b0e04379684cd6a3a85cd05413e15b6f094054473fcbed61c"
+    },
+    "final-unit-r2-dpr2.summary.json": {
+      "bytes": 427068,
+      "sha256": "967d836870c3878634819153822914634069f629db1539fb9f964eca00d5739b"
+    },
+    "rejected-host-depth.summary.json": {
+      "bytes": 3230,
+      "sha256": "8656627ad5fc1694b2ca385c7febc92fb3ab76adbbbe74d37f25975e68e35fef"
+    },
+    "final-yard-dpr2.summary.json": {
+      "bytes": 344532,
+      "sha256": "87151f857c573742936799bf7c3c6910b2df92125478a112e5b15b7f779914ac"
+    },
+    "camera-fit-lifecycle.json": {
+      "bytes": 19328,
+      "sha256": "1613365643590c0ecc4b4bde2aa84e2dbed30de4727f927e16c5bba8af0c92a6"
+    },
+    "final-gap-r2-dpr1.summary.json": {
+      "bytes": 81555,
+      "sha256": "733a8659b3529cfbc8caaeed4e9fee680ecf70dc0bf9863f2217687327f82af9"
+    },
+    "r2-baseline-dpr1.summary.json": {
+      "bytes": 296819,
+      "sha256": "632da8220c278cb89b4a43ec26bb4d518e600875fe31feba32451f6fa64a54c5"
+    },
+    "comparison.html": {
+      "bytes": 3938,
+      "sha256": "0b58ed35c29065ed877887e8d812f36fbfba3f7091998dff5404712e7e037111"
+    },
+    "README.md": {
+      "bytes": 816,
+      "sha256": "980a711def472d91a9c126346604b670d129c0519437a1857d246a226df84e8a"
+    },
+    "camera-forward-ease-failed.json": {
+      "bytes": 18249,
+      "sha256": "024d81442c3cbe118fec8a3fa90b84074971a070e8fd54f8bd713f5bc48e9da6"
+    },
+    "camera-clamp-only-failed.json": {
+      "bytes": 18249,
+      "sha256": "8c5ccfa87dd920d6a0e4f20f4405692460d97ecac4232768cf686a9250a97a9c"
+    },
+    "r2-candidate-bc624-dpr2.summary.json": {
+      "bytes": 319679,
+      "sha256": "b45f12fb6fd8f82039ceeba278bdca76f9e810821475632ebd5e928614a6758c"
+    },
+    "final-gl-state.summary.json": {
+      "bytes": 31268,
+      "sha256": "9edd86061100f0af8d5f68fca1e8bb6c32c69b15a1841de9370d59440236aa5b"
+    },
+    "r2-before-after-comparison.json": {
+      "bytes": 7059,
+      "sha256": "83d53688abc99daf69026d54ff0f78cfa0549402ad0eb76f79ceeaadda3927e4"
+    },
+    "r2-baseline-dpr2.summary.json": {
+      "bytes": 319241,
+      "sha256": "0c1631d6fbc4c8c4c6ddf34c125bf872fe3fa280184eb661d62a7a974493e968"
+    },
+    "final-gap-r2-dpr2.summary.json": {
+      "bytes": 81573,
+      "sha256": "924ed7a9957d97a00e5c35b00ec699119949622030dfa88181a62c509472a543"
+    },
+    "final-unit-r2-dpr1.summary.json": {
+      "bytes": 426732,
+      "sha256": "7732417beb434a460349bbbfc538f0f065d682f1aee4cc5a2891889c42444ec9"
+    },
+    "final-yard-dpr1.summary.json": {
+      "bytes": 318288,
+      "sha256": "5b1c51488289c61d1174803ac08004a3586e531677aabe2471ceea4ee5f81b4a"
+    },
+    "images/all-original.png": {
+      "bytes": 200748,
+      "sha256": "ad53258b53a30de3788d03973e9f3fa56ca10dd21fe405490723bc0daf01a20c"
+    },
+    "images/all-original-through-current.png": {
+      "bytes": 187724,
+      "sha256": "c8d34d180c19ba50ae0df9d818f00777f143586e8311a1e6978713140a72ab68"
+    },
+    "images/operating-original.png": {
+      "bytes": 130999,
+      "sha256": "8ff5264914aaf7253c589a225b1875743b29972304871c24ed9ebca233797832"
+    },
+    "images/all-r3-status.png": {
+      "bytes": 190583,
+      "sha256": "392b24856534b066dcd74abcf405c6dae1db3e56f904b84eae216242bf4434f8"
+    },
+    "images/all-r3-current.png": {
+      "bytes": 192424,
+      "sha256": "e6cbb9a9bd7bba276c2a4011b487e134fc720e5d84b6af32f1dd2b877ee25599"
+    },
+    "images/operating-r3-current.png": {
+      "bytes": 131229,
+      "sha256": "32062af9e9960de016a08f9f98945ec1a4194e39bf10334ccea39c228f4f6d9e"
+    },
+    "images/operating-original-through-current.png": {
+      "bytes": 125251,
+      "sha256": "9299f9854a3c26a7e8f75364f7418bf843d3b054315a7f9988a30555bde8900e"
+    },
+    "images/native-product.png": {
+      "bytes": 70540,
+      "sha256": "383bd24059d226bea030f843b6f2faa32064e7d4032a2e5cde6707cc2f85b7e9"
+    }
+  }
+}

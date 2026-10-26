@@ -1,0 +1,2783 @@
+{
+  "phases": [
+    {
+      "host": "map",
+      "solidsOnly": true,
+      "pair": {
+        "front": "parking/line-1-8",
+        "back": "parking/pavement",
+        "frontBounds": {
+          "min": [
+            -428.4,
+            -279.6,
+            0.012
+          ],
+          "max": [
+            -428.32,
+            -274.20000000000005,
+            0.03
+          ]
+        },
+        "backBounds": {
+          "min": [
+            -451,
+            -286,
+            -0.08
+          ],
+          "max": [
+            -395,
+            -246.4,
+            0
+          ]
+        },
+        "bottomGap": 0.012,
+        "topSeparation": 0.03
+      },
+      "glDepthBits": 24,
+      "samples": 4,
+      "dpr": 2,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "viewport": {
+        "width": 1440,
+        "height": 913,
+        "bufferWidth": 2880,
+        "bufferHeight": 1826
+      },
+      "sampled": 55,
+      "correctPainted": 55,
+      "exactTargetPicks": 55,
+      "minimumMarginDevice": 2.9839311936659763,
+      "tracks": [
+        {
+          "point": "0.2",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.35",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.5",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.65",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.8",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        }
+      ],
+      "frames": [
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.925,
+            "bearing": -25.174999999999955,
+            "zoom": 20.998,
+            "revision": 7,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.7357406616211,
+            -42.82803726196289,
+            -17.01414680480957,
+            -16.96833038330078,
+            42.178619384765625,
+            91.11738586425781,
+            36.19789123535156,
+            36.10041809082031,
+            0,
+            119.66820526123047,
+            -33.650875091552734,
+            -33.56025695800781,
+            50118.4609375,
+            6882.07373046875,
+            4072.351318359375,
+            4097.85595703125
+          ],
+          "depthRange": {
+            "nearMetres": 0.35028126180593416,
+            "farMetres": 259.8125169655049,
+            "a": -1.0027000558355317,
+            "b": -36.569078561825336,
+            "unitsPerMetre": 52.12921704204262
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.94,
+            "bearing": -25.139999999999983,
+            "zoom": 20.9984,
+            "revision": 8,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.786376953125,
+            -42.770912170410156,
+            -17.000444412231445,
+            -16.954708099365234,
+            42.135475158691406,
+            91.14043426513672,
+            36.22620391845703,
+            36.12874221801758,
+            0,
+            119.72774505615234,
+            -33.6496467590332,
+            -33.55911636352539,
+            50128.20703125,
+            6912.9228515625,
+            4086.057373046875,
+            4111.53515625
+          ],
+          "depthRange": {
+            "nearMetres": 0.3501852949306448,
+            "farMetres": 259.97533429280963,
+            "a": -1.0026976222933897,
+            "b": -36.569152100680185,
+            "unitsPerMetre": 52.143671064581596
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.955,
+            "bearing": -25.105000000000018,
+            "zoom": 20.9988,
+            "revision": 9,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.83700561523438,
+            -42.71377182006836,
+            -16.98671531677246,
+            -16.941057205200195,
+            42.092288970947266,
+            91.1634292602539,
+            36.2545166015625,
+            36.15707015991211,
+            0,
+            119.78730773925781,
+            -33.64841079711914,
+            -33.5579719543457,
+            50137.93359375,
+            6943.7666015625,
+            4099.77490234375,
+            4125.22607421875
+          ],
+          "depthRange": {
+            "nearMetres": 0.3500873347829124,
+            "farMetres": 260.1467943557673,
+            "a": -1.002695086776097,
+            "b": -36.56901411603758,
+            "unitsPerMetre": 52.15813094300183
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.97,
+            "bearing": -25.069999999999936,
+            "zoom": 20.9992,
+            "revision": 10,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.88761901855469,
+            -42.656612396240234,
+            -16.972959518432617,
+            -16.92738151550293,
+            42.04905700683594,
+            91.18637084960938,
+            36.282833099365234,
+            36.185401916503906,
+            0,
+            119.84688568115234,
+            -33.64717102050781,
+            -33.556819915771484,
+            50147.64453125,
+            6974.60400390625,
+            4113.50390625,
+            4138.9287109375
+          ],
+          "depthRange": {
+            "nearMetres": 0.34999151713009724,
+            "farMetres": 260.3198151975962,
+            "a": -1.0026925549448407,
+            "b": -36.569097654477446,
+            "unitsPerMetre": 52.172595485463745
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.98500000000001,
+            "bearing": -25.03499999999997,
+            "zoom": 20.9996,
+            "revision": 11,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.93821716308594,
+            -42.599430084228516,
+            -16.959178924560547,
+            -16.913681030273438,
+            42.00578689575195,
+            91.20926666259766,
+            36.3111457824707,
+            36.2137336730957,
+            0,
+            119.90647888183594,
+            -33.64592742919922,
+            -33.555660247802734,
+            50157.33984375,
+            7005.43603515625,
+            4127.24462890625,
+            4152.64306640625
+          ],
+          "depthRange": {
+            "nearMetres": 0.34989136639464574,
+            "farMetres": 260.4997400541594,
+            "a": -1.0026899217367187,
+            "b": -36.56872234916045,
+            "unitsPerMetre": 52.18706206719924
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50,
+            "bearing": -25,
+            "zoom": 21,
+            "revision": 12,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.98880767822266,
+            -42.542232513427734,
+            -16.945371627807617,
+            -16.899951934814453,
+            41.96247100830078,
+            91.23210906982422,
+            36.3394660949707,
+            36.2420654296875,
+            0,
+            119.9660873413086,
+            -33.644676208496094,
+            -33.554500579833984,
+            50167.015625,
+            7036.26171875,
+            4140.99658203125,
+            4166.36865234375
+          ],
+          "depthRange": {
+            "nearMetres": 0.3497993467298071,
+            "farMetres": 260.6652864038715,
+            "a": -1.002687503157682,
+            "b": -36.569199221741655,
+            "unitsPerMetre": 52.20153437563754
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.015,
+            "bearing": -24.965000000000035,
+            "zoom": 21.0004,
+            "revision": 13,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.03939056396484,
+            -42.485015869140625,
+            -16.931537628173828,
+            -16.886198043823242,
+            41.91911315917969,
+            91.2549057006836,
+            36.36778259277344,
+            36.27040100097656,
+            0,
+            120.02570343017578,
+            -33.6434211730957,
+            -33.55332946777344,
+            50176.67578125,
+            7067.08154296875,
+            4154.7607421875,
+            4180.10595703125
+          ],
+          "depthRange": {
+            "nearMetres": 0.34969412709381276,
+            "farMetres": 260.841353450862,
+            "a": -1.0026848777269999,
+            "b": -36.568288224282696,
+            "unitsPerMetre": 52.216008958171194
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.03,
+            "bearing": -24.930000000000067,
+            "zoom": 21.0008,
+            "revision": 14,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.08995056152344,
+            -42.42777633666992,
+            -16.91767692565918,
+            -16.872419357299805,
+            41.87571334838867,
+            91.27764892578125,
+            36.39610290527344,
+            36.298736572265625,
+            0,
+            120.08534240722656,
+            -33.64215850830078,
+            -33.552154541015625,
+            50186.31640625,
+            7097.8955078125,
+            4168.53564453125,
+            4193.85498046875
+          ],
+          "depthRange": {
+            "nearMetres": 0.3496022410864292,
+            "farMetres": 261.0171094224727,
+            "a": -1.0026823614869893,
+            "b": -36.56877101912778,
+            "unitsPerMetre": 52.230488089386206
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.044999999999995,
+            "bearing": -24.894999999999982,
+            "zoom": 21.0012,
+            "revision": 15,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.1405029296875,
+            -42.370521545410156,
+            -16.903791427612305,
+            -16.858612060546875,
+            41.83226776123047,
+            91.30033874511719,
+            36.42442321777344,
+            36.32707214355469,
+            0,
+            120.1449966430664,
+            -33.64088821411133,
+            -33.55097579956055,
+            50195.94140625,
+            7128.70361328125,
+            4182.32275390625,
+            4207.61572265625
+          ],
+          "depthRange": {
+            "nearMetres": 0.3495055129953061,
+            "farMetres": 261.18919499851916,
+            "a": -1.002679849172376,
+            "b": -36.56874426203649,
+            "unitsPerMetre": 52.24497055443462
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.06,
+            "bearing": -24.860000000000014,
+            "zoom": 21.0016,
+            "revision": 16,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.19104766845703,
+            -42.31324768066406,
+            -16.88987922668457,
+            -16.84477996826172,
+            41.788780212402344,
+            91.3229751586914,
+            36.4527473449707,
+            36.355411529541016,
+            0,
+            120.20466613769531,
+            -33.639617919921875,
+            -33.5497932434082,
+            50205.55078125,
+            7159.50537109375,
+            4196.12109375,
+            4221.3876953125
+          ],
+          "depthRange": {
+            "nearMetres": 0.34940856276663684,
+            "farMetres": 261.3610831503654,
+            "a": -1.0026773404930542,
+            "b": -36.56869377604107,
+            "unitsPerMetre": 52.25946025684607
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.075,
+            "bearing": -24.825000000000045,
+            "zoom": 21.002,
+            "revision": 17,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.24156951904297,
+            -42.255950927734375,
+            -16.87594223022461,
+            -16.830921173095703,
+            41.7452507019043,
+            91.34556579589844,
+            36.48107147216797,
+            36.383750915527344,
+            0,
+            120.26435852050781,
+            -33.63833999633789,
+            -33.54859924316406,
+            50215.140625,
+            7190.30126953125,
+            4209.93115234375,
+            4235.17138671875
+          ],
+          "depthRange": {
+            "nearMetres": 0.34931146914501776,
+            "farMetres": 261.5328049471031,
+            "a": -1.0026748357217643,
+            "b": -36.56862208798975,
+            "unitsPerMetre": 52.27394905109548
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        }
+      ],
+      "metrics": {
+        "surfaceOwnership": [
+          {
+            "sceneId": "layout:halden-campus",
+            "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+            "broadPhaseCandidates": 16803186,
+            "coplanarCandidates": 96579,
+            "triangles": 109797,
+            "partitionedTriangles": 6977,
+            "retainedCandidates": 1204,
+            "coincidentPairCount": 939,
+            "coincidentPairsSha256": "e31e4ed0028daea614a920a2d1af178d1c688382b318194b0745194ee984e9e2"
+          }
+        ],
+        "preparation": {
+          "workerAlive": true,
+          "workerCount": 1,
+          "workerBudget": 7,
+          "activeWorkers": 0,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 1,
+          "transferredBytes": 22970652,
+          "retainedViews": 1,
+          "retainedViewBytes": 47100808,
+          "cacheHits": 0,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 15482064,
+          "residentCpuBytes": 47100808,
+          "draws": 24,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 21090352,
+          "instanceBytes": 68,
+          "instanceUploads": 12,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 15536964,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 189319680,
+            "textureBytes": 21035520,
+            "allocations": 1,
+            "composites": 12,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          },
+          "depthNear": 18.259999984164924
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "suppressedLines": 12,
+      "glError": 0
+    },
+    {
+      "host": "map",
+      "solidsOnly": false,
+      "pair": {
+        "front": "parking/line-1-8",
+        "back": "parking/pavement",
+        "frontBounds": {
+          "min": [
+            -428.4,
+            -279.6,
+            0.012
+          ],
+          "max": [
+            -428.32,
+            -274.20000000000005,
+            0.03
+          ]
+        },
+        "backBounds": {
+          "min": [
+            -451,
+            -286,
+            -0.08
+          ],
+          "max": [
+            -395,
+            -246.4,
+            0
+          ]
+        },
+        "bottomGap": 0.012,
+        "topSeparation": 0.03
+      },
+      "glDepthBits": 24,
+      "samples": 4,
+      "dpr": 2,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "viewport": {
+        "width": 1440,
+        "height": 913,
+        "bufferWidth": 2880,
+        "bufferHeight": 1826
+      },
+      "sampled": 55,
+      "correctPainted": 55,
+      "exactTargetPicks": 55,
+      "minimumMarginDevice": 2.9839311936659763,
+      "tracks": [
+        {
+          "point": "0.2",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.35",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.5",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.65",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.8",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        }
+      ],
+      "frames": [
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.925,
+            "bearing": -25.174999999999955,
+            "zoom": 20.998,
+            "revision": 23,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.7357406616211,
+            -42.82803726196289,
+            -17.01414680480957,
+            -16.96833038330078,
+            42.178619384765625,
+            91.11738586425781,
+            36.19789123535156,
+            36.10041809082031,
+            0,
+            119.66820526123047,
+            -33.650875091552734,
+            -33.56025695800781,
+            50118.4609375,
+            6882.07373046875,
+            4072.351318359375,
+            4097.85595703125
+          ],
+          "depthRange": {
+            "nearMetres": 0.35028126180593416,
+            "farMetres": 259.8125169655049,
+            "a": -1.0027000558355317,
+            "b": -36.569078561825336,
+            "unitsPerMetre": 52.12921704204262
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.94,
+            "bearing": -25.139999999999983,
+            "zoom": 20.9984,
+            "revision": 24,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.786376953125,
+            -42.770912170410156,
+            -17.000444412231445,
+            -16.954708099365234,
+            42.135475158691406,
+            91.14043426513672,
+            36.22620391845703,
+            36.12874221801758,
+            0,
+            119.72774505615234,
+            -33.6496467590332,
+            -33.55911636352539,
+            50128.20703125,
+            6912.9228515625,
+            4086.057373046875,
+            4111.53515625
+          ],
+          "depthRange": {
+            "nearMetres": 0.3501852949306448,
+            "farMetres": 259.97533429280963,
+            "a": -1.0026976222933897,
+            "b": -36.569152100680185,
+            "unitsPerMetre": 52.143671064581596
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.955,
+            "bearing": -25.105000000000018,
+            "zoom": 20.9988,
+            "revision": 25,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.83700561523438,
+            -42.71377182006836,
+            -16.98671531677246,
+            -16.941057205200195,
+            42.092288970947266,
+            91.1634292602539,
+            36.2545166015625,
+            36.15707015991211,
+            0,
+            119.78730773925781,
+            -33.64841079711914,
+            -33.5579719543457,
+            50137.93359375,
+            6943.7666015625,
+            4099.77490234375,
+            4125.22607421875
+          ],
+          "depthRange": {
+            "nearMetres": 0.3500873347829124,
+            "farMetres": 260.1467943557673,
+            "a": -1.002695086776097,
+            "b": -36.56901411603758,
+            "unitsPerMetre": 52.15813094300183
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.97,
+            "bearing": -25.069999999999936,
+            "zoom": 20.9992,
+            "revision": 26,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.88761901855469,
+            -42.656612396240234,
+            -16.972959518432617,
+            -16.92738151550293,
+            42.04905700683594,
+            91.18637084960938,
+            36.282833099365234,
+            36.185401916503906,
+            0,
+            119.84688568115234,
+            -33.64717102050781,
+            -33.556819915771484,
+            50147.64453125,
+            6974.60400390625,
+            4113.50390625,
+            4138.9287109375
+          ],
+          "depthRange": {
+            "nearMetres": 0.34999151713009724,
+            "farMetres": 260.3198151975962,
+            "a": -1.0026925549448407,
+            "b": -36.569097654477446,
+            "unitsPerMetre": 52.172595485463745
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 49.98500000000001,
+            "bearing": -25.03499999999997,
+            "zoom": 20.9996,
+            "revision": 27,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.93821716308594,
+            -42.599430084228516,
+            -16.959178924560547,
+            -16.913681030273438,
+            42.00578689575195,
+            91.20926666259766,
+            36.3111457824707,
+            36.2137336730957,
+            0,
+            119.90647888183594,
+            -33.64592742919922,
+            -33.555660247802734,
+            50157.33984375,
+            7005.43603515625,
+            4127.24462890625,
+            4152.64306640625
+          ],
+          "depthRange": {
+            "nearMetres": 0.34989136639464574,
+            "farMetres": 260.4997400541594,
+            "a": -1.0026899217367187,
+            "b": -36.56872234916045,
+            "unitsPerMetre": 52.18706206719924
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50,
+            "bearing": -25,
+            "zoom": 21,
+            "revision": 28,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            89.98880767822266,
+            -42.542232513427734,
+            -16.945371627807617,
+            -16.899951934814453,
+            41.96247100830078,
+            91.23210906982422,
+            36.3394660949707,
+            36.2420654296875,
+            0,
+            119.9660873413086,
+            -33.644676208496094,
+            -33.554500579833984,
+            50167.015625,
+            7036.26171875,
+            4140.99658203125,
+            4166.36865234375
+          ],
+          "depthRange": {
+            "nearMetres": 0.3497993467298071,
+            "farMetres": 260.6652864038715,
+            "a": -1.002687503157682,
+            "b": -36.569199221741655,
+            "unitsPerMetre": 52.20153437563754
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.015,
+            "bearing": -24.965000000000035,
+            "zoom": 21.0004,
+            "revision": 29,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.03939056396484,
+            -42.485015869140625,
+            -16.931537628173828,
+            -16.886198043823242,
+            41.91911315917969,
+            91.2549057006836,
+            36.36778259277344,
+            36.27040100097656,
+            0,
+            120.02570343017578,
+            -33.6434211730957,
+            -33.55332946777344,
+            50176.67578125,
+            7067.08154296875,
+            4154.7607421875,
+            4180.10595703125
+          ],
+          "depthRange": {
+            "nearMetres": 0.34969412709381276,
+            "farMetres": 260.841353450862,
+            "a": -1.0026848777269999,
+            "b": -36.568288224282696,
+            "unitsPerMetre": 52.216008958171194
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.03,
+            "bearing": -24.930000000000067,
+            "zoom": 21.0008,
+            "revision": 30,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.08995056152344,
+            -42.42777633666992,
+            -16.91767692565918,
+            -16.872419357299805,
+            41.87571334838867,
+            91.27764892578125,
+            36.39610290527344,
+            36.298736572265625,
+            0,
+            120.08534240722656,
+            -33.64215850830078,
+            -33.552154541015625,
+            50186.31640625,
+            7097.8955078125,
+            4168.53564453125,
+            4193.85498046875
+          ],
+          "depthRange": {
+            "nearMetres": 0.3496022410864292,
+            "farMetres": 261.0171094224727,
+            "a": -1.0026823614869893,
+            "b": -36.56877101912778,
+            "unitsPerMetre": 52.230488089386206
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.044999999999995,
+            "bearing": -24.894999999999982,
+            "zoom": 21.0012,
+            "revision": 31,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.1405029296875,
+            -42.370521545410156,
+            -16.903791427612305,
+            -16.858612060546875,
+            41.83226776123047,
+            91.30033874511719,
+            36.42442321777344,
+            36.32707214355469,
+            0,
+            120.1449966430664,
+            -33.64088821411133,
+            -33.55097579956055,
+            50195.94140625,
+            7128.70361328125,
+            4182.32275390625,
+            4207.61572265625
+          ],
+          "depthRange": {
+            "nearMetres": 0.3495055129953061,
+            "farMetres": 261.18919499851916,
+            "a": -1.002679849172376,
+            "b": -36.56874426203649,
+            "unitsPerMetre": 52.24497055443462
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.06,
+            "bearing": -24.860000000000014,
+            "zoom": 21.0016,
+            "revision": 32,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.19104766845703,
+            -42.31324768066406,
+            -16.88987922668457,
+            -16.84477996826172,
+            41.788780212402344,
+            91.3229751586914,
+            36.4527473449707,
+            36.355411529541016,
+            0,
+            120.20466613769531,
+            -33.639617919921875,
+            -33.5497932434082,
+            50205.55078125,
+            7159.50537109375,
+            4196.12109375,
+            4221.3876953125
+          ],
+          "depthRange": {
+            "nearMetres": 0.34940856276663684,
+            "farMetres": 261.3610831503654,
+            "a": -1.0026773404930542,
+            "b": -36.56869377604107,
+            "unitsPerMetre": 52.25946025684607
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156248
+            ],
+            "pitch": 50.075,
+            "bearing": -24.825000000000045,
+            "zoom": 21.002,
+            "revision": 33,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            90.24156951904297,
+            -42.255950927734375,
+            -16.87594223022461,
+            -16.830921173095703,
+            41.7452507019043,
+            91.34556579589844,
+            36.48107147216797,
+            36.383750915527344,
+            0,
+            120.26435852050781,
+            -33.63833999633789,
+            -33.54859924316406,
+            50215.140625,
+            7190.30126953125,
+            4209.93115234375,
+            4235.17138671875
+          ],
+          "depthRange": {
+            "nearMetres": 0.34931146914501776,
+            "farMetres": 261.5328049471031,
+            "a": -1.0026748357217643,
+            "b": -36.56862208798975,
+            "unitsPerMetre": 52.27394905109548
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        }
+      ],
+      "metrics": {
+        "surfaceOwnership": [
+          {
+            "sceneId": "layout:halden-campus",
+            "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+            "broadPhaseCandidates": 16803186,
+            "coplanarCandidates": 96579,
+            "triangles": 109797,
+            "partitionedTriangles": 6977,
+            "retainedCandidates": 1204,
+            "coincidentPairCount": 939,
+            "coincidentPairsSha256": "e31e4ed0028daea614a920a2d1af178d1c688382b318194b0745194ee984e9e2"
+          }
+        ],
+        "preparation": {
+          "workerAlive": true,
+          "workerCount": 1,
+          "workerBudget": 7,
+          "activeWorkers": 0,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 1,
+          "transferredBytes": 22970652,
+          "retainedViews": 1,
+          "retainedViewBytes": 47100808,
+          "cacheHits": 0,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 15482064,
+          "residentCpuBytes": 47100808,
+          "draws": 24,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 21090352,
+          "instanceBytes": 68,
+          "instanceUploads": 12,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 15536964,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 189319680,
+            "textureBytes": 21035520,
+            "allocations": 1,
+            "composites": 12,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          },
+          "depthNear": 18.259999984164924
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "residentCpuBytes": 0,
+            "draws": 38,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 19,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 15536964,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "renderPass": {
+              "depthFormat": "float32",
+              "samples": 4,
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 19,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            },
+            "depthNear": 18.259999984164924
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "suppressedLines": 19,
+      "glError": 0
+    },
+    {
+      "host": "canvas",
+      "solidsOnly": true,
+      "pair": {
+        "front": "parking/line-1-8",
+        "back": "parking/pavement",
+        "frontBounds": {
+          "min": [
+            -428.4,
+            -279.6,
+            0.012
+          ],
+          "max": [
+            -428.32,
+            -274.20000000000005,
+            0.03
+          ]
+        },
+        "backBounds": {
+          "min": [
+            -451,
+            -286,
+            -0.08
+          ],
+          "max": [
+            -395,
+            -246.4,
+            0
+          ]
+        },
+        "bottomGap": 0.012,
+        "topSeparation": 0.03
+      },
+      "glDepthBits": 24,
+      "samples": 0,
+      "dpr": 2,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "viewport": {
+        "width": 1440,
+        "height": 913,
+        "bufferWidth": 2880,
+        "bufferHeight": 1826
+      },
+      "sampled": 55,
+      "correctPainted": 55,
+      "exactTargetPicks": 55,
+      "minimumMarginDevice": 5.480871816334768,
+      "tracks": [
+        {
+          "point": "0.2",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.35",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.5",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.65",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.8",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        }
+      ],
+      "frames": [
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.925,
+            "bearing": -25.175,
+            "zoom": 21.79138280563244,
+            "revision": 6,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.734759239179766e-8,
+            -3.214287858099851e-8,
+            -1.5825099453081748e-8,
+            -1.582491293561361e-8,
+            3.165548534411755e-8,
+            6.838453003865652e-8,
+            3.366817225014529e-8,
+            3.3667774346213264e-8,
+            0,
+            8.9812211001572e-8,
+            -3.12991588202749e-8,
+            -3.129878578533862e-8,
+            0.00003761441621463746,
+            0.00000516506679559825,
+            0.0000031365091217594454,
+            0.0000031375479920825455
+          ],
+          "depthRange": {
+            "nearMetres": 0.011065645667221069,
+            "farMetres": 1872.6020673017492,
+            "a": -1.000011818539828,
+            "b": -1.0759515590065769e-9,
+            "unitsPerMetre": 4.8616467276878543e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.94,
+            "bearing": -25.14,
+            "zoom": 21.79178280563244,
+            "revision": 7,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.736691204878298e-8,
+            -3.209110843727103e-8,
+            -1.5808010900286718e-8,
+            -1.580782260646174e-8,
+            3.1614337814289684e-8,
+            6.838286736865484e-8,
+            3.3685250144799284e-8,
+            3.368485224086726e-8,
+            0,
+            8.983199251133556e-8,
+            -3.1289417279367626e-8,
+            -3.128904424443135e-8,
+            0.00003761130210477859,
+            0.0000051867809816030785,
+            0.0000031483937164011877,
+            0.0000031494323593506124
+          ],
+          "depthRange": {
+            "nearMetres": 0.011064557887694967,
+            "farMetres": 1873.367759792632,
+            "a": -1.0000118125479422,
+            "b": -1.075845770160283e-9,
+            "unitsPerMetre": 4.861646650854426e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.955,
+            "bearing": -25.105,
+            "zoom": 21.79218280563244,
+            "revision": 8,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.738621749491358e-8,
+            -3.2039352504398266e-8,
+            -1.5790906360280133e-8,
+            -1.5790718066455156e-8,
+            3.157317962632078e-8,
+            6.838115496066166e-8,
+            3.370231738131224e-8,
+            3.370191592466654e-8,
+            0,
+            8.98517598102444e-8,
+            -3.1279675738460355e-8,
+            -3.127930270352408e-8,
+            0.00003760817344300449,
+            0.000005208478796703275,
+            0.000003160282403769088,
+            0.0000031613205919711618
+          ],
+          "depthRange": {
+            "nearMetres": 0.011064557923274347,
+            "farMetres": 1857.7299732402466,
+            "a": -1.0000119119828856,
+            "b": -1.0758457988615708e-9,
+            "unitsPerMetre": 4.86164652321233e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.97,
+            "bearing": -25.07,
+            "zoom": 21.79258280563244,
+            "revision": 9,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.74054874139074e-8,
+            -3.198760722966654e-8,
+            -1.5773784056705153e-8,
+            -1.5773597539237016e-8,
+            3.153201078021084e-8,
+            6.837940702553169e-8,
+            3.371937395968416e-8,
+            3.371897250303846e-8,
+            0,
+            8.987152710915325e-8,
+            -3.1269930644839405e-8,
+            -3.126955760990313e-8,
+            0.00003760503022931516,
+            0.000005230159786151489,
+            0.0000031721751838631462,
+            0.000003173212917317869
+          ],
+          "depthRange": {
+            "nearMetres": 0.011061141305368704,
+            "farMetres": 1858.0962293214575,
+            "a": -1.000011905957267,
+            "b": -1.0755135921152942e-9,
+            "unitsPerMetre": 4.861646551436601e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.985,
+            "bearing": -25.035,
+            "zoom": 21.79298280563244,
+            "revision": 10,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.742473601661914e-8,
+            -3.1935872613075844e-8,
+            -1.575664754227546e-8,
+            -1.5756461024807322e-8,
+            3.1490827723246184e-8,
+            6.837761645783758e-8,
+            3.373641987991505e-8,
+            3.373601842326934e-8,
+            0,
+            8.989128730263474e-8,
+            -3.126018199850478e-8,
+            -3.125981251628218e-8,
+            0.000037601872463710606,
+            0.0000052518234952003695,
+            0.000003184071829309687,
+            0.000003185109108017059
+          ],
+          "depthRange": {
+            "nearMetres": 0.011057723693296974,
+            "farMetres": 1858.4611505590158,
+            "a": -1.0000118999415006,
+            "b": -1.0751813194304672e-9,
+            "unitsPerMetre": 4.8616467185867725e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50,
+            "bearing": -25,
+            "zoom": 21.79338280563244,
+            "revision": 11,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.74439633030488e-8,
+            -3.188414865462619e-8,
+            -1.573949326427737e-8,
+            -1.5739306746809234e-8,
+            3.144963756085417e-8,
+            6.837577615215196e-8,
+            3.3753455142004896e-8,
+            3.375305368535919e-8,
+            0,
+            8.991104749611623e-8,
+            -3.125043335217015e-8,
+            -3.125006386994755e-8,
+            0.00003759870014619082,
+            0.000005273470833344618,
+            0.0000031959723401087103,
+            0.0000031970091640687315
+          ],
+          "depthRange": {
+            "nearMetres": 0.011054305738298456,
+            "farMetres": 1858.8248466869325,
+            "a": -1.0000118939355664,
+            "b": -1.0748489810239304e-9,
+            "unitsPerMetre": 4.861646739359716e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.015,
+            "bearing": -24.965,
+            "zoom": 21.79378280563244,
+            "revision": 12,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.746316216776904e-8,
+            -3.1832438907031246e-8,
+            -1.5722324775424568e-8,
+            -1.572213825795643e-8,
+            3.1408429634893764e-8,
+            6.837390031932955e-8,
+            3.377047974595371e-8,
+            3.3770078289308e-8,
+            0,
+            8.9930793478743e-8,
+            -3.124068115312184e-8,
+            -3.1240311670899246e-8,
+            0.00003759551327675581,
+            0.0000052951008910895325,
+            0.0000032078769436338916,
+            0.000003208913312846562
+          ],
+          "depthRange": {
+            "nearMetres": 0.011050887206695843,
+            "farMetres": 1859.1872788966398,
+            "a": -1.0000118879394435,
+            "b": -1.074516579812865e-9,
+            "unitsPerMetre": 4.861646729620749e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.03,
+            "bearing": -24.93,
+            "zoom": 21.794182805632442,
+            "revision": 13,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.748233261077985e-8,
+            -3.178073981757734e-8,
+            -1.570514029936021e-8,
+            -1.5704953781892073e-8,
+            3.1367214603506e-8,
+            6.8371981853943e-8,
+            3.3787490139047804e-8,
+            3.378709223511578e-8,
+            0,
+            8.995053235594241e-8,
+            -3.1230928954073534e-8,
+            -3.123055947185094e-8,
+            0.000037592315493384376,
+            0.000005316714577929815,
+            0.00000321978518513788,
+            0.000003220821326976875
+          ],
+          "depthRange": {
+            "nearMetres": 0.011046323640398618,
+            "farMetres": 1875.9571009122153,
+            "a": -1.0000117768030838,
+            "b": -1.074072817531051e-9,
+            "unitsPerMetre": 4.8616468608079765e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.045,
+            "bearing": -24.895,
+            "zoom": 21.79458280563244,
+            "revision": 14,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.750148173750858e-8,
+            -3.172905493897815e-8,
+            -1.5687938059727458e-8,
+            -1.568775154225932e-8,
+            3.132598536126352e-8,
+            6.83700207559923e-8,
+            3.3804493426714544e-8,
+            3.380409197006884e-8,
+            0,
+            8.997027123314183e-8,
+            -3.122117320231155e-8,
+            -3.122080372008895e-8,
+            0.00003758909952011891,
+            0.000005338310984370764,
+            0.000003231697746741702,
+            0.0000032327332064596703
+          ],
+          "depthRange": {
+            "nearMetres": 0.011044048420266912,
+            "farMetres": 1859.9081587912037,
+            "a": -1.0000118759777976,
+            "b": -1.0738515857541888e-9,
+            "unitsPerMetre": 4.8616466009993486e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.06,
+            "bearing": -24.86,
+            "zoom": 21.79498280563244,
+            "revision": 15,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.752060954795525e-8,
+            -3.167738071852e-8,
+            -1.567072160923999e-8,
+            -1.5670535091771853e-8,
+            3.1284745460880004e-8,
+            6.836801702547746e-8,
+            3.3821486056240246e-8,
+            3.382108459959454e-8,
+            0,
+            8.999000300491389e-8,
+            -3.121141389783588e-8,
+            -3.121104441561329e-8,
+            0.00003758587263291702,
+            0.000005359890565159731,
+            0.0000032436139463243308,
+            0.000003244649178668624
+          ],
+          "depthRange": {
+            "nearMetres": 0.011042966409261843,
+            "farMetres": 1860.6607801259354,
+            "a": -1.0000118700109846,
+            "b": -1.0737463656850133e-9,
+            "unitsPerMetre": 4.861646559622336e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.075,
+            "bearing": -24.825,
+            "zoom": 21.79538280563244,
+            "revision": 16,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.753970183126512e-8,
+            -3.162571715620288e-8,
+            -1.565348739518413e-8,
+            -1.565330265407283e-8,
+            3.124349490235545e-8,
+            6.836597066239847e-8,
+            3.383846802762491e-8,
+            3.383806657097921e-8,
+            0,
+            9.000972056583123e-8,
+            -3.120165459336022e-8,
+            -3.120128511113762e-8,
+            0.0000375826311937999,
+            0.000005381453320296714,
+            0.0000032555342386331176,
+            0.0000032565687888563843
+          ],
+          "depthRange": {
+            "nearMetres": 0.01103720652247511,
+            "farMetres": 1860.6240476500948,
+            "a": -1.000011864053901,
+            "b": -1.0731863309101618e-9,
+            "unitsPerMetre": 4.8616466611926075e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        }
+      ],
+      "metrics": {
+        "surfaceOwnership": [
+          {
+            "sceneId": "layout:halden-campus",
+            "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+            "broadPhaseCandidates": 16803186,
+            "coplanarCandidates": 96579,
+            "triangles": 109797,
+            "partitionedTriangles": 6977,
+            "retainedCandidates": 1204,
+            "coincidentPairCount": 939,
+            "coincidentPairsSha256": "e31e4ed0028daea614a920a2d1af178d1c688382b318194b0745194ee984e9e2"
+          }
+        ],
+        "preparation": {
+          "workerAlive": true,
+          "workerCount": 1,
+          "workerBudget": 7,
+          "activeWorkers": 0,
+          "clients": 2,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 2,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 1,
+          "transferredBytes": 22970652,
+          "retainedViews": 1,
+          "retainedViewBytes": 47100808,
+          "cacheHits": 1,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 15482064,
+          "residentCpuBytes": 47100808,
+          "draws": 26,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 21090352,
+          "instanceBytes": 68,
+          "instanceUploads": 13,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 15536964,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 189319680,
+            "textureBytes": 21035520,
+            "allocations": 1,
+            "composites": 13,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          },
+          "depthNear": 5.366190119676428e-10
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "suppressedLines": 13,
+      "glError": 0
+    },
+    {
+      "host": "canvas",
+      "solidsOnly": false,
+      "pair": {
+        "front": "parking/line-1-8",
+        "back": "parking/pavement",
+        "frontBounds": {
+          "min": [
+            -428.4,
+            -279.6,
+            0.012
+          ],
+          "max": [
+            -428.32,
+            -274.20000000000005,
+            0.03
+          ]
+        },
+        "backBounds": {
+          "min": [
+            -451,
+            -286,
+            -0.08
+          ],
+          "max": [
+            -395,
+            -246.4,
+            0
+          ]
+        },
+        "bottomGap": 0.012,
+        "topSeparation": 0.03
+      },
+      "glDepthBits": 24,
+      "samples": 0,
+      "dpr": 2,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "viewport": {
+        "width": 1440,
+        "height": 913,
+        "bufferWidth": 2880,
+        "bufferHeight": 1826
+      },
+      "sampled": 55,
+      "correctPainted": 55,
+      "exactTargetPicks": 55,
+      "minimumMarginDevice": 5.480871816334768,
+      "tracks": [
+        {
+          "point": "0.2",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.35",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.5",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.65",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        },
+        {
+          "point": "0.8",
+          "values": [
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking",
+            "marking"
+          ],
+          "flips": 0
+        }
+      ],
+      "frames": [
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.925,
+            "bearing": -25.175,
+            "zoom": 21.79138280563244,
+            "revision": 19,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.734759239179766e-8,
+            -3.214287858099851e-8,
+            -1.5825099453081748e-8,
+            -1.582491293561361e-8,
+            3.165548534411755e-8,
+            6.838453003865652e-8,
+            3.366817225014529e-8,
+            3.3667774346213264e-8,
+            0,
+            8.9812211001572e-8,
+            -3.12991588202749e-8,
+            -3.129878578533862e-8,
+            0.00003761441621463746,
+            0.00000516506679559825,
+            0.0000031365091217594454,
+            0.0000031375479920825455
+          ],
+          "depthRange": {
+            "nearMetres": 0.011065645667221069,
+            "farMetres": 1872.6020673017492,
+            "a": -1.000011818539828,
+            "b": -1.0759515590065769e-9,
+            "unitsPerMetre": 4.8616467276878543e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.94,
+            "bearing": -25.14,
+            "zoom": 21.79178280563244,
+            "revision": 20,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.736691204878298e-8,
+            -3.209110843727103e-8,
+            -1.5808010900286718e-8,
+            -1.580782260646174e-8,
+            3.1614337814289684e-8,
+            6.838286736865484e-8,
+            3.3685250144799284e-8,
+            3.368485224086726e-8,
+            0,
+            8.983199251133556e-8,
+            -3.1289417279367626e-8,
+            -3.128904424443135e-8,
+            0.00003761130210477859,
+            0.0000051867809816030785,
+            0.0000031483937164011877,
+            0.0000031494323593506124
+          ],
+          "depthRange": {
+            "nearMetres": 0.011064557887694967,
+            "farMetres": 1873.367759792632,
+            "a": -1.0000118125479422,
+            "b": -1.075845770160283e-9,
+            "unitsPerMetre": 4.861646650854426e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.955,
+            "bearing": -25.105,
+            "zoom": 21.79218280563244,
+            "revision": 21,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.738621749491358e-8,
+            -3.2039352504398266e-8,
+            -1.5790906360280133e-8,
+            -1.5790718066455156e-8,
+            3.157317962632078e-8,
+            6.838115496066166e-8,
+            3.370231738131224e-8,
+            3.370191592466654e-8,
+            0,
+            8.98517598102444e-8,
+            -3.1279675738460355e-8,
+            -3.127930270352408e-8,
+            0.00003760817344300449,
+            0.000005208478796703275,
+            0.000003160282403769088,
+            0.0000031613205919711618
+          ],
+          "depthRange": {
+            "nearMetres": 0.011064557923274347,
+            "farMetres": 1857.7299732402466,
+            "a": -1.0000119119828856,
+            "b": -1.0758457988615708e-9,
+            "unitsPerMetre": 4.86164652321233e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.97,
+            "bearing": -25.07,
+            "zoom": 21.79258280563244,
+            "revision": 22,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.74054874139074e-8,
+            -3.198760722966654e-8,
+            -1.5773784056705153e-8,
+            -1.5773597539237016e-8,
+            3.153201078021084e-8,
+            6.837940702553169e-8,
+            3.371937395968416e-8,
+            3.371897250303846e-8,
+            0,
+            8.987152710915325e-8,
+            -3.1269930644839405e-8,
+            -3.126955760990313e-8,
+            0.00003760503022931516,
+            0.000005230159786151489,
+            0.0000031721751838631462,
+            0.000003173212917317869
+          ],
+          "depthRange": {
+            "nearMetres": 0.011061141305368704,
+            "farMetres": 1858.0962293214575,
+            "a": -1.000011905957267,
+            "b": -1.0755135921152942e-9,
+            "unitsPerMetre": 4.861646551436601e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 49.985,
+            "bearing": -25.035,
+            "zoom": 21.79298280563244,
+            "revision": 23,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.742473601661914e-8,
+            -3.1935872613075844e-8,
+            -1.575664754227546e-8,
+            -1.5756461024807322e-8,
+            3.1490827723246184e-8,
+            6.837761645783758e-8,
+            3.373641987991505e-8,
+            3.373601842326934e-8,
+            0,
+            8.989128730263474e-8,
+            -3.126018199850478e-8,
+            -3.125981251628218e-8,
+            0.000037601872463710606,
+            0.0000052518234952003695,
+            0.000003184071829309687,
+            0.000003185109108017059
+          ],
+          "depthRange": {
+            "nearMetres": 0.011057723693296974,
+            "farMetres": 1858.4611505590158,
+            "a": -1.0000118999415006,
+            "b": -1.0751813194304672e-9,
+            "unitsPerMetre": 4.8616467185867725e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50,
+            "bearing": -25,
+            "zoom": 21.79338280563244,
+            "revision": 24,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.74439633030488e-8,
+            -3.188414865462619e-8,
+            -1.573949326427737e-8,
+            -1.5739306746809234e-8,
+            3.144963756085417e-8,
+            6.837577615215196e-8,
+            3.3753455142004896e-8,
+            3.375305368535919e-8,
+            0,
+            8.991104749611623e-8,
+            -3.125043335217015e-8,
+            -3.125006386994755e-8,
+            0.00003759870014619082,
+            0.000005273470833344618,
+            0.0000031959723401087103,
+            0.0000031970091640687315
+          ],
+          "depthRange": {
+            "nearMetres": 0.011054305738298456,
+            "farMetres": 1858.8248466869325,
+            "a": -1.0000118939355664,
+            "b": -1.0748489810239304e-9,
+            "unitsPerMetre": 4.861646739359716e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.015,
+            "bearing": -24.965,
+            "zoom": 21.79378280563244,
+            "revision": 25,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.746316216776904e-8,
+            -3.1832438907031246e-8,
+            -1.5722324775424568e-8,
+            -1.572213825795643e-8,
+            3.1408429634893764e-8,
+            6.837390031932955e-8,
+            3.377047974595371e-8,
+            3.3770078289308e-8,
+            0,
+            8.9930793478743e-8,
+            -3.124068115312184e-8,
+            -3.1240311670899246e-8,
+            0.00003759551327675581,
+            0.0000052951008910895325,
+            0.0000032078769436338916,
+            0.000003208913312846562
+          ],
+          "depthRange": {
+            "nearMetres": 0.011050887206695843,
+            "farMetres": 1859.1872788966398,
+            "a": -1.0000118879394435,
+            "b": -1.074516579812865e-9,
+            "unitsPerMetre": 4.861646729620749e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.03,
+            "bearing": -24.93,
+            "zoom": 21.794182805632442,
+            "revision": 26,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.748233261077985e-8,
+            -3.178073981757734e-8,
+            -1.570514029936021e-8,
+            -1.5704953781892073e-8,
+            3.1367214603506e-8,
+            6.8371981853943e-8,
+            3.3787490139047804e-8,
+            3.378709223511578e-8,
+            0,
+            8.995053235594241e-8,
+            -3.1230928954073534e-8,
+            -3.123055947185094e-8,
+            0.000037592315493384376,
+            0.000005316714577929815,
+            0.00000321978518513788,
+            0.000003220821326976875
+          ],
+          "depthRange": {
+            "nearMetres": 0.011046323640398618,
+            "farMetres": 1875.9571009122153,
+            "a": -1.0000117768030838,
+            "b": -1.074072817531051e-9,
+            "unitsPerMetre": 4.8616468608079765e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.045,
+            "bearing": -24.895,
+            "zoom": 21.79458280563244,
+            "revision": 27,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.750148173750858e-8,
+            -3.172905493897815e-8,
+            -1.5687938059727458e-8,
+            -1.568775154225932e-8,
+            3.132598536126352e-8,
+            6.83700207559923e-8,
+            3.3804493426714544e-8,
+            3.380409197006884e-8,
+            0,
+            8.997027123314183e-8,
+            -3.122117320231155e-8,
+            -3.122080372008895e-8,
+            0.00003758909952011891,
+            0.000005338310984370764,
+            0.000003231697746741702,
+            0.0000032327332064596703
+          ],
+          "depthRange": {
+            "nearMetres": 0.011044048420266912,
+            "farMetres": 1859.9081587912037,
+            "a": -1.0000118759777976,
+            "b": -1.0738515857541888e-9,
+            "unitsPerMetre": 4.8616466009993486e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.06,
+            "bearing": -24.86,
+            "zoom": 21.79498280563244,
+            "revision": 28,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.752060954795525e-8,
+            -3.167738071852e-8,
+            -1.567072160923999e-8,
+            -1.5670535091771853e-8,
+            3.1284745460880004e-8,
+            6.836801702547746e-8,
+            3.3821486056240246e-8,
+            3.382108459959454e-8,
+            0,
+            8.999000300491389e-8,
+            -3.121141389783588e-8,
+            -3.121104441561329e-8,
+            0.00003758587263291702,
+            0.000005359890565159731,
+            0.0000032436139463243308,
+            0.000003244649178668624
+          ],
+          "depthRange": {
+            "nearMetres": 0.011042966409261843,
+            "farMetres": 1860.6607801259354,
+            "a": -1.0000118700109846,
+            "b": -1.0737463656850133e-9,
+            "unitsPerMetre": 4.861646559622336e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        },
+        {
+          "pose": {
+            "center": [
+              11.472502874148006,
+              59.07750969156251
+            ],
+            "pitch": 50.075,
+            "bearing": -24.825,
+            "zoom": 21.79538280563244,
+            "revision": 29,
+            "elevation": 0.021001523859714308
+          },
+          "matrix": [
+            6.753970183126512e-8,
+            -3.162571715620288e-8,
+            -1.565348739518413e-8,
+            -1.565330265407283e-8,
+            3.124349490235545e-8,
+            6.836597066239847e-8,
+            3.383846802762491e-8,
+            3.383806657097921e-8,
+            0,
+            9.000972056583123e-8,
+            -3.120165459336022e-8,
+            -3.120128511113762e-8,
+            0.0000375826311937999,
+            0.000005381453320296714,
+            0.0000032555342386331176,
+            0.0000032565687888563843
+          ],
+          "depthRange": {
+            "nearMetres": 0.01103720652247511,
+            "farMetres": 1860.6240476500948,
+            "a": -1.000011864053901,
+            "b": -1.0731863309101618e-9,
+            "unitsPerMetre": 4.8616466611926075e-8
+          },
+          "sampled": 5,
+          "correctPainted": 5,
+          "exactTargetPicks": 5
+        }
+      ],
+      "metrics": {
+        "surfaceOwnership": [
+          {
+            "sceneId": "layout:halden-campus",
+            "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+            "broadPhaseCandidates": 16803186,
+            "coplanarCandidates": 96579,
+            "triangles": 109797,
+            "partitionedTriangles": 6977,
+            "retainedCandidates": 1204,
+            "coincidentPairCount": 939,
+            "coincidentPairsSha256": "e31e4ed0028daea614a920a2d1af178d1c688382b318194b0745194ee984e9e2"
+          }
+        ],
+        "preparation": {
+          "workerAlive": true,
+          "workerCount": 1,
+          "workerBudget": 7,
+          "activeWorkers": 0,
+          "clients": 2,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 2,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 1,
+          "transferredBytes": 22970652,
+          "retainedViews": 1,
+          "retainedViewBytes": 47100808,
+          "cacheHits": 1,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 15482064,
+          "residentCpuBytes": 47100808,
+          "draws": 24,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 21090352,
+          "instanceBytes": 68,
+          "instanceUploads": 12,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 15536964,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 189319680,
+            "textureBytes": 21035520,
+            "allocations": 1,
+            "composites": 12,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          },
+          "depthNear": 5.366190119676428e-10
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "residentCpuBytes": 0,
+            "draws": 26,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 13,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 15536964,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "renderPass": {
+              "depthFormat": "float32",
+              "samples": 4,
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 13,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            },
+            "depthNear": 5.366190119676428e-10
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "suppressedLines": 13,
+      "glError": 0
+    }
+  ],
+  "ended": {
+    "errors": []
+  },
+  "passed": true,
+  "provenance": {
+    "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-switchyard-depth-proof/apps/world",
+    "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+    "rendererCommit": "7c6b07b429944962fdb6210dc63b31f89885181f",
+    "sourceCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+    "fixtureDeliveryBytes": 29780801,
+    "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+    "definitions": [
+      {
+        "id": "layout:halden-campus",
+        "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+      }
+    ],
+    "sources": {
+      "src/ui/map/physical-scene/backend.ts": "e48ca0fd201d04dd9e41ad8eef21fffcebceb76e49c82f8f0594906de522694f",
+      "src/ui/map/physical-scene/render-pass.ts": "b21f7ccbc570c79eda1473e1a84be5afca5427813899aec1bb47ef22614d8a86",
+      "src/ui/map/physical-scene/depth-projection.ts": "6c6cf6832bff20c42f28919a56970f35602358448bcf627e90b8bf62476b075d",
+      "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+      "src/ui/map/physical-scene/gl-state.ts": "42e05a9999413e095ea1367cb32842ac3c8b96e6482432b76e5cf1605ef1cac0",
+      "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+      "src/ui/map/physical-scene/map-viewport.ts": "85fdb747796a59cd96a8a4af082097ce4e79bd8bdb9e6f2fe43e7115d7a8342b",
+      "src/ui/map/physical-scene/scene-controller.ts": "9eeec6074e725e455323ff284e2d0ee7081e84052a3461dd21f3ab2c53a72f2b",
+      "src/ui/map/physical-scene/preparation.ts": "168ab7305f3c0c0517bbcd6c840c4c41382325f6ab88d2acd109e5a56969d750",
+      "src/ui/map/physical-scene/renderer.ts": "d1906e92c1e4c5a002495acb5bd2102579fecca3cdaee7659aa72f26e6e05273",
+      "src/ui/map/physical-scene/perspective-fit.ts": "9c10e299974f75abc7e568624c437aa408be0c4a5b3793ec881052d2d081b913",
+      "src/ui/map/physical-scene/ground-projection.ts": "8f4eeef5cdc38b3408565125bee5d4f0def8d8758e679ff0be1faa0ab4d5214d",
+      "src/ui/map/physical-scene/scopes.ts": "bba966609d7cc42d027fe366cf9d6a0b349b221c7d99dcfb45584e2540626e25",
+      "src/ui/map/physical-scene/layer.ts": "e803a8d07abf95ed509ba78ce49d60358fbfff51d892f8a415449156c1a52e6d",
+      "src/ui/map/physical-scene/inspection-cutaway.ts": "c62b49e25617a267ef885fa47a19e9aca62e18bc1a4ed20a3d2d15b136e1fb36",
+      "src/ui/map/physical-scene/geometry.ts": "a1717259667358839ece13ba5a5f830c4752aa4936f7ad21f6beb42d7a3177e9",
+      "src/ui/map/physical-scene/canvas-viewport.ts": "8af81b828011d8e3839b5a5b2c7644f47d4570e8634c2131d13791ecd55da08b",
+      "tests/browser/physical-scene/near-gap-app.ts": "a002517d732b332ec0af7558400fa01ad570a88429cd1c71ab8e6ab8bc648211"
+    }
+  },
+  "limits": [
+    "One real parking paint/pavement pair with bottom gap 12 mm and top separation 30 mm; this is not an arbitrary small-gap qualification.",
+    "Every admitted sample is a top-face interior at least one device pixel from all projected edges, uses the actual uploaded matrix, and has an exact CPU pick.",
+    "Both real viewports, nearby camera poses, actual DPR 1/2, solids-only and normal feature-stroke configurations are tested independently.",
+    "Diagnostic palette is a controlled test input, never proposed production appearance or live telemetry."
+  ]
+}

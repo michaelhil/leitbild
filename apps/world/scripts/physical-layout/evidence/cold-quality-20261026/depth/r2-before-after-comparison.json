@@ -1,0 +1,370 @@
+[
+  {
+    "dpr": 1,
+    "host": "map",
+    "scale": "site",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 507,
+      "top": 507,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 507,
+      "top": 507,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "map",
+    "scale": "site",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 507,
+      "top": 507,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 507,
+      "top": 507,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "map",
+    "scale": "yard",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 910,
+      "top": 910,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 910,
+      "top": 910,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "map",
+    "scale": "yard",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 910,
+      "top": 910,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 910,
+      "top": 910,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "canvas",
+    "scale": "site",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 507,
+      "top": 201,
+      "underside": 281,
+      "other": 25,
+      "unstableTracks": 39
+    },
+    "after": {
+      "sampled": 507,
+      "top": 507,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "canvas",
+    "scale": "site",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 507,
+      "top": 201,
+      "underside": 281,
+      "other": 25,
+      "unstableTracks": 39
+    },
+    "after": {
+      "sampled": 507,
+      "top": 507,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "canvas",
+    "scale": "yard",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 884,
+      "top": 882,
+      "underside": 1,
+      "other": 1,
+      "unstableTracks": 2
+    },
+    "after": {
+      "sampled": 884,
+      "top": 884,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 1,
+    "host": "canvas",
+    "scale": "yard",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 884,
+      "top": 882,
+      "underside": 1,
+      "other": 1,
+      "unstableTracks": 2
+    },
+    "after": {
+      "sampled": 884,
+      "top": 884,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "map",
+    "scale": "site",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 611,
+      "top": 611,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 611,
+      "top": 611,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "map",
+    "scale": "site",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 598,
+      "top": 598,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 598,
+      "top": 598,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "map",
+    "scale": "yard",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 988,
+      "top": 988,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 988,
+      "top": 988,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "map",
+    "scale": "yard",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 988,
+      "top": 988,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    },
+    "after": {
+      "sampled": 988,
+      "top": 988,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "canvas",
+    "scale": "site",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 611,
+      "top": 230,
+      "underside": 361,
+      "other": 20,
+      "unstableTracks": 47
+    },
+    "after": {
+      "sampled": 611,
+      "top": 611,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "canvas",
+    "scale": "site",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 611,
+      "top": 230,
+      "underside": 361,
+      "other": 20,
+      "unstableTracks": 47
+    },
+    "after": {
+      "sampled": 611,
+      "top": 611,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "canvas",
+    "scale": "yard",
+    "solidsOnly": true,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 988,
+      "top": 986,
+      "underside": 1,
+      "other": 1,
+      "unstableTracks": 1
+    },
+    "after": {
+      "sampled": 988,
+      "top": 988,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  },
+  {
+    "dpr": 2,
+    "host": "canvas",
+    "scale": "yard",
+    "solidsOnly": false,
+    "sameFixture": true,
+    "sameQualifiedPointMask": true,
+    "sameUploadedMatrices": true,
+    "before": {
+      "sampled": 988,
+      "top": 986,
+      "underside": 1,
+      "other": 1,
+      "unstableTracks": 1
+    },
+    "after": {
+      "sampled": 988,
+      "top": 988,
+      "underside": 0,
+      "other": 0,
+      "unstableTracks": 0
+    }
+  }
+]
