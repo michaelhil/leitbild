@@ -1,0 +1,73 @@
+{
+  "testedAppCommit": "d8ebc139f35399d8ae99dc10b241e9c14d488b96",
+  "runnerCommit": "e2a70b67c23b682f06ad3d48bd10a875456c2d08",
+  "productionFiles": [
+    {
+      "path": "apps/world/src/ui/map/physical-scene/preparation.ts",
+      "sha256": "168ab7305f3c0c0517bbcd6c840c4c41382325f6ab88d2acd109e5a56969d750"
+    },
+    {
+      "path": "apps/world/src/ui/map/physical-scene/preparation-worker.ts",
+      "sha256": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa"
+    },
+    {
+      "path": "apps/world/src/ui/map/physical-scene/canvas-viewport.ts",
+      "sha256": "8af81b828011d8e3839b5a5b2c7644f47d4570e8634c2131d13791ecd55da08b"
+    },
+    {
+      "path": "apps/world/src/ui/map/physical-scene/ground-projection.ts",
+      "sha256": "8f4eeef5cdc38b3408565125bee5d4f0def8d8758e679ff0be1faa0ab4d5214d"
+    },
+    {
+      "path": "apps/world/src/ui/map/physical-scene/map-viewport.ts",
+      "sha256": "85fdb747796a59cd96a8a4af082097ce4e79bd8bdb9e6f2fe43e7115d7a8342b"
+    },
+    {
+      "path": "apps/world/src/ui/map/physical-scene/scene-controller.ts",
+      "sha256": "9eeec6074e725e455323ff284e2d0ee7081e84052a3461dd21f3ab2c53a72f2b"
+    },
+    {
+      "path": "apps/world/src/ui/physical-layout/plan-annotations.ts",
+      "sha256": "49c52a4a1005524407fad8da06b4ce17a7d9e7acf3d8aba41b7f431fe8c7e086"
+    },
+    {
+      "path": "apps/world/src/ui/physical-layout/PhysicalExplorer.svelte",
+      "sha256": "8255d37c5e9708936f91319a064450de62540133881e9c9fac4aa8a0c216ef97"
+    },
+    {
+      "path": "apps/world/src/packs/physical-layout/source-loader.ts",
+      "sha256": "774866c6aa58b200f9872ffb195d103a023ebd3cacef24609a2f9318018ab4b8"
+    },
+    {
+      "path": "apps/world/src/packs/physical-layout/pwr-full-unit-architecture.source.json",
+      "sha256": "c20f04d42e85c91c05322cb8aba6511fba7ac8ad5b3517677171a730171dae45"
+    },
+    {
+      "path": "apps/world/src/packs/physical-layout/pwr-campus-architecture.source.json",
+      "sha256": "5e6f6611b0e824f116e56a4275d58e7453a7e6edfe427b677ef65ae6e54d7390"
+    }
+  ],
+  "testFiles": [
+    {
+      "path": "apps/world/scripts/physical-layout/loading-product-probe.ts",
+      "sha256": "28f78ed7134cc237a8025f03af6d4de58a732633bc75b3693da7c4314a016656"
+    },
+    {
+      "path": "apps/world/tests/browser/physical-scene/loading-product-instrumentation.ts",
+      "sha256": "9f4fde5a87443912adeb06073c83a34dcee2c336606b5667c262fd489e230337"
+    },
+    {
+      "path": "apps/world/scripts/physical-layout/r3-product-probe.ts",
+      "sha256": "29f2e08c9cd652705fc36e278df5c8f6cbb7641102a97fc74da71b6ac97905e5"
+    },
+    {
+      "path": "apps/world/tests/browser/physical-scene/r3-product-instrumentation.ts",
+      "sha256": "2becf37efa238e0d421cf0fa982a8aba19abe879b6493423bd8c3a9e0d1bedb2"
+    }
+  ],
+  "evidence": {
+    "path": "r3-product-qualification.json",
+    "sha256": "8821d831c61925895994a9e6ffbb6f67453c8c9d11637a6d3a06cbca3df12115",
+    "bytes": 72903
+  }
+}
