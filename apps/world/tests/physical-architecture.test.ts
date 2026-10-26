@@ -52,6 +52,21 @@ describe('Model-driven native architecture restoration', () => {
     expect([...edges.values()].every(count => count === 2)).toBe(true)
     expect(object.positions.length / 9).toBe(44)
     expect(object.bounds.max[2] - object.bounds.min[2]).toBe(31.2)
+    for (const id of ['column/0/0.4', 'structure/runway/2.5', 'structure/roof-beam/0']) {
+      const value = solid(artifacts.source, artifacts.source.elements.find(element => element.id === id)!)!
+      let signedVolume = 0
+      let outwardNormals = true
+      for (let index = 0; index < value.positions.length; index += 9) {
+        const [ax, ay, az, bx, by, bz, cx, cy, cz] = value.positions.slice(index, index + 9) as [number, number, number, number, number, number, number, number, number]
+        signedVolume += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6
+        const normal = value.normals.slice(index, index + 3)
+        const cross = [(by - ay) * (cz - az) - (bz - az) * (cy - ay), (bz - az) * (cx - ax) - (bx - ax) * (cz - az), (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)]
+        outwardNormals &&= cross.reduce((sum, coordinate, axis) => sum + coordinate * normal[axis]!, 0) < 0
+      }
+      // Retained Y-up -> Z-up adapter supplies outward normals with opposite winding.
+      expect(signedVolume).toBeLessThan(0)
+      expect(outwardNormals).toBe(true)
+    }
   })
 
   test('full source restores actual architectural detail without manufacturing operational crane state', () => {

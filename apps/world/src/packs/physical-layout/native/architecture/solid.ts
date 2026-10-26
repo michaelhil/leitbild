@@ -13,14 +13,18 @@ const section = (mesh: Mesh, element: Element, dimensions: ReturnType<typeof par
   const ring: Array<[number, number]> = [[0, 0], [width, 0], [width, t], [b, t], [b, depth - t], [width, depth - t], [width, depth], [0, depth], [0, depth - t], [a, depth - t], [a, t], [0, t]]
   const p = ([u, v]: [number, number], at: number): V3 => internal(member.axis === 'z' ? [u, v, at] : member.axis === 'x' ? [at, u, v] : [u, at, v])
   const indices = earcut(ring.flat(), undefined, 2), material = materialRoles.indexOf(element.material ?? 'steel')
+  // The retained mesh adapter reflects Y-up into Z-up, retaining its outward
+  // normals and opposite triangle winding. Match that convention for every axis;
+  // the section's Y-axis basis already reverses handedness once.
+  const triangle = (a: V3, b: V3, c: V3): void => member.axis !== 'y' ? mesh.tri(a, c, b, material) : mesh.tri(a, b, c, material)
   for (let index = 0; index < indices.length; index += 3) {
     const [a, b, c] = indices.slice(index, index + 3).map(index => ring[index]!) as [[number, number], [number, number], [number, number]]
-    mesh.tri(p(c, 0), p(b, 0), p(a, 0), material)
-    mesh.tri(p(a, length), p(b, length), p(c, length), material)
+    triangle(p(c, 0), p(b, 0), p(a, 0))
+    triangle(p(a, length), p(b, length), p(c, length))
   }
   for (let index = 0; index < ring.length; index++) {
     const a = ring[index]!, b = ring[(index + 1) % ring.length]!
-    mesh.quad(p(a, 0), p(b, 0), p(b, length), p(a, length), material)
+    triangle(p(a, 0), p(b, 0), p(b, length)); triangle(p(a, 0), p(b, length), p(a, length))
     mesh.line(p(a, 0), p(b, 0)); mesh.line(p(a, length), p(b, length)); mesh.line(p(a, 0), p(a, length))
   }
 }

@@ -14,4 +14,4 @@ export const explorerPhysicalCompilerRef = { id: 'physical-layout-native-explore
 
 // New architecture recipes and drafting presentation keep every earlier closure exact.
 export const architecturePhysicalCompilerFiles = [...explorerPhysicalCompilerFiles, 'architecture/source.ts', 'architecture/solid.ts', 'architecture/compile-scene.ts'] as const
-export const architecturePhysicalCompilerRef = { id: 'physical-layout-native-architecture', digest: 'ee87a8a56fbd2b72a9cb8cceabb71be35c8ab3730cd4b716117a6e0ce1620f05' } as const
+export const architecturePhysicalCompilerRef = { id: 'physical-layout-native-architecture', digest: '5aa45af40e0a39e895405dc40eca1442c6fd42a2fe89c5adcfec4f32979f3395' } as const

@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261026-r3",
-    "digest": "2923c38d6d03bfbb64e408e5ab720217840479ba68cfd36f0cc4220059061451"
+    "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
   },
   "sourceDigest": "27d44939bd87b73ac218ffc39b3659522d2f71944fd7e0dc69a92357d9608cf1",
   "bindingDigest": "32122fb7b371c124844edf6eaa2c6e3f7c4829e2ec4bbd3b53aca33a9eb5f4f8",
@@ -25,7 +25,7 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "ee87a8a56fbd2b72a9cb8cceabb71be35c8ab3730cd4b716117a6e0ce1620f05"
+    "digest": "5aa45af40e0a39e895405dc40eca1442c6fd42a2fe89c5adcfec4f32979f3395"
   },
   "coverageDigest": "ab0460b385be739166785496947488026dd12ce81ba76260aeeae456926723cc",
   "requirements": {
@@ -36,8 +36,8 @@
   },
   "physicalApplicability": {
     "sourceDigest": "ce83b4c0aac50306de267c6edba4caad65da62a1f3e517053337a82eac64cb37",
-    "geometryDigest": "0b9e5882189b2dfeea53783ca905f8d7cf6a72081e4bd7317c46994ea3013856",
-    "digest": "f0df3111ffbfbf65319dce9d9210b531a6ea26a14216ad97b46b12f11c35304e"
+    "geometryDigest": "6347374093b8220d84ff617970b296e6dda30f7b3b6f69518a5453f377160888",
+    "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
   },
   "presentation": {
     "scopes": [

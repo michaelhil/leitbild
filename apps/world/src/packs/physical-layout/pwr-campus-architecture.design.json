@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261026-r3",
-    "digest": "95d4725b17a048f105a564b7c387ef176938acf5f3291871ce73b83efc01c708"
+    "digest": "abc681b1112f6ea1c76c5b62498711aa52ecddb97e2aee1f8dfbdcf185516cfc"
   },
   "sourceDigest": "0931830694900f541281efb9c90a317b378d7c379391c6f83ed0792649d5e76c",
   "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
@@ -25,7 +25,7 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "ee87a8a56fbd2b72a9cb8cceabb71be35c8ab3730cd4b716117a6e0ce1620f05"
+    "digest": "5aa45af40e0a39e895405dc40eca1442c6fd42a2fe89c5adcfec4f32979f3395"
   },
   "coverageDigest": "9cafb704ff9e51894a438fa5f5ead40a3b2d758fa14e0a1c0ed7712da1ff867b",
   "requirements": {
@@ -52,7 +52,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "f0df3111ffbfbf65319dce9d9210b531a6ea26a14216ad97b46b12f11c35304e"
+            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
           },
           "bearing": 0
         }
@@ -69,7 +69,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "f0df3111ffbfbf65319dce9d9210b531a6ea26a14216ad97b46b12f11c35304e"
+            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
           },
           "bearing": 0
         }
@@ -86,7 +86,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "f0df3111ffbfbf65319dce9d9210b531a6ea26a14216ad97b46b12f11c35304e"
+            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
           },
           "bearing": 0
         }
@@ -103,7 +103,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "f0df3111ffbfbf65319dce9d9210b531a6ea26a14216ad97b46b12f11c35304e"
+            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
           },
           "bearing": 0
         }
@@ -155,7 +155,7 @@
   "physicalApplicability": {
     "sourceDigest": "937a6d3051c835037046509100dfaa631f20da90972501e9122b1e31ae11ae0d",
     "geometryDigest": "a838212e9dd45a8c575d605a2cd88a7d5a1015d5a60a1f9d1c22a90a6d4b1de1",
-    "digest": "555737b8117355a1738c65ce0b6173d1c6574256007ba7e39f113e1ef3bd3347"
+    "digest": "0db1b344ee117226edc525bb503243e68d35cc086c6999dac8ca357e00b1febb"
   },
   "presentation": {
     "scopes": [
