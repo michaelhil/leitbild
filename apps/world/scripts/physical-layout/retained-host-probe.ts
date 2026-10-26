@@ -9,7 +9,7 @@ const rendererRoot = join(import.meta.dir, '../..'), sourceRoot = process.env.LE
 const output = await mkdtemp(join(tmpdir(), 'leitbild-retained-host-proof-')), built = join(output, 'dist')
 await mkdir(built, { recursive: true })
 const sourceHashes: Record<string, string> = {}
-for (const file of ['src/ui/map/physical-scene/surface-ownership.ts', 'src/ui/map/physical-scene/spatial-index.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/scene-controller.ts', 'src/ui/map/physical-scene/preparation.ts', 'src/ui/map/physical-scene/renderer.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/canvas-viewport.ts', 'tests/browser/physical-scene/retained-host-app.ts']) sourceHashes[file] = createHash('sha256').update(await readFile(join(rendererRoot, file))).digest('hex')
+for (const file of ['src/ui/map/physical-scene/surface-ownership.ts', 'src/ui/map/physical-scene/spatial-index.ts', 'src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/render-pass.ts', 'src/ui/map/physical-scene/depth-projection.ts', 'src/ui/map/physical-scene/layer.ts', 'src/ui/map/physical-scene/inspection-cutaway.ts', 'src/ui/map/physical-scene/gl-state.ts', 'src/ui/map/physical-scene/map-viewport.ts', 'src/ui/map/physical-scene/scene-controller.ts', 'src/ui/map/physical-scene/preparation.ts', 'src/ui/map/physical-scene/renderer.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/canvas-viewport.ts', 'tests/browser/physical-scene/retained-host-app.ts']) sourceHashes[file] = createHash('sha256').update(await readFile(join(rendererRoot, file))).digest('hex')
 const commitAt = (cwd: string) => Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd }).stdout.toString().trim()
 const rendererCommit = commitAt(rendererRoot), sourceCommit = commitAt(sourceRoot)
 const load = (path: string) => import(join(sourceRoot, 'src', path))
@@ -38,7 +38,9 @@ const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
   const file = files.get(path); return file ? new Response(Bun.file(file)) : new Response('Not found', { status: 404 })
 } })
 const profile = await mkdtemp(join(tmpdir(), 'leitbild-retained-chrome-'))
-const chrome = Bun.spawn(['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '--headless=new', '--js-flags=--expose-gc', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1440,1000', '--force-device-scale-factor=1', 'about:blank'], { stdout: 'ignore', stderr: Bun.file(join(output, 'chrome.stderr.txt')) })
+const dpr = Number(process.env.LEITBILD_PHYSICAL_PROBE_DPR ?? 1)
+if (!(dpr > 0) || !Number.isFinite(dpr)) throw Error('Diagnostic DPR must be positive and finite')
+const chrome = Bun.spawn(['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '--headless=new', '--js-flags=--expose-gc', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1440,1000', `--force-device-scale-factor=${dpr}`, 'about:blank'], { stdout: 'ignore', stderr: Bun.file(join(output, 'chrome.stderr.txt')) })
 let socket: WebSocket | null = null
 try {
   let port = 0
@@ -55,8 +57,10 @@ try {
   const evaluated = await call('Runtime.evaluate', { expression: 'new Promise((resolve,reject)=>{const started=performance.now();const check=()=>{if(window.retainedProbe)window.retainedProbe.run().then(resolve,reject);else if(performance.now()-started>30000)reject(Error("Retained host app did not initialize"));else setTimeout(check,25)};check()})', awaitPromise: true, returnByValue: true, timeout: 180_000 })
   if (evaluated.exceptionDetails) throw Error(JSON.stringify(evaluated.exceptionDetails))
   const result = evaluated.result.value
+  result.passed = result.errors.length === 0 && Object.values(result.disposals).every((value: any) => value.current === null && value.retainedScenes === 0 && value.loadingScenes === 0 && value.disposals.every((disposal: any) => disposal.liveBuffersAfterDisposal === 0 && disposal.liveProgramsAfterDisposal === 0 && disposal.liveTexturesAfterDisposal === 0 && disposal.renderPass.liveFramebuffers === 0 && disposal.renderPass.liveRenderbuffers === 0 && disposal.renderPass.liveTextures === 0 && disposal.renderPass.livePrograms === 0))
   result.provenance = { rendererRoot, sourceRoot, rendererCommit, sourceCommit, fixtureDeliveryBytes: JSON.stringify({ scenes, descriptors }).length, fixtureSha256: createHash('sha256').update(JSON.stringify({ scenes, descriptors })).digest('hex'), definitions: descriptors.map((descriptor: { id: string; revision: string; geometryKey?: string }) => ({ id: descriptor.id, revision: descriptor.revision, geometryKey: descriptor.geometryKey })), sources: sourceHashes }
   await writeFile(join(output, 'receipt.json'), JSON.stringify(result, null, 2))
+  if (!result.passed) process.exitCode = 1
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, 'canvas-final.png'), Buffer.from(shot.data, 'base64'))
   console.log(JSON.stringify({ output, errors: result.errors, cold: result.cold, canvasCold: result.canvasCold, phases: result.phases.map(({ name, raf, cheapRosterMs, packedOcclusionMs, longTasks, before, after }: any) => ({ name, raf, cheapRosterMs, packedOcclusionMs, longTasks, geometryUploadsDelta: after.current.geometryUploads - before.current.geometryUploads })), separation: result.separation, scheduler: result.scheduler, disposals: result.disposals }, null, 2))
 } finally { socket?.close(); chrome.kill(); await chrome.exited; server.stop(true); await rm(profile, { recursive: true, force: true }) }
