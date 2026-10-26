@@ -3,7 +3,7 @@ import {Mesh,palette as p,type Color} from './mesh';
 import {dot,sub,type V3,type Bounds} from './math';
 export {plant,equipment,assemblyBounds};
 export type Mode='all'|'operating'|'lower';
-export type SceneObject={id:string;name:string;level:Level|'link';kind:'equipment'|'floor'|'wall'|'structure'|'utilities'|'service'|'crane'|'context';mesh:Mesh;lowMesh?:Mesh;side?:V3;equipmentId?:string;componentId?:string;opacity?:number};
+export type SceneObject={id:string;name:string;level:Level|'link';kind:'equipment'|'floor'|'wall'|'structure'|'utilities'|'service'|'crane'|'context';mesh:Mesh;lowMesh?:Mesh;side?:V3;equipmentId?:string;componentId?:string|undefined;opacity?:number};
 export type ViewState={mode:Mode;walls:'cutaway'|'full'|'hidden';utilities:boolean;service:boolean;crane:boolean;explode:number};
 export type DrawObject={object:SceneObject;mesh:Mesh;offset:number};
 export const shaftElevation=17.2;
