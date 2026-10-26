@@ -1,0 +1,176 @@
+{
+  "refs": {
+    "baseline": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+    "productCandidate": "1079c53603234ba44100df85df98757a7b7e7839",
+    "workerCandidate": "6ed25c5d3fec1a335f930ed988c53fc28ede4af4",
+    "loadBalance": "95544a0aece8f33ce7904e2d791f7fcdc6feb562",
+    "sourceCache": "5d8f66667e0f917cce22fef8e590dbb7ee764744",
+    "cacheWitnessTest": "6db4051385adc6b4916a4249fa47b7b56e6dc9a0"
+  },
+  "sourceFiles": {
+    "baseline": [
+      {
+        "path": "apps/world/src/ui/map/physical-scene/preparation.ts",
+        "sha256": "1a254b6aa6a3b4546dac24e55ed2bd12314bf5921705bd7b64810aca7630537b",
+        "bytes": 18553
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/preparation-worker.ts",
+        "sha256": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa",
+        "bytes": 2350
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/geometry.ts",
+        "sha256": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+        "bytes": 13959
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+        "sha256": "042d26984038994d79418a05c0c4fd6b8dd6fac1ee9795377b04287ea8753a6f",
+        "bytes": 10484
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/spatial-index.ts",
+        "sha256": "82d4758e6b0956b7fbc9465693ecdb41873b6d36dc82ec33457e7ead55012a25",
+        "bytes": 5760
+      },
+      {
+        "path": "apps/world/src/packs/physical-layout/source-loader.ts",
+        "sha256": "2132d309c61a739e1d16048cbaea704def41935100a60c6087de82accd1163d0",
+        "bytes": 2934
+      },
+      {
+        "path": "apps/world/src/packs/physical-layout/source-compile.ts",
+        "sha256": "0fa31f9bbd156c1b921a0569f97481026e44f06e26f2259449cf9cc73b7e18df",
+        "bytes": 1660
+      },
+      {
+        "path": "apps/world/src/packs/physical-layout/source-validation.ts",
+        "sha256": "d7f8a3090362747c415c91004bb8fbb0678d18eec7b4cfc5769ff72f046a54db",
+        "bytes": 2156
+      },
+      {
+        "path": "apps/world/tests/browser/physical-scene/loading-product-instrumentation.ts",
+        "sha256": "9f4fde5a87443912adeb06073c83a34dcee2c336606b5667c262fd489e230337",
+        "bytes": 10133
+      },
+      {
+        "path": "apps/world/scripts/physical-layout/loading-product-probe.ts",
+        "sha256": "28f78ed7134cc237a8025f03af6d4de58a732633bc75b3693da7c4314a016656",
+        "bytes": 14645
+      }
+    ],
+    "productCandidate": [
+      {
+        "path": "apps/world/src/ui/map/physical-scene/preparation.ts",
+        "sha256": "168ab7305f3c0c0517bbcd6c840c4c41382325f6ab88d2acd109e5a56969d750",
+        "bytes": 21800
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/preparation-worker.ts",
+        "sha256": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa",
+        "bytes": 2350
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/geometry.ts",
+        "sha256": "ed5b2a375bbe059cc957635731c5430696af5c15cc92dd77fcb24bf0cd0103d8",
+        "bytes": 15851
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+        "sha256": "042d26984038994d79418a05c0c4fd6b8dd6fac1ee9795377b04287ea8753a6f",
+        "bytes": 10484
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/spatial-index.ts",
+        "sha256": "82d4758e6b0956b7fbc9465693ecdb41873b6d36dc82ec33457e7ead55012a25",
+        "bytes": 5760
+      },
+      {
+        "path": "apps/world/src/packs/physical-layout/source-loader.ts",
+        "sha256": "2132d309c61a739e1d16048cbaea704def41935100a60c6087de82accd1163d0",
+        "bytes": 2934
+      },
+      {
+        "path": "apps/world/src/packs/physical-layout/source-compile.ts",
+        "sha256": "5a2170fd69830fcddeed678c0e7984d4f5ec47039b99d5ee238c649d2a3fe982",
+        "bytes": 2030
+      },
+      {
+        "path": "apps/world/src/packs/physical-layout/source-validation.ts",
+        "sha256": "f0991bbb7f50b3f4205f711517889823bfff8fe36f6e9bea3ab6ea35d1f0b71a",
+        "bytes": 2472
+      },
+      {
+        "path": "apps/world/tests/browser/physical-scene/loading-product-instrumentation.ts",
+        "sha256": "9f4fde5a87443912adeb06073c83a34dcee2c336606b5667c262fd489e230337",
+        "bytes": 10133
+      },
+      {
+        "path": "apps/world/scripts/physical-layout/loading-product-probe.ts",
+        "sha256": "28f78ed7134cc237a8025f03af6d4de58a732633bc75b3693da7c4314a016656",
+        "bytes": 14645
+      }
+    ]
+  },
+  "rawResearchReceipts": [
+    {
+      "researchRelativePath": "product-baseline-quiet/receipt.json",
+      "sha256": "d67bda29a11bbad9e0504a3595908c0317247357c2da8b887b183b5103958dc2",
+      "bytes": 110424
+    },
+    {
+      "researchRelativePath": "product-candidate-quiet/receipt.json",
+      "sha256": "79ddc05d9798097f341d387a799fb152f4086653a558015835f28f8f3f72e001",
+      "bytes": 101598
+    },
+    {
+      "researchRelativePath": "stage-baseline.json",
+      "sha256": "a8c741adf55adadb48753af883b70aac6fc40fe6c2c7f3bf646d68425a97accd",
+      "bytes": 4715
+    },
+    {
+      "researchRelativePath": "parallel-worker-r2.json",
+      "sha256": "cab6c15163b52b23be20ebf9031d2b421ebbaa0fd7a3d960ce15ffe34d34f6d0",
+      "bytes": 4996
+    },
+    {
+      "researchRelativePath": "source-cache-isolated-gc.json",
+      "sha256": "acd6921a1acf43a4e7497a6c6c56600276e95de825332b0c05379da21d89de23",
+      "bytes": 2142
+    }
+  ],
+  "publishedEvidence": [
+    {
+      "path": "parallel-worker-r2.json",
+      "sha256": "cab6c15163b52b23be20ebf9031d2b421ebbaa0fd7a3d960ce15ffe34d34f6d0",
+      "bytes": 4996
+    },
+    {
+      "path": "product-r2-comparison.json",
+      "sha256": "a1f518216247c129077de62c71dbc8502b2d7fabb99563fe43b1627897646ce3",
+      "bytes": 14815
+    },
+    {
+      "path": "source-cache-isolated-gc.json",
+      "sha256": "acd6921a1acf43a4e7497a6c6c56600276e95de825332b0c05379da21d89de23",
+      "bytes": 2142
+    },
+    {
+      "path": "stage-r2.json",
+      "sha256": "a8c741adf55adadb48753af883b70aac6fc40fe6c2c7f3bf646d68425a97accd",
+      "bytes": 4715
+    }
+  ],
+  "privacy": "Metrics, hashes, retained Design/compiler identities and diagnostic metadata only; no operational snapshot, source blob, credentials or private saved Run state.",
+  "browser": {
+    "baselineUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "candidateUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "hardwareConcurrency": "Not recorded by this frozen product observer; do not infer the browser budget from the separate Bun CPU report.",
+    "viewport": {
+      "width": 1440,
+      "height": 913,
+      "devicePixelRatio": 1
+    }
+  }
+}

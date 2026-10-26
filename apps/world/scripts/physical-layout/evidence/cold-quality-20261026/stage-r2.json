@@ -1,0 +1,139 @@
+{
+  "at": "2026-10-26T21:36:37.418Z",
+  "bun": "1.4.0",
+  "fixtureDefinitionSha256": "e99fc2b1bba547940ddd93c6c8272134cb7d8749a2629217ed1e198ab6309e1f",
+  "fixtureSetupMs": 390.353291,
+  "records": [
+    {
+      "id": "layout:halden-1",
+      "design": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+      "sourceDigest": "deecf7e0162a43c9bdd5bbb2eff090b9db2c4bae96465de889d3413dc7a760ea",
+      "parseMs": 3.8000829999999723,
+      "validationMs": 6.454916000000026,
+      "compileWithValidationAndShapeCheckMs": 348.64929200000006,
+      "transferCopyMs": 16.570875,
+      "transferBytes": 18361536,
+      "workerSceneAdmissionMs": 49.26487499999996,
+      "variants": [
+        {
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "visibleMs": 94.65487499999995,
+          "ownershipMs": 736.112875,
+          "pickIndexMs": 133.47866699999986,
+          "renderBufferMs": 12.973833000000013,
+          "pickAdmissionMs": 0.15962500000000546,
+          "triangles": 103593,
+          "fragments": 1417,
+          "broadPhaseCandidates": 4750014,
+          "coplanarCandidates": 101625,
+          "renderBytes": 11783520
+        },
+        {
+          "view": {
+            "mode": "3d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "visibleMs": 77.24845900000014,
+          "ownershipMs": 218.82774999999992,
+          "pickIndexMs": 36.92591700000003,
+          "renderBufferMs": 4.960083000000395,
+          "pickAdmissionMs": 0.037207999999736785,
+          "triangles": 31749,
+          "fragments": 485,
+          "broadPhaseCandidates": 1106161,
+          "coplanarCandidates": 29873,
+          "renderBytes": 3538416
+        },
+        {
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": false,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "visibleMs": 112.53774999999996,
+          "ownershipMs": 886.195416,
+          "pickIndexMs": 136.22154200000023,
+          "renderBufferMs": 15.566959000000224,
+          "pickAdmissionMs": 0.05162500000005821,
+          "triangles": 108521,
+          "fragments": 1611,
+          "broadPhaseCandidates": 4798361,
+          "coplanarCandidates": 103190,
+          "renderBytes": 12244512
+        },
+        {
+          "view": {
+            "mode": "2d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "visibleMs": 82.03200000000015,
+          "ownershipMs": 170.50700000000006,
+          "pickIndexMs": 34.597957999999835,
+          "renderBufferMs": 10.196790999999848,
+          "pickAdmissionMs": 0.02062500000010914,
+          "triangles": 29615,
+          "fragments": 374,
+          "broadPhaseCandidates": 751540,
+          "coplanarCandidates": 28495,
+          "renderBytes": 3341616
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "design": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+      "sourceDigest": "58e9958fe7edeec2a37dddd4da98d382854dbb2ca45aaba32a1ebd3688a596c4",
+      "parseMs": 7.339082999999846,
+      "validationMs": 13.84804099999974,
+      "compileWithValidationAndShapeCheckMs": 417.52833299999975,
+      "transferCopyMs": 23.42466599999989,
+      "transferBytes": 22970652,
+      "workerSceneAdmissionMs": 59.53220799999963,
+      "variants": [
+        {
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "visibleMs": 135.11433400000078,
+          "ownershipMs": 1222.4248750000006,
+          "pickIndexMs": 173.59749999999985,
+          "renderBufferMs": 8.794707999999446,
+          "pickAdmissionMs": 0.05687500000021828,
+          "triangles": 131349,
+          "fragments": 1707,
+          "broadPhaseCandidates": 16801633,
+          "coplanarCandidates": 96579,
+          "renderBytes": 15482064
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Pure CPU stage attribution on the frozen admitted Halden fixture; no production Run mutation.",
+    "Explicit schema/validation attribution repeats that work separately; do not sum it with the inclusive compilation stage.",
+    "No network, actual worker queue/transport, GPU upload or painted-frame timing is claimed."
+  ]
+}

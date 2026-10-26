@@ -1,0 +1,171 @@
+{
+  "at": "2026-10-26T21:49:01.356Z",
+  "bun": "1.4.0",
+  "reportedLogicalCpus": 8,
+  "records": [
+    {
+      "kind": "serial",
+      "ms": 2567.452625,
+      "workerCountCreated": 1,
+      "before": {
+        "workerAlive": true,
+        "workerCount": 1,
+        "workerBudget": 1,
+        "activeWorkers": 0,
+        "clients": 1,
+        "registeredSources": 0,
+        "registeredBytes": 41332188,
+        "leases": 2,
+        "inFlightJobs": 2,
+        "pinnedSources": 2,
+        "registrations": 2,
+        "viewRequests": 0,
+        "transferredBytes": 41332188,
+        "retainedViews": 0,
+        "retainedViewBytes": 0,
+        "cacheHits": 0,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "ready": {
+        "workerAlive": true,
+        "workerCount": 1,
+        "workerBudget": 1,
+        "activeWorkers": 0,
+        "clients": 1,
+        "registeredSources": 2,
+        "registeredBytes": 41332188,
+        "leases": 2,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 2,
+        "viewRequests": 2,
+        "transferredBytes": 41332188,
+        "retainedViews": 2,
+        "retainedViewBytes": 83876888,
+        "cacheHits": 0,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "closed": {
+        "workerAlive": false,
+        "workerCount": 0,
+        "workerBudget": 1,
+        "activeWorkers": 0,
+        "clients": 0,
+        "registeredSources": 0,
+        "registeredBytes": 0,
+        "leases": 0,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 2,
+        "viewRequests": 2,
+        "transferredBytes": 41332188,
+        "retainedViews": 0,
+        "retainedViewBytes": 0,
+        "cacheHits": 0,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "assets": [
+        {
+          "key": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/all",
+          "ms": 1120.396875,
+          "sha256": "a14ce593d7c5876ed5190c8f0223f268eaf58e1ec34bad4cb8d4b7ea944e6207",
+          "cpuBytes": 36775952
+        },
+        {
+          "key": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/all",
+          "ms": 2567.446333,
+          "sha256": "59668daaf8a7414c1a3dfc4dcd29ce012b6f14274f2caa7dae81e1d0556bd7fa",
+          "cpuBytes": 47100936
+        }
+      ]
+    },
+    {
+      "kind": "reported",
+      "ms": 1651.3986670000004,
+      "workerCountCreated": 2,
+      "before": {
+        "workerAlive": true,
+        "workerCount": 2,
+        "workerBudget": 7,
+        "activeWorkers": 0,
+        "clients": 1,
+        "registeredSources": 0,
+        "registeredBytes": 41332188,
+        "leases": 2,
+        "inFlightJobs": 2,
+        "pinnedSources": 2,
+        "registrations": 2,
+        "viewRequests": 0,
+        "transferredBytes": 41332188,
+        "retainedViews": 0,
+        "retainedViewBytes": 0,
+        "cacheHits": 0,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "ready": {
+        "workerAlive": true,
+        "workerCount": 2,
+        "workerBudget": 7,
+        "activeWorkers": 0,
+        "clients": 1,
+        "registeredSources": 2,
+        "registeredBytes": 41332188,
+        "leases": 2,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 2,
+        "viewRequests": 2,
+        "transferredBytes": 41332188,
+        "retainedViews": 2,
+        "retainedViewBytes": 83876888,
+        "cacheHits": 0,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "closed": {
+        "workerAlive": false,
+        "workerCount": 0,
+        "workerBudget": 7,
+        "activeWorkers": 0,
+        "clients": 0,
+        "registeredSources": 0,
+        "registeredBytes": 0,
+        "leases": 0,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 2,
+        "viewRequests": 2,
+        "transferredBytes": 41332188,
+        "retainedViews": 0,
+        "retainedViewBytes": 0,
+        "cacheHits": 0,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "assets": [
+        {
+          "key": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/all",
+          "ms": 1225.3229170000004,
+          "sha256": "a14ce593d7c5876ed5190c8f0223f268eaf58e1ec34bad4cb8d4b7ea944e6207",
+          "cpuBytes": 36775952
+        },
+        {
+          "key": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/all",
+          "ms": 1651.395042,
+          "sha256": "59668daaf8a7414c1a3dfc4dcd29ce012b6f14274f2caa7dae81e1d0556bd7fa",
+          "cpuBytes": 47100936
+        }
+      ]
+    }
+  ],
+  "outputEqual": true,
+  "limits": [
+    "Real Bun module workers and exact admitted r2 Halden sources; source compilation is outside the worker-pool timing.",
+    "Serial then reported-capacity runs on one device; not a browser, network, GPU upload or product benchmark.",
+    "Typed storage metrics exclude module heaps, process overhead and temporary allocations; report worker count alongside bytes."
+  ]
+}
