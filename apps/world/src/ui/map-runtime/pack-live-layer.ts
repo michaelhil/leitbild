@@ -103,7 +103,8 @@ export interface PackLiveLayerSyncInput {
 export interface PackLiveLayerControllerConfig {
   readonly query: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
   readonly rasterize: (svg: string) => Promise<ImageData>
-  readonly documentHidden: () => boolean
+  /** Whether this map viewport currently has visible demand. */
+  readonly active: () => boolean
   readonly onSelect: (selection: PackMapFeatureSelection) => void
   readonly onHover: (hover: LiveMapHover | null) => void
   readonly onError: (message: string) => void
@@ -508,7 +509,14 @@ export const createPackLiveLayerController = (config: PackLiveLayerControllerCon
       setShown(instance, map)
       applySelection(instance, map)
     }
-    if (!groupShown(instance) || config.documentHidden()) return
+    if (!groupShown(instance) || !config.active()) {
+      if (instance.abort) {
+        instance.abort.abort(new Error('live map viewport suspended'))
+        instance.abort = null
+        instance.requestedRevision = null
+      }
+      return
+    }
     if (instance.requestedRevision === object.revision) return
     void fetchState(instance, object)
   }

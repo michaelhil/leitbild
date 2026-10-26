@@ -110,7 +110,8 @@
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
     readonly onOpenLayoutBrowser?: (target: PhysicalExplorerTarget) => void
-    readonly physicalLayoutActive?: boolean
+    /** False only when this map viewport is fully covered by another surface. */
+    readonly viewportActive?: boolean
     readonly physicalLayoutSuspended: boolean
     readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
@@ -195,7 +196,7 @@
     physicalLayoutBindings = [],
     onPhysicalDisplay = () => {},
     onOpenLayoutBrowser,
-    physicalLayoutActive = true,
+    viewportActive = true,
     physicalLayoutSuspended,
     layoutClearTop = 0,
     queryLiveMapLayer = async () => { throw new Error('live map layers need a capability query') },
@@ -415,7 +416,7 @@
   const liveLayerController = createPackLiveLayerController({
     query: (request, signal) => queryLiveMapLayer(request, signal),
     rasterize: rasterizeSymbol,
-    documentHidden: () => document.hidden,
+    active: () => viewportActive && !document.hidden,
     onSelect: selection => { clickHandled = true; featureSelection = selection },
     onHover: hover => { if (hover && hoverCardsFor(lastPointerType)) popupController.showCard(hover); else popupController.hide() },
     onError: message => onMapError(`Live map layer: ${message}`),
@@ -526,6 +527,7 @@
     getViewport: currentViewport,
     getCurrentTime: currentDisplayTime,
     getSourceRevisionKey: packFeatureSourceRevisionKey,
+    active: () => viewportActive && !document.hidden,
     enabled: packFeaturesEnabled,
     loadFeatures: context => mapFeaturesFor(context),
     setFeatures: features => {
@@ -536,6 +538,11 @@
     },
     performanceDiagnostics: mapPerformanceDiagnostics,
   })
+
+  const syncViewportDemand = (): void => {
+    packOverlayController.syncEnabled()
+    syncLiveLayers()
+  }
 
   const registerReferenceLayers = (): void => {
     const currentRuntime = runtime
@@ -727,11 +734,11 @@
     }
 
     void runInitializeMap()
-    document.addEventListener('visibilitychange', syncLiveLayers)
+    document.addEventListener('visibilitychange', syncViewportDemand)
 
     return () => {
       cancelled = true
-      document.removeEventListener('visibilitychange', syncLiveLayers)
+      document.removeEventListener('visibilitychange', syncViewportDemand)
       liveLayerController.destroy()
       liveStyleTheme = null
       stopFrameLagMonitor()
@@ -814,6 +821,7 @@
     untrack(() => { operationalRenderController.syncAreaFeatures(); syncPackFeatures() })
   })
 
+  $effect(() => { viewportActive; untrack(syncViewportDemand) })
   $effect(() => { packDataRevisionKey; untrack(() => { void packOverlayController.refresh() }) })
   $effect(() => { perspectiveEpoch; untrack(() => { hoveredObject = null; popupController.hide(); stackChooser.hide() }) })
 
@@ -922,7 +930,7 @@
   {#key runtime.map}
   {#key simulationRunId}
   {#await import('./physical-layout/PhysicalLayouts.svelte') then { default: PhysicalLayouts }}
-    <PhysicalLayouts map={runtime.map} active={physicalLayoutActive} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+    <PhysicalLayouts map={runtime.map} active={viewportActive} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} onDetailedOwners={setDetailedLayoutOwners}
       suspended={physicalLayoutSuspended}
       onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onbrowser={onOpenLayoutBrowser} onconnect={interaction => physicalLayoutInteraction = interaction} />

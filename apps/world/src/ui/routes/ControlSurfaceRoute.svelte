@@ -2110,7 +2110,7 @@
           layoutClearTop={alarmStripBottom}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           onOpenLayoutBrowser={openLayoutBrowser}
-          physicalLayoutActive={layoutBrowser === null}
+          viewportActive={layoutBrowser === null}
           physicalLayoutSuspended={physicalOperationalCapture}
           {queryLiveMapLayer}
           packSelections={packPanelSelections}

@@ -153,6 +153,7 @@ const settle = async (): Promise<void> => {
 const harness = () => {
   const map = createFakeMap(baseLayers)
   const queries: PackMapFeatureQuery[] = []
+  const signals: AbortSignal[] = []
   const answers: { geometry: TestGeometry; state: TestState } = { geometry: { key: 'g1', count: 3 }, state: { key: 'g1', revision: 1, values: [10, 20, 30] } }
   const errors: string[] = []
   const hovers: Array<LiveMapHover | null> = []
@@ -161,13 +162,13 @@ const harness = () => {
   let pending: Array<() => void> | null = null
   const controller = createPackLiveLayerController({
     query: async (request, signal) => {
-      queries.push(request)
+      queries.push(request); signals.push(signal)
       if (pending) await new Promise<void>(resolve => pending!.push(resolve))
       if (signal.aborted) throw signal.reason
       return structuredClone(request.capabilityId.endsWith('geometry') ? answers.geometry : answers.state)
     },
     rasterize: async () => ({ width: 1, height: 1, data: new Uint8ClampedArray(4) }) as unknown as ImageData,
-    documentHidden: () => hidden,
+    active: () => !hidden,
     onSelect: selection => { selections.push(selection) },
     onHover: hover => { hovers.push(hover) },
     onError: message => { errors.push(message) },
@@ -188,7 +189,7 @@ const harness = () => {
     controller.sync(input)
   }
   return {
-    map, queries, answers, errors, hovers, selections, controller, sync,
+    map, queries, signals, answers, errors, hovers, selections, controller, sync,
     setVisible: (value: boolean) => { visible = value },
     setHidden: (value: boolean) => { hidden = value },
     setTheme: (value: 'light' | 'dark') => { theme = value },
@@ -376,4 +377,16 @@ describe('live layer helpers', () => {
     expect(recolorPaintValue(['match', ['get', 'category'], 'line', '#112233', 'rgba(1, 2, 3, 0.5)'], () => '#000000'))
       .toEqual(['match', ['get', 'category'], 'line', '#000000', '#000000'])
   })
+})
+
+test('a covered viewport aborts live state demand, retains geometry and refreshes the same revision when shown again', async () => {
+  const h = harness(); h.sync(1); await settle()
+  const geometry = h.map.sources.get(sourceId)!.data
+  h.hold(); h.answers.state = { key: 'g1', revision: 2, values: [99, 99, 99] }; h.sync(2); await settle()
+  const suspended = h.signals.at(-1)!, before = h.queries.length
+  h.setHidden(true); h.sync(2); expect(suspended.aborted).toBe(true)
+  h.release(); await settle(); expect(h.map.sources.get(sourceId)!.data).toBe(geometry); expect(h.map.stateWrites.some(write => write.state.value === 99)).toBe(false)
+  h.answers.state = { key: 'g1', revision: 2, values: [7, 8, 9] }; h.setHidden(false); h.sync(2); await settle()
+  expect(h.queries.slice(before).map(value => value.capabilityId)).toEqual(['world.test.state']); expect([0, 1, 2].map(fid => h.map.featureState.get(`${sourceId}|${fid}`)!.value)).toEqual([7, 8, 9]); expect(h.errors).toEqual([])
+  h.controller.destroy()
 })

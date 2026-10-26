@@ -15,6 +15,8 @@ export interface PackOverlayControllerConfig {
   readonly getViewport: () => GeoJsonPolygon | null
   readonly getCurrentTime: () => IsoTimestamp | undefined
   readonly getSourceRevisionKey: () => string
+  /** Actual viewport demand; covered/hidden maps retain data but request nothing. */
+  readonly active: () => boolean
   readonly enabled: () => boolean
   readonly loadFeatures: (context: PackOverlayControllerRefreshContext) => Promise<ReadonlyArray<PackMapFeature>>
   readonly setFeatures: (features: ReadonlyArray<PackMapFeature>) => void
@@ -114,11 +116,14 @@ export const createPackOverlayController = (
   }
 
   const abort = (reason: string): void => {
+    refreshQueued = false
     if (!abortController) return
     requestSerial += 1
-    abortController.abort(new Error(reason))
+    const pending = abortController
     abortController = null
     requestKey = null
+    requestInFlight = false
+    pending.abort(new Error(reason))
   }
 
   const refresh = async (): Promise<void> => {
@@ -126,6 +131,7 @@ export const createPackOverlayController = (
       clearFeatures()
       return
     }
+    if (!config.active()) return
     const runtime = config.getRuntime()
     const viewport = config.getViewport()
     if (!runtime || !viewport) return
@@ -170,7 +176,7 @@ export const createPackOverlayController = (
         }),
         { zoom: Number(zoom.toFixed(2)) },
       )
-      if (serial !== requestSerial) return
+      if (serial !== requestSerial || !config.active()) return
       config.setFeatures(features)
       featuresApplied = features.length > 0
       cacheKey = nextRequestKey
@@ -184,7 +190,7 @@ export const createPackOverlayController = (
         ],
       })
       } catch (err) {
-      if (serial !== requestSerial) return
+      if (serial !== requestSerial || !config.active()) return
       const message = err instanceof Error ? err.message : String(err)
       runtime.reportDiagnosticPhase({
         phase: 'operational-static',
@@ -198,12 +204,16 @@ export const createPackOverlayController = (
       })
       config.onError(message)
     } finally {
-      if (abortController === nextAbortController) abortController = null
-      if (requestKey === nextRequestKey) requestKey = null
-      requestInFlight = false
-      if (refreshQueued) {
-        refreshQueued = false
-        window.setTimeout(() => { void refresh() }, 0)
+      // An aborted provider may settle after a newer request has started.
+      // Its finally block owns none of that newer request's state.
+      if (abortController === nextAbortController) {
+        abortController = null
+        requestKey = null
+        requestInFlight = false
+        if (refreshQueued) {
+          refreshQueued = false
+          setTimeout(() => { void refresh() }, 0)
+        }
       }
     }
   }
@@ -211,7 +221,7 @@ export const createPackOverlayController = (
   const startAutoRefresh = (): void => {
     if (refreshInterval !== null) return
     refreshInterval = setInterval(() => {
-      if (!config.enabled() || cameraGestureActive) return
+      if (!config.enabled() || !config.active() || cameraGestureActive) return
       void refresh()
     }, config.refreshIntervalMs ?? defaultRefreshIntervalMs)
   }
@@ -224,6 +234,12 @@ export const createPackOverlayController = (
         abort('pack area features disabled')
         stopAutoRefresh()
         clearFeatures()
+        return
+      }
+      if (!config.active()) {
+        enabledActive = false
+        abort('pack area viewport suspended')
+        stopAutoRefresh()
         return
       }
       const firstEnable = !enabledActive
