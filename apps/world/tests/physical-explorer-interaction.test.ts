@@ -24,7 +24,7 @@ test('fields, dialogs, compositions and prevented keys retain ownership even ins
   expect(physicalExplorerKeyboardRoute({ ...inputEvent, path: [], descendantOwnsKeys: false })).toBeNull()
 })
 
-const demand = { active: true, documentVisible: true, suspended: false, ready: true, statusLayer: false, sceneId: 'unit-1', inspectedSceneId: null }
+const demand = { active: true, documentVisible: true, suspended: false, sourceLoaded: true, locationValid: true, representation: 'ready' as const, statusLayer: false, sceneId: 'unit-1', inspectedSceneId: null }
 test('a Quick look owns current acquisition with the visual status layer off and releases it when closed', () => {
   expect(physicalExplorerNeedsLive(demand)).toBe(false)
   expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1' })).toBe(true)
@@ -32,9 +32,22 @@ test('a Quick look owns current acquisition with the visual status layer off and
   expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1', active: false })).toBe(false)
   expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1', suspended: true })).toBe(false)
   expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1', documentVisible: false })).toBe(false)
-  expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1', ready: false })).toBe(false)
+  expect(physicalExplorerNeedsLive({ ...demand, inspectedSceneId: 'unit-1', sourceLoaded: false })).toBe(false)
   expect(physicalExplorerNeedsLive({ ...demand, statusLayer: true })).toBe(true)
   expect(demand.statusLayer).toBe(false)
+})
+
+test('preparing another floor retains owner demand only for the same loaded and valid source', () => {
+  const visible = { ...demand, statusLayer: true }
+  expect(physicalExplorerNeedsLive(visible)).toBe(true)
+  expect(physicalExplorerNeedsLive({ ...visible, representation: 'loading' })).toBe(true)
+  expect(physicalExplorerNeedsLive(visible)).toBe(true)
+  // Initial/replaced source loading has not passed the controller's retained
+  // source/descriptor validation and cannot acquire from a guessed owner.
+  expect(physicalExplorerNeedsLive({ ...visible, sourceLoaded: false, representation: 'loading' })).toBe(false)
+  expect(physicalExplorerNeedsLive({ ...visible, locationValid: false, representation: 'loading' })).toBe(false)
+  for (const representation of ['distant', 'hidden', 'unavailable'] as const) expect(physicalExplorerNeedsLive({ ...visible, representation })).toBe(false)
+  for (const boundary of [{ active: false }, { documentVisible: false }, { suspended: true }]) expect(physicalExplorerNeedsLive({ ...visible, ...boundary, representation: 'loading' })).toBe(false)
 })
 
 test('every operational capture including an armed controller and panel target picking preempts both physical hosts', () => {

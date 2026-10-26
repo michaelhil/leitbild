@@ -1,3 +1,5 @@
+import type { PhysicalScenePresentation } from '../map/physical-scene/types.ts'
+
 /** Event ownership comes from the actual composed DOM path, including shadow hosts. */
 export const physicalExplorerKeyboardRoute = (input: {
   readonly path: ReadonlyArray<unknown>
@@ -12,16 +14,19 @@ export const physicalExplorerKeyboardRoute = (input: {
   return input.overlay !== null && input.path.includes(input.overlay) ? 'overlay' : null
 }
 
-/** Inspection acquisition remains independent of whether the visual status layer is shown. */
+/** A new representation of the same validated source does not replace its live owner scope. */
 export const physicalExplorerNeedsLive = (input: {
   readonly active: boolean
   readonly documentVisible: boolean
   readonly suspended: boolean
-  readonly ready: boolean
+  readonly sourceLoaded: boolean
+  readonly locationValid: boolean
+  readonly representation: PhysicalScenePresentation['status']
   readonly statusLayer: boolean
   readonly sceneId: string
   readonly inspectedSceneId: string | null
-}): boolean => input.active && input.documentVisible && !input.suspended && input.ready
+}): boolean => input.active && input.documentVisible && !input.suspended && input.sourceLoaded && input.locationValid
+  && (input.representation === 'ready' || input.representation === 'loading')
   && (input.statusLayer || input.inspectedSceneId === input.sceneId)
 
 /** The same operational capture boundary applies to both physical viewport hosts. */

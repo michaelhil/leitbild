@@ -242,7 +242,9 @@
       if (descriptor === undefined || snapshot.latest !== null && (snapshot.latest.scope.revision !== descriptor.revision || snapshot.latest.scope.modelDigest !== descriptor.modelDigest)) snapshots = new Map([...snapshots].filter(([key]) => key !== id))
     }
     for (const scene of scenes) {
-      if (!physicalExplorerNeedsLive({ active, documentVisible, suspended, ready: scene.status === 'ready', statusLayer: scene.view.live, sceneId: scene.descriptor.id, inspectedSceneId: inspected?.sceneId ?? null })) continue
+      // A floor/representation change retains the validated source and exact
+      // owner scope. Keep its acquisition alive while only geometry prepares.
+      if (!physicalExplorerNeedsLive({ active, documentVisible, suspended, sourceLoaded: Boolean(controller?.scene(scene.descriptor.id)), locationValid: scene.descriptor.locationValid, representation: scene.status, statusLayer: scene.view.live, sceneId: scene.descriptor.id, inspectedSceneId: inspected?.sceneId ?? null })) continue
       const owner = objects.find(object => object.id === scene.descriptor.targetObjectId)
       if (owner === undefined) continue
       const expected = { runId, layoutObjectId: objectIdSchema.parse(scene.descriptor.id), revision: scene.descriptor.revision, objectId: owner.id, packId: owner.packId, modelDigest: scene.descriptor.modelDigest }
