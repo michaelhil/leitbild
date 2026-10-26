@@ -25,8 +25,11 @@ GPU execution or physical-monitor presentation timestamps.
 The test observer records actual `fillText` calls made by the drafting canvas,
 their unique strings, active canvas backing dimensions and RGBA byte lower
 bounds. This prevents a ready-state check passing while source labels are lost.
-Font-dependent collision packing may legitimately hide some captions; the
-receipt and screenshots permit inspection of the exact visible set.
+The selected room and returned room require the authored HP, LP 1, GEN and
+TURBINE HALL captions to be actually painted. Whole-site Plan requires all five
+ready layouts and an applicable drafting backing; its much smaller building
+envelopes may legitimately reject all text. Font-dependent collision packing
+may hide other captions; receipts and screenshots retain the visible set.
 
 Weak GL resource keys and primitive allocation metadata identify owned depth32F
 targets, observed MSAA sample counts, color renderbuffers and resolve textures.
@@ -41,3 +44,11 @@ The observer adds overhead. Annotation metadata time is reported; other callback
 overhead is not separately attributed. Capture actual DPR, dimensions, hardware
 and browser. Qualify R3 as its own detail profile; do not describe its timing as
 the retained R2 optimization comparison.
+
+For a separate diagnostic CPU profile, set
+`LEITBILD_R3_PROFILE_WINDOW=browser-site-plan-paused`. The matching input window
+records a DevTools CPU profile. `LEITBILD_R3_PROFILE_ONLY=1` intentionally stops
+after writing that diagnostic with an explicit non-qualification error; its
+`failure.json` is retained and must not be presented as a passing product run.
+Profiler overhead makes these diagnostic timings unsuitable as clean motion
+acceptance measurements.
