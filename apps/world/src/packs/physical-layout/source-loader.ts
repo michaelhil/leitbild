@@ -20,6 +20,15 @@ const pending = new Map<string, Promise<PackPhysicalScene>>()
 // Weak ownership: the renderer/scene instances retain used assets. This cache
 // shares content across hosts without keeping closed Runs' geometry alive.
 const assets = new Map<string, WeakRef<PackPhysicalScene['objects']>>()
+type IntrinsicScene = Omit<PackPhysicalScene,'id'|'revision'|'targetObjectId'|'anchor'|'bearing'|'group'>
+// The objects array is retained by delivered placement wrappers. Its ephemeron
+// owns the entire intrinsic delivery, including drafting and future facets;
+// neither cache independently keeps a closed Run's objects alive.
+const intrinsic = new WeakMap<PackPhysicalScene['objects'],IntrinsicScene>()
+const retainIntrinsic = (scene: PackPhysicalScene): void => {
+  const {id:_id,revision:_revision,targetObjectId:_owner,anchor:_anchor,bearing:_bearing,group:_group,...body}=scene
+  intrinsic.set(scene.objects,body)
+}
 
 export const loadPhysicalSourceAsset = async (data: RetainedPhysicalLayoutData): Promise<PackPhysicalScene> => {
   const key = `${data.compiler.id}/${data.compiler.digest}/${data.design.digest}`
@@ -32,15 +41,16 @@ export const loadPhysicalSourceAsset = async (data: RetainedPhysicalLayoutData):
         const scene = !('document' in globalThis)
           ? await (await import('./source-compile.ts')).compileRetainedPhysicalSource(data)
           : await compilePhysicalSourceInWorker(data)
+        retainIntrinsic(scene)
         assets.set(key, new WeakRef(scene.objects))
         return scene
       } finally { pending.delete(key) }
     })()
     pending.set(key, loading)
   }
-  if (objects === undefined) return await loading!
-  return { id: data.design.id, revision: data.design.digest, targetObjectId: data.owner.objectId,
-    anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: data.bounds,
-    levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
-    ...('presentation' in data ? { scopes: data.presentation.scopes, layers: data.presentation.layers } : {}), objects }
+  const delivered = objects ?? (await loading!).objects, body = intrinsic.get(delivered)
+  if (body === undefined) throw new Error('Live physical source discovery lost its intrinsic delivery')
+  return { ...body, id: data.design.id, revision: data.design.digest, targetObjectId: data.owner.objectId,
+    anchor: data.placement.anchor, bearing: data.placement.bearing,
+    ...('group' in data && data.group !== undefined ? {group:data.group} : {}) }
 }
