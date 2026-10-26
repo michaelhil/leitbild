@@ -162,10 +162,14 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       // site road must not be cut at an administration building's next floor.
       const clipLevel = object.levelId === 'site' ? null : level
       const next = clipLevel ? levels.find(candidate => candidate.elevation > clipLevel.elevation) : undefined
-      const low = clipLevel ? (authoredVolume?.low ?? clipLevel.elevation) - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
+      let slabLow = Infinity
+      if (authoredVolume && object.kind === 'slab' && object.levelId === clipLevel?.id) for (let index = 2; index < object.positions.length; index += 3) slabLow = Math.min(slabLow, object.positions[index]!)
+      const low = clipLevel ? authoredVolume ? Math.min(authoredVolume.low, slabLow) : clipLevel.elevation - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
       const upper = authoredVolume?.high ?? (next ? next.elevation - 0.001 : Infinity)
       const boundary = object.inspectionBoundary !== undefined && view.mode === '3d' && view.cutaway && object.levelId !== 'site'
-      const cut = view.cutaway && (object.kind === 'wall' || object.inspectionBoundary !== undefined) && object.levelId !== 'site' ? clipLevel?.cutHeight ?? (boundary ? levels[0]!.cutHeight : levels.at(-1)!.cutHeight) : Infinity
+      const firstVolume = boundary && !clipLevel ? object.inspectionLevels?.reduce((first, volume) => volume.low < first.low ? volume : first) : undefined
+      const cutLevel = clipLevel ?? (boundary ? levels.find(level => level.id === firstVolume?.levelId) ?? levels[0]! : levels.at(-1)!)
+      const cut = view.cutaway && (object.kind === 'wall' || object.inspectionBoundary !== undefined) && object.levelId !== 'site' ? authoredVolume ? authoredVolume.low + cutLevel.cutHeight - cutLevel.elevation : firstVolume ? firstVolume.low + cutLevel.cutHeight - cutLevel.elevation : cutLevel.cutHeight : Infinity
       // Camera-aware boundaries keep both exact representations resident. The
       // renderer chooses full rear walls or capped foreground walls; camera
       // movement never rebuilds source geometry or leaves a false section seam.

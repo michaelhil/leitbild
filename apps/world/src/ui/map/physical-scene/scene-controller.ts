@@ -68,7 +68,9 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const meshes = separated ? prepared.meshes.map(mesh => ({ ...mesh, offset: mesh.offset.map(value => value * entry.view.separation) as unknown as readonly [number, number, number] })) : prepared.meshes
     const filtered = !hidden.size && !entry.scopeId ? meshes : meshes.filter(mesh => !(mesh.object.layerId && hidden.has(mesh.object.layerId)) && (!entry.scopeId || mesh.object.scopeIds?.some(inScope)))
     if (filtered !== prepared.meshes) derivePhysicalPickAcceleration(filtered, prepared.acceleration)
-    return visiblePhysicalSurfaceOwners(filtered, prepared.acceleration)
+    // Authored full/cut boundary alternatives must reach the camera-facing
+    // selector together. Only then can coincident display owners be chosen.
+    return filtered.some(mesh => mesh.inspectionPart !== undefined) ? filtered : visiblePhysicalSurfaceOwners(filtered, prepared.acceleration)
   }
   const cancelPreparation = (entry: Entry): void => { entry.viewGeneration++; entry.preparationAbort?.abort(); entry.preparationAbort = undefined; entry.preparing = false }
   const cancelOverview = (entry: Entry): void => { entry.overviewAbort?.abort(); entry.overviewAbort = undefined; entry.overviewPreparing = false }

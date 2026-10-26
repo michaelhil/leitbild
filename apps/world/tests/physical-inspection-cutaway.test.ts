@@ -45,3 +45,12 @@ test('retained profiles without boundary metadata keep their existing section an
   expect(meshes).toHaveLength(1); expect(meshes[0]!.inspectionPart).toBeUndefined(); expect(meshes[0]!.bounds.max[2]).toBe(16.2)
   expect(visiblePhysicalInspectionBoundaries(meshes, camera(-20))).toBe(meshes)
 })
+test('new inspection volumes use exact floor boundaries and the full actual thickness of the owning slab', () => {
+  const slab: PhysicalSceneObject = { ...wall, id: 'thick-deck', kind: 'slab', levelId: 'operating', inspectionBoundary: undefined, positions: [0, 0, 12, 10, 0, 12, 10, .4, 15, 0, 0, 12, 10, .4, 15, 0, .4, 15], bounds: { min: [0, 0, 12], max: [10, .4, 15] } }
+  const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'operating' }
+  const meshes = buildVisibleMeshes({ ...scene, objects: [slab, wall] }, view)
+  expect(meshes.find(mesh => mesh.object.id === slab.id)!.bounds.min[2]).toBe(12)
+  expect(meshes.filter(mesh => mesh.object.id === wall.id).every(mesh => mesh.bounds.min[2] === 15)).toBe(true)
+  const lower = buildVisibleMeshes(scene, { ...view, levelId: 'ground' })
+  expect(lower.every(mesh => mesh.bounds.min[2] === 0)).toBe(true)
+})

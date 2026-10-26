@@ -4,10 +4,11 @@ import { createPhysicalRenderPass } from './render-pass.ts'
 import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import { projectPhysicalPlan } from './plan-projection.ts'
 import { physicalPerspectiveNear } from './depth-projection.ts'
+import { visiblePhysicalInspectionBoundaries } from './inspection-cutaway.ts'
 import { captureSceneGlState, restoreSceneGlState } from './gl-state.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
-import { pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
+import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 const styleFor = (entry: PhysicalLayerEntry, subjectIds: ReadonlyArray<string>): PhysicalSubjectStyle | null => {
@@ -25,6 +26,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let depthNear = 0
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
+  const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
     if (disposed || failed) return null
     const rectangle = size(), hit = pickPhysicalMesh(picking, point, rectangle.width, rectangle.height)
@@ -51,7 +53,12 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       const before = captureSceneGlState(gl)
       try {
         const draws: PhysicalDraw[] = []; picking = []
-        const current = entries().map(entry => ({ ...entry, meshes: visiblePhysicalSurfaceOwners(entry.meshes, entry.asset?.acceleration) })), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
+        const current = entries().map(entry => {
+          const boundary = visiblePhysicalInspectionBoundaries(entry.meshes, multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)))
+          const meshes = visiblePhysicalSurfaceOwners(boundary, entry.asset?.acceleration)
+          if (meshes !== entry.meshes && entry.asset && !indexedSelections.has(meshes)) { derivePhysicalPickAcceleration(meshes, entry.asset.acceleration); indexedSelections.add(meshes) }
+          return { ...entry, meshes }
+        }), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
         const baseProjection = plan ? projectPhysicalPlan(current, mainMatrix) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
         depthNear = plan ? 0 : physicalPerspectiveNear(mainMatrix)
         const projected = baseProjection
