@@ -18,6 +18,7 @@ const pending = new Map<number, { resolve: (value: any) => void; reject: (error:
 const events: Array<{ method: string; params: any }> = []
 const phases: any[] = []
 const traceMap = process.env.QA_TRACE_MAP === '1'
+const coldOnly = process.env.QA_COLD_ONLY === '1'
 const call = (method: string, params: any = {}): Promise<any> => new Promise((resolve, reject) => { const id = ++count; pending.set(id, { resolve, reject }); socket!.send(JSON.stringify({ id, method, params })) })
 const evaluate = async (expression: string) => { const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: 60000 }); if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails)); return result.result?.value }
 const W = `document.querySelector('iframe[src*="/world/runs/"]').contentWindow`
@@ -54,7 +55,7 @@ try {
   const target=await(await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json();socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise<void>((resolve,reject)=>{socket!.onopen=()=>resolve();socket!.onerror=reject})
   socket.onmessage=event=>{const message=JSON.parse(String(event.data)),request=pending.get(message.id);if(request){pending.delete(message.id);message.error?request.reject(message.error):request.resolve(message.result)}else if(['Runtime.exceptionThrown','Network.responseReceived','Network.loadingFinished','Tracing.tracingComplete'].includes(message.method))events.push(message)}
   await call('Runtime.enable');await call('Page.enable');await call('Page.bringToFront');await call('Network.enable');await call('Emulation.setDeviceMetricsOverride',{width:1440,height:913,deviceScaleFactor:1,mobile:false})
-  await call('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{window.__productProof={frames:[],tasks:[],messages:[],previous:0,started:performance.now()};new PerformanceObserver(list=>{for(const e of list.getEntries())window.__productProof.tasks.push({start:e.startTime,duration:e.duration})}).observe({type:'longtask',buffered:true});const post=Worker.prototype.postMessage;Worker.prototype.postMessage=function(message,transfer){const physical=message?.kind==='register'||message?.kind==='prepare'||message?.design?.id;const started=performance.now();const bytes=physical&&Array.isArray(transfer)?transfer.reduce((s,b)=>s+(b.byteLength??0),0):0;const result=post.call(this,message,transfer);if(physical)window.__productProof.messages.push({kind:message.kind??'physical-source',sourceKey:message.sourceKey??message.design?.id,key:message.key,bytes,ms:performance.now()-started});return result}})()`})
+  await call('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{window.__productProof={frames:[],tasks:[],messages:[],responses:[],pending:0,previous:0,started:performance.now()};new PerformanceObserver(list=>{for(const e of list.getEntries())window.__productProof.tasks.push({start:e.startTime,duration:e.duration})}).observe({type:'longtask',buffered:true});const post=Worker.prototype.postMessage,jobs=new WeakMap();Worker.prototype.postMessage=function(message,transfer){const q=window.__productProof,physical=message?.kind==='register'||message?.kind==='prepare'||message?.design?.id;const started=performance.now();if(physical&&message.id!==undefined){if(!jobs.has(this)){const active=new Map();jobs.set(this,active);this.addEventListener('message',event=>{const job=active.get(event.data?.id);if(!job)return;active.delete(event.data.id);q.pending--;q.responses.push({...job,kind:event.data.kind,ms:performance.now()-job.started,error:event.data.message})})}jobs.get(this).set(message.id,{id:message.id,key:message.key,sourceKey:message.sourceKey,request:message.kind,started});q.pending++}const bytes=physical&&Array.isArray(transfer)?transfer.reduce((s,b)=>s+(b.byteLength??0),0):0;const result=post.call(this,message,transfer);if(physical)q.messages.push({kind:message.kind??'physical-source',sourceKey:message.sourceKey??message.design?.id,key:message.key,bytes,ms:performance.now()-started});return result}})()`})
   const started=Date.now();await call('Page.navigate',{url:info.url})
   // Wait for the real World iframe before reading its controls.
   while(!await evaluate(`Boolean(document.querySelector('iframe[src*="/world/runs/"]')?.contentDocument?.querySelector('.explorer-controls'))`)){if(Date.now()-started>45000)throw Error('World did not mount');await Bun.sleep(100)}
@@ -63,6 +64,36 @@ try {
   await inWorld(`d.querySelector('button[aria-label="Close grid overview panel"]')?.click()`)
   await button('Open layout browser');await until(`return d.querySelector('.explorer-controls .evidence')?.textContent.includes('5 layouts ready')`,'five real layouts ready')
   phases.push({name:'browser-initial-ready',...await stats()});await screenshot('product-browser-site.png')
+  if (coldOnly) {
+    const transitions: unknown[] = []
+    const settled = async () => {
+      await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
+      await until(`return w.__productProof.pending===0 && !/\\b[1-9]\\d* loading\\b/.test(d.querySelector('.explorer-controls .evidence')?.textContent??'')`,'physical worker responses and visible loading settled')
+    }
+    const transition = async (name: string, action: () => Promise<unknown>) => {
+      const before = await inWorld('return w.__productProof.responses.length'), start = Date.now()
+      await action(); await settled()
+      const value = { name, wallMs: Date.now()-start, ...await stats(), responses: await inWorld(`return w.__productProof.responses.slice(${before})`) }
+      transitions.push(value); console.log(name,JSON.stringify(value))
+    }
+    await transition('initial-site-3d',()=>button('3D'))
+    await transition('first-room-focus',()=>scope('Halden Unit 1 full plant / PWR unit / Turbine hall','Turbine hall'))
+    await transition('first-operating-floor',()=>floor('Turbine and main control'))
+    await transition('first-stack-all-floors',()=>floor('Stack'))
+    await transition('return-operating-floor',()=>floor('Turbine and main control'))
+    await transition('return-stack-all-floors',()=>floor('Stack'))
+    await transition('first-uncut-stack',async()=>{
+      await button('View')
+      await inWorld(`const label=[...d.querySelectorAll('.settings label')].find(l=>l.textContent.includes('Inspection cutaway'));label.querySelector('input').click()`)
+      await button('View')
+    })
+    await screenshot('product-cold-stack.png')
+    const result={source:(await new Response(Bun.spawn(['git','rev-parse','HEAD'],{cwd:repository,stdout:'pipe'}).stdout).text()).trim(),run:info,cold,initial:phases[0],transitions,messages:await inWorld('return w.__productProof.messages'),responses:await inWorld('return w.__productProof.responses'),pending:await inWorld('return w.__productProof.pending'),exceptions:events.filter(e=>e.method==='Runtime.exceptionThrown').map(e=>e.params.exceptionDetails),limits:['Real built product, fresh isolated Chrome profile and paused local Run; no production Run changes.','Worker timings include queueing and response transfer; transition wall time includes the existing test helper polling/UI waits, not isolated geometry CPU.','One Apple M2, DPR1, local services and read-only HTTPS vector assets; not WAN or constrained-device qualification.']}
+    if(result.pending!==0 || result.responses.some((r:any)=>r.kind==='error') || result.exceptions.length)throw Error('Cold transition qualification failed')
+    await writeFile(join(folder,'product-cold-proof.json'),JSON.stringify(result,null,2));console.log('DONE product-cold-proof.json')
+    process.exitCode=0
+    // This branch returns through finally so the QA Run is paused and Chrome closes.
+  } else {
   await movement('browser-site-paused','.layout-canvas');await execution('playing');await Bun.sleep(1000);await movement('browser-site-playing','.layout-canvas');await execution('paused')
   await scope('Halden Unit 1 full plant / PWR unit / Turbine hall','Turbine hall');await floor('Turbine and main control');await button('Home');await Bun.sleep(800)
   await screenshot('product-browser-turbine.png');await movement('browser-room-paused','.layout-canvas')
@@ -81,4 +112,5 @@ try {
   const git=Bun.spawn(['git','rev-parse','HEAD'],{cwd:repository,stdout:'pipe'});const source=(await new Response(git.stdout).text()).trim();if(await git.exited!==0)throw Error('Cannot identify tested source')
   const result={source,run:info,cold,phases,narrow,messages:await inWorld('return w.__productProof.messages'),exceptions:events.filter(e=>e.method==='Runtime.exceptionThrown').map(e=>e.params.exceptionDetails),network:events.filter(e=>e.method==='Network.responseReceived').map(e=>({url:e.params.response.url,status:e.params.response.status,encodedDataLength:e.params.response.encodedDataLength})),limits:['Real full built Host/World/MapLibre/PMTiles/ProcessPlant+Grid observations. Read-only production vector/reference asset proxy; isolated local Run/state.','One Apple M2 / headless Chrome / DPR1 desktop and narrow CSS viewport; not WAN, constrained-device or human-usability qualification.','RAF intervals include browser scheduling; not GPU execution time. Root observer does not attribute cold long tasks to a specific component. Source transport duplication remains.']}
   await writeFile(join(folder,traceMap?'product-browser-traced.json':'product-browser-proof.json'),JSON.stringify(result,null,2));console.log('DONE',traceMap?'product-browser-traced.json':'product-browser-proof.json')
+  }
 } finally { await execution('paused');socket?.close();chrome.kill();await chrome.exited;await rm(profile,{recursive:true,force:true}) }
