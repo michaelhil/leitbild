@@ -33,7 +33,7 @@ export const probePhysicalCoplanarDrawOrder = (gl: WebGL2RenderingContext) => {
       const pixel = new Uint8Array(4); gl.readPixels(16, 16, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
       const picked = pickPhysicalMesh(draws.map((value, index) => ({ sceneId: value === middle ? 'B' : index === 0 ? 'A1' : 'A2', meshes: value.meshes, matrix: value.matrix })), { x: 16, y: 16 }, 32, 32)?.sceneId
       const expected = interleaved ? 'B' : 'A2', green = pixel[1]! > pixel[0]!
-      results.push({ flat, interleaved, picked, pixel: [...pixel], draws: backend.metrics.draws - start, geometryUploads: backend.metrics.geometryUploads, passed: picked === expected && green === interleaved && backend.metrics.geometryUploads === 2 })
+      results.push({ flat, interleaved, picked, pixel: [...pixel], draws: backend.metrics.draws - start, geometryUploads: backend.metrics.geometryUploads, passed: picked === expected && pixel[3] === 255 && pixel[0]! + pixel[1]! > 100 && green === interleaved && backend.metrics.geometryUploads === 2 })
     }
     // Production hosts restore their program before disposing a renderer;
     // unbind this direct test draw too, so GL deletion is no longer deferred.
