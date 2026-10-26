@@ -20,7 +20,7 @@ const inWorld=(body:string)=>evaluate(`(()=>{const w=document.querySelector('ifr
 const until=async(body:string,label:string)=>{const start=performance.now();while(performance.now()-start<45000){if(await inWorld(body))return;await Bun.sleep(50)}throw Error(`Timed out: ${label}: ${await inWorld('return w.document.body.innerText.slice(-1800)')}`)}
 const settled=async(expectedCount?:number)=>{
   await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
-  await until(`const text=d.querySelector('.explorer-controls .evidence')?.textContent??'';return q.pending===0&&!/\b[1-9]\d* loading\b/.test(text)&&${expectedCount?`text.includes('${expectedCount} layouts ready')`:`/Paused · fresh|Live ·|layouts ready/.test(text)`}`,'matching physical view and owner evidence')
+  await until(`const text=d.querySelector('.explorer-controls .evidence')?.textContent??'';return q.pending===0&&!/\\b[1-9]\\d* loading\\b/.test(text)&&${expectedCount?`text.includes('${expectedCount} layouts ready')`:`/Paused · fresh|Live ·|layouts ready/.test(text)`}`,'matching physical view and owner evidence')
   await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
 }
 const button=async(label:string)=>{await inWorld(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}&&b.getBoundingClientRect().width>0);if(!b)throw Error(${JSON.stringify('Missing button '+label)});b.click()`);await settled()}
