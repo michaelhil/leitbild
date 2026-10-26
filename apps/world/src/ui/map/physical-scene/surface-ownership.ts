@@ -86,16 +86,24 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
   for (const faces of cohorts.values()) {
     const index = createPhysicalSpatialIndex(faces.map(face => face.bounds))
     faces.forEach((face, faceIndex) => {
-      const candidates: number[] = []; visitPhysicalSpatialBounds(index, face.bounds, candidate => { if (candidate < faceIndex) candidates.push(candidate) }); candidates.sort((a,b)=>a-b); broadPhaseCandidates += candidates.length
+      const candidates: number[] = []
+      let earlierCandidates = 0
+      visitPhysicalSpatialBounds(index, face.bounds, candidate => {
+        if (candidate >= faceIndex) return
+        earlierCandidates++
+        const cover = faces[candidate]!
+        // These predicates depend only on immutable faces. Apply them before
+        // storing/sorting candidates; only the surviving faces need source order.
+        if (cover.axes.some(axis => Math.min(face.bounds.max[axis]!,cover.bounds.max[axis]!) <= Math.max(face.bounds.min[axis]!,cover.bounds.min[axis]!))) return
+        if (!cover.vertices.every(value => onPlane(face.vertices, value))) return
+        candidates.push(candidate)
+      })
+      broadPhaseCandidates += earlierCandidates
+      coplanarCandidates += candidates.length
+      candidates.sort((a,b)=>a-b)
       let regions: readonly Region[] = [{ vertices: face.vertices, coveredBy: [] }]
       for (const candidate of candidates) {
         const cover = faces[candidate]!
-        // Positive surface overlap needs positive area in the cover's dominant
-        // projection. Reject disjoint/touching boxes before plane arithmetic;
-        // this is an exact geometric test, not a feature-count shortcut.
-        if (cover.axes.some(axis => Math.min(face.bounds.max[axis]!,cover.bounds.max[axis]!) <= Math.max(face.bounds.min[axis]!,cover.bounds.min[axis]!))) continue
-        if (!cover.vertices.every(value => onPlane(face.vertices, value))) continue
-        coplanarCandidates++
         const owner = meshes[cover.mesh]!.key, next: Region[] = []
         for (const region of regions) {
           const result = partition(region, cover, owner); next.push(...result.regions)

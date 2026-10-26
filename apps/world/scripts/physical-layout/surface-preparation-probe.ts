@@ -9,6 +9,12 @@ import { physicalSpatialBytes } from '../../src/ui/map/physical-scene/spatial-in
 const root = join(import.meta.dir, '../..'), baselineRoot = process.env.LEITBILD_PHYSICAL_BASELINE_ROOT
 if (!baselineRoot) throw Error('Set LEITBILD_PHYSICAL_BASELINE_ROOT to the frozen pre-correction apps/world checkout')
 const baseline = await import(join(baselineRoot, 'src/ui/map/physical-scene/preparation.ts')) as { preparePhysicalGeometry: typeof preparePhysicalGeometry }
+const fingerprint = (asset: ReturnType<typeof preparePhysicalGeometry>): string => {
+  const hash=createHash('sha256'), binary=(values:ArrayLike<number>)=>hash.update(new Uint8Array(Float64Array.from(values).buffer))
+  for(const mesh of asset.meshes){hash.update(JSON.stringify([mesh.key,mesh.assetIndex,mesh.levelId,mesh.offset,mesh.bounds,mesh.occludedBy??[],mesh.lineMaterials,mesh.lineStyles,mesh.object.id,mesh.object.subjectIds,mesh.object.material,mesh.object.materials,mesh.object.scopeIds,mesh.object.layerId]));binary(mesh.vertices);binary(mesh.lines)}
+  for(const index of[asset.acceleration.meshes,...asset.acceleration.triangles.map(value=>value.triangles)])for(const values of[index.bounds,index.children,index.ranges,index.order])binary(values)
+  binary(asset.buffers.vertices);binary(asset.buffers.lines);hash.update(JSON.stringify([asset.buffers.roles,asset.surfaceOwnership]));return hash.digest('hex')
+}
 const records: unknown[] = []
 for (const name of ['pwr-full-unit-explorer', 'pwr-campus-explorer']) {
   const raw = await Bun.file(join(root, 'src/packs/physical-layout', `${name}.source.json`)).text(), source = physicalSourceSchema.parse(JSON.parse(raw)), input = { source, bindings: [] }, objects = compilePhysicalObjects(input)
@@ -17,8 +23,8 @@ for (const name of ['pwr-full-unit-explorer', 'pwr-campus-explorer']) {
     const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, ...variant }, values: unknown[] = []
     for (const [kind, prepare] of [['baseline',baseline.preparePhysicalGeometry],['candidate',preparePhysicalGeometry]] as const) {
       Bun.gc(true); const start = performance.now(), asset = prepare(scene,view,`${name}/${JSON.stringify(variant)}/${kind}`), ms = performance.now()-start
-      const selected = kind==='candidate'?visiblePhysicalSurfaceOwners(asset.meshes,asset.acceleration):asset.meshes
-      values.push({kind,ms,sourceObjects:scene.objects.length,preparedFragments:asset.meshes.length,displayedFragments:selected.length,triangles:asset.buffers.vertices.length/24,renderBytes:asset.buffers.vertices.byteLength+asset.buffers.lines.byteLength,indexBytes:physicalSpatialBytes(asset.acceleration.meshes)+asset.acceleration.triangles.reduce((sum,index)=>sum+physicalSpatialBytes(index.triangles),0),ownership:'surfaceOwnership' in asset?asset.surfaceOwnership:undefined})
+      const selected = visiblePhysicalSurfaceOwners(asset.meshes,asset.acceleration)
+      values.push({kind,ms,preparedSha256:fingerprint(asset),sourceObjects:scene.objects.length,preparedFragments:asset.meshes.length,displayedFragments:selected.length,triangles:asset.buffers.vertices.length/24,renderBytes:asset.buffers.vertices.byteLength+asset.buffers.lines.byteLength,indexBytes:physicalSpatialBytes(asset.acceleration.meshes)+asset.acceleration.triangles.reduce((sum,index)=>sum+physicalSpatialBytes(index.triangles),0),ownership:'surfaceOwnership' in asset?asset.surfaceOwnership:undefined})
     }
     records.push({source:name,sourceSha256:scene.revision,variant,values})
   }
