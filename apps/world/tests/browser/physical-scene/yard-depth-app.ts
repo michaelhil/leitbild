@@ -85,5 +85,5 @@ window.yardDepthProbe = {
     const tracks=[...byPoint].filter(([point])=>eligible.has(point)).map(([point,values])=>({point,values,flips:values.slice(1).reduce((sum,value,i)=>sum+Number(value!==values[i]),0)})), all=(frames as Array<{samples:any[]}>).flatMap(frame=>frame.samples).filter(sample=>eligible.has(sample.point)),gpuInfo=gl.getExtension('WEBGL_debug_renderer_info')
     return {host:name,scale,solidsOnly,drawState:host.drawState,baseBounds:b,expectedNormal:[0,0,1],eligiblePoints:[...eligible],sampled:all.length,correctPainted:all.filter(s=>s.painted==='top').length,underside:all.filter(s=>s.painted==='underside').length,other:all.filter(s=>s.painted==='other').length,tracks,frames,glDepthBits:gl.getParameter(gl.DEPTH_BITS),samples:gl.getParameter(gl.SAMPLES),dpr:devicePixelRatio,viewport:{width:box.width,height:box.height,bufferWidth:gl.drawingBufferWidth,bufferHeight:gl.drawingBufferHeight},gpu:gpuInfo?gl.getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER),metrics:host.controller.diagnostics(),glError:gl.getError()}
   },
-  finish(){for(const host of hosts.values())host.controller.destroy();return{errors}},
+  finish(){for(const host of hosts.values())host.controller.destroy();return{errors,disposals:[...hosts].map(([host,value])=>({host,...value.controller.diagnostics()}))}},
 }

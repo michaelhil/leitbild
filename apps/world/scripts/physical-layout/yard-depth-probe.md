@@ -43,3 +43,17 @@ metrics. Validate moving performance, disposal/state restoration, Plan and
 existing unit/parking regressions before release. This probe qualifies the
 actual switchyard on the recorded GPU/profile and scales, not arbitrary hardware
 or every possible physical gap.
+
+The current Map host is an architectural overlay on flat vector geography. Its
+owned physical depth resolves the plant correctly, then composites colour; it
+does not share terrain or other native 3D scenery depth. A future terrain/world
+host needs a vertical datum, host-aware picking and sample-aware depth
+integration. A rejected depth-only reconstruction prototype passed opaque
+front/behind controls but lost 47 of 107 MSAA edge pixels on the reference GPU.
+It is preserved as failed research, not shipped or represented as a successful
+terrain integration.
+
+The final fixture also records live and disposed render-pass targets, including
+the entire viewport texture, float-depth and multisample colour allocations.
+Both hosts must release their owned model resources after destruction. These
+figures are typed GPU target/storage counters, not total browser memory.
