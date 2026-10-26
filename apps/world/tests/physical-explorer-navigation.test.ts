@@ -110,7 +110,7 @@ test('the real Plan adapter and pinned MapLibre fit do not retain camera-fit pad
   // Only geographic camera calculation and final animation are test doubles.
   Object.setPrototypeOf(fake.map, MapLibreMap.prototype)
   Object.assign(fake.map, {
-    getCanvas: () => canvas, getBearing: () => 0, getPadding: () => reserved,
+    getCanvas: () => canvas, getBearing: () => 0, getPadding: () => reserved, getCenterElevation: () => 0,
     cameraForBounds: () => ({ center: [11.47, 59.087], zoom: 18, bearing: 0 }),
     flyTo: (options: Record<string, unknown>) => { moves.push(options); return fake.map },
   })
