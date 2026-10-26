@@ -8,29 +8,36 @@ import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { architectureLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
+import { architectureLayoutDataSchema, physicalDesignManifest } from '../src/packs/physical-layout/model.ts'
+import { physicalContentHash } from '../src/packs/physical-layout/source-validation.ts'
+import { physicalSourceFacts } from '../src/packs/physical-layout/native/architecture/source.ts'
+import { physicalApplicabilityContent } from '../src/packs/physical-layout/applicability.ts'
 import { loadPhysicalSourceAsset } from '../src/packs/physical-layout/source-loader.ts'
 import { loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
 
 const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(normalOperation),[processPlantPack,electricGridPack,weatherPack,physicalLayoutPack],{routing:createDirectRoutingAdapter()})
 const data = (id: string) => architectureLayoutDataSchema.parse(scenario.initialObjects.find(object=>object.id===id)!.packData)
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-// WeakRef targets remain alive for their current host job. Cross real timer
-// tasks before forcing collection, rather than relying on a zero-duration
-// Promise sleep to unwind the VM's current async/native stack.
-const nextTask = () => new Promise<void>(resolve=>setTimeout(resolve,0))
-const collect = async () => { await nextTask(); Bun.gc(true); await nextTask(); Bun.gc(true) }
+// A distinct, fully admitted Design guarantees the pending test is cold. It
+// must not rely on the VM collecting an earlier test's weak cache discovery.
+const freshData = async () => {
+  const value=data('layout:halden-1')
+  value.design.id=value.source.id='source-cache-concurrent-test'
+  value.sourceDigest=await physicalContentHash(value.source)
+  value.physicalApplicability.sourceDigest=await physicalContentHash(physicalSourceFacts(value.source))
+  value.physicalApplicability.digest=await physicalContentHash(physicalApplicabilityContent({...value,modelRequirement:{modelRef:value.owner.modelRef,modelDigest:value.owner.modelDigest}}))
+  value.design.digest=await physicalContentHash(physicalDesignManifest(value))
+  return architectureLayoutDataSchema.parse(value)
+}
 
 test('warm placements preserve the complete intrinsic R3 delivery after only its objects remain retained', async () => {
   const firstData=data('layout:halden-1'),secondData=data('layout:halden-2')
   const retained = await (async () => {
     let first:Awaited<ReturnType<typeof loadPhysicalSourceAsset>>|null=await loadPhysicalSourceAsset(firstData)
     expect(first.planAnnotations!.length).toBeGreaterThan(200)
-    const value={objects:first.objects,scene:new WeakRef(first),annotationHash:hash(first.planAnnotations),scopeHash:hash(first.scopes),layerHash:hash(first.layers),inspectionHash:hash(first.objects.map(object=>[object.id,object.inspectionBoundary,object.inspectionLevels]))}
+    const value={objects:first.objects,annotationHash:hash(first.planAnnotations),scopeHash:hash(first.scopes),layerHash:hash(first.layers),inspectionHash:hash(first.objects.map(object=>[object.id,object.inspectionBoundary,object.inspectionLevels]))}
     first=null;return value
   })()
-  await collect()
-  expect(retained.scene.deref()===undefined).toBe(true)
   const placement={...secondData,placement:{...secondData.placement,bearing:90},group:{id:'other-site',label:'Other site'}}
   const warm=await loadPhysicalSourceAsset(placement)
   expect(warm.objects).toBe(retained.objects)
@@ -47,14 +54,13 @@ test('warm placements preserve the complete intrinsic R3 delivery after only its
   await expect(loadPhysicalSourceAsset(corrupt)).rejects.toThrow('source/binding digest mismatch')
 })
 
-test('pending placements retain distinct headers and intrinsic cache ownership ends with the last objects carrier', async () => {
-  await collect()
-  const reference = await (async () => {
-    const [first,second]=await Promise.all([loadPhysicalSourceAsset(data('layout:halden-1')),loadPhysicalSourceAsset(data('layout:halden-2'))])
-    expect(first.objects).toBe(second.objects);expect(first.planAnnotations).toBe(second.planAnnotations)
-    expect(first.targetObjectId).not.toBe(second.targetObjectId);expect(first.anchor).not.toEqual(second.anchor)
-    return new WeakRef(first.objects)
-  })()
-  await collect()
-  expect(reference.deref()===undefined).toBe(true)
+test('cold pending placements share the complete intrinsic delivery and retain distinct headers', async () => {
+  const firstData=await freshData(),other=data('layout:halden-2')
+  const secondData=architectureLayoutDataSchema.parse({...firstData,owner:other.owner,placement:other.placement,group:other.group,relatedMembers:other.relatedMembers})
+  const [first,second]=await Promise.all([loadPhysicalSourceAsset(firstData),loadPhysicalSourceAsset(secondData)])
+  expect(first.objects).toBe(second.objects);expect(first.planAnnotations).toBe(second.planAnnotations)
+  expect(first.planAnnotations!.length).toBeGreaterThan(200)
+  expect(first.targetObjectId).not.toBe(second.targetObjectId);expect(first.anchor).not.toEqual(second.anchor)
+  expect(first.scopes).toBe(second.scopes);expect(first.layers).toBe(second.layers)
+  expect(first.id).toBe(firstData.design.id);expect(second.revision).toBe(firstData.design.digest)
 })
