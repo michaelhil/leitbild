@@ -80,6 +80,8 @@ export const physicalSceneObjectSchema = z.object({
   /** Physical membership and vertical applicability, not a duplicated occurrence per floor. */
   scopeIds: z.array(identifierSchema).optional(),
   levelIds: z.array(identifierSchema).optional(),
+  /** Actual authored floor volumes; a high bay need not end at another building's level. */
+  inspectionLevels: z.array(z.object({ levelId: identifierSchema, low: z.number().finite(), high: z.number().finite() }).strict().refine(value => value.high > value.low, 'An inspection floor volume must have positive height')).optional(),
   bounds: physicalSceneBoundsSchema.optional(),
   /** Intentional 3D illustration features; section contours are derived separately. */
   featureLines: z.array(physicalFeatureStrokeSchema).optional(),
@@ -159,6 +161,7 @@ export const packPhysicalSceneSchema = z.object({
     if (object.scopeIds && (new Set(object.scopeIds).size !== object.scopeIds.length || object.scopeIds.some(id => !scopes.has(id)))) issue(`Unknown or duplicate occurrence scope: ${object.id}`)
     if (object.layerId !== undefined && !layers.has(object.layerId)) issue(`Unknown physical representation layer: ${object.id}`)
     if (object.levelIds && (new Set(object.levelIds).size !== object.levelIds.length || object.levelIds.some(id => id !== 'site' && !levelIds.has(id)))) issue(`Invalid occurrence levels: ${object.id}`)
+    if (object.inspectionLevels && (new Set(object.inspectionLevels.map(value => value.levelId)).size !== object.inspectionLevels.length || object.inspectionLevels.some(value => !levelIds.has(value.levelId)))) issue(`Invalid authored inspection floor volumes: ${object.id}`)
     for (const line of object.featureLines ?? []) coordinateCount += line.positions.length
     for (let index = 0; index < object.positions.length; index++) {
       const axis = index % 3
