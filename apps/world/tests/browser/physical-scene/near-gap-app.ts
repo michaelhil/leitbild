@@ -59,7 +59,9 @@ window.nearGapProbe = {
     host.controller.setView(scene.id, { ...host.controller.presentations()[0]!.view, mode: '3d', levelId: 'all', cutaway: true, live: false, separation: 0 })
     host.controller.focus(scene.id, { occurrenceId: marking.id, preservePose: false }); await ready(host)
     host.controller.focus(scene.id, { occurrenceId: marking.id, preservePose: false }); await rendered(host)
-    const base = { ...host.viewport.cameraPose() }, surface = name === 'map' ? map.getCanvas() : canvas, box = surface.getBoundingClientRect(), gl = host.gl
+    // One zoom step back from the native occurrence fit retains readable
+    // interiors while challenging depth precision more than the closest fit.
+    const base = { ...host.viewport.cameraPose(), zoom: host.viewport.cameraPose().zoom - 1 }, surface = name === 'map' ? map.getCanvas() : canvas, box = surface.getBoundingClientRect(), gl = host.gl
     const frames: unknown[] = [], byPoint = new globalThis.Map<string, string[]>(), b = marking.bounds!
     for (let frame = 0; frame < 11; frame++) {
       host.viewport.setPose({ bearing: base.bearing + (frame - 5) * .035, pitch: base.pitch + (frame - 5) * .015, zoom: base.zoom + (frame - 5) * .0004 }); await rendered(host)

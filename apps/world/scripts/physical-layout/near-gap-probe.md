@@ -13,7 +13,8 @@ above the pavement and its top is 30 mm above it. These are genuinely separated
 parallel faces, so a correction for exact coplanar ties must not hide a failure.
 No source, physical offset, camera projection or depth state is modified.
 
-Both real viewports focus the marking occurrence using their production camera.
+Both real viewports focus the marking occurrence using their production camera,
+then move one zoom step back to challenge depth precision at a readable scale.
 Five top-face points are tracked through eleven nearby bearing/pitch/zoom poses.
 The actual uploaded Float32 instance matrix projects each point to its actual
 device pixel centre. Samples must be at least one full device pixel inside all
