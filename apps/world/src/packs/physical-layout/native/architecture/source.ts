@@ -5,6 +5,15 @@ export { parameters, elementWorld, type Parameters, type V3 } from '../explorer/
 const id = z.string().min(1).max(200)
 const vector = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()])
 const anchor = z.object({ elementId: id, local: vector }).strict()
+const layer = z.object({ id, label: z.string().min(1).max(200), defaultVisible: z.boolean() }).strict()
+export const architectureLayers = [
+  { id: 'utility-routes', label: 'Utility routes', defaultVisible: false },
+  { id: 'roof-structure', label: 'Roof structure', defaultVisible: false },
+  { id: 'plan-labels', label: 'Plan labels', defaultVisible: true },
+  { id: 'plan-dimensions', label: 'Dimensions', defaultVisible: true },
+  { id: 'plan-allowances', label: 'Illustrative work areas', defaultVisible: false },
+]
+const inspectionView = z.object({ bearing: z.number().finite(), pitch: z.number().finite().min(0).max(85), target: vector.optional() }).strict()
 const membership = { id, levelIds: z.array(id).min(1), scopeIds: z.array(id).min(1), occurrenceId: id.optional(), layerId: id.optional() }
 const annotationSchema = z.discriminatedUnion('kind', [
   z.object({ ...membership, kind: z.literal('label'), role: z.enum(['space', 'equipment', 'note']), text: z.string().min(1).max(1000).optional(), anchor, rotation: z.number().finite() }).strict(),
@@ -19,19 +28,39 @@ const memberSchema = z.discriminatedUnion('kind', [
 ])
 const elementSchema = explorerSourceSchema.shape.elements.element.extend({
   planDisplay: z.enum(['section', 'projection']).optional(),
+  layerId: id.optional(),
+  /** Intentional cover-panel joints, drawn at the exact source-derived top face. */
+  surfaceJoints: z.object({ axis: z.enum(['length', 'width']), offsets: z.array(z.number().finite().positive()).min(1) }).strict().optional(),
   member: memberSchema.optional(),
   inspectionBoundary: z.object({ outward: z.tuple([z.number().finite(), z.number().finite(), z.literal(0)]) }).strict().optional(),
   inspectionLevels: z.array(z.object({ levelId: id, low: z.number().finite(), high: z.number().finite() }).strict()).min(1).optional(),
 })
 /** A new retained compiler profile. The explorer source/recipe closure remains frozen. */
-export const physicalSourceSchema = explorerSourceSchema.safeExtend({ elements: z.array(elementSchema), planAnnotations: z.array(annotationSchema).optional() }).superRefine((source, context) => {
+export const physicalSourceSchema = explorerSourceSchema.safeExtend({ elements: z.array(elementSchema), planAnnotations: z.array(annotationSchema).optional(), layers: z.array(layer).optional(),
+  viewAreas: z.array(z.object({ id, label: z.string().min(1).max(300), members: z.array(id).min(1), inspectionView: inspectionView.optional() }).strict()).optional(),
+}).superRefine((source, context) => {
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
   const elements = new Map(source.elements.map(element => [element.id, element]))
   const levels = new Set([...source.levels.map(level => level.id), 'site'])
   const scopes = new Set([source.rootScope.id, ...source.elements.filter(element => ['building', 'space', 'assembly'].includes(element.kind)).map(element => element.id)])
+  const layers = new Set((source.layers ?? architectureLayers).map(layer => layer.id))
+  if (layers.size !== (source.layers ?? architectureLayers).length) issue('Representation layer IDs must be unique')
+  const physicalIds = new Set([...source.levels, ...source.types, ...source.elements].map(value => value.id))
+  const areas = new Set<string>()
+  for (const area of source.viewAreas ?? []) {
+    if (areas.has(area.id) || physicalIds.has(area.id) || area.id === source.rootScope.id) issue(`View area must have a distinct identity: ${area.id}`)
+    areas.add(area.id)
+    if (new Set(area.members).size !== area.members.length || area.members.some(id => !scopes.has(id))) issue(`View areas reference unique existing non-area scopes: ${area.id}`)
+  }
   let memberCoordinates = 0
   for (const element of source.elements) {
     const member = element.member
+    if (element.layerId !== undefined && !layers.has(element.layerId)) issue(`Unknown representation layer: ${element.id}`)
+    if (element.surfaceJoints) {
+      const dimensions = { ...(source.types.find(type => type.id === element.typeId)?.parameters ?? element.dimensions), ...element.override }
+      if (!['slab', 'roof'].includes(element.kind) || element.shape || element.holes?.length || new Set(element.surfaceJoints.offsets).size !== element.surfaceJoints.offsets.length || element.surfaceJoints.offsets.some(offset => offset >= dimensions[element.surfaceJoints!.axis]!)) issue(`Panel joints require distinct offsets inside a plain rectangular plate: ${element.id}`)
+      memberCoordinates += element.surfaceJoints.offsets.length * 6
+    }
     if (member && !['support', 'context'].includes(element.kind)) issue(`A structural member needs a support or context occurrence: ${element.id}`)
     if (member?.kind === 'i-section') {
       const dimensions = { ...(source.types.find(type => type.id === element.typeId)?.parameters ?? element.dimensions), ...element.override }
@@ -57,8 +86,9 @@ export const physicalSourceSchema = explorerSourceSchema.safeExtend({ elements: 
   if (new Set((source.planAnnotations ?? []).map(annotation => annotation.id)).size !== (source.planAnnotations?.length ?? 0)) issue('Plan annotation IDs must be unique')
   for (const annotation of source.planAnnotations ?? []) {
     if (new Set(annotation.levelIds).size !== annotation.levelIds.length || annotation.levelIds.some(id => !levels.has(id))) issue(`Unknown annotation level: ${annotation.id}`)
-    if (new Set(annotation.scopeIds).size !== annotation.scopeIds.length || annotation.scopeIds.some(id => !scopes.has(id))) issue(`Unknown annotation scope: ${annotation.id}`)
+    if (new Set(annotation.scopeIds).size !== annotation.scopeIds.length || annotation.scopeIds.some(id => !scopes.has(id) && !areas.has(id))) issue(`Unknown annotation scope: ${annotation.id}`)
     if (annotation.occurrenceId && !elements.has(annotation.occurrenceId)) issue(`Unknown annotation occurrence: ${annotation.id}`)
+    if (annotation.layerId !== undefined && !layers.has(annotation.layerId)) issue(`Unknown annotation layer: ${annotation.id}`)
     if (annotation.kind === 'label' && !elements.has(annotation.anchor.elementId)) issue(`Unknown annotation anchor: ${annotation.id}`)
     if (annotation.kind === 'dimension' && !elements.has(annotation.measure.elementId)) issue(`Unknown dimension authority: ${annotation.id}`)
     if (annotation.kind === 'hatch') {
@@ -73,8 +103,8 @@ export type Element = Source['elements'][number]
 
 /** Presentation annotations never alter physical applicability, but remain Design-pinned. */
 export const physicalSourceFacts = (source: Source): unknown => {
-  const { planAnnotations: _presentation, ...physical } = source
+  const { planAnnotations: _annotations, viewAreas: _areas, layers: _layers, ...physical } = source
   return stripMaterial(physical)
 }
 const stripMaterial = (value: unknown): unknown => Array.isArray(value) ? value.map(stripMaterial) : value !== null && typeof value === 'object'
-  ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'material' && key !== 'inspectionBoundary' && key !== 'planDisplay').map(([key, child]) => [key, stripMaterial(child)])) : value
+  ? Object.fromEntries(Object.entries(value).filter(([key]) => !['material', 'inspectionBoundary', 'planDisplay', 'layerId', 'surfaceJoints'].includes(key)).map(([key, child]) => [key, stripMaterial(child)])) : value

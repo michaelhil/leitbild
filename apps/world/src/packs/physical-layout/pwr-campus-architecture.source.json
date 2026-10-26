@@ -24164,5 +24164,32 @@
       },
       "rotation": 0
     }
+  ],
+  "layers": [
+    {
+      "id": "utility-routes",
+      "label": "Utility routes",
+      "defaultVisible": false
+    },
+    {
+      "id": "roof-structure",
+      "label": "Roof structure",
+      "defaultVisible": false
+    },
+    {
+      "id": "plan-labels",
+      "label": "Plan labels",
+      "defaultVisible": true
+    },
+    {
+      "id": "plan-dimensions",
+      "label": "Dimensions",
+      "defaultVisible": true
+    },
+    {
+      "id": "plan-allowances",
+      "label": "Illustrative work areas",
+      "defaultVisible": false
+    }
   ]
 }

@@ -34,11 +34,24 @@ test('an authored high bay keeps its actual ceiling rather than another building
 test('orbit selects exact full rear or cut foreground boundaries without preparing another view', () => {
   const before = JSON.stringify(scene), meshes = buildVisibleMeshes(scene, { ...defaultPhysicalSceneView(scene.levels), mode: '3d', levelId: 'all' })
   const foreground = visiblePhysicalInspectionBoundaries(meshes, camera(-20)), rear = visiblePhysicalInspectionBoundaries(meshes, camera(20))
-  expect(foreground.map(mesh => mesh.inspectionPart)).toEqual(['cut'])
+  expect(foreground.map(mesh => mesh.inspectionPart)).toEqual(['cut', 'cut'])
   expect(foreground[0]!.bounds.max[2]).toBe(1.2)
+  expect(foreground[1]!.bounds).toEqual({ min: [0, 0, 15], max: [10, 0, 16.2] })
+  expect(foreground[1]!.levelId).toBe('operating')
+  expect(new Set(foreground.map(mesh => mesh.key)).size).toBe(2)
   expect(rear.map(mesh => mesh.inspectionPart)).toEqual(['full']); expect(rear[0]!.bounds.max[2]).toBe(30)
   expect(visiblePhysicalInspectionBoundaries(meshes, camera(30))).toBe(rear)
   expect(foreground[0]!.object).toBe(rear[0]!.object); expect(JSON.stringify(scene)).toBe(before)
+})
+test('All keeps floor-local low walls at true elevations without phantom floors or source duplication', () => {
+  const before = JSON.stringify(scene), view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all' }
+  const cuts = buildVisibleMeshes(scene, view).filter(mesh => mesh.inspectionPart === 'cut')
+  expect(cuts.map(mesh => [mesh.levelId, mesh.bounds.min[2], mesh.bounds.max[2]])).toEqual([['ground', 0, 1.2], ['operating', 15, 16.2]])
+  expect(cuts.every(mesh => mesh.offset.every(value => value === 0) && mesh.object === wall)).toBe(true)
+  expect(cuts.every(mesh => [...mesh.vertices].every((value, index) => index % 7 !== 2 || value >= mesh.bounds.min[2] && value <= mesh.bounds.max[2]))).toBe(true)
+  expect(JSON.stringify(scene)).toBe(before)
+  const isolated = buildVisibleMeshes(scene, { ...view, levelId: 'operating' }).filter(mesh => mesh.inspectionPart === 'cut')
+  expect(isolated).toHaveLength(1); expect(isolated[0]!.bounds.min[2]).toBe(15)
 })
 test('retained profiles without boundary metadata keep their existing section and inspection semantics', () => {
   const { inspectionBoundary: _boundary, inspectionLevels: _levels, ...retained } = wall

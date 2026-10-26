@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261026-r3",
-    "digest": "5cb016ce8719cced510f2f8d5bc11a4e0fac035294795d91ea94ad47d70a3baa"
+    "digest": "b2c0a3d7c8c45407642fc47c52bc6e44b76119699db27c86eccff6459d456f41"
   },
-  "sourceDigest": "894086fd77429c5810c9ad1347c39111b34f6fd10c380183b51c3f7f36ccca52",
+  "sourceDigest": "7aa1603f251a1c956b7bf736aca1b84429bb86061f04dc6749ba91a8b26dfe7a",
   "bindingDigest": "32122fb7b371c124844edf6eaa2c6e3f7c4829e2ec4bbd3b53aca33a9eb5f4f8",
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
@@ -25,9 +25,9 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "394069f31d2c7773ae449dd761ed17ea2ccaf4cd5565356662fa51ac550735b6"
+    "digest": "849ef11e9c591058e44b60af0aeb5febb5ae7ee9e131c26a42e5994328929b6d"
   },
-  "coverageDigest": "ab0460b385be739166785496947488026dd12ce81ba76260aeeae456926723cc",
+  "coverageDigest": "38a8ff6b3eef1b7efc94050f930804b4dde60c5c4764763e034b1197b5326967",
   "requirements": {
     "ownerRole": "unit",
     "ownerPackId": "process-plant",
@@ -35,9 +35,9 @@
     "connections": []
   },
   "physicalApplicability": {
-    "sourceDigest": "ce83b4c0aac50306de267c6edba4caad65da62a1f3e517053337a82eac64cb37",
-    "geometryDigest": "6347374093b8220d84ff617970b296e6dda30f7b3b6f69518a5453f377160888",
-    "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
+    "sourceDigest": "aa1cefb9033cb2160615cef5a9d4efad428a07720ff554267ebe302d4a212056",
+    "geometryDigest": "50d8f67fe1b752cf81fb10dc60ba53711449e367c177a1a01e61bbc9592aaf75",
+    "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
   },
   "presentation": {
     "scopes": [
@@ -1296,12 +1296,52 @@
         "levelIds": [
           "operating"
         ]
+      },
+      {
+        "id": "area/turbine-island",
+        "label": "Turbine hall and feedwater pump annex",
+        "kind": "area",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -44.8,
+            -26.1,
+            -0.4
+          ],
+          "max": [
+            44.50000000000001,
+            27.6,
+            31.55
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "operating"
+        ],
+        "members": [
+          "building/turbine-hall",
+          "building/feedwater-annex"
+        ],
+        "inspectionView": {
+          "bearing": 139.893,
+          "pitch": 57.914,
+          "target": [
+            0,
+            -2,
+            11.5
+          ]
+        }
       }
     ],
     "layers": [
       {
         "id": "utility-routes",
         "label": "Utility routes",
+        "defaultVisible": false
+      },
+      {
+        "id": "roof-structure",
+        "label": "Roof structure",
         "defaultVisible": false
       },
       {
@@ -1321,5 +1361,5 @@
       }
     ]
   },
-  "presentationDigest": "dc30ba1126463c8dccde2bf2af4090fa5c2bcd5faf5b995e9ef91ec6fbc7be6e"
+  "presentationDigest": "b722c75ddb7ab4b5b1fb2c50b063c0d4b557c278e011664447033a2882755c77"
 }

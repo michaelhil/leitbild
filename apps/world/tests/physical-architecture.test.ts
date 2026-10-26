@@ -89,10 +89,37 @@ describe('Model-driven native architecture restoration', () => {
   test('full source restores actual architectural detail without manufacturing operational crane state', () => {
     const compiled = scene(), objects = new Map(compiled.objects.map(object => [object.id, object]))
     for (const id of ['structure/runway/2.5', 'structure/crane/trolley', 'structure/shaftline', 'structure/bearing/30/housing', 'structure/stair/upper-east', 'structure/exhaust-transition/condenser-1']) expect(objects.has(id)).toBe(true)
-    expect(compiled.objects.some(object => object.id.includes('structure/glazing/') && object.materials?.[object.materialIndices?.[0] ?? 0] === 'glass')).toBe(true)
+    expect(compiled.objects.some(object => object.id.includes('structure/glazing/') && object.id.includes('mullion'))).toBe(true)
+    expect(compiled.objects.some(object => object.id.includes('/pane-'))).toBe(false)
     expect(objects.get('structure/shaftline')!.subjectIds).toEqual(['turbine'])
     expect(objects.get('structure/crane/trolley')!.subjectIds).toEqual([])
     expect(new Set(artifacts.bindings.map(binding => binding.elementId)).size).toBe(108)
+  })
+
+  test('inspection areas compose the original hall and annex without altering physical membership', () => {
+    const compiled = scene(), area = compiled.scopes!.find(scope => scope.id === 'area/turbine-island')!
+    expect(area.kind).toBe('area'); expect(area.members).toEqual(['building/turbine-hall', 'building/feedwater-annex'])
+    expect(area.levelIds).toEqual(['lower', 'operating'])
+    expect(area.inspectionView).toEqual({ bearing: 139.893, pitch: 57.914, target: [0, -2, 11.5] })
+    expect(compiled.objects.every(object => !object.scopeIds!.includes(area.id))).toBe(true)
+    expect(compiled.layers!.find(layer => layer.id === 'roof-structure')!.defaultVisible).toBe(false)
+    expect(compiled.objects.filter(object => object.kind === 'pipe').every(object => object.layerId === 'utility-routes')).toBe(true)
+    expect(compiled.objects.filter(object => object.id.startsWith('structure/roof-beam/')).every(object => object.layerId === 'roof-structure')).toBe(true)
+    expect(compiled.objects.find(object => object.id === 'structure/crane/trolley')!.layerId).toBeUndefined()
+    const hatch = compiled.objects.find(object => object.id === 'hatch-cover')!
+    expect(hatch.featureLines![0]!.positions.length).toBe(18)
+    expect(Array.from(hatch.featureLines![0]!.positions).filter((_, index) => index % 3 === 2).every(z => z === hatch.bounds!.max[2])).toBe(true)
+  })
+
+  test('area viewpoints, layers and panel linework remain exact Design presentation rather than physical changes', () => {
+    const source = structuredClone(artifacts.source), before = hash(physicalSourceFacts(source))
+    source.viewAreas![0]!.inspectionView!.bearing += 20; source.viewAreas![0]!.label = 'Another inspection view'
+    source.layers![0]!.defaultVisible = true; source.elements.find(element => element.id === 'hatch-cover')!.surfaceJoints!.offsets = [1, 3]
+    expect(hash(physicalSourceFacts(source))).toBe(before)
+    source.viewAreas![0]!.members = ['area/turbine-island']
+    expect(physicalSourceSchema.safeParse(source).success).toBe(false)
+    source.viewAreas![0]!.members = ['building/turbine-hall']; source.elements.find(element => element.id === 'hatch-cover')!.surfaceJoints!.offsets = [100]
+    expect(physicalSourceSchema.safeParse(source).success).toBe(false)
   })
 
   test('Plan cuts a filled I section and presentation choices leave physical fingerprints unchanged', () => {

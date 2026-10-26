@@ -1,6 +1,7 @@
 import { packPhysicalSceneSchema, type PackPhysicalScene, type PhysicalSceneBounds, type PhysicalPlanAnnotation } from '../../../../core/packs/scene.ts'
 import type { Source } from './source.ts'
-import { elementWorld, parameters, type V3 } from './source.ts'
+import { architectureLayers, elementWorld, parameters, type V3 } from './source.ts'
+export { architectureLayers } from './source.ts'
 import { solid } from './solid.ts'
 import { physicalScopeManifest } from '../../scope-manifest.ts'
 
@@ -22,25 +23,31 @@ export const compilePhysicalObjects = (data: PhysicalCompilerInput): PackPhysica
   const origin = data.source.origin
   const positions = mesh.positions.map((value, index) => value - origin[index % 3]!)
   const linePositions = mesh.linePositions.map((value, index) => value - origin[index % 3]!)
-  const featureLines = linePositions.length ? [{ positions: linePositions, material: 'line' }] : []
+  const noEdges = element.kind === 'slab' || element.kind === 'roof' || element.kind === 'pavement' || element.material === 'marking'
+  const featureLines = linePositions.length && !noEdges ? [{ positions: linePositions, material: 'line' }] : []
+  if (element.surfaceJoints) {
+    const pose = elementWorld(data.source, element), d = parameters(data.source, element), c = Math.cos(pose.yaw), s = Math.sin(pose.yaw), joints: number[] = []
+    const point = (x: number, y: number): number[] => [pose.position[0] + c * x - s * y - origin[0], pose.position[1] + s * x + c * y - origin[1], pose.position[2] + d.height - origin[2]]
+    for (const offset of element.surfaceJoints.offsets) joints.push(...(element.surfaceJoints.axis === 'length' ? [...point(offset, 0), ...point(offset, d.width)] : [...point(0, offset), ...point(d.length, offset)]))
+    featureLines.push({ positions: joints, material: 'line' })
+  }
   const planLines = [...featureLines]
   if (element.kind === 'door') {
     const pose = elementWorld(data.source, element), radius = parameters(data.source, element).length, arc: number[] = []
-    const point = (angle: number): V3 => [pose.position[0] + Math.cos(pose.yaw + angle) * radius - origin[0], pose.position[1] + Math.sin(pose.yaw + angle) * radius - origin[1], pose.position[2] + .015 - origin[2]]
+    const point = (angle: number): V3 => [pose.position[0] + Math.cos(pose.yaw + angle) * radius - origin[0], pose.position[1] + Math.sin(pose.yaw + angle) * radius - origin[1], pose.position[2] - origin[2]]
     for (let step = 0; step < 24; step++) arc.push(...point(step * (element.door?.swing ?? Math.PI / 2) / 24), ...point((step + 1) * (element.door?.swing ?? Math.PI / 2) / 24))
     planLines.push({ positions: arc, material: 'door' })
   }
-  const noEdges = element.kind === 'slab' || element.kind === 'roof' || element.kind === 'pavement' || element.material === 'marking'
   return [{
     id: mesh.id, label: mesh.label, kind: mesh.kind, levelId: mesh.levelId,
     positions, normals: mesh.normals, materials: mesh.materials, materialIndices: mesh.materialIndices,
     subjectIds: data.bindings.filter(binding => binding.physicalElementId === element.id).map(binding => binding.elementId),
-    ...(planLines.length && !noEdges ? { planLines } : {}),
-    ...(featureLines.length && !noEdges ? { featureLines } : {}),
-    edgePolicy: noEdges || !featureLines.length ? 'none' as const : 'authored' as const,
+    ...(planLines.length ? { planLines } : {}),
+    ...(featureLines.length ? { featureLines } : {}),
+    edgePolicy: !featureLines.length ? 'none' as const : 'authored' as const,
     bounds: { min: mesh.bounds.min.map((value, axis) => value - origin[axis]!) as V3, max: mesh.bounds.max.map((value, axis) => value - origin[axis]!) as V3 },
     scopeIds: [data.source.rootScope.id, element.buildingId, ...(element.spaceIds ?? []), element.assemblyId].filter((id): id is string => id !== undefined),
-    ...(element.kind === 'conductor' && element.installation === 'cable-corridor' ? { layerId: 'utility-routes' } : {}),
+    ...(element.layerId ? { layerId: element.layerId } : element.kind === 'conductor' && element.installation === 'cable-corridor' ? { layerId: 'utility-routes' } : {}),
     ...(element.inspectionBoundary ? { inspectionBoundary: element.inspectionBoundary } : {}),
     ...(element.planDisplay ? { planDisplay: element.planDisplay } : {}),
   }]
@@ -56,12 +63,6 @@ export const physicalObjectsBounds = (objects: PackPhysicalScene['objects']): Ph
   if (!min.every(Number.isFinite)) throw new Error('A physical scene requires nonempty geometry')
   return { min, max }
 }
-export const architectureLayers = [
-  { id: 'utility-routes', label: 'Utility routes', defaultVisible: false },
-  { id: 'plan-labels', label: 'Plan labels', defaultVisible: true },
-  { id: 'plan-dimensions', label: 'Dimensions', defaultVisible: true },
-  { id: 'plan-allowances', label: 'Illustrative work areas', defaultVisible: false },
-]
 /** Resolve annotations from source authorities, never from screen geometry or duplicated dimensions. */
 export const compilePlanAnnotations = (source: Source): PhysicalPlanAnnotation[] => {
   const elements = new Map(source.elements.map(element => [element.id, element]))
@@ -108,11 +109,24 @@ const inspectionManifest = (source: Source, input: ReturnType<typeof physicalSco
     }),
   }
 }
+/** Authored inspection areas compose existing scopes without changing physical membership. */
+const areaManifest = (source: Source, input: ReturnType<typeof physicalScopeManifest>): ReturnType<typeof physicalScopeManifest> => {
+  const scopes = new Map(input.scopes.map(scope => [scope.id, scope]))
+  const areas = (source.viewAreas ?? []).map(area => {
+    const members = area.members.map(id => scopes.get(id)!)
+    return { id: area.id, label: area.label, kind: 'area' as const, parentId: source.rootScope.id, members: area.members,
+      bounds: { min: [0, 1, 2].map(axis => Math.min(...members.map(member => member.bounds.min[axis]!))) as V3, max: [0, 1, 2].map(axis => Math.max(...members.map(member => member.bounds.max[axis]!))) as V3 },
+      levelIds: source.levels.filter(level => members.some(member => member.levelIds.includes(level.id))).map(level => level.id),
+      ...(area.inspectionView ? { inspectionView: { ...area.inspectionView, ...(area.inspectionView.target ? { target: area.inspectionView.target.map((value, axis) => value - source.origin[axis]!) as V3 } : {}) } } : {}),
+    }
+  })
+  return { ...input, scopes: [...input.scopes, ...areas] }
+}
 export const compilePhysicalScene = (id: string, data: PhysicalSceneInput): PackPhysicalScene => packPhysicalSceneSchema.parse({
   id, revision: data.design.digest, targetObjectId: data.owner.objectId,
   anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: data.bounds,
   levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
-  layers: architectureLayers,
+  layers: data.source.layers ?? architectureLayers,
   planAnnotations: compilePlanAnnotations(data.source),
-  ...inspectionManifest(data.source, physicalScopeManifest(data.source, compilePhysicalObjects(data))),
+  ...areaManifest(data.source, inspectionManifest(data.source, physicalScopeManifest(data.source, compilePhysicalObjects(data)))),
 })

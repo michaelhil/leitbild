@@ -164,7 +164,7 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       const next = clipLevel ? levels.find(candidate => candidate.elevation > clipLevel.elevation) : undefined
       let slabLow = Infinity
       if (authoredVolume && object.kind === 'slab' && object.levelId === clipLevel?.id) for (let index = 2; index < object.positions.length; index += 3) slabLow = Math.min(slabLow, object.positions[index]!)
-      const low = clipLevel ? authoredVolume ? Math.min(authoredVolume.low, slabLow) : clipLevel.elevation - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
+      const baseLow = clipLevel ? authoredVolume ? Math.min(authoredVolume.low, slabLow) : clipLevel.elevation - (object.kind === 'slab' && object.levelId === clipLevel.id ? 1 : 0.01) : -Infinity
       const upper = authoredVolume?.high ?? (next ? next.elevation - 0.001 : Infinity)
       const boundary = object.inspectionBoundary !== undefined && view.mode === '3d' && view.cutaway && object.levelId !== 'site'
       const firstVolume = boundary && !clipLevel ? object.inspectionLevels?.reduce((first, volume) => volume.low < first.low ? volume : first) : undefined
@@ -174,9 +174,15 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       // Camera-aware boundaries keep both exact representations resident. The
       // renderer chooses full rear walls or capped foreground walls; camera
       // movement never rebuilds source geometry or leaves a false section seam.
-      const variants: ReadonlyArray<{ high: number; part?: 'full' | 'cut' }> = boundary && cut < upper ? [{ high: upper, part: 'full' }, { high: Math.min(upper, cut), part: 'cut' }] : [{ high: Math.min(upper, cut) }]
+      const allFloorCuts = boundary && !clipLevel ? object.inspectionLevels?.map(volume => {
+        const sourceLevel = levels.find(level => level.id === volume.levelId)!
+        return { low: volume.low, high: Math.min(volume.high, volume.low + sourceLevel.cutHeight - sourceLevel.elevation), part: 'cut' as const, cutLevelId: volume.levelId }
+      }) : undefined
+      const variants: ReadonlyArray<{ high: number; low?: number; part?: 'full' | 'cut'; cutLevelId?: string }> = allFloorCuts
+        ? [{ high: upper, part: 'full' }, ...allFloorCuts]
+        : boundary && cut < upper ? [{ high: upper, part: 'full' }, { high: Math.min(upper, cut), part: 'cut' }] : [{ high: Math.min(upper, cut) }]
       for (const variant of variants) {
-      const high = variant.high
+      const high = variant.high, low = variant.low ?? baseLow
       const vertices: number[] = [], segments: Array<[Vertex, Vertex]> = []
       const count = object.indices?.length ?? object.positions.length / 3
       for (let index = 0; index < count; index += 3) {
@@ -222,7 +228,7 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
         planPriority = object.kind === 'slab' || object.kind === 'pavement' ? 0 : object.kind === 'context' ? 1 : object.kind === 'wall' ? 2 : object.kind === 'support' || object.kind === 'stair' ? 3 : object.kind === 'equipment' ? 4 : object.kind === 'pipe' || object.kind === 'riser' ? 5 : object.kind === 'door' ? 6 : object.kind === 'roof' ? 8 : 3
       }
       const offset: Vector3 = [0, 0, view.mode === '3d' && level && !selected ? levels.indexOf(level) * view.separation : 0]
-      output.push({ ...(variant.part === undefined ? {} : { inspectionPart: variant.part }), ...(planPriority === undefined ? {} : { planPriority }), key: `${object.id}/${level?.id ?? 'all'}${variant.part === undefined ? '' : `/inspection-${variant.part}`}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
+      output.push({ ...(variant.part === undefined ? {} : { inspectionPart: variant.part }), ...(planPriority === undefined ? {} : { planPriority }), key: `${object.id}/${level?.id ?? 'all'}${variant.part === undefined ? '' : `/inspection-${variant.part}`}${variant.cutLevelId ? `/${variant.cutLevelId}` : ''}`, object, vertices: Float64Array.from(vertices), lines: Float64Array.from(lines), lineMaterials, lineStyles, levelId: variant.cutLevelId ?? level?.id ?? object.levelId, bounds: meshBounds(vertices), offset })
       }
     }
   }

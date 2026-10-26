@@ -4,7 +4,7 @@ import unitCoverage from '../pwr-full-unit-explorer.coverage.json'
 import campusSource from '../pwr-campus-explorer.source.json'
 import campusBindings from '../pwr-campus-explorer.bindings.json'
 import campusCoverage from '../pwr-campus-explorer.coverage.json'
-import { physicalSourceSchema, elementWorld, parameters, type Source, type Element, type V3 } from '../native/architecture/source.ts'
+import { architectureLayers, physicalSourceSchema, elementWorld, parameters, type Source, type Element, type V3 } from '../native/architecture/source.ts'
 import { physicalStairFlights } from '../native/explorer/source.ts'
 
 /** Authoring restoration from the retained browser study, not runtime drawing by plant ID.
@@ -13,6 +13,9 @@ export const createPwrArchitectureUnitArtifacts = () => {
   const source = physicalSourceSchema.parse(structuredClone(unitSource)), bindings = structuredClone(unitBindings), coverage = structuredClone(unitCoverage)
   for (const element of source.elements) if (element.kind === 'support') element.planDisplay = 'section'
   const hallId = 'building/turbine-hall', hallSpace = 'space/turbine-hall'
+  source.layers = structuredClone(architectureLayers)
+  source.viewAreas = [{ id: 'area/turbine-island', label: 'Turbine hall and feedwater pump annex', members: [hallId, 'building/feedwater-annex'], inspectionView: { bearing: 139.893, pitch: 57.914, target: [44.4, 24, 11.5] } }]
+  for (const element of source.elements) if (element.kind === 'pipe') element.layerId = 'utility-routes'
   // Capture each enclosure's actual authored slabs/platforms. Global level
   // names shared across the site do not create floors in unrelated buildings.
   for (const building of source.elements.filter(element => element.kind === 'building')) {
@@ -25,7 +28,7 @@ export const createPwrArchitectureUnitArtifacts = () => {
     }
   }
   const add = (element: Omit<Element, 'disposition' | 'buildingId'> & { buildingId?: string | undefined }): Element => {
-    const authored: Element = { disposition: 'installed', buildingId: hallId, ...element }
+    const authored: Element = { disposition: 'installed', buildingId: hallId, ...(element.kind === 'pipe' ? { layerId: 'utility-routes' } : {}), ...element }
     source.elements.push(authored); return authored
   }
   const box = (id: string, label: string, position: V3, size: V3, material: Element['material'] = 'steel', levelId = 'operating', extra: Partial<Element> = {}): Element => add({ id, label, kind: 'support', levelId, pose: { position, yaw: 0 }, dimensions: { length: size[0], width: size[1], height: size[2] }, material, planDisplay: 'section', ...extra })
@@ -49,6 +52,7 @@ export const createPwrArchitectureUnitArtifacts = () => {
       element.member = { kind: 'i-section', axis: 'z', flange: .12, web: .12 }; element.material = 'steel'
       const [x, y] = element.pose.position
       box(`structure/base/${element.id}`, 'Structural column base plate', [x - .1, y - .1, 0], [1, 1, .16], 'dark', 'lower')
+      box(`structure/operating-plate/${element.id}`, 'Illustrative operating-deck column connection plate', [x - .1, y - .1, 15], [1, 1, .16], 'dark', 'operating')
     }
     if (element.id.startsWith('pier/')) element.material = 'plinth'
   }
@@ -57,7 +61,7 @@ export const createPwrArchitectureUnitArtifacts = () => {
     box(`structure/runway/${y}`, 'Overhead crane runway beam', [.4, y - .16, 27.5], [88, .32, .8], 'steel', 'operating', { member: { kind: 'i-section', axis: 'x', flange: .10, web: .08 }, inspectionBoundary: boundary })
     box(`structure/runway-rail/${y}`, 'Overhead crane runway rail', [.4, y - .07, 28.3], [88, .14, .1], 'dark', 'operating', { inspectionBoundary: boundary })
   }
-  for (let bay = 0; bay < 9; bay++) box(`structure/roof-beam/${bay}`, 'Turbine hall transverse roof beam', [bay * 11 + .24, .4, 30.4], [.32, 36, .8], 'steel', 'refuelling', { member: { kind: 'i-section', axis: 'y', flange: .10, web: .08 } })
+  for (let bay = 0; bay < 9; bay++) box(`structure/roof-beam/${bay}`, 'Turbine hall transverse roof beam', [bay * 11 + .24, .4, 30.4], [.32, 36, .8], 'steel', 'refuelling', { member: { kind: 'i-section', axis: 'y', flange: .10, web: .08 }, layerId: 'roof-structure' })
   const craneId = 'assembly/turbine-hall-crane'
   add({ id: craneId, label: 'Illustrative overhead bridge crane', kind: 'assembly', levelId: 'operating', pose: { position: [79.7, 2.5, 23.4], yaw: 0 }, dimensions: { length: 2.2, width: 31.7, height: 6.9 } })
   for (const x of [80, 81.1]) box(`structure/crane/bridge-${x}`, 'Bridge crane girder', [x, 2.5, 28.4], [.3, 31.7, 1.1], 'crane', 'operating', { assemblyId: craneId, member: { kind: 'i-section', axis: 'y', flange: .12, web: .08 } })
@@ -105,8 +109,9 @@ export const createPwrArchitectureUnitArtifacts = () => {
     localBox('head', [0, dims.width / 2 - .05, dims.height - .08], [dims.length, .1, .08], 'steel')
     const bays = Math.ceil(dims.length / 1.4), bayWidth = dims.length / bays
     for (let index = 0; index <= bays; index++) localBox(`mullion-${index}`, [Math.min(index * bayWidth, dims.length - .07), dims.width / 2 - .05, .08], [.07, .1, dims.height - .16], 'steel')
-    // Glass panes are explicit infill, never invented opaque wall cells.
-    for (let index = 0; index < bays; index++) localBox(`pane-${index}`, [index * bayWidth + .07, dims.width / 2 - .015, .08], [bayWidth - .07, .03, dims.height - .16], 'glass')
+    // This illustrative LOD captures the opening and its frames. The accepted
+    // reference did not model panes; opaque pane solids incorrectly close the
+    // clear clerestory in the current material pass.
   }
   // Restore the original illustrative reheated-steam header/branches. All map
   // to the existing lumped turbine; no component or live state is fabricated.
@@ -118,6 +123,7 @@ export const createPwrArchitectureUnitArtifacts = () => {
     route(`route/turbine-reheat-${y}`, [[15.7, y, 23], [46.5, y, 23]], .84)
     for (const x of [24.5, 35.5, 46.5]) route(`route/turbine-admission-${x}-${y}`, [[x, y, 23], [x, y < 18.4 ? 12.8 : 24, 23], [x, y < 18.4 ? 12.8 : 24, 19.6]], .64)
   }
+  source.elements.find(element => element.id === 'hatch-cover')!.surfaceJoints = { axis: 'length', offsets: [2, 4, 6] }
   source.planAnnotations = createAnnotations(source)
   const bound = new Set(bindings.map(binding => binding.physicalElementId)), oldReasons = new Map(coverage.contextElements.map(element => [element.physicalElementId, element.reason]))
   coverage.contextElements = source.elements.filter(element => !bound.has(element.id)).map(element => ({ physicalElementId: element.id, reason: oldReasons.get(element.id) ?? 'Illustrative authored architecture, structural framing, glazing, crane or stair protection restored from the retained browser study. It has no separate operational state or qualified load/access claim.' }))
@@ -128,7 +134,7 @@ const createAnnotations = (source: Source): NonNullable<Source['planAnnotations'
   const annotations: NonNullable<Source['planAnnotations']> = []
   // Authored drawing designations from the accepted conventional-island study.
   // These label physical parts; they do not create graph aliases or I&C tags.
-  const designations: Readonly<Record<string, string>> = { 'tg-hp': 'HP', 'tg-lp-1': 'LP 1', 'tg-lp-2': 'LP 2', 'tg-lp-3': 'LP 3', 'tg-generator': 'GEN', 'tg-exciter': 'EXC', 'msr-1': 'MSR 1', 'msr-2': 'MSR 2', 'stop-valve': 'TSV', 'condenser-1': 'COND 1', 'condenser-2': 'COND 2', 'condenser-3': 'COND 3', 'cp-a': 'CP A', 'cp-b': 'CP B' }
+  const designations: Readonly<Record<string, string>> = { 'tg-hp': 'HP', 'tg-lp-1': 'LP 1', 'tg-lp-2': 'LP 2', 'tg-lp-3': 'LP 3', 'tg-generator': 'GEN', 'tg-exciter': 'EXC', 'msr-1': 'MSR 1', 'msr-2': 'MSR 2', 'stop-valve': 'TSV', 'condenser-1': 'COND 1', 'condenser-2': 'COND 2', 'condenser-3': 'COND 3', 'cp-a': 'CP A', 'cp-b': 'CP B', 'mfw-a': 'MFW A', 'mfw-b': 'MFW B' }
   const membership = (element: Element) => ({ levelIds: element.inspectionLevels?.map(value => value.levelId) ?? [element.levelId], scopeIds: [source.rootScope.id, ...(element.buildingId ? [element.buildingId] : []), ...(element.kind === 'space' ? [element.id] : element.spaceIds ?? [])] })
   for (const element of source.elements.filter(element => element.kind === 'space' || element.kind === 'equipment')) {
     const d = parameters(source, element), room = element.kind === 'space'
@@ -148,6 +154,7 @@ const createAnnotations = (source: Source): NonNullable<Source['planAnnotations'
 
 export const createPwrArchitectureCampusArtifacts = () => {
   const source = physicalSourceSchema.parse(structuredClone(campusSource))
+  source.layers = structuredClone(architectureLayers)
   source.planAnnotations = source.elements.filter(element => element.kind === 'building').map(element => ({ id: `annotation/label/${element.id}`, kind: 'label', role: 'space', levelIds: ['site'], scopeIds: [source.rootScope.id, element.id], layerId: 'plan-labels', text: element.label, anchor: { elementId: element.id, local: [parameters(source, element).length / 2, parameters(source, element).width / 2, 0] }, rotation: element.pose.yaw * 180 / Math.PI }))
   return { source: physicalSourceSchema.parse(source), bindings: structuredClone(campusBindings), coverage: structuredClone(campusCoverage) }
 }

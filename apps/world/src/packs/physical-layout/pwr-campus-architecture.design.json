@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261026-r3",
-    "digest": "31123304895fc533d293b5555f1fd942dc4fd8d8bc14599e2a62170ea9623c84"
+    "digest": "c52059040d38fae9c4febf8183532a0c6843d01d710e18444fcd9e5d0aa079cd"
   },
-  "sourceDigest": "0931830694900f541281efb9c90a317b378d7c379391c6f83ed0792649d5e76c",
+  "sourceDigest": "8f344fefe90243b52c5db24adce0edfa3f77d88d527024e97b4fe78a323dbf42",
   "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
   "modelRequirement": {
     "modelRef": "electric-grid.halden.four-unit",
@@ -25,7 +25,7 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "394069f31d2c7773ae449dd761ed17ea2ccaf4cd5565356662fa51ac550735b6"
+    "digest": "849ef11e9c591058e44b60af0aeb5febb5ae7ee9e131c26a42e5994328929b6d"
   },
   "coverageDigest": "9cafb704ff9e51894a438fa5f5ead40a3b2d758fa14e0a1c0ed7712da1ff867b",
   "requirements": {
@@ -52,7 +52,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
           },
           "bearing": 0
         }
@@ -69,7 +69,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
           },
           "bearing": 0
         }
@@ -86,7 +86,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
           },
           "bearing": 0
         }
@@ -103,7 +103,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "8b31e391da00fc955185a8110810dd54410ba6193adc119d792649b15d28ba38"
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
           },
           "bearing": 0
         }
@@ -155,7 +155,7 @@
   "physicalApplicability": {
     "sourceDigest": "937a6d3051c835037046509100dfaa631f20da90972501e9122b1e31ae11ae0d",
     "geometryDigest": "a838212e9dd45a8c575d605a2cd88a7d5a1015d5a60a1f9d1c22a90a6d4b1de1",
-    "digest": "0db1b344ee117226edc525bb503243e68d35cc086c6999dac8ca357e00b1febb"
+    "digest": "84c383e6f0dc51861c009784c872329e79f1688001dc2186ac3c547ac77f4d73"
   },
   "presentation": {
     "scopes": [
@@ -1228,6 +1228,11 @@
         "defaultVisible": false
       },
       {
+        "id": "roof-structure",
+        "label": "Roof structure",
+        "defaultVisible": false
+      },
+      {
         "id": "plan-labels",
         "label": "Plan labels",
         "defaultVisible": true
@@ -1244,5 +1249,5 @@
       }
     ]
   },
-  "presentationDigest": "df67c10841e2c4b3bb0cf284a4ba797b3f84673adaf985acbe76873248d89d66"
+  "presentationDigest": "178ac95bd8a4c1cc3881fa906b26de5f40e3370848c78cdc900c5ffc793a8c55"
 }
