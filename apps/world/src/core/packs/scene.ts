@@ -14,6 +14,29 @@ const indicesSchema = (maximum: number) => z.union([
 ])
 const identifierSchema = z.string().min(1).max(200)
 
+const planAnnotationMembership = {
+  id: identifierSchema,
+  levelIds: z.array(identifierSchema).min(1),
+  scopeIds: z.array(identifierSchema).min(1),
+  occurrenceId: identifierSchema.optional(),
+  layerId: identifierSchema.optional(),
+}
+/** Authored 2D drafting presentation, separate from physical solids and live state. */
+export const physicalPlanAnnotationSchema = z.discriminatedUnion('kind', [
+  z.object({ ...planAnnotationMembership, kind: z.literal('label'), role: z.enum(['space', 'equipment', 'note']), text: z.string().min(1).max(1000), anchor: vector3Schema, rotation: z.number().finite() }).strict(),
+  z.object({ ...planAnnotationMembership, kind: z.literal('dimension'), from: vector3Schema, to: vector3Schema, offset: vector3Schema, unit: z.literal('m') }).strict()
+    .refine(value => value.from.some((coordinate, axis) => coordinate !== value.to[axis]), 'Dimension witnesses must be distinct'),
+  z.object({ ...planAnnotationMembership, kind: z.literal('hatch'), role: z.enum(['laydown', 'access', 'withdrawal']), outline: z.array(vector3Schema).min(4), label: z.string().min(1).max(1000), basis: z.literal('illustrative') }).strict()
+    .superRefine((value, context) => {
+      const first = value.outline[0]!, last = value.outline.at(-1)!
+      if (!first.every((coordinate, axis) => coordinate === last[axis])) context.addIssue({ code: 'custom', message: 'Plan hatch polygon must be closed' })
+      if (value.outline.some(point => point[2] !== first[2])) context.addIssue({ code: 'custom', message: 'Plan hatch polygon must lie in one XY plane' })
+      const area = value.outline.slice(0, -1).reduce((sum, point, index) => { const next = value.outline[index + 1]!; return sum + point[0] * next[1] - next[0] * point[1] }, 0)
+      if (area === 0) context.addIssue({ code: 'custom', message: 'Plan hatch polygon must enclose an area' })
+    }),
+])
+export type PhysicalPlanAnnotation = z.infer<typeof physicalPlanAnnotationSchema>
+
 export const physicalSceneBoundsSchema = z.object({ min: vector3Schema, max: vector3Schema }).strict()
   .refine(({ min, max }) => min.every((value, index) => value <= max[index]!), 'Bounds must be ordered')
 
@@ -63,6 +86,9 @@ export const physicalSceneObjectSchema = z.object({
   edgePolicy: z.enum(['authored', 'crease', 'none']).optional(),
   /** Named representation layer, separate from operational status or source disposition. */
   layerId: identifierSchema.optional(),
+  /** Authored outward unit normal of an enclosure boundary, for view-only cutaway. */
+  inspectionBoundary: z.object({ outward: z.tuple([z.number().finite(), z.number().finite(), z.literal(0)]) }).strict()
+    .refine(value => Math.abs(Math.hypot(...value.outward) - 1) <= Number.EPSILON * 8, 'An inspection boundary requires a unit outward normal').optional(),
   /** Complete authored 2D stroke representation; xyz pairs are independent segments.
    * When present it replaces 3D feature strokes in Plan, rather than adding them again. */
   planLines: z.array(z.object({ positions: coordinatesSchema, material: identifierSchema.optional() }).strict()).max(1000).optional(),
@@ -93,6 +119,7 @@ export const packPhysicalSceneSchema = z.object({
   /** Authored placement grouping; a reusable geometry template has no site owner. */
   group: z.object({ id: identifierSchema, label: z.string().min(1).max(300) }).strict().optional(),
   objects: z.array(physicalSceneObjectSchema).max(20_000),
+  planAnnotations: z.array(physicalPlanAnnotationSchema).optional(),
 }).strict().superRefine((scene, context) => {
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
   const levelIds = new Set(scene.levels.map(level => level.id))
@@ -115,6 +142,17 @@ export const packPhysicalSceneSchema = z.object({
   if (levelIds.size !== scene.levels.length) issue('Level IDs must be unique')
   if (new Set(scene.objects.map(object => object.id)).size !== scene.objects.length) issue('Occurrence IDs must be unique')
   let coordinateCount = 0
+  const occurrenceIds = new Set(scene.objects.map(object => object.id))
+  if (new Set((scene.planAnnotations ?? []).map(annotation => annotation.id)).size !== (scene.planAnnotations?.length ?? 0)) issue('Plan annotation IDs must be unique')
+  for (const annotation of scene.planAnnotations ?? []) {
+    if (new Set(annotation.levelIds).size !== annotation.levelIds.length || annotation.levelIds.some(id => id !== 'site' && !levelIds.has(id))) issue(`Unknown or duplicate annotation level: ${annotation.id}`)
+    if (new Set(annotation.scopeIds).size !== annotation.scopeIds.length || annotation.scopeIds.some(id => !scopes.has(id))) issue(`Unknown or duplicate annotation scope: ${annotation.id}`)
+    if (annotation.layerId !== undefined && !layers.has(annotation.layerId)) issue(`Unknown annotation layer: ${annotation.id}`)
+    if (annotation.occurrenceId !== undefined && !occurrenceIds.has(annotation.occurrenceId)) issue(`Unknown annotation occurrence: ${annotation.id}`)
+    const points = annotation.kind === 'label' ? [annotation.anchor] : annotation.kind === 'hatch' ? annotation.outline : [annotation.from, annotation.to, annotation.from.map((value, axis) => value + annotation.offset[axis]!), annotation.to.map((value, axis) => value + annotation.offset[axis]!)]
+    coordinateCount += points.length * 3
+    if (points.some(point => point.some((value, axis) => value < scene.bounds.min[axis]! || value > scene.bounds.max[axis]!))) issue(`Annotation outside declared bounds: ${annotation.id}`)
+  }
   for (const object of scene.objects) {
     if (object.levelId !== 'site' && !levelIds.has(object.levelId)) issue(`Unknown level: ${object.levelId}`)
     coordinateCount += object.positions.length
