@@ -4,8 +4,9 @@ import type { ExplorerViewportRect } from './explorer-viewport.ts'
 
 type Point = { readonly x: number; readonly y: number }
 type Position = readonly [number, number, number]
+const metric = new Intl.NumberFormat('en', { maximumFractionDigits: 2 })
 export const physicalPlanDimensionText = (annotation: Extract<PhysicalPlanAnnotation, { kind: 'dimension' }>): string =>
-  `${new Intl.NumberFormat('en', { maximumFractionDigits: 2 }).format(Math.hypot(...annotation.to.map((value, axis) => value - annotation.from[axis]!)))} m`
+  `${metric.format(Math.hypot(...annotation.to.map((value, axis) => value - annotation.from[axis]!)))} m`
 
 export const visiblePhysicalPlanAnnotations = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null): ReadonlyArray<PhysicalPlanAnnotation> => {
   if (view.mode !== '2d') return []
@@ -16,7 +17,7 @@ export const visiblePhysicalPlanAnnotations = (scene: PackPhysicalScene, view: P
     while (current !== undefined) { if (current === scopeId) return true; current = scopes.get(current)?.parentId }
     return false
   }
-  return (scene.planAnnotations ?? []).filter(annotation => annotation.levelIds.includes(view.levelId) &&
+  return (scene.planAnnotations ?? []).filter(annotation => (annotation.levelIds.includes('site') || annotation.levelIds.includes(view.levelId)) &&
     (annotation.layerId === undefined || !hidden.has(annotation.layerId)) && (scopeId === null || annotation.scopeIds.some(inScope)))
 }
 
@@ -27,6 +28,19 @@ const box = (points: ReadonlyArray<Point>): ExplorerViewportRect => {
 }
 const overlaps = (a: ExplorerViewportRect, b: ExplorerViewportRect): boolean => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
 const corners = (bounds: PhysicalSceneBounds): Position[] => [[bounds.min[0], bounds.min[1], 0], [bounds.max[0], bounds.min[1], 0], [bounds.max[0], bounds.max[1], 0], [bounds.min[0], bounds.max[1], 0]]
+const lookup = new WeakMap<PackPhysicalScene, { objects: Map<string, PackPhysicalScene['objects'][number]>; envelopes: Map<string, PhysicalSceneBounds> }>()
+const draftingLookup = (scene: PackPhysicalScene) => {
+  const previous = lookup.get(scene); if (previous) return previous
+  const scopes = new Map(scene.scopes?.map(scope => [scope.id, scope])), objects = new Map(scene.objects.map(object => [object.id, object]))
+  const depth = (id: string): number => { const parent = scopes.get(id)?.parentId; return parent === undefined ? 0 : depth(parent) + 1 }
+  const area = (bounds: PhysicalSceneBounds) => (bounds.max[0] - bounds.min[0]) * (bounds.max[1] - bounds.min[1])
+  const ordered = [...scopes.values()].sort((a, b) => depth(b.id) - depth(a.id) || area(a.bounds) - area(b.bounds) || a.id.localeCompare(b.id)), envelopes = new Map<string, PhysicalSceneBounds>()
+  for (const annotation of scene.planAnnotations ?? []) {
+    const bounds = (annotation.occurrenceId ? objects.get(annotation.occurrenceId)?.bounds : undefined) ?? ordered.find(scope => annotation.scopeIds.includes(scope.id))?.bounds
+    if (bounds) envelopes.set(annotation.id, bounds)
+  }
+  const value = { objects, envelopes }; lookup.set(scene, value); return value
+}
 
 /** Screen drafting over the actual Plan, shared by map and dedicated hosts.
  * Text/line widths are typography; measured fit/overlap replaces label-count caps. */
@@ -39,7 +53,7 @@ export const drawPhysicalPlanAnnotations = (context: CanvasRenderingContext2D, i
 }, occupied: ExplorerViewportRect[]): void => {
   const annotations = visiblePhysicalPlanAnnotations(input.scene, input.view, input.scopeId)
   if (!annotations.length) return
-  const viewport = { x: 0, y: 0, width: input.width, height: input.height }, objects = new Map(input.scene.objects.map(object => [object.id, object])), scopes = new Map(input.scene.scopes?.map(scope => [scope.id, scope]))
+  const viewport = { x: 0, y: 0, width: input.width, height: input.height }, { envelopes } = draftingLookup(input.scene)
   context.save(); context.font = input.font; context.textAlign = 'center'; context.textBaseline = 'middle'; context.lineWidth = 1
   const height = input.fontSize, gap = height / 3
   const path = (points: ReadonlyArray<Point>, closed = false): void => {
@@ -78,7 +92,7 @@ export const drawPhysicalPlanAnnotations = (context: CanvasRenderingContext2D, i
   }
   for (const annotation of annotations) if (annotation.kind === 'label') {
     const angle = annotation.rotation * Math.PI / 180, points = input.project([annotation.anchor, [annotation.anchor[0] + Math.cos(angle), annotation.anchor[1] + Math.sin(angle), annotation.anchor[2]]]); if (points.length !== 2) continue
-    const bound = annotation.occurrenceId ? objects.get(annotation.occurrenceId)?.bounds : annotation.scopeIds.map(id => scopes.get(id)?.bounds).find(Boolean)
+    const bound = envelopes.get(annotation.id)
     const projected = bound ? input.project(corners(bound)) : []
     label(annotation.text, points[0]!, Math.atan2(points[1]!.y - points[0]!.y, points[1]!.x - points[0]!.x), projected.length ? box(projected) : undefined)
   }

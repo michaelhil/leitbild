@@ -28,6 +28,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   let palette = options.palette, renderer: PhysicalViewportRenderer | null = null, active = true, destroyed = false, generation = 0, mode: PhysicalSceneView['mode'] = '2d', lastPresentation = '', queued = false, contextLost = false
   let focusedId: string | null = null, forcedId: string | null = null
   let pendingFocus: { entry: Entry; source: number; view: number; target: PhysicalSceneFocus; preservePose: boolean } | null = null
+  const planPlacements = new WeakMap<PhysicalSceneSource['descriptor'], Float64Array>()
   const disposals: NonNullable<ReturnType<PhysicalViewportRenderer['metrics']>>[] = []
   const presentations = (): PhysicalScenePresentation[] => [...entries.values()].map(entry => ({ descriptor: entry.source.descriptor, view: entry.view, status: entry.state, ...(entry.reason ? { reason: entry.reason } : {}), renderRevision: entry.renderRevision, occurrenceCount: entry.scene?.objects.length ?? 0 }))
   const emit = (): void => { const next = presentations(), signature = JSON.stringify(next); if (lastPresentation === signature) return; lastPresentation = signature; options.onChange(next) }
@@ -122,7 +123,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       // host when its selected scope contains several layouts.
       const explicitDetail = forcedId === d.id || (viewport.surface.kind === 'canvas' && focusedId === null)
       const needsDetail = explicitDetail || automaticInspectionDemand(inspectionPixels, overviewErrorPixels, pixelError)
-      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail
+      const planAllowsDetail = mode !== '2d' || focusedId === d.id || focusedId === null
+      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && planAllowsDetail
       if (d.locationValid && !entry.failure) entry.reason = undefined
       if (active && intersects && d.locationValid && (!entry.eligible || entry.scopeId)) void prepareOverview(entry)
       if (!d.locationValid) { entry.state = 'unavailable'; entry.reason = d.reason ?? 'Layout location no longer matches its owner' }
@@ -205,7 +207,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     projectPlanPoints(sceneId: string, points: ReadonlyArray<Vector3>): ReadonlyArray<{ x: number; y: number }> {
       const entry = entries.get(sceneId)
       if (!active || !entry || entry.state !== 'ready' || entry.view.mode !== '2d') return []
-      const matrix = localMercatorMatrix(entry.source.descriptor.anchor, entry.source.descriptor.bearing)
+      let matrix = planPlacements.get(entry.source.descriptor)
+      if (!matrix) { matrix = localMercatorMatrix(entry.source.descriptor.anchor, entry.source.descriptor.bearing); planPlacements.set(entry.source.descriptor, matrix) }
       return points.map(point => { const world = transform(matrix, point); return viewport.projectGeographic(new MercatorCoordinate(world[0], world[1]).toLngLat()) })
     },
     presentations, scene: (sceneId: string) => entries.get(sceneId)?.scene ?? null,

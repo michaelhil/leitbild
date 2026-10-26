@@ -25,7 +25,7 @@
   import { priorityRank } from '../../features/displays/alerts/rows.ts'
   import { sparseLayoutBadges } from './badges.ts'
   import { physicalLayoutPalette } from './palette.ts'
-  import { drawPhysicalPlanAnnotations } from './plan-annotations.ts'
+  import { drawPhysicalPlanAnnotations, visiblePhysicalPlanAnnotations } from './plan-annotations.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
   let { map = null, host = 'map', active = true, initialTarget = { sceneId: null }, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
     map?: MapLibreMap | null
@@ -238,17 +238,20 @@
     void screenRevision
     const current = controller, target = draftingCanvas, colors = draftingColors, width = size.width, height = size.height
     if (!target || !current || !colors) return
+    const drafting = !active || suspended || !documentVisible ? [] : scenes.flatMap(presentation => {
+      if (presentation.status !== 'ready' || presentation.view.mode !== '2d' || focusedId !== null && presentation.descriptor.id !== focusedId || focusedGroupId !== null && presentation.descriptor.group?.id !== focusedGroupId) return []
+      const scene = current.scene(presentation.descriptor.id)
+      return scene && visiblePhysicalPlanAnnotations(scene, presentation.view, focusedScopeId).length ? [{ scene, view: presentation.view }] : []
+    })
+    if (!drafting.length) { if (target.width || target.height) { target.width = 0; target.height = 0 }; return }
     const context = target.getContext('2d'); if (!context) { onerror('Architectural Plan annotations require a Canvas 2D context'); return }
     const ratio = window.devicePixelRatio || 1, pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
     if (target.width !== pixelWidth || target.height !== pixelHeight) { target.width = pixelWidth; target.height = pixelHeight }
     context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height)
-    if (!active || suspended || !documentVisible) return
     const style = getComputedStyle(target), fontSize = Number.parseFloat(style.fontSize), occupied: Array<{ x: number; y: number; width: number; height: number }> = []
     const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
-    for (const presentation of scenes) {
-      if (presentation.status !== 'ready' || presentation.view.mode !== '2d' || focusedId !== null && presentation.descriptor.id !== focusedId || focusedGroupId !== null && presentation.descriptor.group?.id !== focusedGroupId) continue
-      const scene = current.scene(presentation.descriptor.id); if (!scene) continue
-      drawPhysicalPlanAnnotations(context, { scene, view: presentation.view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
+    for (const { scene, view } of drafting) {
+      drawPhysicalPlanAnnotations(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
     }
   })
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })
