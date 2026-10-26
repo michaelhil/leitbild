@@ -7,7 +7,7 @@ import type { PhysicalSceneView } from './types.ts'
 import { preparePhysicalRenderBuffers, type PhysicalRenderBuffers } from './render-buffers.ts'
 
 export interface PhysicalPreparedGeometry { readonly sourceAsset?: PhysicalPreparedGeometry; readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers; readonly surfaceOwnership: PhysicalSurfaceOwnershipDiagnostics }
-export interface PhysicalPreparationPoolMetrics { readonly workerAlive: boolean; readonly clients: number; readonly registeredSources: number; readonly registeredBytes: number; readonly leases: number; readonly inFlightJobs: number; readonly pinnedSources: number; readonly registrations: number; readonly viewRequests: number; readonly transferredBytes: number }
+export interface PhysicalPreparationPoolMetrics { readonly workerAlive: boolean; readonly clients: number; readonly registeredSources: number; readonly registeredBytes: number; readonly leases: number; readonly inFlightJobs: number; readonly pinnedSources: number; readonly registrations: number; readonly viewRequests: number; readonly transferredBytes: number; readonly retainedViews: number; readonly retainedViewBytes: number; readonly cacheHits: number }
 export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity?: string, sourceKey?: string) => Promise<PhysicalPreparedGeometry>) & {
   /** Real worker ports retain exact source families; pure offline/test ports own no worker. */
   readonly retainIdentities?: (identities: ReadonlySet<string>) => void
@@ -42,15 +42,26 @@ type Job = { readonly source: Source; readonly reject: (error: Error) => void } 
 )
 const released = (): Error => Object.assign(new Error('Physical preparation source lease was released'), { name: 'AbortError' })
 
+/** Owned typed storage only; shared buffers are counted once, not once per view. */
+const preparedBuffers = (value: PhysicalPreparedGeometry): ReadonlySet<ArrayBufferLike> => {
+  const buffers = new Set<ArrayBufferLike>([value.buffers.vertices.buffer, value.buffers.lines.buffer])
+  for (const mesh of value.meshes) for (const values of [mesh.vertices, mesh.lines]) if (ArrayBuffer.isView(values)) buffers.add(values.buffer)
+  for (const index of [value.acceleration.meshes, ...value.acceleration.triangles.map(item => item.triangles)]) for (const values of [index.bounds, index.children, index.ranges, index.order]) buffers.add(values.buffer)
+  return buffers
+}
+export const physicalPreparedGeometryBytes = (value: PhysicalPreparedGeometry): number => [...preparedBuffers(value)].reduce((bytes, buffer) => bytes + buffer.byteLength, 0)
+
 /** One shared real worker, immutable source registrations and independent host leases. */
 export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = () => {
   if (typeof Worker === 'undefined') throw new Error('Physical layout preparation requires a module Worker')
   return new Worker(new URL('./preparation-worker.ts', import.meta.url), { type: 'module' })
 }) => {
   const sources = new Map<string, Source>(), clients = new Map<number, Client>(), jobs = new Map<number, Job>()
+  // Active views and resident GPU assets own the strong CPU lease. The pool
+  // only discovers those assets; eviction can collect unused view variants.
   const shared = new Map<string, { readonly sourceKey: string; readonly identity: string; readonly value: WeakRef<PhysicalPreparedGeometry> }>()
   const pending = new Map<string, { readonly sourceKey: string; readonly identity: string; readonly task: Promise<PhysicalPreparedGeometry> }>()
-  let worker: WorkerPort | null = null, sequence = 0, clientSequence = 0, registrations = 0, viewRequests = 0, transferredBytes = 0
+  let worker: WorkerPort | null = null, sequence = 0, clientSequence = 0, registrations = 0, viewRequests = 0, transferredBytes = 0, cacheHits = 0
   const stopIfUnused = (): void => { if (!clients.size && !sources.size && !jobs.size && worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); worker = null } }
   const releaseSource = (source: Source): void => {
     if (source.owners.size || source.pins || sources.get(source.key) !== source) return
@@ -111,7 +122,11 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
     source = { key: sourceKey, identity, scene, owners: new Set([...clients].filter(([, client]) => client.identities.has(identity)).map(([id]) => id)), pins: 0, registered: false, registration: null, bytes: 0 }
     sources.set(sourceKey, source); return source
   }
-  const diagnostics = (): PhysicalPreparationPoolMetrics => ({ workerAlive: worker !== null, clients: clients.size, registeredSources: [...sources.values()].filter(source => source.registered).length, registeredBytes: [...sources.values()].reduce((bytes, source) => bytes + source.bytes, 0), leases: [...sources.values()].reduce((sum, source) => sum + source.owners.size, 0), inFlightJobs: jobs.size, pinnedSources: [...sources.values()].filter(source => source.pins > 0).length, registrations, viewRequests, transferredBytes })
+  const diagnostics = (): PhysicalPreparationPoolMetrics => {
+    const retained = [...shared.values()].flatMap(entry => { const value = entry.value.deref(); return value ? [value] : [] })
+    const buffers = new Set(retained.flatMap(value => [...preparedBuffers(value)]))
+    return { workerAlive: worker !== null, clients: clients.size, registeredSources: [...sources.values()].filter(source => source.registered).length, registeredBytes: [...sources.values()].reduce((bytes, source) => bytes + source.bytes, 0), leases: [...sources.values()].reduce((sum, source) => sum + source.owners.size, 0), inFlightJobs: jobs.size, pinnedSources: [...sources.values()].filter(source => source.pins > 0).length, registrations, viewRequests, transferredBytes, retainedViews: retained.length, retainedViewBytes: [...buffers].reduce((bytes, buffer) => bytes + buffer.byteLength, 0), cacheHits }
+  }
   return {
     createPreparer(): PhysicalGeometryPreparer {
       const owner = ++clientSequence, client: Client = { identities: new Set(), explicit: false }; clients.set(owner, client)
@@ -123,7 +138,7 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
         const source = sourceFor(scene, identity, sourceKey); source.owners.add(owner)
         for (const [name, value] of shared) if (!value.value.deref() && !pending.has(name)) shared.delete(name)
         const cached = shared.get(key), cachedValue = cached?.value.deref()
-        if (cachedValue) { if (cached!.sourceKey !== sourceKey || cached!.identity !== identity) return Promise.reject(new Error('Physical prepared key reused by a different source')); return Promise.resolve(cachedValue) }
+        if (cachedValue) { if (cached!.sourceKey !== sourceKey || cached!.identity !== identity) return Promise.reject(new Error('Physical prepared key reused by a different source')); cacheHits++; return Promise.resolve(cachedValue) }
         const existing = pending.get(key)
         if (existing) { if (existing.sourceKey !== sourceKey || existing.identity !== identity) return Promise.reject(new Error('Physical pending key reused by a different source')); return existing.task }
         source.pins++
