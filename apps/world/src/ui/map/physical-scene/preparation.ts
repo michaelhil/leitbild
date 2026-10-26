@@ -174,10 +174,18 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
     let worker = affinity.get(source.identity)
     if (!worker) {
       // Demand is bounded by reported CPU capacity and source families, never
-      // by an authored feature count. At capacity, preserve per-family affinity
-      // on the least occupied registered-source working set.
+      // by an authored feature count. At capacity, prefer available work slots
+      // before balancing registered storage; an idle affinity worker need not
+      // wait behind a different family's synchronous preparation.
       if (workers.size < workerBudget) worker = createWorker()
-      else worker = [...workers].reduce((best,candidate) => candidate.sources.size < best.sources.size ? candidate : best)
+      else {
+        const load = (value: WorkerSlot) => [...jobs.values()].filter(job => job.worker === value).length
+        const bytes = (value: WorkerSlot) => [...value.sources].reduce((sum,source) => sum+source.bytes,0)
+        worker = [...workers].reduce((best,candidate) => {
+          const comparison = load(candidate)-load(best) || bytes(candidate)-bytes(best) || candidate.sources.size-best.sources.size
+          return comparison < 0 ? candidate : best
+        })
+      }
       affinity.set(source.identity,worker)
     }
     worker.sources.add(source); source.worker = worker; return worker

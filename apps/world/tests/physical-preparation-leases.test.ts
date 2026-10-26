@@ -295,3 +295,12 @@ test('last-host disposal terminates all unresponsive workers and immediate recre
   expect(workers.slice(0,2).map(worker => worker.terminations())).toEqual([1,1]); expect(pool.diagnostics()).toMatchObject({workerCount:0,inFlightJobs:0,pinnedSources:0,registeredBytes:0,queuedViews:0})
   const fresh = pool.createPreparer(); expect((await fresh(source,view,'a','a','a/detail')).key).toBe('a'); expect(created).toBe(3); fresh.destroy!()
 })
+
+test('a new family uses an idle worker before queueing behind another family at CPU capacity', async () => {
+  const workers = [workerDouble(),workerDouble()]; workers[0]!.holdViews(); let created = 0
+  const pool = createPhysicalPreparationPool(() => workers[created++]!.port,() => 3), owner = pool.createPreparer(), source = scene(), view = defaultPhysicalSceneView(source.levels)
+  const first = owner(source,view,'a','a','a/detail'); await owner(source,view,'b','b','b/detail')
+  const third = owner(source,view,'c','c','c/detail'); await settle()
+  expect(workers[1]!.sources.has('c/detail')).toBe(true); expect(pool.diagnostics().queuedViews).toBe(0)
+  expect((await third).key).toBe('c'); workers[0]!.flush(); await first; owner.destroy!()
+})
