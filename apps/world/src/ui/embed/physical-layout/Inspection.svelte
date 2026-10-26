@@ -3,13 +3,14 @@
   import { simulationRunIdSchema } from '../../../core/model/ids.ts'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { createLayoutLiveSession, layoutLiveFrozen, layoutLiveRoutes, type LayoutLiveSession, type LayoutLiveSnapshot } from '../../physical-layout/client.ts'
-  import { layoutInspectionExpected, readHostedLayoutInspectionSample, type LayoutInspectionState } from '../../physical-layout/inspection.ts'
+  import { layoutInspectionContentRoom, layoutInspectionExpected, readHostedLayoutInspectionSample, readHostedLayoutInspectionSpace, type LayoutInspectionState } from '../../physical-layout/inspection.ts'
   import type { LayoutLiveExpected } from '../../physical-layout/read-model.ts'
   import { physicalSubjectStatus } from '../../physical-layout/status.ts'
   import { admitPhysicalLiveStamp } from '../../physical-layout/status.ts'
   import { createPageVisibility, embeddedDisplayFrame, trackVisibility, type DisplayOpening } from '../view-host.ts'
   import Faceplate from '../vignette/Faceplate.svelte'
   import type { FaceplateReadings } from '../vignette/faceplate.ts'
+  import { FACEPLATE_MARGIN } from '../vignette/popover.ts'
   import { provideOpening } from '../vignette/opening.svelte.ts'
   import '../vignette/openbridge.ts'
 
@@ -19,9 +20,11 @@
   let snapshot = $state.raw<LayoutLiveSnapshot>({ phase: 'connecting', latest: null, stamp: null, failure: null })
   let wallNow = $state(Date.now())
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
+  let hostAvailableHeight = $state<number | null>(null)
   let where = $state<DisplayOpening | null>(null)
   let activeElement = $state('')
   let closed = $state(false)
+  let failureElement = $state<HTMLElement | null>(null)
   let session: LayoutLiveSession | null = null
   const runId = $derived(simulationRunIdSchema.parse(envelope.subject.id))
   const frozen = $derived(layoutLiveFrozen(snapshot, wallNow))
@@ -52,6 +55,14 @@
     if (snapshot.latest?.subjects.some(subject => subject.elementId === element)) activeElement = element
     else detail(element)
   }
+  $effect(() => {
+    const element = failureElement
+    if (element === null) return
+    const measure = (): void => hostMessage({ type: 'world:layout-inspection-size', height: Math.ceil(element.getBoundingClientRect().bottom + Number.parseFloat(getComputedStyle(element).marginBottom)) })
+    const observer = new ResizeObserver(measure)
+    observer.observe(element); measure()
+    return () => observer.disconnect()
+  })
 
   runOnMount(() => {
     try { parsed = layoutInspectionExpected(envelope); activeElement = parsed.state.elementId } catch (error) {
@@ -62,7 +73,6 @@
     if (hosted && window.parent === window) { failure = 'This inspection requires its authorized layout host'; return stop }
     const live = hosted ? null : createLayoutLiveSession({ expected: parsed.expected, requiredSubjectId: parsed.state.elementId, routes: layoutLiveRoutes, onChange: next => {
       snapshot = next; wallNow = Date.now()
-      if (next.phase === 'failed' && next.latest === null) hostMessage({ type: 'world:layout-inspection-size', height: 160 })
     } })
     session = live
     const resize = (): void => { viewport = { width: window.innerWidth, height: window.innerHeight } }
@@ -84,7 +94,13 @@
     window.addEventListener('resize', resize)
     const tick = setInterval(() => { wallNow = Date.now() }, 250)
     const receive = (event: MessageEvent): void => {
-      if (!hosted || closed || event.source !== window.parent || event.origin !== location.origin || parsed === null || event.data?.type !== 'world:layout-inspection-sample') return
+      if (!hosted || closed || event.source !== window.parent || event.origin !== location.origin || parsed === null) return
+      if (event.data?.type === 'world:layout-inspection-space') {
+        try { hostAvailableHeight = readHostedLayoutInspectionSpace(parsed.state, event.data) }
+        catch (error) { failure = error instanceof Error ? error.message : String(error) }
+        return
+      }
+      if (event.data?.type !== 'world:layout-inspection-sample') return
       try {
         const next = readHostedLayoutInspectionSample(parsed.state, parsed.expected, event.data)
         if (next.stamp !== null) admitPhysicalLiveStamp(parsed.expected, next.stamp.epoch, snapshot.stamp, next.stamp)
@@ -104,20 +120,20 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <obc-button class="close" variant="flat" title="Close layout quick look" onclick={() => close(true)}>Close</obc-button>
   {#if snapshot.phase === 'failed' && snapshot.latest === null}
-    <p class="failure" role="alert">No current owner sample is available. This quick look will retry while visible.</p>
-  {:else}
+    <p bind:this={failureElement} class="failure" role="alert">No current owner sample is available. This quick look will retry while visible.</p>
+  {:else if parsed.state.delivery !== 'host' || hostAvailableHeight !== null}
   <Faceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
     name={subject?.label ?? parsed.state.label} {word} title={subject?.label ?? envelope.title} {readings}
     alerts={snapshot.latest?.sample.alerts ?? []} alertElements={[activeElement]} group={false}
     related={subject === undefined || subject.devices.length === 0 ? null : { heading: 'Devices', entries: subject.devices.map(device => ({ element: device.id, name: device.label })) }}
-    anchor={null} at={{ x: 0, y: 44 }} avoid={[]} zoom={1} room={{ x: 0, y: 44, width: viewport.width, height: Math.max(0, viewport.height - 44) }}
+    anchor={null} at={{ x: 0, y: 44 }} avoid={[]} zoom={1} room={layoutInspectionContentRoom(viewport.width, hostAvailableHeight ?? viewport.height)}
     {frozen} opening={where} pending={false} canPin={false} showHistory={false} maxWidth={Math.max(240, viewport.width - 16)}
     onclose={close} onpin={() => { throw new Error('This map faceplate has no pin canvas') }} onoverlay={() => { throw new Error('This map faceplate has no overlay canvas') }}
-    ontouched={() => {}} onsize={height => hostMessage({ type: 'world:layout-inspection-size', height: Math.min(960, Math.max(120, Math.ceil(height + 60))) })}
+    ontouched={() => {}} onsize={height => hostMessage({ type: 'world:layout-inspection-size', height: Math.ceil(height + 44 + 2 * FACEPLATE_MARGIN) })}
     ondetail={detail} onfaceplate={inspect} />
   {/if}
 {:else if failure !== null}
-  <p class="failure" role="alert">This quick look cannot be shown: {failure}</p>
+  <p bind:this={failureElement} class="failure" role="alert">This quick look cannot be shown: {failure}</p>
 {/if}
 
 <style>

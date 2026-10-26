@@ -7,11 +7,12 @@ import type { Observation } from '../src/core/observation/model.ts'
 import type { AlertRow } from '../src/features/displays/alerts/rows.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import { createLayoutLiveSession, layoutLiveFrozen, type LayoutLiveRoutes, type LayoutLiveSnapshot } from '../src/ui/physical-layout/client.ts'
-import { layoutInspectionEnvelope, layoutInspectionExpected, layoutInspectionMessageSchema, layoutInspectionSampleMessage, layoutInspectionStateSchema, readHostedLayoutInspectionSample } from '../src/ui/physical-layout/inspection.ts'
+import { layoutInspectionContentRoom, layoutInspectionEnvelope, layoutInspectionExpected, layoutInspectionHostRoom, layoutInspectionMessageSchema, layoutInspectionSampleMessage, layoutInspectionSpaceMessage, layoutInspectionStateSchema, readHostedLayoutInspectionSample, readHostedLayoutInspectionSpace } from '../src/ui/physical-layout/inspection.ts'
 import { layoutLiveExpectedSchema, layoutLiveResponseSchema, type LayoutLiveResponse } from '../src/ui/physical-layout/read-model.ts'
 import { admitPhysicalLiveStamp, physicalLayoutStatusSummary, physicalSubjectKey, physicalSubjectStatus, physicalSubjectStyle, type PhysicalLayoutSubject } from '../src/ui/physical-layout/status.ts'
 import { changePhysicalLayoutView, initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
 import { valueRows } from '../src/ui/embed/vignette/value-rows.ts'
+import { faceplateHeight } from '../src/ui/embed/vignette/popover.ts'
 
 const expected = layoutLiveExpectedSchema.parse({ runId: 'run-layout', layoutObjectId: 'layout:one', objectId: 'plant:one', packId: 'process-plant', modelDigest: 'a'.repeat(64), revision: 'physical-two-room-r1' })
 const at = isoTimestampSchema.parse('2026-10-24T12:00:00.000Z')
@@ -245,6 +246,8 @@ describe('physical inspection and local view controls', () => {
     expect(layoutInspectionExpected(envelope).expected).toEqual(expected)
     expect(() => layoutInspectionExpected(embeddedViewEnvelopeSchema.parse({ ...envelope, subject: { ...envelope.subject, type: 'world.object' } }))).toThrow('Simulation Run')
     expect(layoutInspectionMessageSchema.safeParse({ type: 'world:layout-inspection-size', layoutObjectId: expected.layoutObjectId, elementId: 'pump', height: 400 }).success).toBe(true)
+    expect(layoutInspectionMessageSchema.safeParse({ type: 'world:layout-inspection-size', layoutObjectId: expected.layoutObjectId, elementId: 'pump', height: 12_000 }).success).toBe(true)
+    expect(layoutInspectionMessageSchema.safeParse({ type: 'world:layout-inspection-size', layoutObjectId: expected.layoutObjectId, elementId: 'pump', height: Infinity }).success).toBe(false)
     expect(layoutInspectionMessageSchema.safeParse({ type: 'world:layout-inspection-close', layoutObjectId: expected.layoutObjectId, elementId: 'pump', returnFocus: true, operate: true }).success).toBe(false)
   })
 
@@ -268,5 +271,43 @@ describe('physical inspection and local view controls', () => {
     expect(() => readHostedLayoutInspectionSample(state, { ...expected, objectId: objectIdSchema.parse('plant:other') }, message)).toThrow('another Run')
     expect(() => readHostedLayoutInspectionSample(state, expected, { ...message, snapshot: { ...message.snapshot, stamp: { ...message.snapshot.stamp, sequence: 999 } } })).toThrow('disagree')
     expect(() => layoutInspectionStateSchema.parse({ ...scope, elementId: 'pump', label: 'Feed pump', delivery: 'host' })).toThrow('channel')
+  })
+
+  test('a delayed first sample can grow a short hosted card, and host shrink/grow does not feed back through its allocation', async () => {
+    const { runId: _runId, ...scope } = expected
+    const state = layoutInspectionStateSchema.parse({ ...scope, elementId: 'pump', label: 'Feed pump', delivery: 'host', channel: crypto.randomUUID() })
+    const padding = { top: 0, right: 0, bottom: 0, left: 0 }
+    let firstSample!: (value: LayoutLiveResponse) => void
+    const live = harness({ read: () => new Promise(resolve => { firstSample = resolve }) })
+    live.session.start(); await settle()
+    expect(live.calls).toEqual(['presence'])
+
+    let allocatedHeight = 120 // The loading card has already reported its short intrinsic extent.
+    const space = (viewportHeight: number) => {
+      const hostRoom = layoutInspectionHostRoom({ width: 800, height: viewportHeight }, padding, 80)
+      return readHostedLayoutInspectionSpace(state, layoutInspectionSpaceMessage(state, hostRoom.height))
+    }
+    const available = space(800)
+    const budget = faceplateHeight(layoutInspectionContentRoom(360, available), 1)
+    expect(budget).toBeGreaterThan(allocatedHeight)
+
+    firstSample(reading()); await settle()
+    const forwarded = readHostedLayoutInspectionSample(state, expected, layoutInspectionSampleMessage(state, live.last()))
+    expect(forwarded.latest?.subjects[0]!.values[0]!.ref).toBe(value.ref)
+    allocatedHeight = Math.min(360, available) // A measured, larger intrinsic extent is now allowed.
+    expect(space(800)).toBe(available)
+    expect(faceplateHeight(layoutInspectionContentRoom(360, space(800)), 1)).toBe(budget)
+    expect(allocatedHeight).toBeGreaterThan(120)
+
+    const smaller = space(240)
+    allocatedHeight = Math.min(allocatedHeight, smaller)
+    expect(smaller).toBeLessThan(available)
+    expect(allocatedHeight).toBeLessThan(360)
+    expect(space(800)).toBe(available)
+    expect(faceplateHeight(layoutInspectionContentRoom(360, space(800)), 1)).toBe(budget)
+    expect(() => readHostedLayoutInspectionSpace({ ...state, channel: crypto.randomUUID() }, layoutInspectionSpaceMessage(state, available))).toThrow('channel')
+    expect(() => layoutInspectionSpaceMessage(state, Infinity)).toThrow()
+    expect(() => layoutInspectionSpaceMessage(state, -1)).toThrow()
+    live.session.close()
   })
 })

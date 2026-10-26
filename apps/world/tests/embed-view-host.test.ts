@@ -100,6 +100,22 @@ describe('a view framed by the display window', () => {
     expect(page.refused).toHaveLength(2)
   })
 
+  test('coexists with other parent protocols without claiming their messages, while malformed owned messages are refused', () => {
+    const page = framedPage()
+    page.host.listen()
+    page.fromWindow({ type: 'world:layout-inspection-sample', channel: 'another-consumer', snapshot: { phase: 'connecting' } })
+    page.fromWindow({ type: 'world:layout-inspection-space', availableHeight: 640 })
+    page.fromWindow({ type: 'another-view:message', value: true })
+    expect(page.refused).toEqual([])
+    expect(page.host.current()).toEqual({ shown: true, zoom: 1 })
+    page.fromWindow({ type: 'world:display-frame', shown: true, zoom: 'invalid' })
+    page.fromWindow({ type: 'world:display-select', objectId: 'unit' })
+    page.fromWindow({ type: 'leitbild:view-host', extra: true })
+    expect(page.refused).toHaveLength(3)
+    page.fromWindow({ type: 'world:display-frame', shown: false, zoom: 1.5 })
+    expect(page.host.current()).toEqual({ shown: false, zoom: 1.5 })
+  })
+
   // A window presents its frame on the frame's ready message.
   const presented = () => {
     const page = framedPage()

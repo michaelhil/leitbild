@@ -82,19 +82,25 @@ export const createViewHost = (ports: ViewHostPorts) => {
   const receive = (message: ReceivedMessage): void => {
     // Only the framing window, on this origin, presents the view.
     if (ports.parent === null || message.source !== ports.parent || message.origin !== ports.origin) return
-    // A page that opens displays for it (a chat answer's, a procedure tag dialog's) says so once it is hosted.
-    if (embeddedViewHostMessageSchema.safeParse(message.data).success) {
+    // Multiple view-specific protocols may share the parent channel. Only
+    // consume this host's exact message types; malformed owned messages are
+    // still refused rather than mistaken for another listener's protocol.
+    const type = typeof message.data === 'object' && message.data !== null && 'type' in message.data ? message.data.type : undefined
+    if (type === 'leitbild:view-host') {
+      if (!embeddedViewHostMessageSchema.safeParse(message.data).success) { ports.refused(message.data); return }
       if (relayed) return
       relayed = true
       openingChanged()
       return
     }
     // The window asks the display to select an element once (W2.8).
-    const select = parseDisplayFrameSelect(message.data)
-    if (select !== null) {
+    if (type === 'world:display-select') {
+      const select = parseDisplayFrameSelect(message.data)
+      if (select === null) { ports.refused(message.data); return }
       for (const subscriber of [...selectSubscribers]) subscriber({ objectId: select.objectId, elementId: select.elementId })
       return
     }
+    if (type !== 'world:display-frame') return
     const next = parseDisplayFramePresentation(message.data)
     if (next === null) {
       ports.refused(message.data)

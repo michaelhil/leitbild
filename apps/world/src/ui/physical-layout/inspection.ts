@@ -7,6 +7,15 @@ import type { LayoutLiveSnapshot } from './client.ts'
 /** Map-hosted faceplate only; component detail remains the existing vignette. */
 export const LAYOUT_INSPECTION_VIEW_TYPE = 'physical-layout.inspection'
 
+/** The host owns available space; current intrinsic/allocated card height is not an input. */
+export const layoutInspectionHostRoom = (size: { readonly width: number; readonly height: number }, padding: { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }, clearTop: number) => {
+  const x = Math.max(8, padding.left), y = Math.max(8, padding.top, clearTop + 8)
+  return { x, y, width: Math.max(0, size.width - x - Math.max(8, padding.right)), height: Math.max(0, size.height - y - Math.max(8, padding.bottom)) }
+}
+
+/** The 44px status/close band precedes the shared card inside its iframe. */
+export const layoutInspectionContentRoom = (width: number, availableHeight: number) => ({ x: 0, y: 44, width, height: Math.max(0, availableHeight - 44) })
+
 export const layoutInspectionStateSchema = layoutLiveExpectedSchema.omit({ runId: true }).extend({
   elementId: z.string().min(1).max(200), label: z.string().min(1).max(300),
   delivery: z.enum(['direct', 'host']).optional(),
@@ -35,9 +44,29 @@ export const layoutInspectionExpected = (envelope: EmbeddedViewEnvelope): { read
 /** Host validates origin, actual iframe source, and exact retained scope before applying this UI message. */
 export const layoutInspectionMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('world:layout-inspection-close'), layoutObjectId: z.string().min(1).max(200), elementId: z.string().min(1).max(200), returnFocus: z.boolean() }).strict(),
-  z.object({ type: z.literal('world:layout-inspection-size'), layoutObjectId: z.string().min(1).max(200), elementId: z.string().min(1).max(200), height: z.number().int().min(120).max(960) }).strict(),
+  z.object({ type: z.literal('world:layout-inspection-size'), layoutObjectId: z.string().min(1).max(200), elementId: z.string().min(1).max(200), height: z.number().finite().int().nonnegative() }).strict(),
   z.object({ type: z.literal('world:layout-inspection-ready'), layoutObjectId: z.string().min(1).max(200), elementId: z.string().min(1).max(200), channel: z.string().uuid() }).strict(),
 ])
+
+const hostedSpaceSchema = z.object({
+  type: z.literal('world:layout-inspection-space'),
+  channel: z.string().uuid(),
+  layoutObjectId: z.string().min(1).max(200), elementId: z.string().min(1).max(200),
+  availableHeight: z.number().finite().nonnegative(),
+}).strict()
+
+/** Available host space is independent of the card's current allocated height. */
+export const layoutInspectionSpaceMessage = (state: LayoutInspectionState, availableHeight: number): z.output<typeof hostedSpaceSchema> => {
+  if (state.delivery !== 'host' || state.channel === undefined) throw new Error('Inspection did not request hosted space')
+  return hostedSpaceSchema.parse({ type: 'world:layout-inspection-space', channel: state.channel, layoutObjectId: state.layoutObjectId, elementId: state.elementId, availableHeight })
+}
+
+/** Call only after checking the actual parent Window and same origin. */
+export const readHostedLayoutInspectionSpace = (state: LayoutInspectionState, input: unknown): number => {
+  const message = hostedSpaceSchema.parse(input)
+  if (state.delivery !== 'host' || message.channel !== state.channel || message.layoutObjectId !== state.layoutObjectId || message.elementId !== state.elementId) throw new Error('Inspection space belongs to a different host channel or target')
+  return message.availableHeight
+}
 
 const hostedSampleSchema = z.object({
   type: z.literal('world:layout-inspection-sample'),

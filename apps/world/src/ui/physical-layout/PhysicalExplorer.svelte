@@ -20,7 +20,7 @@
   import Controls from './Controls.svelte'
   import CameraControls from './CameraControls.svelte'
   import { createLayoutLiveSession, layoutLiveFrozen, layoutLiveRoutes, type LayoutLiveSnapshot } from './client.ts'
-  import { layoutInspectionEnvelope, layoutInspectionMessageSchema, layoutInspectionSampleMessage, type LayoutInspectionState } from './inspection.ts'
+  import { layoutInspectionEnvelope, layoutInspectionHostRoom, layoutInspectionMessageSchema, layoutInspectionSampleMessage, layoutInspectionSpaceMessage, type LayoutInspectionState } from './inspection.ts'
   import { physicalSubjectStatus, physicalSubjectStyle, physicalLayoutStatusSummary } from './status.ts'
   import { priorityRank } from '../../features/displays/alerts/rows.ts'
   import { sparseLayoutBadges } from './badges.ts'
@@ -72,7 +72,7 @@
   let inspected = $state<{ readonly sceneId: string; readonly occurrenceId: string | null; readonly elementId: string; readonly label: string; readonly channel: string } | null>(null)
   let inspectionReady = $state(false)
   let inspectionFrame = $state<HTMLIFrameElement | null>(null)
-  let inspectionHeight = $state(400)
+  let inspectionHeight = $state<number | null>(null)
   let toolsElement = $state<HTMLElement | null>(null)
   let toolsBox = $state<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null>(null)
   let cameraBox = $state<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null>(null)
@@ -111,7 +111,7 @@
     const surface = controller?.surface.element.getBoundingClientRect(), tools = toolsElement?.getBoundingClientRect(), camera = cameraElement?.getBoundingClientRect()
     if (!surface) return padding
     const covers = [tools, camera].filter((cover): cover is DOMRect => cover !== undefined).map(cover => ({ x: cover.left - surface.left, y: cover.top - surface.top, width: cover.width, height: cover.height }))
-    if (inspected !== null) covers.push({ ...cardPoint, width: Math.min(360, size.width - 16), height: inspectionHeight })
+    if (inspected !== null) covers.push({ ...cardPoint, width: inspectionWidth, height: allocatedInspectionHeight })
     return physicalExplorerFitPadding(surface, { ...padding, top: Math.max(padding.top, clearTop > surface.top ? clearTop - surface.top + 8 : 0) }, covers)
   }
   const afterPanels = async (work: () => void): Promise<void> => {
@@ -180,7 +180,7 @@
     inspected = { sceneId, elementId, label: ownerLabel ?? label, occurrenceId, channel: crypto.randomUUID() }
     inspectionReady = false
     hover = null
-    inspectionHeight = 400
+    inspectionHeight = null
   }
   const inspectHit = (hit: PhysicalSceneHit): void => {
     if (hit.subjectIds.length === 1) inspect(hit.sceneId, hit.subjectIds[0]!, hit.label, hit.occurrenceId)
@@ -201,6 +201,18 @@
     inspectionFrame.contentWindow.postMessage(layoutInspectionSampleMessage(inspectionState, sample), location.origin)
   }
   $effect(() => { void snapshots; void inspectionState; void inspectionReady; void inspectionFrame; untrack(publishInspection) })
+  const inspectionRoom = $derived.by(() => {
+    void screenRevision
+    const padding = controller?.surface.getPadding() ?? { top: 0, right: 0, bottom: 0, left: 0 }
+    const surfaceTop = controller?.surface.element.getBoundingClientRect().top ?? 0
+    return layoutInspectionHostRoom(size, padding, clearTop - surfaceTop)
+  })
+  const inspectionWidth = $derived(Math.min(360, inspectionRoom.width))
+  const allocatedInspectionHeight = $derived(Math.min(inspectionHeight ?? inspectionRoom.height, inspectionRoom.height))
+  $effect(() => {
+    const state = inspectionState, frame = inspectionFrame?.contentWindow, availableHeight = inspectionRoom.height
+    if (inspectionReady && state !== null && frame !== null && frame !== undefined) frame.postMessage(layoutInspectionSpaceMessage(state, availableHeight), location.origin)
+  })
 
   $effect(() => {
     const current = controller
@@ -350,7 +362,7 @@
     void screenRevision
     const projected = inspected?.occurrenceId ? controller?.project(inspected.sceneId, inspected.occurrenceId) : null
     const anchor = projected?.visible ? projected : null
-    return { x: Math.max(8, Math.min(size.width - Math.min(360, size.width - 16) - 8, (anchor?.x ?? size.width / 2) + 24)), y: Math.max(8, Math.min(size.height - inspectionHeight - 8, (anchor?.y ?? 80) - 30)) }
+    return { x: Math.max(inspectionRoom.x, Math.min(inspectionRoom.x + inspectionRoom.width - inspectionWidth, (anchor?.x ?? size.width / 2) + 24)), y: Math.max(inspectionRoom.y, Math.min(inspectionRoom.y + inspectionRoom.height - allocatedInspectionHeight, (anchor?.y ?? 80) - 30)) }
   })
   const statusText = $derived(focusedId === null ? `${scenes.filter(scene => scene.status === 'ready').length} layouts ready · ${scenes.filter(scene => scene.status === 'loading').length} loading · ${scenes.filter(scene => scene.status === 'unavailable').length} unavailable · owner-qualified alarms remain in Run`
     : focused?.status === 'loading' ? 'Loading this physical layout…'
@@ -521,7 +533,7 @@
       if (!message.success || message.data.layoutObjectId !== inspected.sceneId || message.data.elementId !== inspected.elementId) return
       if (message.data.type === 'world:layout-inspection-close') closeInspection(message.data.returnFocus)
       else if (message.data.type === 'world:layout-inspection-ready') { if (message.data.channel === inspected.channel) { inspectionReady = true; publishInspection() } }
-      else inspectionHeight = Math.min(message.data.height, Math.max(120, size.height - 16))
+      else inspectionHeight = message.data.height
     }
     const key = (event: KeyboardEvent): void => {
       if (!active || suspended) return
@@ -601,7 +613,7 @@
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
   {/each}
   {#if hover !== null && !suspended && inspected === null}<button class="layout-quick-look" type="button" style:left={`${Math.max(8, Math.min(size.width - Math.min(260, size.width - 16) - 8, hover.screen.x + 16))}px`} style:top={`${Math.max(8, hover.screen.y - 24)}px`} onpointerenter={retainHover} onpointerleave={dismissHoverSoon} onfocus={retainHover} onblur={dismissHoverSoon} onclick={() => { if (hover !== null) inspectHit(hover) }}>⌕ Quick look · {hover.label}</button>{/if}
-  {#if inspectionSource !== null && inspected !== null && !suspended}<div class="layout-inspection" style:left={`${cardPoint.x}px`} style:top={`${cardPoint.y}px`} style:height={`${inspectionHeight}px`}>{#key inspectionSource}<iframe bind:this={inspectionFrame} title={`Inspect ${inspected.label}`} src={inspectionSource} allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'" referrerpolicy="same-origin"></iframe>{/key}</div>{/if}
+  {#if inspectionSource !== null && inspected !== null && !suspended}<div class="layout-inspection" style:left={`${cardPoint.x}px`} style:top={`${cardPoint.y}px`} style:width={`${inspectionWidth}px`} style:height={`${allocatedInspectionHeight}px`}>{#key inspectionSource}<iframe bind:this={inspectionFrame} title={`Inspect ${inspected.label}`} src={inspectionSource} allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'" referrerpolicy="same-origin"></iframe>{/key}</div>{/if}
 </div>
 
 <style>
