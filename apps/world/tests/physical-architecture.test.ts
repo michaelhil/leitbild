@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import normalOperation from '../src/scenarios/halden-normal-operation.scenario.json'
+import powerComplex from '../src/scenarios/halden-power-complex.scenario.json'
+import restoration from '../src/scenarios/halden-offsite-power-restoration.scenario.json'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { packPhysicalSceneSchema } from '../src/core/packs/scene.ts'
@@ -32,6 +34,18 @@ const withArchitecture = (value: unknown): unknown => {
 }
 
 describe('Model-driven native architecture restoration', () => {
+  test('every bundled PWR site explicitly admits the complete new unit/campus Design pair', async () => {
+    for (const source of [normalOperation, powerComplex, restoration]) {
+      const definition = scenarioDefinitionSchema.parse(source)
+      const items = definition.packs.find(pack => pack.id === 'physical-layout')!.items
+      expect(items).toHaveLength(5)
+      for (const item of items) expect(item.design).toEqual(item.id === 'layout:halden-campus' ? pwrArchitectureCampusPhysicalDesignRef : pwrArchitectureUnitPhysicalDesignRef)
+      const compiled = await compileScenarioDefinition(definition, [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() })
+      const layouts = compiled.initialObjects.filter(object => object.packId === 'physical-layout')
+      expect(layouts).toHaveLength(5)
+      for (const layout of layouts) expect(architectureLayoutDataSchema.parse(layout.packData).design).toEqual(layout.id === 'layout:halden-campus' ? pwrArchitectureCampusPhysicalDesignRef : pwrArchitectureUnitPhysicalDesignRef)
+    }
+  })
   test('new compiler closure is exact and previous explorer Design remains independently resolvable', async () => {
     const compiler = createHash('sha256')
     for (const name of architecturePhysicalCompilerFiles) compiler.update(name).update('\0').update(new Uint8Array(await Bun.file(new URL(`../src/packs/physical-layout/native/${name}`, import.meta.url)).arrayBuffer()))

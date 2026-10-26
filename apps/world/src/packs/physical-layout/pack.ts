@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { objectIdSchema, packIdSchema, type OperationalObject } from '../../core/model/index.ts'
 import type { PackScenarioItemSpec, WorldPack } from '../../core/packs/protocol.ts'
 import { emptyPackScenarioConfigSchema } from '../../core/packs/protocol.ts'
-import { pwrExplorerUnitPhysicalDesignRef, resolvePhysicalDesign } from './design.ts'
+import { pwrArchitectureUnitPhysicalDesignRef, resolvePhysicalDesign } from './design.ts'
 import { physicalDesignRefSchema, physicalLayoutDataSchema, physicalLayoutPackId, physicalPlacementGroupSchema } from './model.ts'
 import { physicalLayoutPackView } from './ui-pack.ts'
 import { physicalCoverageIssues } from './coverage.ts'
@@ -24,7 +24,7 @@ export const physicalLayoutPack: WorldPack = {
   authoring: { itemTypes: [{
     id: 'site-layout', label: 'Physical site layout',
     description: 'An exact retained physical Design Revision bound to its declared owner and related member roles. Existing Runs keep their admitted revision.',
-    idPrefix: 'layout', defaultItem: { design: pwrExplorerUnitPhysicalDesignRef, members: {}, bearing: 0 },
+    idPrefix: 'layout', defaultItem: { design: pwrArchitectureUnitPhysicalDesignRef, members: {}, bearing: 0 },
     fields: [{ path: ['members', 'unit'], label: 'Owner unit', description: 'Required by a unit Design. Exact member roles are checked when the Scenario is admitted.', control: { kind: 'reference', itemTypes: ['plant'] } }, { path: ['bearing'], label: 'Local north bearing (degrees)', control: { kind: 'number', min: -360, max: 360 } }],
   }] },
   scenario: {

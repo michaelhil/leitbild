@@ -20,7 +20,12 @@ import { explorerPhysicalCompilerFiles, explorerPhysicalCompilerRef } from '../s
 import { compilePhysicalSourceInWorker } from '../src/packs/physical-layout/source-loader.ts'
 
 const packs = [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack]
-const compile = (source: unknown) => compileScenarioDefinition(scenarioDefinitionSchema.parse(source), packs, { routing: createDirectRoutingAdapter() })
+// The installed bundled head can advance; these tests exercise retained R2
+// semantics under its exact compiler/source, rather than aliasing it to R3.
+const compile = (source: unknown) => {
+  const definition = scenarioDefinitionSchema.parse(source)
+  return compileScenarioDefinition({ ...definition, packs: definition.packs.map(selection => selection.id !== 'physical-layout' ? selection : { ...selection, items: selection.items.map(item => ({ ...item, design: item.id === 'layout:halden-campus' ? pwrExplorerCampusPhysicalDesignRef : pwrExplorerUnitPhysicalDesignRef })) }) }, packs, { routing: createDirectRoutingAdapter() })
+}
 const hash = (value: unknown) => createHash('sha256').update(canonicalPhysicalJson(value)).digest('hex')
 
 describe('Explicit explorer source admission', () => {
@@ -38,7 +43,7 @@ describe('Explicit explorer source admission', () => {
     await expect(resolvePhysicalDesign({ ...pwrExplorerUnitPhysicalDesignRef, digest: 'f'.repeat(64) })).rejects.toThrow('Unsupported or mismatched')
   })
 
-  test('all bundled sites admit four shared geometry instances and one campus with explicit navigation grouping', async () => {
+  test('retained R2 variants admit four shared geometry instances and one campus with explicit navigation grouping', async () => {
     for (const source of [normalOperation, powerComplex, restoration]) {
       const compiled = await compile(source), layouts = compiled.initialObjects.filter(object => object.packId === 'physical-layout')
       expect(layouts).toHaveLength(5)
