@@ -24,6 +24,7 @@ const settled=async(expectedCount?:number)=>{
   await inWorld('return new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)))')
 }
 const button=async(label:string)=>{await inWorld(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}&&b.getBoundingClientRect().width>0);if(!b)throw Error(${JSON.stringify('Missing button '+label)});b.click()`);await settled()}
+const home=async()=>{await inWorld(`const surface=d.querySelector('.layout-canvas')??w.document.querySelector('.maplibregl-canvas');if(!surface)throw Error('Missing physical keyboard surface');surface.focus()`);await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Home',code:'Home',windowsVirtualKeyCode:36});await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Home',code:'Home',windowsVirtualKeyCode:36});await settled()}
 const floor=async(label:string)=>{await inWorld(`const input=d.querySelector('select[aria-label="Layout level"]'),option=[...input.options].find(o=>o.text.includes(${JSON.stringify(label)}));if(!option)throw Error('Missing authored floor');input.value=option.value;input.dispatchEvent(new w.Event('change',{bubbles:true}))`);await settled()}
 const scope=async()=>{await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return Boolean(d.querySelector('.scopes input[type=search]'))`,'rendered area search');await inWorld(`const input=d.querySelector('.scopes input[type=search]');input.value='Turbine hall';input.dispatchEvent(new w.Event('input',{bubbles:true}))`);await until(`return [...d.querySelectorAll('.scopes button[title]')].some(b=>b.title==='Halden Unit 1 full plant / PWR unit / Turbine hall')`,'authored hall scope');await inWorld(`[...d.querySelectorAll('.scopes button[title]')].find(b=>b.title==='Halden Unit 1 full plant / PWR unit / Turbine hall').click()`);await settled()}
 const execution=async(playback:'paused'|'playing')=>{const response=await fetch(new URL(`/api/workspaces/${info.workspaceId}/capabilities/world.simulation-run.execution.set/invoke`,info.url),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resource:info.resource,input:{playback}})});if(!response.ok)throw Error(await response.text());const value=await response.json();if(value.result.playback!==playback)throw Error('Execution capability did not apply the requested local state');return value.result}
@@ -66,23 +67,23 @@ try{
   await execution('paused');await button('Plan');await settled(5);await shot('site-plan.png')
   await movement('browser-site-plan-paused','.layout-canvas',false,false)
   await movement('browser-site-plan-playing','.layout-canvas',false,true)
-  await execution('paused');await scope();await floor('Turbine and main control');await button('3D');await button('Home')
+  await execution('paused');await scope();await floor('Turbine and main control');await button('3D');await home()
   await movement('browser-room-3d-paused','.layout-canvas',true,false)
   await movement('browser-room-3d-playing','.layout-canvas',true,true)
-  await execution('paused');await button('Plan');await button('Home');await shot('room-plan.png')
+  await execution('paused');await button('Plan');await home();await shot('room-plan.png')
   await movement('browser-room-plan-paused','.layout-canvas',false,false)
   await movement('browser-room-plan-playing','.layout-canvas',false,true)
   await execution('paused');await button('Back to map');const browserClosed=await snapshot()
   if(browserClosed.ownedPhysicalTargets.some((target:any)=>target.surface?.includes('layout-canvas')))throw Error('Closed dedicated host retained its physical targets')
-  await scope();await button('3D');await floor('Turbine and main control');await button('Home')
+  await scope();await button('3D');await floor('Turbine and main control');await home()
   await movement('map-room-3d-paused','.maplibregl-canvas',true,false)
   await movement('map-room-3d-playing','.maplibregl-canvas',true,true)
-  await execution('paused');await button('Plan');await button('Home')
+  await execution('paused');await button('Plan');await home()
   await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
   await movement('map-room-plan-playing','.maplibregl-canvas',false,true)
   await execution('paused');await button('Open layout browser');await settled();const reopened=await snapshot()
   if(reopened.ownedPhysicalTargets.some((target:any)=>target.surface?.includes('maplibregl-canvas')))throw Error('Inactive map retained owned physical targets')
-  await button('Plan');await button('Home');await movement('browser-return-plan-paused','.layout-canvas',false,false);await shot('returned-room-plan.png')
+  await button('Plan');await home();await movement('browser-return-plan-paused','.layout-canvas',false,false);await shot('returned-room-plan.png')
   const beforeExit=await snapshot(),metadata=await inWorld('return {userAgent:w.navigator.userAgent,reportedLogicalCpus:w.navigator.hardwareConcurrency,dpr:w.devicePixelRatio}')
   await call('Page.navigate',{url:'about:blank'});let physicalWorkerTargets:any[]=[];const stopAt=performance.now()+10000
   do{physicalWorkerTargets=(await call('Target.getTargets')).targetInfos.filter((item:any)=>item.type==='worker'&&/preparation-worker|source-compile/.test(item.url));if(!physicalWorkerTargets.length)break;await Bun.sleep(50)}while(performance.now()<stopAt)
