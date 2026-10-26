@@ -2,7 +2,7 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261026-r3",
-    "digest": "b2c0a3d7c8c45407642fc47c52bc6e44b76119699db27c86eccff6459d456f41"
+    "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
   },
   "sourceDigest": "7aa1603f251a1c956b7bf736aca1b84429bb86061f04dc6749ba91a8b26dfe7a",
   "bindingDigest": "32122fb7b371c124844edf6eaa2c6e3f7c4829e2ec4bbd3b53aca33a9eb5f4f8",
@@ -25,7 +25,7 @@
   "profile": "architecture",
   "compiler": {
     "id": "physical-layout-native-architecture",
-    "digest": "849ef11e9c591058e44b60af0aeb5febb5ae7ee9e131c26a42e5994328929b6d"
+    "digest": "96e82c37da017162c4f768eb37db11b8e38f513355a2a9ba2052b453baa156f8"
   },
   "coverageDigest": "38a8ff6b3eef1b7efc94050f930804b4dde60c5c4764763e034b1197b5326967",
   "requirements": {

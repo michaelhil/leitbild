@@ -116,6 +116,11 @@ describe('Model-driven native architecture restoration', () => {
     source.viewAreas![0]!.inspectionView!.bearing += 20; source.viewAreas![0]!.label = 'Another inspection view'
     source.layers![0]!.defaultVisible = true; source.elements.find(element => element.id === 'hatch-cover')!.surfaceJoints!.offsets = [1, 3]
     expect(hash(physicalSourceFacts(source))).toBe(before)
+    source.viewAreas![0]!.inspectionView!.pitch = 89
+    expect(physicalSourceSchema.safeParse(source).success).toBe(true)
+    source.viewAreas![0]!.inspectionView!.pitch = 90
+    expect(physicalSourceSchema.safeParse(source).success).toBe(false)
+    source.viewAreas![0]!.inspectionView!.pitch = 57.914
     source.viewAreas![0]!.members = ['area/turbine-island']
     expect(physicalSourceSchema.safeParse(source).success).toBe(false)
     source.viewAreas![0]!.members = ['building/turbine-hall']; source.elements.find(element => element.id === 'hatch-cover')!.surfaceJoints!.offsets = [100]

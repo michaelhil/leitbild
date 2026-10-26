@@ -13,7 +13,7 @@ export const architectureLayers = [
   { id: 'plan-dimensions', label: 'Dimensions', defaultVisible: true },
   { id: 'plan-allowances', label: 'Illustrative work areas', defaultVisible: false },
 ]
-const inspectionView = z.object({ bearing: z.number().finite(), pitch: z.number().finite().min(0).max(85), target: vector.optional() }).strict()
+const inspectionView = z.object({ bearing: z.number().finite(), pitch: z.number().finite().min(0).lt(90), target: vector.optional() }).strict()
 const membership = { id, levelIds: z.array(id).min(1), scopeIds: z.array(id).min(1), occurrenceId: id.optional(), layerId: id.optional() }
 const annotationSchema = z.discriminatedUnion('kind', [
   z.object({ ...membership, kind: z.literal('label'), role: z.enum(['space', 'equipment', 'note']), text: z.string().min(1).max(1000).optional(), anchor, rotation: z.number().finite() }).strict(),
