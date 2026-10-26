@@ -6,6 +6,7 @@ export interface PhysicalLayoutView {
   readonly cutaway: boolean
   readonly detail: 'auto' | 'hidden'
   readonly live: boolean
+  readonly surroundings?: boolean
   readonly hiddenLayerIds?: ReadonlyArray<string>
 }
 
@@ -18,7 +19,7 @@ export interface PhysicalLayoutLevel {
 export const initialPhysicalLayoutView = (levels: ReadonlyArray<PhysicalLayoutLevel>): PhysicalLayoutView => {
   const first = levels[0]
   if (first === undefined) throw new Error('A physical layout needs at least one level')
-  return { mode: '2d', levelId: first.id, separation: 0, cutaway: true, detail: 'auto', live: true }
+  return { mode: '2d', levelId: first.id, separation: 0, cutaway: true, detail: 'auto', live: true, surroundings: false }
 }
 
 /** A plan has one selected level; an explicit 3D view can show all levels. */

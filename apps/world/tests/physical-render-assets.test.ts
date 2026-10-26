@@ -78,6 +78,22 @@ test('focused architectural context uses declared scope membership and never cov
   expect(overview.objects.every(object => object.subjectIds.length === 0)).toBe(true)
 })
 
+test('focused inspection isolates its geometry and surrounding buildings are an explicit reusable view choice', async () => {
+  const h = harness(), first = scene('a'), second = scene('b')
+  const view = { ...defaultPhysicalSceneView(first.levels), mode: '3d' as const, levelId: 'all' }
+  h.controller.setSources([h.source(first), h.source(second)]); h.controller.setView('a', view); await settled()
+  expect(h.entries().map(entry => entry.scene.id)).toEqual(['a', 'b'])
+  h.controller.selectScope('a', 'a'); await settled()
+  expect(h.entries().map(entry => entry.scene.id)).toEqual(['a'])
+  const count = h.prepares()
+  h.controller.setView('a', { ...view, surroundings: true }); await settled()
+  expect(h.entries().map(entry => entry.scene.id)).toEqual(['a', 'b'])
+  expect(h.prepares()).toBe(count)
+  h.controller.setView('a', view); await settled(); expect(h.entries().map(entry => entry.scene.id)).toEqual(['a'])
+  h.controller.fitAll(); await settled(); expect(h.entries().map(entry => entry.scene.id)).toEqual(['a', 'b'])
+  h.controller.destroy()
+})
+
 test('Home requests the same authored-relative oblique 3D view in either real host; Fit preserves pose', async () => {
   const h = harness(), value = { ...scene('a'), bearing: 40 }; h.controller.setSources([h.source(value)]); h.controller.setView('a', { ...defaultPhysicalSceneView(value.levels), mode: '3d' }); await settled()
   h.controller.home('a'); expect(h.fits.at(-1)).toMatchObject({ bearing: 15, preservePose: false, mode: '3d' })

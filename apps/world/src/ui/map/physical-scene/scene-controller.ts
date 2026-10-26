@@ -34,12 +34,13 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const presentations = (): PhysicalScenePresentation[] => [...entries.values()].map(entry => ({ descriptor: entry.source.descriptor, view: entry.view, status: entry.state, ...(entry.reason ? { reason: entry.reason } : {}), renderRevision: entry.renderRevision, occurrenceCount: entry.scene?.objects.length ?? 0 }))
   const emit = (): void => { const next = presentations(), signature = JSON.stringify(next); if (lastPresentation === signature) return; lastPresentation = signature; options.onChange(next) }
   const drawable = (): PhysicalLayerEntry[] => !active ? [] : [...entries.values()].flatMap(entry => {
+    if (focusedId !== null && !entries.get(focusedId)?.view.surroundings && entry.source.descriptor.id !== focusedId) return []
     const result: PhysicalLayerEntry[] = [], detailed = Boolean(entry.scene && entry.prepared && entry.eligible && entry.state === 'ready')
     if (detailed) result.push({ scene: entry.scene!, meshes: entry.meshes, asset: entry.prepared!, view: entry.view, status: entry.status })
     if (!entry.overview || !entry.source.descriptor.locationValid || entry.view.detail === 'hidden') return result
     let meshes = visiblePhysicalSurfaceOwners(entry.overview.asset.meshes, entry.overview.asset.acceleration)
     if (detailed) {
-      if (!entry.scopeId) return result
+      if (!entry.scopeId || !entry.view.surroundings) return result
       const key = `${entry.overview.asset.key}/${entry.scopeId}`
       if (entry.overviewFilter?.key !== key) {
         const filtered = physicalOverviewContextMeshes(entry.source.descriptor, meshes, entry.scopeId)
@@ -115,6 +116,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const size = viewport.surface.getSize(), pixelError = options.quality?.pixelError ?? 1
     if (!(pixelError > 0) || !Number.isFinite(pixelError)) throw new Error('Physical representation quality must specify a finite positive pixel error')
     for (const entry of [...entries.values()].sort((a, b) => Number(b.source.descriptor.id === focusedId) - Number(a.source.descriptor.id === focusedId))) {
+      const canPresent = focusedId === null || entry.source.descriptor.id === focusedId || entries.get(focusedId)?.view.surroundings === true
       const d = entry.source.descriptor, bounds = worldBounds(d.anchor, d.bearing, d.bounds), points = boundsCorners(bounds).map(p => viewport.projectGeographic(new MercatorCoordinate(p[0], p[1]).toLngLat())), xs = points.map(p => p.x), ys = points.map(p => p.y)
       const intersects = size.width > 0 && size.height > 0 && viewport.intersectsBounds(bounds, mode)
       const physicalSpan = Math.max(...d.bounds.max.map((value, axis) => value - d.bounds.min[axis]!)), pixels = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)), error = d.overviewGeometricErrorMetres ?? physicalSpan
@@ -126,9 +128,9 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const explicitDetail = forcedId === d.id || (viewport.surface.kind === 'canvas' && focusedId === null)
       const needsDetail = explicitDetail || automaticInspectionDemand(inspectionPixels, overviewErrorPixels, pixelError)
       const planAllowsDetail = mode !== '2d' || focusedId === d.id || focusedId === null
-      entry.eligible = active && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && planAllowsDetail
+      entry.eligible = active && canPresent && d.locationValid && entry.view.detail !== 'hidden' && intersects && needsDetail && planAllowsDetail
       if (d.locationValid && !entry.failure) entry.reason = undefined
-      if (active && intersects && d.locationValid && (!entry.eligible || entry.scopeId)) void prepareOverview(entry)
+      if (active && canPresent && intersects && d.locationValid && (!entry.eligible || entry.scopeId && entry.view.surroundings)) void prepareOverview(entry)
       if (!d.locationValid) { entry.state = 'unavailable'; entry.reason = d.reason ?? 'Layout location no longer matches its owner' }
       else if (entry.failure) { entry.state = 'unavailable'; entry.reason = entry.failure }
       else if (!active || entry.view.detail === 'hidden') entry.state = 'hidden'

@@ -18,6 +18,8 @@ export interface PhysicalSceneView {
   readonly separation: number
   readonly detail: 'auto' | 'hidden'
   readonly live: boolean
+  /** Include neighbouring layout/context geometry during focused inspection. */
+  readonly surroundings?: boolean
   readonly hiddenLayerIds?: ReadonlyArray<string>
 }
 export interface PhysicalSubjectStyle { readonly color: Color | null; readonly emphasis: number }
@@ -64,4 +66,4 @@ export interface PhysicalSceneSurface {
 export interface PhysicalSceneFocus { readonly scopeId?: string | undefined; readonly occurrenceId?: string | undefined; readonly levelId?: string | undefined; readonly preservePose?: boolean | undefined }
 export interface PhysicalProjectedPoint { readonly x: number; readonly y: number; readonly depth: number; readonly visible: boolean }
 export interface PhysicalCanvasControllerOptions extends Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'> { readonly canvas: HTMLCanvasElement }
-export const defaultPhysicalSceneView = (levels: ReadonlyArray<PhysicalSceneLevel>): PhysicalSceneView => ({ mode: '2d', levelId: levels[0]?.id ?? 'all', cutaway: true, separation: 0, detail: 'auto', live: true })
+export const defaultPhysicalSceneView = (levels: ReadonlyArray<PhysicalSceneLevel>): PhysicalSceneView => ({ mode: '2d', levelId: levels[0]?.id ?? 'all', cutaway: true, separation: 0, detail: 'auto', live: true, surroundings: false })
