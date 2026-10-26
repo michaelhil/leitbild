@@ -114,11 +114,11 @@ test('failed preparation and GPU admission remain unavailable until an explicit 
   h.controller.retry('a'); await settled(); expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(h.errors.map(error => error.message)).toEqual(['Preparation rejected', 'Renderer rejected']); h.controller.destroy()
 })
 
-test('Map Plan automatically reveals every legible visible layout; explicit scope and Canvas collection retain intentional context', async () => {
+test('Map Plan reveals legible layouts and an explicit Canvas collection shares detailed Plan geometry', async () => {
   const values = Array.from({ length: 17 }, (_, index) => ({ ...scene(`unit:${index}`), anchor: [index * .00001, 0] as [number, number] }))
   const map = harness('map'); map.controller.setSources(values.map(map.source)); await settled(); expect(map.entries()).toHaveLength(17); expect(map.entries().every(entry => entry.view.mode === '2d' && entry.view.levelId === 'lower')).toBe(true)
   map.controller.selectScope('unit:8', 'a'); expect(map.entries().map(entry => entry.scene.id)).toEqual(['unit:8']); map.controller.fitAll(); expect(map.entries()).toHaveLength(17); map.controller.destroy()
-  const canvas = harness('canvas'); canvas.controller.setSources(values.map(canvas.source)); await settled(); expect(canvas.prepares()).toBe(0); expect(canvas.entries()).toHaveLength(0)
+  const canvas = harness('canvas'); canvas.controller.setSources(values.map(canvas.source)); await settled(); expect(canvas.prepares()).toBe(1); expect(canvas.entries()).toHaveLength(17)
   canvas.controller.selectScope('unit:8', 'a'); await settled(); expect(canvas.entries().map(entry => entry.scene.id)).toEqual(['unit:8']); canvas.controller.destroy()
 })
 
