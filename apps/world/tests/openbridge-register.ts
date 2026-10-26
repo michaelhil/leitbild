@@ -57,16 +57,20 @@ const APPROVED = { owner: 'approved', ref: 'Q11 (21 Oct): approved as recommende
 export const customShapes: ReadonlyArray<CustomShape> = [
   {
     id: 'physical-layout-solids-and-plan',
-    draws: 'Model-derived architecture, shaped physical equipment, cut fragments and architectural plan strokes in the geographic map and dedicated layout canvas.',
+    draws: 'Model-derived architecture, shaped physical equipment, cut fragments and authored architectural Plan strokes, labels, dimensions and illustrative allowances in the geographic map and dedicated layout canvas.',
     sites: [
       { file: 'ui/map/physical-scene/canvas-viewport.ts', mark: "canvas.getContext('webgl2'", drawn: 'code' },
       { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
       { file: 'ui/map/physical-scene/geometry.ts', mark: 'export const buildVisibleMeshes', drawn: 'code' },
       { file: 'ui/map/physical-scene/overview.ts', mark: 'export const createPhysicalSceneOverview', drawn: 'code' },
+      { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: 'class="layout-canvas"', drawn: 'canvas' },
+      { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: 'class="layout-plan-annotations"', drawn: 'canvas' },
+      { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: "target.getContext('2d')", drawn: 'code' },
+      { file: 'ui/physical-layout/plan-annotations.ts', mark: 'export const drawPhysicalPlanAnnotations', drawn: 'code' },
     ],
     standsInFor: 'none', reason: 'A',
     evidence: 'OpenBridge has no renderer for metre-based architectural solids, hosted openings or floor cuts. These physical representations use host token roles; operational meaning remains the shared owner status and actual embedded faceplate.',
-    decision: { owner: 'approved', ref: '24 Oct 2026 native PWR map/Run integration; 25 Oct 2026 owner requested full plant, switchyard, first pylons and campus context' },
+    decision: { owner: 'approved', ref: '24 Oct 2026 native PWR map/Run integration; 25 Oct full plant/site; 26 Oct restore the original architectural Plan and 3D quality' },
     ends: 'kept',
   },
   // Shapes the old renderer drew that the vignette draws too (the old renderer went at the swap, P2 architecture §D).
@@ -186,6 +190,7 @@ export interface Surface extends Site {
 }
 
 export const surfaces: ReadonlyArray<Surface> = [
+  { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: "document.createElement('canvas').getContext('2d')", paints: 'nothing: measures text' },
   { file: 'ui/embed/vignette/NetworkTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/FlowTopology.svelte', mark: 'use:lines', paints: 'connector-diagram' },
   { file: 'ui/embed/vignette/FlowLegend.svelte', mark: 'use:lines', paints: 'connector-diagram' },

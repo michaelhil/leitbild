@@ -132,7 +132,7 @@ const unlistedInternals = (sources: Sources, listed: ReadonlyArray<Internal>): R
 })
 
 // A Pack's display panels the embed loads (packs/<pack>/ui/embed.ts) are embed sources as well.
-const displays = sourcesUnder('ui/embed', 'ui/displays', 'ui/map/physical-scene', 'packs/process-plant/ui/displays')
+const displays = sourcesUnder('ui/embed', 'ui/displays', 'ui/map/physical-scene', 'ui/physical-layout', 'packs/process-plant/ui/displays')
 const embed = new Map([...displays].filter(([file]) => file.startsWith('ui/embed/') || file.startsWith('packs/')))
 const sites = drawingSites(displays)
 const registered = registeredSites(customShapes, surfaces)

@@ -25,6 +25,7 @@
   import { priorityRank } from '../../features/displays/alerts/rows.ts'
   import { sparseLayoutBadges } from './badges.ts'
   import { physicalLayoutPalette } from './palette.ts'
+  import { drawPhysicalPlanAnnotations } from './plan-annotations.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
   let { map = null, host = 'map', active = true, initialTarget = { sceneId: null }, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
     map?: MapLibreMap | null
@@ -57,6 +58,8 @@
   let focusedGroupId = $state<string | null>(untrack(() => initialTarget.groupId ?? null))
   let navigation = $state<'pan' | 'orbit'>('pan')
   let canvas = $state<HTMLCanvasElement | null>(null)
+  let draftingCanvas = $state<HTMLCanvasElement | null>(null)
+  let draftingColors = $state.raw<{ line: string; allowance: string; access: string } | null>(null)
   let controls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraElement = $state<HTMLElement | null>(null)
@@ -230,7 +233,24 @@
       untrack(() => current.setView(scene.descriptor.id, view))
     }
   })
-  $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }) })
+  $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }); const color = (role: string) => `rgb(${palette.materials[role]!.map(channel => channel * 255).join(' ')})`; draftingColors = { line: color('line'), allowance: color('outage'), access: color('access') } })
+  $effect(() => {
+    void screenRevision
+    const current = controller, target = draftingCanvas, colors = draftingColors, width = size.width, height = size.height
+    if (!target || !current || !colors) return
+    const context = target.getContext('2d'); if (!context) { onerror('Architectural Plan annotations require a Canvas 2D context'); return }
+    const ratio = window.devicePixelRatio || 1, pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
+    if (target.width !== pixelWidth || target.height !== pixelHeight) { target.width = pixelWidth; target.height = pixelHeight }
+    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height)
+    if (!active || suspended || !documentVisible) return
+    const style = getComputedStyle(target), fontSize = Number.parseFloat(style.fontSize), occupied: Array<{ x: number; y: number; width: number; height: number }> = []
+    const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
+    for (const presentation of scenes) {
+      if (presentation.status !== 'ready' || presentation.view.mode !== '2d' || focusedId !== null && presentation.descriptor.id !== focusedId || focusedGroupId !== null && presentation.descriptor.group?.id !== focusedGroupId) continue
+      const scene = current.scene(presentation.descriptor.id); if (!scene) continue
+      drawPhysicalPlanAnnotations(context, { scene, view: presentation.view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
+    }
+  })
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })
   $effect(() => { onDetailedOwners(!active || suspended ? [] : scenes.filter(scene => scene.status === 'ready').map(scene => scene.descriptor.targetObjectId)) })
   $effect(() => {
@@ -578,6 +598,7 @@
 
 {#if host === 'browser'}<canvas class="layout-canvas" bind:this={canvas} tabindex="0" aria-label="Interactive physical layout browser"></canvas>{/if}
 <div class="explorer-overlay" bind:this={overlayElement} class:inactive={!active} aria-hidden={!active} inert={!active}>
+  <canvas class="layout-plan-annotations" bind:this={draftingCanvas} aria-hidden="true"></canvas>
   {#if scenes.length > 0 && focused !== null}
     <div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
       {#if controlsOpen}
@@ -622,6 +643,7 @@
 <style>
   .layout-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; outline-offset: -3px; }
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
+  .layout-plan-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; font-size: 12px; }
   .layout-tools { position: absolute; z-index: 5; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; color: var(--text); }
   .entry-actions { display: flex; gap: 6px; }.entry-actions button { flex: 1; }
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

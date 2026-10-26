@@ -2,7 +2,7 @@ import { MercatorCoordinate } from 'maplibre-gl'
 import type { PackPhysicalScene, PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
 import type { PhysicalMesh } from './geometry.ts'
-import { boundsCorners, localMercatorMatrix, transform } from './math.ts'
+import { boundsCorners, localMercatorMatrix, transform, type Vector3 } from './math.ts'
 import { createPhysicalGeometryPreparer, type PhysicalPreparedGeometry } from './preparation.ts'
 import { admitPhysicalPickAcceleration, derivePhysicalPickAcceleration } from './picking.ts'
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from './overview-geometry.ts'
@@ -202,6 +202,12 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null : null,
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => active && (renderer?.visibleAt(sceneId, occurrenceId, point) ?? false),
     project: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.project(sceneId, occurrenceId, levelId) ?? null : null,
+    projectPlanPoints(sceneId: string, points: ReadonlyArray<Vector3>): ReadonlyArray<{ x: number; y: number }> {
+      const entry = entries.get(sceneId)
+      if (!active || !entry || entry.state !== 'ready' || entry.view.mode !== '2d') return []
+      const matrix = localMercatorMatrix(entry.source.descriptor.anchor, entry.source.descriptor.bearing)
+      return points.map(point => { const world = transform(matrix, point); return viewport.projectGeographic(new MercatorCoordinate(world[0], world[1]).toLngLat()) })
+    },
     presentations, scene: (sceneId: string) => entries.get(sceneId)?.scene ?? null,
     retry(sceneId: string): void { const entry = requireEntry(sceneId); entry.generation = ++generation; cancelPreparation(entry); cancelOverview(entry); entry.loading = false; entry.failure = undefined; entry.reason = undefined; entry.scene = null; entry.prepared = null; entry.meshes = []; prepare.retainIdentities?.(new Set([...entries.values()].map(entry => identityFor(entry)))); reconcile() },
     metrics: () => renderer?.metrics() ?? null,
