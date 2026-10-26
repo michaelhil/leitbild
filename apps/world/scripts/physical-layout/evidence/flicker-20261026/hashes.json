@@ -1,0 +1,105 @@
+{
+  "productionSourceTree": "de1dff13251060059bac34fcf646d6369d5b33d4",
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 3612,
+      "sha256": "011561a59126083ba001545c36df8113f2bb992dedb4460de28eaea95a1bb925"
+    },
+    {
+      "file": "baseline-dpr1.summary.json",
+      "bytes": 421783,
+      "sha256": "e32e9d4a737e6d2c68dbc9b93f0893e8012d9bd62e69edaa47c807b349012aeb"
+    },
+    {
+      "file": "baseline-dpr2.summary.json",
+      "bytes": 421667,
+      "sha256": "00014256e57bf4d95ca7fa6b40c1c34a2b69238e46542df9e673cb622b8a421f"
+    },
+    {
+      "file": "comparison.json",
+      "bytes": 28207,
+      "sha256": "14c8514942494d2d516e4083d0e4da7fc35eac6d96a29d882908ae2dcfe36395"
+    },
+    {
+      "file": "cpu-preparation.json",
+      "bytes": 522088,
+      "sha256": "2a890a83bdaaa886aaad95d4d759426e34e3cca05981447de805dcfa18e69954"
+    },
+    {
+      "file": "gl-lifecycle.json",
+      "bytes": 151768,
+      "sha256": "adbc95f247fc7c5e8398b28e88f2951823dfa75332c8af5c1943913f8a9bdf42"
+    },
+    {
+      "file": "gpu-manifest.json",
+      "bytes": 2996,
+      "sha256": "005430b789da7d79095412e416ce4661d0c960820d504461cbf557917c84ae76"
+    },
+    {
+      "file": "gpu-report.md",
+      "bytes": 4102,
+      "sha256": "cf6aad78a4a2f0f86cea8938869c6d4d52c0cf47d93f5f960b2fceb644e74ff3"
+    },
+    {
+      "file": "parking.json",
+      "bytes": 1146697,
+      "sha256": "64e4f0192e799c56b1aa8a70f05f19028e4203698a731ecd78dc8aeb55ecefda"
+    },
+    {
+      "file": "primary-dpr1.summary.json",
+      "bytes": 426735,
+      "sha256": "8198a3e1cfb49998811b5fad1d2356fe0cb2aa576d7d22060e76d960e9c55387"
+    },
+    {
+      "file": "primary-dpr2.summary.json",
+      "bytes": 426757,
+      "sha256": "1e78b685adc70fe5795b3f85f408b5cd11e3a6c8e6828d3ca2eefac1cbb090d1"
+    },
+    {
+      "file": "product-cold-proof.json",
+      "bytes": 18909,
+      "sha256": "ada90beb5acfb5a251b76e29efb5f447901995510b1a5d9399f017aebe076411"
+    },
+    {
+      "file": "product-moving-proof.json",
+      "bytes": 168023,
+      "sha256": "2503416fc871712d80abb6c6cdc4fb14562556c9d3dcfdf337cfa4649274fe99"
+    },
+    {
+      "file": "production-source-manifest.json",
+      "bytes": 5734,
+      "sha256": "06daba99f8d3001983266c826bb582441e949e777d4a6c4bc9f4785abc0755c0"
+    },
+    {
+      "file": "real-gap-baseline-dpr1.summary.json",
+      "bytes": 73749,
+      "sha256": "389d6931988026ede4ef70d4c532a868909780c996d8b09389668924842b21c6"
+    },
+    {
+      "file": "real-gap-baseline-dpr2.summary.json",
+      "bytes": 73751,
+      "sha256": "94b14b9aefc5d5d596e54dfac738e99e9a18ebaad51306ac623d6db3345adbf8"
+    },
+    {
+      "file": "real-gap-dpr1.summary.json",
+      "bytes": 76092,
+      "sha256": "30fbf6b49fe8a1c66c524d799e7454aeed6586c54213e7e29dab30ac53ab0fb6"
+    },
+    {
+      "file": "real-gap-dpr2.summary.json",
+      "bytes": 76094,
+      "sha256": "2b437a5cda99254b001b3d0023919e43610582298b39690d207e4ba64c1cb18d"
+    },
+    {
+      "file": "renderer-summary.json",
+      "bytes": 2594,
+      "sha256": "582c189c1548003f72ef64d3cca9d3cc1c369abf9c3a82519471d3e18cab0347"
+    },
+    {
+      "file": "source-audit-summary.json",
+      "bytes": 41307,
+      "sha256": "97081d5042f3ae730f8a95197426979119c3e8348f49739db69b16dd5c3b6265"
+    }
+  ]
+}

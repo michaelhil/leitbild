@@ -1,0 +1,60 @@
+{
+  "rendererCommit": "95c16392d7865d96b85b02f3d434f011d82fe33e",
+  "glPass": true,
+  "parkingPass": true,
+  "sourceMatches": {
+    "src/ui/map/physical-scene/controller.ts": true,
+    "src/ui/map/physical-scene/map-viewport.ts": true,
+    "src/ui/map/physical-scene/scene-controller.ts": true,
+    "src/ui/map/physical-scene/preparation.ts": true,
+    "src/ui/map/physical-scene/preparation-worker.ts": true,
+    "src/ui/map/physical-scene/inspection-demand.ts": true,
+    "src/ui/map/physical-scene/plan-pass.ts": true,
+    "src/ui/map/physical-scene/plan-projection.ts": true,
+    "src/ui/map/physical-scene/visibility.ts": true,
+    "src/ui/map/physical-scene/gl-state.ts": true,
+    "src/ui/map/physical-scene/canvas-viewport.ts": true,
+    "src/core/packs/scene.ts": true,
+    "src/core/packs/scene-transfer.ts": true,
+    "src/ui/map/physical-scene/surface-ownership.ts": true,
+    "src/ui/map/physical-scene/spatial-index.ts": true,
+    "src/ui/map/physical-scene/backend.ts": true,
+    "src/ui/map/physical-scene/geometry.ts": true,
+    "src/ui/map/physical-scene/overview.ts": true,
+    "src/ui/map-runtime/operational-deck-layers.ts": true,
+    "src/packs/physical-layout/native/compile-scene.ts": true,
+    "src/packs/physical-layout/native/campus/compile-scene.ts": true
+  },
+  "parkingSourceMatches": {
+    "src/ui/map/physical-scene/surface-ownership.ts": true,
+    "src/ui/map/physical-scene/spatial-index.ts": true,
+    "src/ui/map/physical-scene/backend.ts": true,
+    "src/ui/map/physical-scene/plan-pass.ts": true,
+    "src/ui/map/physical-scene/plan-projection.ts": true,
+    "src/ui/map/physical-scene/gl-state.ts": true,
+    "src/ui/map/physical-scene/visibility.ts": true,
+    "src/ui/map/physical-scene/map-viewport.ts": true,
+    "src/ui/map/physical-scene/scene-controller.ts": true,
+    "src/ui/map/physical-scene/preparation.ts": true,
+    "src/ui/map/physical-scene/renderer.ts": true,
+    "src/ui/map/physical-scene/geometry.ts": true,
+    "src/ui/map/physical-scene/canvas-viewport.ts": true,
+    "tests/browser/physical-scene/plan-parking-app.ts": true
+  },
+  "statusGeometry": {
+    "uploadsBefore": 1,
+    "uploadsAfter": 1,
+    "changedPixels": true
+  },
+  "mountCycles": 20,
+  "styleCycles": 20,
+  "idleFrames": 0,
+  "contextRecovery": true,
+  "negativeControl": true,
+  "errors": {
+    "renderer": [],
+    "gl": [],
+    "state": []
+  },
+  "retainedHost": "Incomplete: timed out while awaiting every source ready; whole-map all-detail assumption is incompatible with automatic semantic legibility. Not a passing warm resource or camera/status benchmark."
+}

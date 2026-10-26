@@ -1,0 +1,732 @@
+{
+  "finalSourceCommit": "95c16392d7865d96b85b02f3d434f011d82fe33e",
+  "testCheckoutCommit": "2283a07838950e04a285ec41429ffc2085965afc",
+  "rootIntegratedCommit": "24e5c368818eadbac88c7fc72435a1258dcdee7f",
+  "appsWorldSrcTree": "de1dff13251060059bac34fcf646d6369d5b33d4",
+  "runs": {
+    "primary-dpr1": {
+      "provenance": {
+        "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-flicker-visual-proof/apps/world",
+        "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+        "rendererCommit": "2283a07838950e04a285ec41429ffc2085965afc",
+        "sourceCommit": "2d72bcfc8b4b50cbcf99276b42cd7f7f742cb5ad",
+        "fixtureDeliveryBytes": 25270222,
+        "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e",
+        "definitions": [
+          {
+            "id": "layout:halden-1",
+            "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+            "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+          }
+        ],
+        "sources": {
+          "src/ui/map/physical-scene/surface-ownership.ts": "396df497db8efdd2ab9725fc4cb0501db37690ad11ab89930bc6758752f8c37c",
+          "src/ui/map/physical-scene/spatial-index.ts": "ba202fbaca8f0099f50f53201eddd3f7e928b5e8076ae232b1ff069f157867f5",
+          "src/ui/map/physical-scene/preparation-worker.ts": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa",
+          "src/ui/map/physical-scene/backend.ts": "c5d931b4beab114e238bdb11e96b59578e90ca6bd72e5cb198aec4d07889cf0d",
+          "src/ui/map/physical-scene/plan-pass.ts": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+          "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+          "src/ui/map/physical-scene/gl-state.ts": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+          "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+          "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+          "src/ui/map/physical-scene/scene-controller.ts": "10813471340e49c523bd4fa6721e0577c93ee5a951f35a3e2a32adf12ff2d435",
+          "src/ui/map/physical-scene/preparation.ts": "4b4b62e6f28d4f4914685e744a43e317f7935e1874a321126400300a82314cee",
+          "src/ui/map/physical-scene/renderer.ts": "d014acdb970805a9704880cf66986973f0be924030913cea17063d1412276c14",
+          "src/ui/map/physical-scene/geometry.ts": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+          "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+          "tests/browser/physical-scene/flicker-app.ts": "a229da6575162ea7e20752f818f39653af9b3e04aef508a97b2cfc90fb574a6c"
+        }
+      },
+      "passed": true,
+      "phaseCount": 12,
+      "sampled": 7634,
+      "phases": [
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 2.3431308638738755,
+            "farMetres": 293.95687773906786,
+            "a": -1.0160700988138032,
+            "b": -36.81334291287203,
+            "unitsPerMetre": 7.7929714139120385
+          }
+        },
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 2.3431308638738755,
+            "farMetres": 293.95687773906786,
+            "a": -1.0160700988138032,
+            "b": -36.81334291287203,
+            "unitsPerMetre": 7.7929714139120385
+          }
+        },
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0.75,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 1.3932405740968643,
+            "farMetres": 259.8259799247006,
+            "a": -1.0107822296632991,
+            "b": -36.71696136936998,
+            "unitsPerMetre": 13.106163471413755
+          }
+        },
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0.75,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 1.3932405740968643,
+            "farMetres": 259.8259799247006,
+            "a": -1.0107822296632991,
+            "b": -36.71696136936998,
+            "unitsPerMetre": 13.106163471413755
+          }
+        },
+        {
+          "host": "map",
+          "mode": "2d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        },
+        {
+          "host": "map",
+          "mode": "2d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.13125039404987154,
+            "farMetres": 456.33437334190313,
+            "a": -1.000575403312462,
+            "b": -1.2768136423433189e-08,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.13125039404987154,
+            "farMetres": 456.33437334190313,
+            "a": -1.000575403312462,
+            "b": -1.2768136423433189e-08,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0.75,
+          "sampled": 891,
+          "correctPainted": 891,
+          "exactTargetPicks": 891,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.07804143638716114,
+            "farMetres": 357.5175870535795,
+            "a": -1.0004366692904805,
+            "b": -7.591402778205254e-09,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0.75,
+          "sampled": 891,
+          "correctPainted": 891,
+          "exactTargetPicks": 891,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.07804143638716114,
+            "farMetres": 357.5175870535795,
+            "a": -1.0004366692904805,
+            "b": -7.591402778205254e-09,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "2d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        },
+        {
+          "host": "canvas",
+          "mode": "2d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        }
+      ]
+    },
+    "primary-dpr2": {
+      "provenance": {
+        "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-flicker-visual-proof/apps/world",
+        "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+        "rendererCommit": "2283a07838950e04a285ec41429ffc2085965afc",
+        "sourceCommit": "2d72bcfc8b4b50cbcf99276b42cd7f7f742cb5ad",
+        "fixtureDeliveryBytes": 25270222,
+        "fixtureSha256": "93a419a84d3f64bc1ecd9503433d6740876c80ce50c2e41a5dfb1448c5449e9e",
+        "definitions": [
+          {
+            "id": "layout:halden-1",
+            "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+            "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+          }
+        ],
+        "sources": {
+          "src/ui/map/physical-scene/surface-ownership.ts": "396df497db8efdd2ab9725fc4cb0501db37690ad11ab89930bc6758752f8c37c",
+          "src/ui/map/physical-scene/spatial-index.ts": "ba202fbaca8f0099f50f53201eddd3f7e928b5e8076ae232b1ff069f157867f5",
+          "src/ui/map/physical-scene/preparation-worker.ts": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa",
+          "src/ui/map/physical-scene/backend.ts": "c5d931b4beab114e238bdb11e96b59578e90ca6bd72e5cb198aec4d07889cf0d",
+          "src/ui/map/physical-scene/plan-pass.ts": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+          "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+          "src/ui/map/physical-scene/gl-state.ts": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+          "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+          "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+          "src/ui/map/physical-scene/scene-controller.ts": "10813471340e49c523bd4fa6721e0577c93ee5a951f35a3e2a32adf12ff2d435",
+          "src/ui/map/physical-scene/preparation.ts": "4b4b62e6f28d4f4914685e744a43e317f7935e1874a321126400300a82314cee",
+          "src/ui/map/physical-scene/renderer.ts": "d014acdb970805a9704880cf66986973f0be924030913cea17063d1412276c14",
+          "src/ui/map/physical-scene/geometry.ts": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+          "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+          "tests/browser/physical-scene/flicker-app.ts": "a229da6575162ea7e20752f818f39653af9b3e04aef508a97b2cfc90fb574a6c"
+        }
+      },
+      "passed": true,
+      "phaseCount": 12,
+      "sampled": 7634,
+      "phases": [
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 2.3431308638738755,
+            "farMetres": 293.95687773906786,
+            "a": -1.0160700988138032,
+            "b": -36.81334291287203,
+            "unitsPerMetre": 7.7929714139120385
+          }
+        },
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 2.3431308638738755,
+            "farMetres": 293.95687773906786,
+            "a": -1.0160700988138032,
+            "b": -36.81334291287203,
+            "unitsPerMetre": 7.7929714139120385
+          }
+        },
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0.75,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 1.3932405740968643,
+            "farMetres": 259.8259799247006,
+            "a": -1.0107822296632991,
+            "b": -36.71696136936998,
+            "unitsPerMetre": 13.106163471413755
+          }
+        },
+        {
+          "host": "map",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0.75,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 1.3932405740968643,
+            "farMetres": 259.8259799247006,
+            "a": -1.0107822296632991,
+            "b": -36.71696136936998,
+            "unitsPerMetre": 13.106163471413755
+          }
+        },
+        {
+          "host": "map",
+          "mode": "2d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        },
+        {
+          "host": "map",
+          "mode": "2d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.13125039404987154,
+            "farMetres": 456.33437334190313,
+            "a": -1.000575403312462,
+            "b": -1.2768136423433189e-08,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 924,
+          "correctPainted": 924,
+          "exactTargetPicks": 924,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.13125039404987154,
+            "farMetres": 456.33437334190313,
+            "a": -1.000575403312462,
+            "b": -1.2768136423433189e-08,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": true,
+          "zoomOffset": 0.75,
+          "sampled": 891,
+          "correctPainted": 891,
+          "exactTargetPicks": 891,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.07804143638716114,
+            "farMetres": 357.5175870535795,
+            "a": -1.0004366692904805,
+            "b": -7.591402778205254e-09,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "3d",
+          "solidsOnly": false,
+          "zoomOffset": 0.75,
+          "sampled": 891,
+          "correctPainted": 891,
+          "exactTargetPicks": 891,
+          "positiveControlSamples": 77,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.07804143638716114,
+            "farMetres": 357.5175870535795,
+            "a": -1.0004366692904805,
+            "b": -7.591402778205254e-09,
+            "unitsPerMetre": 4.862638378491405e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "mode": "2d",
+          "solidsOnly": true,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        },
+        {
+          "host": "canvas",
+          "mode": "2d",
+          "solidsOnly": false,
+          "zoomOffset": 0,
+          "sampled": 77,
+          "correctPainted": 77,
+          "exactTargetPicks": 77,
+          "positiveControlSamples": 0,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": null
+        }
+      ]
+    },
+    "real-gap-dpr1": {
+      "provenance": {
+        "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-flicker-visual-proof/apps/world",
+        "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+        "rendererCommit": "2283a07838950e04a285ec41429ffc2085965afc",
+        "sourceCommit": "2d72bcfc8b4b50cbcf99276b42cd7f7f742cb5ad",
+        "fixtureDeliveryBytes": 29780801,
+        "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+        "definitions": [
+          {
+            "id": "layout:halden-campus",
+            "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+            "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+          }
+        ],
+        "sources": {
+          "src/ui/map/physical-scene/backend.ts": "c5d931b4beab114e238bdb11e96b59578e90ca6bd72e5cb198aec4d07889cf0d",
+          "src/ui/map/physical-scene/plan-pass.ts": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+          "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+          "src/ui/map/physical-scene/gl-state.ts": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+          "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+          "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+          "src/ui/map/physical-scene/scene-controller.ts": "10813471340e49c523bd4fa6721e0577c93ee5a951f35a3e2a32adf12ff2d435",
+          "src/ui/map/physical-scene/preparation.ts": "4b4b62e6f28d4f4914685e744a43e317f7935e1874a321126400300a82314cee",
+          "src/ui/map/physical-scene/renderer.ts": "d014acdb970805a9704880cf66986973f0be924030913cea17063d1412276c14",
+          "src/ui/map/physical-scene/geometry.ts": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+          "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+          "tests/browser/physical-scene/near-gap-app.ts": "a002517d732b332ec0af7558400fa01ad570a88429cd1c71ab8e6ab8bc648211"
+        }
+      },
+      "passed": true,
+      "phaseCount": 4,
+      "sampled": 220,
+      "phases": [
+        {
+          "host": "map",
+          "solidsOnly": true,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 1.2002858944343464,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.35028174737563056,
+            "farMetres": 259.81287712489325,
+            "a": -1.0027000558355317,
+            "b": -36.56912925490633,
+            "unitsPerMetre": 52.12921704204262
+          }
+        },
+        {
+          "host": "map",
+          "solidsOnly": false,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 1.2002858944343464,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.35028174737563056,
+            "farMetres": 259.81287712489325,
+            "a": -1.0027000558355317,
+            "b": -36.56912925490633,
+            "unitsPerMetre": 52.12921704204262
+          }
+        },
+        {
+          "host": "canvas",
+          "solidsOnly": true,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 1.8827622755385414,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.013881299921031215,
+            "farMetres": 1865.9433360270743,
+            "a": -1.0000148786974619,
+            "b": -1.3497295677769496e-09,
+            "unitsPerMetre": 4.8616467276878543e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "solidsOnly": false,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 1.8827622755385414,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.013881299921031215,
+            "farMetres": 1865.9433360270743,
+            "a": -1.0000148786974619,
+            "b": -1.3497295677769496e-09,
+            "unitsPerMetre": 4.8616467276878543e-08
+          }
+        }
+      ]
+    },
+    "real-gap-dpr2": {
+      "provenance": {
+        "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-flicker-visual-proof/apps/world",
+        "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+        "rendererCommit": "2283a07838950e04a285ec41429ffc2085965afc",
+        "sourceCommit": "2d72bcfc8b4b50cbcf99276b42cd7f7f742cb5ad",
+        "fixtureDeliveryBytes": 29780801,
+        "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+        "definitions": [
+          {
+            "id": "layout:halden-campus",
+            "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+            "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+          }
+        ],
+        "sources": {
+          "src/ui/map/physical-scene/backend.ts": "c5d931b4beab114e238bdb11e96b59578e90ca6bd72e5cb198aec4d07889cf0d",
+          "src/ui/map/physical-scene/plan-pass.ts": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+          "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+          "src/ui/map/physical-scene/gl-state.ts": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+          "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+          "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+          "src/ui/map/physical-scene/scene-controller.ts": "10813471340e49c523bd4fa6721e0577c93ee5a951f35a3e2a32adf12ff2d435",
+          "src/ui/map/physical-scene/preparation.ts": "4b4b62e6f28d4f4914685e744a43e317f7935e1874a321126400300a82314cee",
+          "src/ui/map/physical-scene/renderer.ts": "d014acdb970805a9704880cf66986973f0be924030913cea17063d1412276c14",
+          "src/ui/map/physical-scene/geometry.ts": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+          "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+          "tests/browser/physical-scene/near-gap-app.ts": "a002517d732b332ec0af7558400fa01ad570a88429cd1c71ab8e6ab8bc648211"
+        }
+      },
+      "passed": true,
+      "phaseCount": 4,
+      "sampled": 220,
+      "phases": [
+        {
+          "host": "map",
+          "solidsOnly": true,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 3.0984566386461054,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.35028174737563056,
+            "farMetres": 259.81287712489325,
+            "a": -1.0027000558355317,
+            "b": -36.56912925490633,
+            "unitsPerMetre": 52.12921704204262
+          }
+        },
+        {
+          "host": "map",
+          "solidsOnly": false,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 3.0984566386461054,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.35028174737563056,
+            "farMetres": 259.81287712489325,
+            "a": -1.0027000558355317,
+            "b": -36.56912925490633,
+            "unitsPerMetre": 52.12921704204262
+          }
+        },
+        {
+          "host": "canvas",
+          "solidsOnly": true,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 4.259556298722386,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.013881299921031215,
+            "farMetres": 1865.9433360270743,
+            "a": -1.0000148786974619,
+            "b": -1.3497295677769496e-09,
+            "unitsPerMetre": 4.8616467276878543e-08
+          }
+        },
+        {
+          "host": "canvas",
+          "solidsOnly": false,
+          "sampled": 55,
+          "correctPainted": 55,
+          "exactTargetPicks": 55,
+          "minimumMarginDevice": 4.259556298722386,
+          "glError": 0,
+          "unstableTracks": 0,
+          "depthRange": {
+            "nearMetres": 0.013881299921031215,
+            "farMetres": 1865.9433360270743,
+            "a": -1.0000148786974619,
+            "b": -1.3497295677769496e-09,
+            "unitsPerMetre": 4.8616467276878543e-08
+          }
+        }
+      ]
+    }
+  },
+  "comparisonsToBaseline": {
+    "primary-dpr1": {
+      "baselineRawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/remediation-audit/flicker-gpu-proof-20261026/baseline-dpr1.raw.json",
+      "sourceFixtureEqual": true,
+      "uploadedMatricesByteEqual": true,
+      "baselinePassed": false,
+      "finalPassed": true
+    },
+    "primary-dpr2": {
+      "baselineRawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/remediation-audit/flicker-gpu-proof-20261026/baseline-dpr2.raw.json",
+      "sourceFixtureEqual": true,
+      "uploadedMatricesByteEqual": true,
+      "baselinePassed": false,
+      "finalPassed": true
+    },
+    "real-gap-dpr1": {
+      "baselineRawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/remediation-audit/flicker-gpu-proof-20261026/real-gap-control/baseline-dpr1.raw.json",
+      "sourceFixtureEqual": true,
+      "uploadedMatricesByteEqual": true,
+      "baselinePassed": true,
+      "finalPassed": true
+    },
+    "real-gap-dpr2": {
+      "baselineRawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/remediation-audit/flicker-gpu-proof-20261026/real-gap-control/baseline-dpr2.raw.json",
+      "sourceFixtureEqual": true,
+      "uploadedMatricesByteEqual": true,
+      "baselinePassed": true,
+      "finalPassed": true
+    }
+  }
+}
