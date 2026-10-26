@@ -15,7 +15,11 @@ import { loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
 const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(normalOperation),[processPlantPack,electricGridPack,weatherPack,physicalLayoutPack],{routing:createDirectRoutingAdapter()})
 const data = (id: string) => architectureLayoutDataSchema.parse(scenario.initialObjects.find(object=>object.id===id)!.packData)
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-const collect = async () => { await Bun.sleep(0); Bun.gc(true); await Bun.sleep(0); Bun.gc(true) }
+// WeakRef targets remain alive for their current host job. Cross real timer
+// tasks before forcing collection, rather than relying on a zero-duration
+// Promise sleep to unwind the VM's current async/native stack.
+const nextTask = () => new Promise<void>(resolve=>setTimeout(resolve,0))
+const collect = async () => { await nextTask(); Bun.gc(true); await nextTask(); Bun.gc(true) }
 
 test('warm placements preserve the complete intrinsic R3 delivery after only its objects remain retained', async () => {
   const firstData=data('layout:halden-1'),secondData=data('layout:halden-2')
