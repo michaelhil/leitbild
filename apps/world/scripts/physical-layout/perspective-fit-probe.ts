@@ -63,6 +63,10 @@ try {
       if(evaluated.exceptionDetails)throw Error(JSON.stringify(evaluated.exceptionDetails));phases.push(evaluated.result.value)
     }
   }
+  for(const {minimumPitch,maximumPitch,requestedPitch} of [{minimumPitch:0,maximumPitch:45,requestedPitch:89},{minimumPitch:0,maximumPitch:70,requestedPitch:89},{minimumPitch:20,maximumPitch:85,requestedPitch:0}]){
+    const evaluated=await call('Runtime.evaluate',{expression:`window.perspectiveFitProbe.phase('map',true,true,${maximumPitch},${requestedPitch},${minimumPitch})`,awaitPromise:true,returnByValue:true,timeout:60000})
+    if(evaluated.exceptionDetails)throw Error(JSON.stringify(evaluated.exceptionDetails));phases.push(evaluated.result.value)
+  }
   const lifecycle=await call('Runtime.evaluate',{expression:'window.perspectiveFitProbe.lifecycle()',awaitPromise:true,returnByValue:true,timeout:60000})
   if(lifecycle.exceptionDetails)throw Error(JSON.stringify(lifecycle.exceptionDetails))
   const ended=await call('Runtime.evaluate',{expression:'window.perspectiveFitProbe.finish()',returnByValue:true})

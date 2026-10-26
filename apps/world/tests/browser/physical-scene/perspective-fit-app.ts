@@ -17,23 +17,24 @@ interface Host{viewport:PhysicalViewport;controller:ReturnType<typeof createPhys
 let active:Host|null=null
 const hosts=new Map<string,Host>()
 const rendered=(host:Host)=>new Promise<void>(resolve=>{const off=host.viewport.surface.on('render',()=>{off();resolve()});host.viewport.requestRender()})
-declare global{interface Window{perspectiveFitProbe:{phase:(name:string,asymmetric:boolean,nativePadding:boolean)=>Promise<unknown>;lifecycle:()=>Promise<unknown>;finish:()=>unknown}}}
-window.perspectiveFitProbe={async phase(name,asymmetric,nativePadding){
+declare global{interface Window{perspectiveFitProbe:{phase:(name:string,asymmetric:boolean,nativePadding:boolean,maximumPitch?:number,requestedPitch?:number,minimumPitch?:number)=>Promise<unknown>;lifecycle:()=>Promise<unknown>;finish:()=>unknown}}}
+window.perspectiveFitProbe={async phase(name,asymmetric,nativePadding,maximumPitch=85,requestedPitch=57.914,minimumPitch=0){
  await loaded;active?.controller.setActive(false);mapElement.hidden=name!=='map';canvas.hidden=name!=='canvas';if(name==='map')map.resize()
  let host=hosts.get(name)
  if(!host){const viewport=name==='map'?createMapPhysicalViewport(map,()=>undefined):createCanvasPhysicalViewport(canvas),gl=(name==='map'?map.getCanvas():canvas).getContext('webgl2')!,bufferData=gl.bufferData.bind(gl);host={viewport,controller:null!,matrix:null};const value=host;gl.bufferData=((target:number,data:unknown,usage:number,...rest:unknown[])=>{if(target===gl.ARRAY_BUFFER&&usage===gl.DYNAMIC_DRAW&&data instanceof Float32Array&&data.length===17)value.matrix=[...data.subarray(0,16)];(bufferData as(...args:unknown[])=>void)(target,data,usage,...rest)}) as typeof gl.bufferData
  host.controller=createPhysicalSceneControllerForViewport(viewport,{palette:physicalLayoutPalette(canvas),onChange(){},reportError:error=>errors.push(error.message)});host.controller.setSources([{descriptor,load:async()=>scene}]);host.controller.setView(scene.id,{...host.controller.presentations()[0]!.view,mode:'3d',levelId:'all',live:false});host.controller.focus(scene.id,{scopeId:'building/turbine-hall',preservePose:false});hosts.set(name,host)}
- active=host;host.controller.setActive(true);if(name==='map')map.setPadding(nativePadding?{left:90,right:15,top:40,bottom:25}:{left:0,right:0,top:0,bottom:0})
+ active=host;host.controller.setActive(true);if(name==='map'){map.setMinPitch(0);map.setMaxPitch(maximumPitch);map.setMinPitch(minimumPitch);map.setPadding(nativePadding?{left:90,right:15,top:40,bottom:25}:{left:0,right:0,top:0,bottom:0})}
  const started=performance.now();while(host.controller.presentations()[0]?.status!=='ready'){if(errors.length)throw Error(errors.join(';'));if(performance.now()-started>60000)throw Error('Actual source did not prepare');await tick()}
  const size=host.viewport.surface.getSize(),padding=asymmetric?{left:Math.min(size.width/4,180),right:25,top:Math.min(size.height/3,230),bottom:60}:{left:30,right:30,top:30,bottom:30}
- const authoredTarget=transform(placement,[0,-2,11.5]);host.viewport.fitWorld(bounds,{padding,preservePose:false,mode:'3d',bearing:scene.bearing+139.893,pitch:57.914,target:authoredTarget});await rendered(host)
+ const authoredTarget=transform(placement,[0,-2,11.5]);host.viewport.fitWorld(bounds,{padding,preservePose:false,mode:'3d',bearing:scene.bearing+139.893,pitch:requestedPitch,target:authoredTarget});await rendered(host)
  if(!host.matrix)throw Error('No actual GPU placement matrix')
  const corners=boundsCorners(bounds).map(point=>{const local=transform(unplace,point),p=transform(host!.matrix!,local);return{x:(p[0]+1)*size.width/2,y:(1-p[1])*size.height/2,z:p[2]}}),p=transform(host.matrix,[0,-2,11.5]),anchor={x:(p[0]+1)*size.width/2,y:(1-p[1])*size.height/2},tolerance=1/devicePixelRatio
- const passed=corners.every(point=>point.x>=padding.left-tolerance&&point.x<=size.width-padding.right+tolerance&&point.y>=padding.top-tolerance&&point.y<=size.height-padding.bottom+tolerance&&point.z>=-1-1e-5&&point.z<=1+1e-5)&&Math.abs(anchor.x-(padding.left+size.width-padding.right)/2)<=tolerance&&Math.abs(anchor.y-(padding.top+size.height-padding.bottom)/2)<=tolerance
- return{name,asymmetric,nativePadding,size,padding,anchor,corners,passed,matrix:host.matrix,pose:host.viewport.cameraPose(),actualNativeNearRatio:name==='map'?map.transform.nearZ/map.transform.cameraToCenterDistance:null,hardwareConcurrency:navigator.hardwareConcurrency,dpr:devicePixelRatio,errors}
+ const effectivePitch=name==='map'?Math.max(map.getMinPitch(),Math.min(requestedPitch,map.getMaxPitch())):requestedPitch,pose=host.viewport.cameraPose()
+ const passed=Math.abs(pose.pitch-effectivePitch)<1e-8&&corners.every(point=>point.x>=padding.left-tolerance&&point.x<=size.width-padding.right+tolerance&&point.y>=padding.top-tolerance&&point.y<=size.height-padding.bottom+tolerance&&point.z>=-1-1e-5&&point.z<=1+1e-5)&&Math.abs(anchor.x-(padding.left+size.width-padding.right)/2)<=tolerance&&Math.abs(anchor.y-(padding.top+size.height-padding.bottom)/2)<=tolerance
+ return{name,asymmetric,nativePadding,requestedPitch,minimumPitch:name==='map'?map.getMinPitch():null,maximumPitch:name==='map'?map.getMaxPitch():null,effectivePitch,size,padding,anchor,corners,passed,matrix:host.matrix,pose,actualNativeNearRatio:name==='map'?map.transform.nearZ/map.transform.cameraToCenterDistance:null,hardwareConcurrency:navigator.hardwareConcurrency,dpr:devicePixelRatio,errors}
 },async lifecycle(){
  for(const value of hosts.values())value.controller.setActive(false)
- mapElement.hidden=false;canvas.hidden=true;map.resize();const host=hosts.get('map')!;host.controller.setActive(true)
+ mapElement.hidden=false;canvas.hidden=true;map.resize();map.setMinPitch(0);map.setMaxPitch(85);const host=hosts.get('map')!;host.controller.setActive(true)
  const options={padding:{left:90,right:25,top:120,bottom:40},preservePose:false,mode:'3d' as const,bearing:139.893,pitch:57.914,target:transform(placement,[0,-2,11.5])}
  host.viewport.fitWorld(bounds,options);await rendered(host);const before=host.viewport.cameraPose(),during=map.getCenterClampedToGround()
  host.controller.setActive(false);await rendered(host);const suspended=map.getCenterClampedToGround()

@@ -125,7 +125,11 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
       if (pausedPose) { const now = currentPose(); if (now.bearing === pausedPose.bearing && now.pitch === pausedPose.pitch && now.zoom === pausedPose.zoom && now.center[0] === pausedPose.center[0] && now.center[1] === pausedPose.center[1]) map.setCenterElevation(pausedPose.elevation); pausedPose = null }
     },
     fitWorld(bounds, options) {
-      const bearing = options.preservePose ? map.getBearing() : options.bearing, pitch = options.mode === '2d' ? 0 : options.preservePose ? map.getPitch() : options.pitch ?? 50
+      const bearing = options.preservePose ? map.getBearing() : options.bearing
+      const requestedPitch = options.preservePose ? map.getPitch() : options.pitch ?? 50
+      // Fit the camera the public host can actually apply. Authored poses remain
+      // host-independent; native pitch constraints must precede the solve.
+      const pitch = options.mode === '2d' ? 0 : Math.max(map.getMinPitch(), Math.min(requestedPitch, map.getMaxPitch()))
       if (options.mode === '2d') {
         leaveElevation()
         if (map.getCenterElevation() !== 0) map.jumpTo({ elevation: 0 })
