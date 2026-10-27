@@ -618,13 +618,12 @@
   <canvas class="layout-plan-annotations" bind:this={draftingCanvas} aria-hidden="true"></canvas>
   {#if scenes.length > 0 && focused !== null}
     {#if controlsOpen}<div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
-      <div class="layout-primary-tools"><div class="layout-main-controls">
+      {#snippet cameraNavigation()}
+        <CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
+      {/snippet}
       <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
-          onclose={() => { controlsOpen = false; componentsOpen = false }} />
-      </div>
-      {#if focused.view.mode === '3d'}<CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />{/if}
-      </div>
+          navigationControls={focused.view.mode === '3d' ? cameraNavigation : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}
         <section class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
           <label>Find a component<input type="search" bind:value={filter} /></label>
@@ -660,7 +659,6 @@
 <style>
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
   .layout-plan-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; font-size: 12px; }
-  .layout-primary-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }.layout-main-controls { flex: 1 1 36rem; min-width: 0; }
   .layout-tools { position: absolute; left: 12px; z-index: 5; max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; color: var(--text); }.layout-tools > :global(*) { pointer-events: auto; }
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout-components { display: grid; gap: 6px; width: min(440px, 100%); margin-left: auto; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }
