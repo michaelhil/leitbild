@@ -8,6 +8,7 @@ import { physicalLayoutPackView } from './ui-pack.ts'
 import { physicalCoverageIssues } from './coverage.ts'
 import { validatePhysicalConnections } from './connections.ts'
 import { physicalLayoutDependencyFailure } from './dependencies.ts'
+import { physicalDesignTargets } from './targets.ts'
 
 export const physicalLayoutScenarioItemSchema = z.object({
   pack: z.literal(physicalLayoutPackId), type: z.literal('site-layout'), id: objectIdSchema,
@@ -76,19 +77,29 @@ export const physicalLayoutPack: WorldPack = {
       const restricted = memberObjects.flatMap(member => member.audience === undefined || member.audience === 'public' ? [] : [member.audience])
       const audience = restricted.length === 0 ? owner.audience : restricted[0]!.filter(side => restricted.every(sides => sides.includes(side)))
       if (audience?.length === 0) throw new Error('Physical layout members have no shared audience')
-      const subjectIds = new Set(targets.subjects.map(subject => subject.id))
+      const targetSubjects = physicalDesignTargets(targets, 'includeGraphConnections' in requirements && requirements.includeGraphConnections === true)
+      const subjectIds = new Set(targetSubjects.map(subject => subject.id))
       const representedSubjectIds = [...new Set(retained.bindings.map(binding => binding.elementId))].sort()
       for (const id of representedSubjectIds) if (!subjectIds.has(id)) throw new Error(`Physical-layout correspondence names an unknown owner subject: ${id}`)
       if (retained.profile !== 'turbine-island') {
-        const issues = physicalCoverageIssues({ evidence: retained.coverageEvidence, physicalIds: retained.source.elements.map(element => element.id), ownerSubjectIds: targets.subjects.map(subject => subject.id), bindings: retained.bindings })
+        const physicalIds = [...retained.source.elements.map(element => element.id), ...('routing' in retained.source && retained.source.routing ? retained.source.routing.connections.map(connection => connection.id) : [])]
+        const issues = physicalCoverageIssues({ evidence: retained.coverageEvidence, physicalIds, ownerSubjectIds: targetSubjects.map(subject => subject.id), bindings: retained.bindings })
         if (issues.length) throw new Error(`Physical coverage admission failed: ${issues.join('; ')}`)
+      }
+      if ('routing' in retained.source && retained.source.routing) {
+        const terminals = new Map(retained.source.routing.terminals.map(terminal => [terminal.id, terminal]))
+        for (const route of retained.source.routing.connections) {
+          const edge = targets.connections?.find(connection => connection.id === route.graphConnectionId), from = terminals.get(route.from)!, to = terminals.get(route.to)!
+          if (!edge || edge.from.subjectId !== from.subjectId || edge.from.port !== from.port || edge.to.subjectId !== to.subjectId || edge.to.port !== to.port) throw new Error(`Physical route endpoint differs from its owner graph: ${route.id}`)
+          if (!retained.bindings.some(binding => binding.physicalElementId === route.id && binding.elementId === edge.id)) throw new Error(`Physical route has no exact graph correspondence: ${route.id}`)
+        }
       }
       const data = physicalLayoutDataSchema.parse({
         type: physicalLayoutPackId, design: retained.design, sourceDigest: retained.sourceDigest, bindingDigest: retained.bindingDigest,
         compiler: retained.compiler, source: retained.source, bindings: retained.bindings,
         owner: { objectId: owner.id, packId: owner.packId, modelRef: targets.modelRef, modelDigest: targets.modelDigest },
         placement: { anchor: [point[0], point[1]], bearing: item.bearing }, bounds: retained.bounds,
-        coverage: { representedSubjectIds, unplacedSubjectIds: targets.subjects.filter(subject => !representedSubjectIds.includes(subject.id)).map(subject => subject.id).sort(), totalSubjects: targets.subjects.length },
+        coverage: { representedSubjectIds, unplacedSubjectIds: targetSubjects.filter(subject => !representedSubjectIds.includes(subject.id)).map(subject => subject.id).sort(), totalSubjects: targetSubjects.length },
         ...(retained.profile !== 'turbine-island' ? { coverageDigest: retained.coverageDigest, coverageEvidence: retained.coverageEvidence, requirements: retained.requirements, relatedMembers: resolvedMembers } : {}),
         ...('physicalApplicability' in retained ? { physicalApplicability: retained.physicalApplicability, presentation: retained.presentation, presentationDigest: retained.presentationDigest, ...(item.group === undefined ? {} : { group: item.group }) } : {}),
       })
