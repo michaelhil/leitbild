@@ -25,9 +25,9 @@ import { fixturePackId, fixtureRuntimeId } from './fixtures/fixture-pack.ts'
 import { fixtureCommandIds, fixtureQueryIds } from './fixtures/fixture-runtime.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
-import { explorerLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
+import { architectureLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
 import { physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
-import { pwrExplorerCampusPhysicalDesignRef, pwrExplorerUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { pwrArchitectureCampusPhysicalDesignRef, pwrArchitectureUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -250,8 +250,9 @@ describe('Simulation Run API', () => {
       expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
       const layouts = fetched.body.scenario.initialObjects.filter(object => object.packId === 'physical-layout')
       expect(layouts.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
-      const campus = explorerLayoutDataSchema.parse(layouts.find(object => object.id === 'layout:halden-campus')!.packData)
-      expect(campus.design).toEqual(pwrExplorerCampusPhysicalDesignRef)
+      const campus = architectureLayoutDataSchema.parse(layouts.find(object => object.id === 'layout:halden-campus')!.packData)
+      expect(campus.design).toEqual(pwrArchitectureCampusPhysicalDesignRef)
+      expect(campus.source.planAnnotations!.length).toBeGreaterThan(0)
       expect(campus.owner).toMatchObject({ objectId: 'grid:halden-four-unit', packId: 'electric-grid' })
       expect(campus.coverage.representedSubjectIds).toHaveLength(11)
       expect(campus.relatedMembers).toHaveLength(4)
@@ -261,7 +262,7 @@ describe('Simulation Run API', () => {
       const sharedItem = items.find(item => item.id === 'layout:halden-campus')!
       expect(sharedItem.design).toEqual(campus.design)
       expect(sharedItem.members).toEqual({ [campus.requirements.ownerRole]: objectIdSchema.parse(campus.owner.objectId), ...Object.fromEntries(campus.relatedMembers.map(member => [member.role, objectIdSchema.parse(member.objectId)])) })
-      expect(items.filter(item => item.id !== sharedItem.id).every(item => item.design.digest === pwrExplorerUnitPhysicalDesignRef.digest)).toBe(true)
+      expect(items.filter(item => item.id !== sharedItem.id).every(item => item.design.digest === pwrArchitectureUnitPhysicalDesignRef.digest)).toBe(true)
       const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
       expect(processPlant?.config).toEqual({})
       expect(processPlant?.items).toHaveLength(4)
