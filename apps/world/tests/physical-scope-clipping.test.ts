@@ -84,7 +84,7 @@ test('every admitted PWR floor and the exploded whole unit retain closed true cu
   if (design.profile !== 'drafting') throw Error('The qualification requires the admitted drafting source')
   const scene = compilePhysicalScene('admitted-pwr-floor-qualification', { ...design, owner: { objectId: 'plant' }, placement: { anchor: [11.47, 59.087], bearing: 0 }, bounds: design.presentation.scopes[0]!.bounds })
   for (const levelId of ['all', ...scene.levels.map(level => level.id)]) for (const separation of levelId === 'all' ? [0, 1] : [0]) {
-    const view = { mode: '3d' as const, levelId, cutaway: true, separation, detail: 'auto' as const, live: false }
+    const view = { mode: '3d' as const, levelId, cutaway: true, separation, detail: 'auto' as const, live: false, hiddenLayerIds: [] }
     const before = buildVisibleMeshes(scene, view), clipped = clipPhysicalMeshesToScope(scene, view, before)
     expect(clipped.length).toBeGreaterThan(0)
     for (const mesh of clipped.filter(mesh => mesh.object.clipToScope)) {

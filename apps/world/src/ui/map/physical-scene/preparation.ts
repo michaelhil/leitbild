@@ -1,4 +1,5 @@
 import type { PackPhysicalScene } from '../../../core/packs/scene.ts'
+import { physicalMeshDemandScene } from './layer-demand.ts'
 import { copyPhysicalSceneForTransfer } from '../../../core/packs/scene-transfer.ts'
 import { preparePhysicalSurfaceOwnership, type PhysicalSurfaceOwnershipDiagnostics } from './surface-ownership.ts'
 import { buildVisibleMeshes, type PhysicalMesh } from './geometry.ts'
@@ -20,7 +21,8 @@ export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: Physica
 }
 /** Shared with the module worker and explicit offline/test preparation ports. */
 export const preparePhysicalGeometry = (scene: PackPhysicalScene, view: PhysicalPreparationView, key: string, identity = key): PhysicalPreparedGeometry => {
-  const owned = preparePhysicalSurfaceOwnership(physicalSurfaceAnnotations(scene, view, clipPhysicalMeshesToScope(scene, view, buildVisibleMeshes(scene, view)))), meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
+  const demand = physicalMeshDemandScene(scene, view)
+  const owned = preparePhysicalSurfaceOwnership(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view)))), meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
   return { key, identity, meshes, acceleration: preparePhysicalPickAcceleration(meshes), buffers: preparePhysicalRenderBuffers(meshes), surfaceOwnership: owned.diagnostics }
 }
 type WireMesh = Omit<PhysicalMesh, 'object'> & { readonly objectIndex: number }
