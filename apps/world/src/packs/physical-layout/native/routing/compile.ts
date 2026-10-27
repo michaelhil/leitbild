@@ -52,7 +52,8 @@ export const physicalRouteTube = (points: ReadonlyArray<RoutePoint>, radius: num
   return { positions, normals, indices, featureLines: [{ positions: lines, material: 'line' }] }
 }
 
-/** Assemble requests in authoring coordinates translated to the local origin. */
+/** Solve and validate in the SAME authoring frame. Persisting a local path as
+ * absolute then subtracting the origin would perturb exact clearance faces. */
 const routingRequests = (source: Source, objects: ReadonlyArray<PhysicalSceneObject>) => {
   const network = source.routing; if (!network) return []
   const elements = new Map(source.elements.map(e => [e.id, e])), roster = new Map(objects.map(object => [object.id, object]))
@@ -61,12 +62,12 @@ const routingRequests = (source: Source, objects: ReadonlyArray<PhysicalSceneObj
   const endpoint = (terminal: RoutingTerminal) => {
     const element = elements.get(terminal.elementId); if (!element) throw new Error(`Unknown routing occurrence: ${terminal.elementId}`)
     const pose = elementWorld(source, element), c = Math.cos(pose.yaw), s = Math.sin(pose.yaw), local = terminal.local, outward = terminal.outward
-    return { point: subtract([pose.position[0] + c * local[0] - s * local[1], pose.position[1] + s * local[0] + c * local[1], pose.position[2] + local[2]], source.origin), outward: [c * outward[0] - s * outward[1], s * outward[0] + c * outward[1], outward[2]] as V3, ...(obstacleIds.has(terminal.elementId) ? { obstacleId: terminal.elementId } : {}) }
+    return { point: [pose.position[0] + c * local[0] - s * local[1], pose.position[1] + s * local[0] + c * local[1], pose.position[2] + local[2]] as V3, outward: [c * outward[0] - s * outward[1], s * outward[0] + c * outward[1], outward[2]] as V3, ...(obstacleIds.has(terminal.elementId) ? { obstacleId: terminal.elementId } : {}) }
   }
-  const obstacles = network.obstacleElementIds.map(id => { const object = roster.get(id); if (!object?.bounds) throw new Error(`Routing obstacle has no physical solid: ${id}`); return { id, ...object.bounds } })
+  const obstacles = network.obstacleElementIds.map(id => { const object = roster.get(id); if (!object?.bounds) throw new Error(`Routing obstacle has no physical solid: ${id}`); return { id, min: object.bounds.min.map((value, axis) => value + source.origin[axis]!) as V3, max: object.bounds.max.map((value, axis) => value + source.origin[axis]!) as V3 } })
   return network.connections.map(connection => {
     const fromTerminal = terminals.get(connection.from)!, toTerminal = terminals.get(connection.to)!, from = endpoint(fromTerminal), to = endpoint(toTerminal)
-    const request: PhysicalRouteRequest = { id: connection.id, from, to, radius: connection.diameter / 2, clearance: connection.clearance, bendRadius: connection.bendRadius, obstacles, envelope: { min: subtract(connection.envelope.min, source.origin), max: subtract(connection.envelope.max, source.origin) }, ...(connection.via ? { via: connection.via.map(point => subtract(point, source.origin)) } : {}) }
+    const request: PhysicalRouteRequest = { id: connection.id, from, to, radius: connection.diameter / 2, clearance: connection.clearance, bendRadius: connection.bendRadius, obstacles, envelope: connection.envelope, ...(connection.via ? { via: connection.via } : {}) }
     return { connection, fromTerminal, toTerminal, request }
   })
 }
@@ -75,7 +76,7 @@ const routingRequests = (source: Source, objects: ReadonlyArray<PhysicalSceneObj
  * no map load or live sample invokes the search engine. */
 export const solvePhysicalRoutingNetwork = (source: Source, objects: ReadonlyArray<PhysicalSceneObject>): PhysicalRouting | undefined => {
   if (!source.routing) return undefined
-  return { ...source.routing, connections: routingRequests(source, objects).map(({ connection, request }) => ({ ...connection, solution: routePhysicalConnection(request).points.map(point => point.map((value, axis) => value + source.origin[axis]!) as V3) })) }
+  return { ...source.routing, connections: routingRequests(source, objects).map(({ connection, request }) => ({ ...connection, solution: routePhysicalConnection(request).points.map(point => [...point] as V3) })) }
 }
 
 /** Retained delivery validates accepted routes and generates one shared asset.
@@ -85,10 +86,10 @@ export const compilePhysicalRoutes = (source: Source, objects: ReadonlyArray<Phy
   const roster = new Map(objects.map(object => [object.id, object]))
   return routingRequests(source, objects).map(({ connection, fromTerminal, toTerminal, request }) => {
     if (!connection.solution) throw new Error(`Physical route has no accepted authoring solution: ${connection.id}`)
-    const points = connection.solution.map(point => subtract(point, source.origin))
+    const points = connection.solution
     const validation = validatePhysicalConnectionRoute(request, points)
     const solution: PhysicalRoutedPath = { id: connection.id, points, ...validation, visited: 0 }
-    const centerline = roundedPhysicalRoute(solution.points, connection.bendRadius, network.geometryTolerance / 2), radius = connection.diameter / 2, geometry = physicalRouteTube(centerline, radius, network.geometryTolerance / 2), bounds = extent(centerline, radius)
+    const centerline = roundedPhysicalRoute(solution.points, connection.bendRadius, network.geometryTolerance / 2).map(point => subtract(point, source.origin)), radius = connection.diameter / 2, geometry = physicalRouteTube(centerline, radius, network.geometryTolerance / 2), bounds = extent(centerline, radius)
     const fromObject = roster.get(fromTerminal.elementId)!, toObject = roster.get(toTerminal.elementId)!
     const outside = fromObject.levelId === 'site' && toObject.levelId === 'site'
     const scopes = new Set([source.rootScope.id, ...(fromObject.scopeIds ?? []), ...(toObject.scopeIds ?? [])])
