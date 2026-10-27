@@ -143,7 +143,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           }
           architectureMatrix = new Float32Array(common)
         }
-        backend.draw(draws, depthNear); architectureBackend.draw(draws, depthNear, architectureMatrix)
+        backend.draw(architectureBackend.opaqueDraws(draws), depthNear); architectureBackend.draw(draws, depthNear, architectureMatrix)
         renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
       } catch (error) { failed = true; picking = []; planPicking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
       finally { if (before) restoreSceneGlState(gl, before) }

@@ -72,12 +72,12 @@ uniform int uObjectWidth;
 uniform float uDepthNear;
 uniform bool uFlat;
 uniform bool uLines;
-uniform bool uTranslucent;
+uniform bool uArchitecturePass;
 uniform vec2 uLineOpacity;
 uniform vec3 uIllustrationLine;
 out vec4 outColor;
 void main(){
-  if(vOpacity<=0.||(!uTranslucent&&vOpacity<1.)||(uTranslucent&&vOpacity>=1.))discard;
+  if(vOpacity<=0.||(!uArchitecturePass&&vOpacity<1.))discard;
   // Original clip coordinates still own clipping and screen coverage. A
   // reversed floating camera depth avoids subtracting two almost equal clip
   // coordinates for widely viewed, genuinely thin physical objects.
@@ -166,7 +166,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Physical scene program linking failed')
   } catch (error) { if (program) gl.deleteProgram(program); throw error }
   finally { for (const shader of shaders) gl.deleteShader(shader) }
-  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uTranslucent', 'uOrdered', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
+  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uArchitecturePass', 'uOrdered', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
   const metrics: PhysicalBackendMetrics = { geometryUploads: 0, geometryBytes: 0, residentCpuBytes: 0, draws: 0, buffers: 0, programs: 1, textures: 0, textureBytes: 0, instanceBytes: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, evictions: 0, peakRequiredBytes: 0, liveBuffersAfterDisposal: null, liveProgramsAfterDisposal: null, liveTexturesAfterDisposal: null }
   const texture = (): Texture => { const value = gl.createTexture(); if (!value) throw new Error('Unable to allocate physical material/status table'); metrics.textures++; return { texture: value, width: 0, height: 0, data: new Float32Array() } }
   const dimensions = (pixels: number) => { const width = Math.min(maxTextureSize, Math.max(1, pixels)), height = Math.max(1, Math.ceil(pixels / width)); if (height > maxTextureSize) throw new Error('Physical instance table exceeds this GPU texture allocation') ; return { width, height } }
@@ -265,7 +265,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       // Opaque surfaces retain the original shared depth/antialiasing pass.
       // Fractional architecture is blended in spatial order into this same
       // target by the derived architecture backend, before its single resolve.
-      gl.uniform1i(uniforms.uTranslucent!, 0); gl.depthMask(true)
+      gl.uniform1i(uniforms.uArchitecturePass!, 0); gl.depthMask(true)
       for (const run of runs) {
         const asset = cache.get(run.key)!
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)

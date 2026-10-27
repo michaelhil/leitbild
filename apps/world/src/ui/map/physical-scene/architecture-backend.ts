@@ -4,6 +4,7 @@ import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
 import { physicalFragmentSource, physicalMaterialColor, physicalVertexSource, type PhysicalDraw } from './backend.ts'
 import { inverse } from './math.ts'
 import type { PhysicalScenePalette } from './types.ts'
+import type { PhysicalMesh } from './geometry.ts'
 
 interface Table { readonly handle: WebGLTexture; width: number; height: number; data: Float32Array }
 interface Packet {
@@ -19,6 +20,8 @@ interface Packet {
 export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, initialPalette: PhysicalScenePalette) => {
   let palette = initialPalette, bsp: PhysicalArchitectureBsp | null = null, packet: Packet | null = null, program: WebGLProgram | null = null, disposed = false
   let ownerState = new Float32Array(), ownerPlacementKeys: readonly string[] = []
+  let members = new Map<string, Set<number>>()
+  let opaqueSelections = new WeakMap<readonly PhysicalMesh[], Map<ReadonlySet<number>, readonly PhysicalMesh[]>>()
   let uniforms: Record<string, WebGLUniformLocation | null> = {}
   const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
   const counts = { geometryUploads: 0, orderUploads: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, draws: 0 }
@@ -34,7 +37,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
         gl.attachShader(value, shader)
       }
       gl.linkProgram(value); if (!gl.getProgramParameter(value, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(value) ?? 'Architecture shader linking failed')
-      uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uTranslucent', 'uOrdered', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(value, name)]))
+      uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uArchitecturePass', 'uOrdered', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(value, name)]))
       return value
     } catch (error) { gl.deleteProgram(value); throw error }
     finally { for (const shader of shaders) gl.deleteShader(shader) }
@@ -102,8 +105,25 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       if (packet) release(packet); packet = null; bsp = value
       ownerState = new Float32Array((value?.owners.length ?? 0) * 12)
       ownerPlacementKeys = value?.owners.map(owner => JSON.stringify([owner.sceneId, owner.assetKey])) ?? []
+      members = new Map(); opaqueSelections = new WeakMap()
+      value?.owners.forEach((owner, index) => { const key = ownerPlacementKeys[index]!, group = members.get(key) ?? new Set<number>(); group.add(owner.meshIndex); members.set(key, group) })
     },
     setPalette(value: PhysicalScenePalette): void { palette = value },
+    /** While any architecture is fractional, the global packet owns ALL its
+     * nonzero surfaces, including opaque coincident winners. Keeping alpha-1
+     * architecture in an earlier independent pass would defeat global ties. */
+    opaqueDraws(draws: readonly PhysicalDraw[]): readonly PhysicalDraw[] {
+      if (!bsp || !draws.some(draw => [draw.architecture?.wallOpacity ?? 1, draw.architecture?.floorOpacity ?? 1].some(alpha => alpha > 0 && alpha < 1))) return draws
+      return draws.map(draw => {
+        const group = draw.sceneId === undefined ? undefined : members.get(JSON.stringify([draw.sceneId, draw.asset.key]))
+        if (!group) return draw
+        let selections = opaqueSelections.get(draw.meshes)
+        if (!selections) { selections = new Map(); opaqueSelections.set(draw.meshes, selections) }
+        let selected = selections.get(group)
+        if (!selected) { selected = draw.meshes.filter(mesh => !group.has(mesh.assetIndex ?? draw.asset.meshes.indexOf(mesh))); selections.set(group, selected) }
+        return { ...draw, meshes: selected }
+      })
+    },
     draw(draws: readonly PhysicalDraw[], depthNear = 0, commonMatrix?: Float32Array): void {
       if (disposed) throw Error('Architecture renderer has been disposed')
       if (!bsp || !bsp.owners.length) return
@@ -121,7 +141,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
         if (!mesh || mesh.object.id !== owner.occurrenceId) throw Error('Architecture owner provenance differs from its prepared source')
         const displayed = shown.get(draw)!.has(owner.meshIndex)
         const alpha = displayed ? physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}) : 0
-        if (alpha <= 0 || alpha >= 1) return
+        if (alpha <= 0) return
         visible.add(index); visibleDraw ??= draw
         const at = index * 12, style = draw.styles[owner.meshIndex], color = style?.color ?? palette.defaultMaterial
         ownerData.set([...color, style?.color ? style.emphasis : 0], at); ownerData[at + 7] = alpha
@@ -160,7 +180,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
         value.paletteKey = paletteKey
       } else gl.bindTexture(gl.TEXTURE_2D, value.materials.handle)
       gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform1i(uniforms.uMaterialWidth!, value.materials.width); gl.uniform1i(uniforms.uObjectWidth!, value.objects.width)
-      gl.uniform1i(uniforms.uFlat!, Number(visibleDraw!.flat)); gl.uniform1i(uniforms.uOrdered!, 1); gl.uniform1i(uniforms.uTranslucent!, 1); gl.uniform1f(uniforms.uDepthNear!, depthNear)
+      gl.uniform1i(uniforms.uFlat!, Number(visibleDraw!.flat)); gl.uniform1i(uniforms.uOrdered!, 1); gl.uniform1i(uniforms.uArchitecturePass!, 1); gl.uniform1f(uniforms.uDepthNear!, depthNear)
       gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1); gl.uniform3f(uniforms.uIllustrationLine!, ...palette.line); gl.lineWidth(palette.lineWidth ?? 1)
       gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.disable(gl.POLYGON_OFFSET_FILL); gl.colorMask(true, true, true, true); gl.enable(gl.BLEND)
       gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
@@ -174,7 +194,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       final.liveBuffersAfterDisposal = prior ? [prior.solid, prior.order, prior.instance].filter(value => gl.isBuffer(value)).length : 0
       final.liveTexturesAfterDisposal = prior ? [prior.objects.handle, prior.materials.handle].filter(value => gl.isTexture(value)).length : 0
       final.liveProgramsAfterDisposal = priorProgram ? Number(gl.isProgram(priorProgram)) : 0
-      packet = null; bsp = null; program = null; ownerState = new Float32Array(); ownerPlacementKeys = []; disposed = true
+      packet = null; bsp = null; program = null; ownerState = new Float32Array(); ownerPlacementKeys = []; members.clear(); opaqueSelections = new WeakMap(); disposed = true
     },
   }
 }
