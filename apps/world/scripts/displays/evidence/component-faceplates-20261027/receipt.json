@@ -1,0 +1,357 @@
+{
+  "testedApp": "a3eabf8c2a958deece6cb2f420c4c36a53a3e41d",
+  "url": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd?world=run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11",
+  "initial": {
+    "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+    "title": "Halden Unit 1",
+    "magnifiers": 0,
+    "texts": [
+      {
+        "id": "feedwaterHeader",
+        "title": "Main Feedwater Header · 1902 kg/s",
+        "text": "MFW header\n1902 kg/s"
+      },
+      {
+        "id": "mainSteamHeader",
+        "title": "Main Steam Header · 1902 kg/s",
+        "text": "Steam header\n1902 kg/s"
+      },
+      {
+        "id": "mainFeedwaterPumpA",
+        "title": "Main Feedwater Pump A · RUN 2/2",
+        "text": "MFW A/B\nRUN 2/2"
+      },
+      {
+        "id": "condensatePumpA",
+        "title": "Condensate Pump A · RUN 2/2",
+        "text": "Cond pump A/B\nRUN 2/2"
+      },
+      {
+        "id": "condenser",
+        "title": "Main Condenser · LVL 55.0 % · 13.4 kPa",
+        "text": "Condenser\nLVL 55.0 %\n13.4 kPa"
+      },
+      {
+        "id": "pressurizer",
+        "title": "Pressurizer · 15.50 MPa · LVL 55.0 %",
+        "text": "PZR\n15.50 MPa\nLVL 55.0 %"
+      },
+      {
+        "id": "feedwaterTank",
+        "title": "Feedwater Tank · LVL 82.0 %",
+        "text": "FW tank\nLVL 82.0 %"
+      },
+      {
+        "id": "turbineStopValve",
+        "title": "Turbine Stop Valve · OPEN",
+        "text": "Turbine stop valves\nOPEN"
+      },
+      {
+        "id": "turbineBypassValve",
+        "title": "Turbine Bypass Valve · SHUT",
+        "text": "Turbine bypass\nSHUT"
+      },
+      {
+        "id": "turbine",
+        "title": "Turbine Generator · ON LINE · 1162 MW",
+        "text": "Turbine\nON LINE\n1162 MW"
+      },
+      {
+        "id": "core",
+        "title": "Reactor Core · PWR 100.0 % · 325.0 °C",
+        "text": "Core\nPWR 100.0 %\n325.0 °C"
+      },
+      {
+        "id": "s6",
+        "title": "to Hotwell reject · Hotwell reject",
+        "text": "to\nHotwell reject"
+      },
+      {
+        "id": "s8",
+        "title": "to CW discharge · CW discharge",
+        "text": "to\nCW discharge"
+      },
+      {
+        "id": "s7",
+        "title": "from CW pump · CW pump",
+        "text": "from\nCW pump"
+      },
+      {
+        "id": "s1",
+        "title": "to PORV block, Safety valves · PORV block, Safety valves",
+        "text": "to\nPORV block, Safety valves"
+      },
+      {
+        "id": "s0",
+        "title": "from ACC check valve ×4 +4 more · ACC check valve ×4 +4 more",
+        "text": "from\nACC check valve ×4 +4 more"
+      },
+      {
+        "id": "rcpA",
+        "title": "Reactor Coolant Pump A · RUN",
+        "text": "RCP A\nRUN"
+      },
+      {
+        "id": "feedwaterControlValveA",
+        "title": "Feedwater Control Valve A · part open",
+        "text": "FCV A\npart open"
+      },
+      {
+        "id": "sgA",
+        "title": "Steam Generator A · LVL 54.9 % · 6.90 MPa",
+        "text": "SG A\nLVL 54.9 %\n6.90 MPa"
+      },
+      {
+        "id": "mainSteamIsolationValveA",
+        "title": "Main Steam Isolation Valve A · OPEN",
+        "text": "MSIV A\nOPEN"
+      },
+      {
+        "id": "s2",
+        "title": "from AFW valve A · AFW valve A",
+        "text": "from\nAFW valve A"
+      },
+      {
+        "id": "rcpB",
+        "title": "Reactor Coolant Pump B · RUN",
+        "text": "RCP B\nRUN"
+      },
+      {
+        "id": "feedwaterControlValveB",
+        "title": "Feedwater Control Valve B · part open",
+        "text": "FCV B\npart open"
+      },
+      {
+        "id": "sgB",
+        "title": "Steam Generator B · LVL 54.9 % · 6.90 MPa",
+        "text": "SG B\nLVL 54.9 %\n6.90 MPa"
+      },
+      {
+        "id": "mainSteamIsolationValveB",
+        "title": "Main Steam Isolation Valve B · OPEN",
+        "text": "MSIV B\nOPEN"
+      },
+      {
+        "id": "s3",
+        "title": "from AFW valve B · AFW valve B",
+        "text": "from\nAFW valve B"
+      },
+      {
+        "id": "rcpC",
+        "title": "Reactor Coolant Pump C · RUN",
+        "text": "RCP C\nRUN"
+      },
+      {
+        "id": "feedwaterControlValveC",
+        "title": "Feedwater Control Valve C · part open",
+        "text": "FCV C\npart open"
+      },
+      {
+        "id": "sgC",
+        "title": "Steam Generator C · LVL 54.9 % · 6.90 MPa",
+        "text": "SG C\nLVL 54.9 %\n6.90 MPa"
+      },
+      {
+        "id": "mainSteamIsolationValveC",
+        "title": "Main Steam Isolation Valve C · OPEN",
+        "text": "MSIV C\nOPEN"
+      },
+      {
+        "id": "s4",
+        "title": "from AFW valve C · AFW valve C",
+        "text": "from\nAFW valve C"
+      },
+      {
+        "id": "rcpD",
+        "title": "Reactor Coolant Pump D · RUN",
+        "text": "RCP D\nRUN"
+      },
+      {
+        "id": "feedwaterControlValveD",
+        "title": "Feedwater Control Valve D · part open",
+        "text": "FCV D\npart open"
+      },
+      {
+        "id": "sgD",
+        "title": "Steam Generator D · LVL 54.9 % · 6.90 MPa",
+        "text": "SG D\nLVL 54.9 %\n6.90 MPa"
+      },
+      {
+        "id": "mainSteamIsolationValveD",
+        "title": "Main Steam Isolation Valve D · OPEN",
+        "text": "MSIV D\nOPEN"
+      },
+      {
+        "id": "s5",
+        "title": "from AFW valve D · AFW valve D",
+        "text": "from\nAFW valve D"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "action": "pointer-symbol",
+      "element": "turbine",
+      "name": "Turbine: faceplate",
+      "text": "Turbine\nON LINE\nOpen detail ›\n\nReading Turbine…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "escape",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focusTitle": "Turbine Generator · ON LINE · 1162 MW"
+    },
+    {
+      "action": "pointer-text",
+      "element": "turbine",
+      "name": "Turbine: faceplate",
+      "text": "Turbine\nON LINE\nOpen detail ›\n\nReading Turbine…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "enter",
+      "element": "turbine",
+      "name": "Turbine: faceplate",
+      "text": "Turbine\nON LINE\nOpen detail ›\n\nReading Turbine…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "space",
+      "element": "turbine",
+      "name": "Turbine: faceplate",
+      "text": "Turbine\nON LINE\nOpen detail ›\n\nReading Turbine…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "group",
+      "element": "mainFeedwaterPumpA",
+      "name": "MFW A/B: faceplate",
+      "text": "MFW A/B\nRUN 2/2\nOpen detail ›\nMain Feedwater Pump A ›\nMain Feedwater Pump B ›",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "member",
+      "element": "mainFeedwaterPumpA",
+      "name": "Main Feedwater Pump A: faceplate",
+      "text": "Main Feedwater Pump A\nOpen detail ›\nMFW-PUMP-A-RUN MFW A\nNow: RUN\nSTART\nSTOP\nNot offered here (1)\nRunning\nyes\nFlow\nHalden Unit 1 · Flow · MFW A\nState\nRUN",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "single-continuation",
+      "element": "circulatingWaterPump",
+      "name": "CW pump: faceplate",
+      "text": "CW pump\nOpen detail ›\n\nReading CW pump…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "plural-continuation-choice",
+      "element": "pressurizer.blockValve",
+      "name": "PORV block: faceplate",
+      "text": "PORV block\nOpen detail ›\n\nReading PORV block…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "open-detail",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%20%C2%B7%20Turbine%20Generator%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%20%C2%B7%20Turbine%20Generator%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22element%5C%22%3A%5C%22turbine%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A12%7D%2C%7B%5C%22kind%5C%22%3A%5C%22trend%5C%22%2C%5C%22refs%5C%22%3A%5B%5C%22plant%3Ahalden-1%23turbine.electricMw%5C%22%2C%5C%22plant%3Ahalden-1%23turbine.impulseLoadPercent%5C%22%2C%5C%22plant%3Ahalden-1%23turbine.speedRpm%5C%22%2C%5C%22plant%3Ahalden-1%23turbine.outputBreakerClosed%5C%22%5D%2C%5C%22horizon%5C%22%3A%5C%2210m%5C%22%2C%5C%22rows%5C%22%3A20%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22elements%5C%22%3A%5B%5C%22turbine%5C%22%5D%2C%5C%22rows%5C%22%3A5%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22around%5C%22%3A%5B%5C%22turbine%5C%22%5D%2C%5C%22media%5C%22%3A%5B%5C%22mainSteam%5C%22%2C%5C%22exhaustSteam%5C%22%2C%5C%22electricalPower%5C%22%5D%2C%5C%22reach%5C%22%3A2%7D%2C%5C%22rows%5C%22%3A24%7D%5D%7D%22%7D",
+      "title": "Halden Unit 1 · Turbine Generator"
+    },
+    {
+      "action": "display-choices",
+      "choices": [
+        {
+          "title": "Dashboard",
+          "caption": "Whole Run"
+        },
+        {
+          "title": "Halden Unit 1",
+          "caption": "Overview"
+        },
+        {
+          "title": "Halden Unit 2",
+          "caption": "Overview"
+        },
+        {
+          "title": "Halden Unit 3",
+          "caption": "Overview"
+        },
+        {
+          "title": "Halden Unit 4",
+          "caption": "Overview"
+        },
+        {
+          "title": "Norway grid · Halden connection",
+          "caption": "Overview"
+        },
+        {
+          "title": "Halden complex ground probe",
+          "caption": "Overview"
+        },
+        {
+          "title": "Rain shower",
+          "caption": "Overview"
+        },
+        {
+          "title": "Halden Unit 1 · Turbine Generator",
+          "caption": "From Halden Unit 1"
+        }
+      ]
+    },
+    {
+      "action": "grid-pointer",
+      "element": "branch:osm-50a77b48767677b0",
+      "name": "Follo - Tegneby / Sylling - Tegneby (1): faceplate",
+      "text": "Follo - Tegneby / Sylling - Tegneby (1)\nOpen detail ›\n\nReading Follo - Tegneby / Sylling - Tegneby (1)…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Norway%20grid%20%C2%B7%20Halden%20connection%22%2C%22height%22%3A864%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Norway%20grid%20%C2%B7%20Halden%20connection%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22grid%3Ahalden-four-unit%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22grid%3Ahalden-four-unit%5C%22%5D%2C%5C%22rows%5C%22%3A9%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22grid%3Ahalden-four-unit%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22around%5C%22%3A%5B%5C%22branch%3Aosm-1022cbf125eebbb4%5C%22%5D%2C%5C%22media%5C%22%3A%5B%5C%22ac-420%5C%22%5D%2C%5C%22reach%5C%22%3A3%7D%2C%5C%22rows%5C%22%3A12%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "grid-enter",
+      "element": "branch:osm-50a77b48767677b0",
+      "name": "Follo - Tegneby / Sylling - Tegneby (1): faceplate",
+      "text": "Follo - Tegneby / Sylling - Tegneby (1)\nOpen detail ›\n\nReading Follo - Tegneby / Sylling - Tegneby (1)…",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Norway%20grid%20%C2%B7%20Halden%20connection%22%2C%22height%22%3A864%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Norway%20grid%20%C2%B7%20Halden%20connection%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22grid%3Ahalden-four-unit%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22grid%3Ahalden-four-unit%5C%22%5D%2C%5C%22rows%5C%22%3A9%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22grid%3Ahalden-four-unit%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22around%5C%22%3A%5B%5C%22branch%3Aosm-1022cbf125eebbb4%5C%22%5D%2C%5C%22media%5C%22%3A%5B%5C%22ac-420%5C%22%5D%2C%5C%22reach%5C%22%3A3%7D%2C%5C%22rows%5C%22%3A12%7D%5D%7D%22%7D",
+      "focused": true,
+      "magnifiers": 0
+    },
+    {
+      "action": "grid-detail",
+      "source": "http://127.0.0.1:43146/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Norway%20grid%20%C2%B7%20Halden%20connection%20%C2%B7%20Follo%20-%20Tegneby%20%2F%20Sylling%20-%20Tegneby%20(1)%22%2C%22height%22%3A864%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Norway%20grid%20%C2%B7%20Halden%20connection%20%C2%B7%20Follo%20-%20Tegneby%20%2F%20Sylling%20-%20Tegneby%20(1)%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A03%3A28.671Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22grid%3Ahalden-four-unit%5C%22%2C%5C%22element%5C%22%3A%5C%22branch%3Aosm-50a77b48767677b0%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A8%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22grid%3Ahalden-four-unit%5C%22%5D%2C%5C%22elements%5C%22%3A%5B%5C%22branch%3Aosm-50a77b48767677b0%5C%22%5D%2C%5C%22rows%5C%22%3A30%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22grid%3Ahalden-four-unit%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22around%5C%22%3A%5B%5C%22branch%3Aosm-50a77b48767677b0%5C%22%5D%2C%5C%22media%5C%22%3A%5B%5C%22ac-420%5C%22%5D%2C%5C%22reach%5C%22%3A3%7D%2C%5C%22rows%5C%22%3A38%7D%5D%7D%22%7D",
+      "title": "Norway grid · Halden connection · Follo - Tegneby / Sylling - Tegneby (1)"
+    }
+  ],
+  "modules": [
+    "http://127.0.0.1:43146/assets/world/embed-DD9ZU7m7.js",
+    "http://127.0.0.1:43146/assets/world/svelte-Dp-C2IIQ.js",
+    "http://127.0.0.1:43146/assets/world/preload-helper-BJXbz8SI.js",
+    "http://127.0.0.1:43146/assets/world/model-mqBp-rCk.js",
+    "http://127.0.0.1:43146/assets/world/simulation-run-client-CSns5VfV.js",
+    "http://127.0.0.1:43146/assets/world/rows-BRHDACBI.js",
+    "http://127.0.0.1:43146/assets/world/opened-display-BTVg9xdd.js",
+    "http://127.0.0.1:43146/assets/world/capabilities-BY6gNTg5.js",
+    "http://127.0.0.1:43146/assets/world/inspection-BZz5XRJL.js",
+    "http://127.0.0.1:43146/assets/world/default-display-BZL_biaR.js"
+  ],
+  "exceptions": [],
+  "limits": [
+    "Actual built local Host/World, isolated paused Run.",
+    "CDP pointer and keyboard events; no production hooks or model/command mutation.",
+    "Symbol/text/Enter/Space preserve current display; only explicit card Open detail navigates."
+  ]
+}
