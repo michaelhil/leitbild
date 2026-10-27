@@ -11,13 +11,15 @@ import type {PhysicalArchitectureBspFrame} from './architecture-cohort.ts'
 export interface PhysicalLayerEntry { readonly scene: PackPhysicalScene; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly asset?: PhysicalPreparedGeometry; readonly view: PhysicalSceneView; readonly status: ReadonlyMap<string, PhysicalSubjectStyle>; readonly scopeId?: string }
 export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void, planFontFamily?: () => string) => {
   let renderer: ReturnType<typeof createPhysicalSceneRenderer> | null = null, gl: WebGL2RenderingContext | null = null
+  let mapCanvas: HTMLCanvasElement | null = null
   let finalMetrics: ReturnType<ReturnType<typeof createPhysicalSceneRenderer>['metrics']> | null = null
-  const dispose = (): void => { if (!renderer) return; renderer.dispose(); finalMetrics = renderer.metrics(); renderer = null }
+  const dispose = (): void => { mapCanvas = null; if (!renderer) return; renderer.dispose(); finalMetrics = renderer.metrics(); renderer = null }
   const layer: CustomLayerInterface = {
     // The physical model owns depth; MapLibre receives only the colour overlay.
     id, type: 'custom', renderingMode: '2d',
-    onAdd(map: MapLibreMap, context) { gl = context; try { renderer = createPhysicalSceneRenderer(context, entries, palette, () => map.getCanvas().getBoundingClientRect(), reportError, planFontFamily ?? (() => getComputedStyle(map.getCanvas()).fontFamily)) } catch (error) { reportError(error instanceof Error ? error : new Error(String(error))) } },
-    render(_context, input) { renderer?.render(input.defaultProjectionData.mainMatrix) }, onRemove: dispose,
+    onAdd(map: MapLibreMap, context) { gl = context; mapCanvas = map.getCanvas(); try { renderer = createPhysicalSceneRenderer(context, entries, palette, () => map.getCanvas().getBoundingClientRect(), reportError, planFontFamily ?? (() => getComputedStyle(map.getCanvas()).fontFamily)) } catch (error) { reportError(error instanceof Error ? error : new Error(String(error))) } },
+    prerender(_context, input) { if (mapCanvas) renderer?.prepareFrame(input.defaultProjectionData.mainMatrix, { width: mapCanvas.width, height: mapCanvas.height }) },
+    render() { renderer?.compositeFrame() }, onRemove: dispose,
   }
   return { layer, dispose, setPalette: (next: PhysicalScenePalette) => renderer?.setPalette(next), setHighlight: (target: PhysicalSceneHighlight | null) => renderer?.setHighlight(target), setArchitectureBsp:(asset:PhysicalArchitectureBsp|null,frame:PhysicalArchitectureBspFrame|null)=>renderer?.setArchitectureBsp(asset,frame), retainGeometryIdentities: (identities: ReadonlySet<string>) => renderer?.retainGeometryIdentities(identities), invalidatePicks: () => renderer?.invalidatePicks(), metrics: () => renderer?.metrics() ?? finalMetrics, pick: (point: { x: number; y: number }) => renderer?.pick(point) ?? null,
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null,

@@ -53,24 +53,36 @@ void main(){color=texture(image,uv);}`]] as const) {
       allocations++; return { width, height, samples, texture, draw, resolve, depth, color }
     } catch (error) { clean(); throw error }
   }
+  const resolveColor = (): void => {
+    if (!targets) throw Error('physical render target was not initialized')
+    if (targets.draw !== targets.resolve) {
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, targets.draw); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, targets.resolve)
+      gl.blitFramebuffer(0, 0, targets.width, targets.height, 0, 0, targets.width, targets.height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
+    }
+  }
+  const compositeCurrent = (): void => {
+    if (!targets) throw Error('physical render target was not initialized')
+    // The host owns its current framebuffer/viewport. Never bind or clear it.
+    gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.POLYGON_OFFSET_FILL); gl.disable(gl.RASTERIZER_DISCARD); gl.disable(gl.SAMPLE_COVERAGE); gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gl.enable(gl.BLEND)
+    gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.colorMask(true, true, true, true)
+    gl.useProgram(ownedProgram); gl.bindVertexArray(ownedVao); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.texture); gl.bindSampler(0, null); gl.uniform1i(image, 0)
+    gl.drawArrays(gl.TRIANGLES, 0, 3); composites++
+  }
   return {
     begin(width: number, height: number): void {
       if (disposed) throw Error('physical pass has been disposed')
+      gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null); gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0)
+      gl.disable(gl.RASTERIZER_DISCARD); gl.disable(gl.SAMPLE_COVERAGE); gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE)
       if (!targets || targets.width !== width || targets.height !== height || targets.samples !== samples) { if (targets) releaseTargets(targets); targets = null; targets = allocate(width, height, samples) }
       gl.bindFramebuffer(gl.FRAMEBUFFER, targets.draw); gl.viewport(0, 0, width, height); gl.disable(gl.SCISSOR_TEST); gl.depthRange(0, 1); gl.colorMask(true, true, true, true); gl.depthMask(true)
       gl.clearColor(0, 0, 0, 0); gl.clearDepth(0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
     },
+    resolve: resolveColor,
+    compositeCurrent,
     composite(draw: WebGLFramebuffer | null, read: WebGLFramebuffer | null, viewport: readonly [number, number, number, number]): void {
-      if (!targets) throw Error('physical render target was not initialized')
-      if (targets.draw !== targets.resolve) {
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, targets.draw); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, targets.resolve)
-        gl.blitFramebuffer(0, 0, targets.width, targets.height, 0, 0, targets.width, targets.height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
-      }
+      resolveColor()
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read); gl.viewport(...viewport)
-      gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND)
-      gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.colorMask(true, true, true, true)
-      gl.useProgram(ownedProgram); gl.bindVertexArray(ownedVao); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.texture); gl.bindSampler(0, null); gl.uniform1i(image, 0)
-      gl.drawArrays(gl.TRIANGLES, 0, 3); composites++
+      compositeCurrent()
     },
     metrics: (): PhysicalRenderPassMetrics => ({ depthFormat: 'float32', samples: targets?.samples ?? samples, programs: disposed ? 0 : 1, textures: targets ? 1 : 0, framebuffers: targets ? targets.draw === targets.resolve ? 1 : 2 : 0, renderbuffers: targets ? targets.color ? 2 : 1 : 0, bytes: targets ? targets.width * targets.height * 4 * (1 + (targets.color ? targets.samples * 2 : 1)) : 0, textureBytes: targets ? targets.width * targets.height * 4 : 0, allocations, composites, ...final }),
     dispose(): void {

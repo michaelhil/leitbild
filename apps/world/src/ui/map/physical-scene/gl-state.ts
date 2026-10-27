@@ -7,6 +7,8 @@ export const captureSceneGlState = (gl: GL) => {
   gl.activeTexture(gl.TEXTURE1); const texture1 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null; const sampler1 = gl.getParameter(gl.SAMPLER_BINDING) as WebGLSampler | null
   gl.activeTexture(activeTexture)
   return { activeTexture, texture0, texture1, sampler0, sampler1,
+  unpackBuffer: gl.getParameter(gl.PIXEL_UNPACK_BUFFER_BINDING) as WebGLBuffer | null, unpackRowLength: gl.getParameter(gl.UNPACK_ROW_LENGTH) as number, unpackSkipPixels: gl.getParameter(gl.UNPACK_SKIP_PIXELS) as number, unpackSkipRows: gl.getParameter(gl.UNPACK_SKIP_ROWS) as number,
+  rasterizerDiscard: gl.isEnabled(gl.RASTERIZER_DISCARD), sampleCoverage: gl.isEnabled(gl.SAMPLE_COVERAGE), sampleAlphaToCoverage: gl.isEnabled(gl.SAMPLE_ALPHA_TO_COVERAGE),
   drawFramebuffer: gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null, readFramebuffer: gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null, renderbuffer: gl.getParameter(gl.RENDERBUFFER_BINDING) as WebGLRenderbuffer | null,
   viewport: Array.from(gl.getParameter(gl.VIEWPORT) as Int32Array) as [number, number, number, number], scissor: gl.isEnabled(gl.SCISSOR_TEST), depthRange: Array.from(gl.getParameter(gl.DEPTH_RANGE) as Float32Array) as [number, number], clearColor: Array.from(gl.getParameter(gl.COLOR_CLEAR_VALUE) as Float32Array) as [number, number, number, number], clearDepth: gl.getParameter(gl.DEPTH_CLEAR_VALUE) as number,
   program: gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null,
@@ -33,6 +35,8 @@ export const restoreSceneGlState = (gl: GL, state: ReturnType<typeof captureScen
   gl.useProgram(state.program)
   gl.bindVertexArray(state.vao)
   gl.bindBuffer(gl.ARRAY_BUFFER, state.arrayBuffer)
+  gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, state.unpackBuffer); gl.pixelStorei(gl.UNPACK_ROW_LENGTH, state.unpackRowLength); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, state.unpackSkipPixels); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, state.unpackSkipRows)
+  toggle(gl.RASTERIZER_DISCARD, state.rasterizerDiscard); toggle(gl.SAMPLE_COVERAGE, state.sampleCoverage); toggle(gl.SAMPLE_ALPHA_TO_COVERAGE, state.sampleAlphaToCoverage)
   toggle(gl.DEPTH_TEST, state.depthTest)
   gl.depthFunc(state.depthFunction)
   gl.depthMask(state.depthMask)
