@@ -76,7 +76,28 @@ export const physicalPlanPaintCommands = (scene: PackPhysicalScene, view: Physic
 /** One affine map transform and a retained native paint stream per scene.
  * Each source path keeps its original submission and antialiasing. Canvas state
  * changes only when its value changes; no per-primitive save/restore cycle. */
-const continuationPaths = new WeakMap<ReadonlyArray<PhysicalPlanPrimitive>, ReadonlyArray<{ path: Path2D; material: string; occurrenceId: string }>>()
+const continuationPaths = new WeakMap<ReadonlyArray<PhysicalPlanPrimitive>, ReadonlyArray<{ path: Path2D; material: string; occurrenceId: string; bounds: PhysicalSceneBounds }>>()
+export const physicalPlanContinuationPaths = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null): ReadonlyArray<{ path: Path2D; material: string; occurrenceId: string; bounds: PhysicalSceneBounds }> => {
+  const primitives = visiblePhysicalPlanDrawing(scene, view, scopeId)
+  const previous = continuationPaths.get(primitives); if (previous) return previous
+  const built: Array<{ path: Path2D; material: string; occurrenceId: string; bounds: PhysicalSceneBounds }> = []
+  const regions = physicalScopeRegions(scene, scopeId ?? undefined), objects = objectRoster(scene)
+  const traced = new Set(physicalPlanPaintCommands(scene, view, scopeId).flatMap(command => command.kind === 'geometry' && command.clip && command.occurrenceId ? [command.occurrenceId] : []))
+  for (const id of traced) {
+    const object = objects.get(id)!, route = object.spatialPath; if (!route) continue
+    const floor = object.levelId === 'site' ? undefined : object.inspectionLevels?.find(floor => floor.levelId === view.levelId), path = new Path2D(), length = route.radius * 3 + .16
+    const min: [number, number, number] = [Infinity, Infinity, 0], max: [number, number, number] = [-Infinity, -Infinity, 0]
+    const vertices: Array<readonly [number, number]> = []
+    for (const { point: [x, y], outward: [dx, dy] } of physicalPlanContinuations(route.points, regions, floor)) {
+      const a = [x - dx * length - dy * length / 2, y - dy * length + dx * length / 2] as const, b = [x, y] as const, c = [x - dx * length + dy * length / 2, y - dy * length - dx * length / 2] as const
+      path.moveTo(...a); path.lineTo(...b); path.lineTo(...c); vertices.push(a, b, c)
+    }
+    if (!vertices.length) continue
+    for (const point of vertices) for (const axis of [0, 1] as const) { min[axis] = Math.min(min[axis], point[axis]); max[axis] = Math.max(max[axis], point[axis]) }
+    built.push({ path, material: object.material ?? 'pipe', occurrenceId: id, bounds: { min, max } })
+  }
+  continuationPaths.set(primitives, built); return built
+}
 export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input: {
   readonly scene: PackPhysicalScene; readonly view: PhysicalSceneView; readonly scopeId: string | null
   readonly project: (points: ReadonlyArray<readonly [number, number, number]>) => ReadonlyArray<Point>
@@ -177,19 +198,7 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
     }
     setClip(false); worldTransform()
     if (scope.regions.length) {
-      let markers = continuationPaths.get(primitives)
-      if (!markers) {
-        const built: Array<{ path: Path2D; material: string; occurrenceId: string }> = [], traced = new Set(stream.flatMap(command => command.kind === 'geometry' && command.clip && command.occurrenceId ? [command.occurrenceId] : []))
-        for (const id of traced) {
-          const object = objects.get(id)!, route = object.spatialPath; if (!route) continue
-          const floor = object.levelId === 'site' ? undefined : object.inspectionLevels?.find(floor => floor.levelId === input.view.levelId), path = new Path2D(), length = route.radius * 3 + .16
-          for (const { point: [x, y], outward: [dx, dy] } of physicalPlanContinuations(route.points, scope.regions, floor)) {
-            path.moveTo(x - dx * length - dy * length / 2, y - dy * length + dx * length / 2); path.lineTo(x, y); path.lineTo(x - dx * length + dy * length / 2, y - dy * length - dx * length / 2)
-          }
-          built.push({ path, material: object.material ?? 'pipe', occurrenceId: id })
-        }
-        markers = built; continuationPaths.set(primitives, markers)
-      }
+      const markers = physicalPlanContinuationPaths(input.scene, input.view, input.scopeId)
       setClip(true); opacity(1); context.setLineDash([]); dash = '[]'; lineWidth(.08)
       for (const marker of markers) { const accent = input.view.live ? accentFor(marker.occurrenceId) : null; strokeInk(accent?.color ?? ink(marker.material)); opacity(accent?.alpha ?? 1); context.stroke(marker.path) }
     }
