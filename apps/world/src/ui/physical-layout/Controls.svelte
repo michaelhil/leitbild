@@ -28,6 +28,11 @@
   let scopeQuery = $state('')
   let expandedScopes = $state.raw<ReadonlySet<string>>(new Set())
   const scopeBranches = $derived(explorerScopeBranches(choices, expandedScopes, scopeQuery))
+  const collidingCollectionLayerLabels = $derived.by(() => {
+    const seen = new Set<string>(), colliding = new Set<string>()
+    for (const layer of collectionLayerChoices) { if (seen.has(layer.label)) colliding.add(layer.label); else seen.add(layer.label) }
+    return colliding
+  })
   const toggleScope = (key: string): void => {
     const next = new Set(expandedScopes)
     if (next.has(key)) next.delete(key); else next.add(key)
@@ -86,7 +91,7 @@
       {#if choices.find(choice => choice.key === scopeKey)?.sceneId}<label><input type="checkbox" checked={view.surroundings ?? false} onchange={event => change({ surroundings: event.currentTarget.checked })} /> Surrounding buildings</label>{/if}
       <label><input type="checkbox" checked={view.detail === 'auto'} indeterminate={mixedSettings.includes('detail')} onchange={event => change({ detail: event.currentTarget.checked ? 'auto' : 'hidden' })} /> Reveal detail as needed{mixedSettings.includes('detail') ? ' · Mixed' : ''}</label>
       {#each layers as layer (layer.id)}<label><input type="checkbox" checked={!hiddenLayerIds.includes(layer.id)} onchange={event => change({ hiddenLayerIds: event.currentTarget.checked ? hiddenLayerIds.filter(id => id !== layer.id) : [...hiddenLayerIds, layer.id] })} /> {layer.label}</label>{/each}
-      {#each collectionLayerChoices as layer (layer.key)}<label class="collection-layer" title={layer.memberLabels.join(', ')}><input type="checkbox" checked={layer.visible === true} indeterminate={layer.visible === null} disabled={suspended || !oncollectionlayerchange} onchange={event => oncollectionlayerchange?.(layer.key, event.currentTarget.checked)} /><span>{layer.label}{layer.visible === null ? ' · Mixed' : ''}<small>{layer.scenes.length} {layer.scenes.length === 1 ? 'layout' : 'layouts'} · {layer.memberLabels.join(', ')}</small></span></label>{/each}
+      {#each collectionLayerChoices as layer (layer.key)}<label class="collection-layer" title={layer.memberLabels.join(', ')}><input type="checkbox" checked={layer.visible === true} indeterminate={layer.visible === null} disabled={suspended || !oncollectionlayerchange} onchange={event => oncollectionlayerchange?.(layer.key, event.currentTarget.checked)} /><span>{layer.label}{collidingCollectionLayerLabels.has(layer.label) ? ` · ${layer.id}` : ''}{layer.visible === null ? ' · Mixed' : ''}<small>{layer.scenes.length} {layer.scenes.length === 1 ? 'layout' : 'layouts'} · {layer.memberLabels.join(', ')}</small></span></label>{/each}
       {#if view.mode === '3d' && (view.levelId === 'all' || floorGroups.some(group => group.scenes.some(scene => scene.view.levelId === 'all')))}<label class="separation">Separate floors <output>metres of view offset</output><input aria-label="Floor separation view offset in metres" type="number" min="0" step="1" value={mixedSettings.includes('separation') ? '' : view.separation} placeholder={mixedSettings.includes('separation') ? 'Mixed' : undefined} oninput={event => { const separation = event.currentTarget.valueAsNumber; if (Number.isFinite(separation) && separation >= 0) change({ separation }) }} /></label>{/if}
       <button type="button" onclick={() => { viewOpen = false; onhome() }}>Home · source view</button>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}
     </section>
