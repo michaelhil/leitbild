@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { retryablePhysicalLayouts } from '../src/ui/physical-layout/retry.ts'
 import { defaultPhysicalSceneView, type PhysicalScenePresentation } from '../src/ui/map/physical-scene/types.ts'
 const scene = (id: string, group: string, status: PhysicalScenePresentation['status'], failedLayer = false): PhysicalScenePresentation => ({
-  descriptor: { id, label: id, targetObjectId: `owner:${id}`, revision: 'retained', modelDigest: 'exact', anchor: [0, 0], bearing: 0, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, levels: [{ id: 'ground', label: 'Ground', elevation: 0, cutHeight: 1 }], locationValid: true, subjectIds: [], group: { id: group, label: group } },
+  descriptor: { id, targetObjectId: `owner:${id}`, revision: 'retained', modelDigest: 'exact', anchor: [0, 0], bearing: 0, bounds: { min: [0, 0, 0], max: [1, 1, 1] }, levels: [{ id: 'ground', label: 'Ground', elevation: 0, cutHeight: 1 }], locationValid: true, subjectIds: [], group: { id: group, label: group } },
   view: defaultPhysicalSceneView([]), status, occurrenceCount: 1,
   ...(failedLayer ? { layerPreparation: { status: 'unavailable', layerIds: ['utilities'], reason: 'Worker refused the layer' } } : {}),
 })

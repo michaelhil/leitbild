@@ -400,7 +400,7 @@
   const additionalLayerStatus = $derived((focusedId === null ? scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) : focused ? [focused] : []).map(physicalLayerPreparationText).filter((text): text is string => text !== null).join(' · '))
   const statusText = $derived([baseStatusText, additionalLayerStatus].filter(Boolean).join(' · '))
   const retryableLayouts = $derived(retryablePhysicalLayouts(scenes, focusedId, focusedGroupId))
-  const retryLabel = $derived(`Retry physical layout: ${retryableLayouts.map(id => scenes.find(scene => scene.descriptor.id === id)?.descriptor.label ?? id).join(', ')}`)
+  const retryLabel = $derived(`Retry physical layout: ${retryableLayouts.map(id => objects.find(object => object.id === scenes.find(scene => scene.descriptor.id === id)?.descriptor.targetObjectId)?.label ?? id).join(', ')}`)
   const retryFailedLayouts = (): void => {
     if (suspended) return
     for (const id of retryableLayouts) controller?.retry(id)
