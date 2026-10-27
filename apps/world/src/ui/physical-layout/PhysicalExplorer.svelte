@@ -30,6 +30,7 @@
   import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
   import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
+  import { requestedPhysicalLayoutView, physicalOpacityPreparationText } from './view-intent.ts'
   import { createPhysicalHoverIntent } from './hover-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationWord } from './operation-presentation.ts'
@@ -465,7 +466,8 @@
     : latest?.failure ?? (latest?.phase === 'inactive' ? 'Run not loaded; layout is not live' : latest?.phase === 'missing' ? 'Run missing' : latest?.latest === null || latest === null ? 'Waiting for live owner status'
       : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
   const additionalLayerStatus = $derived((focusedId === null ? scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) : focused ? [focused] : []).map(physicalLayerPreparationText).filter((text): text is string => text !== null).join(' · '))
-  const statusText = $derived([baseStatusText, additionalLayerStatus].filter(Boolean).join(' · '))
+  const opacityStatus = $derived(physicalOpacityPreparationText(focusedId === null ? collectionScenes : focused ? [focused] : []))
+  const statusText = $derived([baseStatusText, additionalLayerStatus, opacityStatus].filter(Boolean).join(' · '))
   const retryableLayouts = $derived(retryablePhysicalLayouts(scenes, focusedId, focusedGroupId))
   const retryLabel = $derived(`Retry physical layout: ${retryableLayouts.map(id => objects.find(object => object.id === scenes.find(scene => scene.descriptor.id === id)?.descriptor.targetObjectId)?.label ?? id).join(', ')}`)
   const retryFailedLayouts = (): void => {
@@ -485,7 +487,7 @@
       if (levelId === null) { scopeFloorChoice = { key: choice.key, sceneId, label: choice.label, levelIds: levels }; return }
       collectionInspection = false; focusedId = sceneId; focusedScopeId = choice.scopeId ?? null; focusedGroupId = scene.descriptor.group?.id ?? null
       controller?.selectScope(sceneId, choice.scopeId)
-      if (scene.view.levelId !== levelId) controller?.setView(sceneId, { ...scene.view, mode: levelId === 'all' ? '3d' : scene.view.mode, levelId })
+      if (scene.view.levelId !== levelId) controller?.setView(sceneId, { ...requestedPhysicalLayoutView(scene), mode: levelId === 'all' ? '3d' : scene.view.mode, levelId })
       void afterPanels(() => controller?.focus(sceneId, { scopeId: choice.scopeId, levelId, preservePose: true }))
     }
     else { collectionInspection = true; focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
@@ -503,11 +505,11 @@
       for (const current of scenes) {
         if (current.view.mode === '2d') rememberedPlanFloor.set(current.descriptor.id, current.view.levelId)
         const levelId = next.mode === '2d' ? physicalPlanLevelAfterModeChange(current, rememberedPlanFloor.get(current.descriptor.id)) : focusedId === null && selected.has(current.descriptor.id) ? 'all' : current.view.levelId
-        controller?.setView(current.descriptor.id, { ...current.view, mode: next.mode, levelId })
+        controller?.setView(current.descriptor.id, { ...requestedPhysicalLayoutView(current), mode: next.mode, levelId })
       }
     } else if (focusedId === null) {
-      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation', 'wallOpacity', 'floorOpacity'] as const).filter(key => requested ? key in requested : next[key] !== scene.view[key]).map(key => [key, next[key]]))
-      for (const current of collectionScenes) controller?.setView(current.descriptor.id, { ...current.view, ...patch })
+      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation', 'wallOpacity', 'floorOpacity'] as const).filter(key => requested ? key in requested : next[key] !== requestedPhysicalLayoutView(scene)[key]).map(key => [key, next[key]]))
+      for (const current of collectionScenes) controller?.setView(current.descriptor.id, { ...requestedPhysicalLayoutView(current), ...patch })
     } else {
       if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
       controller?.setView(scene.descriptor.id, next)
@@ -546,7 +548,7 @@
     pendingCameraFocus = { sceneId, occurrenceId, levelId: level, mode }
     if (scene.status !== 'ready') controller?.focus(sceneId, { preservePose: true })
     else controller?.selectScope(sceneId)
-    controller?.setView(sceneId, { ...scene.view, mode, levelId: level })
+    controller?.setView(sceneId, { ...requestedPhysicalLayoutView(scene), mode, levelId: level })
   }
   const focusComponent = (sceneId: string, subjectId: string, label: string): void => {
     collectionInspection = false
@@ -696,7 +698,7 @@
       {#snippet cameraNavigation()}
         <CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
       {/snippet}
-      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
+      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={requestedPhysicalLayoutView(focused)} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           navigationControls={focused.view.mode === '3d' ? cameraNavigation : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}
