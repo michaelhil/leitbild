@@ -18,7 +18,7 @@ if (!gl) throw Error('Opacity fixture needs WebGL2')
 canvas.width = canvas.height = 128 * devicePixelRatio
 const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
 const palette = { materials: { red: [1, 0, 0] as const, green: [0, 1, 0] as const, blue: [0, 0, 1] as const, yellow: [1, 1, 0] as const }, defaultMaterial: [0, 0, 0] as const, line: [0, 0, 0] as const }
-const scene = (id: string, kind: 'wall' | 'slab' | 'equipment', material: string, z: number, left = -.8, right = .8): PackPhysicalScene => ({
+const scene = (id: string, kind: 'wall' | 'slab' | 'equipment' | 'context', material: string, z: number, left = -.8, right = .8): PackPhysicalScene => ({
   id, revision: 'opacity-probe', targetObjectId: id, anchor: [0, 0], bearing: 0, bounds: { min: [-1, -1, -1], max: [1, 1, 1] },
   levels: [{ id: 'floor', label: 'Floor', elevation: -1, cutHeight: 1 }], objects: [{ id, label: id, kind, levelId: 'site', subjectIds: kind === 'equipment' ? [id] : [], edgePolicy: 'none', material,
     positions: [left, -.8, z, right, -.8, z, right, .8, z, left, -.8, z, right, .8, z, left, .8, z], normals: Array.from({ length: 6 }, () => [0, 0, 1]).flat() }],
@@ -55,7 +55,7 @@ const draw = (indexes: number[], opacity: number, _useFractional = true, matrice
   finally { restoreSceneGlState(gl, saved) }
   const pixels = new Uint8Array(canvas.width * canvas.height * 4); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels); restoreSceneGlState(gl, saved)
   const at = (x: number, y: number) => [...pixels.slice((y * canvas.width + x) * 4, (y * canvas.width + x) * 4 + 4)]
-  return { center: at(canvas.width / 2, canvas.height / 2), pixels, state: stateDifferences(old, state()), metrics: { ...backend.metrics, architecture: architecture.metrics(), pass: pass.metrics() }, glError: gl.getError() }
+  return { center: at(canvas.width / 2, canvas.height / 2), pixels, draws, cohort, state: stateDifferences(old, state()), metrics: { ...backend.metrics, architecture: architecture.metrics(), pass: pass.metrics() }, glError: gl.getError() }
 }
 for (const opacity of [0, .5, 1]) {
   const value = draw([0, 1], opacity), expected = opacity === 0 ? [0, 0, 255, 255] : opacity === 1 ? [255, 0, 0, 255] : [128, 0, 127, 255]
@@ -84,6 +84,14 @@ const geometryUploads = () => backend.metrics.geometryUploads + architecture.met
 const geometryBefore = geometryUploads(), prepBefore = prepares, bspBefore = bspPrepares, allocationBefore = pass.metrics().allocations
 for (const opacity of [.25, .75, 0, 1, .5]) draw([0, 1, 2], opacity)
 results.push({ kind: 'slider-no-derived-geometry', geometryUploadsBefore: geometryBefore, geometryUploadsAfter: geometryUploads(), preparesBefore: prepBefore, preparesAfter: prepares, bspPreparesBefore: bspBefore, bspPreparesAfter: bspPrepares, allocationsBefore: allocationBefore, allocationsAfter: pass.metrics().allocations, passed: geometryBefore === geometryUploads() && prepBefore === prepares && bspBefore === bspPrepares && allocationBefore === pass.metrics().allocations })
+const withDetail = draw([0, 1, 2], .5), contextAsset = prepare(scene('coarse-context', 'context', 'blue', 0)), outside = identity.slice(); outside[12] = 3
+const referenceOwner = withDetail.cohort!.owners[0]!, referenceDraw = withDetail.draws.find(value => value.sceneId === referenceOwner.sceneId && value.asset.key === referenceOwner.assetKey)!
+const contextDraw: PhysicalDraw = { ...referenceDraw, asset: contextAsset, meshes: contextAsset.meshes, matrix: outside }
+const contextHost = captureSceneGlState(gl)
+clear(); pass.begin(canvas.width, canvas.height); backend.draw([...withDetail.draws, contextDraw]); architecture.draw([...withDetail.draws, contextDraw]); pass.composite(null, null, [0, 0, canvas.width, canvas.height])
+const contextPixels = new Uint8Array(withDetail.pixels.length); gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, contextPixels); restoreSceneGlState(gl, contextHost)
+const contextDifferences = contextPixels.reduce((count, value, index) => count + Number(value !== withDetail.pixels[index]), 0)
+results.push({ kind: 'same-scene-overview-does-not-replace-detailed-asset', sameSceneId: contextDraw.sceneId === referenceDraw.sceneId, distinctAsset: contextDraw.asset.key !== referenceDraw.asset.key, differentBytes: contextDifferences, passed: contextDifferences === 0 })
 const plane = (id: string, kind: 'wall' | 'slab', material: string, z: (x: number, y: number) => number): number => {
   const value = scene(id, kind, material, 0), object = value.objects[0]!
   const positions = [...object.positions]; for (let at = 0; at < positions.length; at += 3) positions[at + 2] = z(positions[at]!, positions[at + 1]!)
