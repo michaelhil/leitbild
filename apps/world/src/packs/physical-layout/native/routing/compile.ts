@@ -28,17 +28,22 @@ export const physicalRouteTube = (points: ReadonlyArray<RoutePoint>, radius: num
       return { point: center.map((n, axis) => n + radius * normal[axis]!) as V3, normal }
     })
   })
-  const positions: number[] = [], normals: number[] = [], lines: number[] = []
-  const vertex = (p: RoutePoint, n: RoutePoint) => { positions.push(...p); normals.push(...n) }
+  const positions: number[] = [], normals: number[] = [], indices: number[] = [], lines: number[] = []
+  const vertex = (p: RoutePoint, n: RoutePoint) => { const index = positions.length / 3; positions.push(...p); normals.push(...n); return index }
+  for (const ring of rings) for (const sample of ring) vertex(sample.point, sample.normal)
   for (let ring = 1; ring < rings.length; ring++) for (let side = 0; side < count; side++) {
-    const a = rings[ring - 1]![side]!, b = rings[ring - 1]![(side + 1) % count]!, c = rings[ring]![(side + 1) % count]!, d = rings[ring]![side]!
-    vertex(a.point, a.normal); vertex(b.point, b.normal); vertex(c.point, c.normal); vertex(a.point, a.normal); vertex(c.point, c.normal); vertex(d.point, d.normal)
+    const a = (ring - 1) * count + side, b = (ring - 1) * count + (side + 1) % count, c = ring * count + (side + 1) % count, d = ring * count + side
+    indices.push(a, b, c, a, c, d)
   }
-  for (const end of [0, rings.length - 1]) for (let side = 0; side < count; side++) {
-    const a = rings[end]![side]!.point, b = rings[end]![(side + 1) % count]!.point, normal = tangents[end]!.map(v => end ? v : -v) as V3
-    vertex(points[end]!, normal); vertex(end ? a : b, normal); vertex(end ? b : a, normal); lines.push(...a, ...b)
+  for (const end of [0, rings.length - 1]) {
+    const normal = tangents[end]!.map(v => end ? v : -v) as V3, center = vertex(points[end]!, normal), rim = positions.length / 3
+    for (const sample of rings[end]!) vertex(sample.point, normal)
+    for (let side = 0; side < count; side++) {
+      const a = rim + side, b = rim + (side + 1) % count
+      indices.push(center, end ? a : b, end ? b : a); lines.push(...rings[end]![side]!.point, ...rings[end]![(side + 1) % count]!.point)
+    }
   }
-  return { positions, normals, featureLines: [{ positions: lines, material: 'line' }] }
+  return { positions, normals, indices, featureLines: [{ positions: lines, material: 'line' }] }
 }
 
 /** Assemble requests in authoring coordinates translated to the local origin. */
@@ -84,7 +89,7 @@ export const compilePhysicalRoutes = (source: Source, objects: ReadonlyArray<Phy
     if (!volumes.size) for (let i = 0; i < source.levels.length; i++) { const floor = source.levels[i]!; volumes.set(floor.id, { levelId: floor.id, low: floor.elevation - source.origin[2], high: (source.levels[i + 1]?.elevation ?? bounds.max[2] + source.origin[2] + radius) - source.origin[2] }) }
     const inspectionLevels = [...volumes.values()].filter(floor => bounds.max[2] > floor.low && bounds.min[2] < floor.high), levelIds = inspectionLevels.map(floor => floor.levelId)
     if (!levelIds.length) throw new Error(`Physical route has no admitted floor volume: ${connection.id}`)
-    return { solution, centerline, object: { id: connection.id, label: `${connection.kind === 'pipe' ? 'Pipe' : 'Electrical connection'} · ${connection.graphConnectionId}`, kind: connection.kind === 'pipe' ? 'pipe' : 'conductor', levelId: levelIds[0]!, levelIds, inspectionLevels, scopeIds: [...scopes], subjectIds: [connection.graphConnectionId], material: connection.material, layerId: connection.layerId, positions: geometry.positions, normals: geometry.normals, featureLines: geometry.featureLines, bounds, edgePolicy: 'authored' as const, planDisplay: 'projection' as const } }
+    return { solution, centerline, object: { id: connection.id, label: `${connection.kind === 'pipe' ? 'Pipe' : 'Electrical connection'} · ${connection.graphConnectionId}`, kind: connection.kind === 'pipe' ? 'pipe' : 'conductor', levelId: levelIds[0]!, levelIds, inspectionLevels, scopeIds: [...scopes], subjectIds: [connection.graphConnectionId], material: connection.material, layerId: connection.layerId, positions: geometry.positions, indices: geometry.indices, normals: geometry.normals, featureLines: geometry.featureLines, bounds, edgePolicy: 'authored' as const, planDisplay: 'projection' as const } }
   })
 }
 

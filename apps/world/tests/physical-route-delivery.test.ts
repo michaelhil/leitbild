@@ -25,8 +25,8 @@ test('authoring persists a solved centerline; cold delivery validates it and bin
 test('a continuous pipe sweep has only terminal caps and no open internal seams; tighter authored accuracy refines geometry', () => {
   const mesh = physicalRouteTube([[0, 0, 0], [2, 0, 0], [4, 0, 0]], .2, .01), edges = new Map<string, number>()
   const key = (point: number[]) => point.map(v => Object.is(v, -0) ? 0 : v).join(',')
-  for (let i = 0; i < mesh.positions.length; i += 9) {
-    const triangle = [0, 3, 6].map(offset => key(mesh.positions.slice(i + offset, i + offset + 3)))
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const triangle = mesh.indices.slice(i, i + 3).map(index => key(mesh.positions.slice(index * 3, index * 3 + 3)))
     for (let j = 0; j < 3; j++) { const edge = [triangle[j]!, triangle[(j + 1) % 3]!].sort().join('|'); edges.set(edge, (edges.get(edge) ?? 0) + 1) }
   }
   expect([...edges.values()].every(count => count === 2)).toBe(true)

@@ -7,7 +7,9 @@ import { architecturePhysicalCompilerRef, draftingPhysicalCompilerRef } from './
 
 /** Keep the frozen JSON fingerprint contract independent of worker transport storage. */
 export const physicalSceneShapeFacts = (objects: PackPhysicalScene['objects']) => physicalShapeFacts(objects.map(({ inspectionBoundary: _boundary, planDisplay: _plan, ...object }) => ({ ...object,
-  positions: Array.isArray(object.positions) ? object.positions : Array.from(object.positions),
+  // Fingerprint actual triangles, including indexed connectivity. Every earlier
+  // unindexed artifact retains its exact canonical coordinate sequence.
+  positions: object.indices ? Array.from(object.indices).flatMap(index => [object.positions[index * 3]!, object.positions[index * 3 + 1]!, object.positions[index * 3 + 2]!]) : Array.isArray(object.positions) ? object.positions : Array.from(object.positions),
 })))
 
 export const physicalContentHash = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPhysicalJson(value))))).map(value => value.toString(16).padStart(2, '0')).join('')
