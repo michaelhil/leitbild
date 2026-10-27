@@ -76,6 +76,14 @@ const append = (output: Vertices, polygon: readonly Vertex[]): void => {
   if (required > output.values.length) { const grown = new Float64Array(Math.max(required, output.values.length * 2)); grown.set(output.values); output.values = grown }
   for (let corner = 1; corner < polygon.length - 1; corner++) for (const point of [polygon[0]!, polygon[corner]!, polygon[corner + 1]!]) for (let component = 0; component < 7; component++) output.values[output.length++] = point[component]!
 }
+/** No partition exists when the conservative candidate set is empty. Copy the
+ * original triangle attributes in their exact order without Region/polygon/JSON
+ * temporaries. Capacity and final used bytes follow the same policy as append. */
+const appendTriangle = (output: Vertices, triangle: readonly Vertex[]): void => {
+  const required = output.length + 21
+  if (required > output.values.length) { const grown = new Float64Array(Math.max(required, output.values.length * 2)); grown.set(output.values); output.values = grown }
+  for (let corner = 0; corner < 3; corner++) for (let component = 0; component < 7; component++) output.values[output.length++] = triangle[corner]![component]!
+}
 const finish = (vertices: Vertices): Float64Array => vertices.length === vertices.values.length ? vertices.values : vertices.values.slice(0, vertices.length)
 
 
@@ -117,6 +125,13 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
       })
       broadPhaseCandidates += earlierCandidates
       coplanarCandidates += candidates.length
+      if (!candidates.length) {
+        const target = pieces[face.mesh]!
+        let base = target.get('[]')
+        if (!base) { base = { coveredBy: [], vertices: storage(meshes[face.mesh]!.vertices.length) }; target.set('[]', base) }
+        appendTriangle(base.vertices, face.vertices)
+        return
+      }
       candidates.sort((a,b)=>a-b)
       let regions: readonly Region[] = [{ vertices: face.vertices, coveredBy: [] }]
       for (const candidate of candidates) {
