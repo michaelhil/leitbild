@@ -98,6 +98,10 @@ export const physicalSceneObjectSchema = z.object({
   layerId: identifierSchema.optional(),
   /** Architectural section versus whole-object projection, independent of 3D geometry. */
   planDisplay: z.enum(['section', 'projection']).optional(),
+  /** Spatial traces can be displayed only inside a selected scope envelope.
+   * Whole-site source geometry and graph identity remain unchanged. */
+  clipToScope: z.literal(true).optional(),
+  spatialPath: z.object({ points: z.array(vector3Schema).min(2), radius: z.number().finite().positive() }).strict().optional(),
   /** Authored outward unit normal of an enclosure boundary, for view-only cutaway. */
   inspectionBoundary: z.object({ outward: z.tuple([z.number().finite(), z.number().finite(), z.literal(0)]) }).strict()
     .refine(value => Math.abs(Math.hypot(...value.outward) - 1) <= Number.EPSILON * 8, 'An inspection boundary requires a unit outward normal').optional(),
