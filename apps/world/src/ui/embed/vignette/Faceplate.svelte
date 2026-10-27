@@ -24,14 +24,14 @@
   // most six of its readings, its lead values each sample (while the display
   // is FROZEN the last ones, in OpenBridge's low-integrity style); at most three of
   // its own alerts; and the devices it bundles or, for a group symbol, its
-  // members, each opening its detail or, by its magnifier, its faceplate in
-  // this one's place. Focus moves in and stays in while it is open; Esc
+  // members, each opening its faceplate in this one's place. Open detail
+  // remains the explicit way deeper. Focus moves in and stays in while it is open; Esc
   // (unless a section claims it, a selected command first) closes it and
   // gives the focus back to its item. Pinned (popover.ts), the header is its
   // handle: dragged, or moved by the arrow keys 8 px (Shift 24 px); the corner
   // resizes it, 280 to 520 px wide and by whole rows of readings, or
   // Shift+Alt and the arrows; Esc with focus in it unpins it.
-  let { runId, objectId, packId, elementId, name, word, title, readings, alerts, alertElements, group, related, anchor, at, avoid, zoom, room, frozen, opening, pending, pinned = null, canPin = true, maxWidth = FACEPLATE_WIDTH, showHistory = true, onclose, onpin, onoverlay, ontouched, onsize, ondetail, onfaceplate }: {
+  let { runId, objectId, packId, elementId, name, word, title, context = [], readings, alerts, alertElements, group, related, anchor, at, avoid, zoom, room, frozen, opening, pending, pinned = null, canPin = true, maxWidth = FACEPLATE_WIDTH, showHistory = true, onclose, onpin, onoverlay, ontouched, onsize, ondetail, onfaceplate }: {
     runId: SimulationRunId
     objectId: string
     packId: string
@@ -42,6 +42,8 @@
     word: string | null
     /** The display's title: readings are labelled under it. */
     title: string
+    /** Read-only descriptive rows, such as a connection's exact endpoints and medium. */
+    context?: ReadonlyArray<{ readonly label: string; readonly value: string }>
     readings: FaceplateReadings | null
     /** The display's alert rows this sample: its own are those on its element, or a group's members. */
     alerts: ReadonlyArray<AlertRow>
@@ -260,6 +262,7 @@
         {/if}
       </header>
       <div class="content" bind:this={contentBox}>
+        {#if context.length > 0}<dl class="context">{#each context as entry, index (index)}<dt>{entry.label}</dt><dd>{entry.value}</dd>{/each}</dl>{/if}
         {#if offer === 'actions' && Actions !== null}
           <div class="actions" bind:this={actionsBox}><Actions {runId} objectId={objectIdSchema.parse(objectId)} {elementId} {frozen} pinned={pinned !== null} {short} /></div>
         {/if}
@@ -287,8 +290,7 @@
         {#if related !== null && related.entries.length > 0}
           <ul class="related" aria-label={related.heading}>
             {#each related.entries as entry (entry.element)}
-              <!-- In the window each opens its detail, where it is drawn with its own magnifier; elsewhere its faceplate here. -->
-              <li><button type="button" class="open" title={offer === 'actions' ? `Open ${entry.name}'s detail` : `${entry.name}'s faceplate`} onclick={() => (offer === 'actions' ? ondetail(entry.element) : onfaceplate(entry.element, entry.name))}>{entry.name} ›</button></li>
+              <li><button type="button" class="open" title={`${entry.name}'s faceplate`} onclick={() => onfaceplate(entry.element, entry.name)}>{entry.name} ›</button></li>
             {/each}
           </ul>
         {/if}
@@ -329,6 +331,7 @@
   .pin { flex: none; }
   .content { display: flex; flex-direction: column; gap: 2px; min-height: 0; padding: 2px 8px 6px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
   .content > * { flex: none; }
+  .context { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 8px; margin: 4px 0; font-size: 12px; line-height: 1.45; }.context dt { color: var(--element-neutral-color); }.context dd { margin: 0; overflow-wrap: anywhere; }
   .status { margin: 0; line-height: var(--row); color: var(--element-neutral-color); }
   .alerts { overflow: hidden; }
   .alerts :global(h2) { display: none; }

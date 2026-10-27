@@ -18,7 +18,7 @@
   import { FLOW_TEXT, FLOW_TRACE } from '../../../features/displays/topology/text.ts'
   import { FLOW_LINE_PX, flowDrawing } from './flow-symbols.ts'
   import { paintLines } from './lines.ts'
-  import { magnifierAt, MAGNIFIER } from './magnifier.ts'
+  import { componentActivation, componentActivationKey } from './component-activation.ts'
   import {
     FACEPLATE_CLOSED, FACEPLATE_WIDTH, faceplatePlacement, keptInRoom, movedOverlay, nextFaceplate, openElementDetail, raisedOverlay, readPins, replacedOverlays, resizedOverlay, togglePinned, writePins,
     type Box, type FaceplateState, type OpenedFrom, type OverlayChange, type PinnedOverlay,
@@ -43,16 +43,10 @@
   // rows are fewer than its height, down to its text floor on screen at the
   // window's zoom, past which it scrolls down within its rows (grid.ts
   // drawnScale); where it scrolls it says it continues.
-  // Option A (plan v5 §3): a press on an item's body, its symbol or its text
-  // (Enter or Space), opens its detail, the element's World default as the
-  // next display in the window (Back, and Esc, return here); in a chat answer
-  // or a tag's dialog, which have no window to walk in, it opens the
-  // faceplate. OpenBridge's 16 px magnifier after the item's name opens the
-  // faceplate (L2, Faceplate.svelte): with a mouse it shows on hover and
-  // keyboard focus, at rest only on touch screens and on the items a proposal
-  // waits on (which carry the badge besides), so the drawing stays calm; it is
-  // its own tab stop straight after its item, and Shift+Enter on the item
-  // does the same. An item a proposal waits on carries OpenBridge's
+  // A press on an item's symbol or text (Enter or Space) opens the same
+  // element faceplate in every host. Its explicit Open detail action opens
+  // the element's World default as the next display, preserving Back.
+  // An item a proposal waits on carries OpenBridge's
   // command request badge, and a display the window opened after another pins
   // the faceplate of the one that lapses first, once each time it is shown
   // (W3.6). One faceplate opens at a time; pinned ones
@@ -131,7 +125,7 @@
   const opens = (id: string): boolean => (texts.get(id)?.targets.length ?? 0) > 0
   /**
    * The items a person presses, in reading order: by the grid row their top stands on, then from the left (W8.3: Tab
-   * walks the drawing as it reads, each item followed by its magnifier). A line's, a bar's or a stop's area is one
+   * walks the drawing as it reads, one stop per item). A line's, a bar's or a stop's area is one
    * only where it opens something and has no symbol of its own.
    */
   const ordered = $derived([
@@ -144,7 +138,7 @@
   const membersOf = (id: string): ReadonlyArray<{ readonly element: string; readonly name: string }> =>
     (texts.get(id)?.targets ?? []).map(target => ({ element: target.element, name: target.label }))
 
-  // Each item's button and text block as drawn: focus returns there, a faceplate stands beside them, the magnifier measures the name.
+  // Each item's button and text block as drawn: focus returns there and a faceplate stands beside them.
   const buttons = new Map<string, HTMLElement>()
   const textBlocks = new Map<string, HTMLElement>()
   const kept = (store: Map<string, HTMLElement>) => (node: HTMLElement, id: string) => {
@@ -167,6 +161,7 @@
   // change goes through show(): it keeps the pins, the faceplates' sample and the window's room in step.
   let faceplate = $state.raw<FaceplateState>(FACEPLATE_CLOSED)
   let openedAt = $state.raw<{ readonly x: number; readonly y: number } | null>(null)
+  let returnItem = $state<string | null>(null)
   let anchor = $state.raw<Box | null>(null)
   let overlays = $state.raw<ReadonlyArray<PinnedOverlay>>([])
   let heights = $state.raw<Readonly<Record<string, number>>>({})
@@ -219,16 +214,17 @@
     embeddedDisplayFrame().reportFill(fillReason, faceplate.kind === 'open' || overlays.length > 0)
   }
 
-  const openFaceplate = (key: string, at: { readonly x: number; readonly y: number } | null = null): void => {
+  const openFaceplate = (key: string, at: { readonly x: number; readonly y: number } | null = null, origin: string | null = null): void => {
     if (pinned(key)) { show({ overlays: raisedOverlay(overlays, key) }); return }
     anchor = key.startsWith('#') ? null : itemBox(key)
     openedAt = at
+    returnItem = origin ?? (key.startsWith('#') ? returnItem : key)
     show({ faceplate: nextFaceplate(faceplate, { kind: 'pressed', item: key }) })
   }
   const closeFaceplate = (returnFocus: boolean): void => {
     const was = faceplate
     show({ faceplate: nextFaceplate(faceplate, { kind: 'dismissed' }) })
-    if (returnFocus && was.kind === 'open') buttons.get(was.item)?.focus()
+    if (returnFocus && was.kind === 'open') buttons.get(returnItem ?? was.item)?.focus()
   }
   const pin = (key: string, place: { readonly x: number; readonly y: number }): void => {
     const standing = overlays.find(overlay => overlay.item === key)
@@ -282,26 +278,30 @@
     if (opening !== 'window') { openFaceplate(item ?? `#${element}`); return }
     void openDefault(element, item)
   }
-  /** A press on an item's body: its one target's detail, or a chooser where it names several (a group, a stop). */
+  /** A component or group opens its faceplate; a continuation inspects its named target. */
   const bodyPress = (id: string): void => {
-    const targets = texts.get(id)?.targets ?? []
-    if (targets.length === 1 && texts.get(id)?.kind === 'stop') {
-      elementNames = { ...elementNames, [`#${targets[0]!.element}`]: targets[0]!.label }
-      openDetail(targets[0]!.element, null)
-    } else if (targets.length === 1) openDetail(targets[0]!.element, id)
-    else if (targets.length > 1) openChooser(id)
+    const item = texts.get(id)
+    if (!item) return
+    const action = componentActivation(item)
+    if (action.kind === 'faceplate') openFaceplate(action.key)
+    else if (action.kind === 'chooser') openChooser(id)
+    else if (action.kind === 'target') {
+      elementNames = { ...elementNames, [`#${action.element}`]: action.name }
+      const box = itemBox(id)
+      openFaceplate(`#${action.element}`, box === null ? null : { x: box.x, y: box.y }, id)
+    }
   }
   const bodyKey = (id: string) => (event: KeyboardEvent): void => {
-    if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); if (texts.get(id)?.kind !== 'stop') openFaceplate(id); return }
-    if (event.key !== 'Enter' && event.key !== ' ') return
+    if (!componentActivationKey(event)) return
     event.preventDefault()
     bodyPress(id)
   }
 
   /** What makes an item's body a button: only an item that opens something; a refused default stays plain. */
   const body = (id: string, title: string): Record<string, unknown> => !opens(id) ? {} : {
-    role: 'button', tabindex: 0, 'aria-label': `Open ${title}`, 'aria-haspopup': membersOf(id).length > 1 ? 'dialog' : undefined,
-    onclick: () => bodyPress(id), onkeydown: bodyKey(id), ...hover(id), ...focus(id),
+    role: 'button', tabindex: 0, 'aria-label': `Faceplate: ${title}`, 'aria-haspopup': 'dialog',
+    'aria-expanded': faceplated(id) || (faceplate.kind === 'open' && returnItem === id),
+    onclick: () => bodyPress(id), onkeydown: bodyKey(id), ...hover(id),
   }
 
   // --- The chooser: a press on an item that names several things to open (Chooser.svelte) -----------------------------
@@ -315,13 +315,12 @@
     chooser = null
     if (returnFocus && was !== null) buttons.get(was.id)?.focus()
   }
-  /** One of them chosen: its detail in the window; elsewhere its faceplate where the list stood. */
+  /** A continuation target's faceplate stands where its chooser stood. */
   const choose = (entry: { readonly element: string; readonly name: string }): void => {
     const was = chooser
     chooser = null
-    if (opening === 'window') { openDetail(entry.element, null); return }
     elementNames = { ...elementNames, [`#${entry.element}`]: entry.name }
-    openFaceplate(`#${entry.element}`, was === null ? null : { x: was.box.x, y: was.box.y })
+    openFaceplate(`#${entry.element}`, was === null ? null : { x: was.box.x, y: was.box.y }, was?.id ?? null)
   }
 
   // --- What the Pack marks on the items: pending proposals (W3.6) ----------------------------------------------------
@@ -374,45 +373,13 @@
     else if (!(faceplate.kind === 'open' && faceplate.item === id)) openFaceplate(id)
   }
 
-  // --- The magnifier --------------------------------------------------------------------------------------------------
-  /** Each item's name as drawn, in drawing px: measured once its text is laid out and again whenever its name changes. */
-  let named = $state.raw<Readonly<Record<string, number>>>({})
-  const nameWidth = (node: HTMLElement, params: { readonly id: string; readonly name: string; readonly scale: number }) => {
-    let frame = 0
-    let last = ''
-    const measure = (next: typeof params): void => {
-      if (`${next.name}\u0000${next.scale}` === last) return
-      last = `${next.name}\u0000${next.scale}`
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const first = node.firstElementChild
-        if (first === null) return
-        const range = document.createRange()
-        range.selectNodeContents(first)
-        const width = range.getBoundingClientRect().width / next.scale
-        if (named[next.id] !== width) named = { ...named, [next.id]: width }
-      })
-    }
-    measure(params)
-    return { update: measure, destroy: () => cancelAnimationFrame(frame) }
-  }
-  const magnifiers = $derived(new Map(drawing.texts.flatMap(text => {
-    const width = named[text.id]
-    // No magnifier on a stop: it names other equipment, whose faceplates stand on the displays it opens.
-    return width === undefined || !opens(text.id) || text.kind === 'stop' ? [] : [[text.id, magnifierAt(text, FLOW_LINE_PX, width, drawing)] as const]
-  })))
   let hovered = $state<string | null>(null)
-  let focused = $state<string | null>(null)
   /** The items an alert tile points out (W2.2), drawn activated like an open faceplate's. */
   let marked = $state<ReadonlySet<string>>(new Set())
   /** Its faceplate stands, open or pinned. */
   const faceplated = (id: string): boolean => (faceplate.kind === 'open' && faceplate.item === id) || pinned(id)
   const activated = (id: string): boolean => faceplated(id) || marked.has(id)
-  /** A tile's marks outline items without their magnifiers, so the drawing stays calm. */
-  const shown = (id: string): boolean => hovered === id || focused === id || faceplated(id) || pendingOf(id) !== undefined
   const hover = (id: string) => ({ onpointerenter: () => { hovered = id }, onpointerleave: () => { if (hovered === id) hovered = null } })
-  /** Keyboard focus, not a press's, shows the magnifier. */
-  const focus = (id: string) => ({ onfocus: (event: FocusEvent) => { if ((event.currentTarget as Element).matches(':focus-visible')) focused = id }, onblur: () => { if (focused === id) focused = null } })
 
   // --- Lifecycle: the window's presentation, the close rules, the room --------------------------------------------------
   runOnMount(() => {
@@ -431,12 +398,12 @@
       }),
       host.subscribeOpening(where => { opening = where }),
     ]
-    // A press outside an open faceplate, its item and its magnifier closes it; so does focus leaving the display.
+    // A press outside an open faceplate and its item closes it; so does focus leaving the display.
     const down = (event: PointerEvent): void => {
       if (!(event.target instanceof Element)) return
       if (faceplate.kind !== 'open') return
-      if (event.target.closest('[data-faceplate], [data-magnifier]') !== null) return
-      const item = faceplate.item
+      if (event.target.closest('[data-faceplate]') !== null) return
+      const item = returnItem ?? faceplate.item
       if (buttons.get(item)?.contains(event.target) === true || textBlocks.get(item)?.contains(event.target) === true) return
       show({ faceplate: FACEPLATE_CLOSED })
     }
@@ -492,18 +459,6 @@
   const faceplateName = (key: string): string => key.startsWith('#') ? elementNames[key] ?? key.slice(1) : nameOf(key)
 </script>
 
-{#snippet magnifier(id: string)}
-  {@const at = magnifiers.get(id)}
-  {#if at !== undefined}
-    <!-- Its own tab stop straight after its item; the 40 px square is the press target, the 16 px glyph its ink. -->
-    <button type="button" class="magnifier" class:shown={shown(id)} data-magnifier={id} aria-label={`Faceplate: ${nameOf(id)}`} aria-expanded={faceplated(id)} title={`Faceplate: ${nameOf(id)}`}
-      style:left={`${at.hit.x}px`} style:top={`${at.hit.y}px`} style:--glyph-x={`${at.glyph.x - at.hit.x}px`} style:--glyph-y={`${at.glyph.y - at.hit.y}px`}
-      onclick={() => openFaceplate(id)} {...hover(id)} {...focus(id)}>
-      <span class="glyph"><obi-search usecsscolor></obi-search></span>
-    </button>
-  {/if}
-{/snippet}
-
 {#snippet waiting(pending: { readonly ai: boolean })}
   <!-- A proposal waits on it: OpenBridge's command request glyph, an AI's pending glyph where an AI agent proposed it. -->
   {#if pending.ai}<obi-ai-pending usecsscolor></obi-ai-pending>{:else}<obi-command-request usecsscolor></obi-command-request>{/if}
@@ -524,13 +479,12 @@
 <div class="frame">
 <div class="flow" class:tall style:max-height={tall ? `${held}px` : undefined} use:scrollEnds={ends => { more = ends }}>
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
-  <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--magnifier-glyph={`${MAGNIFIER.glyph}px`} style:--magnifier-hit={`${MAGNIFIER.hit}px`} style:--unscale={1 / scale} role="group" aria-label="Flow topology">
+  <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--unscale={1 / scale} role="group" aria-label="Flow topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
     {#each drawing.buses as bus (bus.id)}
       <obc-bus class="placed" size="small" vertical={bus.vertical} label="" title={bus.title} style:left={`${bus.x}px`} style:top={`${bus.y}px`} style:width={`${bus.width}px`} style:height={`${bus.height}px`}></obc-bus>
     {/each}
-    <!-- Every item a person presses, in reading order (top to bottom, then left to right), each followed by its
-         magnifier: Tab walks the drawing as it reads (W8.3). -->
+    <!-- Every item a person inspects, in reading order (top to bottom, then left to right), one Tab stop per item. -->
     {#each ordered as entry (entry.id)}
       {#if entry.kind === 'vessel'}
         {@const item = entry.item}
@@ -572,12 +526,11 @@
         <div class="placed area" class:hovered={hovered === text.id} class:activated={activated(text.id)} title={text.title} use:button={text.id}
           style:left={`${text.press.x}px`} style:top={`${text.press.y}px`} style:width={`${text.press.width}px`} style:height={`${text.press.height}px`} {...body(text.id, text.title)}></div>
       {/if}
-      {@render magnifier(entry.id)}
     {/each}
     {#each drawing.texts as text (text.id)}
-      <!-- An item's text is part of its body: a press on it opens the item's detail, as a press on its symbol does. -->
+      <!-- An item's text opens the same faceplate as its symbol. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} class:framed={framed.has(text.id)} data-item={text.id} use:textBlock={text.id} use:nameWidth={{ id: text.id, name: text.lines[0]?.text ?? '', scale }} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
+      <div class={`text ${text.tone ?? ''}`} class:body={opens(text.id)} class:framed={framed.has(text.id)} data-item={text.id} use:textBlock={text.id} style:left={`${text.x}px`} style:top={`${text.y}px`} style:width={`${text.width}px`} style:--line={`${FLOW_LINE_PX}px`} title={text.title}
         onclick={opens(text.id) ? () => bodyPress(text.id) : undefined} {...(opens(text.id) ? hover(text.id) : {})}>
         {#each text.lines as line, at (at)}
           {#if line.kind === 'trace' && line.ref !== undefined}
@@ -622,7 +575,7 @@
   .box { display: block; border-radius: 4px; }
   [role='button'] { cursor: pointer; }
   [role='button']:focus-visible { outline: 2px solid var(--border-focus-color); outline-offset: 2px; }
-  /* A vessel takes OpenBridge's flat hover and activated surfaces, as its button would: it is pressed for its detail, opened for its faceplate. */
+  /* A vessel takes OpenBridge's flat hover and activated surfaces while its faceplate stands. */
   .box:hover, .box.hovered, .area:hover, .area.hovered, .device:hover, .device.hovered { background: var(--flat-hover-background-color); }
   .device { border-radius: 4px; }
   .box.activated, .area.activated { background: var(--flat-activated-background-color); outline: 1px solid var(--border-outline-color); }
@@ -630,8 +583,7 @@
   .area { z-index: 1; border-radius: 4px; }
   /* Set in Noto Sans at the sizes the composer reserved each line's room for (topology/text.ts). */
   .text { position: absolute; display: flex; flex-direction: column; line-height: var(--line); white-space: nowrap; pointer-events: none; }
-  /* The body's ink (its symbol and its text lines, each as wide as written) stands above the magnifier's hit area:
-     a press on the item opens its detail, a press on the room round the glyph its faceplate. */
+  /* Text and symbols take the same inspection action; ink stays above underlying line hit areas. */
   .device, .box { z-index: 2; }
   .text.body { z-index: 2; align-items: flex-start; }
   .text.body span { pointer-events: auto; cursor: pointer; }
@@ -651,21 +603,10 @@
   .text.warning .name { text-decoration-color: var(--display-warning-mark); }
   .text.alarm .name { text-decoration-color: var(--display-alarm-mark); }
   .text.critical .name { text-decoration-color: var(--display-critical-mark); }
-  /* The magnifier: a transparent 40 px square, only its 16 px glyph drawn; seen on hover and focus, at rest on touch screens and where a proposal waits. */
-  .magnifier { position: absolute; z-index: 1; width: var(--magnifier-hit); height: var(--magnifier-hit); padding: 0; border: none; background: none; cursor: pointer; opacity: 0; color: var(--element-neutral-color); }
-  .magnifier .glyph { position: absolute; left: var(--glyph-x); top: var(--glyph-y); display: block; width: var(--magnifier-glyph); height: var(--magnifier-glyph); border-radius: 3px; }
-  .magnifier obi-search { display: block; width: var(--magnifier-glyph); height: var(--magnifier-glyph); }
-  .magnifier.shown, .magnifier:focus-visible { opacity: 1; }
-  .magnifier:hover .glyph { background: var(--flat-hover-background-color); color: var(--element-active-color); }
-  .magnifier:focus-visible { outline: none; }
-  .magnifier:focus-visible .glyph { outline: 2px solid var(--border-focus-color); }
-  @media (pointer: coarse) { .magnifier { opacity: 1; } }
   /* On a touch screen every press target reaches 40 px on screen, whatever the drawing's scale (W8.3): an unseen
-     margin round a line's, a bar's or a stop's area and round the magnifier, under the symbols and words beside it. */
-  /* The magnifier, shown at rest there, then stands over the end of its name, so its whole square is the faceplate's. */
+     margin round a line's, a bar's or a stop's area, under the symbols and words beside it. */
   @media (pointer: coarse) {
-    .area::before, .magnifier::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(40px * var(--unscale))); height: max(100%, calc(40px * var(--unscale))); transform: translate(-50%, -50%); }
-    .magnifier { z-index: 3; }
+    .area::before { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(40px * var(--unscale))); height: max(100%, calc(40px * var(--unscale))); transform: translate(-50%, -50%); }
   }
   .notice { margin: 0; font-size: 12px; color: var(--element-active-color); }
   /* An item not following a command (its CMD word bold), or whose alerts are all expected after a first-out (dashed):

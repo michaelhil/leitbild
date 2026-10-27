@@ -3,7 +3,8 @@
   import { bareLabel } from '../../../features/displays/compose/element-groups.ts'
   import type { ValueBlock, VignetteValue, VignetteView } from '../../../features/displays/compose/model.ts'
   import type { DrawnSeries } from './trend.ts'
-  import { wholeWords } from './fit-words.ts'
+  import ComponentName from './ComponentName.svelte'
+  import { componentValueOwner } from './component-activation.ts'
   import { valueRows, type ValueRow } from './value-rows.ts'
   import GroupedValues from './GroupedValues.svelte'
   import ValueRows from './ValueRows.svelte'
@@ -43,7 +44,7 @@
     <GroupedValues section={block.table} {observations} {frozen} />
   {:else}
     <!-- The element's name gives way by whole words where its row is short; its whole label stays in the title. -->
-    {#if block.element !== null}<div class="element" role="heading" aria-level={3} title={block.element.label} aria-label={block.element.label} use:wholeWords={block.element.shortLabel ?? block.element.label}></div>{/if}
+    {#if block.element !== null}<div class="element" role="heading" aria-level={3}><ComponentName objectId={componentValueOwner(block.values)} elementId={block.element.id} name={block.element.shortLabel ?? block.element.label} fullName={block.element.label} /></div>{/if}
     <ValueRows rows={rowsOf(block)} {now} />
   {/if}
 {/each}

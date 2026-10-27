@@ -5,6 +5,8 @@
   import { valueLook } from './readout.ts'
   import Readout from './Readout.svelte'
   import StateWord from './StateWord.svelte'
+  import ComponentName from './ComponentName.svelte'
+  import { componentValueOwner } from './component-activation.ts'
 
   // Parallel values as one table (architecture B): a column per quantity, a
   // line per element, as the composer grouped them; each cell reads as its
@@ -37,7 +39,7 @@
     {@const name = line.element.shortLabel ?? line.element.label}
     <div class="line" role="row">
       <!-- Its name as long as the column lets it be (the sizer asks for the whole), giving way by whole words. -->
-      <span class="element" role="rowheader" title={line.element.label} aria-label={name}><span class="sizer" aria-hidden="true">{name}</span><span class="shown" aria-hidden="true" use:wholeWords={name}></span></span>
+      <span class="element" role="rowheader" title={line.element.label} aria-label={name}><span class="sizer" aria-hidden="true">{name}</span><ComponentName objectId={componentValueOwner(line.values)} elementId={line.element.id} {name} fullName={line.element.label} /></span>
       {#each line.values as value, index (index)}
         <span class="cell" role="cell">
           {#if value !== null}
@@ -65,7 +67,6 @@
   .element { display: block; line-height: var(--row); color: var(--element-neutral-color); }
   /* The whole name sets how wide the names' column asks to be; the name shown fits the width it gets. */
   .sizer { display: block; height: 0; visibility: hidden; }
-  .shown { display: block; overflow: hidden; }
   .cell { justify-content: flex-end; }
   /* A heading in its row, right-aligned over its values: the name over the unit (a unitless name centred), never widening its column. */
   .heading { contain: inline-size; flex-direction: column; align-items: stretch; justify-content: center; line-height: 12px; text-align: right; color: var(--element-neutral-color); }

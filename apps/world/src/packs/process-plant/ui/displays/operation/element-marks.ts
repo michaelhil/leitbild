@@ -6,7 +6,7 @@ import { operationClient, type OperationClient } from './operation-client.ts'
 // What a drawing in the display window marks on the Plant's items (plan v5
 // W3.6, PackEmbedContribution.elementMarks): the items a pending proposal
 // waits on (control.proposals), the one that lapses first first, which carry
-// OpenBridge's command request badge, show their magnifier at rest and whose
+// OpenBridge's command request badge, and whose
 // faceplate a display opened on that equipment pins.
 
 /** The marks, from the Plant's proposals. */

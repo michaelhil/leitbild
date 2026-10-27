@@ -100,8 +100,8 @@
   const fills = $derived(board === undefined && opening.where === 'window' && view !== undefined && fillsWindow(view))
 
   /**
-   * A chip's press opens the detail of what decides its state (opening.svelte.ts): through a drawing of this display
-   * that draws it (selection.ts), else as its default after this display. Null where nothing opens it.
+   * A chip inspects what decides its state through the drawing's existing faceplate;
+   * where that component is not drawn, its default opens after this display.
    */
   const opener = (chip: VignetteValue): (() => void) | null => {
     const elementId = chip.decidingElement
@@ -109,7 +109,7 @@
     const objectId = refObjectId(chip.ref)
     return () => {
       unopened = null
-      void opening.element(objectId, elementId, 'detail').then(why => { unopened = why })
+      void opening.element(objectId, elementId).then(why => { unopened = why })
     }
   }
 </script>
