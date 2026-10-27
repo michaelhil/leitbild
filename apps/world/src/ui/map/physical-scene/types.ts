@@ -22,7 +22,12 @@ export interface PhysicalSceneView {
   /** Include neighbouring layout/context geometry during focused inspection. */
   readonly surroundings?: boolean
   readonly hiddenLayerIds?: ReadonlyArray<string>
+  /** Inspection-only architecture transparency; equipment retains its material. */
+  readonly wallOpacity?: number
+  readonly floorOpacity?: number
 }
+/** Transient pointer/inspection emphasis; never part of a geometry identity. */
+export interface PhysicalSceneHighlight { readonly sceneId: string; readonly occurrenceId: string; readonly color: Color }
 /** Owner-qualified severity accent for drawing contours; solid material is architectural truth. */
 export interface PhysicalSubjectStyle { readonly color: Color | null; readonly emphasis: number }
 export type PhysicalSceneDescriptor = PackPhysicalSceneDescriptor

@@ -1,10 +1,12 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
-import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, PhysicalScenePalette, PhysicalSceneSurface, PhysicalViewportFitOptions } from './types.ts'
+import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneSurface, PhysicalViewportFitOptions } from './types.ts'
+import type { Vector3 } from './math.ts'
 import type { PhysicalBackendMetrics } from './backend.ts'
 export type PhysicalViewportEvent = 'change' | 'resize' | 'render' | 'movestart' | 'style' | 'idle' | 'contextlost' | 'contextrestored'
 export interface PhysicalViewportRenderer {
   readonly setPalette: (palette: PhysicalScenePalette) => void
+  readonly setHighlight: (target: PhysicalSceneHighlight | null) => void
   readonly retainGeometryIdentities: (identities: ReadonlySet<string>) => void
   readonly dispose: () => void
   readonly invalidatePicks: () => void
@@ -13,6 +15,8 @@ export interface PhysicalViewportRenderer {
   readonly cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => PhysicalProjectedPoint | null
   readonly visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => boolean
   readonly project: (sceneId: string, occurrenceId: string, levelId?: string) => PhysicalProjectedPoint | null
+  /** Project actual local path points with the displayed occurrence's level offset. */
+  readonly projectOccurrencePoints: (sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string) => ReadonlyArray<PhysicalProjectedPoint>
 }
 export interface PhysicalViewport {
   readonly surface: PhysicalSceneSurface

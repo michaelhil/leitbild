@@ -2,7 +2,7 @@ import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import type { PhysicalRenderPassMetrics } from './render-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
-import type { Color, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
+import type { Color, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 /** Quiet illustrative surface colour, precomposited against its actual material
  * before the common lighting pass. No second coincident translucent surface. */
@@ -42,7 +42,7 @@ flat out int vObject;
 flat out float vStroke;
 vec4 objectData(int i){return texelFetch(uObjects,ivec2(i%uObjectWidth,i/uObjectWidth),0);}
 void main(){
-  int i=int(instanceData)+int(objectIndex)*2;
+  int i=int(instanceData)+int(objectIndex)*3;
   vec4 placement=objectData(i+1);
   gl_Position=placement.w<.5?vec4(2.,2.,2.,1.):instanceMatrix*vec4(position+placement.xyz,1.);
   vCameraDepth=gl_Position.w;
@@ -87,6 +87,12 @@ void main(){
   // status badge remains the explicit alarm/count target in either view.
   vec3 edge=mix(material,state.rgb,state.a);
   vec3 solid=material*light;
+  // Interaction tint belongs to the existing surface, so it has exactly the
+  // same depth/occlusion as its machinery. It is independent of alarm colour.
+  int selectionAt=vObject+2;
+  vec4 selection=texelFetch(uObjects,ivec2(selectionAt%uObjectWidth,selectionAt/uObjectWidth),0);
+  solid=mix(solid,selection.rgb*light,selection.a);
+  if(selection.a>0.)edge=selection.rgb;
   if(!uLines&&surface.a>.5){
     // Hatch is part of the owning floor fragment's material. Its local metre
     // coordinates are stable under pan/orbit; derivatives keep a fine stroke
@@ -106,7 +112,7 @@ void main(){
     float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
     solid=mix(solid,uIllustrationLine,ink*.65);
   }
-  outColor=vec4(uLines?edge:solid,uLines?max(edgeAlpha,state.a):1.);
+  outColor=vec4(uLines?edge:solid,uLines?max(max(edgeAlpha,state.a),selection.a>0.?1.:0.):1.);
 }
 `
 export interface PhysicalBackendMetrics {
@@ -122,6 +128,7 @@ export interface PhysicalDraw {
   readonly flat: boolean
   readonly meshes: ReadonlyArray<PhysicalMesh>
   readonly styles: ReadonlyArray<PhysicalSubjectStyle | null>
+  readonly highlight?: PhysicalSceneHighlight
 }
 interface Texture { readonly texture: WebGLTexture; width: number; height: number; data: Float32Array }
 interface Asset {
@@ -206,7 +213,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       draws = draws.map(draw => ({ ...draw, meshes: visiblePhysicalSurfaceOwners(draw.meshes) }))
       for (const draw of draws) { const list = groups.get(draw.asset.key) ?? []; list.push(draw); groups.set(draw.asset.key, list) }
       let requiredBytes = 0
-      for (const list of groups.values()) { const first = list[0]!; requiredBytes += first.asset.buffers.vertices.byteLength + first.asset.buffers.lines.byteLength + list.length * (17 + first.asset.meshes.length * 8) * 4 + first.asset.buffers.roles.length * 16 }
+      for (const list of groups.values()) { const first = list[0]!; requiredBytes += first.asset.buffers.vertices.byteLength + first.asset.buffers.lines.byteLength + list.length * (17 + first.asset.meshes.length * 12) * 4 + first.asset.buffers.roles.length * 16 }
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, requiredBytes); const required = new Set(groups.keys()); evictUnused(required)
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.GEQUAL); gl.depthMask(true); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true); gl.useProgram(ownedProgram); gl.uniform1f(uniforms.uDepthNear!, depthNear)
       gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1)
@@ -215,16 +222,18 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       // Populate each retained asset's complete instance/status table once.
       for (const [key, list] of groups) {
         const first = list[0]!, asset = cache.get(key) ?? createAsset(first); cache.set(key, asset); asset.lastUsed = frame; updatePalette(asset)
-        const objectCount = first.asset.meshes.length, allocation = resizeTexture(asset.objects, list.length * objectCount * 2)
+        const objectCount = first.asset.meshes.length, allocation = resizeTexture(asset.objects, list.length * objectCount * 3)
         let statusChanged = allocation
         if (asset.instanceData.length !== list.length * 17) { metrics.instanceBytes -= asset.instanceData.byteLength; asset.instanceData = new Float32Array(list.length * 17); asset.instanceWords = new Uint32Array(asset.instanceData.buffer); metrics.instanceBytes += asset.instanceData.byteLength }
         list.forEach((draw, instanceIndex) => {
-          asset.instanceData.set(draw.matrix, instanceIndex * 17); asset.instanceWords[instanceIndex * 17 + 16] = instanceIndex * objectCount * 2
+          asset.instanceData.set(draw.matrix, instanceIndex * 17); asset.instanceWords[instanceIndex * 17 + 16] = instanceIndex * objectCount * 3
           const shown = new Map(draw.meshes.map(mesh => [mesh.assetIndex ?? first.asset.meshes.indexOf(mesh), mesh]))
           first.asset.meshes.forEach((mesh, objectIndex) => {
-            const displayed = shown.get(objectIndex), style = draw.styles[objectIndex], at = (instanceIndex * objectCount + objectIndex) * 8, color = style?.color ?? palette.defaultMaterial
+            const displayed = shown.get(objectIndex), style = draw.styles[objectIndex], at = (instanceIndex * objectCount + objectIndex) * 12, color = style?.color ?? palette.defaultMaterial
             statusChanged = setObject(asset.objects.data, at, [color[0], color[1], color[2], style?.color ? style.emphasis : 0]) || statusChanged
             statusChanged = setObject(asset.objects.data, at + 4, [displayed?.offset[0] ?? mesh.offset[0], displayed?.offset[1] ?? mesh.offset[1], displayed?.offset[2] ?? mesh.offset[2], displayed ? 1 : 0]) || statusChanged
+            const selection = draw.highlight?.occurrenceId === mesh.object.id ? draw.highlight.color : null
+            statusChanged = setObject(asset.objects.data, at + 8, selection ? [...selection, .24] : [0, 0, 0, 0]) || statusChanged
           })
         })
         gl.bindBuffer(gl.ARRAY_BUFFER, asset.instances); gl.bufferData(gl.ARRAY_BUFFER, asset.instanceData, gl.DYNAMIC_DRAW); metrics.instanceUploads++

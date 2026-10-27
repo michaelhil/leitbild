@@ -11,7 +11,7 @@ import type { PhysicalLayerEntry } from './layer.ts'
 import { physicalScopeMembers } from './scopes.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
-import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
+import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 const styleFor = (entry: PhysicalLayerEntry, subjectIds: ReadonlyArray<string>): PhysicalSubjectStyle | null => {
   if (!entry.view.live || !subjectIds.length) return null
@@ -27,6 +27,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   const cpu = createPhysicalPreparedResidency()
   let renderPass: ReturnType<typeof createPhysicalRenderPass> | null = null
   let depthNear = 0
+  let highlight: PhysicalSceneHighlight | null = null
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
   const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
@@ -72,7 +73,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           if (entry.view.mode === '2d' && entry.scene.planDrawing?.views.some(view => view.levelId === entry.view.levelId)) continue
           const drawMatrix = new Float32Array(matrix)
           if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
-          draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)) })
+          draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
         }
         // Vector Plan still updates real solid picking above, but owns all
         // visible colour in its native drawing surface. An empty GL pass must
@@ -85,6 +86,18 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       finally { if (before) restoreSceneGlState(gl, before) }
     },
     invalidatePicks(): void { picking = [] }, pick, cheapProject,
+    setHighlight(value: PhysicalSceneHighlight | null): void { highlight = value },
+    projectOccurrencePoints(sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string): ReadonlyArray<PhysicalProjectedPoint> {
+      if (disposed || failed) return []
+      const entry = picking.find(candidate => candidate.sceneId === sceneId)
+      const mesh = entry?.meshes.find(candidate => candidate.object.id === occurrenceId && (levelId === undefined || candidate.levelId === levelId))
+      if (!entry || !mesh) return []
+      const rectangle = size()
+      return points.map(point => {
+        const p = transform(entry.matrix, point.map((coordinate, axis) => coordinate + mesh.offset[axis]!) as unknown as Vector3)
+        return { x: (p[0] + 1) * rectangle.width / 2, y: (1 - p[1]) * rectangle.height / 2, depth: p[2], visible: Math.abs(p[0]) <= 1 && Math.abs(p[1]) <= 1 && Math.abs(p[2]) <= 1 }
+      })
+    },
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },
     setPalette: backend.setPalette,
