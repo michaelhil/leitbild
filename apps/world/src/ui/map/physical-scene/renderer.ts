@@ -176,7 +176,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         geometryUploads: base.geometryUploads + architecture.geometryUploads, geometryBytes: base.geometryBytes + architecture.geometryBytes + architecture.orderBytes,
         instanceBytes: base.instanceBytes + architecture.instanceBytes, instanceUploads: base.instanceUploads + architecture.instanceUploads,
         statusUploads: base.statusUploads + architecture.statusUploads, paletteUploads: base.paletteUploads + architecture.paletteUploads, draws: base.draws + architecture.draws,
-        residentCpuBytes: cpu.metrics().residentBytes + architecture.residentCpuBytes, buffers: base.buffers + architecture.buffers,
+        residentCpuBytes: cpu.metrics().residentBytes + base.residentCpuBytes + architecture.residentCpuBytes, buffers: base.buffers + architecture.buffers,
         programs: base.programs + architecture.programs + (owned?.programs ?? 0), textures: base.textures + architecture.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + architecture.textureBytes + (owned?.textureBytes ?? 0),
         liveBuffersAfterDisposal: base.liveBuffersAfterDisposal === null ? null : base.liveBuffersAfterDisposal + (architecture.liveBuffersAfterDisposal ?? 0),
         liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (architecture.liveProgramsAfterDisposal ?? 0) + (owned?.livePrograms ?? 0),
