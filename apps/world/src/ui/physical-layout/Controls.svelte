@@ -1,16 +1,16 @@
 <script lang="ts">
   import { changePhysicalLayoutView, levelLabel, type PhysicalLayoutLevel, type PhysicalLayoutView } from './view.ts'
-  import { explorerEntryTarget, explorerScopeAncestors, explorerScopeBranches, type ExplorerScopeBranch, type ExplorerScopeChoice, type PhysicalExplorerTarget } from './explorer-model.ts'
+  import { explorerScopeAncestors, explorerScopeBranches, type ExplorerScopeBranch, type ExplorerScopeChoice } from './explorer-model.ts'
 
-  let { title, path = title, choices, scopeKey, levels, layers = [], view, status, host, suspended = false,
-    onscope, onviewchange, onfit, onoverview, onfind, onbrowser, onback, onclose,
+  let { title, path = title, choices, scopeKey, levels, layers = [], view, status, suspended = false,
+    onscope, onviewchange, onfit, onhome, onoverview, onfind, onclose,
   }: {
     title: string; path?: string; choices: ReadonlyArray<ExplorerScopeChoice>; scopeKey: string | null
-    levels: ReadonlyArray<PhysicalLayoutLevel>; view: PhysicalLayoutView; status: string; host: 'map' | 'browser'; suspended?: boolean
+    levels: ReadonlyArray<PhysicalLayoutLevel>; view: PhysicalLayoutView; status: string; suspended?: boolean
     layers?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly defaultVisible: boolean }>
     onscope: (key: string | null) => void; onviewchange: (view: PhysicalLayoutView) => void
-    onfit: () => void; onoverview?: (() => void) | undefined; onfind: () => void; onbrowser?: ((target: PhysicalExplorerTarget) => void) | undefined
-    onback?: (() => void) | undefined; onclose?: (() => void) | undefined
+    onfit: () => void; onhome: () => void; onoverview?: (() => void) | undefined; onfind: () => void
+    onclose?: (() => void) | undefined
   } = $props()
   let scopeOpen = $state(false)
   let viewOpen = $state(false)
@@ -26,7 +26,6 @@
   const hiddenLayerIds = $derived(view.hiddenLayerIds ?? layers.filter(layer => !layer.defaultVisible).map(layer => layer.id))
   const change = (patch: Partial<PhysicalLayoutView>): void => onviewchange(levels.length > 0 ? changePhysicalLayoutView(view, patch, levels) : { ...view, ...patch })
   const choose = (key: string | null): void => { scopeOpen = false; onscope(key) }
-  const openBrowser = (): void => { const choice = choices.find(choice => choice.key === scopeKey); onbrowser?.(explorerEntryTarget(choice, view)) }
   export const dismiss = (): boolean => {
     if (viewOpen) { viewOpen = false; return true }
     if (scopeOpen) { scopeOpen = false; return true }
@@ -49,7 +48,7 @@
     <button class="scope" type="button" title={path} aria-label={`Choose physical scope: ${path}`} aria-expanded={scopeOpen} onclick={() => { scopeOpen = !scopeOpen; viewOpen = false }}><strong>{title}</strong><span>{scopeKey === null ? 'All admitted layouts' : path} ▾</span></button>
     <div class="modes" role="group" aria-label="Layout representation"><button type="button" aria-pressed={view.mode === '2d'} onclick={() => change({ mode: '2d' })}>Plan</button><button type="button" aria-pressed={view.mode === '3d'} onclick={() => change({ mode: '3d' })}>3D</button></div>
   </div>
-  <div class="action-row"><button type="button" onclick={onfind}>Find</button><button type="button" aria-expanded={viewOpen} onclick={() => { viewOpen = !viewOpen; scopeOpen = false }}>View</button>{#if host === 'map' && onbrowser}<button type="button" onclick={openBrowser}>Open layout browser</button>{:else if host === 'browser'}<button type="button" onclick={onback}>Back to map</button>{/if}{#if onclose}<button class="close" type="button" aria-label="Close layout controls" onclick={onclose}>×</button>{/if}</div>
+  <div class="action-row"><button type="button" onclick={onfind}>Find</button><button type="button" onclick={onfit}>Fit</button><button type="button" aria-expanded={viewOpen} onclick={() => { viewOpen = !viewOpen; scopeOpen = false }}>View</button>{#if onclose}<button class="close" type="button" aria-label="Close layout controls" onclick={onclose}>×</button>{/if}</div>
   {#if levels.length > 0}<label class="floor-row"><span>Floor</span><select aria-label="Layout level" value={view.levelId} onchange={event => change({ levelId: event.currentTarget.value })}>{#each levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>{#if view.mode === '3d' && view.levelId === 'all'}<p class="floor-hint">Choose a floor to inspect the interior.</p>{/if}{/if}
   {#if scopeOpen}
     <nav class="sheet scopes" aria-label="Physical scope hierarchy">
@@ -60,7 +59,7 @@
       <p class="area-help">Choose an area to focus it. Expand an arrow to browse inside.</p>
       <ul class="area-tree">{#each scopeBranches as branch (branch.choice.key)}{@render scopeBranch(branch)}{/each}</ul>
       {#if scopeBranches.length === 0}<p role="status">No area matches this search.</p>{/if}
-      <footer>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}{#if host === 'map'}<button type="button" onclick={() => { scopeOpen = false; onfit() }}>Explore on map</button>{#if onbrowser}<button type="button" onclick={openBrowser}>Open this area in layout browser</button>{/if}{/if}</footer>
+      <footer>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}</footer>
     </nav>
   {/if}
   {#if viewOpen}
@@ -71,7 +70,7 @@
       <label><input type="checkbox" checked={view.detail === 'auto'} onchange={event => change({ detail: event.currentTarget.checked ? 'auto' : 'hidden' })} /> Reveal detail as needed</label>
       {#each layers as layer (layer.id)}<label><input type="checkbox" checked={!hiddenLayerIds.includes(layer.id)} onchange={event => change({ hiddenLayerIds: event.currentTarget.checked ? hiddenLayerIds.filter(id => id !== layer.id) : [...hiddenLayerIds, layer.id] })} /> {layer.label}</label>{/each}
       {#if view.mode === '3d' && view.levelId === 'all'}<label class="separation">Separate floors <output>metres of view offset</output><input aria-label="Floor separation view offset in metres" type="number" min="0" step="1" value={view.separation} oninput={event => { const separation = event.currentTarget.valueAsNumber; if (Number.isFinite(separation) && separation >= 0) change({ separation }) }} /></label>{/if}
-      <button type="button" onclick={() => { viewOpen = false; onfit() }}>Fit selection · keep angle</button>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}
+      <button type="button" onclick={() => { viewOpen = false; onhome() }}>Home · source view</button>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}
     </section>
   {/if}
   <p class="evidence" role="status">{suspended ? 'Inspection suspended while choosing an operational target.' : status}{view.live ? '' : ' · Status layer off'}</p>

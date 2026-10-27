@@ -29,7 +29,7 @@ export const physicalExplorerNeedsLive = (input: {
   && (input.representation === 'ready' || input.representation === 'loading')
   && (input.statusLayer || input.inspectedSceneId === input.sceneId)
 
-/** The same operational capture boundary applies to both physical viewport hosts. */
+/** Physical inspection yields to operational target capture on the native map. */
 export const physicalExplorerOperationalCapture = (input: {
   readonly placement: boolean
   readonly assignment: boolean

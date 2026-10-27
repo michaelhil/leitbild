@@ -63,7 +63,6 @@ export const customShapes: ReadonlyArray<CustomShape> = [
       { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
       { file: 'ui/map/physical-scene/geometry.ts', mark: 'export const buildVisibleMeshes', drawn: 'code' },
       { file: 'ui/map/physical-scene/overview.ts', mark: 'export const createPhysicalSceneOverview', drawn: 'code' },
-      { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: 'class="layout-canvas"', drawn: 'canvas' },
       { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: 'class="layout-plan-annotations"', drawn: 'canvas' },
       { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: "target.getContext('2d')", drawn: 'code' },
       { file: 'ui/physical-layout/plan-annotations.ts', mark: 'export const drawPhysicalPlanAnnotations', drawn: 'code' },

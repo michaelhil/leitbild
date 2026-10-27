@@ -3,7 +3,6 @@
   import { untrack } from 'svelte'
   import type { EmbeddedViewListing } from '@leitbild/contracts'
   import type { PhysicalLayoutBinding, PhysicalLayoutMapInteraction } from './physical-layout/sources.ts'
-  import type { PhysicalExplorerTarget } from './physical-layout/explorer-model.ts'
   import type {
     GeoJsonPoint,
     GeoJsonPolygon,
@@ -109,9 +108,6 @@
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
-    readonly onOpenLayoutBrowser?: (target: PhysicalExplorerTarget) => void
-    /** False only when this map viewport is fully covered by another surface. */
-    readonly viewportActive?: boolean
     readonly physicalLayoutSuspended: boolean
     readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
@@ -195,8 +191,6 @@
     liveMapLayers = [],
     physicalLayoutBindings = [],
     onPhysicalDisplay = () => {},
-    onOpenLayoutBrowser,
-    viewportActive = true,
     physicalLayoutSuspended,
     layoutClearTop = 0,
     queryLiveMapLayer = async () => { throw new Error('live map layers need a capability query') },
@@ -416,7 +410,7 @@
   const liveLayerController = createPackLiveLayerController({
     query: (request, signal) => queryLiveMapLayer(request, signal),
     rasterize: rasterizeSymbol,
-    active: () => viewportActive && !document.hidden,
+    active: () => !document.hidden,
     onSelect: selection => { clickHandled = true; featureSelection = selection },
     onHover: hover => { if (hover && hoverCardsFor(lastPointerType)) popupController.showCard(hover); else popupController.hide() },
     onError: message => onMapError(`Live map layer: ${message}`),
@@ -527,7 +521,7 @@
     getViewport: currentViewport,
     getCurrentTime: currentDisplayTime,
     getSourceRevisionKey: packFeatureSourceRevisionKey,
-    active: () => viewportActive && !document.hidden,
+    active: () => !document.hidden,
     enabled: packFeaturesEnabled,
     loadFeatures: context => mapFeaturesFor(context),
     setFeatures: features => {
@@ -821,7 +815,6 @@
     untrack(() => { operationalRenderController.syncAreaFeatures(); syncPackFeatures() })
   })
 
-  $effect(() => { viewportActive; untrack(syncViewportDemand) })
   $effect(() => { packDataRevisionKey; untrack(() => { void packOverlayController.refresh() }) })
   $effect(() => { perspectiveEpoch; untrack(() => { hoveredObject = null; popupController.hide(); stackChooser.hide() }) })
 
@@ -929,11 +922,11 @@
 {#if runtime !== null && simulationRunId !== null && physicalLayoutBindings.length > 0}
   {#key runtime.map}
   {#key simulationRunId}
-  {#await import('./physical-layout/PhysicalLayouts.svelte') then { default: PhysicalLayouts }}
-    <PhysicalLayouts map={runtime.map} active={viewportActive} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+  {#await import('./physical-layout/PhysicalExplorer.svelte') then { default: PhysicalExplorer }}
+    <PhysicalExplorer map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} reservedPadding={cameraPadding} onDetailedOwners={setDetailedLayoutOwners}
       suspended={physicalLayoutSuspended}
-      onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onbrowser={onOpenLayoutBrowser} onconnect={interaction => physicalLayoutInteraction = interaction} />
+      onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />
   {:catch error}
     <p role="alert">Physical layouts cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
   {/await}

@@ -6,9 +6,8 @@
   import { objectIdSchema } from '../../core/model/index.ts'
   import type { PackObjectPresentation } from '../../core/packs/protocol.ts'
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
-  import { createPhysicalCanvasController } from '../map/physical-scene/canvas-controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
-  import { explorerEntryTarget, explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice, type PhysicalExplorerTarget } from './explorer-model.ts'
+  import { explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
   import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
@@ -27,11 +26,9 @@
   import { physicalLayoutPalette } from './palette.ts'
   import { drawPhysicalPlanAnnotations, visiblePhysicalPlanAnnotations } from './plan-annotations.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { map = null, host = 'map', active = true, initialTarget = { sceneId: null }, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {}, onbrowser, onback }: {
-    map?: MapLibreMap | null
-    host?: 'map' | 'browser'
+  let { map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+    map: MapLibreMap
     active?: boolean
-    initialTarget?: PhysicalExplorerTarget
     objects: ReadonlyArray<OperationalObject>
     bindings: ReadonlyArray<PhysicalLayoutBinding>
     hiddenCategoryIds: ReadonlyArray<string>
@@ -48,16 +45,13 @@
     onopen: (listing: EmbeddedViewListing) => void
     onerror: (message: string) => void
     onconnect?: (interaction: PhysicalLayoutMapInteraction | null) => void
-    onbrowser?: ((target: PhysicalExplorerTarget) => void) | undefined
-    onback?: (() => void) | undefined
   } = $props()
 
   let scenes = $state.raw<ReadonlyArray<PhysicalScenePresentation>>([])
-  let focusedId = $state<string | null>(untrack(() => initialTarget.sceneId))
-  let focusedScopeId = $state<string | null>(untrack(() => initialTarget.scopeId ?? null))
-  let focusedGroupId = $state<string | null>(untrack(() => initialTarget.groupId ?? null))
+  let focusedId = $state<string | null>(null)
+  let focusedScopeId = $state<string | null>(null)
+  let focusedGroupId = $state<string | null>(null)
   let navigation = $state<'pan' | 'orbit'>('pan')
-  let canvas = $state<HTMLCanvasElement | null>(null)
   let draftingCanvas = $state<HTMLCanvasElement | null>(null)
   let draftingColors = $state.raw<{ line: string; allowance: string; access: string } | null>(null)
   let controls = $state<{ dismiss: () => boolean } | null>(null)
@@ -87,7 +81,6 @@
   let pendingFocus = $state<{ readonly sceneId: string; readonly subjectId: string; readonly label: string } | null>(null)
   let pendingCameraFocus = $state<{ readonly sceneId: string; readonly occurrenceId: string; readonly levelId: string; readonly mode: PhysicalSceneView['mode'] } | null>(null)
   const rememberedPlanFloor = new Map<string, string>()
-  const initializedBrowserSources = new Set<string>()
   let snapshots = $state.raw<ReadonlyMap<string, LayoutLiveSnapshot>>(new Map())
   let wallNow = $state(Date.now())
   let documentVisible = $state(!document.hidden)
@@ -222,16 +215,6 @@
     const current = controller
     const sources = physicalLayoutSources({ bindings, objects, hiddenCategoryIds, presentationFor })
     untrack(() => current?.setSources(sources))
-  })
-  $effect(() => {
-    const current = controller
-    if (host !== 'browser' || !current) return
-    const mode = scenes.find(scene => initializedBrowserSources.has(scene.descriptor.id))?.view.mode ?? initialTarget.view?.mode ?? '3d'
-    for (const scene of scenes) if (!initializedBrowserSources.has(scene.descriptor.id)) {
-      initializedBrowserSources.add(scene.descriptor.id)
-      const view = scene.descriptor.id === initialTarget.sceneId && initialTarget.view !== undefined ? initialTarget.view : { ...scene.view, mode, levelId: mode === '3d' ? 'all' : scene.view.levelId }
-      untrack(() => current.setView(scene.descriptor.id, view))
-    }
   })
   $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }); const color = (role: string) => `rgb(${palette.materials[role]!.map(channel => channel * 255).join(' ')})`; draftingColors = { line: color('line'), allowance: color('outage'), access: color('access') } })
   $effect(() => {
@@ -487,29 +470,23 @@
   })
 
   runOnMount(() => {
-    const element = host === 'map' ? map?.getContainer() : canvas
-    if (!element) { onerror('The physical viewport has no mounted surface'); return }
+    const element = map.getContainer()
     badgeMeasure = document.createElement('canvas').getContext('2d')
     if (badgeMeasure) badgeMeasure.font = `11px ${getComputedStyle(element).fontFamily}`
     const options = { palette: physicalLayoutPalette(element), fitPadding, onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
     let next: PhysicalSceneController
     try {
-      next = host === 'map' && map !== null
-        ? createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
-        : createPhysicalCanvasController({ ...options, canvas: canvas! })
+      next = createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
     } catch (error) {
       viewportFailure = error instanceof Error ? error.message : String(error)
       onerror(`Physical viewport unavailable: ${viewportFailure}`)
       return
     }
     controller = next
-    if (host === 'browser') next.surface.element.focus({ preventScroll: true })
     size = next.surface.getSize()
-    if (map !== null && host === 'map') overviewLayer = createPhysicalSceneOverview({ map, palette: options.palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical overview: ${error.message}`) })
+    overviewLayer = createPhysicalSceneOverview({ map, palette: options.palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical overview: ${error.message}`) })
     annotationScheduler = createPhysicalAnnotationScheduler<Badge>({ test: value => next.visibleAt(value.sceneId, value.occurrenceId, value.point), onChange: value => { testedBadges = value.visible; pendingBadges = value.pending } })
     let hoverTimer: ReturnType<typeof setTimeout> | null = null
-    let pressed: { x: number; y: number; pointerId: number; moved: boolean } | null = null
-    let initialFit = false
     const changed = (): void => {
       const pose = next.cameraPose()
       const signature = JSON.stringify([pose.pitch, pose.bearing, pose.zoom, pose.center])
@@ -517,20 +494,12 @@
       cameraSignature = signature; overlayDirty = false
       cameraReadout = { pitch: pose.pitch, bearing: pose.bearing }
       size = next.surface.getSize(); screenRevision += 1
-      if (host === 'browser' && !initialFit && scenes.length > 0) {
-        initialFit = true
-        if (initialTarget.sceneId === null) next.fitAll(groups.get(initialTarget.groupId ?? '')?.sceneIds); else next.focus(initialTarget.sceneId, { scopeId: initialTarget.scopeId, preservePose: false })
-      }
     }
     const pointAt = (event: PointerEvent | MouseEvent) => { const box = next.surface.element.getBoundingClientRect(); return { x: event.clientX - box.left, y: event.clientY - box.top } }
     const leave = (): void => { retainHover(); if (hoverTimer !== null) clearTimeout(hoverTimer); hoverTimer = null; hover = null }
     const moving = (): void => { leave(); overlayDirty = true }
     const move = (event: PointerEvent): void => {
       retainHover()
-      if (pressed?.pointerId === event.pointerId) {
-        const point = pointAt(event)
-        if (Math.hypot(point.x - pressed.x, point.y - pressed.y) >= 4) pressed.moved = true
-      }
       if (!active || suspended || event.buttons !== 0 || inspected !== null) { leave(); return }
       if (hoverTimer !== null) clearTimeout(hoverTimer)
       const point = pointAt(event)
@@ -544,13 +513,7 @@
       if (!scene) return false
       overview(scene); return true
     }
-    const down = (event: PointerEvent): void => { if (active && !suspended && event.button === 0) pressed = { ...pointAt(event), pointerId: event.pointerId, moved: false } }
-    const up = (event: PointerEvent): void => {
-      if (pressed?.pointerId !== event.pointerId) return
-      const before = pressed; pressed = null; const point = pointAt(event)
-      if (!before.moved && Math.hypot(point.x - before.x, point.y - before.y) < 4 && host === 'browser') activate(point)
-    }
-    const cancel = (): void => { pressed = null; leave() }
+    const cancel = (): void => leave()
     const visibility = (): void => { documentVisible = !document.hidden }
     const receive = (event: MessageEvent): void => {
       frameHost.receive(event)
@@ -578,19 +541,18 @@
       else if (focusLocations !== null || floorChoice !== null || scopeFloorChoice !== null) { focusLocations = null; floorChoice = null; scopeFloorChoice = null }
       else if (componentsOpen) componentsOpen = false
       else if (controls?.dismiss() || cameraControls?.dismiss()) { /* the active disclosure consumed Escape */ }
-      else if (host === 'browser') onback?.()
       else return
       next.cancelCamera(); event.preventDefault(); event.stopPropagation()
     }
     const clock = setInterval(() => { wallNow = Date.now() }, 250)
     const disposers = [next.surface.on('render', changed), next.surface.on('resize', () => { overlayDirty = true; changed() }), next.surface.on('movestart', moving)]
     const surface = next.surface.element
-    surface.addEventListener('pointermove', move); surface.addEventListener('pointerdown', down); surface.addEventListener('pointerup', up); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', dismissHoverSoon)
+    surface.addEventListener('pointermove', move); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', dismissHoverSoon)
     document.addEventListener('visibilitychange', visibility); window.addEventListener('message', receive); window.addEventListener('keydown', key)
     onconnect({ dismiss: () => { closeInspection(); leave() }, activate })
     return () => {
       onconnect(null); onDetailedOwners([]); leave(); clearInterval(clock); disposers.forEach(dispose => dispose())
-      surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerdown', down); surface.removeEventListener('pointerup', up); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', dismissHoverSoon)
+      surface.removeEventListener('pointermove', move); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', dismissHoverSoon)
       document.removeEventListener('visibilitychange', visibility); window.removeEventListener('message', receive); window.removeEventListener('keydown', key)
       for (const entry of sessions.values()) entry.session.close()
       sessions.clear(); annotationScheduler?.destroy(); annotationScheduler = null; overviewLayer?.destroy(); overviewLayer = null; next.destroy(); controller = null
@@ -599,17 +561,16 @@
 
 </script>
 
-{#if host === 'browser'}<canvas class="layout-canvas" bind:this={canvas} tabindex="0" aria-label="Interactive physical layout browser"></canvas>{/if}
 <div class="explorer-overlay" bind:this={overlayElement} class:inactive={!active} aria-hidden={!active} inert={!active}>
   <canvas class="layout-plan-annotations" bind:this={draftingCanvas} aria-hidden="true"></canvas>
   {#if scenes.length > 0 && focused !== null}
     <div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
       {#if controlsOpen}
-        <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focused.descriptor.layers ?? []} view={focused.view} status={statusText} {host} {suspended}
-          onscope={chooseScope} onviewchange={changeView} onfit={fit} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
-          onbrowser={onbrowser === undefined ? undefined : target => { if (!suspended) onbrowser?.(target) }} {onback} onclose={() => { controlsOpen = false; componentsOpen = false }} />
+        <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focused.descriptor.layers ?? []} view={focused.view} status={statusText} {suspended}
+          onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
+          onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {:else}
-        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button>{#if host === 'map' && onbrowser}<button type="button" disabled={suspended} onclick={() => onbrowser?.(explorerEntryTarget(choices.find(choice => choice.key === scopeKey), focused.view))}>Open layout browser</button>{:else if host === 'browser'}<button type="button" onclick={onback}>Back to map</button>{/if}</div>
+        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button></div>
       {/if}
       {#if componentsOpen}
         <section class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
@@ -633,8 +594,8 @@
       {#if scopeFloorChoice}<section class="layout-components" aria-label="Choose area floor"><header><strong>{scopeFloorChoice.label}</strong><button type="button" aria-label="Close area floor choice" onclick={() => scopeFloorChoice = null}>×</button></header><p>The current floor does not intersect this area. Choose a floor or show its whole 3D context.</p><button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, 'all') }}>Show whole area in 3D</button>{#each scopeFloorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, levelId) }}>{scenes.find(scene => scene.descriptor.id === scopeFloorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
     </div>
     {#if controlsOpen && focused.view.mode === '3d'}<CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />{/if}
-  {:else if host === 'browser'}
-    <div class="layout-tools empty-browser" style:top={`${toolsTop}px`}><button type="button" onclick={onback}>Back to map</button><p role={viewportFailure === null ? 'status' : 'alert'}>{viewportFailure ?? 'No physical layouts are available in the current Run and visible categories.'}</p></div>
+  {:else if viewportFailure !== null}
+    <div class="layout-tools" style:top={`${toolsTop}px`}><p role="alert">{viewportFailure}</p></div>
   {/if}
   {#each badges as badge (`${badge.sceneId}:${badge.occurrenceId}:${badge.elementId}`)}
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
@@ -644,7 +605,6 @@
 </div>
 
 <style>
-  .layout-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; outline-offset: -3px; }
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
   .layout-plan-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; font-size: 12px; }
   .layout-tools { position: absolute; z-index: 5; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; color: var(--text); }

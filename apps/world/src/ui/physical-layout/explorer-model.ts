@@ -17,14 +17,6 @@ export interface ExplorerScopeChoice {
   readonly kind: string
 }
 
-/** Ephemeral UI navigation only; it never changes the physical source or Run. */
-export interface PhysicalExplorerTarget {
-  readonly sceneId: string | null
-  readonly groupId?: string
-  readonly scopeId?: string
-  readonly view?: PhysicalSceneView
-}
-
 // Namespace tuple keys avoid collisions between arbitrary source, scope and group IDs.
 export const explorerLayoutKey = (sceneId: string, scopeId?: string): string => JSON.stringify(scopeId === undefined ? ['layout', sceneId] : ['scope', sceneId, scopeId])
 export const explorerGroupKey = (groupId: string): string => JSON.stringify(['group', groupId])
@@ -53,14 +45,6 @@ export const explorerScopeChoices = (descriptor: PhysicalSceneDescriptor, label:
       label: scope.label, path: path.join(' / '), depth: path.length - 1, kind: scope.kind }
   })]
 }
-
-/** Keep area, section and information-layer context when changing viewport hosts. */
-export const explorerEntryTarget = (choice: ExplorerScopeChoice | undefined, view: PhysicalSceneView): PhysicalExplorerTarget => ({
-  sceneId: choice?.sceneId ?? null,
-  ...(choice?.groupId === undefined ? {} : { groupId: choice.groupId }),
-  ...(choice?.scopeId === undefined ? {} : { scopeId: choice.scopeId }),
-  ...(choice?.sceneId ? { view: { ...view } } : {}),
-})
 
 export interface ExplorerScopeBranch {
   readonly choice: ExplorerScopeChoice

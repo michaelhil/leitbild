@@ -25,7 +25,6 @@
   import type { PackCreateObjectType, PackMapAssignmentMode, PackMapAssignmentTarget, PackMapFeatureQuery, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation, PackPresentationContribution, PackProcedureContribution, PackSurfacePanelContribution, PackTargetContext, PackTargetPreview } from '../../core/packs/protocol.ts'
   import type { PackLiveMapLayerBinding } from '../map-runtime/pack-live-layer.ts'
   import type { PhysicalLayoutBinding } from '../physical-layout/sources.ts'
-  import type { PhysicalExplorerTarget } from '../physical-layout/explorer-model.ts'
   import { physicalExplorerOperationalCapture } from '../physical-layout/explorer-interaction.ts'
   import type { ActivePackViews } from '../../core/packs/active-views.ts'
   import {
@@ -274,20 +273,7 @@
   const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
-  let layoutBrowser = $state<PhysicalExplorerTarget | null>(null)
-  let layoutBrowserOrigin: HTMLElement | null = null
-  const openLayoutBrowser = (target: PhysicalExplorerTarget): void => {
-    if (physicalOperationalCapture) return
-    layoutBrowserOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    layoutBrowser = target
-  }
-  const closeLayoutBrowser = async (): Promise<void> => {
-    layoutBrowser = null
-    const origin = layoutBrowserOrigin; layoutBrowserOrigin = null
-    await tick()
-    if (origin?.isConnected) origin.focus({ preventScroll: true })
-  }
-  $effect(() => { if (physicalOperationalCapture) { layoutBrowser = null; layoutBrowserOrigin = null; if (railLayout.drawer) railLayout.collapse() } })
+  $effect(() => { if (physicalOperationalCapture && railLayout.drawer) railLayout.collapse() })
   let surfaceShell = $state<HTMLElement | null>(null)
   $effect(() => {
     const element = surfaceShell
@@ -2109,8 +2095,6 @@
           physicalLayoutBindings={activePhysicalLayoutBindings}
           layoutClearTop={alarmStripBottom}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
-          onOpenLayoutBrowser={openLayoutBrowser}
-          viewportActive={layoutBrowser === null}
           physicalLayoutSuspended={physicalOperationalCapture}
           {queryLiveMapLayer}
           packSelections={packPanelSelections}
@@ -2215,19 +2199,6 @@
       close={() => closeDroneControl(windowEntry.id)}
     />
   {/each}
-{/if}
-
-{#if layoutBrowser !== null && simulationRunId !== null && !physicalOperationalCapture}
-  {#await import('../physical-layout/LayoutBrowser.svelte')}
-    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="status">Opening layout browser…</p></section>
-  {:then { default: LayoutBrowser }}
-  <LayoutBrowser objects={objects} bindings={activePhysicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds} presentationFor={mapPresentationFor}
-    runId={simulationRunId} {perspectiveEpoch} {theme} clearTop={alarmStripBottom} initialTarget={layoutBrowser}
-    suspended={physicalOperationalCapture} onconnect={() => {}}
-    onoverview={object => { if (!physicalOperationalCapture) selectObject(object) }} onopen={listing => requestDisplayWindow({ kind: 'listing', listing }, true)} onerror={handleMapError} onback={closeLayoutBrowser} />
-  {:catch error}
-    <section class="layout-browser-state" aria-label="Physical layout browser"><button type="button" onclick={closeLayoutBrowser}>Back to map</button><p role="alert">The layout browser could not open: {error instanceof Error ? error.message : String(error)}</p></section>
-  {/await}
 {/if}
 
 {#if DroneProfileEditorModal && simulationRunId}
@@ -2340,6 +2311,4 @@
 {/if}
 
 <style>
-  .layout-browser-state { position: fixed; inset: 0; z-index: 10; box-sizing: border-box; padding: 16px; color: var(--text); background: var(--panel); }
-  .layout-browser-state button { min-height: 44px; min-width: 44px; padding: 8px 12px; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; }
 </style>

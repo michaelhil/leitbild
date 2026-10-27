@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { explorerEntryTarget, explorerGroupKey, explorerLayoutKey, explorerScopeAncestors, explorerScopeBranches, explorerScopeChoices, type ExplorerScopeBranch, type ExplorerScopeChoice } from '../src/ui/physical-layout/explorer-model.ts'
+import { explorerGroupKey, explorerLayoutKey, explorerScopeAncestors, explorerScopeBranches, explorerScopeChoices, type ExplorerScopeBranch, type ExplorerScopeChoice } from '../src/ui/physical-layout/explorer-model.ts'
 import { physicalExplorerFitPadding, physicalExplorerFitRect } from '../src/ui/physical-layout/explorer-viewport.ts'
 import type { PhysicalSceneDescriptor } from '../src/ui/map/physical-scene/types.ts'
 import { Map as MapLibreMap } from 'maplibre-gl'
@@ -59,14 +59,18 @@ test('room choices derive floor labels and preserve explicit source and authored
   expect(result[3]!.groupId).toBe('campus')
 })
 
-test('switching viewport hosts preserves the selected area section and layers while collection entry has no implicit first-source view', () => {
-  const view = { mode: '2d' as const, levelId: 'operating', separation: 0, cutaway: true, detail: 'auto' as const, live: true, hiddenLayerIds: ['utility-routes'] }
-  const choice = { key: 'room', sceneId: 'unit-3', scopeId: 'room/operating', groupId: 'campus', label: 'Machine room', path: 'Unit 3 / Machine room', kind: 'space', depth: 2 }
-  const target = explorerEntryTarget(choice, view)
-  expect(target).toEqual({ sceneId: 'unit-3', scopeId: 'room/operating', groupId: 'campus', view })
-  expect(target.view).not.toBe(view)
-  expect(explorerEntryTarget({ key: 'campus', sceneId: null, groupId: 'campus', label: 'Campus', path: 'Campus', kind: 'site group', depth: 0 }, view)).toEqual({ sceneId: null, groupId: 'campus' })
-  expect(explorerEntryTarget(undefined, view)).toEqual({ sceneId: null })
+test('product physical inspection has one native map controller and no alternate viewport launch or canvas', async () => {
+  const [route, map, explorer, controls] = await Promise.all([
+    '../src/ui/routes/ControlSurfaceRoute.svelte', '../src/ui/OperationalMap.svelte',
+    '../src/ui/physical-layout/PhysicalExplorer.svelte', '../src/ui/physical-layout/Controls.svelte',
+  ].map(path => Bun.file(new URL(path, import.meta.url)).text()))
+  expect(map).toContain("import('./physical-layout/PhysicalExplorer.svelte')")
+  expect(explorer).toContain('createPhysicalSceneController({ ...options, map,')
+  for (const source of [route!, map!, explorer!, controls!]) {
+    for (const retired of ['LayoutBrowser', 'onbrowser', 'onback', 'Open layout browser', 'Back to map', 'createPhysicalCanvasController', 'class="layout-canvas"']) expect(source).not.toContain(retired)
+  }
+  expect(route).not.toContain('layoutBrowser')
+  expect(route).not.toContain('<PhysicalExplorer')
 })
 
 test('source, group and scope navigation identities cannot collide through separators', () => {
