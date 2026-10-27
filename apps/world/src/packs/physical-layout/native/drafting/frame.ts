@@ -23,6 +23,7 @@ const object = (value: PhysicalSceneObject): PhysicalSceneObject => ({ ...value,
 const annotation = (value: PhysicalPlanAnnotation): PhysicalPlanAnnotation => value.kind === 'label' ? { ...value, anchor: point(value.anchor), rotation: -value.rotation }
   : value.kind === 'dimension' ? { ...value, from: point(value.from), to: point(value.to), offset: point(value.offset) }
   : { ...value, outline: value.outline.map(point) }
+const inspectionView = (value: NonNullable<NonNullable<PackPhysicalScene['scopes']>[number]['inspectionView']>) => ({ ...value, bearing: ((180 - value.bearing) % 360 + 360) % 360, ...(value.target ? { target: point(value.target) } : {}) })
 const primitive = (value: PhysicalPlanPrimitive): PhysicalPlanPrimitive => {
   const common = { ...value, bounds: drawingBounds(value.bounds) }
   if (value.kind === 'text') return { ...value, ...common, kind: 'text', anchor: [value.anchor[0], -value.anchor[1]], rotation: -value.rotation } as PhysicalPlanPrimitive
@@ -35,7 +36,7 @@ const primitive = (value: PhysicalPlanPrimitive): PhysicalPlanPrimitive => {
  * performed once, not a reflected camera or a renderer special case. */
 export const normalizePhysicalDraftingScene = (scene: PackPhysicalScene, northAxis: 'positive-y' | 'negative-y'): PackPhysicalScene => northAxis === 'positive-y' ? scene : ({ ...scene,
   bounds: bounds(scene.bounds), objects: scene.objects.map(object),
-  ...(scene.scopes ? { scopes: scene.scopes.map(scope => ({ ...scope, bounds: bounds(scope.bounds), ...(scope.inspectionView ? { inspectionView: { ...scope.inspectionView, bearing: ((180 - scope.inspectionView.bearing) % 360 + 360) % 360, ...(scope.inspectionView.target ? { target: point(scope.inspectionView.target) } : {}) } } : {}) })) } : {}),
+  ...(scene.scopes ? { scopes: scene.scopes.map(scope => ({ ...scope, bounds: bounds(scope.bounds), ...(scope.inspectionView ? { inspectionView: inspectionView(scope.inspectionView) } : {}), ...(scope.levelInspectionViews ? { levelInspectionViews: scope.levelInspectionViews.map(value => ({ ...value, view: inspectionView(value.view) })) } : {}) })) } : {}),
   ...(scene.planAnnotations ? { planAnnotations: scene.planAnnotations.map(annotation) } : {}),
   ...(scene.planDrawing ? { planDrawing: { views: scene.planDrawing.views.map(view => ({ ...view, bounds: drawingBounds(view.bounds), primitives: view.primitives.map(primitive) })) } } : {}),
 })

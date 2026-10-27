@@ -67,6 +67,8 @@ export const physicalSceneScopeSchema = z.object({
   members: z.array(identifierSchema).min(1).optional(),
   /** Preferred Home orientation relative to local north; target is scene-local metres. */
   inspectionView: z.object({ bearing: z.number().finite(), pitch: z.number().finite().min(0).lt(90), target: vector3Schema.optional() }).strict().optional(),
+  /** Floor-specific Home intent; all-floors and unspecified floors use inspectionView. */
+  levelInspectionViews: z.array(z.object({ levelId: identifierSchema, view: z.object({ bearing: z.number().finite(), pitch: z.number().finite().min(0).lt(90), target: vector3Schema.optional() }).strict() }).strict()).optional(),
 }).strict()
 
 export const physicalSceneObjectSchema = z.object({
@@ -141,6 +143,8 @@ export const packPhysicalSceneSchema = z.object({
   if (scopes.size !== (scene.scopes?.length ?? 0)) issue('Scope IDs must be unique')
   for (const scope of scopes.values()) {
     if (new Set(scope.levelIds).size !== scope.levelIds.length || scope.levelIds.some(id => !levelIds.has(id))) issue(`Invalid scope levels: ${scope.id}`)
+    const views = scope.levelInspectionViews ?? []
+    if (new Set(views.map(value => value.levelId)).size !== views.length || views.some(value => !scope.levelIds.includes(value.levelId))) issue(`Invalid scope floor inspection views: ${scope.id}`)
     if (scope.kind === 'area') {
       const members = scope.members?.map(id => scopes.get(id)) ?? []
       if (!members.length || new Set(scope.members).size !== members.length || members.some(member => !member || member.kind === 'area' || member.id === scope.id)) issue(`Invalid inspection area members: ${scope.id}`)
