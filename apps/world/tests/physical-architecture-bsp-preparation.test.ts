@@ -44,5 +44,5 @@ test('actual module worker returns equivalent geometry and exits with no retaine
 
 test('omitted authored line metadata uses the exact engine default role/style and remains admissible',()=>{
  const input=fixture(),source=input.sources[0]!,defaulted={...input,sources:[{...source,lineMaterials:undefined,lineStyles:undefined}]},result=preparePhysicalArchitectureBsp(defaulted),line=result.fragments.find(f=>f.kind==='line')!
- expect(line.material).toBe('wall');expect(line.strokeStyle).toBe('feature');expect(admitPhysicalArchitectureBsp(result,defaulted)).toBe(result)
+ expect(line.material).toBe('line');expect(line.strokeStyle).toBe('feature');expect(admitPhysicalArchitectureBsp(result,defaulted)).toBe(result)
 })

@@ -23,7 +23,7 @@ export const admitPhysicalArchitectureBsp = (value: PhysicalArchitectureBsp,inpu
     if(!fragment||!integer(fragment.ownerIndex,0,value.owners.length)||fragment.kind!=='triangle'&&fragment.kind!=='line'||fragment.first!==next||!Number.isInteger(fragment.count)||fragment.count<(fragment.kind==='line'?2:3)||fragment.count%(fragment.kind==='line'?2:3)||!Array.isArray(fragment.occludedBy)||fragment.occludedBy.some(owner=>!integer(owner,0,fragment.ownerIndex))||new Set(fragment.occludedBy).size!==fragment.occludedBy.length)invalid()
     next+=fragment.count
     const source=input.sources[fragment.ownerIndex]!
-    if(fragment.kind==='triangle'?!source.materials.includes(fragment.material):!(source.lineMaterials??source.materials).includes(fragment.material)||!['feature','context','section'].includes(fragment.strokeStyle??''))invalid()
+    if(fragment.kind==='triangle'?!source.materials.includes(fragment.material):!(source.lineMaterials??['line']).includes(fragment.material)||!['feature','context','section'].includes(fragment.strokeStyle??''))invalid()
   }
   if(next*9!==value.vertices.length)invalid()
   if(value.root===-1){if(value.nodes.length||value.fragments.length||value.vertices.length)invalid()}

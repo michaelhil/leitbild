@@ -129,7 +129,7 @@ export const preparePhysicalArchitectureBsp = (input: PhysicalArchitectureBspInp
     for(let at=0;at<source.lines.length;at+=6){
       const a=transformVertex(source.lines,at,source.matrix,false),b=transformVertex(source.lines,at+3,source.matrix,false);inputLines++
       if(a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2])continue
-      lines.push({vertices:[a,b],owner,material:source.lineMaterials?.[at/6]??source.materials[0]!,style:source.lineStyles?.[at/6]??'feature',ordinal:at/6})
+      lines.push({vertices:[a,b],owner,material:source.lineMaterials?.[at/6]??'line',style:source.lineStyles?.[at/6]??'feature',ordinal:at/6})
     }
   })
   const nodes: PhysicalArchitectureBspNode[]=[],fragments: PhysicalArchitectureBspFragment[]=[],values: number[]=[]
