@@ -65,6 +65,9 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         const projected = baseProjection
         for (const { entry, matrix, meshes } of projected) {
           picking.push({ sceneId: entry.scene.id, meshes, matrix })
+          // Explicit architectural ink owns Plan colour. Retain the same solid
+          // acceleration for operational picking without painting it twice.
+          if (entry.view.mode === '2d' && entry.scene.planDrawing?.views.some(view => view.levelId === entry.view.levelId)) continue
           const drawMatrix = new Float32Array(matrix)
           if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
           draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)) })

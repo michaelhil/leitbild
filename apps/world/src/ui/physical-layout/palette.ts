@@ -16,7 +16,9 @@ export const physicalLayoutPalette = (container: HTMLElement): PhysicalScenePale
   try {
     const names = ['floor', 'wall', 'steel', 'dark', 'machine', 'hood', 'motor', 'light', 'plinth', 'pipe', 'steam', 'crane', 'access', 'outage', 'waterbox', 'ground', 'glass', 'line', 'pavement', 'marking'] as const
     const roles = Object.fromEntries(names.map(name => [name, token(`--physical-${name}`)])) as Record<typeof names[number], Color>
-    const palette = { materials: { ...roles, metal: roles.steel, equipment: roles.machine, door: roles.crane, context: roles.ground }, defaultMaterial: roles.machine, line: roles.line, lineOpacity: .26, contextLineOpacity: .10 }
+    const drawingNames = [...names, 'paper', 'muted', 'grid', 'dimension', 'equipment-line', 'cut', 'rib', 'context-line', 'floor-joint']
+    const planMaterials = Object.fromEntries(drawingNames.map(name => [name, token(`--physical-plan-${name}`)]))
+    const palette = { materials: { ...roles, metal: roles.steel, equipment: roles.machine, door: roles.crane, context: roles.ground }, planMaterials, defaultMaterial: roles.machine, line: roles.line, lineOpacity: .26, contextLineOpacity: .10 }
     return palette
   } finally { probe.remove() }
 }

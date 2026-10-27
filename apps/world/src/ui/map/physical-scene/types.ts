@@ -5,6 +5,7 @@ import type { PackPhysicalScene, PackPhysicalSceneDescriptor, PhysicalSceneBound
 export type Color = readonly [number, number, number]
 export interface PhysicalScenePalette {
   readonly materials: Readonly<Record<string, Color>>
+  readonly planMaterials?: Readonly<Record<string, Color>>
   readonly defaultMaterial: Color
   readonly line: Color
   readonly lineOpacity?: number

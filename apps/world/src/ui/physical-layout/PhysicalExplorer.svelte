@@ -11,7 +11,7 @@
   import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
-  import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
+  import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -25,6 +25,7 @@
   import { sparseLayoutBadges } from './badges.ts'
   import { physicalLayoutPalette } from './palette.ts'
   import { drawPhysicalPlanAnnotations, visiblePhysicalPlanAnnotations } from './plan-annotations.ts'
+  import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
   let { map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
     map: MapLibreMap
@@ -54,6 +55,7 @@
   let navigation = $state<'pan' | 'orbit'>('pan')
   let draftingCanvas = $state<HTMLCanvasElement | null>(null)
   let draftingColors = $state.raw<{ line: string; allowance: string; access: string } | null>(null)
+  let draftingPalette = $state.raw<PhysicalScenePalette | null>(null)
   let controls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraElement = $state<HTMLElement | null>(null)
@@ -216,15 +218,15 @@
     const sources = physicalLayoutSources({ bindings, objects, hiddenCategoryIds, presentationFor })
     untrack(() => current?.setSources(sources))
   })
-  $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }); const color = (role: string) => `rgb(${palette.materials[role]!.map(channel => channel * 255).join(' ')})`; draftingColors = { line: color('line'), allowance: color('outage'), access: color('access') } })
+  $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); draftingPalette = palette; untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }); const color = (role: string) => `rgb(${palette.materials[role]!.map(channel => channel * 255).join(' ')})`; draftingColors = { line: color('line'), allowance: color('outage'), access: color('access') } })
   $effect(() => {
     void screenRevision
-    const current = controller, target = draftingCanvas, colors = draftingColors, width = size.width, height = size.height
-    if (!target || !current || !colors) return
+    const current = controller, target = draftingCanvas, colors = draftingColors, palette = draftingPalette, width = size.width, height = size.height
+    if (!target || !current || !colors || !palette) return
     const drafting = !active || suspended || !documentVisible ? [] : scenes.flatMap(presentation => {
       if (presentation.status !== 'ready' || presentation.view.mode !== '2d' || focusedId !== null && presentation.descriptor.id !== focusedId || focusedGroupId !== null && presentation.descriptor.group?.id !== focusedGroupId) return []
       const scene = current.scene(presentation.descriptor.id)
-      return scene && visiblePhysicalPlanAnnotations(scene, presentation.view, focusedScopeId).length ? [{ scene, view: presentation.view }] : []
+      return scene && (visiblePhysicalPlanDrawing(scene, presentation.view, focusedScopeId).length || visiblePhysicalPlanAnnotations(scene, presentation.view, focusedScopeId).length) ? [{ scene, view: presentation.view }] : []
     })
     if (!drafting.length) { if (target.width || target.height) { target.width = 0; target.height = 0 }; return }
     const context = target.getContext('2d'); if (!context) { onerror('Architectural Plan annotations require a Canvas 2D context'); return }
@@ -234,7 +236,8 @@
     const style = getComputedStyle(target), fontSize = Number.parseFloat(style.fontSize), occupied: Array<{ x: number; y: number; width: number; height: number }> = []
     const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
     for (const { scene, view } of drafting) {
-      drawPhysicalPlanAnnotations(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
+      if (scene.planDrawing) drawPhysicalPlanDrawing(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, ratio, palette, fontFamily: style.fontFamily, status: current.subjectStyles(scene.id) })
+      else drawPhysicalPlanAnnotations(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
     }
   })
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })

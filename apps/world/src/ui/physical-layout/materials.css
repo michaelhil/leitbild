@@ -21,6 +21,37 @@
   --physical-line: #475e4a;
   --physical-pavement: #a6aca5;
   --physical-marking: #ebeee2;
+  /* The accepted architectural sheet uses pale surfaces and dark cut edges.
+     These are depiction materials; alert colours never become physical fills. */
+  --physical-plan-paper: #faf9f4;
+  --physical-plan-floor: #f6f5ec;
+  --physical-plan-wall: #edf0e9;
+  --physical-plan-steel: #b9c0b4;
+  --physical-plan-dark: #5d7867;
+  --physical-plan-machine: #dfe8de;
+  --physical-plan-hood: #edf1e7;
+  --physical-plan-motor: #d6e1df;
+  --physical-plan-light: #edf0e9;
+  --physical-plan-plinth: #e2e2d6;
+  --physical-plan-pipe: #7c9d9f;
+  --physical-plan-steam: #b08b70;
+  --physical-plan-crane: #a28d57;
+  --physical-plan-access: #a8cbb6;
+  --physical-plan-outage: #b49a62;
+  --physical-plan-waterbox: #d0dfda;
+  --physical-plan-ground: #faf9f4;
+  --physical-plan-glass: #faf9f4;
+  --physical-plan-line: #4e6f60;
+  --physical-plan-pavement: #d9ddd4;
+  --physical-plan-marking: #faf9f4;
+  --physical-plan-muted: #75856b;
+  --physical-plan-grid: #b0b6a9;
+  --physical-plan-dimension: #829273;
+  --physical-plan-equipment-line: #5c766c;
+  --physical-plan-cut: #35433d;
+  --physical-plan-rib: #a4afaa;
+  --physical-plan-context-line: #b2b9aa;
+  --physical-plan-floor-joint: #e0e2d7;
 }
 :root.dark {
   --physical-floor: #667568;
@@ -43,4 +74,33 @@
   --physical-line: #b8c7b9;
   --physical-pavement: #59635d;
   --physical-marking: #bac8b8;
+  --physical-plan-paper: #26382f;
+  --physical-plan-floor: #314439;
+  --physical-plan-wall: #526356;
+  --physical-plan-steel: #8a9c8e;
+  --physical-plan-dark: #a9c1af;
+  --physical-plan-machine: #476654;
+  --physical-plan-hood: #4d6954;
+  --physical-plan-motor: #456b66;
+  --physical-plan-light: #58735f;
+  --physical-plan-plinth: #4d5b46;
+  --physical-plan-pipe: #90b7b7;
+  --physical-plan-steam: #c1a88f;
+  --physical-plan-crane: #bfa875;
+  --physical-plan-access: #668f74;
+  --physical-plan-outage: #c2ac74;
+  --physical-plan-waterbox: #4b7062;
+  --physical-plan-ground: #26382f;
+  --physical-plan-glass: #26382f;
+  --physical-plan-line: #b7cdbb;
+  --physical-plan-pavement: #435245;
+  --physical-plan-marking: #c2ccba;
+  --physical-plan-muted: #a8baa2;
+  --physical-plan-grid: #6f8270;
+  --physical-plan-dimension: #a1b795;
+  --physical-plan-equipment-line: #a5c5ae;
+  --physical-plan-cut: #d0decf;
+  --physical-plan-rib: #7c9b88;
+  --physical-plan-context-line: #73866e;
+  --physical-plan-floor-joint: #415548;
 }
