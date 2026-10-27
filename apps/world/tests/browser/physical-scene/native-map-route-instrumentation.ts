@@ -5,6 +5,7 @@
   if (!target) return
   const q: any = { registrations: [], prepared: [], matrix: null, instances: 0, points: [], samples: [], endpointContexts: [], errors: [], currentDrawKey: null, heldLayer: null, holdNextLayer: false }
   ;(window as any).__nativeRouteProof = q
+  const projectedByKey = new Map<string, number[][]>()
   const sourceIndices = new Map<string, number>(), arrays = new WeakMap<object, { key: string; sourceKey: string }>()
   const buffers = new WeakMap<WebGLBuffer, { key: string; sourceKey: string }>(), vaos = new WeakMap<WebGLVertexArrayObject, WebGLBuffer>(), instanceVao = new WeakMap<WebGLVertexArrayObject, WebGLBuffer>()
   const instanceBuffers = new WeakSet<WebGLBuffer>(), matrices = new WeakMap<WebGLBuffer, Float32Array>()
@@ -18,7 +19,7 @@
     const points: number[][] = []
     for (const mesh of selected) for (let i = 0; i + 20 < mesh.vertices.length; i += 21) points.push([0, 1, 2].map(axis => (mesh.vertices[i + axis] + mesh.vertices[i + 7 + axis] + mesh.vertices[i + 14 + axis]) / 3 + mesh.offset[axis]))
     q.prepared.push({ key: response.key, sourceKey: response.sourceKey, meshes: selected.length, triangles: points.length })
-    q.points = points; q.key = response.key; arrays.set(response.buffers.vertices, { key: response.key, sourceKey: response.sourceKey })
+    projectedByKey.set(response.key, points); q.points = points; q.key = response.key; arrays.set(response.buffers.vertices, { key: response.key, sourceKey: response.sourceKey })
   }
   ;(window as any).Worker = new Proxy(NativeWorker, { construct(constructor, args, receiver) { const worker = Reflect.construct(constructor, args, receiver) as Worker; worker.addEventListener('message', event => {const response=event.data,at=typeof response?.key==='string'?response.key.lastIndexOf('/['):-1,view=at<0?null:JSON.parse(response.key.slice(at+1));if(q.holdNextLayer&&response?.kind==='prepared'&&view?.some((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&part.layers?.includes(q.holdLayerId??'utility-routes'))){event.stopImmediatePropagation();q.holdNextLayer=false;q.heldLayer={worker,response};return}inspect(response)}); return worker } })
   Worker.prototype.postMessage = function (this: Worker, message: any, transfer: any) {
@@ -50,7 +51,7 @@
   const draw = WebGL2RenderingContext.prototype.drawArraysInstanced
   WebGL2RenderingContext.prototype.drawArraysInstanced = function (...args: Parameters<WebGL2RenderingContext['drawArraysInstanced']>) {
     const result = draw.apply(this, args), s = state(this), buffer = s.vao ? vaos.get(s.vao) : undefined, meta = buffer ? buffers.get(buffer) : undefined, instance = s.vao ? instanceVao.get(s.vao) : undefined, values = instance ? matrices.get(instance) : undefined
-    if (args[0] === this.TRIANGLES && meta && meta.key === q.key && values) { q.currentDrawKey=meta.key;q.lastDrawAt=performance.now();q.matrix = Array.from(values.slice(0, 16)); q.instances = args[3] }
+    if (args[0] === this.TRIANGLES && meta && projectedByKey.has(meta.key) && values) { q.points=projectedByKey.get(meta.key);q.key=meta.key;q.currentDrawKey=meta.key;q.lastDrawAt=performance.now();q.matrix = Array.from(values.slice(0, 16)); q.instances = args[3] }
     return result
   }
   q.projected = () => {
