@@ -20,6 +20,8 @@ test('worker reply admission rejects stale keys, owner rebinding, invalid attrib
  expect(()=>admitPhysicalArchitectureBsp({...result,fragments:[{...result.fragments[0]!,count:4},...result.fragments.slice(1)]},input)).toThrow('provenance')
  expect(()=>admitPhysicalArchitectureBsp({...result,nodes:[{...result.nodes[0]!,front:0}]},input)).toThrow('provenance')
  expect(()=>admitPhysicalArchitectureBsp({...result,nodes:[{...result.nodes[0]!,fragments:[]}]},input)).toThrow('provenance')
+ expect(()=>admitPhysicalArchitectureBsp({...result,nodes:[{...result.nodes[0]!,normal:[0,0,-1]}]},input)).toThrow('provenance')
+ expect(()=>admitPhysicalArchitectureBsp({...result,diagnostics:{...result.diagnostics,inputTriangles:9}},input)).toThrow('provenance')
  expect(()=>admitPhysicalArchitectureBsp({...result,fragments:result.fragments.map(f=>({...f,occludedBy:[0]}))},input)).toThrow('provenance')
 })
 

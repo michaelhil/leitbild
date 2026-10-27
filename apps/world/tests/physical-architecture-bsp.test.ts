@@ -92,3 +92,11 @@ test('real prepared visibility ownership is preserved by cohort reuse including 
  const selectedArea=(id:string,hideFirst:boolean)=>bsp.owners.reduce((sum,owner,i)=>sum+(owner.occurrenceId===id?area(bsp,i,selected(hideFirst)):0),0)
  expect(bsp.diagnostics.coplanarOverlaps).toBe(0);expect(selectedArea('first',false)).toBeCloseTo(1.44,12);expect(selectedArea('later',false)).toBeCloseTo(.24,12);expect(selectedArea('later',true)).toBeCloseTo(.96,12)
 })
+
+test('retained traversal reuses exact topology order and invalidates camera-side or visible-owner changes',()=>{
+ const bsp=prepare({key:'retained-order',sources:[quad('back',-1,-1,1,1),quad('front',-1,-1,1,1,2)]}),visible=new Set([0,1]),first=ordered(bsp,[0,0,10,1],visible)
+ expect(ordered(bsp,[.1,.2,11,1],new Set([1,0]))).toBe(first)
+ const reversed=ordered(bsp,[0,0,-10,1],visible);expect(reversed).not.toBe(first);expect(reversed.map(id=>bsp.fragments[id]!.ownerIndex)).toEqual([1,1,0,0])
+ visible.delete(0);const changed=ordered(bsp,[0,0,-10,1],visible);expect(changed).not.toBe(reversed);expect(changed.map(id=>bsp.fragments[id]!.ownerIndex)).toEqual([1,1]);expect(ordered(bsp,[.2,.3,-9,1],visible)).toBe(changed)
+ expect(()=>ordered(bsp,[0,0,10,1],new Set([bsp.owners.length]))).toThrow('unknown owner')
+})

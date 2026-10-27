@@ -184,17 +184,48 @@ export const preparePhysicalArchitectureBsp = (input: PhysicalArchitectureBspInp
   return {key:input.key,owners:input.sources.map(({id,sceneId,assetKey,meshIndex,occurrenceId})=>({id,sceneId,assetKey,meshIndex,occurrenceId})),vertices,fragments,nodes,root,diagnostics:{inputTriangles,inputLines,splitPolygons,splitLines,coplanarOverlaps,retainedAlternatives,vertexBytes:vertices.byteLength}}
 }
 
+interface TraversalState {
+  readonly normals: Float64Array
+  readonly currentOwners: Uint8Array
+  readonly previousOwners: Uint8Array
+  readonly currentSides: Uint8Array
+  readonly previousSides: Uint8Array
+  order: readonly number[] | null
+}
+const traversals=new WeakMap<PhysicalArchitectureBsp,TraversalState>()
 /** Homogeneous point toward the camera: perspective w != 0, orthographic w=0.
- * Iteration avoids a JS recursion limit for a legitimate deep source partition. */
+ * Painter order depends on plane sides and visible owners, not on each camera
+ * matrix value. Retain the exact last order while that topology is unchanged.
+ * The WeakMap follows the BSP asset lifetime and owns no all-visited cache. */
 export const orderedPhysicalArchitectureFragments = (bsp: PhysicalArchitectureBsp,eye: readonly [number,number,number,number],visibleOwners: ReadonlySet<number>): readonly number[] => {
   if(eye.length!==4||!eye.every(Number.isFinite))throw new Error('Architecture BSP requires a finite homogeneous camera')
-  const eyeScale=Math.max(...eye.map(Math.abs));if(eyeScale===0)throw new Error('Architecture BSP camera has no point or direction')
-  const e=eye.map(value=>value/eyeScale)
-  const result: number[]=[],stack: Array<{node:number;emit:boolean}>=bsp.root<0?[]:[{node:bsp.root,emit:false}]
-  while(stack.length){const task=stack.pop()!,node=bsp.nodes[task.node]!;if(task.emit){for(const id of node.fragments){const fragment=bsp.fragments[id]!;if(visibleOwners.has(fragment.ownerIndex)&&!fragment.occludedBy.some(owner=>visibleOwners.has(owner)))result.push(id)}continue}
-    const a=node.plane[0],normalScale=Math.max(...node.normal.map(Math.abs)),direction=[e[0]!-a[0]*e[3]!,e[1]!-a[1]*e[3]!,e[2]!-a[2]*e[3]!],side=(node.normal[0]/normalScale*direction[0]!+node.normal[1]/normalScale*direction[1]!+node.normal[2]/normalScale*direction[2]!)*(eye[3]<0?-1:1)
-    const far=side>=0?node.back:node.front,near=side>=0?node.front:node.back
-    if(near>=0)stack.push({node:near,emit:false});stack.push({node:task.node,emit:true});if(far>=0)stack.push({node:far,emit:false})
+  const eyeScale=Math.max(Math.abs(eye[0]),Math.abs(eye[1]),Math.abs(eye[2]),Math.abs(eye[3]));if(eyeScale===0)throw new Error('Architecture BSP camera has no point or direction')
+  const ex=eye[0]/eyeScale,ey=eye[1]/eyeScale,ez=eye[2]/eyeScale,ew=eye[3]/eyeScale,orientation=eye[3]<0?-1:1
+  let state=traversals.get(bsp)
+  if(!state){
+    const normals=new Float64Array(bsp.nodes.length*3)
+    bsp.nodes.forEach((node,index)=>{const n=node.normal,scale=Math.max(Math.abs(n[0]),Math.abs(n[1]),Math.abs(n[2]));normals[index*3]=n[0]/scale;normals[index*3+1]=n[1]/scale;normals[index*3+2]=n[2]/scale})
+    state={normals,currentOwners:new Uint8Array(bsp.owners.length),previousOwners:new Uint8Array(bsp.owners.length),currentSides:new Uint8Array(bsp.nodes.length),previousSides:new Uint8Array(bsp.nodes.length),order:null};traversals.set(bsp,state)
   }
+  const active=state.currentOwners,sides=state.currentSides;active.fill(0)
+  for(const owner of visibleOwners){if(!Number.isInteger(owner)||owner<0||owner>=active.length)throw new Error('Architecture BSP visibility refers to an unknown owner');active[owner]=1}
+  let changed=state.order===null
+  for(let index=0;index<active.length;index++)if(active[index]!==state.previousOwners[index])changed=true
+  for(let index=0;index<bsp.nodes.length;index++){
+    const a=bsp.nodes[index]!.plane[0],at=index*3,n=state.normals,side=(n[at]!*(ex-a[0]*ew)+n[at+1]!*(ey-a[1]*ew)+n[at+2]!*(ez-a[2]*ew))*orientation
+    sides[index]=Number(side>=0);if(sides[index]!==state.previousSides[index])changed=true
+  }
+  if(!changed)return state.order!
+  const result:number[]=[],stack:number[]=bsp.root<0?[]:[bsp.root+1]
+  while(stack.length){
+    const token=stack.pop()!,index=Math.abs(token)-1,node=bsp.nodes[index]!
+    if(token<0){
+      for(const id of node.fragments){const fragment=bsp.fragments[id]!;if(!active[fragment.ownerIndex])continue;let blocked=false;for(const owner of fragment.occludedBy)if(active[owner]){blocked=true;break}if(!blocked)result.push(id)}
+      continue
+    }
+    const far=sides[index]?node.back:node.front,near=sides[index]?node.front:node.back
+    if(near>=0)stack.push(near+1);stack.push(-token);if(far>=0)stack.push(far+1)
+  }
+  state.previousOwners.set(active);state.previousSides.set(sides);state.order=result
   return result
 }

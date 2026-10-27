@@ -30,12 +30,14 @@ export const admitPhysicalArchitectureBsp = (value: PhysicalArchitectureBsp,inpu
   else if(!integer(value.root,0,value.nodes.length))invalid()
   const visited=new Set<number>(),assigned=new Set<number>(),stack=value.root<0?[]:[value.root]
   while(stack.length){const index=stack.pop()!;if(visited.has(index))invalid();visited.add(index);const node=value.nodes[index]!;if(!node||!Array.isArray(node.plane)||node.plane.length!==3||node.plane.some(p=>!finiteArray(p,3))||!finiteArray(node.normal,3)||node.normal.every(v=>v===0)||!Array.isArray(node.fragments))invalid()
+    const [a,b,c]=node.plane,ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2],expected=[uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx]
+    if(expected.some((component,axis)=>component!==node.normal[axis]))invalid()
     for(const child of [node.front,node.back])if(child!==-1){if(!integer(child,0,value.nodes.length))invalid();stack.push(child)}
     for(const id of node.fragments){if(!integer(id,0,value.fragments.length)||assigned.has(id))invalid();assigned.add(id)}
   }
   if(visited.size!==value.nodes.length||assigned.size!==value.fragments.length)invalid()
   const d=value.diagnostics
-  if(!d||d.vertexBytes!==value.vertices.byteLength||![d.inputTriangles,d.inputLines,d.splitPolygons,d.splitLines,d.coplanarOverlaps,d.retainedAlternatives,d.vertexBytes].every(n=>Number.isSafeInteger(n)&&n>=0))invalid()
+  if(!d||d.inputTriangles!==input.sources.reduce((sum,source)=>sum+source.vertices.length/21,0)||d.inputLines!==input.sources.reduce((sum,source)=>sum+source.lines.length/6,0)||d.vertexBytes!==value.vertices.byteLength||![d.inputTriangles,d.inputLines,d.splitPolygons,d.splitLines,d.coplanarOverlaps,d.retainedAlternatives,d.vertexBytes].every(n=>Number.isSafeInteger(n)&&n>=0))invalid()
   return value
 }
 
