@@ -16,6 +16,7 @@ import { createPhysicalArchitectureBackend } from './architecture-backend.ts'
 import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
 import type { PhysicalArchitectureBspFrame } from './architecture-cohort.ts'
 import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from './plan-picking.ts'
+import {createPhysicalOccurrenceMeshIndex,projectPhysicalSpatialPoints} from './occurrence-projection.ts'
 import { physicalPlanFrame } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
@@ -38,7 +39,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let architectureFrame: PhysicalArchitectureBspFrame | null = null
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   let planPicking: ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly input: PhysicalPlanPickInput }> = []
-  const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
+  const occurrenceMeshes=createPhysicalOccurrenceMeshIndex()
+  let renderedRectangle={width:0,height:0}
   const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
   const architecturePicks = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const architectureVisibility = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
@@ -70,10 +72,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     }
     const entry = picking.find(candidate => candidate.sceneId === sceneId)
     if (!entry || disposed || failed) return null
-    const rectangle = size()
-    let roster = occurrenceMeshes.get(entry.meshes)
-    if (!roster) { roster = new Map(); for (const mesh of entry.meshes) { const previous = roster.get(mesh.object.id) ?? []; roster.set(mesh.object.id, [...previous, mesh]) }; occurrenceMeshes.set(entry.meshes, roster) }
-    const points = (roster.get(occurrenceId) ?? []).filter(mesh => levelId === undefined || mesh.levelId === levelId).map(mesh => {
+    const rectangle=renderedRectangle
+    const points = occurrenceMeshes.group(entry.meshes,occurrenceId).filter(mesh => levelId === undefined || mesh.levelId === levelId).map(mesh => {
       const center: Vector3 = [0, 1, 2].map(axis => (mesh.bounds.min[axis]! + mesh.bounds.max[axis]!) / 2 + mesh.offset[axis]!) as unknown as Vector3
       const p = transform(entry.matrix, center)
       return { x: (p[0] + 1) * rectangle.width / 2, y: (1 - p[1]) * rectangle.height / 2, depth: p[2], visible: Math.abs(p[0]) <= 1 && Math.abs(p[1]) <= 1 && Math.abs(p[2]) <= 1 }
@@ -86,7 +86,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       let before: ReturnType<typeof captureSceneGlState> | null = null
       try {
         const draws: PhysicalDraw[] = []; picking = []; planPicking = []; const presented = entries(); cpu.update(presented.flatMap(entry => entry.asset ? [entry.asset] : []))
-        const rectangle = size(), ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+        const rectangle = size(); renderedRectangle={width:rectangle.width,height:rectangle.height}; const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
         const ink = presented.filter(entry => entry.view.mode === '2d' && entry.scene.planDrawing?.views.some(view => view.levelId === entry.view.levelId))
         planPicking = ink.flatMap(entry => {
           const matrix = multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing))
@@ -165,13 +165,9 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         return points.map(point => { const x = f.a * point[0] + f.c * point[1] + f.e, y = f.b * point[0] + f.d * point[1] + f.f; return { x, y, depth: 0, visible: x >= 0 && y >= 0 && x <= plan.input.width && y <= plan.input.height } })
       }
       const entry = picking.find(candidate => candidate.sceneId === sceneId)
-      const mesh = entry?.meshes.find(candidate => candidate.object.id === occurrenceId && (levelId === undefined || candidate.levelId === levelId))
+      const mesh=entry?occurrenceMeshes.first(entry.meshes,occurrenceId,levelId):undefined
       if (!entry || !mesh) return []
-      const rectangle = size()
-      return points.map(point => {
-        const p = transform(entry.matrix, point.map((coordinate, axis) => coordinate + mesh.offset[axis]!) as unknown as Vector3)
-        return { x: (p[0] + 1) * rectangle.width / 2, y: (1 - p[1]) * rectangle.height / 2, depth: p[2], visible: Math.abs(p[0]) <= 1 && Math.abs(p[1]) <= 1 && Math.abs(p[2]) <= 1 }
-      })
+      return projectPhysicalSpatialPoints(entry.matrix,mesh.offset,renderedRectangle,points)
     },
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },
