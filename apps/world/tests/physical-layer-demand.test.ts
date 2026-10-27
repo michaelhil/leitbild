@@ -11,7 +11,7 @@ test('mesh demand keeps the complete retained source and excludes presentation-o
  const source=fixture(),before=JSON.stringify(source),view={...defaultPhysicalSceneView(source.levels),mode:'3d' as const}
  expect(physicalMeshLayers(source,view)).toEqual(['pipes','power']);expect(physicalDesiredMeshLayers(source,view)).toEqual(['power'])
  expect(physicalDesiredMeshLayers(source,{...view,hiddenLayerIds:['pipes','labels']})).toEqual(['power'])
- const demand=physicalMeshDemandScene(source,view);expect(demand.objects.map(object=>object.id)).toEqual(['machine','visible-power']);expect(demand.objects[1]).toBe(source.objects[2])
+ const demand=physicalMeshDemandScene(source,view);expect(demand.objects.map(object=>object.id)).toEqual(['machine','visible-power']);expect(demand.objects[1]).toBe(source.objects[2]!)
  expect(physicalMeshDemandScene(source,{...view,hiddenLayerIds:[]})).toBe(source)
  const coverage=physicalLayerUnion(['power'],['pipes']),superset=physicalViewWithMeshCoverage(source,{...view,hiddenLayerIds:['power']},coverage)
  expect(physicalDesiredMeshLayers(source,superset)).toEqual(['pipes','power']);expect(JSON.stringify(source)).toBe(before)
@@ -24,7 +24,7 @@ test('real module worker preserves original source ordinals graph identity and p
  try {
   prepare.retainIdentities!(new Set(['same-design']))
   const first=await prepare(source,view,'default','same-design','full-source')
-  expect(first.meshes.map(mesh=>mesh.object.id)).toEqual(['machine','visible-power']);expect(first.meshes[1]!.object).toBe(source.objects[2]);expect(first.meshes[1]!.object.subjectIds).toEqual(['graph/visible-power'])
+  expect(first.meshes.map(mesh=>mesh.object.id)).toEqual(['machine','visible-power']);expect(first.meshes[1]!.object).toBe(source.objects[2]!);expect(first.meshes[1]!.object.subjectIds).toEqual(['graph/visible-power'])
   expect(first.buffers.objectCount).toBe(first.meshes.length)
   for(let at=7;at<first.buffers.vertices.length;at+=8)expect(first.buffers.vertices[at]).toBeLessThan(first.meshes.length)
   const all=await prepare(source,{...view,hiddenLayerIds:[]},'all-layers','same-design','full-source')
