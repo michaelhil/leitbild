@@ -180,7 +180,8 @@ export const packPhysicalSceneSchema = z.object({
     if (annotation.occurrenceId !== undefined && !occurrenceIds.has(annotation.occurrenceId)) issue(`Unknown annotation occurrence: ${annotation.id}`)
     const points = annotation.kind === 'label' ? [annotation.anchor] : annotation.kind === 'hatch' ? annotation.outline : [annotation.from, annotation.to, annotation.from.map((value, axis) => value + annotation.offset[axis]!), annotation.to.map((value, axis) => value + annotation.offset[axis]!)]
     coordinateCount += points.length * 3
-    if (points.some(point => point.some((value, axis) => value < scene.bounds.min[axis]! || value > scene.bounds.max[axis]!))) issue(`Annotation outside declared bounds: ${annotation.id}`)
+    // Dimensions and notes intentionally extend beyond the physical envelope.
+    // Their finite coordinates and authorities are validated independently.
   }
   for (const object of scene.objects) {
     if (object.levelId !== 'site' && !levelIds.has(object.levelId)) issue(`Unknown level: ${object.levelId}`)
