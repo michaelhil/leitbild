@@ -7,3 +7,9 @@ The source audit confirms the offscreen loop runs before ordinary main-frame dra
 This contract does not permit unspecified incoming GLstate assumptions. Owned texture work establishes its framebuffer, viewport, draw state, VAO, samplers and upload dependencies. State outside MapLibre's tracking, including pixel unpack buffers, rasterizer discard and sample coverage, needs explicit neutral setup. Empty/error/lost frames must not composite the prior source image. Meshless Plan must still update the exact frame used by picking and projection.
 
 The generic borrowed renderer keeps full state capture/restore. This source review does not qualify new pixels, resource lifecycle or speed; the separate native phase oracle and actual built-app windows must do that. No raster-disjoint batching or assumed universal pixel-error certificate is adopted by this boundary change.
+
+## Built-app checkpoint
+
+The [b7 checkpoint](b7-checkpoint.json) preserves actual built-app measurements. Ordinary full Live ON site3D passes at16.8 ms p95 paused/playing on DPR1. Whole-site fractional remains a severe failure:749.9/716.5 ms p95, while the scoped room passes16.7/16.8 ms. The phase/API correction therefore does not close the full-site performance gate.
+
+The new profile no longer shows native getParameter as a hot function. Initial Deckmousedown readPixels is20.38 ms and postrelease hover2.57 ms. Mesh-subset acceleration reconstruction, architecture owner-row work, traversal and native/driver intervals remain. GPUqueries record about2,045 ordered draws per render. ScriptDuration and ThreadTime deltas differ materially, so CPUarithmetic samples alone cannot explain the stalls. Actual native call walltime is the next diagnostic; no utilization claim is inferred from unassigned `(program)` samples.
