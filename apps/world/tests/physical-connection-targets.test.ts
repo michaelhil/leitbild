@@ -6,7 +6,7 @@ import { physicalDesignTargets } from '../src/packs/physical-layout/targets.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 test('physical Designs opt into exact owner graph connections without changing retained component-only coverage', async () => {
-  const compiled = await compileScenarioDefinition({ id: 'targets-test', title: 'Connection target test', packs: [{ id: 'process-plant', config: {}, items: [{ type: 'plant', id: 'plant:targets', label: 'Targets', location: [11.47, 59.087], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] }], world: { startsAt: '2026-10-27T00:00:00.000Z', environment: {} } }, [processPlantPack], { routing: createDirectRoutingAdapter() })
+  const compiled = await compileScenarioDefinition({ id: 'targets-test', title: 'Connection target test', packs: [{ id: 'process-plant', config: {}, items: [{ type: 'plant', id: 'plant:targets', label: 'Targets', location: [11.47, 59.087], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] }], world: { startsAt: '2026-10-27T00:00:00.000Z', environment: {} }, view: { map: { center: [11.47, 59.087], zoom: 16 } } }, [processPlantPack], { routing: createDirectRoutingAdapter() })
   const owner = compiled.initialObjects.find(object => object.id === 'plant:targets')!, description = describeProcessPlantPhysicalTargets(owner)
   expect(physicalDesignTargets(description, false)).toBe(description.subjects)
   const all = physicalDesignTargets(description, true)
