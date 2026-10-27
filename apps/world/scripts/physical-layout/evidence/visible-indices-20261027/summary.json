@@ -1,0 +1,95 @@
+{
+  "baselineProductionCommit": "2a2755715162fc2335cf958fc08c14eebb0322f3",
+  "candidateProductionCommit": "a8db5f21e6e900887c900f04ef4d433389ae15ca",
+  "fixtureCommit": "b909e889df217beee92300eed0325a3de3994d3a",
+  "controlPassed": true,
+  "candidatePassed": true,
+  "differentialCasesPerDpr": [
+    27,
+    27
+  ],
+  "pixelTolerance": 0,
+  "differingPixels": [
+    0,
+    0
+  ],
+  "samples": [
+    4,
+    4
+  ],
+  "resourceWitnesses": [
+    [
+      {
+        "name": "camera-does-not-upload-owner-metadata-or-indices",
+        "uploads": 14,
+        "warmedUploads": 15,
+        "cameraUploads": 15,
+        "warmedVisibility": 16,
+        "cameraVisibility": 16,
+        "warmedIndexBytes": 192,
+        "cameraIndexBytes": 192,
+        "residentCpuBytes": 99,
+        "expectIndices": true,
+        "passed": true
+      },
+      {
+        "name": "withdrawn-run-releases-current-index-packets",
+        "before": 64,
+        "after": 0,
+        "residentCpuBytes": 96,
+        "expectIndices": true,
+        "passed": true
+      }
+    ],
+    [
+      {
+        "name": "camera-does-not-upload-owner-metadata-or-indices",
+        "uploads": 14,
+        "warmedUploads": 15,
+        "cameraUploads": 15,
+        "warmedVisibility": 16,
+        "cameraVisibility": 16,
+        "warmedIndexBytes": 192,
+        "cameraIndexBytes": 192,
+        "residentCpuBytes": 99,
+        "expectIndices": true,
+        "passed": true
+      },
+      {
+        "name": "withdrawn-run-releases-current-index-packets",
+        "before": 64,
+        "after": 0,
+        "residentCpuBytes": 96,
+        "expectIndices": true,
+        "passed": true
+      }
+    ]
+  ],
+  "disposal": [
+    {
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "residentCpuBytes": 0,
+      "indexBytes": 0
+    },
+    {
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "residentCpuBytes": 0,
+      "indexBytes": 0
+    }
+  ],
+  "orderedPassed": true,
+  "orderedCasesPerDpr": [
+    17,
+    17
+  ],
+  "limits": [
+    "Functional graphics/resources only; no speed or complete-product claim.",
+    "Both backends receive identical prepared buffers; original GL_LINES, shader primitives and depth tests remain native.",
+    "Candidate is the actual combineda8 tree; earlier eb3 direct pass/control outputs remain in external research.",
+    "This test-only bundle has no production mode flag or geometry reduction."
+  ]
+}
