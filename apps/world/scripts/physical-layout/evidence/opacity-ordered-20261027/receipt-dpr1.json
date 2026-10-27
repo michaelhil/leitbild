@@ -1,0 +1,1702 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "kind": "single-red-over-blue",
+      "opacity": 0,
+      "center": [
+        0,
+        0,
+        255,
+        255
+      ],
+      "expected": [
+        0,
+        0,
+        255,
+        255
+      ],
+      "passed": true,
+      "state": [],
+      "glError": 0
+    },
+    {
+      "kind": "single-red-over-blue",
+      "opacity": 0.5,
+      "center": [
+        128,
+        0,
+        128,
+        255
+      ],
+      "expected": [
+        128,
+        0,
+        127,
+        255
+      ],
+      "passed": true,
+      "state": [],
+      "glError": 0
+    },
+    {
+      "kind": "single-red-over-blue",
+      "opacity": 1,
+      "center": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "expected": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "passed": true,
+      "state": [],
+      "glError": 0
+    },
+    {
+      "kind": "overlap-order",
+      "center": [
+        128,
+        64,
+        64,
+        255
+      ],
+      "reverse": [
+        128,
+        64,
+        64,
+        255
+      ],
+      "differentBytes": 0,
+      "expected": [
+        128,
+        64,
+        64,
+        255
+      ],
+      "passed": true
+    },
+    {
+      "kind": "MSAA-shared-silhouette",
+      "edgeSamples": 408,
+      "edgeFailures": 0,
+      "edgeMaximumError": 0,
+      "edgeExamples": [],
+      "passed": true
+    },
+    {
+      "kind": "slider-no-derived-geometry",
+      "geometryUploadsBefore": 7,
+      "geometryUploadsAfter": 7,
+      "preparesBefore": 3,
+      "preparesAfter": 3,
+      "bspPreparesBefore": 2,
+      "bspPreparesAfter": 2,
+      "allocationsBefore": 1,
+      "allocationsAfter": 1,
+      "passed": true
+    },
+    {
+      "kind": "same-scene-overview-does-not-replace-detailed-asset",
+      "sameSceneId": true,
+      "distinctAsset": true,
+      "differentBytes": 0,
+      "passed": true
+    },
+    {
+      "kind": "cohort-basis-remains-valid-when-reference-source-is-not-drawn",
+      "referenceId": "green/[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]",
+      "referenceAbsent": true,
+      "pixel": [
+        128,
+        0,
+        128,
+        255
+      ],
+      "expected": [
+        128,
+        0,
+        127,
+        255
+      ],
+      "passed": true
+    },
+    {
+      "kind": "three-intersecting-architecture-planes",
+      "samples": [
+        {
+          "x": -0.6171875,
+          "y": -0.2890625,
+          "expected": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.6171875,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.6171875,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": -0.2890625,
+          "expected": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": 0.2734375,
+          "expected": [
+            191,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": -0.2890625,
+          "expected": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            96,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            96,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": 0.2734375,
+          "expected": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": -0.2890625,
+          "expected": [
+            96,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": 0.2734375,
+          "expected": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            159,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            159,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.5859375,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.5859375,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            191,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.5859375,
+          "y": 0.2734375,
+          "expected": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            191,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            191,
+            32,
+            255
+          ]
+        }
+      ],
+      "errors": 0,
+      "maximumError": 0,
+      "passed": true
+    },
+    {
+      "kind": "shared-family-cross-placement-order",
+      "samples": [
+        {
+          "x": -0.6171875,
+          "y": -0.2890625,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.6171875,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.6171875,
+          "y": 0.2734375,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            128,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": -0.2890625,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": 0.2734375,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.3671875,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            32,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            128,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": -0.2890625,
+          "expected": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            128,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": 0.2734375,
+          "expected": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            32,
+            32,
+            255
+          ]
+        },
+        {
+          "x": -0.1328125,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            32,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            128,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": -0.2890625,
+          "expected": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            128,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": 0.2734375,
+          "expected": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            32,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.1171875,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            32,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": -0.5703125,
+          "expected": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "actual": [
+            96,
+            128,
+            32,
+            255
+          ],
+          "reverse": [
+            96,
+            128,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": 0.2734375,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.3515625,
+          "y": 0.5546875,
+          "expected": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "actual": [
+            191,
+            32,
+            32,
+            255
+          ],
+          "reverse": [
+            191,
+            32,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.5859375,
+          "y": -0.2890625,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.5859375,
+          "y": -0.0078125,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        },
+        {
+          "x": 0.5859375,
+          "y": 0.2734375,
+          "expected": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "actual": [
+            159,
+            64,
+            32,
+            255
+          ],
+          "reverse": [
+            159,
+            64,
+            32,
+            255
+          ]
+        }
+      ],
+      "errors": 0,
+      "maximumError": 0,
+      "passed": true
+    },
+    {
+      "kind": "authored-line-traverses-with-its-far-wall",
+      "linePixels": 168,
+      "errors": 0,
+      "orderDifferentBytes": 0,
+      "passed": true
+    },
+    {
+      "kind": "perspective-cyclic-order-and-original-lighting",
+      "samples": [
+        {
+          "x": -0.1640625,
+          "y": -0.0859375,
+          "expected": [
+            153,
+            184,
+            31,
+            255
+          ],
+          "actual": [
+            154,
+            184,
+            31,
+            255
+          ],
+          "reverse": [
+            154,
+            184,
+            31,
+            255
+          ]
+        },
+        {
+          "x": -0.1640625,
+          "y": 0.0078125,
+          "expected": [
+            153,
+            184,
+            31,
+            255
+          ],
+          "actual": [
+            154,
+            184,
+            31,
+            255
+          ],
+          "reverse": [
+            154,
+            184,
+            31,
+            255
+          ]
+        },
+        {
+          "x": -0.1640625,
+          "y": 0.1171875,
+          "expected": [
+            92,
+            184,
+            31,
+            255
+          ],
+          "actual": [
+            92,
+            184,
+            31,
+            255
+          ],
+          "reverse": [
+            92,
+            184,
+            31,
+            255
+          ]
+        },
+        {
+          "x": -0.0703125,
+          "y": -0.1953125,
+          "expected": [
+            184,
+            153,
+            31,
+            255
+          ],
+          "actual": [
+            184,
+            154,
+            31,
+            255
+          ],
+          "reverse": [
+            184,
+            154,
+            31,
+            255
+          ]
+        },
+        {
+          "x": 0.0234375,
+          "y": -0.1953125,
+          "expected": [
+            184,
+            153,
+            31,
+            255
+          ],
+          "actual": [
+            184,
+            154,
+            31,
+            255
+          ],
+          "reverse": [
+            184,
+            154,
+            31,
+            255
+          ]
+        },
+        {
+          "x": 0.0234375,
+          "y": 0.1171875,
+          "expected": [
+            92,
+            153,
+            31,
+            255
+          ],
+          "actual": [
+            92,
+            154,
+            31,
+            255
+          ],
+          "reverse": [
+            92,
+            154,
+            31,
+            255
+          ]
+        },
+        {
+          "x": 0.1328125,
+          "y": -0.1953125,
+          "expected": [
+            184,
+            92,
+            31,
+            255
+          ],
+          "actual": [
+            184,
+            92,
+            31,
+            255
+          ],
+          "reverse": [
+            184,
+            92,
+            31,
+            255
+          ]
+        },
+        {
+          "x": 0.1328125,
+          "y": 0.0078125,
+          "expected": [
+            153,
+            92,
+            31,
+            255
+          ],
+          "actual": [
+            154,
+            92,
+            31,
+            255
+          ],
+          "reverse": [
+            154,
+            92,
+            31,
+            255
+          ]
+        }
+      ],
+      "errors": 0,
+      "maximumError": 1,
+      "passed": true
+    },
+    {
+      "kind": "legacy-plan-semantic-depth-bands-and-unlit-colour",
+      "pixel": [
+        0,
+        0,
+        255,
+        255
+      ],
+      "picked": "legacy-equipment",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "kind": "hidden-architecture-reveals-coplanar-equipment",
+      "pixel": [
+        0,
+        0,
+        245,
+        255
+      ],
+      "picked": "contact-equipment",
+      "errors": [],
+      "geometryUploadsBefore": 1,
+      "geometryUploadsAfter": 1,
+      "passed": true
+    }
+  ],
+  "negativeCapability": {
+    "errors": [],
+    "floatQueries": 0,
+    "initialPick": "negative",
+    "fractionalPick": null,
+    "changedFractionalBytes": 1206,
+    "recoveredPick": "negative",
+    "opaqueDraws": 1,
+    "fractionalDraws": 3,
+    "recoveredDraws": 4,
+    "recovered": true
+  },
+  "disposal": true,
+  "metrics": {
+    "geometryUploads": 13,
+    "geometryBytes": 0,
+    "residentCpuBytes": 0,
+    "draws": 76,
+    "buffers": 0,
+    "programs": 0,
+    "textures": 0,
+    "textureBytes": 0,
+    "instanceBytes": 0,
+    "instanceUploads": 72,
+    "statusUploads": 29,
+    "paletteUploads": 13,
+    "evictions": 9,
+    "peakRequiredBytes": 1296,
+    "liveBuffersAfterDisposal": 0,
+    "liveProgramsAfterDisposal": 0,
+    "liveTexturesAfterDisposal": 0,
+    "architecture": {
+      "geometryUploads": 8,
+      "orderUploads": 9,
+      "instanceUploads": 19,
+      "statusUploads": 12,
+      "paletteUploads": 8,
+      "draws": 23,
+      "geometryBytes": 0,
+      "orderBytes": 0,
+      "instanceBytes": 0,
+      "traversalBytes": 0,
+      "residentCpuBytes": 0,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0
+    },
+    "pass": {
+      "depthFormat": "float32",
+      "samples": 4,
+      "programs": 0,
+      "textures": 0,
+      "framebuffers": 0,
+      "renderbuffers": 0,
+      "bytes": 0,
+      "textureBytes": 0,
+      "allocations": 1,
+      "composites": 25,
+      "liveTextures": 0,
+      "livePrograms": 0,
+      "liveFramebuffers": 0,
+      "liveRenderbuffers": 0
+    },
+    "negative": {
+      "geometryUploads": 2,
+      "geometryBytes": 0,
+      "residentCpuBytes": 0,
+      "draws": 4,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 4,
+      "statusUploads": 4,
+      "paletteUploads": 2,
+      "evictions": 0,
+      "peakRequiredBytes": 324,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0,
+      "architecture": {
+        "geometryUploads": 1,
+        "orderUploads": 1,
+        "instanceUploads": 1,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "draws": 1,
+        "geometryBytes": 0,
+        "orderBytes": 0,
+        "instanceBytes": 0,
+        "traversalBytes": 0,
+        "residentCpuBytes": 0,
+        "buffers": 0,
+        "programs": 0,
+        "textures": 0,
+        "textureBytes": 0,
+        "liveBuffersAfterDisposal": 0,
+        "liveProgramsAfterDisposal": 0,
+        "liveTexturesAfterDisposal": 0
+      },
+      "cpuResidency": {
+        "residentViews": 0,
+        "residentBytes": 0,
+        "peakRequiredBytes": 0,
+        "evictions": 0
+      },
+      "renderPass": {
+        "depthFormat": "float32",
+        "samples": 4,
+        "programs": 0,
+        "textures": 0,
+        "framebuffers": 0,
+        "renderbuffers": 0,
+        "bytes": 0,
+        "textureBytes": 0,
+        "allocations": 1,
+        "composites": 3,
+        "liveTextures": 0,
+        "livePrograms": 0,
+        "liveFramebuffers": 0,
+        "liveRenderbuffers": 0
+      },
+      "depthNear": 0
+    },
+    "legacy": {
+      "geometryUploads": 2,
+      "geometryBytes": 0,
+      "residentCpuBytes": 0,
+      "draws": 2,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 2,
+      "statusUploads": 2,
+      "paletteUploads": 2,
+      "evictions": 0,
+      "peakRequiredBytes": 580,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0,
+      "architecture": {
+        "geometryUploads": 1,
+        "orderUploads": 1,
+        "instanceUploads": 1,
+        "statusUploads": 1,
+        "paletteUploads": 1,
+        "draws": 1,
+        "geometryBytes": 0,
+        "orderBytes": 0,
+        "instanceBytes": 0,
+        "traversalBytes": 0,
+        "residentCpuBytes": 0,
+        "buffers": 0,
+        "programs": 0,
+        "textures": 0,
+        "textureBytes": 0,
+        "liveBuffersAfterDisposal": 0,
+        "liveProgramsAfterDisposal": 0,
+        "liveTexturesAfterDisposal": 0
+      },
+      "cpuResidency": {
+        "residentViews": 0,
+        "residentBytes": 0,
+        "peakRequiredBytes": 0,
+        "evictions": 0
+      },
+      "renderPass": {
+        "depthFormat": "float32",
+        "samples": 4,
+        "programs": 0,
+        "textures": 0,
+        "framebuffers": 0,
+        "renderbuffers": 0,
+        "bytes": 0,
+        "textureBytes": 0,
+        "allocations": 1,
+        "composites": 1,
+        "liveTextures": 0,
+        "livePrograms": 0,
+        "liveFramebuffers": 0,
+        "liveRenderbuffers": 0
+      },
+      "depthNear": 0
+    },
+    "contact": {
+      "geometryUploads": 1,
+      "geometryBytes": 0,
+      "residentCpuBytes": 0,
+      "draws": 2,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 2,
+      "statusUploads": 2,
+      "paletteUploads": 1,
+      "evictions": 0,
+      "peakRequiredBytes": 628,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0,
+      "architecture": {
+        "geometryUploads": 0,
+        "orderUploads": 0,
+        "instanceUploads": 0,
+        "statusUploads": 0,
+        "paletteUploads": 0,
+        "draws": 0,
+        "geometryBytes": 0,
+        "orderBytes": 0,
+        "instanceBytes": 0,
+        "traversalBytes": 0,
+        "residentCpuBytes": 0,
+        "buffers": 0,
+        "programs": 0,
+        "textures": 0,
+        "textureBytes": 0,
+        "liveBuffersAfterDisposal": 0,
+        "liveProgramsAfterDisposal": 0,
+        "liveTexturesAfterDisposal": 0
+      },
+      "cpuResidency": {
+        "residentViews": 0,
+        "residentBytes": 0,
+        "peakRequiredBytes": 0,
+        "evictions": 0
+      },
+      "renderPass": {
+        "depthFormat": "float32",
+        "samples": 4,
+        "programs": 0,
+        "textures": 0,
+        "framebuffers": 0,
+        "renderbuffers": 0,
+        "bytes": 0,
+        "textureBytes": 0,
+        "allocations": 1,
+        "composites": 2,
+        "liveTextures": 0,
+        "livePrograms": 0,
+        "liveFramebuffers": 0,
+        "liveRenderbuffers": 0
+      },
+      "depthNear": 0
+    }
+  },
+  "device": {
+    "dpr": 1,
+    "renderer": "WebKit WebGL",
+    "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+    "samples": 4
+  },
+  "hostState": []
+}
