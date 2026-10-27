@@ -82,7 +82,8 @@ const resources=async()=>{
   const heap=await call('Runtime.getHeapUsage'),performanceMetrics=await call('Performance.getMetrics'),processTable=Bun.spawnSync(['ps','-Ao','pid=,ppid=,rss=']).stdout.toString().trim().split('\n').map(line=>{const [pid,ppid,rssKiB]=line.trim().split(/\s+/).map(Number);return{pid:pid!,ppid:ppid!,rssKiB:rssKiB!}}),owned=new Set([chrome.pid]);let changed=true
   while(changed){changed=false;for(const row of processTable)if(owned.has(row.ppid)&&!owned.has(row.pid)){owned.add(row.pid);changed=true}}
   const processes=processTable.filter(row=>owned.has(row.pid))
-  return{heap,performanceMetrics:performanceMetrics.metrics,isolatedChromeProcesses:processes,sumRssKiB:processes.reduce((sum,row)=>sum+row.rssKiB,0),limits:'RSS is a sum of own Chrome process mappings, not unique physical memory/PSS; page-isolate heap excludes worker isolates and does not equal prepared/driver bytes.'}
+  const machine=glWallDiagnostic?{atUtc:new Date().toISOString(),readings:[['sysctl','vm.swapusage','kern.memorystatus_vm_pressure_level'],['vm_stat'],['memory_pressure','-Q']].map(command=>{const at=performance.now(),value=Bun.spawnSync(command);return{command,wallMs:performance.now()-at,exitCode:value.exitCode,stdout:value.stdout.toString(),stderr:value.stderr.toString()}})}:null
+  return{machine,heap,performanceMetrics:performanceMetrics.metrics,isolatedChromeProcesses:processes,sumRssKiB:processes.reduce((sum,row)=>sum+row.rssKiB,0),limits:'RSS is a sum of own Chrome process mappings, not unique physical memory/PSS; page-isolate heap excludes worker isolates and does not equal prepared/driver bytes.'}
 }
 const movement=async(name:string,selector:string,orbit:boolean,playing:boolean,keepCamera=false)=>{
   const mapOnly=diagnosticControls&&name.startsWith('control-map-only-')
@@ -111,6 +112,7 @@ const movement=async(name:string,selector:string,orbit:boolean,playing:boolean,k
   if(name.includes('plan')&&value.drawnTextAngles.some((text:any)=>text.min < -Math.PI/2||text.max > Math.PI/2))throw Error(`Plan ${name} painted upside-down text`)
   if(!name.includes('plan')&&!mapOnly&&(!value.ownedPhysicalTargets.length||value.ownedPhysicalTargets.some((target:any)=>target.depthBytes<=0)))throw Error(`${name} lacks the actual floating 3D target`)
   phases.push({name,playing,moves,processWindows,mapOnly,keepCamera,poseStart,poseEnd:(matchedCamera||replay)?{native:value.nativeCameraProjection,plan:value.firstActualPlanInkTransform}:null,resourcesStart,resourcesEnd:await resources(),glWall:glWallDiagnostic?await inWorld('return w.__nativePhysicalGlWallProof.snapshot()'):null,gpu:gpuDiagnostic?await inWorld('return w.__nativePhysicalGpuProof.settle()'):null,...value});console.log(name,JSON.stringify({p95:value.rafP95Ms,frames:value.frames,longTasks:value.longTasks.length,texts:value.drawnTexts.length,targets:value.ownedPhysicalTargets,drafting:value.draftingCanvases}));await writeFile(join(folder,'partial.json'),JSON.stringify({phases},null,2))
+  if(glWallDiagnostic&&process.env.LEITBILD_NATIVE_GL_WALL_ONLY===name)throw Error('Requested diagnostic-only native GL wall window completed; no qualification verdict')
   if(profileThis&&process.env.LEITBILD_NATIVE_PROFILE_ONLY==='1')throw Error('Requested diagnostic-only CPU profile completed; this run does not issue a qualification verdict')
 }
 const setting=async(label:string,checked:boolean)=>{
