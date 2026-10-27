@@ -10,6 +10,7 @@ import { projectedInspectionFeature, automaticInspectionDemand } from './inspect
 import { visiblePhysicalBounds } from './renderer.ts'
 import { physicalScopeMembers } from './scopes.ts'
 import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
+import { physicalPlanDrawingBounds } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle } from './types.ts'
 
@@ -156,7 +157,9 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const entryBounds = (entry: Entry, target: PhysicalSceneFocus = {}): PhysicalSceneBounds => {
     const visible = entry.scene && entry.meshes.length ? visiblePhysicalBounds({ scene: entry.scene, meshes: entry.meshes, view: entry.view, status: entry.status }, target) : null
     const physical = visible ?? (target.occurrenceId ? entry.scene?.objects.find(object => object.id === target.occurrenceId)?.bounds : null) ?? (target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId)?.bounds : null) ?? entry.source.descriptor.bounds
-    const bounds = entry.view.mode === '2d' ? { min: [physical.min[0], physical.min[1], 0] as [number, number, number], max: [physical.max[0], physical.max[1], 0] as [number, number, number] } : physical
+    const drawing = entry.view.mode === '2d' && entry.scene && !target.occurrenceId ? physicalPlanDrawingBounds(entry.scene, entry.view, target.scopeId ?? entry.scopeId ?? null) : null
+    const presented = drawing ? combinedBounds([physical, drawing]) : physical
+    const bounds = entry.view.mode === '2d' ? { min: [presented.min[0], presented.min[1], 0] as [number, number, number], max: [presented.max[0], presented.max[1], 0] as [number, number, number] } : physical
     return worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, bounds)
   }
   const applyFit = (entry: Entry, target: PhysicalSceneFocus, preservePose: boolean): void => {

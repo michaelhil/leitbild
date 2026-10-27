@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { PackPhysicalScene } from '../src/core/packs/scene.ts'
+import type { PackPhysicalScene, PhysicalSceneBounds } from '../src/core/packs/scene.ts'
 import { createPhysicalSceneControllerForViewport } from '../src/ui/map/physical-scene/scene-controller.ts'
 import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
 import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
@@ -8,6 +8,7 @@ import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from '../s
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import type { PhysicalViewport } from '../src/ui/map/physical-scene/viewport.ts'
 import type { PhysicalLayerEntry } from '../src/ui/map/physical-scene/layer.ts'
+import { localMercatorMatrix, transform } from '../src/ui/map/physical-scene/math.ts'
 
 const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObjectId: id, anchor: [0, 0], bearing: 0,
   bounds: { min: [0, 0, 0], max: [10, 10, 8] }, levels: [{ id: 'lower', label: 'Lower', elevation: 0, cutHeight: 2 }, { id: 'upper', label: 'Upper', elevation: 4, cutHeight: 6 }],
@@ -18,14 +19,14 @@ const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   let projectScale = 1_000_000
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
   const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = []
-  const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = []
+  const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = [], fitBounds: PhysicalSceneBounds[] = []
   const viewport: PhysicalViewport = {
     surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
     intersectsBounds: () => true,
     projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() {}, registered: () => true, orderRenderer() {}, removeRenderer() {},
     installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
-    cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch) }, fitWorld(_bounds, options) { fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
+    cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch) }, fitWorld(bounds, options) { fitBounds.push(bounds); fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
   }
   let failPreparation = false, rendererError: ((error: Error) => void) | null = null
   const errors: Error[] = []
@@ -35,7 +36,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
     prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, tools, poses, signals, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, fits, fitBounds, tools, poses, signals, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -133,6 +134,22 @@ test('Plan painting reads the existing presentation styles without acquiring sep
   const status = new Map([['a:machine', { color: [.1, .2, .3] as const, emphasis: .5 }]])
   h.controller.setStatus('a', status); expect(h.controller.subjectStyles('a')).toBe(status)
   expect(h.controller.subjectStyles('missing').size).toBe(0); h.controller.destroy()
+})
+
+test('Plan camera fitting includes selected drafting extents without changing physical bounds or occurrence focus', async () => {
+  const h = harness('map'), value = scene('a'), physicalBounds = structuredClone(value.bounds)
+  value.planDrawing = { views: [{ levelId: 'lower', bounds: { min: [-3, -4], max: [150, 150] }, primitives: [
+    { id: 'room-dimension', kind: 'path', scopeIds: ['a'], depiction: 'annotation', bounds: { min: [-3, -4], max: [8, 12] }, commands: [['M', -3, -4], ['L', 8, 12]], stroke: 'line' },
+    { id: 'other-room-dimension', kind: 'path', scopeIds: ['b'], depiction: 'annotation', bounds: { min: [100, 100], max: [150, 150] }, commands: [['M', 100, 100], ['L', 150, 150]], stroke: 'line' },
+  ] }] }
+  h.controller.setSources([h.source(value)]); await settled(); h.controller.home('a', 'a')
+  const matrix = localMercatorMatrix(value.anchor, value.bearing), min = transform(matrix, [-3, 12, 0]), max = transform(matrix, [8, -4, 0])
+  const expected: PhysicalSceneBounds = { min: [...min], max: [...max] }
+  expect(h.fitBounds.at(-1)).toEqual(expected)
+  expect(value.bounds).toEqual(physicalBounds)
+  h.controller.focus('a', { occurrenceId: 'machine' })
+  expect(h.fitBounds.at(-1)!.min[0]).toBeGreaterThan(min[0])
+  expect(h.fitBounds.at(-1)!.max[0]).toBeLessThan(max[0]); h.controller.destroy()
 })
 
 test('rapid floor choices cancel obsolete demand and stale completions cannot replace the selected floor', async () => {
