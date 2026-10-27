@@ -25,7 +25,7 @@ const areaOnPlane = (meshes: ReadonlyArray<PhysicalMesh>, axis: number, coordina
 const prepare = (source: PackPhysicalScene, scopeId?: string) => {
   const view = { ...defaultPhysicalSceneView(source.levels), mode: '3d' as const, levelId: 'all', ...(scopeId ? { scopeId } : {}) }
   const prepared = preparePhysicalGeometry(source, view, scopeId ?? 'whole')
-  return visiblePhysicalSurfaceOwners(prepared.meshes, prepared.acceleration)
+  return visiblePhysicalSurfaceOwners(prepared.meshes)
 }
 
 test('a room clips a transiting route to its real envelope, caps both ends and preserves source/graph/pick identity', () => {
@@ -67,7 +67,7 @@ test('selected floor cuts reconstruct both real tube caps from closed source geo
   object.spatialPath = { radius: .5, points: [[0, 1, -4], [0, 1, 4]] }
   object.levelId = 'lower'; object.levelIds = ['lower', 'upper']; object.inspectionLevels = [{ levelId: 'lower', low: 0, high: 1.5 }, { levelId: 'upper', low: 1.5, high: 3 }]
   source.levels = [{ id: 'lower', label: 'Lower', elevation: 0, cutHeight: .6 }, { id: 'upper', label: 'Upper', elevation: 1.5, cutHeight: 2.1 }]
-  const prepared = preparePhysicalGeometry(source, { ...defaultPhysicalSceneView(source.levels), mode: '3d', levelId: 'upper' }, 'upper'), meshes = visiblePhysicalSurfaceOwners(prepared.meshes, prepared.acceleration)
+  const prepared = preparePhysicalGeometry(source, { ...defaultPhysicalSceneView(source.levels), mode: '3d', levelId: 'upper' }, 'upper'), meshes = visiblePhysicalSurfaceOwners(prepared.meshes)
   expect(Math.min(...meshes.map(mesh => mesh.bounds.min[2]))).toBe(1.5)
   expect(Math.max(...meshes.map(mesh => mesh.bounds.max[2]))).toBe(3)
   const polygonArea = 16 / 2 * .5 ** 2 * Math.sin(Math.PI * 2 / 16)

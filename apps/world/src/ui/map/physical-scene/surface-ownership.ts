@@ -1,7 +1,6 @@
 import type { PhysicalMesh } from './geometry.ts'
 import { meshBounds } from './geometry.ts'
 import { type Vector3 } from './math.ts'
-import { derivePhysicalPickAcceleration, type PhysicalPickAcceleration } from './picking.ts'
 import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds, physicalSpatialBoundsOverlap } from './spatial-index.ts'
 
 /** A deterministic display tie, not a change to physical/material ownership. */
@@ -162,14 +161,13 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
   return { meshes: result, diagnostics: { broadPhaseCandidates, coplanarCandidates, triangles, partitionedTriangles, retainedCandidates: result.length - meshes.length, coincidentPairs: [...pairs.values()] } }
 }
 
-const visible = new WeakMap<ReadonlyArray<PhysicalMesh>, ReadonlyArray<PhysicalMesh>>(), indexed = new WeakSet<ReadonlyArray<PhysicalMesh>>()
-export const visiblePhysicalSurfaceOwners = (meshes: ReadonlyArray<PhysicalMesh>, acceleration?: PhysicalPickAcceleration): ReadonlyArray<PhysicalMesh> => {
+const visible = new WeakMap<ReadonlyArray<PhysicalMesh>, ReadonlyArray<PhysicalMesh>>()
+export const visiblePhysicalSurfaceOwners = (meshes: ReadonlyArray<PhysicalMesh>): ReadonlyArray<PhysicalMesh> => {
   let selected = visible.get(meshes)
   if (!selected) {
     const candidates = new Set(meshes.map(mesh => mesh.key))
     selected = meshes.some(mesh => mesh.occludedBy?.length) ? meshes.filter(mesh => !mesh.occludedBy?.some(owner => candidates.has(owner))) : meshes
     visible.set(meshes, selected)
   }
-  if (acceleration && selected !== meshes && !indexed.has(selected)) { derivePhysicalPickAcceleration(selected, acceleration); indexed.add(selected) }
   return selected
 }

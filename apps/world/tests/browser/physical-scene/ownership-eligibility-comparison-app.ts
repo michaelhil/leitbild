@@ -28,7 +28,7 @@ const controller=createPhysicalSceneController({map,palette,beforeId:()=>undefin
 controller.setSources([{descriptor,load:async()=>scene}])
 const pixels=(context:WebGL2RenderingContext)=>{const bytes=new Uint8Array(context.drawingBufferWidth*context.drawingBufferHeight*4);context.readPixels(0,0,context.drawingBufferWidth,context.drawingBufferHeight,context.RGBA,context.UNSIGNED_BYTE,bytes);return bytes}
 const surfaceStats=(entry:PhysicalLayerEntry)=>{
- const selected=visiblePhysicalSurfaceOwners(visiblePhysicalInspectionBoundaries(entry.meshes,multiply(matrix!,localMercatorMatrix(scene.anchor,scene.bearing))),entry.asset!.acceleration),materials:Record<string,{area:number;normal:number[]}>={}
+ const selected=visiblePhysicalSurfaceOwners(visiblePhysicalInspectionBoundaries(entry.meshes,multiply(matrix!,localMercatorMatrix(scene.anchor,scene.bearing)))),materials:Record<string,{area:number;normal:number[]}>={}
  let physicalTriangles=0,duplicateFloat32Triangles=0
  for(const mesh of selected)for(let at=0;at<mesh.vertices.length;at+=21){
   const v=mesh.vertices,a=[v[at]!,v[at+1]!,v[at+2]!],b=[v[at+7]!,v[at+8]!,v[at+9]!],c=[v[at+14]!,v[at+15]!,v[at+16]!],u=b.map((n,i)=>n-a[i]!),w=c.map((n,i)=>n-a[i]!),area=Math.hypot(u[1]!*w[2]!-u[2]!*w[1]!,u[2]!*w[0]!-u[0]!*w[2]!,u[0]!*w[1]!-u[1]!*w[0]!)/2

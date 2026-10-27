@@ -3,12 +3,39 @@ import type { PhysicalMesh } from './geometry.ts'
 import { inverse, normalize, rayBox, rayTrianglePacked, subtract, transform, type Vector3 } from './math.ts'
 import { createPhysicalSpatialIndex, visitPhysicalSpatialRay, type PhysicalSpatialIndex } from './spatial-index.ts'
 
-export interface PhysicalPickEntry { readonly sceneId: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly matrix: ArrayLike<number> }
+export interface PhysicalPickEntry {
+  readonly sceneId: string
+  /** Exact displayed/pickable subset, in its original tie order. */
+  readonly meshes: ReadonlyArray<PhysicalMesh>
+  /** Stable prepared roster with the SAME mesh identities and actual offsets. */
+  readonly roster?: ReadonlyArray<PhysicalMesh>
+  readonly matrix: ArrayLike<number>
+}
 export interface PhysicalMeshAcceleration { readonly triangles: PhysicalSpatialIndex }
 export interface PhysicalPickAcceleration { readonly meshes: PhysicalSpatialIndex; readonly triangles: ReadonlyArray<PhysicalMeshAcceleration> }
 const meshIndices = new WeakMap<PhysicalMesh, PhysicalMeshAcceleration>()
 const sceneIndices = new WeakMap<ReadonlyArray<PhysicalMesh>, PhysicalPickAcceleration>()
 const inverses = new WeakMap<ArrayLike<number>, Float64Array>()
+interface PickRoster {
+  readonly members: WeakSet<PhysicalMesh>
+  active?: { readonly meshes: WeakRef<ReadonlyArray<PhysicalMesh>>; readonly ordinals: WeakMap<PhysicalMesh, number> }
+}
+const rosters = new WeakMap<ReadonlyArray<PhysicalMesh>, PickRoster>()
+/** Only the latest active mask belongs to a retained roster. Neither the mask
+ * nor the weak roster key keeps a withdrawn camera selection alive. */
+const activeOrdinals = (roster: ReadonlyArray<PhysicalMesh>, meshes: ReadonlyArray<PhysicalMesh>): WeakMap<PhysicalMesh, number> | null => {
+  if (roster === meshes) return null
+  let value = rosters.get(roster)
+  if (!value) { value = { members: new WeakSet(roster) }; rosters.set(roster, value) }
+  if (value.active?.meshes.deref() === meshes) return value.active.ordinals
+  const ordinals = new WeakMap<PhysicalMesh, number>()
+  meshes.forEach((mesh, index) => {
+    if (!value.members.has(mesh)) throw Error('Physical pick subset is not part of its exact prepared roster')
+    if (!ordinals.has(mesh)) ordinals.set(mesh, index)
+  })
+  value.active = { meshes: new WeakRef(meshes), ordinals }
+  return ordinals
+}
 export const preparePhysicalMeshAcceleration = (mesh: PhysicalMesh): PhysicalMeshAcceleration => {
   const cached = meshIndices.get(mesh)
   if (cached) return cached
@@ -43,12 +70,13 @@ export const pickPhysicalMesh = (entries: ReadonlyArray<PhysicalPickEntry>, poin
   for (const entry of entries) {
     let inverted = inverses.get(entry.matrix)
     if (!inverted) { inverted = inverse(entry.matrix); inverses.set(entry.matrix, inverted) }
-    const origin = transform(inverted, clip), far = transform(inverted, [clip[0], clip[1], 1]), direction = normalize(subtract(far, origin)), acceleration = preparePhysicalPickAcceleration(entry.meshes), candidates: number[] = []
-    visitPhysicalSpatialRay(acceleration.meshes, origin, direction, () => Infinity, index => { candidates.push(index) })
-    candidates.sort((a, b) => a - b)
+    const roster = entry.roster ?? entry.meshes, active = activeOrdinals(roster, entry.meshes)
+    const origin = transform(inverted, clip), far = transform(inverted, [clip[0], clip[1], 1]), direction = normalize(subtract(far, origin)), acceleration = preparePhysicalPickAcceleration(roster), candidates: number[] = []
+    visitPhysicalSpatialRay(acceleration.meshes, origin, direction, () => Infinity, index => { if (!active || active.has(roster[index]!)) candidates.push(index) })
+    candidates.sort(active ? (a, b) => active.get(roster[a]!)! - active.get(roster[b]!)! || a - b : (a, b) => a - b)
     let localNearest = Infinity
     for (const meshIndex of candidates) {
-      const mesh = entry.meshes[meshIndex]!
+      const mesh = roster[meshIndex]!
       const local = subtract(origin, mesh.offset), boundsDistance = rayBox(local, direction, mesh.bounds)
       if (boundsDistance === null || boundsDistance > localNearest) continue
       let meshNearest = localNearest, triangleIndex = Infinity

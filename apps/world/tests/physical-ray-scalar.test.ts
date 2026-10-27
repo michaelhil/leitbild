@@ -93,7 +93,7 @@ test('actual selected R5 floor/camera/opacity/offset cases retain exact source w
       const placed = levelId === 'all' ? asset.meshes.map(mesh => ({ ...mesh, offset: mesh.offset.map(value => value * 9) as unknown as Vector3 })) : asset.meshes
       for (const [bearing, pitch] of [[-25, 50], [140, 75]]) for (const alpha of [0, .4, 1]) {
         const matrix = camera(scene.bounds, bearing!, pitch!), boundary = visiblePhysicalInspectionBoundaries(placed, matrix), selected = visiblePhysicalSurfaceOwners(boundary.filter(mesh => physicalArchitectureOpacity(mesh.object, { wallOpacity: alpha, floorOpacity: alpha }) > 0)), pickable = selected.filter(mesh => mesh.object.subjectIds.length > 0 || physicalArchitectureOpacity(mesh.object, { wallOpacity: alpha, floorOpacity: alpha }) === 1)
-        const entries = [{ sceneId: scene.id, matrix, meshes: pickable }], width = 1000, height = 700
+        const entries = [{ sceneId: scene.id, matrix, meshes: pickable, roster: placed }], width = 1000, height = 700
         const points = Array.from({ length: 24 }, () => ({ x: random() * width, y: random() * height }))
         for (const mesh of pickable.filter(mesh => mesh.object.subjectIds.length > 0).slice(0, 24)) {
           const center = mesh.bounds.min.map((value, axis) => (value + mesh.bounds.max[axis]!) / 2 + mesh.offset[axis]!) as unknown as Vector3, point = transform(matrix, center)
