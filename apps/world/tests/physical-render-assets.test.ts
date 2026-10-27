@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import type{PhysicalArchitectureBsp,PhysicalArchitectureBspInput,PhysicalArchitectureBspPreparer}from'../src/ui/map/physical-scene/architecture-bsp-types.ts'
+import{preparePhysicalArchitectureBsp}from'../src/ui/map/physical-scene/architecture-bsp.ts'
+import{physicalArchitectureOpacity}from'../src/ui/map/physical-scene/architecture-opacity.ts'
 import type { PackPhysicalScene, PhysicalSceneBounds } from '../src/core/packs/scene.ts'
 import { createPhysicalSceneControllerForViewport } from '../src/ui/map/physical-scene/scene-controller.ts'
 import { preparePhysicalGeometry, type PhysicalPreparationView } from '../src/ui/map/physical-scene/preparation.ts'
@@ -9,6 +12,7 @@ import { defaultPhysicalSceneView, type PhysicalSceneHighlight } from '../src/ui
 import type { PhysicalViewport } from '../src/ui/map/physical-scene/viewport.ts'
 import type { PhysicalLayerEntry } from '../src/ui/map/physical-scene/layer.ts'
 import { visiblePhysicalBounds } from '../src/ui/map/physical-scene/renderer.ts'
+import { visiblePhysicalSurfaceOwners } from '../src/ui/map/physical-scene/surface-ownership.ts'
 import { localMercatorMatrix, transform } from '../src/ui/map/physical-scene/math.ts'
 
 const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObjectId: id, anchor: [0, 0], bearing: 0,
@@ -16,10 +20,10 @@ const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObj
   scopes: [{ id: 'a', label: 'A', kind: 'building', bounds: { min: [0, 0, 0], max: [5, 10, 8] }, levelIds: ['lower', 'upper'] }, { id: 'b', label: 'B', kind: 'building', bounds: { min: [5, 0, 0], max: [10, 10, 8] }, levelIds: ['lower', 'upper'] }],
   layers: [{ id: 'utilities', label: 'Utilities', defaultVisible: true }],
   objects: ['machine', 'utility'].map((key, index) => ({ id: key, label: key, kind: 'equipment', levelId: 'lower', scopeIds: [index ? 'b' : 'a'], ...(index ? { layerId: 'utilities' } : {}), positions: [0, 0, 0, 5, 0, 8, 0, 5, 8], subjectIds: [`${id}:${key}`], material: 'metal' })) })
-const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => {
-  let projectScale = 1_000_000
+const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false,architecture?:PhysicalArchitectureBspPreparer) => {
+  let projectScale = 1_000_000,boundsVisible=true
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
-  const highlights: Array<PhysicalSceneHighlight | null> = [], projectionCalls: unknown[] = []
+  const highlights: Array<PhysicalSceneHighlight | null> = [], projectionCalls: unknown[] = [],architectureAssets:Array<PhysicalArchitectureBsp|null>=[]
   let renders = 0
   const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = [], planarity: boolean[] = [], cameraEvents: Array<{kind:'pose';pitch:number|undefined}|{kind:'planarity';value:boolean}> = []
   const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = [], fitBounds: PhysicalSceneBounds[] = []
@@ -28,9 +32,9 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
   const viewport: PhysicalViewport = {
     surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
-    intersectsBounds: () => true,
+    intersectsBounds: () => boundsVisible,
     projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() { renders++ }, registered: () => true, orderRenderer() {}, removeRenderer() {},
-    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, setHighlight(value) { highlights.push(value) }, projectOccurrencePoints(sceneId, occurrenceId, points, levelId) { projectionCalls.push({ sceneId, occurrenceId, points, levelId }); return points.map(point => ({ x: point[0], y: point[1], depth: point[2], visible: true })) }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
+    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setArchitectureBsp(value) {architectureAssets.push(value)}, setPalette() { paletteUpdates++ }, setHighlight(value) { highlights.push(value) }, projectOccurrencePoints(sceneId, occurrenceId, points, levelId) { projectionCalls.push({ sceneId, occurrenceId, points, levelId }); return points.map(point => ({ x: point[0], y: point[1], depth: point[2], visible: true })) }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
     cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch); cameraEvents.push({kind:'pose',pitch:patch.pitch}) }, setPlanarInspection(value) { planarity.push(value); cameraEvents.push({kind:'planarity',value}) }, fitWorld(bounds, options) { fitBounds.push(bounds); fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
   }
   let failPreparation = false, rendererError: ((error: Error) => void) | null = null
@@ -38,12 +42,65 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
   let waitForPreparation: Promise<void> | null = null
   const hold = () => { let release!: () => void; waitForPreparation = new Promise<void>(resolve => { release = resolve }); return () => { waitForPreparation = null; release() } }
   const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>(), requests: Array<{key:string;view:PhysicalPreparationView;sourceKey:string|undefined;signal:AbortSignal|undefined}> = []
-  const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
+  const controller = createPhysicalSceneControllerForViewport(viewport, {...(architecture?{prepareArchitecture:architecture}:{}), palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
     prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); requests.push({key,view,sourceKey:_sourceKey,signal}); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const { scopeId, ...unscopedView } = view; const base = preparePhysicalGeometry(value, tagScopedTraces ? unscopedView : view, key, identity), asset = tagScopedTraces && scopeId ? { ...base, meshes:base.meshes.map(mesh => mesh.object.clipToScope ? { ...mesh, inspectionScopeId:scopeId } : mesh) } : base; cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, forgetDiscovered: () => cache.clear(), highlights, projectionCalls, renders: () => renders, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, architectureAssets,visibility:(visible:boolean)=>{boundsVisible=visible},emit:(event:string)=>listeners.get(event)?.forEach(fn=>fn()),forgetDiscovered: () => cache.clear(), highlights, projectionCalls, renders: () => renders, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
+const orderingFixture=()=>{
+ const jobs:Array<{input:PhysicalArchitectureBspInput;signal:AbortSignal|undefined;resolve:(value:PhysicalArchitectureBsp)=>void;reject:(error:Error)=>void}>=[]
+ const port=Object.assign((input:PhysicalArchitectureBspInput,signal?:AbortSignal)=>new Promise<PhysicalArchitectureBsp>((resolve,reject)=>jobs.push({input,signal,resolve,reject})),{destroy(){},diagnostics:()=>({workers:0,pending:0})})
+ return{jobs,port,resolve:(index:number)=>jobs[index]!.resolve(preparePhysicalArchitectureBsp(jobs[index]!.input))}
+}
+
+test('opaque views make no ordering request; pending style retains current geometry and latest slider intent',async()=>{
+ const ordering=orderingFixture(),h=harness('map',false,ordering.port),value=scene('a');value.objects=value.objects.map((object,index)=>({...object,kind:index?'slab':'wall'}))
+ h.controller.setSources([h.source(value)]);h.controller.selectCollection();h.controller.setView('a',{...defaultPhysicalSceneView(value.levels),mode:'3d',levelId:'all',separation:4});await settled()
+ expect(ordering.jobs).toHaveLength(0);const asset=h.entries()[0]!.asset,meshes=h.entries()[0]!.meshes,prepares=h.prepares()
+ h.controller.setView('a',{...h.controller.presentations()[0]!.view,wallOpacity:.4,floorOpacity:.6});await settled()
+ expect(ordering.jobs).toHaveLength(1);expect(h.entries()[0]!.asset).toBe(asset);expect(h.entries()[0]!.meshes).toBe(meshes)
+ expect(h.controller.presentations()[0]).toMatchObject({status:'ready',view:{wallOpacity:1,floorOpacity:1},opacityPreparation:{status:'loading',requested:{wallOpacity:.4,floorOpacity:.6}}})
+ h.controller.setView('a',{...h.controller.presentations()[0]!.view,...h.controller.presentations()[0]!.opacityPreparation!.requested,wallOpacity:.2});await settled()
+ expect(ordering.jobs).toHaveLength(1)
+ ordering.resolve(0);await settled();expect(h.controller.presentations()[0]).toMatchObject({view:{wallOpacity:.2,floorOpacity:.6}});expect(h.controller.presentations()[0]!.opacityPreparation).toBeUndefined()
+ const accepted=h.architectureAssets.at(-1);h.controller.setView('a',{...h.controller.presentations()[0]!.view,wallOpacity:.7});await settled();h.emit('change');await settled()
+ expect(ordering.jobs).toHaveLength(1);expect(h.prepares()).toBe(prepares);expect(h.entries()[0]!.meshes).toBe(meshes);expect(h.architectureAssets.at(-1)).toBe(accepted)
+ h.visibility(false);h.emit('change');await settled();expect(ordering.jobs).toHaveLength(1);expect(h.architectureAssets.at(-1)).toBe(accepted);h.visibility(true);h.emit('change');await settled();expect(ordering.jobs).toHaveLength(1)
+ h.controller.setView('a',{...h.controller.presentations()[0]!.view,wallOpacity:1,floorOpacity:1});await settled();h.controller.setView('a',{...h.controller.presentations()[0]!.view,wallOpacity:.3});await settled();expect(ordering.jobs).toHaveLength(1)
+ h.controller.destroy()
+})
+
+test('focused hidden-layer slider edits retain the warmed cohort and exact original source ordinals',async()=>{
+ const ordering=orderingFixture(),h=harness('map',false,ordering.port),value=scene('a');value.objects=value.objects.map((object,index)=>({...object,kind:index?'slab':'wall'}))
+ h.controller.setSources([h.source(value)]);h.controller.selectScope('a','a');h.controller.setView('a',{...defaultPhysicalSceneView(value.levels),mode:'3d',levelId:'all',hiddenLayerIds:['utilities'],wallOpacity:.4});await settled()
+ expect(ordering.jobs).toHaveLength(1);ordering.resolve(0);await settled();const accepted=h.architectureAssets.at(-1),meshSelection=h.entries()[0]!.meshes,resets=h.architectureAssets.length
+ expect(ordering.jobs[0]!.input.sources.every(source=>source.occurrenceId==='machine')).toBe(true)
+ for(const opacity of[.7,0,1,.2]){h.controller.setView('a',{...h.controller.presentations()[0]!.view,wallOpacity:opacity});await settled()}
+ expect(ordering.jobs).toHaveLength(1);expect(h.architectureAssets).toHaveLength(resets);expect(h.architectureAssets.at(-1)).toBe(accepted);expect(h.entries()[0]!.meshes).toBe(meshSelection);expect(h.controller.presentations()[0]!.view.wallOpacity).toBe(.2)
+ h.controller.destroy()
+})
+
+test('global ordering retains other placements pending intent and rejects obsolete geometry; retry preserves source assets',async()=>{
+ const ordering=orderingFixture(),h=harness('map',false,ordering.port),a=scene('a'),b=scene('b');for(const value of[a,b])value.objects=value.objects.map(object=>({...object,kind:'wall'}))
+ h.controller.setSources([h.source(a),h.source(b)]);h.controller.selectCollection();const view={...defaultPhysicalSceneView(a.levels),mode:'3d' as const,levelId:'all',separation:3};h.controller.setView('a',view);await settled()
+ h.controller.setView('a',{...view,wallOpacity:.4});h.controller.setView('b',{...view,wallOpacity:.5});await settled()
+ expect(h.controller.presentations().map(value=>value.opacityPreparation!.requested.wallOpacity)).toEqual([.4,.5])
+ const before=ordering.jobs.length,last=ordering.jobs.at(-1)!;h.controller.setView('a',{...view,wallOpacity:.4,separation:13});await settled();expect(last.signal!.aborted).toBe(true);expect(ordering.jobs.length).toBeGreaterThan(before)
+ last.resolve(preparePhysicalArchitectureBsp(last.input));await settled();expect(h.controller.presentations()[0]!.view.wallOpacity).toBe(1)
+ ordering.jobs.at(-1)!.reject(Error('Exact ordering unavailable'));await settled();expect(h.controller.presentations()[0]).toMatchObject({status:'ready',view:{wallOpacity:1},opacityPreparation:{status:'unavailable',reason:'Exact ordering unavailable'}})
+ const prepares=h.prepares();h.controller.retry('a');await settled();ordering.resolve(ordering.jobs.length-1);await settled();expect(h.prepares()).toBe(prepares);expect(h.controller.presentations()[0]!.view.wallOpacity).toBe(.4)
+ h.controller.setView('a',{...view,wallOpacity:.4,separation:9});await settled();const pending=ordering.jobs.at(-1)!;h.controller.setActive(false);expect(pending.signal!.aborted).toBe(true);pending.resolve(preparePhysicalArchitectureBsp(pending.input));await settled();expect(h.controller.presentations()[0]!.status).toBe('hidden');h.controller.destroy()
+})
+
+test('controller retains a simple no-boundary coplanar equipment alternative when the first slab is hidden',async()=>{
+ const h=harness(),value=scene('a');value.objects=[{...value.objects[0]!,id:'floor',kind:'slab',subjectIds:[]},{...value.objects[0]!,id:'equipment',kind:'equipment',subjectIds:['actual-pump']}]
+ h.controller.setSources([h.source(value)]);h.controller.setView('a',{...defaultPhysicalSceneView(value.levels),mode:'3d',floorOpacity:0});await settled()
+ const displayed=h.entries()[0]!,retained=displayed.meshes.filter(mesh=>mesh.object.id==='equipment'&&mesh.occludedBy?.length)
+ expect(retained.length).toBeGreaterThan(0)
+ const visible=visiblePhysicalSurfaceOwners(displayed.meshes.filter(mesh=>physicalArchitectureOpacity(mesh.object,displayed.view)>0))
+ expect(visible.some(mesh=>mesh.object.id==='equipment'&&mesh.vertices.length>0)).toBe(true);expect(displayed.view.floorOpacity).toBe(0);h.controller.destroy()
+})
 
 test('shared render geometry preserves each placement owner and subject binding', async () => {
   const h = harness(), a = scene('a'), b = scene('b'); h.controller.setSources([h.source(a), h.source(b)])
@@ -64,7 +121,7 @@ test('offset magnitude, layers, scope and palette preserve immutable base buffer
   expect(h.prepares()).toBe(count); expect(h.entries()[0]!.asset).toBe(asset)
   expect(h.entries()[0]!.meshes.every(mesh => mesh.object.id === 'machine')).toBe(true)
   expect(h.entries()[0]!.meshes.find(mesh => mesh.levelId === 'upper')!.offset[2]).toBe(13)
-  h.controller.setView('a', { ...view, hiddenLayerIds: [] }); h.controller.selectScope('a', 'a'); expect(h.entries()[0]!.meshes).toHaveLength(2); h.controller.fitAll(); expect(h.entries()[0]!.meshes).toHaveLength(4)
+  h.controller.setView('a', { ...view, hiddenLayerIds: [] }); h.controller.selectScope('a', 'a'); expect(h.entries()[0]!.meshes).toHaveLength(2); h.controller.fitAll(); expect(visiblePhysicalSurfaceOwners(h.entries()[0]!.meshes)).toHaveLength(4)
   h.controller.setPalette({ materials: {}, defaultMaterial: [.6, .6, .6], line: [0, 0, 0] }); expect(h.paletteUpdates()).toBe(1); expect(h.prepares()).toBe(count)
   h.controller.destroy()
 })
@@ -285,11 +342,11 @@ test('incremental layer loading keeps valid buffers picks and owner status ready
   expect(h.entries()[0]!.asset).toBe(prior); expect(h.entries()[0]!.asset!.acceleration).toBe(prior.acceleration)
   expect(h.entries()[0]!.meshes.every(mesh => mesh.object.id === 'machine')).toBe(true); expect(h.controller.subjectStyles('a')).toBe(styles)
   release(); await settled()
-  expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine', 'utility'])
+  expect(visiblePhysicalSurfaceOwners(h.entries()[0]!.meshes).map(mesh => mesh.object.id)).toEqual(['machine', 'utility'])
   expect(h.entries()[0]!.asset!.key).toContain('"layers":["utilities"]')
   expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); expect(h.controller.subjectStyles('a')).toBe(styles)
   const prepared = h.prepares(), retained = h.entries()[0]!.asset
-  h.controller.setView('a', view); expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine'])
+  h.controller.setView('a', view); expect(visiblePhysicalSurfaceOwners(h.entries()[0]!.meshes).map(mesh => mesh.object.id)).toEqual(['machine'])
   h.controller.setView('a', { ...view, hiddenLayerIds: [] }); await settled()
   expect(h.prepares()).toBe(prepared); expect(h.entries()[0]!.asset).toBe(retained); h.controller.destroy()
 })
@@ -314,7 +371,7 @@ test('cold-start layer expansion supersedes the pending request before a first a
   h.controller.setView('a', { ...view, hiddenLayerIds: [] }); expect(old.aborted).toBe(true)
   expect(h.requests.at(-1)!.view.hiddenLayerIds).not.toContain('utilities')
   release(); await settled()
-  expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine', 'utility'])
+  expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(visiblePhysicalSurfaceOwners(h.entries()[0]!.meshes).map(mesh => mesh.object.id)).toEqual(['machine', 'utility'])
   expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
 })
 
@@ -327,7 +384,7 @@ test('incremental layer failure retains current buffers; explicit retry preserve
   expect(h.entries()[0]!.asset).toBe(prior); expect(loads).toBe(1)
   h.controller.retry('a'); await settled()
   expect(loads).toBe(1); expect(h.requests.at(-1)!.sourceKey).toBe(sourceKey)
-  expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine', 'utility']); expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
+  expect(visiblePhysicalSurfaceOwners(h.entries()[0]!.meshes).map(mesh => mesh.object.id)).toEqual(['machine', 'utility']); expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
 })
 
 test('floor and source replacement invalidate pending layers and cannot admit stale owner data', async () => {
@@ -368,7 +425,7 @@ test('shared geometry placements keep independent layer coverage and rebound exa
   release(); await settled(); h.controller.setView('b', { ...view, hiddenLayerIds: [] }); await settled()
   const first = h.entries().find(entry => entry.scene.id === 'a')!, second = h.entries().find(entry => entry.scene.id === 'b')!
   expect(first.asset!.buffers).toBe(second.asset!.buffers)
-  expect(first.meshes.map(mesh => mesh.object.subjectIds[0])).toEqual(['a:machine', 'a:utility']); expect(second.meshes.map(mesh => mesh.object.subjectIds[0])).toEqual(['b:machine', 'b:utility']); h.controller.destroy()
+  expect(visiblePhysicalSurfaceOwners(first.meshes).map(mesh => mesh.object.subjectIds[0])).toEqual(['a:machine', 'a:utility']); expect(visiblePhysicalSurfaceOwners(second.meshes).map(mesh => mesh.object.subjectIds[0])).toEqual(['b:machine', 'b:utility']); h.controller.destroy()
 })
 
 

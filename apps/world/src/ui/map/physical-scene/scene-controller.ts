@@ -3,6 +3,10 @@ import { physicalSceneInitialVisibleLayers, type PackPhysicalScene, type Physica
 import type { PhysicalLayerEntry } from './layer.ts'
 import { meshBounds, type PhysicalMesh } from './geometry.ts'
 import { boundsCorners, localMercatorMatrix, transform, type Vector3 } from './math.ts'
+import {createPhysicalArchitectureOrdering,physicalArchitectureCohort,type PhysicalArchitectureCohort,type PhysicalArchitectureBspFrame} from './architecture-cohort.ts'
+import {createPhysicalArchitectureBspPreparer} from './architecture-bsp-preparation.ts'
+import type {PhysicalArchitectureBsp} from './architecture-bsp-types.ts'
+import type {PhysicalArchitectureOpacity} from './types.ts'
 import { createPhysicalInspectionWorkingSet } from './inspection-working-set.ts'
 import { createPhysicalGeometryPreparer, type PhysicalPreparedGeometry } from './preparation.ts'
 import { admitPhysicalPickAcceleration, derivePhysicalPickAcceleration } from './picking.ts'
@@ -16,7 +20,7 @@ import { physicalPlanDrawingBounds } from '../../physical-layout/plan-drawing.ts
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalSceneHighlight, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle, type PhysicalViewportFitOptions } from './types.ts'
 
-interface Entry { planSignature?: string; renderRevision: number; source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; preparationAbort?: AbortController | undefined; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; preparedLayers?: ReadonlyArray<string> | undefined; requestedLayers?: ReadonlyArray<string> | undefined; layerFailure?: { layerIds: ReadonlyArray<string>; reason: string } | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean; overviewAbort?: AbortController | undefined; overviewFilter?: { key: string; meshes: ReadonlyArray<PhysicalMesh> } | undefined }
+interface Entry { requestedOpacity?:PhysicalArchitectureOpacity; opaqueOpacity?:PhysicalArchitectureOpacity; planSignature?: string; renderRevision: number; source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; preparationAbort?: AbortController | undefined; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; preparedLayers?: ReadonlyArray<string> | undefined; requestedLayers?: ReadonlyArray<string> | undefined; layerFailure?: { layerIds: ReadonlyArray<string>; reason: string } | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean; overviewAbort?: AbortController | undefined; overviewFilter?: { key: string; meshes: ReadonlyArray<PhysicalMesh> } | undefined }
 type Options = Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'>
 const worldBounds = (anchor: readonly [number, number], bearing: number, bounds: PhysicalSceneBounds): PhysicalSceneBounds => {
   const matrix = localMercatorMatrix(anchor, bearing), points = boundsCorners(bounds).map(p => transform(matrix, p))
@@ -36,6 +40,19 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   let pendingCollectionFocus: { targets: ReadonlyArray<{ entry: Entry; source: number }>; preservePose: boolean } | null = null
   let cameraOwned = true, reconcilingCamera = false
   let highlight: PhysicalSceneHighlight | null = null
+  const architecturePrepare=options.prepareArchitecture??createPhysicalArchitectureBspPreparer()
+  const architectureOrdering=createPhysicalArchitectureOrdering(architecturePrepare,()=>enqueue())
+  let architectureAsset:PhysicalArchitectureBsp|null=null,architectureInput:PhysicalArchitectureCohort|null=null,architectureFrame:PhysicalArchitectureBspFrame|null=null,architectureRetry=false
+  let architectureSelection:ReadonlyArray<{scene:PackPhysicalScene;asset:PhysicalPreparedGeometry|undefined;meshes:ReadonlyArray<PhysicalMesh>;mode:PhysicalSceneView['mode'];level:string;separation:number}>=[]
+  const opacityOf=(view:PhysicalSceneView):PhysicalArchitectureOpacity=>({wallOpacity:view.wallOpacity??1,floorOpacity:view.floorOpacity??1})
+  const fractional=(value:number):boolean=>value>0&&value<1
+  const wantedOpacity=(entry:Entry):PhysicalArchitectureOpacity=>entry.requestedOpacity??opacityOf(entry.view)
+  const opacityPresentation=(entry:Entry):PhysicalScenePresentation['opacityPreparation']=>{
+    const desired=wantedOpacity(entry),actual=opacityOf(entry.view)
+    if(desired.wallOpacity===actual.wallOpacity&&desired.floorOpacity===actual.floorOpacity)return undefined
+    const state=architectureOrdering.state()
+    return{status:state.status==='unavailable'?'unavailable':'loading',requested:desired,...(state.reason?{reason:state.reason}:{})}
+  }
   const clearHighlight = (): void => { highlight = null; renderer?.setHighlight(null) }
   const setPlanarity = (value: boolean): void => { const prior = reconcilingCamera; reconcilingCamera = true; try { viewport.setPlanarInspection?.(value) } finally { reconcilingCamera = prior } }
   const syncPlanarity = (): void => setPlanarity(active && cameraOwned && mode === '2d' && [...entries.values()].some(entry => entry.eligible && entry.state === 'ready' && entry.scene?.planDrawing?.views.some(view => view.levelId === entry.view.levelId)))
@@ -57,8 +74,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     return entry.preparing ? { status: 'loading', layerIds: missing } : undefined
   }
   const presentations = (): PhysicalScenePresentation[] => [...entries.values()].map(entry => {
-    const layerPreparation = layerPresentation(entry)
-    return { descriptor: entry.source.descriptor, view: entry.view, status: entry.state, ...(entry.reason ? { reason: entry.reason } : {}), ...(layerPreparation ? { layerPreparation } : {}), renderRevision: entry.renderRevision, occurrenceCount: entry.scene?.objects.length ?? 0 }
+    const layerPreparation = layerPresentation(entry),opacityPreparation=opacityPresentation(entry)
+    return { descriptor: entry.source.descriptor, view: entry.view, status: entry.state, ...(entry.reason ? { reason: entry.reason } : {}), ...(layerPreparation ? { layerPreparation } : {}),...(opacityPreparation?{opacityPreparation}:{}), renderRevision: entry.renderRevision, occurrenceCount: entry.scene?.objects.length ?? 0 }
   })
   const emit = (): void => { const next = presentations(), signature = JSON.stringify(next); if (lastPresentation === signature) return; lastPresentation = signature; options.onChange(next) }
   const drawable = (): PhysicalLayerEntry[] => !active ? [] : [...entries.values()].flatMap(entry => {
@@ -80,6 +97,33 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (meshes.length) result.push({ scene: entry.overview.scene, meshes, asset: entry.overview.asset, view: entry.view, status: new Map() })
     return result
   })
+  const reconcileArchitecture=():void=>{
+    const visible:PhysicalLayerEntry[]=[...entries.values()].flatMap(entry=>{
+      if(!active||!entry.scene||!entry.prepared||entry.failure||!entry.source.descriptor.locationValid||entry.view.detail==='hidden')return[]
+      if(focusedId===null&&collectionIds!==null&&!collectionIds.has(entry.source.descriptor.id))return[]
+      if(focusedId!==null&&!entries.get(focusedId)?.view.surroundings&&entry.source.descriptor.id!==focusedId)return[]
+      const explicit=focusedId!==null||collectionIds!==null
+      if(!explicit&&!entry.eligible)return[]
+      return[{scene:entry.scene,asset:entry.prepared,meshes:entry.meshes,view:entry.view,status:entry.status}]
+    }),selected=visible.map(entry=>({scene:entry.scene,asset:entry.asset,meshes:entry.meshes,mode:entry.view.mode,level:entry.view.levelId,separation:entry.view.separation}))
+    const same=selected.length===architectureSelection.length&&selected.every((entry,index)=>{const before=architectureSelection[index]!;return entry.scene===before.scene&&entry.asset===before.asset&&entry.meshes===before.meshes&&entry.mode===before.mode&&entry.level===before.level&&entry.separation===before.separation})
+    const needs=visible.some(draw=>{const entry=entries.get(draw.scene.id);if(!entry||draw.view.mode==='2d'&&hasPlanInk(entry))return false;const desired=wantedOpacity(entry);return fractional(desired.wallOpacity)||fractional(desired.floorOpacity)})
+    if(!same){architectureSelection=selected;const candidate=needs?physicalArchitectureCohort(visible):null;if(candidate?.key!==architectureInput?.key){architectureOrdering.request(null);architectureInput=candidate}else if(!architectureInput)architectureInput=candidate}
+    else if(needs&&!architectureInput)architectureInput=physicalArchitectureCohort(visible)
+    if(needs&&architectureInput){architectureOrdering.request(architectureInput,architectureRetry);architectureRetry=false}
+    else architectureOrdering.suspend()
+    const next=architectureInput?architectureOrdering.asset(architectureInput.key):null
+    const nextFrame=next?architectureInput!.frame:null
+    if(next!==architectureAsset||nextFrame!==architectureFrame){architectureAsset=next;architectureFrame=nextFrame;renderer?.setArchitectureBsp(next,nextFrame)}
+    const drawn=new Set(visible.map(entry=>entry.scene.id))
+    for(const entry of entries.values()){
+      if(!entry.requestedOpacity)continue
+      const desired=entry.requestedOpacity,requires=drawn.has(entry.source.descriptor.id)&&!(entry.view.mode==='2d'&&hasPlanInk(entry))&&architectureInput!==null&&!next
+      const fallback=entry.opaqueOpacity??{wallOpacity:1,floorOpacity:1}
+      const applied={wallOpacity:requires&&fractional(desired.wallOpacity)?fallback.wallOpacity:desired.wallOpacity,floorOpacity:requires&&fractional(desired.floorOpacity)?fallback.floorOpacity:desired.floorOpacity}
+      if(entry.view.wallOpacity!==applied.wallOpacity||entry.view.floorOpacity!==applied.floorOpacity)entry.view={...entry.view,...applied}
+    }
+  }
   const removeRenderer = (): void => { if (!renderer) return; const prior = renderer; renderer = null; viewport.removeRenderer(prior); const receipt = prior.metrics(); if (receipt) disposals.push(receipt) }
   const reconcileRenderer = (): void => {
     if (destroyed || contextLost) return
@@ -88,7 +132,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (!viewport.ready()) return
     if (renderer && viewport.registered(renderer)) { viewport.orderRenderer(); return }
     if (renderer) removeRenderer()
-    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; syncPlanarity(); options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }, options.planFontFamily); renderer.setHighlight(highlight); viewport.requestRender() }
+    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; syncPlanarity(); options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }, options.planFontFamily); renderer.setHighlight(highlight);renderer.setArchitectureBsp(architectureAsset,architectureFrame); viewport.requestRender() }
     catch (error) { options.reportError(error instanceof Error ? error : new Error(String(error))) }
   }
   const filteredMeshes = (entry: Entry, prepared: PhysicalPreparedGeometry): ReadonlyArray<PhysicalMesh> => {
@@ -103,7 +147,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (filtered !== prepared.meshes) derivePhysicalPickAcceleration(filtered, prepared.acceleration)
     // Authored full/cut boundary alternatives must reach the camera-facing
     // selector together. Only then can coincident display owners be chosen.
-    return filtered.some(mesh => mesh.inspectionPart !== undefined) ? filtered : visiblePhysicalSurfaceOwners(filtered, prepared.acceleration)
+    return filtered
   }
   const cancelPreparation = (entry: Entry): void => { entry.viewGeneration++; entry.preparationAbort?.abort(); entry.preparationAbort = undefined; entry.preparing = false; entry.requestedLayers = undefined }
   const discardPrepared = (entry: Entry): void => { entry.prepared = null; entry.preparedLayers = undefined; entry.meshes = []; entry.layerFailure = undefined }
@@ -217,7 +261,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     }
     const selected = new Set([...entries.values()].filter(entry => entry.source.descriptor.locationValid && entry.view.detail !== 'hidden' && (focusedId !== null ? entry.source.descriptor.id === focusedId : collectionIds !== null ? collectionIds.has(entry.source.descriptor.id) : entry.eligible)).map(entry => entry.source.descriptor.id))
     inspectionWorkingSet.retainScenes(selected)
-    syncPlanarity(); reconcileRenderer(); refreshCollectionFit(); emit()
+    reconcileArchitecture();syncPlanarity(); reconcileRenderer(); refreshCollectionFit(); emit()
   }
   const enqueue = (): void => { if (queued || destroyed) return; queued = true; queueMicrotask(() => { queued = false; reconcile() }) }
   const cleanup = [viewport.on('change', enqueue), viewport.on('resize', enqueue), viewport.on('style', enqueue), viewport.on('idle', enqueue), viewport.on('contextlost', () => { contextLost = true; removeRenderer() }), viewport.on('contextrestored', () => { contextLost = false; enqueue() })]
@@ -268,7 +312,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
         const previous = entries.get(source.descriptor.id)
         if (previous && JSON.stringify(previous.source.descriptor) === JSON.stringify(source.descriptor)) { previous.source = source; continue }
         if (previous) { inspectionWorkingSet.forget(source.descriptor.id); previous.generation = ++generation; cancelPreparation(previous); cancelOverview(previous); if (highlight?.sceneId === source.descriptor.id) clearHighlight() }
-        entries.set(source.descriptor.id, { renderRevision: 0, source, generation: ++generation, viewGeneration: 0, scene: null, prepared: null, meshes: [], view: previous?.view ?? initialView(source), status: new Map(), signature: '', state: 'distant', loading: false, eligible: false }); changed = true
+        entries.set(source.descriptor.id, { renderRevision: 0, source, generation: ++generation, viewGeneration: 0, scene: null, prepared: null, meshes: [], view: previous?.view ?? initialView(source), ...(previous?.requestedOpacity?{requestedOpacity:previous.requestedOpacity}:{}),...(previous?.opaqueOpacity?{opaqueOpacity:previous.opaqueOpacity}:{}),status: new Map(), signature: '', state: 'distant', loading: false, eligible: false }); changed = true
       }
       if (focusedId !== null && !entries.has(focusedId)) { focusedId = null; forcedId = null }
       if (pendingFocus && (entries.get(pendingFocus.entry.source.descriptor.id) !== pendingFocus.entry || pendingFocus.entry.generation !== pendingFocus.source)) pendingFocus = null
@@ -287,7 +331,12 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
         const selected = target === entry ? view : changedMode ? { ...target.view, mode } : target.view
         const desired = changedMode && mode === '3d' && focusedId === null && collectionIds?.has(target.source.descriptor.id) ? { ...selected, levelId: 'all' } : selected
         const normalized = mode === '2d' && desired.levelId === 'all' ? { ...desired, levelId: target.source.descriptor.levels[0]!.id } : desired
-        const old = target.view; target.view = normalized
+        const old = target.view
+        if(normalized.wallOpacity!==undefined||normalized.floorOpacity!==undefined||target.requestedOpacity){
+          const desired=target!==entry&&target.requestedOpacity?target.requestedOpacity:opacityOf(normalized),prior=target.opaqueOpacity??{wallOpacity:1,floorOpacity:1}
+          target.requestedOpacity=desired;target.opaqueOpacity={wallOpacity:fractional(desired.wallOpacity)?prior.wallOpacity:desired.wallOpacity,floorOpacity:fractional(desired.floorOpacity)?prior.floorOpacity:desired.floorOpacity}
+          target.view={...normalized,wallOpacity:fractional(desired.wallOpacity)?target.opaqueOpacity.wallOpacity:desired.wallOpacity,floorOpacity:fractional(desired.floorOpacity)?target.opaqueOpacity.floorOpacity:desired.floorOpacity}
+        }else target.view=normalized
         if (changedMode) { target.overview = undefined; cancelOverview(target) }
         if (JSON.stringify([old.mode, old.levelId, old.cutaway, old.levelId === 'all' && old.separation > 0]) !== JSON.stringify([normalized.mode, normalized.levelId, normalized.cutaway, normalized.levelId === 'all' && normalized.separation > 0])) { cancelPreparation(target); discardPrepared(target) }
         else {
@@ -299,7 +348,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
             // layer cannot be lost behind an older cold-start request.
             if (target.preparing && (currentCovers || physicalMissingLayers(desiredLayers, target.requestedLayers).length)) cancelPreparation(target)
           }
-          if (target.prepared) target.meshes = filteredMeshes(target, target.prepared)
+          if (target.prepared&&(old.separation!==normalized.separation||JSON.stringify(old.hiddenLayerIds??null)!==JSON.stringify(normalized.hiddenLayerIds??null))) target.meshes = filteredMeshes(target, target.prepared)
         }
       }
       renderer?.invalidatePicks(); if (mode === '2d') { if (active && cameraOwned) viewport.cancelCamera(); viewport.setNavigationTool('pan') }; if (changedMode && active && cameraOwned) viewport.setPose({ pitch: mode === '2d' ? 0 : 50, ...(mode === '2d' ? { elevation: 0, bearing: focusedId === null ? 0 : requireEntry(focusedId).source.descriptor.bearing } : {}) }); reconcile(); viewport.requestRender()
@@ -376,11 +425,12 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     subjectStyles: (sceneId: string): ReadonlyMap<string, PhysicalSubjectStyle> => entries.get(sceneId)?.status ?? emptyStatus,
     retry(sceneId: string): void {
       const entry = requireEntry(sceneId)
+      if(opacityPresentation(entry)?.status==='unavailable'){architectureRetry=true;reconcile();viewport.requestRender();return}
       if (entry.layerFailure && entry.prepared) { entry.layerFailure = undefined; cancelPreparation(entry); reconcile(); viewport.requestRender(); return }
       inspectionWorkingSet.forget(sceneId); if (highlight?.sceneId === sceneId) clearHighlight(); entry.generation = ++generation; cancelPreparation(entry); cancelOverview(entry); entry.loading = false; entry.failure = undefined; entry.reason = undefined; entry.scene = null; discardPrepared(entry); prepare.retainIdentities?.(new Set([...entries.values()].map(entry => identityFor(entry)))); reconcile()
     },
     metrics: () => renderer?.metrics() ?? null,
-    diagnostics: () => ({ inspectionWorkingSet: inspectionWorkingSet.metrics(), surfaceOwnership: [...entries.values()].filter(entry => entry.prepared).map(entry => ({ sceneId: entry.source.descriptor.id, key: entry.prepared!.key, ...entry.prepared!.surfaceOwnership })), preparation: prepare.diagnostics?.() ?? null, current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
-    destroy(): void { if (destroyed) return; destroyed = true; pendingFocus = null; pendingCollectionFocus = null; for (const entry of entries.values()) { entry.generation = ++generation; cancelPreparation(entry); cancelOverview(entry) }; entries.clear(); inspectionWorkingSet.clear(); prepare.destroy?.(); for (const remove of cleanup) remove(); removeRenderer(); viewport.destroy() },
+    diagnostics: () => ({architecture:{...architectureOrdering.state(),...architecturePrepare.diagnostics()}, inspectionWorkingSet: inspectionWorkingSet.metrics(), surfaceOwnership: [...entries.values()].filter(entry => entry.prepared).map(entry => ({ sceneId: entry.source.descriptor.id, key: entry.prepared!.key, ...entry.prepared!.surfaceOwnership })), preparation: prepare.diagnostics?.() ?? null, current: renderer?.metrics() ?? null, disposals: [...disposals], retainedScenes: [...entries.values()].filter(entry => entry.scene).length, loadingScenes: [...entries.values()].filter(entry => entry.loading || entry.state === 'loading').length }),
+    destroy(): void { if (destroyed) return; destroyed = true; pendingFocus = null; pendingCollectionFocus = null; for (const entry of entries.values()) { entry.generation = ++generation; cancelPreparation(entry); cancelOverview(entry) }; entries.clear(); inspectionWorkingSet.clear();architectureOrdering.destroy();architectureAsset=null;architectureInput=null;architectureFrame=null;architectureSelection=[]; prepare.destroy?.(); for (const remove of cleanup) remove(); removeRenderer(); viewport.destroy() },
   }
 }

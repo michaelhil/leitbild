@@ -2,6 +2,7 @@ import type {PhysicalLayerEntry} from './layer.ts'
 import type {PhysicalArchitectureBsp,PhysicalArchitectureBspInput,PhysicalArchitectureBspPreparer,PhysicalArchitectureBspSource} from './architecture-bsp-types.ts'
 import {localMercatorMatrix} from './math.ts'
 import {physicalPlanDepthDomain,type PhysicalPlanDepthDomain} from './plan-projection.ts'
+const materialExtents=new WeakMap<object,number>()
 export interface PhysicalArchitectureBspFrame {readonly matrix:Float64Array;readonly planDepth?:PhysicalPlanDepthDomain}
 export interface PhysicalArchitectureCohort extends PhysicalArchitectureBspInput {readonly frame:PhysicalArchitectureBspFrame}
 
@@ -44,8 +45,9 @@ export const physicalArchitectureCohort=(entries:ReadonlyArray<PhysicalLayerEntr
     identities.push([id,entry.view.mode,entry.scene.anchor,entry.scene.bearing,entry.view.levelId==='all'?entry.view.separation:0,offset])
     const matrix=relativePlacement(basis,localMercatorMatrix(entry.scene.anchor,entry.scene.bearing),offset)
     if(plan){matrix[2]=0;matrix[6]=0;matrix[10]=1;matrix[14]=offset[2]!}
-    let last=Math.max((mesh.materials?.length??0)-1,(mesh.object.materials?.length??0)-1,0)
-    for(let at=6;at<mesh.vertices.length;at+=7)last=Math.max(last,mesh.vertices[at]!)
+    let extent=materialExtents.get(mesh.vertices)
+    if(extent===undefined){extent=0;for(let at=6;at<mesh.vertices.length;at+=7)extent=Math.max(extent,mesh.vertices[at]!);materialExtents.set(mesh.vertices,extent)}
+    const last=Math.max((mesh.materials?.length??0)-1,(mesh.object.materials?.length??0)-1,extent)
     const materials=Array.from({length:last+1},(_,index)=>mesh.materials?.[index]??mesh.object.materials?.[index]??mesh.object.material??mesh.object.kind)
     sources.push({id,sceneId:entry.scene.id,assetKey:asset.key,meshIndex,occurrenceId:mesh.object.id,preparedOwnershipCohort,matrix,vertices:mesh.vertices,lines:mesh.lines,materials,...(mesh.lineMaterials?{lineMaterials:mesh.lineMaterials}:{}),...(mesh.lineStyles?{lineStyles:mesh.lineStyles}:{})})
   }
