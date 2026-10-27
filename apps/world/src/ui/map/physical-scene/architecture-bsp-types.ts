@@ -17,6 +17,11 @@ export interface PhysicalArchitectureBspSource {
   readonly materials: readonly string[]
   readonly lineMaterials?: readonly string[]
   readonly lineStyles?: readonly ('feature' | 'context' | 'section')[]
+  /** Exact prepared asset + placement + original offset ownership cohort.
+   * Supply only when the visible mask already applies that prepared asset's
+   * visiblePhysicalSurfaceOwners selection. Reuse its prior partition proof;
+   * different cohorts still receive full global coincident-patch ownership. */
+  readonly preparedOwnershipCohort?: string
 }
 export interface PhysicalArchitectureBspInput {
   readonly key: string

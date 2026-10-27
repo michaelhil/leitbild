@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
 import { orderedPhysicalArchitectureFragments as ordered, preparePhysicalArchitectureBsp as prepare } from '../src/ui/map/physical-scene/architecture-bsp.ts'
+import { preparePhysicalSurfaceOwnership, visiblePhysicalSurfaceOwners } from '../src/ui/map/physical-scene/surface-ownership.ts'
+import { meshBounds, type PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
 import type { PhysicalArchitectureBsp, PhysicalArchitectureBspSource } from '../src/ui/map/physical-scene/architecture-bsp-types.ts'
 const identity = new Float64Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1])
 const source=(id:string,positions:readonly number[],extra:Partial<PhysicalArchitectureBspSource>={}):PhysicalArchitectureBspSource=>({id,sceneId:id,assetKey:'asset',meshIndex:0,occurrenceId:id,matrix:identity,vertices:positions.flatMap((v,i)=>i%3===0?[v,positions[i+1]!,positions[i+2]!,0,0,1,0]:[]),lines:[],materials:['material'],...extra})
@@ -71,4 +73,22 @@ test('repeatedly split authored lines retain their support plane and exact zero 
 test('homogeneous camera comparison avoids division by a tiny finite w',()=>{
  const bsp=prepare({key:'camera-at-infinity',sources:[quad('far',-1,-1,1,1),quad('near',-1,-1,1,1,2)]})
  expect(owners(bsp,[1,0,1,Number.MIN_VALUE])).toEqual(owners(bsp,[1,0,1,0]));expect(()=>ordered(bsp,[0,0,0,0],new Set())).toThrow('camera')
+})
+
+test('exact prior ownership cohorts reuse prepared winners while cross-placement coincidence still partitions',()=>{
+ const first={...quad('first',-.6,-.6,.6,.6),preparedOwnershipCohort:'asset/placement/offset'},later={...quad('later',-.8,-.3,.8,.3,0,true),preparedOwnershipCohort:'asset/placement/offset'},raw=prepare({key:'preowned',sources:[first,later]})
+ // The supplied visible mask is the prior ownership selector's authority.
+ // BSP preserves both candidates and adds no redundant inner-cohort partition.
+ expect(raw.diagnostics.coplanarOverlaps).toBe(0);expect(area(raw,0,new Set([0]))).toBeCloseTo(1.44,12);expect(area(raw,1,new Set([1]))).toBeCloseTo(.96,12)
+ const otherPlacement={...later,id:'second-placement',preparedOwnershipCohort:'asset/second-placement/offset'},global=prepare({key:'independent-placement',sources:[first,otherPlacement]})
+ expect(global.diagnostics.coplanarOverlaps).toBeGreaterThan(0);expect(area(global,1)).toBeCloseTo(.24,12);expect(area(global,1,new Set([1]))).toBeCloseTo(.96,12)
+})
+
+
+test('real prepared visibility ownership is preserved by cohort reuse including hidden-first fallback',()=>{
+ const records=[quad('first',-.6,-.6,.6,.6),quad('later',-.8,-.3,.8,.3,0,true)],meshes:PhysicalMesh[]=records.map(s=>({key:s.id,object:{id:s.id,label:s.id,kind:'wall',levelId:'site',subjectIds:[],positions:[],material:'material'},vertices:Array.from(s.vertices),lines:[],bounds:meshBounds(Array.from(s.vertices)),offset:[0,0,0]})),prepared=preparePhysicalSurfaceOwnership(meshes).meshes
+ const sources=prepared.map((mesh,i)=>({...records[0]!,id:String(i),occurrenceId:mesh.object.id,meshIndex:i,vertices:mesh.vertices,lines:mesh.lines,preparedOwnershipCohort:'exact-prepared/placement/offset'})),bsp=prepare({key:'reuse-real-proof',sources})
+ const selected=(hideFirst:boolean)=>{const visible=visiblePhysicalSurfaceOwners(prepared.filter(mesh=>!hideFirst||mesh.object.id!=='first'));return new Set(prepared.flatMap((mesh,i)=>visible.includes(mesh)?[i]:[]))}
+ const selectedArea=(id:string,hideFirst:boolean)=>bsp.owners.reduce((sum,owner,i)=>sum+(owner.occurrenceId===id?area(bsp,i,selected(hideFirst)):0),0)
+ expect(bsp.diagnostics.coplanarOverlaps).toBe(0);expect(selectedArea('first',false)).toBeCloseTo(1.44,12);expect(selectedArea('later',false)).toBeCloseTo(.24,12);expect(selectedArea('later',true)).toBeCloseTo(.96,12)
 })

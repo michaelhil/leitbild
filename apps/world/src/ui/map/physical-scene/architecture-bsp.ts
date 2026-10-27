@@ -80,6 +80,7 @@ const validateInput = (input: PhysicalArchitectureBspInput): void => {
   for(const source of input.sources){
     if(!source.id||ids.has(source.id)||!source.sceneId||!source.assetKey||!source.occurrenceId||!Number.isInteger(source.meshIndex)||source.meshIndex<0)throw new Error('Architecture BSP source provenance is invalid or duplicated')
     ids.add(source.id)
+    if(source.preparedOwnershipCohort!==undefined&&(typeof source.preparedOwnershipCohort!=='string'||!source.preparedOwnershipCohort))throw new Error('Architecture BSP prepared ownership provenance is invalid')
     if(source.matrix.length!==16||!Array.from(source.matrix).every(Number.isFinite)||source.matrix[3]!==0||source.matrix[7]!==0||source.matrix[11]!==0||source.matrix[15]!==1)throw new Error('Architecture BSP requires a finite affine placement matrix')
     if(source.vertices.length%21||source.lines.length%6||!Array.from(source.vertices).every(Number.isFinite)||!Array.from(source.lines).every(Number.isFinite))throw new Error('Architecture BSP source numeric buffers are invalid')
     if(!source.materials.length||source.materials.some(value=>typeof value!=='string'||!value))throw new Error('Architecture BSP source materials are invalid')
@@ -167,8 +168,8 @@ export const preparePhysicalArchitectureBsp = (input: PhysicalArchitectureBspInp
     on.sort((a,b)=>a.owner-b.owner||a.ordinal-b.ordinal)
     const onBounds=on.map(polygon=>bounds(polygon.vertices)),index=createPhysicalSpatialIndex(onBounds,'overlap'),nodeFragments: number[]=[]
     on.forEach((polygon,ordinal)=>{
-      const candidates: number[]=[]
-      visitPhysicalSpatialBounds(index,onBounds[ordinal]!,candidate=>{if(candidate>=ordinal||!physicalSpatialBoundsOverlap(onBounds[ordinal]!,onBounds[candidate]!))return;const axes=plane.axes,a=onBounds[ordinal]!,b=onBounds[candidate]!;if(axes.some(axis=>Math.min(a.max[axis]!,b.max[axis]!)<=Math.max(a.min[axis]!,b.min[axis]!)))return;candidates.push(candidate)})
+      const candidates: number[]=[],priorCohort=input.sources[polygon.owner]!.preparedOwnershipCohort
+      visitPhysicalSpatialBounds(index,onBounds[ordinal]!,candidate=>{if(priorCohort!==undefined&&priorCohort===input.sources[on[candidate]!.owner]!.preparedOwnershipCohort)return;if(candidate>=ordinal||!physicalSpatialBoundsOverlap(onBounds[ordinal]!,onBounds[candidate]!))return;const axes=plane.axes,a=onBounds[ordinal]!,b=onBounds[candidate]!;if(axes.some(axis=>Math.min(a.max[axis]!,b.max[axis]!)<=Math.max(a.min[axis]!,b.min[axis]!)))return;candidates.push(candidate)})
       candidates.sort((a,b)=>a-b)
       let regions: readonly Region[]=[{vertices:polygon.vertices,blockers:[]}]
       for(const candidate of candidates){const cover=on[candidate]!,next: Region[]=[];for(const region of regions){const result=partitionRegion(region,cover);if(result.overlap)coplanarOverlaps++;for(const piece of result.regions)if(!piece.blockers.includes(polygon.owner))next.push(piece)}regions=next;if(!regions.length)break}
