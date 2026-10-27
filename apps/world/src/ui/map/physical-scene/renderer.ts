@@ -1,4 +1,5 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
+import {createPhysicalSceneStyleCache} from './subject-styles.ts'
 import { createPhysicalBackend, type PhysicalDraw } from './backend.ts'
 import { createPhysicalPreparedResidency } from './prepared-residency.ts'
 import { createPhysicalRenderPass } from './render-pass.ts'
@@ -20,12 +21,6 @@ import {createPhysicalOccurrenceMeshIndex,projectPhysicalSpatialPoints} from './
 import { physicalPlanFrame } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
-const styleFor = (entry: PhysicalLayerEntry, subjectIds: ReadonlyArray<string>): PhysicalSubjectStyle | null => {
-  if (!entry.view.live || !subjectIds.length) return null
-  const styles = subjectIds.map(id => entry.status.get(id)), first = styles[0]
-  if (!first || styles.some(style => !style || style.emphasis !== first.emphasis || JSON.stringify(style.color) !== JSON.stringify(first.color))) return null
-  return first
-}
 /** Shared drawing/picking core. Hosts provide an actual GL context, matrix and surface size. */
 export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, size: () => { width: number; height: number }, reportError: (error: Error) => void, planFontFamily: () => string = () => 'sans-serif') => {
   const initial = captureSceneGlState(gl)
@@ -33,6 +28,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   try { backend = createPhysicalBackend(gl, palette) } finally { restoreSceneGlState(gl, initial) }
   const architectureBackend = createPhysicalArchitectureBackend(gl, palette)
   const cpu = createPhysicalPreparedResidency()
+  const stylesFor=createPhysicalSceneStyleCache()
   let renderPass: ReturnType<typeof createPhysicalRenderPass> | null = null
   let depthNear = 0
   let highlight: PhysicalSceneHighlight | null = null
@@ -127,7 +123,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           picking.push({ sceneId: entry.scene.id, meshes: pickable, matrix })
           const drawMatrix = new Float32Array(matrix)
           if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
-          draws.push({ sceneId: entry.scene.id, asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', architecture: entry.view, styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
+          draws.push({ sceneId: entry.scene.id, asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', architecture: entry.view, styles:stylesFor(entry.asset,entry.status,entry.view.live), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
         }
         // Native vector Plan draws and picks its own ink. An empty GL pass
         // must neither query shared state nor composite a blank target.

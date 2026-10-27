@@ -4,7 +4,7 @@ import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import type { Color, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 import type { PhysicalSceneView } from './types.ts'
-import { physicalArchitectureOpacity } from './architecture-opacity.ts'
+import { createPhysicalObjectTableRows } from './object-table.ts'
 
 /** Quiet illustrative surface colour, precomposited against its actual material
  * before the common lighting pass. No second coincident translucent surface. */
@@ -148,6 +148,7 @@ interface Texture { readonly texture: WebGLTexture; width: number; height: numbe
 interface Asset {
   readonly identity: string; readonly solid: WebGLBuffer; readonly lines: WebGLBuffer; readonly instances: WebGLBuffer; readonly vao: WebGLVertexArrayObject; readonly lineVao: WebGLVertexArrayObject
   readonly count: number; readonly lineCount: number; readonly geometryBytes: number; readonly materials: Texture; readonly objects: Texture
+  readonly objectRows: ReturnType<typeof createPhysicalObjectTableRows>
   instanceData: Float32Array; instanceWords: Uint32Array; lastUsed: number; roles: ReadonlyArray<string>; paletteSignature: string
 }
 
@@ -204,11 +205,10 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     for (const [location, components, offset] of [[0, 3, 0], [2, 1, 12], [3, 1, 16], [4, 1, 20]] as const) { gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, components, gl.FLOAT, false, 24, offset) }
     gl.disableVertexAttribArray(1); setupInstances()
     const geometryBytes = draw.asset.buffers.vertices.byteLength + draw.asset.buffers.lines.byteLength
-    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials, objects, instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
+    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials, objects, objectRows:createPhysicalObjectTableRows(),instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
     metrics.geometryUploads++; metrics.geometryBytes += geometryBytes; metrics.buffers += 3; return value
     } catch (error) { for (const buffer of [solid, lines, instances]) gl.deleteBuffer(buffer); gl.deleteVertexArray(vao); gl.deleteVertexArray(lineVao); for (const table of [materials, objects]) if (table) { gl.deleteTexture(table.texture); metrics.textures-- }; throw error }
   }
-  const setObject = (data: Float32Array, at: number, values: ReadonlyArray<number>): boolean => { let changed = false; for (let component = 0; component < values.length; component++) if (data[at + component] !== Math.fround(values[component]!)) { data[at + component] = values[component]!; changed = true }; return changed }
   const ownedBytes = () => metrics.geometryBytes + metrics.instanceBytes + metrics.textureBytes
   const evictUnused = (required: ReadonlySet<string>): void => {
     for (const [key, value] of [...cache].filter(([key]) => !required.has(key)).sort(([, a], [, b]) => a.lastUsed - b.lastUsed)) {
@@ -241,15 +241,9 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
         if (asset.instanceData.length !== list.length * 17) { metrics.instanceBytes -= asset.instanceData.byteLength; asset.instanceData = new Float32Array(list.length * 17); asset.instanceWords = new Uint32Array(asset.instanceData.buffer); metrics.instanceBytes += asset.instanceData.byteLength }
         list.forEach((draw, instanceIndex) => {
           asset.instanceData.set(draw.matrix, instanceIndex * 17); asset.instanceWords[instanceIndex * 17 + 16] = instanceIndex * objectCount * 3
-          const shown = new Map(draw.meshes.map(mesh => [mesh.assetIndex ?? first.asset.meshes.indexOf(mesh), mesh]))
-          first.asset.meshes.forEach((mesh, objectIndex) => {
-            const displayed = shown.get(objectIndex), style = draw.styles[objectIndex], at = (instanceIndex * objectCount + objectIndex) * 12, color = style?.color ?? palette.defaultMaterial
-            statusChanged = setObject(asset.objects.data, at, [color[0], color[1], color[2], style?.color ? style.emphasis : 0]) || statusChanged
-            statusChanged = setObject(asset.objects.data, at + 4, [displayed?.offset[0] ?? mesh.offset[0], displayed?.offset[1] ?? mesh.offset[1], displayed?.offset[2] ?? mesh.offset[2], displayed ? physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}) : 0]) || statusChanged
-            const selection = draw.highlight?.occurrenceId === mesh.object.id ? draw.highlight.color : null
-            statusChanged = setObject(asset.objects.data, at + 8, selection ? [...selection, .24] : [0, 0, 0, 0]) || statusChanged
-          })
+
         })
+        statusChanged=asset.objectRows(asset.objects.data,first.asset.meshes,list,palette.defaultMaterial,allocation).changed||statusChanged
         gl.bindBuffer(gl.ARRAY_BUFFER, asset.instances); gl.bufferData(gl.ARRAY_BUFFER, asset.instanceData, gl.DYNAMIC_DRAW); metrics.instanceUploads++
         gl.activeTexture(gl.TEXTURE1); if (statusChanged) { uploadTexture(asset.objects, allocation); metrics.statusUploads++ } else gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
       }
