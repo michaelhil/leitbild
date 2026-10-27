@@ -69,17 +69,18 @@ results.push({ kind: 'overlap-order', center: forward.center, reverse: reverse.c
 // average of opaque red and opaque blue at EVERY hardware antialiasing sample,
 // including partially covered pixels. This oracle is independent of the OIT math.
 const blueEdge = draw([0], 1), redEdge = draw([0, 1], 1), halfEdge = draw([0, 1], .5)
-let edgeFailures = 0, edgeMaximumError = 0
+let edgeSamples = 0, edgeFailures = 0, edgeMaximumError = 0
 const edgeExamples: unknown[] = []
 for (let at = 0; at < halfEdge.pixels.length; at += 4) {
   if (!(redEdge.pixels[at + 1]! > 0 && redEdge.pixels[at + 1]! < 255)) continue
+  edgeSamples++
   let maximum = 0
   const expected = [0, 1, 2, 3].map(channel => (redEdge.pixels[at + channel]! + blueEdge.pixels[at + channel]!) / 2)
   for (let channel = 0; channel < 4; channel++) maximum = Math.max(maximum, Math.abs(halfEdge.pixels[at + channel]! - expected[channel]!))
   edgeMaximumError = Math.max(edgeMaximumError, maximum)
   if (maximum > 1) { edgeFailures++; if (edgeExamples.length < 4) edgeExamples.push({ x: at / 4 % canvas.width, y: Math.floor(at / 4 / canvas.width), expected, actual: [...halfEdge.pixels.slice(at, at + 4)], red: [...redEdge.pixels.slice(at, at + 4)], blue: [...blueEdge.pixels.slice(at, at + 4)] }) }
 }
-results.push({ kind: 'MSAA-shared-silhouette', edgeFailures, edgeMaximumError, edgeExamples, passed: edgeFailures === 0 })
+results.push({ kind: 'MSAA-shared-silhouette', edgeSamples, edgeFailures, edgeMaximumError, edgeExamples, passed: edgeSamples > 0 && edgeFailures === 0 })
 draw([0, 1, 2], .5)
 const geometryUploads = () => backend.metrics.geometryUploads + architecture.metrics().geometryUploads
 const geometryBefore = geometryUploads(), prepBefore = prepares, bspBefore = bspPrepares, allocationBefore = pass.metrics().allocations

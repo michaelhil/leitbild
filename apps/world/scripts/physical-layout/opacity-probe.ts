@@ -33,7 +33,7 @@ try {
       runs.push(result)
     } finally { socket?.close(); chrome.kill(); await chrome.exited; await rm(profile, { recursive: true, force: true }) }
   }
-  const files = ['backend.ts', 'renderer.ts', 'render-pass.ts', 'architecture-backend.ts', 'architecture-bsp.ts', 'architecture-bsp-types.ts', 'gl-state.ts', 'architecture-opacity.ts'].map(file => `src/ui/map/physical-scene/${file}`)
+  const files = ['backend.ts', 'renderer.ts', 'render-pass.ts', 'architecture-backend.ts', 'architecture-bsp.ts', 'architecture-bsp-types.ts', 'architecture-cohort.ts', 'plan-projection.ts', 'preparation.ts', 'geometry.ts', 'surface-ownership.ts', 'picking.ts', 'render-buffers.ts', 'math.ts', 'gl-state.ts', 'architecture-opacity.ts'].map(file => `src/ui/map/physical-scene/${file}`)
   const fixtureFiles = ['tests/browser/physical-scene/opacity-probe.ts', 'scripts/physical-layout/opacity-probe.ts']
   const hashes = async (base: string, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async file => [file, createHash('sha256').update(await readFile(join(base, file))).digest('hex')])))
   const provenance = { commit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: rendererRoot }).stdout.toString().trim(), rendererRoot, files: await hashes(rendererRoot, files), fixtureCommit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim(), fixtureFiles: await hashes(root, fixtureFiles) }
