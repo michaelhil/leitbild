@@ -1,0 +1,3857 @@
+{
+  "testedAppCommit": "941fbbe4a20a24ecf3d50e873213b71165b0d69e",
+  "instrumentationSha256": "7ebaaf27f308a57dacf2c9bdc6beb8bbecc2e3bd8b365e5eef796df3ad1fe999",
+  "expected": {
+    "design": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261027-r5",
+      "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    "sourceFrame": {
+      "origin": [
+        44.4,
+        26,
+        0
+      ],
+      "northAxis": "negative-y"
+    },
+    "targets": [
+      {
+        "elementId": "mainSteamHeader",
+        "physicalId": "route/main-steam-header",
+        "relation": "represents",
+        "nodeLabel": "Main Steam Header",
+        "label": "Main-steam header assembly",
+        "levelId": "operating",
+        "incident": [
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "msiv-d-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletD"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "elementId": "turbineStopValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "elementId": "turbineBypassValve",
+              "port": "inlet"
+            }
+          }
+        ]
+      },
+      {
+        "elementId": "turbine",
+        "physicalId": "route/turbine-reheat-10.4",
+        "relation": "partOf",
+        "nodeLabel": "Turbine Generator",
+        "label": "Illustrative turbine reheat steam distribution",
+        "levelId": "operating",
+        "incident": [
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "from": {
+              "elementId": "turbineStopValve",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "turbine",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "from": {
+              "elementId": "turbine",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "elementId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "from": {
+              "elementId": "turbine",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "elementId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "startup": {
+    "legacyAlreadyOpen": false,
+    "initial": [
+      {
+        "label": "Scenario briefingThis Run has no scenario briefing",
+        "checked": false
+      },
+      {
+        "label": "Alarm strip",
+        "checked": false
+      },
+      {
+        "label": "Layout controls",
+        "checked": false
+      },
+      {
+        "label": "Grid operations",
+        "checked": false
+      }
+    ],
+    "briefingInitiallyVisible": false,
+    "openedControls": true
+  },
+  "trials": [
+    {
+      "target": {
+        "elementId": "mainSteamHeader",
+        "physicalId": "route/main-steam-header",
+        "relation": "represents",
+        "nodeLabel": "Main Steam Header",
+        "label": "Main-steam header assembly",
+        "levelId": "operating",
+        "incident": [
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "msiv-d-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletD"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "elementId": "turbineStopValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "elementId": "turbineBypassValve",
+              "port": "inlet"
+            }
+          }
+        ]
+      },
+      "mode": "3d",
+      "hover": {
+        "point": {
+          "x": 838.7818280705321,
+          "y": 433.06166705171523
+        },
+        "text": "Main-steam header assemblyComponent-level connection Main Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steamComponent-level connection Main Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steamComponent-level connection Main Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steamComponent-level connection Main Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steamComponent-level connection Main Steam Header · outletA → Turbine Stop Valve · inlet · Main steamComponent-level connection Main Steam Header · outletC → Turbine Bypass Valve · inlet · Main steamFlow Flowing · direction not measured · 1902 kg/sClick to inspect · pause here to open",
+        "rows": [
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Header · outletA → Turbine Stop Valve · inlet · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Header · outletC → Turbine Bypass Valve · inlet · Main steam"
+          },
+          {
+            "label": "Flow",
+            "value": "Flowing · direction not measured · 1902 kg/s"
+          }
+        ],
+        "selection": {
+          "at": 6596.299999952316,
+          "selected": [
+            {
+              "index": 1492,
+              "color": [
+                0.11372549086809158,
+                0.4000000059604645,
+                0.8235294222831726,
+                0.23999999463558197
+              ]
+            },
+            {
+              "index": 1493,
+              "color": [
+                0.11372549086809158,
+                0.4000000059604645,
+                0.8235294222831726,
+                0.23999999463558197
+              ]
+            }
+          ]
+        }
+      },
+      "card": {
+        "src": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/embed/physical-layout.inspection#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22a31f9fc6-1961-469c-927c-bb456326dfc1%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-94c67255-e555-443c-a9db-4f8e7996dbdf%22%7D%2C%22viewType%22%3A%22physical-layout.inspection%22%2C%22title%22%3A%22Main%20Steam%20Header%22%2C%22height%22%3A400%2C%22state%22%3A%22%7B%5C%22layoutObjectId%5C%22%3A%5C%22layout%3Ahalden-1%5C%22%2C%5C%22revision%5C%22%3A%5C%2295c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22packId%5C%22%3A%5C%22process-plant%5C%22%2C%5C%22modelDigest%5C%22%3A%5C%2247b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea%5C%22%2C%5C%22elementId%5C%22%3A%5C%22mainSteamHeader%5C%22%2C%5C%22label%5C%22%3A%5C%22Main%20Steam%20Header%5C%22%2C%5C%22delivery%5C%22%3A%5C%22host%5C%22%2C%5C%22channel%5C%22%3A%5C%22adac3555-8ac3-4808-9d87-539c1b933c1e%5C%22%7D%22%7D",
+        "text": "Paused · readings fresh\nClose\nMain Steam Header\nIn window ›\nComponent-level connection\nMain Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steam\nComponent-level connection\nMain Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steam\nComponent-level connection\nMain Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steam\nComponent-level connection\nMain Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steam\nComponent-level connection\nMain Steam Header · outletA → Turbine Stop Valve · inlet · Main steam\nComponent-level connection\nMain Steam Header · outletC → Turbine Bypass Valve · inlet · Main steam\nFlow\nFlowing · direction not measured · 1902 kg/s\nPressure\nHalden Unit 1 · Steam header mixed pressure · Steam header\n+3 more in its detail ›",
+        "faceplate": "mainSteamHeader",
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "values": [
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                  "label": "Halden Unit 1 · Steam header mixed pressure · Steam header",
+                  "shortLabel": "Steam header pressure",
+                  "quantity": "pressure",
+                  "unit": "MPa",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5db97bae15254b9d700cdcd7",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header inlet flow · Steam header",
+                  "shortLabel": "Steam header inlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                  "shortLabel": "Steam header outlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                  "label": "Halden Unit 1 · Steam header mixed temperature · Steam header",
+                  "shortLabel": "Steam header temp",
+                  "quantity": "temperature",
+                  "unit": "degC",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "flow",
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                    "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                    "shortLabel": "Steam header outlet flow",
+                    "quantity": "flow",
+                    "unit": "kg/s",
+                    "valueType": "number",
+                    "thresholds": [],
+                    "basis": "instrument",
+                    "series": null,
+                    "element": {
+                      "id": "mainSteamHeader",
+                      "class": "steamHeader",
+                      "label": "Main Steam Header",
+                      "shortLabel": "Steam header"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "junction",
+                "equipmentKind": "steamHeader",
+                "connections": [
+                  {
+                    "id": "msiv-a-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveA",
+                      "label": "Main Steam Isolation Valve A",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletA"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-b-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveB",
+                      "label": "Main Steam Isolation Valve B",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletB"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-c-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveC",
+                      "label": "Main Steam Isolation Valve C",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletC"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-d-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveD",
+                      "label": "Main Steam Isolation Valve D",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletD"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-stop-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletA"
+                    },
+                    "to": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-bypass-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletC"
+                    },
+                    "to": {
+                      "elementId": "turbineBypassValve",
+                      "label": "Turbine Bypass Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                "value": 6.901763532231883,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                "value": 284.8720733547434,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141074219
+            }
+          },
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "values": [
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                  "label": "Halden Unit 1 · Steam header mixed pressure · Steam header",
+                  "shortLabel": "Steam header pressure",
+                  "quantity": "pressure",
+                  "unit": "MPa",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5db97bae15254b9d700cdcd7",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header inlet flow · Steam header",
+                  "shortLabel": "Steam header inlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                  "shortLabel": "Steam header outlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                  "label": "Halden Unit 1 · Steam header mixed temperature · Steam header",
+                  "shortLabel": "Steam header temp",
+                  "quantity": "temperature",
+                  "unit": "degC",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "flow",
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                    "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                    "shortLabel": "Steam header outlet flow",
+                    "quantity": "flow",
+                    "unit": "kg/s",
+                    "valueType": "number",
+                    "thresholds": [],
+                    "basis": "instrument",
+                    "series": null,
+                    "element": {
+                      "id": "mainSteamHeader",
+                      "class": "steamHeader",
+                      "label": "Main Steam Header",
+                      "shortLabel": "Steam header"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "junction",
+                "equipmentKind": "steamHeader",
+                "connections": [
+                  {
+                    "id": "msiv-a-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveA",
+                      "label": "Main Steam Isolation Valve A",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletA"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-b-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveB",
+                      "label": "Main Steam Isolation Valve B",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletB"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-c-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveC",
+                      "label": "Main Steam Isolation Valve C",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletC"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-d-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveD",
+                      "label": "Main Steam Isolation Valve D",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletD"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-stop-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletA"
+                    },
+                    "to": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-bypass-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletC"
+                    },
+                    "to": {
+                      "elementId": "turbineBypassValve",
+                      "label": "Turbine Bypass Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                "value": 6.901763532231883,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                "value": 284.8720733547434,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141074219
+            }
+          }
+        ]
+      },
+      "operation": {
+        "subjectId": "mainSteamHeader",
+        "label": "Main Steam Header",
+        "componentConnections": [
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveA",
+              "label": "Main Steam Isolation Valve A",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletA"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveB",
+              "label": "Main Steam Isolation Valve B",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletB"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveC",
+              "label": "Main Steam Isolation Valve C",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletC"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "msiv-d-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveD",
+              "label": "Main Steam Isolation Valve D",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletD"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "outletA"
+            },
+            "to": {
+              "elementId": "turbineStopValve",
+              "label": "Turbine Stop Valve",
+              "port": "inlet"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "outletC"
+            },
+            "to": {
+              "elementId": "turbineBypassValve",
+              "label": "Turbine Bypass Valve",
+              "port": "inlet"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          }
+        ],
+        "connection": null,
+        "flow": {
+          "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+          "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+          "quality": "good",
+          "reason": null,
+          "value": 1902.4208173461436,
+          "unit": "kg/s",
+          "word": "1902 kg/s",
+          "state": "flowing",
+          "direction": "unknown"
+        },
+        "flows": [
+          {
+            "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+            "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+            "quality": "good",
+            "reason": null,
+            "value": 1902.4208173461436,
+            "unit": "kg/s",
+            "word": "1902 kg/s",
+            "state": "flowing",
+            "direction": "unknown"
+          }
+        ],
+        "equipment": {
+          "class": "junction",
+          "kind": "steamHeader",
+          "running": null,
+          "conducting": null,
+          "positions": []
+        },
+        "conducting": null
+      },
+      "context": [
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Header · outletA → Turbine Stop Valve · inlet · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Header · outletC → Turbine Bypass Valve · inlet · Main steam"
+        },
+        {
+          "label": "Flow",
+          "value": "Flowing · direction not measured · 1902 kg/s"
+        }
+      ],
+      "freshReadingRefs": [
+        "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+        "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+        "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+        "plant:halden-1#mainSteamHeader.mixedTemperatureC"
+      ],
+      "pose": {
+        "nativeMvp": [
+          33.31332778930664,
+          -12.381226539611816,
+          -4.961915493011475,
+          -4.91845703125,
+          15.534259796142578,
+          26.551626205444336,
+          10.640862464904785,
+          10.5476655960083,
+          0,
+          34.914180755615234,
+          -9.851778984069824,
+          -9.76549243927002,
+          1155.2857666015625,
+          -1900.2684326171875,
+          1045.7156982421875,
+          1071.244384765625
+        ],
+        "planTransform": null,
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "preparedKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "scope": "Halden Unit 1 full plantHalden Unit 1 full plant ▾",
+        "floor": "all"
+      }
+    },
+    {
+      "target": {
+        "elementId": "mainSteamHeader",
+        "physicalId": "route/main-steam-header",
+        "relation": "represents",
+        "nodeLabel": "Main Steam Header",
+        "label": "Main-steam header assembly",
+        "levelId": "operating",
+        "incident": [
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "msiv-d-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "port": "inletD"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "elementId": "turbineStopValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "elementId": "turbineBypassValve",
+              "port": "inlet"
+            }
+          }
+        ]
+      },
+      "mode": "2d",
+      "hover": {
+        "point": {
+          "x": 906.0959923505783,
+          "y": 361.18413350024946
+        },
+        "text": "Main-steam header assemblyComponent-level connection Main Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steamComponent-level connection Main Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steamComponent-level connection Main Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steamComponent-level connection Main Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steamComponent-level connection Main Steam Header · outletA → Turbine Stop Valve · inlet · Main steamComponent-level connection Main Steam Header · outletC → Turbine Bypass Valve · inlet · Main steamFlow Flowing · direction not measured · 1902 kg/sClick to inspect · pause here to open",
+        "rows": [
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Header · outletA → Turbine Stop Valve · inlet · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Main Steam Header · outletC → Turbine Bypass Valve · inlet · Main steam"
+          },
+          {
+            "label": "Flow",
+            "value": "Flowing · direction not measured · 1902 kg/s"
+          }
+        ]
+      },
+      "card": {
+        "src": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/embed/physical-layout.inspection#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22a31f9fc6-1961-469c-927c-bb456326dfc1%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-94c67255-e555-443c-a9db-4f8e7996dbdf%22%7D%2C%22viewType%22%3A%22physical-layout.inspection%22%2C%22title%22%3A%22Main%20Steam%20Header%22%2C%22height%22%3A400%2C%22state%22%3A%22%7B%5C%22layoutObjectId%5C%22%3A%5C%22layout%3Ahalden-1%5C%22%2C%5C%22revision%5C%22%3A%5C%2295c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22packId%5C%22%3A%5C%22process-plant%5C%22%2C%5C%22modelDigest%5C%22%3A%5C%2247b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea%5C%22%2C%5C%22elementId%5C%22%3A%5C%22mainSteamHeader%5C%22%2C%5C%22label%5C%22%3A%5C%22Main%20Steam%20Header%5C%22%2C%5C%22delivery%5C%22%3A%5C%22host%5C%22%2C%5C%22channel%5C%22%3A%5C%22571e5896-cbeb-4059-8c96-1f1b9da400f0%5C%22%7D%22%7D",
+        "text": "Paused · readings fresh\nClose\nMain Steam Header\nIn window ›\nComponent-level connection\nMain Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steam\nComponent-level connection\nMain Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steam\nComponent-level connection\nMain Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steam\nComponent-level connection\nMain Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steam\nComponent-level connection\nMain Steam Header · outletA → Turbine Stop Valve · inlet · Main steam\nComponent-level connection\nMain Steam Header · outletC → Turbine Bypass Valve · inlet · Main steam\nFlow\nFlowing · direction not measured · 1902 kg/s\nPressure\nHalden Unit 1 · Steam header mixed pressure · Steam header\n+3 more in its detail ›",
+        "faceplate": "mainSteamHeader",
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "values": [
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                  "label": "Halden Unit 1 · Steam header mixed pressure · Steam header",
+                  "shortLabel": "Steam header pressure",
+                  "quantity": "pressure",
+                  "unit": "MPa",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5db97bae15254b9d700cdcd7",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header inlet flow · Steam header",
+                  "shortLabel": "Steam header inlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                  "shortLabel": "Steam header outlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                  "label": "Halden Unit 1 · Steam header mixed temperature · Steam header",
+                  "shortLabel": "Steam header temp",
+                  "quantity": "temperature",
+                  "unit": "degC",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "flow",
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                    "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                    "shortLabel": "Steam header outlet flow",
+                    "quantity": "flow",
+                    "unit": "kg/s",
+                    "valueType": "number",
+                    "thresholds": [],
+                    "basis": "instrument",
+                    "series": null,
+                    "element": {
+                      "id": "mainSteamHeader",
+                      "class": "steamHeader",
+                      "label": "Main Steam Header",
+                      "shortLabel": "Steam header"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "junction",
+                "equipmentKind": "steamHeader",
+                "connections": [
+                  {
+                    "id": "msiv-a-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveA",
+                      "label": "Main Steam Isolation Valve A",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletA"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-b-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveB",
+                      "label": "Main Steam Isolation Valve B",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletB"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-c-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveC",
+                      "label": "Main Steam Isolation Valve C",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletC"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-d-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveD",
+                      "label": "Main Steam Isolation Valve D",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletD"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-stop-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletA"
+                    },
+                    "to": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-bypass-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletC"
+                    },
+                    "to": {
+                      "elementId": "turbineBypassValve",
+                      "label": "Turbine Bypass Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                "value": 6.901763532231883,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                "value": 284.8720733547434,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141075271
+            }
+          },
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "values": [
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                  "label": "Halden Unit 1 · Steam header mixed pressure · Steam header",
+                  "shortLabel": "Steam header pressure",
+                  "quantity": "pressure",
+                  "unit": "MPa",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5db97bae15254b9d700cdcd7",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header inlet flow · Steam header",
+                  "shortLabel": "Steam header inlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                  "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                  "shortLabel": "Steam header outlet flow",
+                  "quantity": "flow",
+                  "unit": "kg/s",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                  "label": "Halden Unit 1 · Steam header mixed temperature · Steam header",
+                  "shortLabel": "Steam header temp",
+                  "quantity": "temperature",
+                  "unit": "degC",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "mainSteamHeader",
+                    "class": "steamHeader",
+                    "label": "Main Steam Header",
+                    "shortLabel": "Steam header"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "flow",
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                    "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+                    "shortLabel": "Steam header outlet flow",
+                    "quantity": "flow",
+                    "unit": "kg/s",
+                    "valueType": "number",
+                    "thresholds": [],
+                    "basis": "instrument",
+                    "series": null,
+                    "element": {
+                      "id": "mainSteamHeader",
+                      "class": "steamHeader",
+                      "label": "Main Steam Header",
+                      "shortLabel": "Steam header"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "junction",
+                "equipmentKind": "steamHeader",
+                "connections": [
+                  {
+                    "id": "msiv-a-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveA",
+                      "label": "Main Steam Isolation Valve A",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletA"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-b-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveB",
+                      "label": "Main Steam Isolation Valve B",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletB"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-c-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveC",
+                      "label": "Main Steam Isolation Valve C",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletC"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "msiv-d-to-main-steam-header",
+                    "from": {
+                      "elementId": "mainSteamIsolationValveD",
+                      "label": "Main Steam Isolation Valve D",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "inletD"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-stop-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletA"
+                    },
+                    "to": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "main-steam-header-to-turbine-bypass-valve",
+                    "from": {
+                      "elementId": "mainSteamHeader",
+                      "label": "Main Steam Header",
+                      "port": "outletC"
+                    },
+                    "to": {
+                      "elementId": "turbineBypassValve",
+                      "label": "Turbine Bypass Valve",
+                      "port": "inlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+                "value": 6.901763532231883,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+                "value": 1902.4208173461436,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#mainSteamHeader.mixedTemperatureC",
+                "value": 284.8720733547434,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141075271
+            }
+          }
+        ]
+      },
+      "operation": {
+        "subjectId": "mainSteamHeader",
+        "label": "Main Steam Header",
+        "componentConnections": [
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveA",
+              "label": "Main Steam Isolation Valve A",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletA"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveB",
+              "label": "Main Steam Isolation Valve B",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletB"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveC",
+              "label": "Main Steam Isolation Valve C",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletC"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "msiv-d-to-main-steam-header",
+            "from": {
+              "elementId": "mainSteamIsolationValveD",
+              "label": "Main Steam Isolation Valve D",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "inletD"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "outletA"
+            },
+            "to": {
+              "elementId": "turbineStopValve",
+              "label": "Turbine Stop Valve",
+              "port": "inlet"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "from": {
+              "elementId": "mainSteamHeader",
+              "label": "Main Steam Header",
+              "port": "outletC"
+            },
+            "to": {
+              "elementId": "turbineBypassValve",
+              "label": "Turbine Bypass Valve",
+              "port": "inlet"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          }
+        ],
+        "connection": null,
+        "flow": {
+          "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+          "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+          "quality": "good",
+          "reason": null,
+          "value": 1902.4208173461436,
+          "unit": "kg/s",
+          "word": "1902 kg/s",
+          "state": "flowing",
+          "direction": "unknown"
+        },
+        "flows": [
+          {
+            "ref": "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+            "label": "Halden Unit 1 · Steam header outlet flow · Steam header",
+            "quality": "good",
+            "reason": null,
+            "value": 1902.4208173461436,
+            "unit": "kg/s",
+            "word": "1902 kg/s",
+            "state": "flowing",
+            "direction": "unknown"
+          }
+        ],
+        "equipment": {
+          "class": "junction",
+          "kind": "steamHeader",
+          "running": null,
+          "conducting": null,
+          "positions": []
+        },
+        "conducting": null
+      },
+      "context": [
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve A · outlet → Main Steam Header · inletA · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve B · outlet → Main Steam Header · inletB · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve C · outlet → Main Steam Header · inletC · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Isolation Valve D · outlet → Main Steam Header · inletD · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Header · outletA → Turbine Stop Valve · inlet · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Main Steam Header · outletC → Turbine Bypass Valve · inlet · Main steam"
+        },
+        {
+          "label": "Flow",
+          "value": "Flowing · direction not measured · 1902 kg/s"
+        }
+      ],
+      "freshReadingRefs": [
+        "plant:halden-1#mainSteamHeader.mixedPressureMPa",
+        "plant:halden-1#mainSteamHeader.inletFlowKgPerS",
+        "plant:halden-1#mainSteamHeader.outletFlowKgPerS",
+        "plant:halden-1#mainSteamHeader.mixedTemperatureC"
+      ],
+      "pose": {
+        "nativeMvp": [
+          37.997169494628906,
+          0,
+          0,
+          0,
+          0,
+          30.284774780273438,
+          12.133480072021484,
+          12.030662536621094,
+          0,
+          36.09198760986328,
+          -10.181198120117188,
+          -10.094924926757812,
+          1683.5919189453125,
+          -1436.4326171875,
+          1247.9302978515625,
+          1272.0479736328125
+        ],
+        "planTransform": [
+          3.5649030208587646,
+          0,
+          0,
+          -3.5649030208587646,
+          684.0577392578125,
+          308.2847900390625
+        ],
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "preparedKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "scope": "Halden Unit 1 full plantHalden Unit 1 full plant ▾",
+        "floor": "operating"
+      }
+    },
+    {
+      "target": {
+        "elementId": "turbine",
+        "physicalId": "route/turbine-reheat-10.4",
+        "relation": "partOf",
+        "nodeLabel": "Turbine Generator",
+        "label": "Illustrative turbine reheat steam distribution",
+        "levelId": "operating",
+        "incident": [
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "from": {
+              "elementId": "turbineStopValve",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "turbine",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "from": {
+              "elementId": "turbine",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "elementId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "from": {
+              "elementId": "turbine",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "elementId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          }
+        ]
+      },
+      "mode": "3d",
+      "hover": {
+        "point": {
+          "x": 747.8381106810241,
+          "y": 415.42577909279566
+        },
+        "text": "Illustrative turbine reheat steam distributionComponent-level connection Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steamComponent-level connection Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steamComponent-level connection Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical powerEquipment ON LINEClick to inspect · pause here to open",
+        "rows": [
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power"
+          },
+          {
+            "label": "Equipment",
+            "value": "ON LINE"
+          }
+        ],
+        "selection": {
+          "at": 8996,
+          "selected": [
+            {
+              "index": 771,
+              "color": [
+                0.11372549086809158,
+                0.4000000059604645,
+                0.8235294222831726,
+                0.23999999463558197
+              ]
+            }
+          ]
+        }
+      },
+      "card": {
+        "src": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/embed/physical-layout.inspection#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22a31f9fc6-1961-469c-927c-bb456326dfc1%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-94c67255-e555-443c-a9db-4f8e7996dbdf%22%7D%2C%22viewType%22%3A%22physical-layout.inspection%22%2C%22title%22%3A%22Turbine%20Generator%22%2C%22height%22%3A400%2C%22state%22%3A%22%7B%5C%22layoutObjectId%5C%22%3A%5C%22layout%3Ahalden-1%5C%22%2C%5C%22revision%5C%22%3A%5C%2295c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22packId%5C%22%3A%5C%22process-plant%5C%22%2C%5C%22modelDigest%5C%22%3A%5C%2247b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea%5C%22%2C%5C%22elementId%5C%22%3A%5C%22turbine%5C%22%2C%5C%22label%5C%22%3A%5C%22Turbine%20Generator%5C%22%2C%5C%22delivery%5C%22%3A%5C%22host%5C%22%2C%5C%22channel%5C%22%3A%5C%2229acd1a1-2644-4ac1-8c52-3abb954993c0%5C%22%7D%22%7D",
+        "text": "Paused · readings fresh\nClose\nTurbine Generator\nON LINE\nIn window ›\nComponent-level connection\nTurbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam\nComponent-level connection\nTurbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam\nComponent-level connection\nTurbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power\nEquipment\nON LINE\nElec output\nHalden Unit 1 · Electrical output · Turbine\n+5 more in its detail ›",
+        "faceplate": "turbine",
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "values": [
+                {
+                  "ref": "plant:halden-1#turbine.electricMw",
+                  "label": "Halden Unit 1 · Electrical output · Turbine",
+                  "shortLabel": "Elec output",
+                  "quantity": "electric-power",
+                  "unit": "MW",
+                  "valueType": "number",
+                  "thresholds": [
+                    {
+                      "id": "generator-output-low",
+                      "direction": "low",
+                      "value": 450,
+                      "order": 1,
+                      "effect": "alarm",
+                      "priority": "notice",
+                      "consequence": "ALM",
+                      "when": "Power operation"
+                    }
+                  ],
+                  "basis": "instrument",
+                  "span": {
+                    "min": -100,
+                    "max": 1300
+                  },
+                  "series": {
+                    "seriesId": "series:810824427ef031352b031377",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                  "label": "Halden Unit 1 · Turbine load (impulse pressure, from steam flow) · Turbine",
+                  "shortLabel": "Turbine load",
+                  "quantity": "loading",
+                  "unit": "%",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5681f301009470b63b661d24",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.speedRpm",
+                  "label": "Halden Unit 1 · Turbine-generator speed (synchronous) · Turbine",
+                  "shortLabel": "Turbine speed",
+                  "quantity": "rotational-speed",
+                  "unit": "rpm",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "invalidWhile": "OFF LINE",
+                  "series": {
+                    "seriesId": "series:c2327835f68b6eb6556f4ce0",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                  "label": "Halden Unit 1 · Generator output breaker closed · Turbine",
+                  "shortLabel": "Output breaker",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "boolean",
+                  "states": [
+                    {
+                      "value": "true",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "false",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:42ae8e081872440131118637",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                  "label": "Halden Unit 1 · Turbine steam availability · Turbine",
+                  "shortLabel": "Steam availability",
+                  "quantity": "fraction",
+                  "unit": "1",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.state",
+                  "label": "Halden Unit 1 · State · Turbine",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "enum",
+                  "states": [
+                    {
+                      "value": "on",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "off",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "running",
+                    "ref": "plant:halden-1#turbine.state"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#turbine.state",
+                    "label": "Halden Unit 1 · State · Turbine",
+                    "quantity": "state",
+                    "unit": "",
+                    "valueType": "enum",
+                    "states": [
+                      {
+                        "value": "on",
+                        "label": "ON LINE",
+                        "active": true
+                      },
+                      {
+                        "value": "off",
+                        "label": "OFF LINE"
+                      }
+                    ],
+                    "thresholds": [],
+                    "series": null,
+                    "element": {
+                      "id": "turbine",
+                      "class": "steam-turbine",
+                      "label": "Turbine Generator",
+                      "shortLabel": "Turbine"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "sink",
+                "equipmentKind": "turbineLoadSink",
+                "connections": [
+                  {
+                    "id": "turbine-stop-valve-to-turbine",
+                    "from": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-exhaust-to-condenser",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "exhaustSteamOutlet"
+                    },
+                    "to": {
+                      "elementId": "condenser",
+                      "label": "Main Condenser",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "exhaustSteam",
+                      "label": "Exhaust steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-generator-to-unit-aux-transformer",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "generatorOutput"
+                    },
+                    "to": {
+                      "elementId": "unitAuxTransformer",
+                      "label": "Unit Auxiliary Transformer",
+                      "port": "primary"
+                    },
+                    "medium": {
+                      "id": "electricalPower",
+                      "label": "Electrical power",
+                      "kind": "electric-ac"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.state",
+                "value": "on",
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                "value": true,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.electricMw",
+                "value": 1162.1683122501233,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                "value": 100,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.speedRpm",
+                "value": 1499.9711032672708,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                "value": 1,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141076305
+            }
+          },
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "values": [
+                {
+                  "ref": "plant:halden-1#turbine.electricMw",
+                  "label": "Halden Unit 1 · Electrical output · Turbine",
+                  "shortLabel": "Elec output",
+                  "quantity": "electric-power",
+                  "unit": "MW",
+                  "valueType": "number",
+                  "thresholds": [
+                    {
+                      "id": "generator-output-low",
+                      "direction": "low",
+                      "value": 450,
+                      "order": 1,
+                      "effect": "alarm",
+                      "priority": "notice",
+                      "consequence": "ALM",
+                      "when": "Power operation"
+                    }
+                  ],
+                  "basis": "instrument",
+                  "span": {
+                    "min": -100,
+                    "max": 1300
+                  },
+                  "series": {
+                    "seriesId": "series:810824427ef031352b031377",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                  "label": "Halden Unit 1 · Turbine load (impulse pressure, from steam flow) · Turbine",
+                  "shortLabel": "Turbine load",
+                  "quantity": "loading",
+                  "unit": "%",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5681f301009470b63b661d24",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.speedRpm",
+                  "label": "Halden Unit 1 · Turbine-generator speed (synchronous) · Turbine",
+                  "shortLabel": "Turbine speed",
+                  "quantity": "rotational-speed",
+                  "unit": "rpm",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "invalidWhile": "OFF LINE",
+                  "series": {
+                    "seriesId": "series:c2327835f68b6eb6556f4ce0",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                  "label": "Halden Unit 1 · Generator output breaker closed · Turbine",
+                  "shortLabel": "Output breaker",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "boolean",
+                  "states": [
+                    {
+                      "value": "true",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "false",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:42ae8e081872440131118637",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                  "label": "Halden Unit 1 · Turbine steam availability · Turbine",
+                  "shortLabel": "Steam availability",
+                  "quantity": "fraction",
+                  "unit": "1",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.state",
+                  "label": "Halden Unit 1 · State · Turbine",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "enum",
+                  "states": [
+                    {
+                      "value": "on",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "off",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "running",
+                    "ref": "plant:halden-1#turbine.state"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#turbine.state",
+                    "label": "Halden Unit 1 · State · Turbine",
+                    "quantity": "state",
+                    "unit": "",
+                    "valueType": "enum",
+                    "states": [
+                      {
+                        "value": "on",
+                        "label": "ON LINE",
+                        "active": true
+                      },
+                      {
+                        "value": "off",
+                        "label": "OFF LINE"
+                      }
+                    ],
+                    "thresholds": [],
+                    "series": null,
+                    "element": {
+                      "id": "turbine",
+                      "class": "steam-turbine",
+                      "label": "Turbine Generator",
+                      "shortLabel": "Turbine"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "sink",
+                "equipmentKind": "turbineLoadSink",
+                "connections": [
+                  {
+                    "id": "turbine-stop-valve-to-turbine",
+                    "from": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-exhaust-to-condenser",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "exhaustSteamOutlet"
+                    },
+                    "to": {
+                      "elementId": "condenser",
+                      "label": "Main Condenser",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "exhaustSteam",
+                      "label": "Exhaust steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-generator-to-unit-aux-transformer",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "generatorOutput"
+                    },
+                    "to": {
+                      "elementId": "unitAuxTransformer",
+                      "label": "Unit Auxiliary Transformer",
+                      "port": "primary"
+                    },
+                    "medium": {
+                      "id": "electricalPower",
+                      "label": "Electrical power",
+                      "kind": "electric-ac"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.state",
+                "value": "on",
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                "value": true,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.electricMw",
+                "value": 1162.1683122501233,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                "value": 100,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.speedRpm",
+                "value": 1499.9711032672708,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                "value": 1,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141076305
+            }
+          }
+        ]
+      },
+      "operation": {
+        "subjectId": "turbine",
+        "label": "Turbine Generator",
+        "componentConnections": [
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "from": {
+              "elementId": "turbineStopValve",
+              "label": "Turbine Stop Valve",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "port": "steamInlet"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "from": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "elementId": "condenser",
+              "label": "Main Condenser",
+              "port": "steamInlet"
+            },
+            "medium": {
+              "id": "exhaustSteam",
+              "label": "Exhaust steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "from": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "elementId": "unitAuxTransformer",
+              "label": "Unit Auxiliary Transformer",
+              "port": "primary"
+            },
+            "medium": {
+              "id": "electricalPower",
+              "label": "Electrical power",
+              "kind": "electric-ac"
+            },
+            "directed": true
+          }
+        ],
+        "connection": null,
+        "flow": null,
+        "flows": [],
+        "equipment": {
+          "class": "sink",
+          "kind": "turbineLoadSink",
+          "running": {
+            "ref": "plant:halden-1#turbine.state",
+            "label": "Halden Unit 1 · State · Turbine",
+            "quality": "good",
+            "reason": null,
+            "value": "on",
+            "unit": "",
+            "word": "ON LINE",
+            "active": true
+          },
+          "conducting": null,
+          "positions": []
+        },
+        "conducting": null
+      },
+      "context": [
+        {
+          "label": "Component-level connection",
+          "value": "Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power"
+        },
+        {
+          "label": "Equipment",
+          "value": "ON LINE"
+        }
+      ],
+      "freshReadingRefs": [
+        "plant:halden-1#turbine.electricMw",
+        "plant:halden-1#turbine.impulseLoadPercent",
+        "plant:halden-1#turbine.speedRpm",
+        "plant:halden-1#turbine.outputBreakerClosed",
+        "plant:halden-1#turbine.steamAvailabilityFraction",
+        "plant:halden-1#turbine.state"
+      ],
+      "pose": {
+        "nativeMvp": [
+          71.73001861572266,
+          -26.659168243408203,
+          -10.633743286132812,
+          -10.590386390686035,
+          33.44825744628906,
+          57.170772552490234,
+          22.804134368896484,
+          22.711158752441406,
+          0,
+          75.17697143554688,
+          -21.11307144165039,
+          -21.026988983154297,
+          432.2164611816406,
+          -2888.501220703125,
+          1265.36474609375,
+          1294.9744873046875
+        ],
+        "planTransform": null,
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "preparedKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "scope": "Halden Unit 1 full plantHalden Unit 1 full plant ▾",
+        "floor": "operating"
+      }
+    },
+    {
+      "target": {
+        "elementId": "turbine",
+        "physicalId": "route/turbine-reheat-10.4",
+        "relation": "partOf",
+        "nodeLabel": "Turbine Generator",
+        "label": "Illustrative turbine reheat steam distribution",
+        "levelId": "operating",
+        "incident": [
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "from": {
+              "elementId": "turbineStopValve",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "turbine",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "from": {
+              "elementId": "turbine",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "elementId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "from": {
+              "elementId": "turbine",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "elementId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          }
+        ]
+      },
+      "mode": "2d",
+      "hover": {
+        "point": {
+          "x": 1425.7808143615723,
+          "y": 447.3911480042002
+        },
+        "text": "Illustrative turbine reheat steam distributionComponent-level connection Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steamComponent-level connection Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steamComponent-level connection Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical powerEquipment ON LINEClick to inspect · pause here to open",
+        "rows": [
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power"
+          },
+          {
+            "label": "Equipment",
+            "value": "ON LINE"
+          }
+        ]
+      },
+      "card": {
+        "src": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/embed/physical-layout.inspection#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22a31f9fc6-1961-469c-927c-bb456326dfc1%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-94c67255-e555-443c-a9db-4f8e7996dbdf%22%7D%2C%22viewType%22%3A%22physical-layout.inspection%22%2C%22title%22%3A%22Turbine%20Generator%22%2C%22height%22%3A400%2C%22state%22%3A%22%7B%5C%22layoutObjectId%5C%22%3A%5C%22layout%3Ahalden-1%5C%22%2C%5C%22revision%5C%22%3A%5C%2295c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22packId%5C%22%3A%5C%22process-plant%5C%22%2C%5C%22modelDigest%5C%22%3A%5C%2247b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea%5C%22%2C%5C%22elementId%5C%22%3A%5C%22turbine%5C%22%2C%5C%22label%5C%22%3A%5C%22Turbine%20Generator%5C%22%2C%5C%22delivery%5C%22%3A%5C%22host%5C%22%2C%5C%22channel%5C%22%3A%5C%22bb973739-88c2-49a6-b41b-b1568c2ebdac%5C%22%7D%22%7D",
+        "text": "Paused · readings fresh\nClose\nTurbine Generator\nON LINE\nIn window ›\nComponent-level connection\nTurbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam\nComponent-level connection\nTurbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam\nComponent-level connection\nTurbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power\nEquipment\nON LINE\nElec output\nHalden Unit 1 · Electrical output · Turbine\n+5 more in its detail ›",
+        "faceplate": "turbine",
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "values": [
+                {
+                  "ref": "plant:halden-1#turbine.electricMw",
+                  "label": "Halden Unit 1 · Electrical output · Turbine",
+                  "shortLabel": "Elec output",
+                  "quantity": "electric-power",
+                  "unit": "MW",
+                  "valueType": "number",
+                  "thresholds": [
+                    {
+                      "id": "generator-output-low",
+                      "direction": "low",
+                      "value": 450,
+                      "order": 1,
+                      "effect": "alarm",
+                      "priority": "notice",
+                      "consequence": "ALM",
+                      "when": "Power operation"
+                    }
+                  ],
+                  "basis": "instrument",
+                  "span": {
+                    "min": -100,
+                    "max": 1300
+                  },
+                  "series": {
+                    "seriesId": "series:810824427ef031352b031377",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                  "label": "Halden Unit 1 · Turbine load (impulse pressure, from steam flow) · Turbine",
+                  "shortLabel": "Turbine load",
+                  "quantity": "loading",
+                  "unit": "%",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5681f301009470b63b661d24",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.speedRpm",
+                  "label": "Halden Unit 1 · Turbine-generator speed (synchronous) · Turbine",
+                  "shortLabel": "Turbine speed",
+                  "quantity": "rotational-speed",
+                  "unit": "rpm",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "invalidWhile": "OFF LINE",
+                  "series": {
+                    "seriesId": "series:c2327835f68b6eb6556f4ce0",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                  "label": "Halden Unit 1 · Generator output breaker closed · Turbine",
+                  "shortLabel": "Output breaker",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "boolean",
+                  "states": [
+                    {
+                      "value": "true",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "false",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:42ae8e081872440131118637",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                  "label": "Halden Unit 1 · Turbine steam availability · Turbine",
+                  "shortLabel": "Steam availability",
+                  "quantity": "fraction",
+                  "unit": "1",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.state",
+                  "label": "Halden Unit 1 · State · Turbine",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "enum",
+                  "states": [
+                    {
+                      "value": "on",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "off",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "running",
+                    "ref": "plant:halden-1#turbine.state"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#turbine.state",
+                    "label": "Halden Unit 1 · State · Turbine",
+                    "quantity": "state",
+                    "unit": "",
+                    "valueType": "enum",
+                    "states": [
+                      {
+                        "value": "on",
+                        "label": "ON LINE",
+                        "active": true
+                      },
+                      {
+                        "value": "off",
+                        "label": "OFF LINE"
+                      }
+                    ],
+                    "thresholds": [],
+                    "series": null,
+                    "element": {
+                      "id": "turbine",
+                      "class": "steam-turbine",
+                      "label": "Turbine Generator",
+                      "shortLabel": "Turbine"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "sink",
+                "equipmentKind": "turbineLoadSink",
+                "connections": [
+                  {
+                    "id": "turbine-stop-valve-to-turbine",
+                    "from": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-exhaust-to-condenser",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "exhaustSteamOutlet"
+                    },
+                    "to": {
+                      "elementId": "condenser",
+                      "label": "Main Condenser",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "exhaustSteam",
+                      "label": "Exhaust steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-generator-to-unit-aux-transformer",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "generatorOutput"
+                    },
+                    "to": {
+                      "elementId": "unitAuxTransformer",
+                      "label": "Unit Auxiliary Transformer",
+                      "port": "primary"
+                    },
+                    "medium": {
+                      "id": "electricalPower",
+                      "label": "Electrical power",
+                      "kind": "electric-ac"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.state",
+                "value": "on",
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                "value": true,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.electricMw",
+                "value": 1162.1683122501233,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                "value": 100,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.speedRpm",
+                "value": 1499.9711032672708,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                "value": 1,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141077357
+            }
+          },
+          {
+            "scope": {
+              "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559
+            },
+            "subject": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "values": [
+                {
+                  "ref": "plant:halden-1#turbine.electricMw",
+                  "label": "Halden Unit 1 · Electrical output · Turbine",
+                  "shortLabel": "Elec output",
+                  "quantity": "electric-power",
+                  "unit": "MW",
+                  "valueType": "number",
+                  "thresholds": [
+                    {
+                      "id": "generator-output-low",
+                      "direction": "low",
+                      "value": 450,
+                      "order": 1,
+                      "effect": "alarm",
+                      "priority": "notice",
+                      "consequence": "ALM",
+                      "when": "Power operation"
+                    }
+                  ],
+                  "basis": "instrument",
+                  "span": {
+                    "min": -100,
+                    "max": 1300
+                  },
+                  "series": {
+                    "seriesId": "series:810824427ef031352b031377",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                  "label": "Halden Unit 1 · Turbine load (impulse pressure, from steam flow) · Turbine",
+                  "shortLabel": "Turbine load",
+                  "quantity": "loading",
+                  "unit": "%",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:5681f301009470b63b661d24",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.speedRpm",
+                  "label": "Halden Unit 1 · Turbine-generator speed (synchronous) · Turbine",
+                  "shortLabel": "Turbine speed",
+                  "quantity": "rotational-speed",
+                  "unit": "rpm",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "invalidWhile": "OFF LINE",
+                  "series": {
+                    "seriesId": "series:c2327835f68b6eb6556f4ce0",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                  "label": "Halden Unit 1 · Generator output breaker closed · Turbine",
+                  "shortLabel": "Output breaker",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "boolean",
+                  "states": [
+                    {
+                      "value": "true",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "false",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": {
+                    "seriesId": "series:42ae8e081872440131118637",
+                    "intervalMs": 1000
+                  },
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                  "label": "Halden Unit 1 · Turbine steam availability · Turbine",
+                  "shortLabel": "Steam availability",
+                  "quantity": "fraction",
+                  "unit": "1",
+                  "valueType": "number",
+                  "thresholds": [],
+                  "basis": "instrument",
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                },
+                {
+                  "ref": "plant:halden-1#turbine.state",
+                  "label": "Halden Unit 1 · State · Turbine",
+                  "quantity": "state",
+                  "unit": "",
+                  "valueType": "enum",
+                  "states": [
+                    {
+                      "value": "on",
+                      "label": "ON LINE",
+                      "active": true
+                    },
+                    {
+                      "value": "off",
+                      "label": "OFF LINE"
+                    }
+                  ],
+                  "thresholds": [],
+                  "series": null,
+                  "element": {
+                    "id": "turbine",
+                    "class": "steam-turbine",
+                    "label": "Turbine Generator",
+                    "shortLabel": "Turbine"
+                  }
+                }
+              ],
+              "word": null,
+              "devices": [],
+              "topology": {
+                "bindings": [
+                  {
+                    "role": "running",
+                    "ref": "plant:halden-1#turbine.state"
+                  }
+                ],
+                "values": [
+                  {
+                    "ref": "plant:halden-1#turbine.state",
+                    "label": "Halden Unit 1 · State · Turbine",
+                    "quantity": "state",
+                    "unit": "",
+                    "valueType": "enum",
+                    "states": [
+                      {
+                        "value": "on",
+                        "label": "ON LINE",
+                        "active": true
+                      },
+                      {
+                        "value": "off",
+                        "label": "OFF LINE"
+                      }
+                    ],
+                    "thresholds": [],
+                    "series": null,
+                    "element": {
+                      "id": "turbine",
+                      "class": "steam-turbine",
+                      "label": "Turbine Generator",
+                      "shortLabel": "Turbine"
+                    }
+                  }
+                ],
+                "kind": "node",
+                "class": "sink",
+                "equipmentKind": "turbineLoadSink",
+                "connections": [
+                  {
+                    "id": "turbine-stop-valve-to-turbine",
+                    "from": {
+                      "elementId": "turbineStopValve",
+                      "label": "Turbine Stop Valve",
+                      "port": "outlet"
+                    },
+                    "to": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "mainSteam",
+                      "label": "Main steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-exhaust-to-condenser",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "exhaustSteamOutlet"
+                    },
+                    "to": {
+                      "elementId": "condenser",
+                      "label": "Main Condenser",
+                      "port": "steamInlet"
+                    },
+                    "medium": {
+                      "id": "exhaustSteam",
+                      "label": "Exhaust steam",
+                      "kind": "steam"
+                    },
+                    "directed": true
+                  },
+                  {
+                    "id": "turbine-generator-to-unit-aux-transformer",
+                    "from": {
+                      "elementId": "turbine",
+                      "label": "Turbine Generator",
+                      "port": "generatorOutput"
+                    },
+                    "to": {
+                      "elementId": "unitAuxTransformer",
+                      "label": "Unit Auxiliary Transformer",
+                      "port": "primary"
+                    },
+                    "medium": {
+                      "id": "electricalPower",
+                      "label": "Electrical power",
+                      "kind": "electric-ac"
+                    },
+                    "directed": true
+                  }
+                ]
+              }
+            },
+            "observations": [
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.state",
+                "value": "on",
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.outputBreakerClosed",
+                "value": true,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.electricMw",
+                "value": 1162.1683122501233,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.impulseLoadPercent",
+                "value": 100,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.speedRpm",
+                "value": 1499.9711032672708,
+                "quality": "good",
+                "priority": "none"
+              },
+              {
+                "at": "2026-07-12T04:02:55.618Z",
+                "clock": "simulation",
+                "ref": "plant:halden-1#turbine.steamAvailabilityFraction",
+                "value": 1,
+                "quality": "good",
+                "priority": "none"
+              }
+            ],
+            "at": {
+              "at": "2026-07-12T04:02:55.618Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "f5f7d415-2b59-4ac4-9eb7-436be2619254",
+              "sequence": 559,
+              "receivedWallMs": 1793141077357
+            }
+          }
+        ]
+      },
+      "operation": {
+        "subjectId": "turbine",
+        "label": "Turbine Generator",
+        "componentConnections": [
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "from": {
+              "elementId": "turbineStopValve",
+              "label": "Turbine Stop Valve",
+              "port": "outlet"
+            },
+            "to": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "port": "steamInlet"
+            },
+            "medium": {
+              "id": "mainSteam",
+              "label": "Main steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "from": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "elementId": "condenser",
+              "label": "Main Condenser",
+              "port": "steamInlet"
+            },
+            "medium": {
+              "id": "exhaustSteam",
+              "label": "Exhaust steam",
+              "kind": "steam"
+            },
+            "directed": true
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "from": {
+              "elementId": "turbine",
+              "label": "Turbine Generator",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "elementId": "unitAuxTransformer",
+              "label": "Unit Auxiliary Transformer",
+              "port": "primary"
+            },
+            "medium": {
+              "id": "electricalPower",
+              "label": "Electrical power",
+              "kind": "electric-ac"
+            },
+            "directed": true
+          }
+        ],
+        "connection": null,
+        "flow": null,
+        "flows": [],
+        "equipment": {
+          "class": "sink",
+          "kind": "turbineLoadSink",
+          "running": {
+            "ref": "plant:halden-1#turbine.state",
+            "label": "Halden Unit 1 · State · Turbine",
+            "quality": "good",
+            "reason": null,
+            "value": "on",
+            "unit": "",
+            "word": "ON LINE",
+            "active": true
+          },
+          "conducting": null,
+          "positions": []
+        },
+        "conducting": null
+      },
+      "context": [
+        {
+          "label": "Component-level connection",
+          "value": "Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam"
+        },
+        {
+          "label": "Component-level connection",
+          "value": "Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power"
+        },
+        {
+          "label": "Equipment",
+          "value": "ON LINE"
+        }
+      ],
+      "freshReadingRefs": [
+        "plant:halden-1#turbine.electricMw",
+        "plant:halden-1#turbine.impulseLoadPercent",
+        "plant:halden-1#turbine.speedRpm",
+        "plant:halden-1#turbine.outputBreakerClosed",
+        "plant:halden-1#turbine.steamAvailabilityFraction",
+        "plant:halden-1#turbine.state"
+      ],
+      "pose": {
+        "nativeMvp": [
+          71.73001861572266,
+          -26.659168243408203,
+          -10.633743286132812,
+          -10.590386390686035,
+          33.44825744628906,
+          57.170772552490234,
+          22.804134368896484,
+          22.711158752441406,
+          0,
+          75.17697143554688,
+          -21.11307144165039,
+          -21.026988983154297,
+          432.2164611816406,
+          -2888.501220703125,
+          1265.36474609375,
+          1294.9744873046875
+        ],
+        "planTransform": [
+          34.14160919189453,
+          0,
+          0,
+          -34.14160919189453,
+          994.0834350585938,
+          928.804443359375
+        ],
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "preparedKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "scope": "Halden Unit 1 full plantHalden Unit 1 full plant ▾",
+        "floor": "operating"
+      }
+    }
+  ],
+  "witnesses": {
+    "registrations": [
+      {
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "index": 286,
+        "id": "route/main-steam-header",
+        "label": "Main-steam header assembly",
+        "subjectIds": [
+          "mainSteamHeader"
+        ],
+        "layerId": "utility-routes"
+      }
+    ],
+    "prepared": [
+      {
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"lower\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "meshes": 0,
+        "triangles": 0
+      },
+      {
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "meshes": 2,
+        "triangles": 256
+      },
+      {
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "meshes": 1,
+        "triangles": 128
+      }
+    ],
+    "reportedLogicalCpus": 8,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+  },
+  "errors": [],
+  "limits": [
+    "Functional actual Host/World pointer and hosted-card proof; not a frame-time or cold-loading benchmark.",
+    "Candidates derive from actual prepared route triangles and submitted MVP or actual native Plan ink transform; a real pointer pick must independently accept the exact route.",
+    "Default-on is tested before any Utility routes checkbox click. Node incident graph IDs/ports are independently compared with retained R5 routing terminals; labels/medium/current readings come from the same acquired owner sample.",
+    "Structural partOf paths expose only their parent component connections and exact declared operational roles; no per-branch direction or unmeasured flow is inferred."
+  ]
+}
