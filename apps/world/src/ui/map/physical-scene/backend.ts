@@ -8,6 +8,11 @@ import type { Color, PhysicalScenePalette, PhysicalSubjectStyle } from './types.
  * before the common lighting pass. No second coincident translucent surface. */
 export const physicalMaterialColor = (palette: PhysicalScenePalette, role: string): Color => {
   if (role === 'line') return palette.line
+  if (role.startsWith('continuation/')) {
+    const [, material, radius] = role.split('/')
+    if (!material || !Number.isFinite(Number(radius)) || !(Number(radius) > 0)) throw Error(`Invalid physical continuation material: ${role}`)
+    return palette.materials[material] ?? palette.defaultMaterial
+  }
   if (role.startsWith('surface/')) {
     const [, accent, material] = role.split('/')
     if (accent !== 'access' && accent !== 'outage' || !material) throw Error(`Invalid physical surface decoration role: ${role}`)
@@ -30,7 +35,7 @@ layout(location=9) in uint instanceData;
 uniform sampler2D uObjects;
 uniform int uObjectWidth;
 out vec3 vNormal;
-out vec2 vLocalPosition;
+out vec3 vLocalPosition;
 out float vCameraDepth;
 flat out int vMaterial;
 flat out int vObject;
@@ -41,7 +46,7 @@ void main(){
   vec4 placement=objectData(i+1);
   gl_Position=placement.w<.5?vec4(2.,2.,2.,1.):instanceMatrix*vec4(position+placement.xyz,1.);
   vCameraDepth=gl_Position.w;
-  vLocalPosition=position.xy;
+  vLocalPosition=position;
   vNormal=normal;vMaterial=int(materialIndex);vObject=i;vStroke=strokeStyle;
 }
 `
@@ -49,7 +54,7 @@ const fragmentSource = `#version 300 es
 precision highp float;
 precision highp int;
 in vec3 vNormal;
-in vec2 vLocalPosition;
+in vec3 vLocalPosition;
 in float vCameraDepth;
 flat in int vMaterial;
 flat in int vObject;
@@ -90,6 +95,16 @@ void main(){
     float width=fwidth(phase);
     float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
     solid=mix(solid,uIllustrationLine,ink*uLineOpacity.x);
+  }
+  if(!uLines&&surface.a<0.){
+    // A true clipping cap carries an architectural continuation hatch in its
+    // owning material; no coplanar decal, added Z, or new physical occurrence.
+    vec3 axis=abs(n);
+    vec2 uv=axis.z>=axis.x&&axis.z>=axis.y?vLocalPosition.xy:axis.y>=axis.x?vLocalPosition.xz:vLocalPosition.yz;
+    float phase=(uv.x-uv.y)/(-surface.a*.5);
+    float width=fwidth(phase);
+    float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
+    solid=mix(solid,uIllustrationLine,ink*.65);
   }
   outColor=vec4(uLines?edge:solid,uLines?max(edgeAlpha,state.a):1.);
 }
@@ -147,7 +162,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     const colors = asset.roles.map(role => physicalMaterialColor(palette, role)), signature = JSON.stringify(colors)
     if (signature === asset.paletteSignature) return
     const allocation = resizeTexture(asset.materials, colors.length)
-    colors.forEach((color, index) => asset.materials.data.set([color[0], color[1], color[2], asset.roles[index]!.startsWith('surface/outage/') ? 1 : 0], index * 4))
+    colors.forEach((color, index) => { const role = asset.roles[index]!, pattern = role.startsWith('continuation/') ? -Number(role.split('/')[2]) : role.startsWith('surface/outage/') ? 1 : 0; asset.materials.data.set([color[0], color[1], color[2], pattern], index * 4) })
     gl.activeTexture(gl.TEXTURE0); uploadTexture(asset.materials, allocation); asset.paletteSignature = signature; metrics.paletteUploads++
   }
   const release = (asset: Asset): void => {
