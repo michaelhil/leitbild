@@ -55,6 +55,28 @@ export const uniqueLayoutAlerts = (rows: ReadonlyArray<AlertRow>): ReadonlyArray
 export const subjectLayoutAlerts = (rows: ReadonlyArray<AlertRow>, subject: PhysicalLayoutSubject): ReadonlyArray<AlertRow> =>
   uniqueLayoutAlerts(rows.filter(row => row.packId === subject.packId && row.objectId === subject.objectId && subjectOf(row) === subject.elementId))
 
+interface IndexedObservation { readonly observation: Observation; readonly ordinal: number }
+// One index belongs to an immutable acquired sample, not a source ID or visited
+// Run cache. Keep duplicates and their original positions for the generic API.
+const observationIndices = new WeakMap<ReadonlyArray<Observation>, ReadonlyMap<string, ReadonlyArray<IndexedObservation>>>()
+const selectedObservations = (values: ReadonlyArray<VignetteValue>, observations: ReadonlyArray<Observation>): ReadonlyArray<Observation> => {
+  const refs = new Set<string>(); values.forEach(value => refs.add(value.ref))
+  if (!refs.size) return []
+  let index = observationIndices.get(observations)
+  if (!index) {
+    const built = new Map<string, IndexedObservation[]>()
+    observations.forEach((observation, ordinal) => {
+      const ref = observation.ref, entries = built.get(ref)
+      if (entries) entries.push({ observation, ordinal }); else built.set(ref, [{ observation, ordinal }])
+    })
+    index = built; observationIndices.set(observations, index)
+  }
+  const selected: IndexedObservation[] = []
+  for (const ref of refs) { const entries = index.get(ref); if (entries) for (const entry of entries) selected.push(entry) }
+  selected.sort((a, b) => a.ordinal - b.ordinal)
+  return selected.map(entry => entry.observation)
+}
+
 const worstQuality = (values: ReadonlyArray<VignetteValue>, observations: ReadonlyArray<Observation>): PhysicalSubjectStatus['quality'] => {
   if (values.length === 0) return 'not-observed'
   const qualities = values.map(value => observations.find(observation => observation.ref === value.ref)?.quality ?? 'bad')
@@ -64,7 +86,7 @@ const worstQuality = (values: ReadonlyArray<VignetteValue>, observations: Readon
 
 export const physicalSubjectStatus = (reading: PhysicalSubjectReading, rows: ReadonlyArray<AlertRow>, frozen: boolean): PhysicalSubjectStatus => {
   const own = subjectLayoutAlerts(rows, reading.subject)
-  const observations = reading.observations.filter(observation => reading.values.some(value => value.ref === observation.ref))
+  const observations = selectedObservations(reading.values, reading.observations)
   if (reading.values.some(value => refObjectId(value.ref) !== reading.subject.objectId)
     || observations.some(observation => refObjectId(observation.ref) !== reading.subject.objectId)) throw new Error('Layout readings belong to another operational owner')
   const quality = worstQuality(reading.values, observations)
