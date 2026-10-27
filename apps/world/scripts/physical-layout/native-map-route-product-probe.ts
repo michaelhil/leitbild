@@ -44,9 +44,17 @@ try{
   layerTrial.push({name:'pending-retains-current-model',...pending});await shot('layer-pending-current-model.png');await world('q.failHeldLayer()')
   await until(`return d.querySelector('.evidence')?.textContent.includes('Additional layers unavailable: Utility routes')`,'truthful additional-layer failure')
   const failed=await world(`return{currentDrawKey:q.currentDrawKey,evidence:d.querySelector('.evidence')?.textContent}`);if(!/Paused · fresh|Live ·/.test(failed.evidence)||failed.currentDrawKey?.includes('utility-routes'))throw Error('Additional-layer failure destroyed the valid model or current owner evidence');layerTrial.push({name:'failure-retains-current-model',...failed});await shot('layer-failure-current-model.png')
-  for(const checked of [false,true,false,true]){await world(`const input=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()==='Utility routes').querySelector('input');if(input.checked!==${checked})input.click();return new Promise(resolve=>w.requestAnimationFrame(resolve))`)}
-  await until(`return q.currentDrawKey?.includes('utility-routes')&&!d.querySelector('.evidence')?.textContent.includes('additional layers')&&!d.querySelector('.evidence')?.textContent.includes('Additional layers')`,'new coverage-qualified utility draw after rapid retry')
+  await world(`const retry=d.querySelector('button[aria-label^="Retry physical layout:"]');if(!retry||retry.disabled)throw Error('Missing usable public Retry action');retry.click()`)
+  await until(`return q.currentDrawKey?.includes('utility-routes')&&!d.querySelector('.evidence')?.textContent.includes('additional layers')&&!d.querySelector('.evidence')?.textContent.includes('Additional layers')`,'new coverage-qualified utility draw after public Retry')
+  layerTrial.push({name:'public-retry-recovered',...(await world(`return{currentDrawKey:q.currentDrawKey,evidence:d.querySelector('.evidence')?.textContent}`))})
+  await world(`q.holdLayerId='roof-structure';q.holdNextLayer=true;const input=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()==='Roof structure').querySelector('input');if(input.checked)throw Error('Rapid-toggle control was already prepared');input.click()`)
+  await until(`return Boolean(q.heldLayerInfo())`,'actual new roof coverage held during rapid toggle')
+  for(const checked of [false,true,false,true]){await world(`const input=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()==='Roof structure').querySelector('input');if(input.checked!==${checked})input.click();return new Promise(resolve=>w.requestAnimationFrame(resolve))`)}
+  await world('q.releaseHeldLayer()')
+  await until(`return q.currentDrawKey?.includes('roof-structure')&&!d.querySelector('.evidence')?.textContent.includes('additional layers')&&!d.querySelector('.evidence')?.textContent.includes('Additional layers')`,'latest actual roof coverage after rapid toggles')
   layerTrial.push({name:'rapid-toggle-recovered',...(await world(`return{currentDrawKey:q.currentDrawKey,evidence:d.querySelector('.evidence')?.textContent}`))})
+  await world(`const input=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()==='Roof structure').querySelector('input');if(input.checked)input.click()`)
+  await settled()
  }
  await settled();await button('View');await button('Find')
  await until(`return Boolean(d.querySelector('.layout-components input[type=search]'))`,'equipment search');await world(`const input=d.querySelector('.layout-components input[type=search]');input.value=${JSON.stringify(expected.elementId)};input.dispatchEvent(new w.Event('input',{bubbles:true}))`)

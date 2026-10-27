@@ -37,6 +37,7 @@ const enableAllDeclaredLayers=async()=>{
   const roots=await inWorld(`return [...d.querySelectorAll('.choose-area')].filter(button=>button.querySelector('small')?.textContent==='layout').map(button=>button.title)`)
   await inWorld(`d.querySelector('[aria-label="Close area chooser"]').click()`)
   for(const title of roots){
+    const responseStart=await inWorld('return q.responses.length')
     await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return Boolean(d.querySelector('.scopes input[type=search]'))`,'root chooser')
     await inWorld(`const input=d.querySelector('.scopes input[type=search]');input.value=${JSON.stringify(title)};input.dispatchEvent(new w.Event('input',{bubbles:true}))`);await until(`return [...d.querySelectorAll('.choose-area')].some(button=>button.title===${JSON.stringify(title)})`,'exact declared layout')
     await inWorld(`[...d.querySelectorAll('.choose-area')].find(button=>button.title===${JSON.stringify(title)}).click()`);await settled()
@@ -45,7 +46,7 @@ const enableAllDeclaredLayers=async()=>{
     for(const value of labels){if(!value.before){await inWorld(`const input=[...d.querySelectorAll('.settings label')].find(label=>label.textContent.trim()===${JSON.stringify(value.label)}).querySelector('input');input.click()`);await settled()}}
     const after=await inWorld(`const declared=new Set(q.declaredSources.flatMap(source=>source.layers.map(layer=>layer.label)));return [...d.querySelectorAll('.settings label')].filter(label=>declared.has(label.textContent.trim())).map(label=>({label:label.textContent.trim(),checked:label.querySelector('input').checked}))`)
     if(after.some((layer:any)=>!layer.checked))throw Error('Requested source layer did not remain enabled')
-    layerSelections.push({title,labels,after});await button('View')
+    layerSelections.push({title,labels,after,responses:await inWorld(`return q.responses.slice(${responseStart})`)});await button('View')
   }
   await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'collection return');await inWorld(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`);await settled(5)
 }

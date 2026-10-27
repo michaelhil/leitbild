@@ -20,7 +20,7 @@
     q.prepared.push({ key: response.key, sourceKey: response.sourceKey, meshes: selected.length, triangles: points.length })
     q.points = points; q.key = response.key; arrays.set(response.buffers.vertices, { key: response.key, sourceKey: response.sourceKey })
   }
-  ;(window as any).Worker = new Proxy(NativeWorker, { construct(constructor, args, receiver) { const worker = Reflect.construct(constructor, args, receiver) as Worker; worker.addEventListener('message', event => {const response=event.data,at=typeof response?.key==='string'?response.key.lastIndexOf('/['):-1,view=at<0?null:JSON.parse(response.key.slice(at+1));if(q.holdNextLayer&&response?.kind==='prepared'&&view?.some((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&part.layers?.includes('utility-routes'))){event.stopImmediatePropagation();q.holdNextLayer=false;q.heldLayer={worker,response};return}inspect(response)}); return worker } })
+  ;(window as any).Worker = new Proxy(NativeWorker, { construct(constructor, args, receiver) { const worker = Reflect.construct(constructor, args, receiver) as Worker; worker.addEventListener('message', event => {const response=event.data,at=typeof response?.key==='string'?response.key.lastIndexOf('/['):-1,view=at<0?null:JSON.parse(response.key.slice(at+1));if(q.holdNextLayer&&response?.kind==='prepared'&&view?.some((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&part.layers?.includes(q.holdLayerId??'utility-routes'))){event.stopImmediatePropagation();q.holdNextLayer=false;q.heldLayer={worker,response};return}inspect(response)}); return worker } })
   Worker.prototype.postMessage = function (this: Worker, message: any, transfer: any) {
     if (message?.kind === 'register') {
       const index = message.scene.objects.findIndex((object: any) => object.subjectIds.includes(target.elementId))
@@ -29,6 +29,7 @@
     return Reflect.apply(post, this, [message, transfer])
   } as typeof post
   q.heldLayerInfo=()=>q.heldLayer?{id:q.heldLayer.response.id,key:q.heldLayer.response.key}:null
+  q.releaseHeldLayer=()=>{const held=q.heldLayer;if(!held)throw Error('No actual held layer response');q.heldLayer=null;held.worker.dispatchEvent(new MessageEvent('message',{data:held.response}))}
   q.failHeldLayer=()=>{const held=q.heldLayer;if(!held)throw Error('No actual held layer response');q.heldLayer=null;held.worker.dispatchEvent(new MessageEvent('message',{data:{kind:'error',id:held.response.id,message:'Intentional isolated test failure while adding Utility routes'}}))}
   const bindBuffer = WebGL2RenderingContext.prototype.bindBuffer
   WebGL2RenderingContext.prototype.bindBuffer = function (target, buffer) { if (target === this.ARRAY_BUFFER) state(this).array = buffer; return bindBuffer.call(this, target, buffer) }
