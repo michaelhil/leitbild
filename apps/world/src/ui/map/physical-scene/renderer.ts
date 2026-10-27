@@ -39,6 +39,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
   const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
   const architecturePicks = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
+  const architectureVisibility = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
     if (disposed || failed) return null
     for (let index = planPicking.length - 1; index >= 0; index--) {
@@ -93,7 +94,18 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         })
         const current = presented.filter(entry => !ink.includes(entry)).map(entry => {
           const boundary = visiblePhysicalInspectionBoundaries(entry.meshes, multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)))
-          const meshes = visiblePhysicalSurfaceOwners(boundary, entry.asset?.acceleration)
+          // Invisible architecture is no longer a surface owner. Select its
+          // retained alternatives before using the SAME set for colour/picks.
+          let visible = boundary
+          if (entry.view.wallOpacity === 0 || entry.view.floorOpacity === 0) {
+            let selections = architectureVisibility.get(boundary)
+            if (!selections) { selections = new Map(); architectureVisibility.set(boundary, selections) }
+            const key = JSON.stringify([entry.view.wallOpacity === 0, entry.view.floorOpacity === 0])
+            const cached = selections.get(key)
+            if (cached) visible = cached
+            else { visible = boundary.filter(mesh => physicalArchitectureOpacity(mesh.object, entry.view) > 0); selections.set(key, visible) }
+          }
+          const meshes = visiblePhysicalSurfaceOwners(visible, entry.asset?.acceleration)
           if (meshes !== entry.meshes && entry.asset && !indexedSelections.has(meshes)) { derivePhysicalPickAcceleration(meshes, entry.asset.acceleration); indexedSelections.add(meshes) }
           return { ...entry, meshes }
         }), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
