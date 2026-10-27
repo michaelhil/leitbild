@@ -11,7 +11,7 @@ import { captureSceneGlState, restoreSceneGlState } from './gl-state.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
 import { physicalScopeMembers } from './scopes.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
-import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
+import { pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
 import { physicalArchitectureOpacity } from './architecture-opacity.ts'
 import { createPhysicalArchitectureBackend } from './architecture-backend.ts'
 import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
@@ -37,7 +37,6 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let planPicking: ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly input: PhysicalPlanPickInput }> = []
   const occurrenceMeshes=createPhysicalOccurrenceMeshIndex()
   let renderedRectangle={width:0,height:0}
-  const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
   const architecturePicks = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const architectureVisibility = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
@@ -91,6 +90,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         const frame = physicalPlanFrame(points)
         return frame ? [{ entry, input: { scene: entry.scene, view: entry.view, scopeId: entry.scopeId ?? null, frame, width: rectangle.width, height: rectangle.height, ratio, fontFamily: planFontFamily() } }] : []
       })
+      const rosters = new Map<PhysicalLayerEntry, PhysicalLayerEntry['meshes']>()
       const current = presented.filter(entry => !ink.includes(entry)).map(entry => {
         const boundary = visiblePhysicalInspectionBoundaries(entry.meshes, multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)))
         // Invisible architecture is no longer a surface owner. Select its
@@ -104,9 +104,9 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           if (cached) visible = cached
           else { visible = boundary.filter(mesh => physicalArchitectureOpacity(mesh.object, entry.view) > 0); selections.set(key, visible) }
         }
-        const meshes = visiblePhysicalSurfaceOwners(visible, entry.asset?.acceleration)
-        if (meshes !== entry.meshes && entry.asset && !indexedSelections.has(meshes)) { derivePhysicalPickAcceleration(meshes, entry.asset.acceleration); indexedSelections.add(meshes) }
-        return { ...entry, meshes }
+        const selected = { ...entry, meshes: visiblePhysicalSurfaceOwners(visible) }
+        rosters.set(selected, entry.meshes)
+        return selected
       }), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
       const baseProjection = plan ? projectPhysicalPlan(current, mainMatrix, architectureFrame?.planDepth) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
       depthNear = plan ? 0 : physicalPerspectiveNear(mainMatrix)
@@ -119,9 +119,13 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           if (!selections) { selections = new Map(); architecturePicks.set(meshes, selections) }
           const cached = selections.get(key)
           if (cached) pickable = cached
-          else { pickable = meshes.filter(mesh => mesh.object.subjectIds.length > 0 || physicalArchitectureOpacity(mesh.object, entry.view) === 1); if (entry.asset) derivePhysicalPickAcceleration(pickable, entry.asset.acceleration); selections.set(key, pickable) }
+          else { pickable = meshes.filter(mesh => mesh.object.subjectIds.length > 0 || physicalArchitectureOpacity(mesh.object, entry.view) === 1); selections.set(key, pickable) }
         }
-        picking.push({ sceneId: entry.scene.id, meshes: pickable, matrix })
+        // Solid Plan has its own semantic-band offsets. 3D retains the exact
+        // pre-camera roster's hierarchy and filters active leaves at pick time.
+        const roster = plan ? meshes : rosters.get(entry)
+        if (!roster) throw Error('Physical picking lost its displayed spatial roster')
+        picking.push({ sceneId: entry.scene.id, meshes: pickable, roster, matrix })
         const drawMatrix = new Float32Array(matrix)
         if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
         draws.push({ sceneId: entry.scene.id, asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', architecture: entry.view, styles:stylesFor(entry.asset,entry.status,entry.view.live), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })

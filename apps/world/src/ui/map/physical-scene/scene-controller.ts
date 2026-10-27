@@ -84,7 +84,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const result: PhysicalLayerEntry[] = [], detailed = Boolean(entry.scene && readyGeometry(entry) && entry.eligible && entry.state === 'ready')
     if (detailed) result.push({ scene: entry.scene!, meshes: entry.meshes, ...(entry.prepared ? { asset: entry.prepared } : {}), ...(entry.scopeId ? { scopeId: entry.scopeId } : {}), view: entry.view, status: entry.status })
     if (!entry.overview || !entry.source.descriptor.locationValid || entry.view.detail === 'hidden') return result
-    let meshes = visiblePhysicalSurfaceOwners(entry.overview.asset.meshes, entry.overview.asset.acceleration)
+    let meshes = visiblePhysicalSurfaceOwners(entry.overview.asset.meshes)
     if (detailed) {
       if (!entry.scopeId || !entry.view.surroundings) return result
       const key = `${entry.overview.asset.key}/${entry.scopeId}`
