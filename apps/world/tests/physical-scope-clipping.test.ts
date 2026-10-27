@@ -74,3 +74,22 @@ test('selected floor cuts reconstruct both real tube caps from closed source geo
   expect(areaOnPlane(meshes, 2, 1.5)).toBeCloseTo(polygonArea, 10)
   expect(areaOnPlane(meshes, 2, 3)).toBeCloseTo(polygonArea, 10)
 })
+
+test('every admitted PWR floor and the exploded whole unit retain closed true cuts without recapping source extrema', async () => {
+  const { resolvePhysicalDesign, pwrDraftingUnitPhysicalDesignRef } = await import('../src/packs/physical-layout/design.ts')
+  const { compilePhysicalScene } = await import('../src/packs/physical-layout/native/drafting/compile-scene.ts')
+  const { buildVisibleMeshes } = await import('../src/ui/map/physical-scene/geometry.ts')
+  const { clipPhysicalMeshesToScope } = await import('../src/ui/map/physical-scene/scope-clipping.ts')
+  const design = await resolvePhysicalDesign(pwrDraftingUnitPhysicalDesignRef)
+  if (design.profile !== 'drafting') throw Error('The qualification requires the admitted drafting source')
+  const scene = compilePhysicalScene('admitted-pwr-floor-qualification', { ...design, owner: { objectId: 'plant' }, placement: { anchor: [11.47, 59.087], bearing: 0 }, bounds: design.presentation.scopes[0]!.bounds })
+  for (const levelId of ['all', ...scene.levels.map(level => level.id)]) for (const separation of levelId === 'all' ? [0, 1] : [0]) {
+    const view = { mode: '3d' as const, levelId, cutaway: true, separation, detail: 'auto' as const, live: false }
+    const before = buildVisibleMeshes(scene, view), clipped = clipPhysicalMeshesToScope(scene, view, before)
+    expect(clipped.length).toBeGreaterThan(0)
+    for (const mesh of clipped.filter(mesh => mesh.object.clipToScope)) {
+      expect(scene.objects.includes(mesh.object)).toBe(true)
+      expect(mesh.vertices.every(Number.isFinite)).toBe(true)
+    }
+  }
+})

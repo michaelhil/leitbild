@@ -126,7 +126,10 @@ export const clipPhysicalMeshesToScope = (scene: PackPhysicalScene, view: Physic
     for (let at = 0; at < source.length; at += 21) for (const cell of cells) append(output, clipBox([vertex(source, at), vertex(source, at + 7), vertex(source, at + 14)], cell))
     const sections = new Map<string, ReadonlyArray<ReadonlyArray<Vertex>>>()
     for (const face of boundary) {
-      if (face.coordinate < bounds.min[face.axis]! || face.coordinate > bounds.max[face.axis]!) continue
+      // An extremal plane removes no source volume. Its existing terminal or
+      // tangent boundary is already retained; inventing a section there can
+      // produce a branching zero-area graph at an elbow extremum.
+      if (face.coordinate <= bounds.min[face.axis]! || face.coordinate >= bounds.max[face.axis]!) continue
       const key = `${face.axis}/${face.coordinate}/${face.outward}`
       let caps = sections.get(key)
       if (!caps) { caps = section(source, face, material, object.id, coordinateScale); sections.set(key, caps) }
