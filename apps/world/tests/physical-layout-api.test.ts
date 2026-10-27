@@ -10,12 +10,13 @@ import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { currentPwrPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { currentPwrPhysicalDesignRef, pwrConnectedUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { layoutLiveResponseSchema } from '../src/ui/physical-layout/read-model.ts'
 import { physicalSubjectStatus } from '../src/ui/physical-layout/status.ts'
+import { resolvePhysicalSubjectOperation } from '../src/ui/physical-layout/operation.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import type { ObservationPort } from '../src/features/displays/observation/port.ts'
 import { createRoleRunRegistry } from './fixtures/role-runs.ts'
@@ -34,10 +35,10 @@ const route = async (registry: SimulationRunRegistry, id: string, body: unknown 
   if (!response) throw new Error('Layout route was not handled')
   return { status: response.status, body: await response.json() as unknown }
 }
-const withRun = async (work: (registry: SimulationRunRegistry, run: SimulationRunRuntime) => Promise<void>): Promise<void> => {
+const withRun = async (work: (registry: SimulationRunRegistry, run: SimulationRunRuntime) => Promise<void>,source=definition): Promise<void> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-layout-api-'))
-  const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: [definition], compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs }), runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter()] })
-  try { const run = await registry.create({ scenarioId: definition.id }); await run.setClock({ paused: true }); await work(registry, run) }
+  const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: [source], compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs }), runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter()] })
+  try { const run = await registry.create({ scenarioId: source.id }); await run.setClock({ paused: true }); await work(registry, run) }
   finally { await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) }
 }
 const wrapObservations = (run: SimulationRunRuntime, read: (original: ObservationPort) => ObservationPort) => {
@@ -47,6 +48,42 @@ const wrapObservations = (run: SimulationRunRuntime, read: (original: Observatio
 const errorCode = (body: unknown): string | undefined => (body as { error?: { code?: string } }).error?.code
 
 describe('Real PWR layout display boundary', () => {
+  test('full connected layout acquires exact route endpoints, flow and equipment roles in one owner sample',async()=>{
+    const source=scenarioDefinitionSchema.parse({...definition,packs:definition.packs.map(selection=>selection.id!=='physical-layout'?selection:{...selection,items:[{type:'site-layout',id:'layout:proof',label:'Full connected unit',design:pwrConnectedUnitPhysicalDesignRef,members:{unit:'plant:proof'},bearing:0}]})})
+    await withRun(async(registry,run)=>{
+      let reads=0
+      const spy=wrapObservations(run,original=>({...original,read:async request=>{reads++;return original.read(request)}}))
+      try{
+        const response=await route(registry,run.id,{...input,expectedRevision:pwrConnectedUnitPhysicalDesignRef.digest})
+        if(response.status!==200)throw Error(JSON.stringify(response.body))
+        expect(response.status).toBe(200)
+        const parsed=layoutLiveResponseSchema.parse(response.body),routeSubject=parsed.subjects.find(subject=>subject.elementId==='main-feedwater-pump-a-to-header')!
+        expect(reads).toBe(1)
+        expect(routeSubject.topology).toMatchObject({kind:'connection',directed:true,from:{elementId:'mainFeedwaterPumpA',port:'outlet'},to:{elementId:'feedwaterHeader',port:'inletA'}})
+        expect(routeSubject.topology!.bindings.some(binding=>binding.role==='flow')).toBe(true)
+        const acquired=new Map(parsed.sample.observations.map(observation=>[observation.ref,observation]))
+        for(const subject of parsed.subjects)for(const value of subject.topology?.values??[])expect(acquired.has(value.ref)).toBe(true)
+        const operation=resolvePhysicalSubjectOperation(routeSubject,parsed.sample.observations,false)
+        expect(operation.connection).toEqual(routeSubject.topology!.kind==='connection'?routeSubject.topology!:null)
+        expect(operation.flows.length).toBeGreaterThan(0)
+        for(const flow of operation.flows)if(flow.quality==='good')expect(acquired.get(flow.ref)!.value).toBe(flow.value)
+        for(const id of ['rcs-hot-leg-a','main-steam-header-to-turbine-stop-valve','circulating-water-pump-to-condenser']){
+          const subject=parsed.subjects.find(subject=>subject.elementId===id)!
+          expect(subject.topology!.bindings.some(binding=>binding.role==='flow')).toBe(true)
+          expect(resolvePhysicalSubjectOperation(subject,parsed.sample.observations,false).flows.length).toBeGreaterThan(0)
+        }
+        const electrical=parsed.subjects.find(subject=>subject.elementId==='unit-bus-a-to-mainFeedwaterPumpA')!,electricalOperation=resolvePhysicalSubjectOperation(electrical,parsed.sample.observations,false)
+        expect(electricalOperation.flows).toEqual([])
+        expect(electricalOperation.conducting).not.toBeNull()
+        const pump=parsed.subjects.find(subject=>subject.elementId==='mainFeedwaterPumpA')!,valve=parsed.subjects.find(subject=>subject.elementId==='feedwaterControlValveA')!
+        expect(pump.topology!.bindings.some(binding=>binding.role==='running')).toBe(true)
+        expect(resolvePhysicalSubjectOperation(pump,parsed.sample.observations,false).equipment!.running).not.toBeNull()
+        expect(valve.topology!.bindings.some(binding=>binding.role==='position')).toBe(true)
+        expect(resolvePhysicalSubjectOperation(valve,parsed.sample.observations,true).equipment!.positions.every(position=>position.quality==='stale'&&position.fraction===null)).toBe(true)
+      }finally{spy.mockRestore()}
+    },source)
+  })
+
   test('one real owner acquisition parses in the exact UI schema and retains owner quality, labels and epoch', async () => withRun(async (registry, run) => {
     let reads = 0
     const spy = wrapObservations(run, original => ({ ...original, read: async request => { reads++; return original.read(request) } }))

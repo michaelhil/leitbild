@@ -16,6 +16,7 @@ import { withDecidingElements } from './deciding.ts'
 import { shortLabelOf } from './short-labels.ts'
 import { invalidWhileOf, readingWords } from './reading-words.ts'
 import { elementLeads, elementStops, leadDigest } from './leads.ts'
+import {lineStateSignals} from './line-state.ts'
 
 // What a Plant declares to World's observation layer (plan v3.1 §2.2, A1):
 // every signal it publishes and every signal the Run records, addressed
@@ -91,6 +92,10 @@ const labelOf = (plant: CompiledProcessPlant, binding: ProcessSignalBinding): st
   const reads = name === undefined ? binding.label : `${binding.label} (${name})`
   if (binding.owner.type === 'link') {
     const link = graph.links[binding.owner.linkIndex]!
+    // The compiler's energized descriptor already spells both full endpoint
+    // names. Name this newly declared primary read once by their authored
+    // operator names, instead of repeating those ends around a separator.
+    if(lineStateSignals(graph).byLink.get(String(link.id))?.some(entry=>entry.role==='conducting'&&entry.signal.path===binding.path))return `Energized · ${nameOf(graph.components[link.fromComponentIndex]!)} → ${nameOf(graph.components[link.toComponentIndex]!)}`
     return `${reads} · ${nameOf(graph.components[link.fromComponentIndex]!)} → ${nameOf(graph.components[link.toComponentIndex]!)}`
   }
   const component = graph.components[binding.owner.componentIndex]!
@@ -146,9 +151,10 @@ export const qualifiedReadings = (plant: CompiledProcessPlant): ReadonlyMap<stri
   return qualified
 })()
 
-/** Whether the Plant declares the signal: it publishes it, or the Run records it; never a fault the scenario injects (isInjectedFault). */
+/** Declared read surface: selected push values, solved primary line-state reads,
+ * or recorded values; never instructor knobs or injected-fault truth. */
 const declares = (plant: CompiledProcessPlant, recording: PlantRecording, binding: ProcessSignalBinding): boolean =>
-  !isInjectedFault(binding) && (binding.published || recording?.seriesIds.has(recordingSeriesIdFor(plant.id, binding.path)) === true)
+  !isInjectedFault(binding) && (binding.published || lineStateSignals(plant.graph).paths.has(binding.path) || recording?.seriesIds.has(recordingSeriesIdFor(plant.id, binding.path)) === true)
 
 /**
  * A count the I&C only steps through (a diesel's load sequencer, R29) is a

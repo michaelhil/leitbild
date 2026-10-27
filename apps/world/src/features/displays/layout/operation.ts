@@ -17,5 +17,5 @@ export type LayoutSubjectTopology = LayoutSubjectTopologyStructure & {
 export interface LayoutOperationalSubject {
   readonly elementId: string
   readonly label: string
-  readonly topology?: LayoutSubjectTopology
+  readonly topology?: LayoutSubjectTopology | undefined
 }

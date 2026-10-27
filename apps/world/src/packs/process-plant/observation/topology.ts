@@ -8,6 +8,7 @@ import { plantCarriers, plantLoops, principalCircuits } from '../equipment/circu
 import { electricalExternalPortId } from '../electrical-ports.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { insertionPositions, itemStateRoles, stoppedPaths } from './derived.ts'
+import {lineStateSignals} from './line-state.ts'
 
 // The Plant as World's `flow` topology (plan v3.1 §2.9, architecture A5):
 // equipment as nodes with the ports its pipes and cables join, each port's
@@ -106,6 +107,7 @@ export const plantTopology = (objectId: ObjectId, graph: CompiledPlantGraph, rev
   if (known !== undefined && known.objectId === objectId && known.revision === revision) return known
   const carriers = new Set(plantCarriers(graph))
   const links = graph.links.filter(link => carriers.has(linkCarrier(link)))
+  const lineStates=lineStateSignals(graph)
   const portMedia = new Map<string, Set<string>>()
   for (const link of links) {
     for (const key of [`${link.fromComponentIndex}|${link.fromPortName}`, `${link.toComponentIndex}|${link.toPortName}`]) portMedia.set(key, new Set([...(portMedia.get(key) ?? []), linkCarrier(link)]))
@@ -140,7 +142,7 @@ export const plantTopology = (objectId: ObjectId, graph: CompiledPlantGraph, rev
     }),
     edges: links.map(link => ({
       id: String(link.id), rank: `${linkCarrier(link)}|${link.id}`, medium: linkCarrier(link), directed: true,
-      bindings: bound(objectId, graph, [['flow', link.variables.find(variable => String(variable.path) === `${link.id}.flowKgPerS`)?.path], ['conducting', link.variables.find(variable => String(variable.path) === `${link.id}.energized`)?.path]]),
+      bindings: (lineStates.byLink.get(String(link.id))??[]).map(({role,signal})=>({role,ref:`${objectId}#${signal.path}`})),
       from: { node: String(graph.components[link.fromComponentIndex]!.id), port: String(link.fromPortName) },
       to: { node: String(graph.components[link.toComponentIndex]!.id), port: String(link.toPortName) },
       ...(link.metadata?.loopId === undefined ? {} : { group: link.metadata.loopId }),
