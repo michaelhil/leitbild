@@ -8,6 +8,8 @@ import architectureUnitManifestData from './pwr-full-unit-architecture.design.js
 import architectureCampusManifestData from './pwr-campus-architecture.design.json'
 import draftingUnitManifestData from './pwr-full-unit-drafting.design.json'
 import draftingCampusManifestData from './pwr-campus-drafting.design.json'
+import connectedUnitManifestData from './pwr-full-unit-connected.design.json'
+import connectedCampusManifestData from './pwr-campus-connected.design.json'
 import { physicalCatalogContent, physicalCatalogManifestSchema, type PhysicalCatalogManifest } from './catalog-manifest.ts'
 import { canonicalPhysicalJson, physicalCorrespondenceSchema, physicalDesignRefSchema, turbineIslandCorrespondenceSchema } from './model.ts'
 import { physicalSourceSchema as originalSourceSchema, type Source as OriginalSource } from './native/source.ts'
@@ -29,6 +31,8 @@ const architectureUnitManifest = physicalCatalogManifestSchema.parse(architectur
 const architectureCampusManifest = physicalCatalogManifestSchema.parse(architectureCampusManifestData)
 const draftingUnitManifest = physicalCatalogManifestSchema.parse(draftingUnitManifestData)
 const draftingCampusManifest = physicalCatalogManifestSchema.parse(draftingCampusManifestData)
+const connectedUnitManifest = physicalCatalogManifestSchema.parse(connectedUnitManifestData)
+const connectedCampusManifest = physicalCatalogManifestSchema.parse(connectedCampusManifestData)
 
 /** The original reference remains exact; it is not a mutable current/latest pointer. */
 export const currentPwrPhysicalDesignRef = Object.freeze({ ...turbineManifest.design, id: 'pwr-turbine-island' as const })
@@ -41,6 +45,8 @@ export const pwrArchitectureCampusPhysicalDesignRef = Object.freeze({ ...archite
 
 export const pwrDraftingUnitPhysicalDesignRef = Object.freeze({ ...draftingUnitManifest.design, id: 'pwr-full-unit' as const })
 export const pwrDraftingCampusPhysicalDesignRef = Object.freeze({ ...draftingCampusManifest.design, id: 'pwr-campus' as const })
+export const pwrConnectedUnitPhysicalDesignRef = Object.freeze({ ...connectedUnitManifest.design, id: 'pwr-full-unit' as const })
+export const pwrConnectedCampusPhysicalDesignRef = Object.freeze({ ...connectedCampusManifest.design, id: 'pwr-campus' as const })
 
 type OriginalDesign = Extract<PhysicalCatalogManifest, { profile: 'turbine-island' }> & { readonly source: OriginalSource; readonly bindings: Array<z.infer<typeof turbineIslandCorrespondenceSchema>> }
 type CampusDesign = Extract<PhysicalCatalogManifest, { profile: 'campus' }> & { readonly source: CampusSource; readonly bindings: Array<z.infer<typeof physicalCorrespondenceSchema>>; readonly coverageEvidence: PhysicalCoverageEvidence }
@@ -59,6 +65,8 @@ const entries: ReadonlyArray<CatalogEntry> = [
   { manifest: architectureCampusManifest, load: async () => ({ source: (await import('./pwr-campus-architecture.source.json')).default, bindings: (await import('./pwr-campus-architecture.bindings.json')).default, coverage: (await import('./pwr-campus-architecture.coverage.json')).default }) },
   { manifest: draftingUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-drafting.source.json')).default, bindings: (await import('./pwr-full-unit-drafting.bindings.json')).default, coverage: (await import('./pwr-full-unit-drafting.coverage.json')).default }) },
   { manifest: draftingCampusManifest, load: async () => ({ source: (await import('./pwr-campus-drafting.source.json')).default, bindings: (await import('./pwr-campus-drafting.bindings.json')).default, coverage: (await import('./pwr-campus-drafting.coverage.json')).default }) },
+  { manifest: connectedUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-connected.source.json')).default, bindings: (await import('./pwr-full-unit-connected.bindings.json')).default, coverage: (await import('./pwr-full-unit-connected.coverage.json')).default }) },
+  { manifest: connectedCampusManifest, load: async () => ({ source: (await import('./pwr-campus-connected.source.json')).default, bindings: (await import('./pwr-campus-connected.bindings.json')).default, coverage: (await import('./pwr-campus-connected.coverage.json')).default }) },
 ]
 const catalog = new Map(entries.map(entry => [canonicalPhysicalJson(entry.manifest.design), entry]))
 if (catalog.size !== entries.length) throw new Error('Duplicate exact physical Design Revision')
