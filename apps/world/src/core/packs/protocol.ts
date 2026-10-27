@@ -869,6 +869,13 @@ export interface PackPhysicalTargetDescription {
   readonly modelRef: string
   readonly modelDigest: string
   readonly subjects: ReadonlyArray<{ readonly id: string; readonly label: string; readonly location?: readonly [number, number] }>
+  /** Exact graph edges, independently selectable by a physical Design. The
+   * owning Pack supplies endpoint identities; layouts cannot invent links. */
+  readonly connections?: ReadonlyArray<{
+    readonly id: string; readonly label: string; readonly kind: string
+    readonly from: { readonly subjectId: string; readonly port: string }
+    readonly to: { readonly subjectId: string; readonly port: string }
+  }>
 }
 
 /** Complete server-side Pack definition. World Pack views are projections of

@@ -20,6 +20,13 @@ export const describeProcessPlantPhysicalTargets = (object: OperationalObject): 
     modelRef: plant.modelRef,
     modelDigest: plant.modelDigest,
     subjects: Object.freeze(plant.sourceGraph.components.map(component => Object.freeze({ id: component.id, label: component.label ?? component.id }))),
+    connections: Object.freeze(plant.graph.links.map(link => {
+      const from = plant.graph.components[link.fromComponentIndex]!, to = plant.graph.components[link.toComponentIndex]!
+      return Object.freeze({ id: String(link.id), label: `${from.label} to ${to.label}`, kind: link.kind,
+        from: Object.freeze({ subjectId: String(from.id), port: String(link.fromPortName) }),
+        to: Object.freeze({ subjectId: String(to.id), port: String(link.toPortName) }),
+      })
+    })),
   })
   if (descriptions.size >= 64) descriptions.delete(descriptions.keys().next().value!)
   descriptions.set(key, description)

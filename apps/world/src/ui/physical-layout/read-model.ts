@@ -56,7 +56,7 @@ const sampleSchema = z.object({
 
 const responseSchema = z.object({
   scope: layoutLiveScopeSchema, acquiredAt: z.string().datetime({ offset: true }), sample: sampleSchema,
-  subjects: z.array(z.object({ elementId: z.string().min(1).max(200), label: text, values: z.array(valueSchema).max(16), word: z.string().min(1).max(300).nullable(), devices: z.array(elementSchema).max(64) }).strict()).min(1).max(256),
+  subjects: z.array(z.object({ elementId: z.string().min(1).max(200), label: text, values: z.array(valueSchema).max(16), word: z.string().min(1).max(300).nullable(), devices: z.array(elementSchema).max(64) }).strict()).min(1),
 }).strict().superRefine((response, context) => {
   const subjects = response.subjects.map(subject => subject.elementId)
   if (new Set(subjects).size !== subjects.length) context.addIssue({ code: 'custom', message: 'Duplicate layout live subject' })

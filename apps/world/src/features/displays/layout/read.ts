@@ -60,8 +60,8 @@ export const layoutDescriptorOf = async (run: ViewRun, input: z.infer<typeof lay
   const requiredConnections = descriptor.requiredConnections ?? []
   if (requiredConnections.length > 64 || requiredConnections.some(required => run.connections.filter(connection => connection.system.objectId === required.system.objectId && connection.system.portId === required.system.portId
     && connection.network.objectId === required.network.objectId && connection.network.portId === required.network.portId).length !== 1)) return refuse('layout_connection_mismatch', 'The retained physical routing does not match this Run\'s canonical connections')
-  const ids = new Set(targets.subjects.map(subject => subject.id))
-  if (descriptor.subjectIds.length > 256 || descriptor.subjectIds.some(id => !ids.has(id))) return refuse('layout_subject_mismatch', 'The layout contains unsupported owner subjects')
+  const ids = new Set([...targets.subjects, ...(targets.connections ?? [])].map(subject => subject.id))
+  if (descriptor.subjectIds.some(id => !ids.has(id))) return refuse('layout_subject_mismatch', 'The layout contains unsupported owner subjects')
   return descriptor
 }
 
