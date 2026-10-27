@@ -10,6 +10,10 @@ const subtract = (a: RoutePoint, b: RoutePoint): V3 => a.map((v, i) => v - b[i]!
 const norm = (v: RoutePoint): V3 => { const length = Math.hypot(...v); if (!length) throw new Error('A route sweep requires a nonzero tangent'); return v.map(n => n / length) as V3 }
 const cross = (a: RoutePoint, b: RoutePoint): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 const dot = (a: RoutePoint, b: RoutePoint) => a.reduce((sum, v, i) => sum + v * b[i]!, 0)
+const perpendicular = (tangent: RoutePoint): V3 => {
+  const least = [0, 1, 2].reduce((best, axis) => Math.abs(tangent[axis]!) < Math.abs(tangent[best]!) ? axis : best, 0), axis: V3 = [0, 0, 0]
+  axis[least] = 1; return norm(cross(tangent, axis))
+}
 const extent = (points: ReadonlyArray<RoutePoint>, padding: number) => ({ min: [0, 1, 2].map(axis => Math.min(...points.map(p => p[axis]!)) - padding) as V3, max: [0, 1, 2].map(axis => Math.max(...points.map(p => p[axis]!)) + padding) as V3 })
 
 /** Continuous watertight sweep: shared rings and smooth normals, capped only at
@@ -20,10 +24,10 @@ export const physicalRouteTube = (points: ReadonlyArray<RoutePoint>, radius: num
   const count = Math.max(3, Math.ceil(Math.PI / (2 * Math.asin(Math.sqrt(Math.min(1, tolerance / (2 * radius)))))))
   if (!Number.isSafeInteger(count)) throw new Error('Requested sweep accuracy exceeds representable geometric precision')
   const tangents = points.map((p, i) => norm(i === 0 ? subtract(points[1]!, p) : i === points.length - 1 ? subtract(p, points[i - 1]!) : norm(subtract(p, points[i - 1]!)).map((v, axis) => v + norm(subtract(points[i + 1]!, p))[axis]!) as V3))
-  let u: V3 = norm(cross(tangents[0]!, Math.abs(tangents[0]![2]) < .9 ? [0, 0, 1] : [0, 1, 0]))
+  let u: V3 = perpendicular(tangents[0]!)
   const rings = points.map((center, index) => {
     const tangent = tangents[index]!, projected = u.map((value, axis) => value - tangent[axis]! * dot(u, tangent)) as V3
-    u = Math.hypot(...projected) > Number.EPSILON ? norm(projected) : norm(cross(tangent, [0, 1, 0]))
+    u = Math.hypot(...projected) > Number.EPSILON ? norm(projected) : perpendicular(tangent)
     const v = cross(tangent, u)
     return Array.from({ length: count }, (_, side) => {
       const angle = side * 2 * Math.PI / count, normal = u.map((n, axis) => n * Math.cos(angle) + v[axis]! * Math.sin(angle)) as V3
@@ -116,7 +120,7 @@ export const appendPhysicalRouteDrawing = (scene: PackPhysicalScene, drawing: Ph
       const fractions = [low, ...(delta && (floor.cutHeight - a[2]) / delta > low && (floor.cutHeight - a[2]) / delta < high ? [(floor.cutHeight - a[2]) / delta] : []), high]
       for (let part = 1; part < fractions.length; part++) {
         const p = a.map((v, axis) => v + (b[axis]! - v) * fractions[part - 1]!) as V3, q = a.map((v, axis) => v + (b[axis]! - v) * fractions[part]!) as V3
-        append(p, q, (p[2] + q[2]) / 2 > floor.cutHeight)
+        append(p, q, route.object.levelId !== 'site' && (p[2] + q[2]) / 2 > floor.cutHeight)
       }
     }
     // One cached path per depiction, not a separate draw for every curve chord.

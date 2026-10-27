@@ -51,7 +51,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   return {
     render(mainMatrix: ArrayLike<number>): void {
       if (disposed || failed) return
-      const before = captureSceneGlState(gl)
+      let before: ReturnType<typeof captureSceneGlState> | null = null
       try {
         const draws: PhysicalDraw[] = []; picking = []
         const current = entries().map(entry => {
@@ -72,10 +72,15 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
           draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)) })
         }
+        // Vector Plan still updates real solid picking above, but owns all
+        // visible colour in its native drawing surface. An empty GL pass must
+        // neither query shared GL state nor clear/composite a blank target.
+        if (!draws.length) return
+        before = captureSceneGlState(gl)
         renderPass ??= createPhysicalRenderPass(gl); renderPass.begin(before.viewport[2], before.viewport[3])
         backend.draw(draws, depthNear); renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
       } catch (error) { failed = true; picking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
-      finally { restoreSceneGlState(gl, before) }
+      finally { if (before) restoreSceneGlState(gl, before) }
     },
     invalidatePicks(): void { picking = [] }, pick, cheapProject,
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
