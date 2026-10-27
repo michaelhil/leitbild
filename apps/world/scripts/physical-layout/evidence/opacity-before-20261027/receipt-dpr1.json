@@ -1,0 +1,312 @@
+{
+  "passed": false,
+  "results": [
+    {
+      "kind": "single-red-over-blue",
+      "opacity": 0,
+      "center": [
+        0,
+        0,
+        255,
+        255
+      ],
+      "expected": [
+        0,
+        0,
+        255,
+        255
+      ],
+      "passed": true,
+      "state": [],
+      "glError": 0
+    },
+    {
+      "kind": "single-red-over-blue",
+      "opacity": 0.5,
+      "center": [
+        127,
+        0,
+        128,
+        255
+      ],
+      "expected": [
+        128,
+        0,
+        127,
+        255
+      ],
+      "passed": true,
+      "state": [],
+      "glError": 0
+    },
+    {
+      "kind": "single-red-over-blue",
+      "opacity": 1,
+      "center": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "expected": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "passed": true,
+      "state": [],
+      "glError": 0
+    },
+    {
+      "kind": "overlap-order",
+      "center": [
+        96,
+        96,
+        64,
+        255
+      ],
+      "reverse": [
+        96,
+        96,
+        64,
+        255
+      ],
+      "differentBytes": 0,
+      "expected": [
+        128,
+        64,
+        64,
+        255
+      ],
+      "passed": false
+    },
+    {
+      "kind": "MSAA-shared-silhouette",
+      "edgeFailures": 408,
+      "edgeMaximumError": 24,
+      "edgeExamples": [
+        {
+          "x": 13,
+          "y": 12,
+          "expected": [
+            223,
+            191,
+            223,
+            255
+          ],
+          "actual": [
+            199,
+            167,
+            223,
+            255
+          ],
+          "red": [
+            255,
+            191,
+            191,
+            255
+          ],
+          "blue": [
+            191,
+            191,
+            255,
+            255
+          ]
+        },
+        {
+          "x": 14,
+          "y": 12,
+          "expected": [
+            223,
+            191,
+            223,
+            255
+          ],
+          "actual": [
+            199,
+            167,
+            223,
+            255
+          ],
+          "red": [
+            255,
+            191,
+            191,
+            255
+          ],
+          "blue": [
+            191,
+            191,
+            255,
+            255
+          ]
+        },
+        {
+          "x": 15,
+          "y": 12,
+          "expected": [
+            223,
+            191,
+            223,
+            255
+          ],
+          "actual": [
+            199,
+            167,
+            223,
+            255
+          ],
+          "red": [
+            255,
+            191,
+            191,
+            255
+          ],
+          "blue": [
+            191,
+            191,
+            255,
+            255
+          ]
+        },
+        {
+          "x": 16,
+          "y": 12,
+          "expected": [
+            223,
+            191,
+            223,
+            255
+          ],
+          "actual": [
+            199,
+            167,
+            223,
+            255
+          ],
+          "red": [
+            255,
+            191,
+            191,
+            255
+          ],
+          "blue": [
+            191,
+            191,
+            255,
+            255
+          ]
+        }
+      ],
+      "passed": false
+    },
+    {
+      "kind": "slider-no-derived-geometry",
+      "geometryUploadsBefore": 3,
+      "geometryUploadsAfter": 3,
+      "preparesBefore": 3,
+      "preparesAfter": 3,
+      "allocationsBefore": 1,
+      "allocationsAfter": 1,
+      "passed": true
+    }
+  ],
+  "negativeCapability": {
+    "errors": [
+      "Architecture transparency requires floating-point colour attachments on this GPU"
+    ],
+    "initialPick": "negative",
+    "changedRefusalBytes": 0,
+    "recoveredPick": null,
+    "opaqueDraws": 1,
+    "refusedDraws": 2,
+    "recoveredDraws": 2,
+    "recovered": false
+  },
+  "disposal": true,
+  "metrics": {
+    "geometryUploads": 3,
+    "geometryBytes": 0,
+    "residentCpuBytes": 0,
+    "draws": 70,
+    "buffers": 0,
+    "programs": 0,
+    "textures": 0,
+    "textureBytes": 0,
+    "instanceBytes": 0,
+    "instanceUploads": 32,
+    "statusUploads": 18,
+    "paletteUploads": 3,
+    "evictions": 0,
+    "peakRequiredBytes": 972,
+    "liveBuffersAfterDisposal": 0,
+    "liveProgramsAfterDisposal": 0,
+    "liveTexturesAfterDisposal": 0,
+    "pass": {
+      "depthFormat": "float32",
+      "samples": 4,
+      "programs": 0,
+      "textures": 0,
+      "framebuffers": 0,
+      "renderbuffers": 0,
+      "bytes": 0,
+      "textureBytes": 0,
+      "allocations": 1,
+      "composites": 13,
+      "liveTextures": 0,
+      "livePrograms": 0,
+      "liveFramebuffers": 0,
+      "liveRenderbuffers": 0
+    },
+    "negative": {
+      "geometryUploads": 1,
+      "geometryBytes": 0,
+      "residentCpuBytes": 0,
+      "draws": 2,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 2,
+      "statusUploads": 2,
+      "paletteUploads": 1,
+      "evictions": 0,
+      "peakRequiredBytes": 324,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0,
+      "cpuResidency": {
+        "residentViews": 0,
+        "residentBytes": 0,
+        "peakRequiredBytes": 0,
+        "evictions": 0
+      },
+      "renderPass": {
+        "depthFormat": "float32",
+        "samples": 4,
+        "programs": 0,
+        "textures": 0,
+        "framebuffers": 0,
+        "renderbuffers": 0,
+        "bytes": 0,
+        "textureBytes": 0,
+        "allocations": 1,
+        "composites": 1,
+        "liveTextures": 0,
+        "livePrograms": 0,
+        "liveFramebuffers": 0,
+        "liveRenderbuffers": 0
+      },
+      "depthNear": 0
+    }
+  },
+  "device": {
+    "dpr": 1,
+    "renderer": "WebKit WebGL",
+    "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+    "samples": 4
+  },
+  "hostState": []
+}
