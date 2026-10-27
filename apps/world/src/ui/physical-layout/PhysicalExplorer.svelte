@@ -436,18 +436,28 @@
     })
     return proposals
   })
+  // Readings change glyphs; only a changed connection roster changes which
+  // physical paths need projection. Equal membership preserves screen geometry.
+  const flowSubjectMembership = $derived.by(() => JSON.stringify(annotationScenes.map(scene => {
+    const reading = snapshots.get(scene.descriptor.id)?.latest
+    if (!scene.view.live || !reading) return [scene.descriptor.id, []]
+    const operations = operationsFor(reading, frozenScenes.has(scene.descriptor.id))
+    return [scene.descriptor.id, reading.subjects.filter(subject => operations.get(subject.elementId)?.connection).map(subject => subject.elementId)]
+  })))
+  const flowSubjectIndex = $derived(new Map((JSON.parse(flowSubjectMembership) as Array<[string, string[]]>).map(([sceneId, subjects]) => [sceneId, new Set(subjects)])))
+  type ProjectedFlowMark = Omit<FlowMark, 'glyph'> & { readonly elementId: string }
   const flowScopeRegions = new WeakMap<PackPhysicalScene, { readonly scopeId: string | undefined; readonly regions: ReturnType<typeof physicalScopeRegions> }>()
-  const proposedFlowMarks = $derived.by((): ReadonlyArray<FlowMark> => {
-    void screenRevision
+  const projectedFlowMarks = $derived.by((): ReadonlyArray<ProjectedFlowMark> => {
+    void screenRevision; void theme
     if (!active || suspended || !documentVisible || !controller || !draftingCanvas) return []
     const fontSize = Number.parseFloat(getComputedStyle(draftingCanvas).fontSize)
-    const marks: FlowMark[] = [], presentations = new Map(annotationScenes.map(scene => [scene.descriptor.id, scene]))
+    const marks: ProjectedFlowMark[] = [], presentations = new Map(annotationScenes.map(scene => [scene.descriptor.id, scene]))
     const sceneContexts = new Map<string, { readonly source: PackPhysicalScene; readonly regions: ReturnType<typeof physicalScopeRegions> }>()
     const scopeId = focusedScopeId ?? undefined
     for (const { sceneId, occurrence } of scopedOccurrences) {
-      if (!occurrence.spatialPath || occurrence.subjectIds.length !== 1) continue
-      const presentation = presentations.get(sceneId), reading = snapshots.get(sceneId)?.latest
-      if (!presentation?.view.live || !reading) continue
+      if (!occurrence.spatialPath || occurrence.subjectIds.length !== 1 || !flowSubjectIndex.get(sceneId)?.has(occurrence.subjectIds[0]!)) continue
+      const presentation = presentations.get(sceneId)
+      if (!presentation?.view.live) continue
       let context = sceneContexts.get(sceneId)
       if (!context) {
         const source = controller.scene(sceneId); if (!source) continue
@@ -455,15 +465,24 @@
         if (!cached || cached.scopeId !== scopeId) { cached = { scopeId, regions: physicalScopeRegions(source, scopeId) }; flowScopeRegions.set(source, cached) }
         context = { source, regions: cached.regions }; sceneContexts.set(sceneId, context)
       }
-      const operation = operationsFor(reading, frozenScenes.has(sceneId)).get(occurrence.subjectIds[0]!)
-      if (!operation?.connection) continue
-      const flow = operation.flow, conducting = operation.conducting
-      const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'deenergized' : 'unknown'
       let ordinal = 0
       for (const path of physicalRouteInspectionPaths(occurrence, context.regions, presentation.view)) {
         const points = controller.projectOccurrencePoints(sceneId, occurrence.id, path.points, path.levelId)
-        for (const mark of physicalRouteScreenMarks(points, size, fontSize)) marks.push({ ...mark, kind: 'flow', key: `${sceneId}:${occurrence.id}:${ordinal++}`, sceneId, occurrenceId: occurrence.id, glyph, rank: 0 })
+        for (const mark of physicalRouteScreenMarks(points, size, fontSize)) marks.push({ ...mark, kind: 'flow', key: `${sceneId}:${occurrence.id}:${ordinal++}`, sceneId, occurrenceId: occurrence.id, elementId: occurrence.subjectIds[0]!, rank: 0 })
       }
+    }
+    return marks
+  })
+  const proposedFlowMarks = $derived.by((): ReadonlyArray<FlowMark> => {
+    const marks: FlowMark[] = []
+    for (const mark of projectedFlowMarks) {
+      const reading = snapshots.get(mark.sceneId)?.latest
+      if (!reading) continue
+      const operation = operationsFor(reading, frozenScenes.has(mark.sceneId)).get(mark.elementId)
+      if (!operation?.connection) continue
+      const flow = operation.flow, conducting = operation.conducting
+      const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'deenergized' : 'unknown'
+      marks.push({ ...mark, glyph })
     }
     return marks
   })
