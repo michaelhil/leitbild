@@ -55,7 +55,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       if (!object) return null
       return { sceneId: plan.entry.scene.id, targetObjectId: plan.entry.scene.targetObjectId, occurrenceId: object.id, label: object.label, subjectIds: object.subjectIds, screen: point }
     }
-    const rectangle = size(), hit = pickPhysicalMesh(picking, point, rectangle.width, rectangle.height)
+    const rectangle=renderedRectangle,hit=pickPhysicalMesh(picking,point,rectangle.width,rectangle.height)
     if (!hit) return null
     const entry = entries().find(candidate => candidate.scene.id === hit.sceneId)
     return entry ? { sceneId: hit.sceneId, targetObjectId: entry.scene.targetObjectId, occurrenceId: hit.mesh.object.id, label: hit.mesh.object.label, subjectIds: hit.mesh.object.subjectIds, screen: point } : null
