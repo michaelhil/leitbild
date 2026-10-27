@@ -9,6 +9,7 @@
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
   import { explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
+  import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
   import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
@@ -150,6 +151,7 @@
   })
   const collectionScenes = $derived(scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId))
   const collectionFloorGroups = $derived(focusedId === null ? physicalCollectionFloorGroups(collectionScenes, scene => objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId) : [])
+  const collectionLayerChoices = $derived(focusedId === null ? physicalCollectionLayerChoices(collectionScenes, scene => objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId) : [])
   const mixedSettings = $derived(focusedId === null ? physicalCollectionMixedSettings(collectionScenes) : [])
   const scopeKey = $derived(focusedId === null ? focusedGroupId === null ? null : explorerGroupKey(focusedGroupId) : explorerLayoutKey(focusedId, focusedScopeId ?? undefined))
   const activeScope = $derived(focused?.descriptor.scopes?.find(scope => scope.id === focusedScopeId) ?? null)
@@ -460,6 +462,12 @@
     for (const change of changes) { controller?.setView(change.sceneId, change.view); if (change.view.mode === '2d') rememberedPlanFloor.set(change.sceneId, levelId) }
     void afterPanels(() => controller?.fitAll(ids))
   }
+  const changeCollectionLayer = (key: string, visible: boolean): void => {
+    if (suspended || focusedId !== null) return
+    const choice = collectionLayerChoices.find(choice => choice.key === key)
+    if (!choice) return
+    for (const change of physicalCollectionLayerChanges(choice, visible)) controller?.setView(change.sceneId, change.view)
+  }
   const fit = (): void => { if (suspended) return; controls?.dismiss(); cameraControls?.dismiss(); componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
   const home = (): void => { if (suspended) return; controls?.dismiss(); cameraControls?.dismiss(); componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.home(sceneId, scopeId ?? undefined) }) }
   const focusOccurrence = (sceneId: string, occurrenceId: string, chosenLevel?: string): void => {
@@ -621,7 +629,7 @@
       {#snippet cameraNavigation()}
         <CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
       {/snippet}
-      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
+      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           navigationControls={focused.view.mode === '3d' ? cameraNavigation : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}

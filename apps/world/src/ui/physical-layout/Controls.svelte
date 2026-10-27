@@ -1,17 +1,20 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { PhysicalCollectionFloorGroup, PhysicalMixedViewSetting } from './collection-floors.ts'
+  import type { PhysicalCollectionLayerChoice } from './collection-layers.ts'
   import { changePhysicalLayoutView, levelLabel, type PhysicalLayoutLevel, type PhysicalLayoutView } from './view.ts'
   import { explorerScopeAncestors, explorerScopeBranches, type ExplorerScopeBranch, type ExplorerScopeChoice } from './explorer-model.ts'
 
-  let { title, path = title, choices, scopeKey, levels, layers = [], view, status, suspended = false, floorGroups = [], mixedSettings = [], onfloorchange,
+  let { title, path = title, choices, scopeKey, levels, layers = [], collectionLayerChoices = [], view, status, suspended = false, floorGroups = [], mixedSettings = [], onfloorchange, oncollectionlayerchange,
     onscope, onviewchange, onfit, onhome, onoverview, onfind, onclose, onretry, retryLabel = 'Retry physical layout', navigationControls,
   }: {
     title: string; path?: string; choices: ReadonlyArray<ExplorerScopeChoice>; scopeKey: string | null
     levels: ReadonlyArray<PhysicalLayoutLevel>; view: PhysicalLayoutView; status: string; suspended?: boolean
     layers?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly defaultVisible: boolean }>
+    collectionLayerChoices?: ReadonlyArray<PhysicalCollectionLayerChoice>
     floorGroups?: ReadonlyArray<PhysicalCollectionFloorGroup>; mixedSettings?: ReadonlyArray<PhysicalMixedViewSetting>
     onfloorchange?: (key: string, levelId: string) => void
+    oncollectionlayerchange?: ((key: string, visible: boolean) => void) | undefined
     onscope: (key: string | null) => void; onviewchange: (view: PhysicalLayoutView, patch?: Partial<PhysicalLayoutView>) => void
     onfit: () => void; onhome: () => void; onoverview?: (() => void) | undefined; onfind: () => void
     onclose?: (() => void) | undefined
@@ -83,6 +86,7 @@
       {#if choices.find(choice => choice.key === scopeKey)?.sceneId}<label><input type="checkbox" checked={view.surroundings ?? false} onchange={event => change({ surroundings: event.currentTarget.checked })} /> Surrounding buildings</label>{/if}
       <label><input type="checkbox" checked={view.detail === 'auto'} indeterminate={mixedSettings.includes('detail')} onchange={event => change({ detail: event.currentTarget.checked ? 'auto' : 'hidden' })} /> Reveal detail as needed{mixedSettings.includes('detail') ? ' · Mixed' : ''}</label>
       {#each layers as layer (layer.id)}<label><input type="checkbox" checked={!hiddenLayerIds.includes(layer.id)} onchange={event => change({ hiddenLayerIds: event.currentTarget.checked ? hiddenLayerIds.filter(id => id !== layer.id) : [...hiddenLayerIds, layer.id] })} /> {layer.label}</label>{/each}
+      {#each collectionLayerChoices as layer (layer.key)}<label class="collection-layer" title={layer.memberLabels.join(', ')}><input type="checkbox" checked={layer.visible === true} indeterminate={layer.visible === null} disabled={suspended || !oncollectionlayerchange} onchange={event => oncollectionlayerchange?.(layer.key, event.currentTarget.checked)} /><span>{layer.label}{layer.visible === null ? ' · Mixed' : ''}<small>{layer.scenes.length} {layer.scenes.length === 1 ? 'layout' : 'layouts'} · {layer.memberLabels.join(', ')}</small></span></label>{/each}
       {#if view.mode === '3d' && (view.levelId === 'all' || floorGroups.some(group => group.scenes.some(scene => scene.view.levelId === 'all')))}<label class="separation">Separate floors <output>metres of view offset</output><input aria-label="Floor separation view offset in metres" type="number" min="0" step="1" value={mixedSettings.includes('separation') ? '' : view.separation} placeholder={mixedSettings.includes('separation') ? 'Mixed' : undefined} oninput={event => { const separation = event.currentTarget.valueAsNumber; if (Number.isFinite(separation) && separation >= 0) change({ separation }) }} /></label>{/if}
       <button type="button" onclick={() => { viewOpen = false; onhome() }}>Home · source view</button>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}
     </section>
@@ -107,6 +111,7 @@
   .area-search { display: grid; gap: 4px; }.area-search input { min-width: 0; min-height: 44px; box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--panel); font: inherit; }.area-help { margin: 2px 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
   .area-tree, .area-tree ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }.area-tree ul { margin-top: 5px; margin-left: 12px; padding-left: 5px; border-left: 1px solid var(--border); }.scope-node { display: flex; align-items: stretch; gap: 4px; }.expand-area, .leaf-spacer { flex: 0 0 44px; width: 44px; }.expand-area { padding: 0; font-size: 18px; }.choose-area { flex: 1; min-width: 0; display: grid; gap: 3px; text-align: left; }.choose-area strong { font-weight: 600; overflow-wrap: anywhere; }.choose-area small { font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
   .settings label { display: flex; align-items: center; gap: 8px; min-height: 44px; }.settings input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }.settings .separation { display: grid; grid-template-columns: 1fr auto; }.separation input { grid-column: 1 / -1; width: 100%; min-height: 44px; box-sizing: border-box; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit; }
+  .collection-layer > span { min-width: 0; overflow-wrap: anywhere; }.collection-layer input { flex: 0 0 18px; }.collection-layer small { display: block; color: var(--muted); font-size: 10px; line-height: 1.4; }
   .evidence button { margin-right: 8px; }
   .control-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
   .evidence { flex: 1 1 20rem; min-width: 0; margin: 0; color: var(--muted); background: var(--panel); border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.4; }
