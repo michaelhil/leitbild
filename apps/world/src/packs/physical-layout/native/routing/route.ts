@@ -2,6 +2,7 @@ import type { RouteBounds, RoutePoint } from './source.ts'
 import { same, inside, pointKey, unit, scale, dot, cross, distance, magnitude, enough, onSegment, simplify, subtract, physicalRouteIntersects } from './vector.ts'
 import { searchPhysicalRoute } from './search.ts'
 import { physicalFilletTrims } from './round.ts'
+import { validatePhysicalRouteSelfClearance } from './self-clearance.ts'
 export { physicalRouteIntersects } from './vector.ts'
 export { roundedPhysicalRoute } from './round.ts'
 
@@ -92,6 +93,7 @@ export const validatePhysicalConnectionRoute = (request: PhysicalRouteRequest, a
     }
     if (!found) throw Error(`Accepted route misses or reorders a required straight-through waypoint: ${request.id}`)
   }
+  validatePhysicalRouteSelfClearance(request.id, points, trims, request.bendRadius, request.radius)
   return { length: points.slice(1).reduce((sum, p, i) => sum + distance(points[i]!, p), 0), bends: trims.filter(value => value > 0).length }
 }
 

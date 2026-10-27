@@ -11,6 +11,14 @@ export const physicalFilletTrims = (input: ReadonlyArray<RoutePoint>, radius: nu
   for (let i = 1; i < points.length; i++) if (!enough(distance(points[i - 1]!, points[i]!), trims[i - 1]! + trims[i]!, Math.max(...points[i - 1]!.map(Math.abs), ...points[i]!.map(Math.abs)))) throw Error('Centreline straight length cannot accommodate the specified minimum bend radius')
   return { points, trims }
 }
+/** Analytic circular corner shared by meshing and self-clearance validation. */
+export const physicalFilletArc = (a: RoutePoint, b: RoutePoint, c: RoutePoint, radius: number, trim: number) => {
+  const u = unit(subtract(b, a)), v = unit(subtract(c, b)), normal = unit(cross(u, v)), angle = Math.atan2(magnitude(cross(u, v)), dot(u, v))
+  const p = b.map((value, axis) => value - u[axis]! * trim) as unknown as RoutePoint, q = b.map((value, axis) => value + v[axis]! * trim) as unknown as RoutePoint
+  const inward = cross(normal, u), center = p.map((value, axis) => value + inward[axis]! * radius) as unknown as RoutePoint, radial = subtract(p, center), tangent = cross(normal, radial)
+  const point = (fraction: number): RoutePoint => fraction === 0 ? p : fraction === 1 ? q : center.map((value, axis) => value + radial[axis]! * Math.cos(angle * fraction) + tangent[axis]! * Math.sin(angle * fraction)) as unknown as RoutePoint
+  return { p, q, angle, point }
+}
 /** True circular fillets with the requested minimum radius. Insufficient
  * straight length and immediate reversals are explicit errors. Chord tolerance
  * controls the sagitta; it never relaxes the authored bend radius. */
@@ -21,14 +29,12 @@ export const roundedPhysicalRoute = (input: ReadonlyArray<RoutePoint>, radius: n
   for (let i = 1; i < points.length - 1; i++) {
     const a = points[i - 1]!, b = points[i]!, c = points[i + 1]!, trim = trims[i]!
     if (!trim) { result.push(b); continue }
-    const u = unit(subtract(b, a)), v = unit(subtract(c, b)), normal = unit(cross(u, v)), angle = Math.atan2(magnitude(cross(u, v)), dot(u, v))
-    const p = b.map((value, axis) => value - u[axis]! * trim) as unknown as RoutePoint, q = b.map((value, axis) => value + v[axis]! * trim) as unknown as RoutePoint
-    const inward = cross(normal, u), center = p.map((value, axis) => value + inward[axis]! * radius) as unknown as RoutePoint, radial = subtract(p, center), tangent = cross(normal, radial)
+    const { p, q, angle, point } = physicalFilletArc(a, b, c, radius, trim)
     const stepAngle = chordTolerance >= radius ? Math.PI : 2 * Math.acos(1 - chordTolerance / radius) || Math.sqrt(8 * chordTolerance / radius)
     const steps = Math.ceil(angle / stepAngle)
     if (!Number.isSafeInteger(steps) || steps < 1) throw Error('Requested circular-arc tolerance is not representable')
     result.push(p)
-    for (let step = 1; step < steps; step++) { const theta = angle * step / steps; result.push(center.map((value, axis) => value + radial[axis]! * Math.cos(theta) + tangent[axis]! * Math.sin(theta)) as unknown as RoutePoint) }
+    for (let step = 1; step < steps; step++) result.push(point(step / steps))
     result.push(q)
   }
   if (points.length > 1) result.push(points.at(-1)!)

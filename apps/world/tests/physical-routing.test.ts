@@ -40,8 +40,8 @@ test('a nozzle facing away from its destination keeps its real exit direction an
 })
 
 test('ordered via points beyond the destination survive simplification and true-radius fillets', () => {
-  const via = [[15, 2, 2], [14, 5, 2]] as const
-  const result = routePhysicalConnection({ ...request, obstacles: [], envelope: { min: [0, 0, 0], max: [20, 10, 10] }, via })
+  const via = [[13, 4, 2], [15, 5, 2]] as const
+  const result = routePhysicalConnection({ ...request, to: { ...request.to, point: [9, 8, 2] }, obstacles: [], envelope: { min: [0, 0, 0], max: [20, 10, 10] }, via })
   const rounded = roundedPhysicalRoute(result.points, request.bendRadius, .001)
   let previous = -1
   for (const point of via) {
@@ -107,4 +107,19 @@ test('retained solutions validate current constraints without searching or repai
   expect(() => validatePhysicalConnectionRoute({ ...request, obstacles: [...request.obstacles, { id: 'new-cabinet', min: [.9, 1.9, 1.9], max: [1.2, 2.1, 2.1] }] }, route.points)).toThrow('obstacle clearance')
   expect(() => validatePhysicalConnectionRoute({ ...request, bendRadius: 5 }, route.points)).toThrow('minimum bend radius')
   expect(() => validatePhysicalConnectionRoute({ ...request, radius: .5 }, route.points)).toThrow('exceed its tube radius')
+})
+
+test('accepted circular routes refuse nonlocal crossings and overlapping parallel runs', () => {
+  const base: PhysicalRouteRequest = { ...request, from: { point: [0, 0, 0], outward: [1, 0, 0] }, to: { point: [2, -2, 0], outward: [0, 1, 0] }, obstacles: [], envelope: { min: [-2, -4, -2], max: [6, 6, 4] } }
+  expect(() => validatePhysicalConnectionRoute(base, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [2, 4, 0], [2, -2, 0]])).toThrow('own nonlocal tube reservation')
+  const parallel: PhysicalRouteRequest = { ...base, to: { point: [3, .15, 0], outward: [-1, 0, 0] } }
+  expect(() => validatePhysicalConnectionRoute(parallel, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0], [0, .15, 0], [3, .15, 0]])).toThrow('own nonlocal tube reservation')
+  expect(() => validatePhysicalConnectionRoute({ ...parallel, to: { ...parallel.to, point: [3, .5, 0] } }, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0], [0, .5, 0], [3, .5, 0]])).not.toThrow()
+  expect(() => validatePhysicalConnectionRoute({ ...base, to: { ...base.to, point: [2, -2, 2] } }, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [2, 4, 0], [2, 4, 2], [2, -2, 2]])).not.toThrow()
+})
+
+test('a declared coincident start/end graph junction permits only its local closed-loop neighbourhood', () => {
+  const base: PhysicalRouteRequest = { ...request, from: { point: [0, 0, 0], outward: [1, 0, 0] }, to: { point: [0, 0, 0], outward: [0, 1, 0] }, obstacles: [], envelope: { min: [-2, -4, -2], max: [6, 6, 4] } }
+  expect(() => validatePhysicalConnectionRoute(base, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0], [0, 0, 0]])).not.toThrow()
+  expect(() => validatePhysicalConnectionRoute(base, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [-1, 4, 0], [-1, -1, 0], [2, -1, 0], [2, 2, 0], [0, 2, 0], [0, 0, 0]])).toThrow('own nonlocal tube reservation')
 })
