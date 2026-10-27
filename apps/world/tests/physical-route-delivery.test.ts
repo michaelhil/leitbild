@@ -34,3 +34,36 @@ test('a continuous pipe sweep has only terminal caps and no open internal seams;
   for (let i = 0; i < mesh.normals.length; i += 3) expect(Math.hypot(...mesh.normals.slice(i, i + 3))).toBeCloseTo(1, 12)
   expect(physicalRouteTube([[0, 0, 0], [2, 0, 0], [4, 0, 0]], .2, .001).positions.length).toBeGreaterThan(mesh.positions.length)
 })
+
+test('analytic circular tangents give exact sweep frames and outer-torus chord accuracy', async () => {
+  const { roundedPhysicalRouteSamples, roundedPhysicalRoute } = await import('../src/packs/physical-layout/native/routing/round.ts')
+  const controls = [[0, 0, 0], [5, 0, 0], [5, 5, 0]] as const, radius = 1, tubeRadius = .8, tolerance = .01
+  const samples = roundedPhysicalRouteSamples(controls, radius, tolerance / 2, radius + tubeRadius)
+  expect(roundedPhysicalRouteSamples(controls, radius, tolerance / 2).points).toEqual(roundedPhysicalRoute(controls, radius, tolerance / 2))
+  expect(samples.points.length).toBeGreaterThanOrEqual(roundedPhysicalRoute(controls, radius, tolerance / 2).length)
+  const start = samples.points.findIndex(p => p[0] === 4 && p[1] === 0), end = samples.points.findIndex(p => p[0] === 5 && p[1] === 1)
+  expect(samples.tangents[start]).toEqual([1, 0, 0]); expect(samples.tangents[end]).toEqual([0, 1, 0])
+  for (let i = start; i <= end; i++) {
+    const point = samples.points[i]!, tangent = samples.tangents[i]!
+    expect(Math.hypot(...tangent)).toBeCloseTo(1, 13)
+    expect((point[0] - 4) * tangent[0] + (point[1] - 1) * tangent[1]).toBeCloseTo(0, 13)
+  }
+  const mesh = physicalRouteTube(samples.points, tubeRadius, tolerance / 2, samples.tangents), sides = (mesh.positions.length / 3 - 2) / (samples.points.length + 2)
+  expect(Number.isInteger(sides)).toBe(true)
+  for (let ring = 0; ring < samples.points.length; ring++) for (let side = 0; side < sides; side++) {
+    const normal = mesh.normals.slice((ring * sides + side) * 3, (ring * sides + side + 1) * 3), tangent = samples.tangents[ring]!
+    expect(normal.reduce((sum, n, axis) => sum + n * tangent[axis]!, 0)).toBeCloseTo(0, 12)
+    expect(Math.hypot(...normal)).toBeCloseTo(1, 12)
+  }
+  let maxError = 0
+  for (let at = start * sides * 6; at < end * sides * 6; at += 3) {
+    const triangle = mesh.indices.slice(at, at + 3).map(i => mesh.positions.slice(i * 3, i * 3 + 3))
+    for (const weights of [[1, 0, 0], [.5, .5, 0], [.5, 0, .5], [0, .5, .5], [1 / 3, 1 / 3, 1 / 3]]) {
+      const point = [0, 1, 2].map(axis => triangle.reduce((sum, vertex, i) => sum + vertex[axis]! * weights[i]!, 0))
+      const distance = Math.hypot(Math.hypot(point[0]! - 4, point[1]! - 1) - radius, point[2]!)
+      maxError = Math.max(maxError, Math.abs(distance - tubeRadius))
+    }
+  }
+  expect(maxError).toBeLessThanOrEqual(tolerance)
+  expect(() => physicalRouteTube(samples.points, tubeRadius, tolerance / 2, [[1, 0, 0]])).toThrow('must match')
+})

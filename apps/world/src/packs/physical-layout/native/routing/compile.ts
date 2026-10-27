@@ -1,7 +1,8 @@
 import type { PackPhysicalScene, PhysicalSceneObject } from '../../../../core/packs/scene.ts'
 import type { PhysicalPlanDrawing, PhysicalPlanPrimitive } from '../../../../core/packs/plan-drawing.ts'
 import { elementWorld, type Source as ArchitectureSource, type V3 } from '../architecture/source.ts'
-import { routePhysicalConnection, roundedPhysicalRoute, validatePhysicalConnectionRoute, type PhysicalRoutedPath, type PhysicalRouteRequest } from './route.ts'
+import { routePhysicalConnection, validatePhysicalConnectionRoute, type PhysicalRoutedPath, type PhysicalRouteRequest } from './route.ts'
+import { roundedPhysicalRouteSamples } from './round.ts'
 import type { PhysicalRouting, RoutePoint, RoutingTerminal } from './source.ts'
 
 type Source = ArchitectureSource & { readonly routing?: PhysicalRouting | undefined }
@@ -18,15 +19,25 @@ const extent = (points: ReadonlyArray<RoutePoint>, padding: number) => ({ min: [
 
 /** Continuous watertight sweep: shared rings and smooth normals, capped only at
  * terminals. Accuracy derives from the authored chord tolerance, not facet caps. */
-export const physicalRouteTube = (points: ReadonlyArray<RoutePoint>, radius: number, tolerance: number) => {
+export const physicalRouteTube = (points: ReadonlyArray<RoutePoint>, radius: number, tolerance: number, analyticTangents?: ReadonlyArray<RoutePoint>) => {
   if (points.length < 2 || !Number.isFinite(radius) || !Number.isFinite(tolerance) || !(radius > 0) || !(tolerance > 0) || points.some(point => point.some(v => !Number.isFinite(v)))) throw new Error('A route sweep needs a finite path, radius and geometric tolerance')
   // asin avoids catastrophic cancellation in acos(1-tolerance/radius).
   const count = Math.max(3, Math.ceil(Math.PI / (2 * Math.asin(Math.sqrt(Math.min(1, tolerance / (2 * radius)))))))
   if (!Number.isSafeInteger(count)) throw new Error('Requested sweep accuracy exceeds representable geometric precision')
-  const tangents = points.map((p, i) => norm(i === 0 ? subtract(points[1]!, p) : i === points.length - 1 ? subtract(p, points[i - 1]!) : norm(subtract(p, points[i - 1]!)).map((v, axis) => v + norm(subtract(points[i + 1]!, p))[axis]!) as V3))
+  if (analyticTangents && (analyticTangents.length !== points.length || analyticTangents.some(t => t.length !== 3 || t.some(v => !Number.isFinite(v)) || !(Math.hypot(...t) > 0)))) throw new Error('Analytic sweep tangents must match the finite centreline samples')
+  const tangents = analyticTangents?.map(norm) ?? points.map((p, i) => norm(i === 0 ? subtract(points[1]!, p) : i === points.length - 1 ? subtract(p, points[i - 1]!) : norm(subtract(p, points[i - 1]!)).map((v, axis) => v + norm(subtract(points[i + 1]!, p))[axis]!) as V3))
   let u: V3 = perpendicular(tangents[0]!)
   const rings = points.map((center, index) => {
-    const tangent = tangents[index]!, projected = u.map((value, axis) => value - tangent[axis]! * dot(u, tangent)) as V3
+    const tangent = tangents[index]!
+    if (index) {
+      const previous = tangents[index - 1]!, axis = cross(previous, tangent), cosine = dot(previous, tangent)
+      if (cosine <= -1) throw new Error('A tube frame cannot cross an immediate tangent reversal')
+      // Minimal rotation parallel-transports the frame exactly around circular
+      // arcs, without the twist introduced by repeated planar projection.
+      const first = cross(axis, u), second = cross(axis, first)
+      u = u.map((value, i) => value + first[i]! + second[i]! / (1 + cosine)) as V3
+    }
+    const projected = u.map((value, axis) => value - tangent[axis]! * dot(u, tangent)) as V3
     u = Math.hypot(...projected) > Number.EPSILON ? norm(projected) : perpendicular(tangent)
     const v = cross(tangent, u)
     return Array.from({ length: count }, (_, side) => {
@@ -89,7 +100,8 @@ export const compilePhysicalRoutes = (source: Source, objects: ReadonlyArray<Phy
     const points = connection.solution
     const validation = validatePhysicalConnectionRoute(request, points)
     const solution: PhysicalRoutedPath = { id: connection.id, points, ...validation, visited: 0 }
-    const centerline = roundedPhysicalRoute(solution.points, connection.bendRadius, network.geometryTolerance / 2).map(point => subtract(point, source.origin)), radius = connection.diameter / 2, geometry = physicalRouteTube(centerline, radius, network.geometryTolerance / 2), bounds = extent(centerline, radius)
+    const radius = connection.diameter / 2, samples = roundedPhysicalRouteSamples(solution.points, connection.bendRadius, network.geometryTolerance / 2, connection.bendRadius + radius)
+    const centerline = samples.points.map(point => subtract(point, source.origin)), geometry = physicalRouteTube(centerline, radius, network.geometryTolerance / 2, samples.tangents), bounds = extent(centerline, radius)
     const fromObject = roster.get(fromTerminal.elementId)!, toObject = roster.get(toTerminal.elementId)!
     const outside = fromObject.levelId === 'site' && toObject.levelId === 'site'
     const scopes = new Set([source.rootScope.id, ...(fromObject.scopeIds ?? []), ...(toObject.scopeIds ?? [])])

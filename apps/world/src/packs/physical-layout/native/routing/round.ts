@@ -29,27 +29,39 @@ export const physicalFilletArc = (a: RoutePoint, b: RoutePoint, c: RoutePoint, r
   const p = sharedStart ?? b.map((value, axis) => value - u[axis]! * trim) as unknown as RoutePoint, q = sharedEnd ?? b.map((value, axis) => value + v[axis]! * trim) as unknown as RoutePoint
   const inward = cross(normal, u), center = p.map((value, axis) => value + inward[axis]! * radius) as unknown as RoutePoint, radial = subtract(p, center), tangent = cross(normal, radial)
   const point = (fraction: number): RoutePoint => fraction === 0 ? p : fraction === 1 ? q : center.map((value, axis) => value + radial[axis]! * Math.cos(angle * fraction) + tangent[axis]! * Math.sin(angle * fraction)) as unknown as RoutePoint
-  return { p, q, angle, point }
+  const tangentAt = (fraction: number): RoutePoint => fraction === 0 ? u : fraction === 1 ? v : u.map((value, axis) => value * Math.cos(angle * fraction) + inward[axis]! * Math.sin(angle * fraction)) as unknown as RoutePoint
+  return { p, q, angle, point, tangent: tangentAt }
 }
-/** True circular fillets with the requested minimum radius. Insufficient
- * straight length and immediate reversals are explicit errors. Chord tolerance
- * controls the sagitta; it never relaxes the authored bend radius. */
-export const roundedPhysicalRoute = (input: ReadonlyArray<RoutePoint>, radius: number, chordTolerance: number): ReadonlyArray<RoutePoint> => {
-  if (!Number.isFinite(chordTolerance) || !(chordTolerance > 0)) throw Error('Rounded routes require positive finite geometric tolerance')
+export interface PhysicalRoundedRouteSamples { readonly points: ReadonlyArray<RoutePoint>; readonly tangents: ReadonlyArray<RoutePoint> }
+/** True circular fillets and their analytic unit tangents. The sampling radius
+ * may exceed the centreline radius: a swept tube uses R+r so its outer surface,
+ * rather than only its centreline, obeys the chord-error budget. */
+export const roundedPhysicalRouteSamples = (input: ReadonlyArray<RoutePoint>, radius: number, chordTolerance: number, samplingRadius = radius): PhysicalRoundedRouteSamples => {
+  if (!Number.isFinite(chordTolerance) || !(chordTolerance > 0) || !Number.isFinite(samplingRadius) || samplingRadius < radius) throw Error('Rounded routes require finite positive tolerance and a sampling radius enclosing their centreline')
   const { points, trims } = physicalFilletTrims(input, radius)
-  const joints = physicalFilletJoints(points, trims)
-  const result: RoutePoint[] = [points[0]!]
+  if (points.length < 2) throw Error('A sampled route requires at least two distinct points')
+  const joints = physicalFilletJoints(points, trims), result: RoutePoint[] = [], tangents: RoutePoint[] = []
+  const append = (point: RoutePoint, tangent: RoutePoint) => {
+    if (result.length && same(point, result.at(-1)!)) return
+    result.push(point); tangents.push(tangent)
+  }
+  append(points[0]!, unit(subtract(points[1]!, points[0]!)))
   for (let i = 1; i < points.length - 1; i++) {
     const a = points[i - 1]!, b = points[i]!, c = points[i + 1]!, trim = trims[i]!
-    if (!trim) { result.push(b); continue }
-    const { p, q, angle, point } = physicalFilletArc(a, b, c, radius, trim, joints[i - 1], joints[i])
-    const stepAngle = chordTolerance >= radius ? Math.PI : 2 * Math.acos(1 - chordTolerance / radius) || Math.sqrt(8 * chordTolerance / radius)
-    const steps = Math.ceil(angle / stepAngle)
+    if (!trim) { append(b, unit(subtract(c, b))); continue }
+    const arc = physicalFilletArc(a, b, c, radius, trim, joints[i - 1], joints[i])
+    // Stable sagitta inversion: t = 2R sin²(step/4), without acos cancellation.
+    const stepAngle = chordTolerance >= samplingRadius ? Math.PI : 4 * Math.asin(Math.sqrt(chordTolerance / (2 * samplingRadius)))
+    const steps = Math.ceil(arc.angle / stepAngle)
     if (!Number.isSafeInteger(steps) || steps < 1) throw Error('Requested circular-arc tolerance is not representable')
-    result.push(p)
-    for (let step = 1; step < steps; step++) result.push(point(step / steps))
-    result.push(q)
+    for (let step = 0; step <= steps; step++) append(arc.point(step / steps), arc.tangent(step / steps))
   }
-  if (points.length > 1) result.push(points.at(-1)!)
-  return result.filter((point, index) => !index || !same(point, result[index - 1]!))
+  append(points.at(-1)!, unit(subtract(points.at(-1)!, points.at(-2)!)))
+  return { points: result, tangents }
+}
+/** Existing centreline-only authoring API: its chord budget applies to R. */
+export const roundedPhysicalRoute = (input: ReadonlyArray<RoutePoint>, radius: number, chordTolerance: number): ReadonlyArray<RoutePoint> => {
+  const { points } = physicalFilletTrims(input, radius)
+  if (points.length === 1) { if (!Number.isFinite(chordTolerance) || !(chordTolerance > 0)) throw Error('Rounded routes require positive finite geometric tolerance'); return points }
+  return roundedPhysicalRouteSamples(points, radius, chordTolerance).points
 }
