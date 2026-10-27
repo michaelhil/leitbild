@@ -29,9 +29,9 @@ export const physicalCollectionFloorChanges = (group: PhysicalCollectionFloorGro
   if (levelId === 'all' ? group.scenes.some(scene => scene.view.mode !== '3d') : !group.levels.some(level => level.id === levelId)) throw new Error(`Unknown collection floor: ${levelId}`)
   return group.scenes.map(scene => ({ sceneId: scene.descriptor.id, view: { ...scene.view, levelId } }))
 }
-export type PhysicalMixedViewSetting = 'live' | 'cutaway' | 'detail' | 'separation'
+export type PhysicalMixedViewSetting = 'live' | 'cutaway' | 'detail' | 'separation' | 'wallOpacity' | 'floorOpacity'
 export const physicalCollectionMixedSettings = (scenes: ReadonlyArray<PhysicalScenePresentation>): ReadonlyArray<PhysicalMixedViewSetting> =>
-  (['live', 'cutaway', 'detail', 'separation'] as const).filter(key => new Set(scenes.map(scene => scene.view[key])).size > 1)
+  (['live', 'cutaway', 'detail', 'separation', 'wallOpacity', 'floorOpacity'] as const).filter(key => new Set(scenes.map(scene => key === 'wallOpacity' || key === 'floorOpacity' ? scene.view[key] ?? 1 : scene.view[key])).size > 1)
 /** A Stack-to-Plan change restores each source's own valid floor. */
 export const physicalPlanLevelAfterModeChange = (scene: PhysicalScenePresentation, remembered?: string): string => {
   if (scene.view.levelId !== 'all') return scene.view.levelId

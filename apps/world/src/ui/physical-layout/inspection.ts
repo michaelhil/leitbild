@@ -85,7 +85,7 @@ export const layoutInspectionSampleMessage = (state: LayoutInspectionState, snap
   const latest = snapshot.latest === null ? null : (() => {
     const subject = snapshot.latest.subjects.find(subject => subject.elementId === state.elementId)
     if (!subject) throw new Error('Inspection subject is absent from the acquired owner sample')
-    const refs = new Set(subject.values.map(value => value.ref))
+    const refs = new Set([...subject.values, ...(subject.topology?.values ?? [])].map(value => value.ref))
     return { ...snapshot.latest, subjects: [subject], sample: { ...snapshot.latest.sample, observations: snapshot.latest.sample.observations.filter(value => refs.has(value.ref)) } }
   })()
   const stamp = snapshot.stamp === null ? null : { ...snapshot.stamp, scope: {

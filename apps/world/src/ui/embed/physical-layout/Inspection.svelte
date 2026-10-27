@@ -7,6 +7,8 @@
   import type { LayoutLiveExpected } from '../../physical-layout/read-model.ts'
   import { physicalSubjectStatus } from '../../physical-layout/status.ts'
   import { admitPhysicalLiveStamp } from '../../physical-layout/status.ts'
+  import { resolvePhysicalSubjectOperation } from '../../physical-layout/operation.ts'
+  import { physicalOperationContext } from '../../physical-layout/operation-presentation.ts'
   import { createPageVisibility, embeddedDisplayFrame, trackVisibility, type DisplayOpening } from '../view-host.ts'
   import Faceplate from '../vignette/Faceplate.svelte'
   import type { FaceplateReadings } from '../vignette/faceplate.ts'
@@ -29,6 +31,7 @@
   const runId = $derived(simulationRunIdSchema.parse(envelope.subject.id))
   const frozen = $derived(layoutLiveFrozen(snapshot, wallNow))
   const subject = $derived(snapshot.latest?.subjects.find(subject => subject.elementId === activeElement))
+  const context = $derived(subject && snapshot.latest ? physicalOperationContext(resolvePhysicalSubjectOperation(subject, snapshot.latest.sample.observations, frozen)) : [])
   const readings = $derived<FaceplateReadings | null>(subject === undefined || snapshot.latest === null ? null : {
     values: subject.values, observations: snapshot.latest.sample.observations, devices: subject.devices,
     // The first map slice reads no extra history. The shared card explicitly
@@ -123,7 +126,7 @@
     <p bind:this={failureElement} class="failure" role="alert">No current owner sample is available. This quick look will retry while visible.</p>
   {:else if parsed.state.delivery !== 'host' || hostAvailableHeight !== null}
   <Faceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
-    name={subject?.label ?? parsed.state.label} {word} title={subject?.label ?? envelope.title} {readings}
+    name={subject?.label ?? parsed.state.label} {word} title={subject?.label ?? envelope.title} {readings} {context}
     alerts={snapshot.latest?.sample.alerts ?? []} alertElements={[activeElement]} group={false}
     related={subject === undefined || subject.devices.length === 0 ? null : { heading: 'Devices', entries: subject.devices.map(device => ({ element: device.id, name: device.label })) }}
     anchor={null} at={{ x: 0, y: 44 }} avoid={[]} zoom={1} room={layoutInspectionContentRoom(viewport.width, hostAvailableHeight ?? viewport.height)}

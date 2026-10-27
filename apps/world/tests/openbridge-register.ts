@@ -57,7 +57,7 @@ const APPROVED = { owner: 'approved', ref: 'Q11 (21 Oct): approved as recommende
 export const customShapes: ReadonlyArray<CustomShape> = [
   {
     id: 'physical-layout-solids-and-plan',
-    draws: 'Model-derived architecture, shaped physical equipment, cut fragments and authored architectural Plan strokes, labels, dimensions and illustrative allowances in the geographic map and dedicated layout canvas.',
+    draws: 'Model-derived architecture, shaped physical equipment, cut fragments, architectural Plan ink and owner-reading-driven spatial flow marks in the geographic map and isolated qualification viewport.',
     sites: [
       { file: 'ui/map/physical-scene/canvas-viewport.ts', mark: "canvas.getContext('webgl2'", drawn: 'code' },
       { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
@@ -66,6 +66,7 @@ export const customShapes: ReadonlyArray<CustomShape> = [
       { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: 'class="layout-plan-annotations"', drawn: 'canvas' },
       { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: "target.getContext('2d')", drawn: 'code' },
       { file: 'ui/physical-layout/plan-annotations.ts', mark: 'export const drawPhysicalPlanAnnotations', drawn: 'code' },
+      { file: 'ui/displays/physical-flow-marks.ts', mark: 'export const drawPhysicalFlowMark', drawn: 'code' },
     ],
     standsInFor: 'none', reason: 'A',
     evidence: 'OpenBridge has no renderer for metre-based architectural solids, hosted openings or floor cuts. These physical representations use host token roles; operational meaning remains the shared owner status and actual embedded faceplate.',

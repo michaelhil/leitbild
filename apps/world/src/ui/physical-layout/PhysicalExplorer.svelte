@@ -30,6 +30,12 @@
   import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
   import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
+  import { createPhysicalHoverIntent } from './hover-intent.ts'
+  import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
+  import { physicalOperationContext, physicalOperationWord } from './operation-presentation.ts'
+  import { physicalRouteDisplayPaths, physicalRouteScreenMarks } from './route-marks.ts'
+  import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
+  import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
   let { suspendPickingForNavigation, controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
     suspendPickingForNavigation?: (() => (() => void)) | undefined
@@ -75,7 +81,7 @@
   let hover = $state<PhysicalSceneHit | null>(null)
   let hoverDismissTimer: ReturnType<typeof setTimeout> | null = null
   const retainHover = (): void => { if (hoverDismissTimer !== null) clearTimeout(hoverDismissTimer); hoverDismissTimer = null }
-  const dismissHoverSoon = (): void => { retainHover(); hoverDismissTimer = setTimeout(() => { hoverDismissTimer = null; hover = null }, 200) }
+  const dismissHoverSoon = (): void => { retainHover(); hoverIntent.clear(); hoverDismissTimer = setTimeout(() => { hoverDismissTimer = null; hover = null }, 200) }
   let inspected = $state<{ readonly sceneId: string; readonly occurrenceId: string | null; readonly elementId: string; readonly label: string; readonly channel: string } | null>(null)
   let inspectionReady = $state(false)
   let inspectionFrame = $state<HTMLIFrameElement | null>(null)
@@ -99,6 +105,17 @@
   const sessions = new Map<string, { readonly key: string; readonly session: ReturnType<typeof createLayoutLiveSession> }>()
   type Reading = NonNullable<LayoutLiveSnapshot['latest']>
   const statusCache = new WeakMap<Reading, Map<boolean, ReadonlyMap<string, ReturnType<typeof physicalSubjectStatus>>>>()
+  const operationCache = new WeakMap<Reading, Map<boolean, ReadonlyMap<string, PhysicalSubjectOperation>>>()
+  const operationsFor = (reading: Reading, stale: boolean): ReadonlyMap<string, PhysicalSubjectOperation> => {
+    let cached = operationCache.get(reading)
+    if (!cached) { cached = new Map(); operationCache.set(reading, cached) }
+    const previous = cached.get(stale); if (previous) return previous
+    const next = new Map(reading.subjects.map(subject => [subject.elementId, resolvePhysicalSubjectOperation(subject, reading.sample.observations, stale)]))
+    cached.set(stale, next); return next
+  }
+  // Only freshness transitions, not every wall-clock tick, invalidate drawing.
+  const frozenSceneIds = $derived(JSON.stringify(scenes.filter(scene => { const snapshot = snapshots.get(scene.descriptor.id); return snapshot === undefined || layoutLiveFrozen(snapshot, wallNow) }).map(scene => scene.descriptor.id)))
+  const frozenScenes = $derived(new Set<string>(JSON.parse(frozenSceneIds)))
   const appliedStatus = new Map<string, { readonly reading: Reading | undefined; readonly stale: boolean; readonly palette: string }>()
   const statusesFor = (reading: Reading, stale: boolean): ReadonlyMap<string, ReturnType<typeof physicalSubjectStatus>> => {
     let cached = statusCache.get(reading)
@@ -203,6 +220,22 @@
     if (hit.subjectIds.length === 1) inspect(hit.sceneId, hit.subjectIds[0]!, hit.label, hit.occurrenceId)
     else { controlsOpen = true; componentScope = { sceneId: hit.sceneId, label: hit.label, subjectIds: hit.subjectIds }; filter = ''; componentsOpen = true }
   }
+  const hoverIntent = createPhysicalHoverIntent(hit => {
+    if (!active || suspended || !documentVisible || inspected !== null) return
+    const current = controller?.pick(hit.screen)
+    if (current?.sceneId === hit.sceneId && current.occurrenceId === hit.occurrenceId && current.subjectIds.length > 0) inspectHit(current)
+  })
+  const highlighted = $derived(hover ?? (inspected?.occurrenceId ? { sceneId: inspected.sceneId, occurrenceId: inspected.occurrenceId } : null))
+  const hoverContext = $derived.by(() => {
+    if (hover === null || hover.subjectIds.length !== 1) return []
+    const reading = snapshots.get(hover.sceneId)?.latest
+    return reading ? physicalOperationContext(operationsFor(reading, frozenScenes.has(hover.sceneId)).get(hover.subjectIds[0]!)) : []
+  })
+  $effect(() => {
+    const color = draftingPalette?.materials.selection
+    controller?.setHighlight(active && !suspended && documentVisible && highlighted !== null && color ? { sceneId: highlighted.sceneId, occurrenceId: highlighted.occurrenceId, color } : null)
+    hoverIntent.update(active && !suspended && documentVisible && inspected === null ? hover : null)
+  })
   const frameHost = createEmbeddedFrameHost({
     origin: location.origin, frame: () => inspectionFrame?.contentWindow ?? null,
     post: (frame, message) => (frame as Window).postMessage(message, location.origin),
@@ -245,7 +278,7 @@
       const scene = current.scene(presentation.descriptor.id)
       return scene && (visiblePhysicalPlanDrawing(scene, presentation.view, focusedScopeId).length || visiblePhysicalPlanAnnotations(scene, presentation.view, focusedScopeId).length) ? [{ scene, view: presentation.view }] : []
     })
-    if (!drafting.length) { if (target.width || target.height) { target.width = 0; target.height = 0 }; return }
+    if (!drafting.length && !flowMarks.length) { if (target.width || target.height) { target.width = 0; target.height = 0 }; return }
     const context = target.getContext('2d'); if (!context) { onerror('Architectural Plan annotations require a Canvas 2D context'); return }
     const ratio = window.devicePixelRatio || 1, pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
     if (target.width !== pixelWidth || target.height !== pixelHeight) { target.width = pixelWidth; target.height = pixelHeight }
@@ -253,9 +286,12 @@
     const style = getComputedStyle(target), fontSize = Number.parseFloat(style.fontSize), occupied: Array<{ x: number; y: number; width: number; height: number }> = []
     const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
     for (const { scene, view } of drafting) {
-      if (scene.planDrawing) drawPhysicalPlanDrawing(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, ratio, palette, fontFamily: style.fontFamily, status: current.subjectStyles(scene.id) })
+      if (scene.planDrawing) drawPhysicalPlanDrawing(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, ratio, palette, fontFamily: style.fontFamily, status: current.subjectStyles(scene.id), highlight: highlighted?.sceneId === scene.id && palette.materials.selection ? { ...highlighted, color: palette.materials.selection } : null })
       else drawPhysicalPlanAnnotations(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
     }
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    const css = (color: readonly number[]) => `rgb(${color.map(channel => channel * 255).join(' ')})`
+    for (const mark of flowMarks) drawPhysicalFlowMark(context, mark, { ink: css(palette.materials.dark!), paper: css(scenes.find(scene => scene.descriptor.id === mark.sceneId)?.view.mode === '2d' ? palette.planMaterials!.paper! : palette.materials.ground!), fontSize, fontFamily: style.fontFamily })
   })
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })
   $effect(() => { onDetailedOwners(!active || suspended ? [] : scenes.filter(scene => scene.status === 'ready').map(scene => scene.descriptor.targetObjectId)) })
@@ -344,45 +380,73 @@
     })
   })
   let showStateWords = $state(false)
-  type Badge = { readonly sceneId: string; readonly elementId: string; readonly label: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly width: number; readonly color: string; readonly word: string; readonly chip: string; readonly alarms: number; readonly rank: number }
+  type Badge = { readonly kind: 'status'; readonly sceneId: string; readonly elementId: string; readonly label: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly width: number; readonly color: string; readonly word: string; readonly chip: string; readonly alarms: number; readonly rank: number }
+  type FlowMark = { readonly kind: 'flow'; readonly key: string; readonly sceneId: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly angle: number; readonly glyph: PhysicalFlowGlyph; readonly rank: number }
   let testedBadges = $state.raw<ReadonlyArray<Badge>>([])
+  let testedFlowMarks = $state.raw<ReadonlyArray<FlowMark>>([])
   let pendingBadges = $state(0)
-  let annotationScheduler = $state.raw<ReturnType<typeof createPhysicalAnnotationScheduler<Badge>> | null>(null)
+  let annotationScheduler = $state.raw<ReturnType<typeof createPhysicalAnnotationScheduler<Badge | FlowMark>> | null>(null)
   const proposedBadges = $derived.by(() => {
-    void wallNow; void screenRevision
+    void screenRevision
     if (!active || suspended || !documentVisible) return []
     const proposals = scenes.filter(scene => scene.status === 'ready' && scene.view.live).flatMap(scene => {
       const snapshot = snapshots.get(scene.descriptor.id)
       const reading = snapshot?.latest
       if (reading === undefined || reading === null) return []
-      const stale = layoutLiveFrozen(snapshot!, wallNow)
+      const stale = frozenScenes.has(scene.descriptor.id), operations = operationsFor(reading, stale)
       return reading.subjects.flatMap(subject => {
         const status = statusesFor(reading, stale).get(subject.elementId)!
-        if (!stale && status.quality === 'good' && status.census.total === 0 && !showStateWords) return []
+        const operationWord = physicalOperationWord(operations.get(subject.elementId))
+        if (!stale && status.quality === 'good' && status.census.total === 0 && !showStateWords && operationWord === null) return []
         return (scopedBySubject.get(scene.descriptor.id)?.get(subject.elementId) ?? []).flatMap(occurrence => {
           const point = controller?.cheapProject(scene.descriptor.id, occurrence.id)
           if (!point?.visible) return []
           const color = physicalSubjectStyle(status, theme === 'dark' ? 'dusk' : 'day').color
-          const chip = stale || status.quality !== 'good' ? '?' : status.word ?? '', alarms = status.active + status.returned
+          const chip = stale ? '?' : operationWord ?? (status.quality !== 'good' ? '?' : status.word ?? ''), alarms = status.active + status.returned
           const text = alarms > 0 ? String(alarms) : chip
           // The chip uses 11px text, 10px horizontal padding and a 2px border.
           const width = Math.max(44, Math.min(96, badgeMeasure?.measureText(text).width ?? 96) + 12)
-          return [{ sceneId: scene.descriptor.id, elementId: subject.elementId, label: subject.label, occurrenceId: occurrence.id, point,
+          return [{ kind: 'status' as const, sceneId: scene.descriptor.id, elementId: subject.elementId, label: subject.label, occurrenceId: occurrence.id, point,
             width,
             color: color === null ? 'var(--muted)' : `rgb(${color.map(channel => Math.round(channel * 255)).join(' ')})`,
-            word: stale ? 'Not live' : status.quality !== 'good' ? `${status.quality} quality` : status.word ?? 'Live',
+            word: stale ? 'Not live' : operationWord ?? (status.quality !== 'good' ? `${status.quality} quality` : status.word ?? 'Live'),
             chip, alarms, rank: priorityRank(status.priority) }]
         })
       })
     })
     return proposals
   })
+  const proposedFlowMarks = $derived.by((): ReadonlyArray<FlowMark> => {
+    void screenRevision
+    if (!active || suspended || !documentVisible || !controller || !draftingCanvas) return []
+    const fontSize = Number.parseFloat(getComputedStyle(draftingCanvas).fontSize)
+    const marks: FlowMark[] = []
+    for (const { sceneId, occurrence } of scopedOccurrences) {
+      if (!occurrence.spatialPath || occurrence.subjectIds.length !== 1) continue
+      const presentation = scenes.find(scene => scene.descriptor.id === sceneId), source = controller.scene(sceneId), reading = snapshots.get(sceneId)?.latest
+      if (!presentation?.view.live || !source || !reading) continue
+      const operation = operationsFor(reading, frozenScenes.has(sceneId)).get(occurrence.subjectIds[0]!)
+      if (!operation?.connection) continue
+      const flow = operation.flow, conducting = operation.conducting
+      const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'isolated' : 'unknown'
+      const view = presentation.view, regions = physicalScopeRegions(source, focusedScopeId ?? undefined)
+      const floors = view.levelId === 'all' && view.separation > 0 && occurrence.inspectionLevels?.length ? occurrence.inspectionLevels.map(volume => ({ id: volume.levelId, volume })) : [{ id: view.levelId === 'all' ? undefined : view.levelId, volume: view.levelId === 'all' || occurrence.levelId === 'site' ? undefined : occurrence.inspectionLevels?.find(volume => volume.levelId === view.levelId) }]
+      let ordinal = 0
+      for (const floor of floors) for (const path of physicalRouteDisplayPaths(occurrence.spatialPath.points, occurrence.clipToScope ? regions : [], floor.volume)) {
+        const points = controller.projectOccurrencePoints(sceneId, occurrence.id, path, floor.id)
+        for (const mark of physicalRouteScreenMarks(points, size, fontSize)) marks.push({ ...mark, kind: 'flow', key: `${sceneId}:${occurrence.id}:${ordinal++}`, sceneId, occurrenceId: occurrence.id, glyph, rank: 0 })
+      }
+    }
+    return marks
+  })
   $effect(() => {
     annotationScheduler?.setActive(active && !suspended && documentVisible)
     const generation = JSON.stringify([screenRevision, scenes.map(scene => [scene.descriptor.revision, scene.view]), focusedId, focusedScopeId, focusedGroupId])
     const candidates = sparseLayoutBadges(proposedBadges, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
-    annotationScheduler?.update(generation, candidates.map(value => ({ key: `${value.sceneId}:${value.occurrenceId}:${value.elementId}`, priority: value.rank, value })))
+    const marks = sparseLayoutBadges(proposedFlowMarks, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
+    annotationScheduler?.update(generation, [...candidates.map(value => ({ key: `status:${value.sceneId}:${value.occurrenceId}:${value.elementId}`, priority: value.rank, value })), ...marks.map(value => ({ key: `flow:${value.key}`, priority: value.rank, value }))])
   })
+  const flowMarks = $derived.by(() => { const visible = new Set(testedFlowMarks.map(mark => mark.key)); return proposedFlowMarks.filter(mark => visible.has(mark.key)) })
   const badges = $derived.by(() => {
     const visible = new Set(testedBadges.map(value => `${value.sceneId}:${value.occurrenceId}:${value.elementId}`))
     return sparseLayoutBadges(proposedBadges.filter(value => visible.has(`${value.sceneId}:${value.occurrenceId}:${value.elementId}`)), size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
@@ -431,7 +495,8 @@
     const scene = focused
     if (!scene) return
     const changedRepresentation = scene.view.mode !== next.mode, changedFloor = scene.view.levelId !== next.levelId
-    pendingCameraFocus = null; closeInspection(); hover = null
+    const opacityOnly = requested !== undefined && Object.keys(requested).every(key => key === 'wallOpacity' || key === 'floorOpacity')
+    pendingCameraFocus = null; if (!opacityOnly) closeInspection(); hover = null
     if (next.mode === '2d') { navigation = 'pan'; controller?.setNavigationTool('pan') }
     if (changedRepresentation) {
       const selected = new Set(collectionScenes.map(scene => scene.descriptor.id))
@@ -441,7 +506,7 @@
         controller?.setView(current.descriptor.id, { ...current.view, mode: next.mode, levelId })
       }
     } else if (focusedId === null) {
-      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation'] as const).filter(key => requested ? key in requested : next[key] !== scene.view[key]).map(key => [key, next[key]]))
+      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation', 'wallOpacity', 'floorOpacity'] as const).filter(key => requested ? key in requested : next[key] !== scene.view[key]).map(key => [key, next[key]]))
       for (const current of collectionScenes) controller?.setView(current.descriptor.id, { ...current.view, ...patch })
     } else {
       if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
@@ -534,7 +599,7 @@
     const element = map.getContainer()
     badgeMeasure = document.createElement('canvas').getContext('2d')
     if (badgeMeasure) badgeMeasure.font = `11px ${getComputedStyle(element).fontFamily}`
-    const options = { palette: physicalLayoutPalette(element), fitPadding, ...(suspendPickingForNavigation === undefined ? {} : { suspendPickingForNavigation }), onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
+    const options = { palette: physicalLayoutPalette(element), planFontFamily: () => getComputedStyle(draftingCanvas ?? element).fontFamily, fitPadding, ...(suspendPickingForNavigation === undefined ? {} : { suspendPickingForNavigation }), onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
     let next: PhysicalSceneController
     try {
       next = createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
@@ -546,7 +611,7 @@
     controller = next
     size = next.surface.getSize()
     overviewLayer = createPhysicalSceneOverview({ map, palette: options.palette, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()), reportError: error => onerror(`Physical overview: ${error.message}`) })
-    annotationScheduler = createPhysicalAnnotationScheduler<Badge>({ test: value => next.visibleAt(value.sceneId, value.occurrenceId, value.point), onChange: value => { testedBadges = value.visible; pendingBadges = value.pending } })
+    annotationScheduler = createPhysicalAnnotationScheduler<Badge | FlowMark>({ test: value => next.visibleAt(value.sceneId, value.occurrenceId, value.point), onChange: value => { testedBadges = value.visible.filter((value): value is Badge => value.kind === 'status'); testedFlowMarks = value.visible.filter((value): value is FlowMark => value.kind === 'flow'); pendingBadges = value.pending } })
     let hoverTimer: ReturnType<typeof setTimeout> | null = null
     const changed = (): void => {
       const pose = next.cameraPose()
@@ -557,19 +622,21 @@
       size = next.surface.getSize(); screenRevision += 1
     }
     const pointAt = (event: PointerEvent | MouseEvent) => { const box = next.surface.element.getBoundingClientRect(); return { x: event.clientX - box.left, y: event.clientY - box.top } }
-    const leave = (): void => { retainHover(); if (hoverTimer !== null) clearTimeout(hoverTimer); hoverTimer = null; hover = null }
+    const leave = (): void => { retainHover(); hoverIntent.clear(); if (hoverTimer !== null) clearTimeout(hoverTimer); hoverTimer = null; hover = null }
     const moving = (): void => { leave(); overlayDirty = true }
     const move = (event: PointerEvent): void => {
       retainHover()
-      if (!active || suspended || event.buttons !== 0 || inspected !== null) { leave(); return }
+      const target = event.target instanceof Element ? event.target : null
+      if (!active || suspended || event.buttons !== 0 || target && (overlayElement?.contains(target) || target.closest('.maplibregl-ctrl'))) { leave(); return }
       if (hoverTimer !== null) clearTimeout(hoverTimer)
       const point = pointAt(event)
       hoverTimer = setTimeout(() => { hoverTimer = null; const hit = next.pick(point); hover = hit !== null && hit.subjectIds.length > 0 ? hit : null }, 120)
     }
     const activate = (point: { x: number; y: number }): boolean => {
       if (!active || suspended) return false
-      if (inspected !== null) { closeInspection(true); return true }
       const hit = next.pick(point), sceneId = hit?.sceneId ?? overviewLayer?.sceneAt(point)
+      if (hit !== null && hit.subjectIds.length > 0) { inspectHit(hit); leave(); return true }
+      if (inspected !== null) { closeInspection(true); leave(); return true }
       const scene = scenes.find(value => value.descriptor.id === sceneId)
       if (!scene) return false
       overview(scene); return true
@@ -608,12 +675,12 @@
     const clock = setInterval(() => { wallNow = Date.now() }, 250)
     const disposers = [next.surface.on('render', changed), next.surface.on('resize', () => { overlayDirty = true; changed() }), next.surface.on('movestart', moving)]
     const surface = next.surface.element
-    surface.addEventListener('pointermove', move); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', dismissHoverSoon)
+    surface.addEventListener('pointermove', move); surface.addEventListener('pointerdown', cancel); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', dismissHoverSoon)
     document.addEventListener('visibilitychange', visibility); window.addEventListener('message', receive); window.addEventListener('keydown', key)
     onconnect({ dismiss: () => { closeInspection(); leave() }, activate })
     return () => {
       onconnect(null); onDetailedOwners([]); leave(); clearInterval(clock); disposers.forEach(dispose => dispose())
-      surface.removeEventListener('pointermove', move); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', dismissHoverSoon)
+      surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerdown', cancel); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', dismissHoverSoon)
       document.removeEventListener('visibilitychange', visibility); window.removeEventListener('message', receive); window.removeEventListener('keydown', key)
       for (const entry of sessions.values()) entry.session.close()
       sessions.clear(); annotationScheduler?.destroy(); annotationScheduler = null; overviewLayer?.destroy(); overviewLayer = null; next.destroy(); controller = null
@@ -660,7 +727,7 @@
   {#each badges as badge (`${badge.sceneId}:${badge.occurrenceId}:${badge.elementId}`)}
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
   {/each}
-  {#if hover !== null && !suspended && inspected === null}<button class="layout-quick-look" type="button" style:left={`${Math.max(8, Math.min(size.width - Math.min(260, size.width - 16) - 8, hover.screen.x + 16))}px`} style:top={`${Math.max(8, hover.screen.y - 24)}px`} onpointerenter={retainHover} onpointerleave={dismissHoverSoon} onfocus={retainHover} onblur={dismissHoverSoon} onclick={() => { if (hover !== null) inspectHit(hover) }}>⌕ Quick look · {hover.label}</button>{/if}
+  {#if hover !== null && !suspended && inspected === null}<div class="layout-hover-label" style:left={`${Math.max(8, Math.min(size.width - Math.min(300, size.width - 16) - 8, hover.screen.x + 16))}px`} style:top={`${Math.max(8, hover.screen.y - 24)}px`}><strong>{hover.label}</strong>{#each hoverContext as context}<small><b>{context.label}</b> {context.value}</small>{/each}<small>Click to inspect · pause here to open</small></div>{/if}
   {#if inspectionSource !== null && inspected !== null && !suspended}<div class="layout-inspection" style:left={`${cardPoint.x}px`} style:top={`${cardPoint.y}px`} style:width={`${inspectionWidth}px`} style:height={`${allocatedInspectionHeight}px`}>{#key inspectionSource}<iframe bind:this={inspectionFrame} title={`Inspect ${inspected.label}`} src={inspectionSource} allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'" referrerpolicy="same-origin"></iframe>{/key}</div>{/if}
 </div>
 
@@ -671,7 +738,8 @@
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout-components { display: grid; gap: 6px; width: min(440px, 100%); margin-left: auto; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }
   .component-row { display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border); padding-top: 4px; }.component-row > span { flex: 1; min-width: 0; display: grid; gap: 3px; }.component-row strong, .component-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.component-row small { color: var(--muted); font-size: 10px; }.component-row button { flex: none; padding: 6px; }
-  .layout-status, .layout-quick-look { position: absolute; z-index: 4; pointer-events: auto; min-width: 44px; min-height: 44px; font-size: 11px; }.layout-status { transform: translate(-50%, -50%); padding: 0; background: transparent; border: 0; }.layout-status span { display: inline-block; max-width: 96px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }.layout-quick-look { max-width: min(260px, calc(100% - 16px)); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .layout-status { position: absolute; z-index: 4; pointer-events: auto; min-width: 44px; min-height: 44px; font-size: 11px; transform: translate(-50%, -50%); padding: 0; background: transparent; border: 0; }.layout-status span { display: inline-block; max-width: 96px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
+  .layout-hover-label { position: absolute; z-index: 4; pointer-events: none; max-width: min(300px, calc(100% - 16px)); padding: 7px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 11px; box-shadow: var(--shadow-floating); }.layout-hover-label strong,.layout-hover-label small { display: block; overflow-wrap: anywhere; }.layout-hover-label small { color: var(--muted); margin-top: 3px; }
   .layout-inspection { position: absolute; z-index: 8; width: min(360px, calc(100% - 16px)); box-sizing: border-box; pointer-events: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow-floating); }.layout-inspection iframe { display: block; width: 100%; height: 100%; border: 0; }
   @container (max-width: 440px) { .layout-tools { left: 8px; right: 8px !important; }.component-row { flex-wrap: wrap; }.component-row > span { flex-basis: 100%; }.component-row button { flex: 1; } }
 </style>

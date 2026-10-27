@@ -8,6 +8,8 @@ export interface PhysicalLayoutView {
   readonly live: boolean
   readonly surroundings?: boolean
   readonly hiddenLayerIds?: ReadonlyArray<string>
+  readonly wallOpacity?: number
+  readonly floorOpacity?: number
 }
 
 export interface PhysicalLayoutLevel {
@@ -26,6 +28,7 @@ export const initialPhysicalLayoutView = (levels: ReadonlyArray<PhysicalLayoutLe
 export const changePhysicalLayoutView = (current: PhysicalLayoutView, patch: Partial<PhysicalLayoutView>, levels: ReadonlyArray<PhysicalLayoutLevel>): PhysicalLayoutView => {
   const next = { ...current, ...patch }
   if (!Number.isFinite(next.separation) || next.separation < 0) throw new Error('Level separation must be a finite, non-negative distance')
+  for (const opacity of [next.wallOpacity, next.floorOpacity]) if (opacity !== undefined && (!Number.isFinite(opacity) || opacity < 0 || opacity > 1)) throw new Error('Architecture opacity must be between zero and one')
   if (next.levelId !== 'all' && !levels.some(level => level.id === next.levelId)) throw new Error(`Unknown layout level: ${next.levelId}`)
   if (next.mode === '2d') return { ...next, levelId: next.levelId === 'all' ? initialPhysicalLayoutView(levels).levelId : next.levelId, separation: 0 }
   return next
