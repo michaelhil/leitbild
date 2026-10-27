@@ -94,7 +94,7 @@ void main(){
     float phase=(vLocalPosition.x-vLocalPosition.y)/.8;
     float width=fwidth(phase);
     float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
-    solid=mix(solid,uIllustrationLine,ink*uLineOpacity.x);
+    solid=mix(solid,uIllustrationLine,ink*uLineOpacity.x*.42);
   }
   if(!uLines&&surface.a<0.){
     // A true clipping cap carries an architectural continuation hatch in its
