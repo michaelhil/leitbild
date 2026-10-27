@@ -5,7 +5,7 @@ import { preparePhysicalGeometry, type PhysicalPreparationView } from '../src/ui
 import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from '../src/ui/map/physical-scene/overview-geometry.ts'
-import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
+import { defaultPhysicalSceneView, type PhysicalSceneHighlight } from '../src/ui/map/physical-scene/types.ts'
 import type { PhysicalViewport } from '../src/ui/map/physical-scene/viewport.ts'
 import type { PhysicalLayerEntry } from '../src/ui/map/physical-scene/layer.ts'
 import { visiblePhysicalBounds } from '../src/ui/map/physical-scene/renderer.ts'
@@ -19,6 +19,8 @@ const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObj
 const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => {
   let projectScale = 1_000_000
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
+  const highlights: Array<PhysicalSceneHighlight | null> = [], projectionCalls: unknown[] = []
+  let renders = 0
   const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = [], planarity: boolean[] = [], cameraEvents: Array<{kind:'pose';pitch:number|undefined}|{kind:'planarity';value:boolean}> = []
   const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = [], fitBounds: PhysicalSceneBounds[] = []
   // Scope-tagged lifecycle fixtures use open triangles, not tube solids; real
@@ -27,8 +29,8 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
     surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
     intersectsBounds: () => true,
-    projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() {}, registered: () => true, orderRenderer() {}, removeRenderer() {},
-    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
+    projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() { renders++ }, registered: () => true, orderRenderer() {}, removeRenderer() {},
+    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, setHighlight(value) { highlights.push(value) }, projectOccurrencePoints(sceneId, occurrenceId, points, levelId) { projectionCalls.push({ sceneId, occurrenceId, points, levelId }); return points.map(point => ({ x: point[0], y: point[1], depth: point[2], visible: true })) }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
     cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch); cameraEvents.push({kind:'pose',pitch:patch.pitch}) }, setPlanarInspection(value) { planarity.push(value); cameraEvents.push({kind:'planarity',value}) }, fitWorld(bounds, options) { fitBounds.push(bounds); fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
   }
   let failPreparation = false, rendererError: ((error: Error) => void) | null = null
@@ -39,7 +41,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
     prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); requests.push({key,view,sourceKey:_sourceKey,signal}); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const { scopeId, ...unscopedView } = view; const base = preparePhysicalGeometry(value, tagScopedTraces ? unscopedView : view, key, identity), asset = tagScopedTraces && scopeId ? { ...base, meshes:base.meshes.map(mesh => mesh.object.clipToScope ? { ...mesh, inspectionScopeId:scopeId } : mesh) } : base; cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, highlights, projectionCalls, renders: () => renders, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -380,4 +382,22 @@ test('a changed clipping scope can recover failed additional layers without disc
   expect(h.entries()[0]!.asset).toBe(prior); expect(h.controller.presentations()[0]!.layerPreparation?.status).toBe('loading')
   expect(h.requests.at(-1)!.view.scopeId).toBe('b'); release(); await settled()
   expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
+})
+
+
+test('transient highlights and occurrence path projection never request new geometry and clear at lifecycle boundaries', async () => {
+  const h = harness(), value = scene('a'), source = h.source(value)
+  h.controller.setSources([source]); h.controller.setView('a', { ...defaultPhysicalSceneView(value.levels), mode: '3d' }); await settled()
+  const prepares = h.prepares(), highlight = { sceneId: 'a', occurrenceId: 'machine', color: [.2, .4, .8] as const }
+  h.controller.setHighlight(highlight); expect(h.highlights.at(-1)).toEqual(highlight)
+  const renders = h.renders(), forwarded = h.highlights.length
+  h.controller.setHighlight({ ...highlight, color: [...highlight.color] }); expect(h.renders()).toBe(renders); expect(h.highlights).toHaveLength(forwarded)
+  expect(h.controller.projectOccurrencePoints('a', 'machine', [[1, 2, 3]], 'upper')).toEqual([{ x: 1, y: 2, depth: 3, visible: true }])
+  expect(h.projectionCalls.at(-1)).toEqual({ sceneId: 'a', occurrenceId: 'machine', points: [[1, 2, 3]], levelId: 'upper' })
+  h.controller.setView('a', { ...h.controller.presentations()[0]!.view, wallOpacity: .2, floorOpacity: .4 }); await settled(); expect(h.prepares()).toBe(prepares)
+  h.controller.setActive(false); expect(h.highlights.at(-1)).toBeNull(); expect(h.controller.projectOccurrencePoints('a', 'machine', [[1, 2, 3]])).toEqual([])
+  h.controller.setActive(true); await settled(); h.controller.setHighlight(highlight)
+  h.controller.setSources([{ ...source, descriptor: { ...source.descriptor, revision: 'next' }, load: async () => ({ ...value, revision: 'next' }) }]); expect(h.highlights.at(-1)).toBeNull(); await settled()
+  h.controller.setHighlight(highlight); h.controller.setSources([]); expect(h.highlights.at(-1)).toBeNull()
+  h.controller.destroy()
 })
