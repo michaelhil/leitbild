@@ -1,0 +1,5065 @@
+{
+  "testedAppCommit": "20a10558a6978cd1bca678a41f6f25c401fb718e",
+  "provenance": {
+    "cold": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/cold-default/receipt.json",
+      "bytes": 108093,
+      "sha256": "7a5033d9f090c563d735e4086296216b4a070558dd75acd68a99b7172c14be7f"
+    },
+    "default-dpr1": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr1/receipt.json",
+      "bytes": 103145,
+      "sha256": "9e818c34eb0536e1cc43692eead25749174b5c4aeafb6f1d3832e06a56c8d0c0"
+    },
+    "default-dpr2": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr2/receipt.json",
+      "bytes": 103191,
+      "sha256": "b5c5a52ddbaa0852430a914b729909d96c0309f7e2957f76ecaa29c87cfa2545"
+    },
+    "all-layers-dpr1": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr1/receipt.json",
+      "bytes": 110056,
+      "sha256": "7a4bcafaade050198781bba57c90cb5f077a3f13076ec4bf9b57e680c1b6bea8"
+    },
+    "all-layers-dpr2": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr2/receipt.json",
+      "bytes": 110484,
+      "sha256": "2ca320342cc25e60751dcbc9e0ab8a30a90dbcbf6922e56b86a98e49ad2e4c36"
+    }
+  },
+  "sourceFamilies": [
+    {
+      "worker": 1,
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+      "started": 1762.5,
+      "postMs": 1.7000000476837158,
+      "transferBytes": 0,
+      "responseAt": 2923.0999999046326,
+      "responseMs": 1160.5999999046326,
+      "ok": true,
+      "occurrences": 744,
+      "terminatedAt": 2923.0999999046326
+    },
+    {
+      "worker": 2,
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+      "started": 1781,
+      "postMs": 1.5999999046325684,
+      "transferBytes": 0,
+      "responseAt": 2520.7000000476837,
+      "responseMs": 739.7000000476837,
+      "ok": true,
+      "occurrences": 540,
+      "terminatedAt": 2520.7000000476837
+    }
+  ],
+  "cold": {
+    "mounted": {
+      "navigationToControlsMs": 1925.7897079999993,
+      "world": {
+        "at": 1630,
+        "pending": 0,
+        "jobs": 0,
+        "sources": 0
+      }
+    },
+    "hostNavigationToFirst3dDrawMs": 4075.10009765625,
+    "hostNavigationToAllSources3dDrawMs": 4494.60009765625,
+    "hostNavigationToAllSourcesGpuCompletionMs": 4511.89990234375,
+    "physicalWorkerTargetsAfterExit": [],
+    "exceptions": []
+  },
+  "actions": [
+    {
+      "name": "cold-native-full-site-3d",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 2068,
+      "actionToAllRequiredSourcesFirstDrawMs": 2487.5,
+      "actionToGpuCompletedMs": 2504.800000190735,
+      "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+      "pending": 0,
+      "glError": 0,
+      "prepareJobs": [
+        {
+          "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[]}]",
+          "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+          "responseMs": 1088.1999998092651,
+          "postMs": 0,
+          "renderBytes": 15233904,
+          "meshes": 1551
+        },
+        {
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "responseMs": 1041,
+          "postMs": 0,
+          "renderBytes": 13556352,
+          "meshes": 2949
+        }
+      ]
+    },
+    {
+      "name": "first-turbine-hall-focus",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 22.59999990463257,
+      "actionToAllRequiredSourcesFirstDrawMs": 22.59999990463257,
+      "actionToGpuCompletedMs": 33.59999990463257,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4256.700000047684,
+        "actionToFreshMs": 40.700000047683716,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "first-operating-3d",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 311.09999990463257,
+      "actionToAllRequiredSourcesFirstDrawMs": 311.09999990463257,
+      "actionToGpuCompletedMs": 325.2000000476837,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4587.599999904633,
+        "actionToFreshMs": 326.09999990463257,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": [
+        {
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "responseMs": 277.7999999523163,
+          "postMs": 0,
+          "renderBytes": 3964368,
+          "meshes": 770
+        }
+      ]
+    },
+    {
+      "name": "first-stack-3d",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 33.10000014305115,
+      "actionToAllRequiredSourcesFirstDrawMs": 33.10000014305115,
+      "actionToGpuCompletedMs": 39.40000009536743,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4629.099999904633,
+        "actionToFreshMs": 40.799999952316284,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "gc-return-operating-3d",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 40.799999952316284,
+      "actionToAllRequiredSourcesFirstDrawMs": 40.799999952316284,
+      "actionToGpuCompletedMs": 47.09999990463257,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4764.200000047684,
+        "actionToFreshMs": 48.299999952316284,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "gc-return-stack-3d",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 38,
+      "actionToAllRequiredSourcesFirstDrawMs": 38,
+      "actionToGpuCompletedMs": 45.799999952316284,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 4883.5,
+        "actionToFreshMs": 47.200000047683716,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "first-uncut-stack",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 757.5,
+      "actionToAllRequiredSourcesFirstDrawMs": 757.5,
+      "actionToGpuCompletedMs": 771,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 5672.5,
+        "actionToFreshMs": 773.9000000953674,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      },
+      "prepareJobs": [
+        {
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",false,0,{\"layers\":[\"plan-allowances\"]}]",
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "responseMs": 709.9000000953674,
+          "postMs": 0,
+          "renderBytes": 12708768,
+          "meshes": 1963
+        }
+      ]
+    },
+    {
+      "name": "gc-return-cutaway-stack",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 34.90000009536743,
+      "actionToAllRequiredSourcesFirstDrawMs": 34.90000009536743,
+      "actionToGpuCompletedMs": 43.10000014305115,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 5807.099999904633,
+        "actionToFreshMs": 44,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "first-plan",
+      "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+      "actionToFirstInkMs": 410.09999990463257,
+      "actionToPaintOpportunityMs": 442,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6252,
+        "actionToFreshMs": 443.2999999523163,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": [
+        {
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"lower\",true,0,{\"layers\":[]}]",
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "responseMs": 399.5,
+          "postMs": 0,
+          "renderBytes": 7010496,
+          "meshes": 533
+        }
+      ]
+    },
+    {
+      "name": "first-plan-operating",
+      "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+      "actionToFirstInkMs": 188,
+      "actionToPaintOpportunityMs": 215.90000009536743,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6471.799999952316,
+        "actionToFreshMs": 217.70000004768372,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": [
+        {
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"operating\",true,0,{\"layers\":[]}]",
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "responseMs": 182.30000019073486,
+          "postMs": 0,
+          "renderBytes": 3328272,
+          "meshes": 351
+        }
+      ]
+    },
+    {
+      "name": "first-plan-lower",
+      "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+      "actionToFirstInkMs": 5.299999952316284,
+      "actionToPaintOpportunityMs": 29.399999856948853,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6502.700000047684,
+        "actionToFreshMs": 30.09999990463257,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "gc-return-plan-operating",
+      "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+      "actionToFirstInkMs": 8.5,
+      "actionToPaintOpportunityMs": 49.60000014305115,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6619.5,
+        "actionToFreshMs": 50.700000047683716,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": []
+    },
+    {
+      "name": "return-3d-operating",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "actionToFirstDrawMs": 259.40000009536743,
+      "actionToAllRequiredSourcesFirstDrawMs": 259.40000009536743,
+      "actionToGpuCompletedMs": 268.2000000476837,
+      "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+      "pending": 0,
+      "glError": 0,
+      "ownerFresh": {
+        "applicable": true,
+        "at": 6891.299999952316,
+        "actionToFreshMs": 270.2000000476837,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+      },
+      "prepareJobs": [
+        {
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "responseMs": 240.40000009536743,
+          "postMs": 0,
+          "renderBytes": 3964368,
+          "meshes": 770
+        }
+      ]
+    }
+  ],
+  "motion": [
+    {
+      "workload": "default",
+      "dpr": 1,
+      "app": "20a10558a6978cd1bca678a41f6f25c401fb718e",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "startup": {
+        "legacyAlreadyOpen": false,
+        "initial": [
+          {
+            "label": "Scenario briefingThis Run has no scenario briefing",
+            "checked": false
+          },
+          {
+            "label": "Alarm strip",
+            "checked": false
+          },
+          {
+            "label": "Layout controls",
+            "checked": false
+          },
+          {
+            "label": "Grid operations",
+            "checked": false
+          }
+        ],
+        "briefingInitiallyVisible": false,
+        "openedControls": true
+      },
+      "layerSelections": [],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 6,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 266,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure",
+                  "utility-routes"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 7,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "instrumentationSha256": "87071031b0aceedd05e5da47ec24bf538ab26023898725eaf76be85e60aef9fa",
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "frames": 241,
+          "rafMedianMs": 16.699999999999818,
+          "rafP95Ms": 16.800000000000182,
+          "rafMaxMs": 16.800000000000182,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 4,
+              "lastAt": 8203.299999952316
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[]}]",
+              "instances": 1,
+              "lastAt": 8203.299999952316
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 4,
+              "lastAt": 12386.699999809265
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[]}]",
+              "instances": 1,
+              "lastAt": 12386.699999809265
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "frames": 244,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.29999999999927,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "frames": 241,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 1,
+              "lastAt": 27367.5
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 1,
+              "lastAt": 32584.199999809265
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": [],
+      "screenshots": {
+        "site-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr1/site-plan.png",
+        "room-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr1/room-plan.png",
+        "room-3d.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr1/room-3d.png"
+      }
+    },
+    {
+      "workload": "default",
+      "dpr": 2,
+      "app": "20a10558a6978cd1bca678a41f6f25c401fb718e",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "startup": {
+        "legacyAlreadyOpen": false,
+        "initial": [
+          {
+            "label": "Scenario briefingThis Run has no scenario briefing",
+            "checked": false
+          },
+          {
+            "label": "Alarm strip",
+            "checked": false
+          },
+          {
+            "label": "Layout controls",
+            "checked": false
+          },
+          {
+            "label": "Grid operations",
+            "checked": false
+          }
+        ],
+        "briefingInitiallyVisible": false,
+        "openedControls": true
+      },
+      "layerSelections": [],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 6,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 290,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure",
+                  "utility-routes"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 7,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "instrumentationSha256": "87071031b0aceedd05e5da47ec24bf538ab26023898725eaf76be85e60aef9fa",
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "frames": 242,
+          "rafMedianMs": 16.699999999999818,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 4,
+              "lastAt": 8661.600000143051
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[]}]",
+              "instances": 1,
+              "lastAt": 8661.600000143051
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 4,
+              "lastAt": 12878.600000143051
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[]}]",
+              "instances": 1,
+              "lastAt": 12878.600000143051
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "frames": 244,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.29999999999927,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 1,
+              "lastAt": 27924.900000095367
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "frames": 241,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "instances": 1,
+              "lastAt": 32191.400000095367
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": [],
+      "screenshots": {
+        "site-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr2/site-plan.png",
+        "room-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr2/room-plan.png",
+        "room-3d.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/default-dpr2/room-3d.png"
+      }
+    },
+    {
+      "workload": "all-layers",
+      "dpr": 1,
+      "app": "20a10558a6978cd1bca678a41f6f25c401fb718e",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "startup": {
+        "legacyAlreadyOpen": false,
+        "initial": [
+          {
+            "label": "Scenario briefingThis Run has no scenario briefing",
+            "checked": false
+          },
+          {
+            "label": "Alarm strip",
+            "checked": false
+          },
+          {
+            "label": "Layout controls",
+            "checked": false
+          },
+          {
+            "label": "Grid operations",
+            "checked": false
+          }
+        ],
+        "briefingInitiallyVisible": false,
+        "openedControls": true
+      },
+      "layerSelections": [
+        {
+          "title": "Halden Unit 1 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 4085.600000143051,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 6230,
+              "responseMs": 2144.399999856949,
+              "responseKind": "prepared"
+            },
+            {
+              "started": 6305.200000047684,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 8382.299999952316,
+              "responseMs": 2077.0999999046326,
+              "responseKind": "prepared"
+            }
+          ]
+        },
+        {
+          "title": "Halden Unit 2 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 3 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 4 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden shared campus and switchyard",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": false
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 10157.600000143051,
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 11210.100000143051,
+              "responseMs": 1052.5,
+              "responseKind": "prepared"
+            }
+          ]
+        }
+      ],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 9,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 278,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": []
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 10,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "instrumentationSha256": "87071031b0aceedd05e5da47ec24bf538ab26023898725eaf76be85e60aef9fa",
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "frames": 238,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.399999999999636,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 4,
+              "lastAt": 16504.10000014305
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 16504.10000014305
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "frames": 227,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 33.29999999999927,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 4,
+              "lastAt": 20736.299999952316
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 20736.299999952316
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "frames": 246,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.29999999999927,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 37116
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 42050.5
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": [],
+      "screenshots": {
+        "site-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr1/site-plan.png",
+        "room-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr1/room-plan.png",
+        "room-3d.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr1/room-3d.png"
+      }
+    },
+    {
+      "workload": "all-layers",
+      "dpr": 2,
+      "app": "20a10558a6978cd1bca678a41f6f25c401fb718e",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "startup": {
+        "legacyAlreadyOpen": false,
+        "initial": [
+          {
+            "label": "Scenario briefingThis Run has no scenario briefing",
+            "checked": false
+          },
+          {
+            "label": "Alarm strip",
+            "checked": false
+          },
+          {
+            "label": "Layout controls",
+            "checked": false
+          },
+          {
+            "label": "Grid operations",
+            "checked": false
+          }
+        ],
+        "briefingInitiallyVisible": false,
+        "openedControls": true
+      },
+      "layerSelections": [
+        {
+          "title": "Halden Unit 1 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 4135.099999904633,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 6360.299999952316,
+              "responseMs": 2225.2000000476837,
+              "responseKind": "prepared"
+            },
+            {
+              "started": 6457.299999952316,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 8536,
+              "responseMs": 2078.7000000476837,
+              "responseKind": "prepared"
+            }
+          ]
+        },
+        {
+          "title": "Halden Unit 2 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 3 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 9519.799999952316,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 11733.700000047684,
+              "responseMs": 2213.9000000953674,
+              "responseKind": "prepared"
+            }
+          ]
+        },
+        {
+          "title": "Halden Unit 4 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden shared campus and switchyard",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": false
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 12925.399999856949,
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 14094.200000047684,
+              "responseMs": 1168.8000001907349,
+              "responseKind": "prepared"
+            }
+          ]
+        }
+      ],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 10,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 286,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": []
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 11,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "instrumentationSha256": "87071031b0aceedd05e5da47ec24bf538ab26023898725eaf76be85e60aef9fa",
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "frames": 229,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 33.29999999999927,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 4,
+              "lastAt": 19403.700000047684
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 19403.700000047684
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "frames": 218,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 33.39999999999782,
+          "rafMaxMs": 50,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 4,
+              "lastAt": 23886.700000047684
+            },
+            {
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 23886.700000047684
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "frames": 213,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 33.400000000001455,
+          "rafMaxMs": 50,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "frames": 238,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 50,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 41698.89999985695
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [
+            {
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "instances": 1,
+              "lastAt": 46882.200000047684
+            }
+          ],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "physicalDraws": [],
+          "declaredSources": [
+            {
+              "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+              "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": false
+                }
+              ],
+              "meshLayerIds": [
+                "utility-routes"
+              ]
+            },
+            {
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+              "layers": [
+                {
+                  "id": "utility-routes",
+                  "label": "Utility routes",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "roof-structure",
+                  "label": "Roof structure",
+                  "defaultVisible": false
+                },
+                {
+                  "id": "plan-labels",
+                  "label": "Plan labels",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-dimensions",
+                  "label": "Dimensions",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-allowances",
+                  "label": "Illustrative work areas",
+                  "defaultVisible": true
+                },
+                {
+                  "id": "plan-grid",
+                  "label": "Structural grid",
+                  "defaultVisible": true
+                }
+              ],
+              "meshLayerIds": [
+                "plan-allowances",
+                "roof-structure",
+                "utility-routes"
+              ]
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": [],
+      "screenshots": {
+        "site-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr2/site-plan.png",
+        "room-plan.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr2/room-plan.png",
+        "room-3d.png": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr2/room-3d.png"
+      }
+    }
+  ],
+  "pendingAcceptance": [
+    "New20a public Retry/held-response/failure/rapid-toggle fixture has not run.",
+    "Fresh final Scenario Definition guidance and per-Run startup functional pass has not run; the earlierfff startup checkpoint remains separately bounded.",
+    "No matched-start-pose or CPU/GPU profile attribution of the four full-quality frame-time misses has run."
+  ],
+  "limits": [
+    "These32 real input windows do not reset the start camera between paused/playing, so they are acceptance workloads and cannot isolate live-status cost. Matched-pose diagnostic is pending.",
+    "All-layer UI setup selects every declared layer on all five public layout roots. It is not a single cold full-site action; its actual preparation response stages are recorded per selection.",
+    "The default visible quality is preserved while currently hidden mesh layers defer preparation. Exact retained source/compiler pins are unchanged; full requested layer coverage is checked against actual submitted VBO keys.",
+    "The user explicitly requested immediate deployment before remaining follow-up tests. Four full-quality95th-percentile misses remain disclosed; this is not a universal16.8ms pass.",
+    "No JavaScript exception, physical worker after page close, or50ms long task was observed in these32 samples. This does not prove absence of shorter bursts, GPU pressure, or performance on other hardware.",
+    "One browser/device profile and uncompressed loopback services; production Caddy compression and WAN behavior are separate. Typed/renderbuffer bytes are not process RSS or driver memory."
+  ]
+}
