@@ -1,5 +1,5 @@
 import { MercatorCoordinate } from 'maplibre-gl'
-import type { PackPhysicalScene, PhysicalSceneBounds } from '../../../core/packs/scene.ts'
+import { physicalSceneInitialVisibleLayers, type PackPhysicalScene, type PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import { boundsCorners, localMercatorMatrix, transform, type Vector3 } from './math.ts'
@@ -42,6 +42,10 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const planPlacements = new WeakMap<PhysicalSceneSource['descriptor'], Float64Array>()
   const emptyStatus: ReadonlyMap<string, PhysicalSubjectStyle> = new Map()
   const disposals: NonNullable<ReturnType<PhysicalViewportRenderer['metrics']>>[] = []
+  const initialView = (source: PhysicalSceneSource): PhysicalSceneView => {
+    const descriptor = source.descriptor, visible = new Set(physicalSceneInitialVisibleLayers(descriptor)), base = { ...defaultPhysicalSceneView(descriptor.levels), mode }
+    return descriptor.layers ? { ...base, hiddenLayerIds: descriptor.layers.filter(layer => !layer.defaultVisible && !visible.has(layer.id)).map(layer => layer.id) } : base
+  }
   const layerPresentation = (entry: Entry): PhysicalScenePresentation['layerPreparation'] => {
     if (!entry.scene || !entry.prepared) return undefined
     const missing = physicalMissingLayers(physicalDesiredMeshLayers(entry.scene, entry.view), entry.preparedLayers)
@@ -81,7 +85,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (!viewport.ready()) return
     if (renderer && viewport.registered(renderer)) { viewport.orderRenderer(); return }
     if (renderer) removeRenderer()
-    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; syncPlanarity(); options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }); renderer.setHighlight(highlight); viewport.requestRender() }
+    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; syncPlanarity(); options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }, options.planFontFamily); renderer.setHighlight(highlight); viewport.requestRender() }
     catch (error) { options.reportError(error instanceof Error ? error : new Error(String(error))) }
   }
   const filteredMeshes = (entry: Entry, prepared: PhysicalPreparedGeometry): ReadonlyArray<PhysicalMesh> => {
@@ -247,7 +251,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
         const previous = entries.get(source.descriptor.id)
         if (previous && JSON.stringify(previous.source.descriptor) === JSON.stringify(source.descriptor)) { previous.source = source; continue }
         if (previous) { inspectionWorkingSet.forget(source.descriptor.id); previous.generation = ++generation; cancelPreparation(previous); cancelOverview(previous); if (highlight?.sceneId === source.descriptor.id) clearHighlight() }
-        entries.set(source.descriptor.id, { renderRevision: 0, source, generation: ++generation, viewGeneration: 0, scene: null, prepared: null, meshes: [], view: previous?.view ?? { ...defaultPhysicalSceneView(source.descriptor.levels), mode }, status: new Map(), signature: '', state: 'distant', loading: false, eligible: false }); changed = true
+        entries.set(source.descriptor.id, { renderRevision: 0, source, generation: ++generation, viewGeneration: 0, scene: null, prepared: null, meshes: [], view: previous?.view ?? initialView(source), status: new Map(), signature: '', state: 'distant', loading: false, eligible: false }); changed = true
       }
       if (focusedId !== null && !entries.has(focusedId)) { focusedId = null; forcedId = null }
       if (pendingFocus && (entries.get(pendingFocus.entry.source.descriptor.id) !== pendingFocus.entry || pendingFocus.entry.generation !== pendingFocus.source)) pendingFocus = null
@@ -256,6 +260,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     },
     setView(sceneId: string, view: PhysicalSceneView): void {
       const entry = requireEntry(sceneId)
+      for (const opacity of [view.wallOpacity, view.floorOpacity]) if (opacity !== undefined && (!Number.isFinite(opacity) || opacity < 0 || opacity > 1)) throw new Error('Physical architecture opacity must be between zero and one')
       if (!Number.isFinite(view.separation) || view.separation < 0) throw new Error('Level separation must be a finite nonnegative display distance')
       if (view.levelId !== 'all' && !entry.source.descriptor.levels.some(level => level.id === view.levelId)) throw new Error(`Unknown physical level: ${view.levelId}`)
       pendingFocus = null; pendingCollectionFocus = null

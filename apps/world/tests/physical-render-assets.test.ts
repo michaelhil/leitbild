@@ -417,3 +417,15 @@ test('active inspection reuses Plan and spatial assets independently of shared-c
   h.controller.setSources([]); expect(h.controller.diagnostics().inspectionWorkingSet.bytes).toBe(0)
   h.controller.destroy(); expect(h.controller.diagnostics().inspectionWorkingSet.representations).toBe(0)
 })
+
+
+test('Pack-owned default visible layers materialize only for a new view and preserve explicit user choices', async () => {
+  const h = harness(), value = scene('policy'), source = h.source(value), descriptor = { ...source.descriptor, layers: [{ id: 'utilities', label: 'Utilities', defaultVisible: false }], viewDefaults: { visibleLayerIds: ['utilities'] } }
+  h.controller.setSources([{ ...source, descriptor }]); await settled()
+  expect(h.controller.presentations()[0]!.view.hiddenLayerIds).toEqual([])
+  h.controller.setView('policy', { ...h.controller.presentations()[0]!.view, hiddenLayerIds: ['utilities'], wallOpacity: .3, floorOpacity: .4 }); await settled()
+  h.controller.setSources([{ ...source, descriptor: { ...descriptor, revision: 'updated' }, load: async () => ({ ...value, revision: 'updated' }) }]); await settled()
+  expect(h.controller.presentations()[0]!.view).toMatchObject({ hiddenLayerIds: ['utilities'], wallOpacity: .3, floorOpacity: .4 })
+  expect(() => h.controller.setView('policy', { ...h.controller.presentations()[0]!.view, wallOpacity: Number.NaN })).toThrow()
+  h.controller.destroy()
+})
