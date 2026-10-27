@@ -656,6 +656,9 @@
     }
     const key = (event: KeyboardEvent): void => {
       if (!active || suspended) return
+      // Keyboard editing/navigation takes intent away from a resting pointer.
+      // A pending dwell must not later steal focus into an equipment card.
+      leave()
       const path = event.composedPath()
       const route = physicalExplorerKeyboardRoute({ path, surface: next.surface.element, overlay: overlayElement, defaultPrevented: event.defaultPrevented, composing: event.isComposing,
         descendantOwnsKeys: path.some(node => node instanceof Element && node.matches('input, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], dialog, [role="dialog"], [role="alertdialog"]')) })
@@ -678,12 +681,12 @@
     const disposers = [next.surface.on('render', changed), next.surface.on('resize', () => { overlayDirty = true; changed() }), next.surface.on('movestart', moving)]
     const surface = next.surface.element
     surface.addEventListener('pointermove', move); surface.addEventListener('pointerdown', cancel); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', dismissHoverSoon)
-    document.addEventListener('visibilitychange', visibility); window.addEventListener('message', receive); window.addEventListener('keydown', key)
+    document.addEventListener('visibilitychange', visibility); document.addEventListener('focusin', cancel); window.addEventListener('blur', cancel); window.addEventListener('message', receive); window.addEventListener('keydown', key)
     onconnect({ dismiss: () => { closeInspection(); leave() }, activate })
     return () => {
       onconnect(null); onDetailedOwners([]); leave(); clearInterval(clock); disposers.forEach(dispose => dispose())
       surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerdown', cancel); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', dismissHoverSoon)
-      document.removeEventListener('visibilitychange', visibility); window.removeEventListener('message', receive); window.removeEventListener('keydown', key)
+      document.removeEventListener('visibilitychange', visibility); document.removeEventListener('focusin', cancel); window.removeEventListener('blur', cancel); window.removeEventListener('message', receive); window.removeEventListener('keydown', key)
       for (const entry of sessions.values()) entry.session.close()
       sessions.clear(); annotationScheduler?.destroy(); annotationScheduler = null; overviewLayer?.destroy(); overviewLayer = null; next.destroy(); controller = null
     }
