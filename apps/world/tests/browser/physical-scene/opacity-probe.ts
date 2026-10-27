@@ -3,6 +3,7 @@ import { createPhysicalBackend, type PhysicalDraw } from '../../../src/ui/map/ph
 import { createPhysicalArchitectureBackend } from '../../../src/ui/map/physical-scene/architecture-backend.ts'
 import { preparePhysicalArchitectureBsp } from '../../../src/ui/map/physical-scene/architecture-bsp.ts'
 import type { PhysicalArchitectureBsp } from '../../../src/ui/map/physical-scene/architecture-bsp-types.ts'
+import { physicalArchitectureCohort } from '../../../src/ui/map/physical-scene/architecture-cohort.ts'
 import { createPhysicalRenderPass } from '../../../src/ui/map/physical-scene/render-pass.ts'
 import { createPhysicalSceneRenderer } from '../../../src/ui/map/physical-scene/renderer.ts'
 import { preparePhysicalGeometry } from '../../../src/ui/map/physical-scene/preparation.ts'
@@ -92,6 +93,10 @@ clear(); pass.begin(canvas.width, canvas.height); backend.draw([...withDetail.dr
 const contextPixels = new Uint8Array(withDetail.pixels.length); gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, contextPixels); restoreSceneGlState(gl, contextHost)
 const contextDifferences = contextPixels.reduce((count, value, index) => count + Number(value !== withDetail.pixels[index]), 0)
 results.push({ kind: 'same-scene-overview-does-not-replace-detailed-asset', sameSceneId: contextDraw.sceneId === referenceDraw.sceneId, distinctAsset: contextDraw.asset.key !== referenceDraw.asset.key, differentBytes: contextDifferences, passed: contextDifferences === 0 })
+const withoutBasis = withDetail.draws.filter(draw => draw !== referenceDraw), basisHost = captureSceneGlState(gl)
+clear(); pass.begin(canvas.width, canvas.height); backend.draw(withoutBasis); architecture.draw(withoutBasis, 0, referenceDraw.matrix); pass.composite(null, null, [0, 0, canvas.width, canvas.height])
+const basisPixel = new Uint8Array(4); gl.readPixels(canvas.width / 2, canvas.height / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, basisPixel); restoreSceneGlState(gl, basisHost)
+results.push({ kind: 'cohort-basis-remains-valid-when-reference-source-is-not-drawn', referenceId: referenceOwner.sceneId, referenceAbsent: !withoutBasis.some(draw => draw.sceneId === referenceOwner.sceneId && draw.asset.key === referenceOwner.assetKey), pixel: [...basisPixel], expected: [128, 0, 127, 255], passed: [...basisPixel].every((value, channel) => Math.abs(value - [128, 0, 127, 255][channel]!) <= 1) })
 const plane = (id: string, kind: 'wall' | 'slab', material: string, z: (x: number, y: number) => number): number => {
   const value = scene(id, kind, material, 0), object = value.objects[0]!
   const positions = [...object.positions]; for (let at = 0; at < positions.length; at += 3) positions[at + 2] = z(positions[at]!, positions[at + 1]!)
@@ -176,6 +181,15 @@ const changedRefusalBytes = refusedPixels.reduce((count, value, index) => count 
 negativeView = { ...negativeView, wallOpacity: 1 }; negative.render(main); const recoveredMetrics = negative.metrics(), recoveredPick = negative.pick({ x: canvas.width / 2, y: canvas.height / 2 })
 gl.getExtension = realExtension
 const negativeCapability = { errors, floatQueries, initialPick: initialPick?.occurrenceId, fractionalPick: refusedPick?.occurrenceId ?? null, changedFractionalBytes: changedRefusalBytes, recoveredPick: recoveredPick?.occurrenceId ?? null, opaqueDraws: opaqueMetrics.draws, fractionalDraws: refusalMetrics.draws, recoveredDraws: recoveredMetrics.draws, recovered: errors.length === 0 && floatQueries === 0 && recoveredMetrics.draws > refusalMetrics.draws && refusalMetrics.draws > opaqueMetrics.draws && recoveredPick !== null && changedRefusalBytes > 0 }
+const legacyScene: PackPhysicalScene = { ...base, id: 'legacy-plan', targetObjectId: 'legacy-plan', objects: [scene('legacy-wall', 'wall', 'red', .6).objects[0]!, scene('legacy-equipment', 'equipment', 'blue', 0).objects[0]!] }
+const legacyView = { ...view, mode: '2d' as const, levelId: 'floor', wallOpacity: .5 }, legacyAsset = preparePhysicalGeometry(legacyScene, legacyView, 'legacy-plan', 'legacy-plan'), legacyErrors: string[] = []
+const legacyEntries = [{ scene: legacyScene, asset: legacyAsset, meshes: legacyAsset.meshes, view: legacyView, status: new Map() }], legacyCohort = physicalArchitectureCohort(legacyEntries)!
+const legacy = createPhysicalSceneRenderer(gl, () => legacyEntries, palette, () => ({ width: canvas.width, height: canvas.height }), error => legacyErrors.push(error.message))
+legacy.setArchitectureBsp(preparePhysicalArchitectureBsp(legacyCohort), legacyCohort.frame)
+const legacyHost = captureSceneGlState(gl); clear(); legacy.render(main); restoreSceneGlState(gl, legacyHost)
+const legacyPixel = new Uint8Array(4); gl.readPixels(canvas.width / 2, canvas.height / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, legacyPixel)
+const legacyPick = legacy.pick({ x: canvas.width / 2, y: canvas.height / 2 })
+results.push({ kind: 'legacy-plan-semantic-depth-bands-and-unlit-colour', pixel: [...legacyPixel], picked: legacyPick?.occurrenceId ?? null, errors: legacyErrors, passed: legacyPixel[0] === 0 && legacyPixel[1] === 0 && legacyPixel[2] === 255 && legacyPixel[3] === 255 && legacyPick?.occurrenceId === 'legacy-equipment' && !legacyErrors.length })
 const contactScene: PackPhysicalScene = { ...base, id: 'contact', targetObjectId: 'contact', objects: [{ ...scene('floor', 'slab', 'red', 0).objects[0]! }, { ...scene('contact-equipment', 'equipment', 'blue', 0).objects[0]! }] }
 const contactAsset = prepare(contactScene), contactErrors: string[] = []
 let contactView = { ...view, floorOpacity: 1 }
@@ -187,10 +201,10 @@ const contactPixel = new Uint8Array(4); gl.readPixels(canvas.width / 2, canvas.h
 const contactPick = contact.pick({ x: canvas.width / 2, y: canvas.height / 2 })
 results.push({ kind: 'hidden-architecture-reveals-coplanar-equipment', pixel: [...contactPixel], picked: contactPick?.occurrenceId ?? null, errors: contactErrors, geometryUploadsBefore: contactUploads, geometryUploadsAfter: contact.metrics().geometryUploads, passed: contactPixel[2]! > 100 && contactPixel[0]! < 2 && contactPixel[1]! < 2 && contactPick?.occurrenceId === 'contact-equipment' && !contactErrors.length && contactUploads === contact.metrics().geometryUploads })
 const hostState = stateDifferences(host, state())
-restoreSceneGlState(gl, before); negative.dispose(); contact.dispose(); backend.dispose(); architecture.dispose(); pass.dispose()
+restoreSceneGlState(gl, before); negative.dispose(); legacy.dispose(); contact.dispose(); backend.dispose(); architecture.dispose(); pass.dispose()
 hostTextures.forEach(value => gl.deleteTexture(value)); hostSamplers.forEach(value => gl.deleteSampler(value))
-const metrics = { ...backend.metrics, architecture: architecture.metrics(), pass: pass.metrics(), negative: negative.metrics(), contact: contact.metrics() }
-const disposal = [metrics, metrics.architecture, metrics.negative, metrics.contact].every(value => value.liveBuffersAfterDisposal === 0 && value.liveProgramsAfterDisposal === 0 && value.liveTexturesAfterDisposal === 0) && metrics.pass.liveTextures === 0 && metrics.pass.livePrograms === 0 && metrics.pass.liveFramebuffers === 0 && metrics.pass.liveRenderbuffers === 0
+const metrics = { ...backend.metrics, architecture: architecture.metrics(), pass: pass.metrics(), negative: negative.metrics(), legacy: legacy.metrics(), contact: contact.metrics() }
+const disposal = [metrics, metrics.architecture, metrics.negative, metrics.legacy, metrics.contact].every(value => value.liveBuffersAfterDisposal === 0 && value.liveProgramsAfterDisposal === 0 && value.liveTexturesAfterDisposal === 0) && metrics.pass.liveTextures === 0 && metrics.pass.livePrograms === 0 && metrics.pass.liveFramebuffers === 0 && metrics.pass.liveRenderbuffers === 0
 const result = { passed: (results as { passed: boolean }[]).every(value => value.passed) && disposal && negativeCapability.recovered && !hostState.length, results, negativeCapability, disposal, metrics, device: { dpr: devicePixelRatio, renderer: gl.getParameter(gl.RENDERER), version: gl.getParameter(gl.VERSION), samples: metrics.pass.samples }, hostState }
 Object.assign(window, { opacityProbe: result })
 document.querySelector('pre')!.textContent = JSON.stringify(result, null, 2)
