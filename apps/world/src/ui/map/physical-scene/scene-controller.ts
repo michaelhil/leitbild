@@ -32,6 +32,9 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   let collectionIds: ReadonlySet<string> | null = null
   let pendingFocus: { entry: Entry; source: number; view: number; target: PhysicalSceneFocus; preservePose: boolean } | null = null
   let pendingCollectionFocus: { targets: ReadonlyArray<{ entry: Entry; source: number }>; preservePose: boolean } | null = null
+  let cameraOwned = true, reconcilingCamera = false
+  const setPlanarity = (value: boolean): void => { const prior = reconcilingCamera; reconcilingCamera = true; try { viewport.setPlanarInspection?.(value) } finally { reconcilingCamera = prior } }
+  const syncPlanarity = (): void => setPlanarity(active && cameraOwned && mode === '2d' && [...entries.values()].some(entry => entry.eligible && entry.state === 'ready' && entry.scene?.planDrawing?.views.some(view => view.levelId === entry.view.levelId)))
   const planPlacements = new WeakMap<PhysicalSceneSource['descriptor'], Float64Array>()
   const emptyStatus: ReadonlyMap<string, PhysicalSubjectStyle> = new Map()
   const disposals: NonNullable<ReturnType<PhysicalViewportRenderer['metrics']>>[] = []
@@ -64,7 +67,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (!viewport.ready()) return
     if (renderer && viewport.registered(renderer)) { viewport.orderRenderer(); return }
     if (renderer) removeRenderer()
-    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }); viewport.requestRender() }
+    try { renderer = viewport.installRenderer(drawable, palette, error => { for (const entry of entries.values()) if (entry.eligible) { entry.failure = error.message; entry.state = 'unavailable'; entry.reason = error.message }; syncPlanarity(); options.reportError(error); emit(); queueMicrotask(reconcileRenderer) }); viewport.requestRender() }
     catch (error) { options.reportError(error instanceof Error ? error : new Error(String(error))) }
   }
   const filteredMeshes = (entry: Entry, prepared: PhysicalPreparedGeometry): ReadonlyArray<PhysicalMesh> => {
@@ -96,6 +99,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const rebound = { ...prepared, sourceAsset: prepared, meshes: prepared.meshes.map(mesh => { const object = objects.get(mesh.object.id); if (!object) throw new Error('Shared physical asset occurrence identity mismatch'); return { ...mesh, object } }) }
       admitPhysicalPickAcceleration(rebound.meshes, rebound.acceleration)
       entry.renderRevision++; entry.preparing = false; entry.prepared = rebound; entry.meshes = filteredMeshes(entry, rebound); entry.state = !active ? 'hidden' : entry.eligible ? 'ready' : 'distant';
+      syncPlanarity()
       if (active && pendingFocus?.entry === entry && pendingFocus.source === entry.generation && pendingFocus.view <= expected) { const intent = pendingFocus; pendingFocus = null; applyFit(entry, intent.target, intent.preservePose) }; refreshCollectionFit(); reconcileRenderer(); viewport.requestRender(); emit()
     } catch (error) { if (request.signal.aborted || expected !== entry.viewGeneration || sourceGeneration !== entry.generation || destroyed || entries.get(entry.source.descriptor.id) !== entry) return; entry.preparing = false; entry.failure = error instanceof Error ? error.message : String(error); entry.state = 'unavailable'; entry.reason = entry.failure; options.reportError(new Error(entry.failure)); reconcileRenderer(); emit() }
     finally { if (entry.preparationAbort === request) entry.preparationAbort = undefined }
@@ -148,7 +152,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       else if (entry.loading) entry.state = 'loading'
       else void load(entry)
     }
-    reconcileRenderer(); emit()
+    syncPlanarity(); reconcileRenderer(); emit()
   }
   const enqueue = (): void => { if (queued || destroyed) return; queued = true; queueMicrotask(() => { queued = false; reconcile() }) }
   const cleanup = [viewport.on('change', enqueue), viewport.on('resize', enqueue), viewport.on('style', enqueue), viewport.on('idle', enqueue), viewport.on('contextlost', () => { contextLost = true; removeRenderer() }), viewport.on('contextrestored', () => { contextLost = false; enqueue() })]
@@ -180,7 +184,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (intent.targets.some(({ entry }) => !entry.prepared || entry.preparing || entry.state !== 'ready')) return
     pendingCollectionFocus = null; applyCollectionFit(intent.targets.map(target => target.entry), intent.preservePose)
   }
-  cleanup.push(viewport.on('movestart', () => { pendingFocus = null; pendingCollectionFocus = null }))
+  cleanup.push(viewport.on('movestart', () => { if (!reconcilingCamera) { pendingFocus = null; pendingCollectionFocus = null } }))
   return {
     surface: viewport.surface,
     setSources(sources: ReadonlyArray<PhysicalSceneSource>): void {
@@ -205,6 +209,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       if (view.levelId !== 'all' && !entry.source.descriptor.levels.some(level => level.id === view.levelId)) throw new Error(`Unknown physical level: ${view.levelId}`)
       pendingFocus = null; pendingCollectionFocus = null
       const changedMode = mode !== view.mode; mode = view.mode
+      if (changedMode && mode === '3d') setPlanarity(false)
       for (const target of entries.values()) {
         const selected = target === entry ? view : changedMode ? { ...target.view, mode } : target.view
         const desired = changedMode && mode === '3d' && focusedId === null && collectionIds?.has(target.source.descriptor.id) ? { ...selected, levelId: 'all' } : selected
@@ -249,7 +254,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     home(sceneId: string, scopeId?: string): void { const entry = requireEntry(sceneId); this.selectScope(sceneId, scopeId); fitEntry(entry, { scopeId }, false) },
     reset(sceneId: string): void { const entry = requireEntry(sceneId); this.setView(sceneId, defaultPhysicalSceneView(entry.source.descriptor.levels)); this.home(sceneId) },
     cameraPose: viewport.cameraPose, zoomBy: (delta: number) => viewport.setPose({ zoom: viewport.cameraPose().zoom + delta }), tiltBy: (degrees: number) => viewport.setPose({ pitch: viewport.cameraPose().pitch + degrees }), turnBy: (degrees: number) => viewport.setPose({ bearing: viewport.cameraPose().bearing + degrees }), panBy: viewport.panBy, cancelCamera: () => { pendingFocus = null; pendingCollectionFocus = null; viewport.cancelCamera() }, setNavigationTool: viewport.setNavigationTool,
-    setActive(value: boolean): void { if (active === value || destroyed) return; active = value; viewport.setActive?.(value); if (!active) { pendingFocus = null; pendingCollectionFocus = null; for (const entry of entries.values()) { cancelPreparation(entry); cancelOverview(entry) }; viewport.cancelCamera(); renderer?.invalidatePicks() }; reconcile(); viewport.requestRender() },
+    setActive(value: boolean): void { if (active === value || destroyed) return; active = value; viewport.setActive?.(active && cameraOwned); if (!active) { pendingFocus = null; pendingCollectionFocus = null; for (const entry of entries.values()) { cancelPreparation(entry); cancelOverview(entry) }; viewport.cancelCamera(); renderer?.invalidatePicks() }; reconcile(); viewport.requestRender() },
+    setCameraOwnership(value: boolean): void { if (cameraOwned === value || destroyed) return; cameraOwned = value; if (!value) { pendingFocus = null; pendingCollectionFocus = null; viewport.cancelCamera() }; syncPlanarity(); viewport.setActive?.(active && cameraOwned) },
     pick: (point: { x: number; y: number }) => active ? renderer?.pick(point) ?? null : null,
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null : null,
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => active && (renderer?.visibleAt(sceneId, occurrenceId, point) ?? false),

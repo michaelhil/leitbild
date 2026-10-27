@@ -308,7 +308,7 @@
     if (changedPerspective || !active || suspended || !documentVisible || (inspected !== null && activeInspection?.status !== 'ready')) { closeInspection(); hover = null; controller?.cancelCamera() }
   })
 
-  $effect(() => { controller?.setActive(active && documentVisible); if (!active || suspended || !documentVisible) { focusGeneration++; pendingFocus = null; pendingCameraFocus = null; scopeFloorChoice = null; controller?.cancelCamera(); controller?.setNavigationTool('pan'); navigation = 'pan' } })
+  $effect(() => { controller?.setActive(active && documentVisible); controller?.setCameraOwnership(!suspended); if (!active || suspended || !documentVisible) { focusGeneration++; pendingFocus = null; pendingCameraFocus = null; scopeFloorChoice = null; controller?.cancelCamera(); controller?.setNavigationTool('pan'); navigation = 'pan' } })
 
   const scopedOccurrences = $derived(scenes.filter(scene => scene.status === 'ready').flatMap(scene => (controller?.scene(scene.descriptor.id)?.objects ?? []).filter(occurrence =>
     (focusedId === null || focusedId === scene.descriptor.id) && (focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) && physicalOccurrenceInScope(occurrence, focusedScopeId, scene.descriptor.scopes ?? []) && physicalOccurrenceOnLevel(occurrence, scene.view.levelId) && (occurrence.layerId === undefined || !(scene.view.hiddenLayerIds ?? scene.descriptor.layers?.filter(layer => !layer.defaultVisible).map(layer => layer.id) ?? []).includes(occurrence.layerId)),

@@ -15,6 +15,22 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
   let active = true, elevatedInspection = false, priorClamp: boolean | null = null
   type PausedPose = { center: readonly [number, number]; bearing: number; pitch: number; zoom: number; elevation: number }
   let pausedPose: PausedPose | null = null
+  let planarInspection = false, priorPitch: { min: number; max: number } | null = null
+  const releasePlanar = (): void => {
+    const prior = priorPitch; if (!prior) return
+    priorPitch = null
+    // Restore only bounds still owned by this lease. An operational camera
+    // that deliberately replaced a bound retains its newer valid interval.
+    if (map.getMaxPitch() === 0) map.setMaxPitch(prior.max)
+    if (map.getMinPitch() === 0 && prior.min <= map.getMaxPitch()) map.setMinPitch(prior.min)
+  }
+  const syncPlanar = (): void => {
+    if (!active || !planarInspection) { releasePlanar(); return }
+    if (priorPitch !== null) return
+    priorPitch = { min: map.getMinPitch(), max: map.getMaxPitch() }
+    map.setMinPitch(0); map.setMaxPitch(0)
+    if (map.getPitch() !== 0) map.jumpTo({ pitch: 0 })
+  }
   const currentPose = (): PausedPose => { const point = map.getCenter(); return { center: [point.lng, point.lat], bearing: map.getBearing(), pitch: map.getPitch(), zoom: map.getZoom(), elevation: map.getCenterElevation() } }
   const acquireElevation = (): void => { if (!active || !elevatedInspection) return; if (priorClamp === null) priorClamp = map.getCenterClampedToGround(); map.setCenterClampedToGround(false) }
   const releaseElevation = (): void => { if (priorClamp === null) return; if (!map.getCenterClampedToGround()) map.setCenterClampedToGround(priorClamp); priorClamp = null }
@@ -120,10 +136,11 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     },
     setActive(value) {
       if (active === value) return
-      if (!value) { if (elevatedInspection) pausedPose = currentPose(); active = false; releaseElevation(); return }
-      active = true; acquireElevation()
+      if (!value) { if (elevatedInspection) pausedPose = currentPose(); active = false; releaseElevation(); syncPlanar(); return }
+      active = true; acquireElevation(); syncPlanar()
       if (pausedPose) { const now = currentPose(); if (now.bearing === pausedPose.bearing && now.pitch === pausedPose.pitch && now.zoom === pausedPose.zoom && now.center[0] === pausedPose.center[0] && now.center[1] === pausedPose.center[1]) map.setCenterElevation(pausedPose.elevation); pausedPose = null }
     },
+    setPlanarInspection(value) { planarInspection = value; syncPlanar() },
     fitWorld(bounds, options) {
       const bearing = options.preservePose ? map.getBearing() : options.bearing
       const requestedPitch = options.preservePose ? map.getPitch() : options.pitch ?? 50
@@ -150,7 +167,7 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     panBy: (x, y) => map.panBy([x, y], { duration: 0 }),
     setNavigationTool(value) { releasePointer(); tool = value; /* Native camera handlers retain their global contract; mousedown claims this gesture. */ },
     cancelCamera() { map.stop(); releasePointer() },
-    destroy() { leaveElevation(); for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
+    destroy() { releasePlanar(); leaveElevation(); for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
   }
   return port
 }

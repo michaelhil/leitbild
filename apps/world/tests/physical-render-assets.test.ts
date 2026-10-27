@@ -18,7 +18,7 @@ const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObj
 const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   let projectScale = 1_000_000
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
-  const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = []
+  const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = [], planarity: boolean[] = []
   const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = [], fitBounds: PhysicalSceneBounds[] = []
   const viewport: PhysicalViewport = {
     surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
@@ -26,7 +26,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas') => {
     intersectsBounds: () => true,
     projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() {}, registered: () => true, orderRenderer() {}, removeRenderer() {},
     installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setPalette() { paletteUpdates++ }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
-    cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch) }, fitWorld(bounds, options) { fitBounds.push(bounds); fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
+    cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch) }, setPlanarInspection(value) { planarity.push(value) }, fitWorld(bounds, options) { fitBounds.push(bounds); fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
   }
   let failPreparation = false, rendererError: ((error: Error) => void) | null = null
   const errors: Error[] = []
@@ -36,7 +36,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
     prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, fitBounds, tools, poses, signals, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, fits, fitBounds, tools, poses, signals, planarity, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -150,6 +150,17 @@ test('Plan camera fitting includes selected drafting extents without changing ph
   h.controller.focus('a', { occurrenceId: 'machine' })
   expect(h.fitBounds.at(-1)!.min[0]).toBeGreaterThan(min[0])
   expect(h.fitBounds.at(-1)!.max[0]).toBeLessThan(max[0]); h.controller.destroy()
+})
+
+test('only ready visible vector Plan owns flat camera projection and operational capture releases it without hiding data', async () => {
+  const h = harness('map'), value = scene('a')
+  value.planDrawing = { views: [{ levelId: 'lower', bounds: { min: [0, 0], max: [5, 5] }, primitives: [{ id: 'outline', kind: 'path', scopeIds: ['a'], depiction: 'section', bounds: { min: [0, 0], max: [5, 5] }, commands: [['M', 0, 0], ['L', 5, 5]], stroke: 'line' }] }] }
+  h.scale(1); h.controller.setSources([h.source(value)]); await settled(); expect(h.planarity.at(-1)).toBe(false)
+  h.controller.selectScope('a'); await settled(); expect(h.planarity.at(-1)).toBe(true)
+  h.controller.setCameraOwnership(false); expect(h.planarity.at(-1)).toBe(false); expect(h.controller.presentations()[0]!.status).toBe('ready')
+  h.controller.setCameraOwnership(true); expect(h.planarity.at(-1)).toBe(true)
+  h.controller.setView('a', { ...h.controller.presentations()[0]!.view, mode: '3d' }); await settled(); expect(h.planarity.at(-1)).toBe(false)
+  h.controller.destroy()
 })
 
 test('rapid floor choices cancel obsolete demand and stale completions cannot replace the selected floor', async () => {

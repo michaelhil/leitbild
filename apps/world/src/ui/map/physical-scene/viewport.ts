@@ -30,6 +30,8 @@ export interface PhysicalViewport {
   readonly cameraPose: () => PhysicalCameraPose
   /** Suspend host-specific camera ownership without discarding the user's pose. */
   readonly setActive?: (active: boolean) => void
+  /** A visible architectural Plan uses a flat geographic projection. */
+  readonly setPlanarInspection?: (active: boolean) => void
   readonly setPose: (patch: Partial<Pick<PhysicalCameraPose, 'pitch' | 'bearing' | 'zoom' | 'center' | 'elevation'>>) => void
   /** Bounds in normalized Mercator world coordinates, including elevation. */
   readonly fitWorld: (bounds: PhysicalSceneBounds, options: { padding: { top: number; right: number; bottom: number; left: number }; preservePose: boolean; mode: '2d' | '3d'; bearing: number; pitch?: number; target?: Vector3 }) => void
