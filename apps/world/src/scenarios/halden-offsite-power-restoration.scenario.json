@@ -318,7 +318,7 @@
             "guidance": {
               "id": "offsite-power-briefing",
               "title": "In two minutes, a fault cuts Halden off the grid",
-              "message": "To jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. Then follow the grid frequency on the right.",
+              "message": "Open View in the header and turn on Grid operations to follow the grid frequency. To jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. You can close this briefing with \u00d7 and reopen it from View.",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
@@ -393,7 +393,7 @@
             "guidance": {
               "id": "switchyard-busbar-fault",
               "title": "Halden is cut off from the grid",
-              "message": "All six circuits are open and every turbine has tripped. To restore offsite power, open Assets in the grid panel, search \u201cHasle circuit 1\u201d, choose it and press Close. Or ask the Leitbild Assistant: \u201cWhy did the turbine trip?\u201d",
+              "message": "All six circuits are open and every turbine has tripped. To restore offsite power, turn on Grid operations from View in the header, open Assets, search \u201cHasle circuit 1\u201d, choose it and press Close. Or ask the Leitbild Assistant: \u201cWhy did the turbine trip?\u201d",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
