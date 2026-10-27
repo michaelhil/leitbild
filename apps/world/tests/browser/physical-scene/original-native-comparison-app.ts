@@ -5,6 +5,10 @@ import { physicalLayoutPalette } from '../../../src/ui/physical-layout/palette.t
 import { defaultPhysicalSceneView } from '../../../src/ui/map/physical-scene/types.ts'
 import { preparePhysicalGeometry } from '../../../src/ui/map/physical-scene/preparation.ts'
 import { createPhysicalBackend } from '../../../src/ui/map/physical-scene/backend.ts'
+import { createPhysicalSceneRenderer } from '../../../src/ui/map/physical-scene/renderer.ts'
+import { inverse, localMercatorMatrix, multiply, transform } from '../../../src/ui/map/physical-scene/math.ts'
+import { scopeRouteFixture } from '../../fixtures/physical-scope-route.ts'
+import { lookAt, perspective } from '../../../../../experiments/physical-layout-trials/render/src/reference/math.ts'
 import { buildScene } from '../../../../../experiments/physical-layout-trials/render/src/reference/scene.ts'
 import { createRenderer as originalRenderer, homeCamera } from './original-reference-renderer.ts'
 
@@ -90,6 +94,24 @@ const waitReady = async () => {
       gl.useProgram(null); backend.dispose(); results.push({ ...result, liveBuffers: backend.metrics.liveBuffersAfterDisposal, liveTextures: backend.metrics.liveTexturesAfterDisposal, livePrograms: backend.metrics.liveProgramsAfterDisposal })
     }
     return { results, passed: results.every(value => value.changedContours > 0 && value.preservedInterior === 1024 && value.changedInterior === 0 && value.geometryUploadsBefore === value.geometryUploadsAfter && value.error === 0 && value.liveBuffers === 0 && value.liveTextures === 0 && value.livePrograms === 0) }
+  },
+  scopeCaps() {
+    const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512
+    const gl = canvas.getContext('webgl2', { antialias: true, preserveDrawingBuffer: true })!, route = scopeRouteFixture(), source: PackPhysicalScene = { id: 'controlled-layout', revision: 'controlled-fixture', targetObjectId: 'test-owner', anchor: [0, 0], bearing: 0, bounds: { min: [-5, -2, 0], max: [5, 2, 3] }, levels: [{ id: 'floor', label: 'Floor', elevation: 0, cutHeight: 1.2 }], objects: [route], scopes: [{ id: 'unit', label: 'Unit', kind: 'unit', levelIds: ['floor'], bounds: { min: [-5, -2, 0], max: [5, 2, 3] } }, { id: 'room', label: 'Room', kind: 'space', parentId: 'unit', levelIds: ['floor'], bounds: { min: [-1, -1, 0], max: [1, 1, 3] } }] }
+    const view = { ...defaultPhysicalSceneView(source.levels), mode: '3d' as const, levelId: 'all', scopeId: 'room' }, asset = preparePhysicalGeometry(source, view, 'scope-cap', 'scope-cap'), errors: string[] = []
+    const entry = { scene: source, view, asset, meshes: asset.meshes, status: new Map() }, renderer = createPhysicalSceneRenderer(gl, () => [entry], physicalLayoutPalette(mapElement), () => ({ width: 512, height: 512 }), error => errors.push(error.message)), placement = inverse(localMercatorMatrix(source.anchor, source.bearing))
+    const pixel = (x: number, y: number) => { const data = new Uint8Array(4); gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, data); return [...data] }
+    const observations: Array<{ plain: number[]; stripe: number[]; pick: string | undefined }> = []
+    for (let phase = 0; phase < 16; phase++) {
+      const dx = Math.sin(phase / 16 * Math.PI * 2) * .001, dy = Math.cos(phase / 16 * Math.PI * 2) * .001, matrix = multiply(perspective(Math.PI / 3, 1, .1, 100), lookAt([-5, dy, 1 + dx], [0, dy, 1 + dx], [0, 0, 1]))
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, 512, 512); gl.clearColor(1, 1, 1, 1); gl.clearDepth(1); gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+      renderer.render(multiply(matrix, placement))
+      const plain = transform(matrix, [-1, .125, 1]), stripe = transform(matrix, [-1, 0, 1]), plainX = Math.floor((plain[0] + 1) * 256), plainY = Math.floor((plain[1] + 1) * 256), stripeX = Math.floor((stripe[0] + 1) * 256), stripeY = Math.floor((stripe[1] + 1) * 256)
+      observations.push({ plain: pixel(plainX, plainY), stripe: pixel(stripeX, stripeY), pick: renderer.pick({ x: plainX, y: 512 - plainY })?.subjectIds[0] })
+    }
+    const error = gl.getError(), image = canvas.toDataURL('image/png')
+    renderer.dispose(); const metrics = renderer.metrics()
+    return { image, observations, errors, metrics, error, materials: asset.buffers.roles, passed: errors.length === 0 && error === 0 && asset.buffers.roles.some(role => role.startsWith('continuation/pipe/')) && observations.every(value => value.pick === 'supply-edge' && value.plain.join(',') === observations[0]!.plain.join(',') && value.plain.join(',') !== value.stripe.join(',')) && metrics.liveBuffersAfterDisposal === 0 && metrics.liveProgramsAfterDisposal === 0 && metrics.liveTexturesAfterDisposal === 0 }
   },
   finish() { controller.destroy(); map.remove(); return { errors } },
 }

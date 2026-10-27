@@ -1,23 +1,12 @@
 import { expect, test } from 'bun:test'
-import type { PackPhysicalScene, PhysicalSceneObject, PhysicalSceneBounds } from '../src/core/packs/scene.ts'
+import type { PackPhysicalScene, PhysicalSceneBounds } from '../src/core/packs/scene.ts'
 import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
 import { visiblePhysicalSurfaceOwners } from '../src/ui/map/physical-scene/surface-ownership.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
 import type { PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
+import { scopeRouteFixture as tube } from './fixtures/physical-scope-route.ts'
 
-const tube = (): PhysicalSceneObject & { clipToScope: true; spatialPath: { points: [number, number, number][]; radius: number } } => {
-  const positions: number[] = [], normals: number[] = [], sides = 16, radius = .5
-  const ring = (x: number, side: number) => [x, Math.cos(side * Math.PI * 2 / sides) * radius, 1 + Math.sin(side * Math.PI * 2 / sides) * radius] as [number, number, number]
-  const radial = (side: number) => [0, Math.cos(side * Math.PI * 2 / sides), Math.sin(side * Math.PI * 2 / sides)] as [number, number, number]
-  const vertex = (point: number[], normal: number[]) => { positions.push(...point); normals.push(...normal) }
-  for (let side = 0; side < sides; side++) {
-    for (const [x, s] of [[-4, side], [-4, side + 1], [4, side + 1], [-4, side], [4, side + 1], [4, side]]) vertex(ring(x!, s!), radial(s!))
-    vertex([-4, 0, 1], [-1, 0, 0]); vertex(ring(-4, side + 1), [-1, 0, 0]); vertex(ring(-4, side), [-1, 0, 0])
-    vertex([4, 0, 1], [1, 0, 0]); vertex(ring(4, side), [1, 0, 0]); vertex(ring(4, side + 1), [1, 0, 0])
-  }
-  return { id: 'pipe', label: 'Graph-owned supply route', kind: 'pipe', levelId: 'floor', levelIds: ['floor'], inspectionLevels: [{ levelId: 'floor', low: 0, high: 3 }], positions, normals, material: 'pipe', subjectIds: ['supply-edge'], scopeIds: ['unit'], edgePolicy: 'none', bounds: { min: [-4, -.5, .5], max: [4, .5, 1.5] }, clipToScope: true, spatialPath: { points: [[-4, 0, 1], [4, 0, 1]], radius } }
-}
 const scene = (regions: PhysicalSceneBounds[]): PackPhysicalScene => ({ id: 'layout', revision: 'source', targetObjectId: 'plant', anchor: [0, 0], bearing: 0, bounds: { min: [-5, -5, -5], max: [5, 5, 5] }, levels: [{ id: 'floor', label: 'Floor', elevation: 0, cutHeight: 1.2 }], objects: [tube()], scopes: [
   { id: 'unit', label: 'Unit', kind: 'unit', levelIds: ['floor'], bounds: { min: [-5, -5, -5], max: [5, 5, 5] } },
   ...regions.map((bounds, index) => ({ id: `room-${index}`, label: `Room ${index}`, kind: 'space' as const, parentId: 'unit', levelIds: ['floor'], bounds })),
