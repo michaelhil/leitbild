@@ -30,7 +30,8 @@
   import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+  let { suspendPickingForNavigation, controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+    suspendPickingForNavigation?: (() => (() => void)) | undefined
     controlsOpen?: boolean
     map: MapLibreMap
     active?: boolean
@@ -525,7 +526,7 @@
     const element = map.getContainer()
     badgeMeasure = document.createElement('canvas').getContext('2d')
     if (badgeMeasure) badgeMeasure.font = `11px ${getComputedStyle(element).fontFamily}`
-    const options = { palette: physicalLayoutPalette(element), fitPadding, onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
+    const options = { palette: physicalLayoutPalette(element), fitPadding, ...(suspendPickingForNavigation === undefined ? {} : { suspendPickingForNavigation }), onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
     let next: PhysicalSceneController
     try {
       next = createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
