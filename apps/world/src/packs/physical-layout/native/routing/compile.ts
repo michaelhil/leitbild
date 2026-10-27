@@ -15,8 +15,10 @@ const extent = (points: ReadonlyArray<RoutePoint>, padding: number) => ({ min: [
 /** Continuous watertight sweep: shared rings and smooth normals, capped only at
  * terminals. Accuracy derives from the authored chord tolerance, not facet caps. */
 export const physicalRouteTube = (points: ReadonlyArray<RoutePoint>, radius: number, tolerance: number) => {
-  if (points.length < 2 || !(radius > 0) || !(tolerance > 0)) throw new Error('A route sweep needs a path, radius and geometric tolerance')
-  const count = Math.max(3, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - tolerance / radius))))
+  if (points.length < 2 || !Number.isFinite(radius) || !Number.isFinite(tolerance) || !(radius > 0) || !(tolerance > 0) || points.some(point => point.some(v => !Number.isFinite(v)))) throw new Error('A route sweep needs a finite path, radius and geometric tolerance')
+  // asin avoids catastrophic cancellation in acos(1-tolerance/radius).
+  const count = Math.max(3, Math.ceil(Math.PI / (2 * Math.asin(Math.sqrt(Math.min(1, tolerance / (2 * radius)))))))
+  if (!Number.isSafeInteger(count)) throw new Error('Requested sweep accuracy exceeds representable geometric precision')
   const tangents = points.map((p, i) => norm(i === 0 ? subtract(points[1]!, p) : i === points.length - 1 ? subtract(p, points[i - 1]!) : norm(subtract(p, points[i - 1]!)).map((v, axis) => v + norm(subtract(points[i + 1]!, p))[axis]!) as V3))
   let u: V3 = norm(cross(tangents[0]!, Math.abs(tangents[0]![2]) < .9 ? [0, 0, 1] : [0, 1, 0]))
   const rings = points.map((center, index) => {
@@ -51,10 +53,11 @@ const routingRequests = (source: Source, objects: ReadonlyArray<PhysicalSceneObj
   const network = source.routing; if (!network) return []
   const elements = new Map(source.elements.map(e => [e.id, e])), roster = new Map(objects.map(object => [object.id, object]))
   const terminals = new Map(network.terminals.map(terminal => [terminal.id, terminal]))
+  const obstacleIds = new Set(network.obstacleElementIds)
   const endpoint = (terminal: RoutingTerminal) => {
     const element = elements.get(terminal.elementId); if (!element) throw new Error(`Unknown routing occurrence: ${terminal.elementId}`)
     const pose = elementWorld(source, element), c = Math.cos(pose.yaw), s = Math.sin(pose.yaw), local = terminal.local, outward = terminal.outward
-    return { point: subtract([pose.position[0] + c * local[0] - s * local[1], pose.position[1] + s * local[0] + c * local[1], pose.position[2] + local[2]], source.origin), outward: [c * outward[0] - s * outward[1], s * outward[0] + c * outward[1], outward[2]] as V3, obstacleId: terminal.elementId }
+    return { point: subtract([pose.position[0] + c * local[0] - s * local[1], pose.position[1] + s * local[0] + c * local[1], pose.position[2] + local[2]], source.origin), outward: [c * outward[0] - s * outward[1], s * outward[0] + c * outward[1], outward[2]] as V3, ...(obstacleIds.has(terminal.elementId) ? { obstacleId: terminal.elementId } : {}) }
   }
   const obstacles = network.obstacleElementIds.map(id => { const object = roster.get(id); if (!object?.bounds) throw new Error(`Routing obstacle has no physical solid: ${id}`); return { id, ...object.bounds } })
   return network.connections.map(connection => {
@@ -79,24 +82,25 @@ export const compilePhysicalRoutes = (source: Source, objects: ReadonlyArray<Phy
   return routingRequests(source, objects).map(({ connection, fromTerminal, toTerminal, request }) => {
     if (!connection.solution) throw new Error(`Physical route has no accepted authoring solution: ${connection.id}`)
     const points = connection.solution.map(point => subtract(point, source.origin))
-    validatePhysicalConnectionRoute(request, points)
-    const solution: PhysicalRoutedPath = { id: connection.id, points, length: points.slice(1).reduce((sum, p, index) => sum + Math.hypot(...subtract(p, points[index]!)), 0), bends: Math.max(0, points.length - 2), visited: 0 }
-    const centerline = roundedPhysicalRoute(solution.points, connection.bendRadius, network.geometryTolerance), radius = connection.diameter / 2, geometry = physicalRouteTube(centerline, radius, network.geometryTolerance), bounds = extent(centerline, radius)
+    const validation = validatePhysicalConnectionRoute(request, points)
+    const solution: PhysicalRoutedPath = { id: connection.id, points, ...validation, visited: 0 }
+    const centerline = roundedPhysicalRoute(solution.points, connection.bendRadius, network.geometryTolerance / 2), radius = connection.diameter / 2, geometry = physicalRouteTube(centerline, radius, network.geometryTolerance / 2), bounds = extent(centerline, radius)
     const fromObject = roster.get(fromTerminal.elementId)!, toObject = roster.get(toTerminal.elementId)!
+    const outside = fromObject.levelId === 'site' && toObject.levelId === 'site'
     const scopes = new Set([source.rootScope.id, ...(fromObject.scopeIds ?? []), ...(toObject.scopeIds ?? [])])
     const volumes = new Map<string, { levelId: string; low: number; high: number }>()
     for (const object of [fromObject, toObject]) for (const floor of object.inspectionLevels ?? []) { const previous = volumes.get(floor.levelId); volumes.set(floor.levelId, { levelId: floor.levelId, low: Math.min(previous?.low ?? Infinity, floor.low), high: Math.max(previous?.high ?? -Infinity, floor.high) }) }
     if (!volumes.size) for (let i = 0; i < source.levels.length; i++) { const floor = source.levels[i]!; volumes.set(floor.id, { levelId: floor.id, low: floor.elevation - source.origin[2], high: (source.levels[i + 1]?.elevation ?? bounds.max[2] + source.origin[2] + radius) - source.origin[2] }) }
     const inspectionLevels = [...volumes.values()].filter(floor => bounds.max[2] > floor.low && bounds.min[2] < floor.high), levelIds = inspectionLevels.map(floor => floor.levelId)
-    if (!levelIds.length) throw new Error(`Physical route has no admitted floor volume: ${connection.id}`)
-    return { solution, centerline, object: { id: connection.id, label: `${connection.kind === 'pipe' ? 'Pipe' : 'Electrical connection'} · ${connection.graphConnectionId}`, kind: connection.kind === 'pipe' ? 'pipe' : 'conductor', levelId: levelIds[0]!, levelIds, inspectionLevels, scopeIds: [...scopes], subjectIds: [connection.graphConnectionId], material: connection.material, layerId: connection.layerId, positions: geometry.positions, indices: geometry.indices, normals: geometry.normals, featureLines: geometry.featureLines, bounds, edgePolicy: 'authored' as const, planDisplay: 'projection' as const } }
+    if (!outside && !levelIds.length) throw new Error(`Physical route has no admitted floor volume: ${connection.id}`)
+    return { solution, centerline, object: { id: connection.id, label: `${connection.kind === 'pipe' ? 'Pipe' : 'Electrical connection'} · ${connection.graphConnectionId}`, kind: connection.kind === 'pipe' ? 'pipe' : 'conductor', levelId: outside ? 'site' : levelIds[0]!, ...(outside ? {} : { levelIds, inspectionLevels }), scopeIds: [...scopes], subjectIds: [connection.graphConnectionId], material: connection.material, layerId: connection.layerId, positions: geometry.positions, indices: geometry.indices, normals: geometry.normals, featureLines: geometry.featureLines, bounds, edgePolicy: 'authored' as const, planDisplay: 'projection' as const } }
   })
 }
 
 export const appendPhysicalRouteDrawing = (scene: PackPhysicalScene, drawing: PhysicalPlanDrawing, routes: ReadonlyArray<CompiledPhysicalRoute>): PhysicalPlanDrawing => ({ views: drawing.views.map(view => {
   const floor = scene.levels.find(floor => floor.id === view.levelId)!, primitives: PhysicalPlanPrimitive[] = []
   for (const route of routes) {
-    const volume = route.object.inspectionLevels!.find(volume => volume.levelId === view.levelId); if (!volume) continue
+    const volume = route.object.levelId === 'site' ? { low: -Infinity, high: Infinity } : route.object.inspectionLevels!.find(volume => volume.levelId === view.levelId); if (!volume) continue
     const groups = new Map<boolean, { commands: Array<['M' | 'L', number, number]>; points: RoutePoint[] }>()
     const append = (a: RoutePoint, b: RoutePoint, above: boolean) => {
       let group = groups.get(above); if (!group) { group = { commands: [], points: [] }; groups.set(above, group) }

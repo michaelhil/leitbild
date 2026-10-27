@@ -14,6 +14,7 @@ export const routingConnectionSchema = z.object({
   solution: z.array(point).min(2).optional(),
   material: z.enum(['pipe', 'steam', 'crane']), layerId: id,
 }).strict().refine(value => value.from !== value.to, 'A connection needs distinct terminals')
+  .refine(value => value.bendRadius > value.diameter / 2, 'A bend radius must exceed the tube radius to preserve its bore')
 /** Source authoring constraints, not numerical solver geometry. Ports retain the
  * graph's exact component/port identity; the accepted centerline is reproducible. */
 export const physicalRoutingSchema = z.object({
