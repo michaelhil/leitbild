@@ -8,6 +8,7 @@
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
   import { explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
+  import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
@@ -143,6 +144,9 @@
     const ids = focusedGroupId === null ? scenes.map(scene => scene.descriptor.id) : groups.get(focusedGroupId)?.sceneIds ?? []
     untrack(() => current.selectCollection(ids))
   })
+  const collectionScenes = $derived(scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId))
+  const collectionFloorGroups = $derived(focusedId === null ? physicalCollectionFloorGroups(collectionScenes, scene => objects.find(object => object.id === scene.descriptor.targetObjectId)?.label ?? scene.descriptor.targetObjectId) : [])
+  const mixedSettings = $derived(focusedId === null ? physicalCollectionMixedSettings(collectionScenes) : [])
   const scopeKey = $derived(focusedId === null ? focusedGroupId === null ? null : explorerGroupKey(focusedGroupId) : explorerLayoutKey(focusedId, focusedScopeId ?? undefined))
   const activeScope = $derived(focused?.descriptor.scopes?.find(scope => scope.id === focusedScopeId) ?? null)
   const scopeTitle = $derived(focusedId === null ? groups.get(focusedGroupId ?? '')?.label ?? 'All layouts' : activeScope?.label ?? focusedLabel)
@@ -407,21 +411,41 @@
     }
     else { collectionInspection = true; focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
   }
-  const changeView = (next: PhysicalSceneView): void => {
+  const changeView = (next: PhysicalSceneView, requested?: Partial<PhysicalSceneView>): void => {
     if (suspended) return
     const scene = focused
     if (!scene) return
     const changedRepresentation = scene.view.mode !== next.mode, changedFloor = scene.view.levelId !== next.levelId
-    pendingCameraFocus = null
-    closeInspection(); hover = null
+    pendingCameraFocus = null; closeInspection(); hover = null
     if (next.mode === '2d') { navigation = 'pan'; controller?.setNavigationTool('pan') }
-    if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
-    if (next.mode === '2d' && scene.view.levelId === 'all') next = { ...next, levelId: rememberedPlanFloor.get(scene.descriptor.id) ?? scopeLevels[0]?.id ?? scene.descriptor.levels[0]!.id }
-    controller?.setView(scene.descriptor.id, next)
+    if (changedRepresentation) {
+      const selected = new Set(collectionScenes.map(scene => scene.descriptor.id))
+      for (const current of scenes) {
+        if (current.view.mode === '2d') rememberedPlanFloor.set(current.descriptor.id, current.view.levelId)
+        const levelId = next.mode === '2d' ? physicalPlanLevelAfterModeChange(current, rememberedPlanFloor.get(current.descriptor.id)) : focusedId === null && selected.has(current.descriptor.id) ? 'all' : current.view.levelId
+        controller?.setView(current.descriptor.id, { ...current.view, mode: next.mode, levelId })
+      }
+    } else if (focusedId === null) {
+      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation'] as const).filter(key => requested ? key in requested : next[key] !== scene.view[key]).map(key => [key, next[key]]))
+      for (const current of collectionScenes) controller?.setView(current.descriptor.id, { ...current.view, ...patch })
+    } else {
+      if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
+      controller?.setView(scene.descriptor.id, next)
+    }
     if ((changedRepresentation || changedFloor) && (focusedId !== null || collectionInspection)) {
       const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds
       void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: !changedRepresentation }); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: !changedRepresentation }) })
     }
+  }
+  const changeCollectionFloor = (key: string, levelId: string): void => {
+    if (suspended || focusedId !== null) return
+    const group = collectionFloorGroups.find(group => group.key === key)
+    if (!group) return
+    pendingFocus = null; pendingCameraFocus = null; closeInspection(); hover = null; collectionInspection = true
+    const ids = collectionScenes.map(scene => scene.descriptor.id), changes = physicalCollectionFloorChanges(group, levelId)
+    controller?.selectCollection(ids)
+    for (const change of changes) { controller?.setView(change.sceneId, change.view); if (change.view.mode === '2d') rememberedPlanFloor.set(change.sceneId, levelId) }
+    void afterPanels(() => controller?.fitAll(ids))
   }
   const fit = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
   const home = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.home(sceneId, scopeId ?? undefined) }) }
@@ -582,7 +606,7 @@
   {#if scenes.length > 0 && focused !== null}
     <div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
       {#if controlsOpen}
-        <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focused.descriptor.layers ?? []} view={focused.view} status={statusText} {suspended}
+        <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {:else}

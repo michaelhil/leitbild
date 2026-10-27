@@ -1,14 +1,17 @@
 <script lang="ts">
+  import type { PhysicalCollectionFloorGroup, PhysicalMixedViewSetting } from './collection-floors.ts'
   import { changePhysicalLayoutView, levelLabel, type PhysicalLayoutLevel, type PhysicalLayoutView } from './view.ts'
   import { explorerScopeAncestors, explorerScopeBranches, type ExplorerScopeBranch, type ExplorerScopeChoice } from './explorer-model.ts'
 
-  let { title, path = title, choices, scopeKey, levels, layers = [], view, status, suspended = false,
+  let { title, path = title, choices, scopeKey, levels, layers = [], view, status, suspended = false, floorGroups = [], mixedSettings = [], onfloorchange,
     onscope, onviewchange, onfit, onhome, onoverview, onfind, onclose,
   }: {
     title: string; path?: string; choices: ReadonlyArray<ExplorerScopeChoice>; scopeKey: string | null
     levels: ReadonlyArray<PhysicalLayoutLevel>; view: PhysicalLayoutView; status: string; suspended?: boolean
     layers?: ReadonlyArray<{ readonly id: string; readonly label: string; readonly defaultVisible: boolean }>
-    onscope: (key: string | null) => void; onviewchange: (view: PhysicalLayoutView) => void
+    floorGroups?: ReadonlyArray<PhysicalCollectionFloorGroup>; mixedSettings?: ReadonlyArray<PhysicalMixedViewSetting>
+    onfloorchange?: (key: string, levelId: string) => void
+    onscope: (key: string | null) => void; onviewchange: (view: PhysicalLayoutView, patch?: Partial<PhysicalLayoutView>) => void
     onfit: () => void; onhome: () => void; onoverview?: (() => void) | undefined; onfind: () => void
     onclose?: (() => void) | undefined
   } = $props()
@@ -24,7 +27,7 @@
   }
   const revealCurrent = (): void => { if (scopeKey !== null) { scopeQuery = ''; expandedScopes = new Set([...expandedScopes, ...explorerScopeAncestors(choices, scopeKey)]) } }
   const hiddenLayerIds = $derived(view.hiddenLayerIds ?? layers.filter(layer => !layer.defaultVisible).map(layer => layer.id))
-  const change = (patch: Partial<PhysicalLayoutView>): void => onviewchange(levels.length > 0 ? changePhysicalLayoutView(view, patch, levels) : { ...view, ...patch })
+  const change = (patch: Partial<PhysicalLayoutView>): void => onviewchange(levels.length > 0 ? changePhysicalLayoutView(view, patch, levels) : { ...view, ...patch }, patch)
   const choose = (key: string | null): void => { scopeOpen = false; onscope(key) }
   export const dismiss = (): boolean => {
     if (viewOpen) { viewOpen = false; return true }
@@ -50,6 +53,7 @@
   </div>
   <div class="action-row"><button type="button" onclick={onfind}>Find</button><button type="button" onclick={onfit}>Fit</button><button type="button" aria-expanded={viewOpen} onclick={() => { viewOpen = !viewOpen; scopeOpen = false }}>View</button>{#if onclose}<button class="close" type="button" aria-label="Close layout controls" onclick={onclose}>×</button>{/if}</div>
   {#if levels.length > 0}<label class="floor-row"><span>Floor</span><select aria-label="Layout level" value={view.levelId} onchange={event => change({ levelId: event.currentTarget.value })}>{#each levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>{#if view.mode === '3d' && view.levelId === 'all'}<p class="floor-hint">Choose a floor to inspect the interior.</p>{/if}{/if}
+  {#if floorGroups.length > 0}<div class="collection-floors" aria-label="Floors by physical model">{#each floorGroups as group (group.key)}<label class="floor-row collection-floor" title={group.memberLabels.join(', ')}><span>{group.label}<small>{group.scenes.length} {group.scenes.length === 1 ? 'layout' : 'layouts'} · {group.memberLabels.join(', ')}</small></span><select aria-label={`Layout level: ${group.label}`} value={group.levelId ?? ''} onchange={event => onfloorchange?.(group.key, event.currentTarget.value)}>{#if group.levelId === null}<option value="" disabled>Mixed floors</option>{/if}{#each group.levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>{/each}</div>{/if}
   {#if scopeOpen}
     <nav class="sheet scopes" aria-label="Physical scope hierarchy">
       <header><strong>Choose an area</strong><button type="button" aria-label="Close area chooser" onclick={() => scopeOpen = false}>×</button></header>
@@ -64,12 +68,12 @@
   {/if}
   {#if viewOpen}
     <section class="sheet settings" aria-label="Layout view and information layers"><header><strong>View</strong><button type="button" aria-label="Close view settings" onclick={() => viewOpen = false}>×</button></header>
-      <label><input type="checkbox" checked={view.live} onchange={event => change({ live: event.currentTarget.checked })} /> Live status</label>
-      <label><input type="checkbox" checked={view.cutaway} onchange={event => change({ cutaway: event.currentTarget.checked })} /> Inspection cutaway</label>
+      <label><input type="checkbox" checked={view.live} indeterminate={mixedSettings.includes('live')} onchange={event => change({ live: event.currentTarget.checked })} /> Live status{mixedSettings.includes('live') ? ' · Mixed' : ''}</label>
+      <label><input type="checkbox" checked={view.cutaway} indeterminate={mixedSettings.includes('cutaway')} onchange={event => change({ cutaway: event.currentTarget.checked })} /> Inspection cutaway{mixedSettings.includes('cutaway') ? ' · Mixed' : ''}</label>
       {#if choices.find(choice => choice.key === scopeKey)?.sceneId}<label><input type="checkbox" checked={view.surroundings ?? false} onchange={event => change({ surroundings: event.currentTarget.checked })} /> Surrounding buildings</label>{/if}
-      <label><input type="checkbox" checked={view.detail === 'auto'} onchange={event => change({ detail: event.currentTarget.checked ? 'auto' : 'hidden' })} /> Reveal detail as needed</label>
+      <label><input type="checkbox" checked={view.detail === 'auto'} indeterminate={mixedSettings.includes('detail')} onchange={event => change({ detail: event.currentTarget.checked ? 'auto' : 'hidden' })} /> Reveal detail as needed{mixedSettings.includes('detail') ? ' · Mixed' : ''}</label>
       {#each layers as layer (layer.id)}<label><input type="checkbox" checked={!hiddenLayerIds.includes(layer.id)} onchange={event => change({ hiddenLayerIds: event.currentTarget.checked ? hiddenLayerIds.filter(id => id !== layer.id) : [...hiddenLayerIds, layer.id] })} /> {layer.label}</label>{/each}
-      {#if view.mode === '3d' && view.levelId === 'all'}<label class="separation">Separate floors <output>metres of view offset</output><input aria-label="Floor separation view offset in metres" type="number" min="0" step="1" value={view.separation} oninput={event => { const separation = event.currentTarget.valueAsNumber; if (Number.isFinite(separation) && separation >= 0) change({ separation }) }} /></label>{/if}
+      {#if view.mode === '3d' && (view.levelId === 'all' || floorGroups.some(group => group.scenes.some(scene => scene.view.levelId === 'all')))}<label class="separation">Separate floors <output>metres of view offset</output><input aria-label="Floor separation view offset in metres" type="number" min="0" step="1" value={mixedSettings.includes('separation') ? '' : view.separation} placeholder={mixedSettings.includes('separation') ? 'Mixed' : undefined} oninput={event => { const separation = event.currentTarget.valueAsNumber; if (Number.isFinite(separation) && separation >= 0) change({ separation }) }} /></label>{/if}
       <button type="button" onclick={() => { viewOpen = false; onhome() }}>Home · source view</button>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}
     </section>
   {/if}
@@ -84,6 +88,7 @@
   .modes { display: flex; gap: 4px; } .modes button { min-width: 52px; }
   .action-row { display: flex; gap: 6px; margin-top: 6px; }.action-row button { flex: 1; }.action-row .close { flex: none; padding: 0; }
   .floor-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-left: 8px; background: var(--panel); border-radius: 7px; }.floor-row select { flex: 1; min-width: 0; }.floor-hint { margin: 3px 0 0; padding: 3px 6px; background: var(--panel); border-radius: 4px; color: var(--muted); font-size: 11px; }
+  .collection-floors { display: grid; gap: 4px; }.collection-floor > span { min-width: 0; max-width: 42%; overflow-wrap: anywhere; }.collection-floor small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 10px; }.collection-floor select { width: 0; }
   .sheet { display: grid; gap: 6px; box-sizing: border-box; padding: 10px; margin-top: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); max-height: min(55dvh, 560px); overflow: auto; overscroll-behavior: contain; box-shadow: var(--shadow-floating); }
   header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }header button { padding: 0; font-size: 21px; }.scopes > button { text-align: left; }.scopes small { color: var(--muted); }.scopes footer { display: grid; gap: 6px; border-top: 1px solid var(--border); padding-top: 6px; }
   .area-search { display: grid; gap: 4px; }.area-search input { min-width: 0; min-height: 44px; box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--panel); font: inherit; }.area-help { margin: 2px 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
