@@ -15,3 +15,19 @@ LEITBILD_INSPECTION_CENSUS_RECEIPT=/tmp/inspection-part-census.json bun scripts/
 ```
 
 The script instruments a temporary copy of the exact ownership module through guarded unique markers, records its original SHA-256, and removes the temporary file afterward. Instrumentation changes counters only. It does not rewrite a retained source, compiled Design, production algorithm or solver.
+
+## Exact empty-candidate append
+
+A separate optimization leaves every eligibility/partition predicate in place. When a face has no exact coplanar candidates, its original triangle attributes append directly to the same base typed storage. It avoids temporary regions, polygon arrays and JSON grouping for that already-unpartitioned face.
+
+The frozen prior algorithm and actual admitted R5 unit/campus inputs pass 5,792 assertions: ordered geometry, ownership diagnostics/masks, materials, authored lines, packed render buffers and every picking array are byte-identical. Adversarial input covers a hole, partial overlaps, material/negative-zero normal attributes, degenerate omissions and complementary inspection parts.
+
+The [serial phase receipt](empty-candidate-phase-pair.json) records an explicit coordinated idle CPU interval and AB/BA order. Unit ownership work measured 1,917.7→1,724.1 ms and 1,778.6→1,680.3 ms. Campus measured 879.9→855.1 ms and 859.8→862.7 ms; the campus result is mixed. All output hashes match within each family. GC and output hashing were outside the measured regions.
+
+This is a small standalone Bun CPU attribution, not browser cold-loading, whole preparation, frame-rate evidence or a statistical confidence claim. It supports removing exact redundant unit work; it does not establish a reliable campus gain.
+
+```sh
+LEITBILD_OWNERSHIP_PHASE_RECEIPT=/tmp/ownership-pair.json \
+LEITBILD_OWNERSHIP_PHASE_QUIET='Describe the coordinated idle CPU interval' \
+bun scripts/physical-layout/ownership-empty-phase-pair.ts
+```
