@@ -105,5 +105,9 @@ export const routePhysicalConnection = (request: PhysicalRouteRequest): Physical
   const result = searchPhysicalRoute({ id: request.id, start, end, from, to, envelope: request.envelope, obstacles, radius: request.bendRadius, via: pending, startViaRoom: prefix.length ? distance(prefix.at(-1)!, start) : Infinity, endViaRoom: suffix.length ? distance(end, suffix[0]!) : Infinity })
   const path = simplify([from.point, ...prefix, ...result.points, ...suffix, to.point], protectedPoints)
   if (path.length < 2 || same(path[0]!, path[1]!)) throw Error(`A connection needs a nonzero routed centreline: ${request.id}`)
+  // This finite orthogonal arrangement searches a useful authoring subset.
+  // A conservative final refusal is not a proof that every continuous route
+  // is infeasible. Authors can revise declared corridor/waypoint guidance;
+  // neither authoring nor delivery invents a straight-line fallback.
   return { id: request.id, points: path, ...validatePhysicalConnectionRoute(request, path), visited: result.visited }
 }

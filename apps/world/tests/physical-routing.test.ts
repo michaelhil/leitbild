@@ -17,7 +17,7 @@ test('3D routing rises over a wall that blocks every plan-only path, with conser
   expect(routePhysicalConnection(request)).toEqual(result)
 })
 test('routing refuses a completely sealed authored volume instead of drawing through it', () => {
-  expect(() => routePhysicalConnection({ ...request, obstacles: [{ id: 'sealed', min: [4, -1, -1], max: [6, 11, 11] }] })).toThrow('No clearance-safe, bend-feasible 3D route')
+  expect(() => routePhysicalConnection({ ...request, obstacles: [{ id: 'sealed', min: [4, -1, -1], max: [6, 11, 11] }] })).toThrow('No admissible 3D route found')
 })
 test('terminal escape exempts only its own equipment and preserves the specified port direction', () => {
   const own = { id: 'pump', min: [0, 1, 1] as const, max: [2, 3, 3] as const }

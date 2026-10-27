@@ -88,5 +88,5 @@ export const searchPhysicalRoute = (input: SearchInput): { points: RoutePoint[];
       open.push({ key: nextKey, index: indices, direction: dir, origin, trim: startTrim, viaAt, progress, cost, score: cost + heuristic(next, progress) })
     }
   }
-  throw Error(`No clearance-safe, bend-feasible 3D route exists in the authored centreline envelope: ${id}`)
+  throw Error(`No admissible 3D route found in the authored orthogonal search arrangement: ${id}`)
 }
