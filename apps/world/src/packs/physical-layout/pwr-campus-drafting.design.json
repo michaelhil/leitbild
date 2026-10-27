@@ -1,0 +1,1253 @@
+{
+  "design": {
+    "id": "pwr-campus",
+    "revision": "pwr-campus-20261027-r4",
+    "digest": "718eabb3209ca4ecdd03a9ebad2ad76c3ac584881c75cb9a4c485506155755d7"
+  },
+  "sourceDigest": "8f344fefe90243b52c5db24adce0edfa3f77d88d527024e97b4fe78a323dbf42",
+  "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
+  "modelRequirement": {
+    "modelRef": "electric-grid.halden.four-unit",
+    "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+  },
+  "bounds": {
+    "min": [
+      -839,
+      -320.05196152422707,
+      -0.2
+    ],
+    "max": [
+      900.06,
+      1010.0519615242271,
+      44.126071980926035
+    ]
+  },
+  "profile": "drafting",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "79e2a2723291286b092cc4f012099fe82cf7e2ff8705138715c146017f63d0ec"
+  },
+  "coverageDigest": "9cafb704ff9e51894a438fa5f5ead40a3b2d758fa14e0a1c0ed7712da1ff867b",
+  "requirements": {
+    "ownerRole": "grid",
+    "ownerPackId": "electric-grid",
+    "placement": {
+      "anchor": [
+        11.48,
+        59.08
+      ],
+      "bearing": 0,
+      "subjectId": "bus:curated-halden-pwr-switchyard@420"
+    },
+    "relatedMembers": [
+      {
+        "role": "unit-1",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.47,
+          59.087
+        ],
+        "physicalLayout": {
+          "physical": {
+            "id": "pwr-full-unit",
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
+          },
+          "bearing": 0
+        }
+      },
+      {
+        "role": "unit-2",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.477,
+          59.085
+        ],
+        "physicalLayout": {
+          "physical": {
+            "id": "pwr-full-unit",
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
+          },
+          "bearing": 0
+        }
+      },
+      {
+        "role": "unit-3",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.484,
+          59.083
+        ],
+        "physicalLayout": {
+          "physical": {
+            "id": "pwr-full-unit",
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
+          },
+          "bearing": 0
+        }
+      },
+      {
+        "role": "unit-4",
+        "packId": "process-plant",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "anchor": [
+          11.491,
+          59.081
+        ],
+        "physicalLayout": {
+          "physical": {
+            "id": "pwr-full-unit",
+            "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
+          },
+          "bearing": 0
+        }
+      }
+    ],
+    "connections": [
+      {
+        "system": {
+          "role": "unit-1",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-1-420kv"
+        }
+      },
+      {
+        "system": {
+          "role": "unit-2",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-2-420kv"
+        }
+      },
+      {
+        "system": {
+          "role": "unit-3",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-3-420kv"
+        }
+      },
+      {
+        "system": {
+          "role": "unit-4",
+          "portId": "grid-420kv"
+        },
+        "network": {
+          "role": "grid",
+          "portId": "unit-4-420kv"
+        }
+      }
+    ]
+  },
+  "physicalApplicability": {
+    "sourceDigest": "937a6d3051c835037046509100dfaa631f20da90972501e9122b1e31ae11ae0d",
+    "geometryDigest": "a838212e9dd45a8c575d605a2cd88a7d5a1015d5a60a1f9d1c22a90a6d4b1de1",
+    "digest": "84c383e6f0dc51861c009784c872329e79f1688001dc2186ac3c547ac77f4d73"
+  },
+  "presentation": {
+    "scopes": [
+      {
+        "id": "site",
+        "label": "Shared plant campus",
+        "kind": "site",
+        "bounds": {
+          "min": [
+            -839,
+            -320.05196152422707,
+            -0.2
+          ],
+          "max": [
+            900.06,
+            1010.0519615242271,
+            44.126071980926035
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "building/administration",
+        "label": "Administration and visitor reception",
+        "kind": "building",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -430.28,
+            -165,
+            -0.2
+          ],
+          "max": [
+            -366,
+            -134.72,
+            8.3
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/0/room-0-south",
+        "label": "Administration and visitor reception south room 1",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -429,
+            -164.7,
+            0
+          ],
+          "max": [
+            -419.2,
+            -151.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-0-north",
+        "label": "Administration and visitor reception north room 1",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -429,
+            -148.3,
+            0
+          ],
+          "max": [
+            -419.2,
+            -135.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-1-south",
+        "label": "Administration and visitor reception south room 2",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -419,
+            -164.7,
+            0
+          ],
+          "max": [
+            -409.2,
+            -151.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-1-north",
+        "label": "Administration and visitor reception north room 2",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -419,
+            -148.3,
+            0
+          ],
+          "max": [
+            -409.2,
+            -135.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-2-south",
+        "label": "Administration and visitor reception south room 3",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -409,
+            -164.7,
+            0
+          ],
+          "max": [
+            -399.2,
+            -151.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-2-north",
+        "label": "Administration and visitor reception north room 3",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -409,
+            -148.3,
+            0
+          ],
+          "max": [
+            -399.2,
+            -135.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-3-south",
+        "label": "Administration and visitor reception south room 4",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -399,
+            -164.7,
+            0
+          ],
+          "max": [
+            -389.2,
+            -151.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-3-north",
+        "label": "Administration and visitor reception north room 4",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -399,
+            -148.3,
+            0
+          ],
+          "max": [
+            -389.2,
+            -135.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-4-south",
+        "label": "Administration and visitor reception south room 5",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -389,
+            -164.7,
+            0
+          ],
+          "max": [
+            -379.2,
+            -151.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-4-north",
+        "label": "Administration and visitor reception north room 5",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -389,
+            -148.3,
+            0
+          ],
+          "max": [
+            -379.2,
+            -135.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-5-south",
+        "label": "Administration and visitor reception south room 6",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -379,
+            -164.7,
+            0
+          ],
+          "max": [
+            -367.2,
+            -151.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/0/room-5-north",
+        "label": "Administration and visitor reception north room 6",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -379,
+            -148.3,
+            0
+          ],
+          "max": [
+            -367.2,
+            -135.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "administration/1/room-0-south",
+        "label": "Administration and visitor reception south room 1",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -429,
+            -164.7,
+            4
+          ],
+          "max": [
+            -419.2,
+            -151.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-0-north",
+        "label": "Administration and visitor reception north room 1",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -429,
+            -148.3,
+            4
+          ],
+          "max": [
+            -419.2,
+            -135.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-1-south",
+        "label": "Administration and visitor reception south room 2",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -419,
+            -164.7,
+            4
+          ],
+          "max": [
+            -409.2,
+            -151.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-1-north",
+        "label": "Administration and visitor reception north room 2",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -419,
+            -148.3,
+            4
+          ],
+          "max": [
+            -409.2,
+            -135.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-2-south",
+        "label": "Administration and visitor reception south room 3",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -409,
+            -164.7,
+            4
+          ],
+          "max": [
+            -399.2,
+            -151.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-2-north",
+        "label": "Administration and visitor reception north room 3",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -409,
+            -148.3,
+            4
+          ],
+          "max": [
+            -399.2,
+            -135.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-3-south",
+        "label": "Administration and visitor reception south room 4",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -399,
+            -164.7,
+            4
+          ],
+          "max": [
+            -389.2,
+            -151.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-3-north",
+        "label": "Administration and visitor reception north room 4",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -399,
+            -148.3,
+            4
+          ],
+          "max": [
+            -389.2,
+            -135.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-4-south",
+        "label": "Administration and visitor reception south room 5",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -389,
+            -164.7,
+            4
+          ],
+          "max": [
+            -379.2,
+            -151.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-4-north",
+        "label": "Administration and visitor reception north room 5",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -389,
+            -148.3,
+            4
+          ],
+          "max": [
+            -379.2,
+            -135.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-5-south",
+        "label": "Administration and visitor reception south room 6",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -379,
+            -164.7,
+            4
+          ],
+          "max": [
+            -367.2,
+            -151.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "administration/1/room-5-north",
+        "label": "Administration and visitor reception north room 6",
+        "kind": "space",
+        "parentId": "building/administration",
+        "bounds": {
+          "min": [
+            -379,
+            -148.3,
+            4
+          ],
+          "max": [
+            -367.2,
+            -135.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "building/training",
+        "label": "Training and engineering offices",
+        "kind": "building",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -430.28,
+            -100,
+            -0.2
+          ],
+          "max": [
+            -374,
+            -71.72,
+            4.3
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "training/0/room-0-south",
+        "label": "Training and engineering offices south room 1",
+        "kind": "space",
+        "parentId": "building/training",
+        "bounds": {
+          "min": [
+            -429,
+            -99.7,
+            0
+          ],
+          "max": [
+            -411.2,
+            -87.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "training/0/room-0-north",
+        "label": "Training and engineering offices north room 1",
+        "kind": "space",
+        "parentId": "building/training",
+        "bounds": {
+          "min": [
+            -429,
+            -84.3,
+            0
+          ],
+          "max": [
+            -411.2,
+            -72.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "training/0/room-1-south",
+        "label": "Training and engineering offices south room 2",
+        "kind": "space",
+        "parentId": "building/training",
+        "bounds": {
+          "min": [
+            -411,
+            -99.7,
+            0
+          ],
+          "max": [
+            -393.2,
+            -87.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "training/0/room-1-north",
+        "label": "Training and engineering offices north room 2",
+        "kind": "space",
+        "parentId": "building/training",
+        "bounds": {
+          "min": [
+            -411,
+            -84.3,
+            0
+          ],
+          "max": [
+            -393.2,
+            -72.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "training/0/room-2-south",
+        "label": "Training and engineering offices south room 3",
+        "kind": "space",
+        "parentId": "building/training",
+        "bounds": {
+          "min": [
+            -393,
+            -99.7,
+            0
+          ],
+          "max": [
+            -377.2,
+            -87.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "training/0/room-2-north",
+        "label": "Training and engineering offices north room 3",
+        "kind": "space",
+        "parentId": "building/training",
+        "bounds": {
+          "min": [
+            -393,
+            -84.3,
+            0
+          ],
+          "max": [
+            -377.2,
+            -72.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "building/workshop",
+        "label": "Central maintenance workshop and stores",
+        "kind": "building",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -305.28,
+            -170,
+            -0.2
+          ],
+          "max": [
+            -225,
+            -127.72,
+            8.3
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "workshop/0/room-0-south",
+        "label": "Central maintenance workshop and stores south room 1",
+        "kind": "space",
+        "parentId": "building/workshop",
+        "bounds": {
+          "min": [
+            -304,
+            -169.7,
+            0
+          ],
+          "max": [
+            -278.2,
+            -150.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "workshop/0/room-0-north",
+        "label": "Central maintenance workshop and stores north room 1",
+        "kind": "space",
+        "parentId": "building/workshop",
+        "bounds": {
+          "min": [
+            -304,
+            -147.3,
+            0
+          ],
+          "max": [
+            -278.2,
+            -128.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "workshop/0/room-1-south",
+        "label": "Central maintenance workshop and stores south room 2",
+        "kind": "space",
+        "parentId": "building/workshop",
+        "bounds": {
+          "min": [
+            -278,
+            -169.7,
+            0
+          ],
+          "max": [
+            -252.2,
+            -150.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "workshop/0/room-1-north",
+        "label": "Central maintenance workshop and stores north room 2",
+        "kind": "space",
+        "parentId": "building/workshop",
+        "bounds": {
+          "min": [
+            -278,
+            -147.3,
+            0
+          ],
+          "max": [
+            -252.2,
+            -128.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "workshop/0/room-2-south",
+        "label": "Central maintenance workshop and stores south room 3",
+        "kind": "space",
+        "parentId": "building/workshop",
+        "bounds": {
+          "min": [
+            -252,
+            -169.7,
+            0
+          ],
+          "max": [
+            -228.2,
+            -150.7,
+            8
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "workshop/0/room-2-north",
+        "label": "Central maintenance workshop and stores north room 3",
+        "kind": "space",
+        "parentId": "building/workshop",
+        "bounds": {
+          "min": [
+            -252,
+            -147.3,
+            0
+          ],
+          "max": [
+            -228.2,
+            -128.3,
+            8
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "building/security",
+        "label": "Gatehouse and site access control",
+        "kind": "building",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -778.28,
+            -195,
+            -0.2
+          ],
+          "max": [
+            -756,
+            -182.72,
+            4.3
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "security/0/room-0-south",
+        "label": "Gatehouse and site access control south room 1",
+        "kind": "space",
+        "parentId": "building/security",
+        "bounds": {
+          "min": [
+            -777,
+            -194.7,
+            0
+          ],
+          "max": [
+            -767.2,
+            -190.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "security/0/room-0-north",
+        "label": "Gatehouse and site access control north room 1",
+        "kind": "space",
+        "parentId": "building/security",
+        "bounds": {
+          "min": [
+            -777,
+            -187.3,
+            0
+          ],
+          "max": [
+            -767.2,
+            -183.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "security/0/room-1-south",
+        "label": "Gatehouse and site access control south room 2",
+        "kind": "space",
+        "parentId": "building/security",
+        "bounds": {
+          "min": [
+            -767,
+            -194.7,
+            0
+          ],
+          "max": [
+            -759.2,
+            -190.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "security/0/room-1-north",
+        "label": "Gatehouse and site access control north room 2",
+        "kind": "space",
+        "parentId": "building/security",
+        "bounds": {
+          "min": [
+            -767,
+            -187.3,
+            0
+          ],
+          "max": [
+            -759.2,
+            -183.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "building/yard-control",
+        "label": "Switchyard protection and control house",
+        "kind": "building",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -190.28,
+            -20,
+            -0.2
+          ],
+          "max": [
+            -162,
+            -1.72,
+            4.3
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "yard-control/0/room-0-south",
+        "label": "Switchyard protection and control house south room 1",
+        "kind": "space",
+        "parentId": "building/yard-control",
+        "bounds": {
+          "min": [
+            -189,
+            -19.7,
+            0
+          ],
+          "max": [
+            -177.2,
+            -12.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "yard-control/0/room-0-north",
+        "label": "Switchyard protection and control house north room 1",
+        "kind": "space",
+        "parentId": "building/yard-control",
+        "bounds": {
+          "min": [
+            -189,
+            -9.3,
+            0
+          ],
+          "max": [
+            -177.2,
+            -2.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "yard-control/0/room-1-south",
+        "label": "Switchyard protection and control house south room 2",
+        "kind": "space",
+        "parentId": "building/yard-control",
+        "bounds": {
+          "min": [
+            -177,
+            -19.7,
+            0
+          ],
+          "max": [
+            -165.2,
+            -12.7,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      },
+      {
+        "id": "yard-control/0/room-1-north",
+        "label": "Switchyard protection and control house north room 2",
+        "kind": "space",
+        "parentId": "building/yard-control",
+        "bounds": {
+          "min": [
+            -177,
+            -9.3,
+            0
+          ],
+          "max": [
+            -165.2,
+            -2.3,
+            4
+          ]
+        },
+        "levelIds": [
+          "campus-ground"
+        ]
+      }
+    ],
+    "layers": [
+      {
+        "id": "utility-routes",
+        "label": "Utility routes",
+        "defaultVisible": false
+      },
+      {
+        "id": "roof-structure",
+        "label": "Roof structure",
+        "defaultVisible": false
+      },
+      {
+        "id": "plan-labels",
+        "label": "Plan labels",
+        "defaultVisible": true
+      },
+      {
+        "id": "plan-dimensions",
+        "label": "Dimensions",
+        "defaultVisible": true
+      },
+      {
+        "id": "plan-allowances",
+        "label": "Illustrative work areas",
+        "defaultVisible": false
+      }
+    ]
+  },
+  "presentationDigest": "178ac95bd8a4c1cc3881fa906b26de5f40e3370848c78cdc900c5ffc793a8c55"
+}

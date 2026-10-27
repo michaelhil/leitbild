@@ -37,9 +37,9 @@ const withArchitecture = (value: unknown): unknown => {
 }
 
 describe('Model-driven native architecture restoration', () => {
-  test('every bundled PWR site explicitly admits the complete new unit/campus Design pair', async () => {
+  test('each bundled PWR site still admits its explicitly retained architecture Design pair', async () => {
     for (const source of [normalOperation, powerComplex, restoration]) {
-      const definition = scenarioDefinitionSchema.parse(source)
+      const definition = scenarioDefinitionSchema.parse(withArchitecture(source))
       const items = definition.packs.find(pack => pack.id === 'physical-layout')!.items
       expect(items).toHaveLength(5)
       for (const item of items) expect(item.design).toEqual(item.id === 'layout:halden-campus' ? pwrArchitectureCampusPhysicalDesignRef : pwrArchitectureUnitPhysicalDesignRef)

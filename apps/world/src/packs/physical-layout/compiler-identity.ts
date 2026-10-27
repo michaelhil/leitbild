@@ -15,3 +15,8 @@ export const explorerPhysicalCompilerRef = { id: 'physical-layout-native-explore
 // New architecture recipes and drafting presentation keep every earlier closure exact.
 export const architecturePhysicalCompilerFiles = [...explorerPhysicalCompilerFiles, 'architecture/source.ts', 'architecture/solid.ts', 'architecture/compile-scene.ts'] as const
 export const architecturePhysicalCompilerRef = { id: 'physical-layout-native-architecture', digest: '96e82c37da017162c4f768eb37db11b8e38f513355a2a9ba2052b453baa156f8' } as const
+
+// Explicit vector drafting extends the retained physical architecture without
+// reinterpreting earlier source/compiler pairs.
+export const draftingPhysicalCompilerFiles = [...architecturePhysicalCompilerFiles, 'drafting/source.ts', 'drafting/primitives.ts', 'drafting/family-plan.ts', 'drafting/architecture-plan.ts', 'drafting/compile-scene.ts'] as const
+export const draftingPhysicalCompilerRef = { id: 'physical-layout-native-drafting', digest: '79e2a2723291286b092cc4f012099fe82cf7e2ff8705138715c146017f63d0ec' } as const

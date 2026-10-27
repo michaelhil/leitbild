@@ -8,10 +8,22 @@ import {compilePlanDrawing} from '../src/packs/physical-layout/native/drafting/a
 import {compilePhysicalScene as compileDraftingScene} from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import {drawEquipmentPlan} from '../src/packs/physical-layout/native/drafting/family-plan.ts'
 import type {PhysicalPlanPrimitive} from '../src/core/packs/plan-drawing.ts'
+import normalOperation from '../src/scenarios/halden-normal-operation.scenario.json'
+import {scenarioDefinitionSchema} from '../src/core/scenarios/definition.ts'
+import {compileScenarioDefinition} from '../src/core/scenarios/compiler.ts'
+import {processPlantPack} from '../src/packs/process-plant/pack.ts'
+import {electricGridPack} from '../src/packs/electric-grid/pack.ts'
+import {weatherPack} from '../src/packs/weather/pack.ts'
+import {physicalLayoutPack} from '../src/packs/physical-layout/pack.ts'
+import {createDirectRoutingAdapter} from '../src/routing/direct-adapter.ts'
+import {draftingLayoutDataSchema} from '../src/packs/physical-layout/model.ts'
+import {pwrDraftingUnitPhysicalDesignRef,pwrDraftingCampusPhysicalDesignRef} from '../src/packs/physical-layout/design.ts'
+import {compileRetainedPhysicalSource} from '../src/packs/physical-layout/source-compile.ts'
 const artifacts=createPwrDraftingUnitArtifacts()
 const scene=(source=artifacts.source)=>compilePhysicalScene('test',{...artifacts,source,design:{digest:'test'},owner:{objectId:'plant:test'},placement:{anchor:[0,0],bearing:0},bounds:{min:[-1000,-1000,-1000],max:[1000,1000,1000]}})
 const physical=scene(),drawing=compilePlanDrawing(artifacts.source,physical)
 describe('Native source-derived architectural drafting',()=>{
+ test('new default Scenario admits exact drafting unit/campus and retained source compiles its vector delivery',async()=>{const compiled=await compileScenarioDefinition(scenarioDefinitionSchema.parse(normalOperation),[processPlantPack,electricGridPack,weatherPack,physicalLayoutPack],{routing:createDirectRoutingAdapter()});const layouts=compiled.initialObjects.filter(o=>o.packId==='physical-layout').map(o=>draftingLayoutDataSchema.parse(o.packData));expect(layouts).toHaveLength(5);for(const layout of layouts)expect(layout.design).toEqual(layout.design.id==='pwr-campus'?pwrDraftingCampusPhysicalDesignRef:pwrDraftingUnitPhysicalDesignRef);for(const id of['pwr-full-unit','pwr-campus']){const delivered=await compileRetainedPhysicalSource(layouts.find(l=>l.design.id===id)!);expect(delivered.planDrawing!.views.length).toBeGreaterThan(0)}},30_000)
  test('full delivered drawing passes the strict core scene boundary',()=>{const value=compileDraftingScene('draft',{...artifacts,design:{digest:'draft'},owner:{objectId:'plant:test'},placement:{anchor:[0,0],bearing:0},bounds:physical.bounds});expect(value.planDrawing!.views.map(v=>v.levelId)).toEqual(artifacts.source.levels.map(l=>l.id));expect(value.objects).toEqual(physical.objects)})
  test('new drawing intent preserves the complete retained physical authority',()=>{expect(physicalSourceFacts(artifacts.source)).toEqual(oldFacts(physicalSourceSchema.parse(retained)));expect(artifacts.bindings.every(binding=>physical.objects.some(object=>object.id===binding.physicalElementId))).toBe(true)})
  test('every primitive has valid identity, physical scope and a finite presentation envelope',()=>{const ids=new Set(physical.objects.map(o=>o.id)),scopes=new Set(physical.scopes!.map(s=>s.id));for(const view of drawing.views){expect(new Set(view.primitives.map(p=>p.id)).size).toBe(view.primitives.length);for(const p of view.primitives){expect([...p.bounds.min,...p.bounds.max].every(Number.isFinite)).toBe(true);expect(p.scopeIds.every(s=>scopes.has(s))).toBe(true);if(p.occurrenceId)expect(ids.has(p.occurrenceId)).toBe(true);for(const axis of[0,1]){expect(p.bounds.min[axis]!).toBeGreaterThanOrEqual(view.bounds.min[axis]!);expect(p.bounds.max[axis]!).toBeLessThanOrEqual(view.bounds.max[axis]!)}}}})

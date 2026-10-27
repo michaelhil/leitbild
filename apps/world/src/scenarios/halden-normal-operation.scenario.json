@@ -167,7 +167,7 @@
         {
           "type": "grid",
           "id": "grid:halden-four-unit",
-          "label": "Norway grid · Halden connection",
+          "label": "Norway grid \u00b7 Halden connection",
           "location": [
             11.48,
             59.08
@@ -290,8 +290,8 @@
           "label": "Halden Unit 1 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -308,8 +308,8 @@
           "label": "Halden Unit 2 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -326,8 +326,8 @@
           "label": "Halden Unit 3 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -344,8 +344,8 @@
           "label": "Halden Unit 4 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-4"
@@ -362,8 +362,8 @@
           "label": "Halden shared campus and switchyard",
           "design": {
             "id": "pwr-campus",
-            "revision": "pwr-campus-20261026-r3",
-            "digest": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+            "revision": "pwr-campus-20261027-r4",
+            "digest": "718eabb3209ca4ecdd03a9ebad2ad76c3ac584881c75cb9a4c485506155755d7"
           },
           "members": {
             "grid": "grid:halden-four-unit",

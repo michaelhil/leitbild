@@ -1,0 +1,1370 @@
+{
+  "design": {
+    "id": "pwr-full-unit",
+    "revision": "pwr-full-unit-20261027-r4",
+    "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
+  },
+  "sourceDigest": "cadc167ce697d935b3deb1e2a351dae305e07498e6271ce0c74ec64309cecb4a",
+  "bindingDigest": "32122fb7b371c124844edf6eaa2c6e3f7c4829e2ec4bbd3b53aca33a9eb5f4f8",
+  "modelRequirement": {
+    "modelRef": "process-plant.pwr.reference",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+  },
+  "bounds": {
+    "min": [
+      -186.72,
+      -60,
+      -0.4
+    ],
+    "max": [
+      105.9,
+      109.32,
+      48
+    ]
+  },
+  "profile": "drafting",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "79e2a2723291286b092cc4f012099fe82cf7e2ff8705138715c146017f63d0ec"
+  },
+  "coverageDigest": "38a8ff6b3eef1b7efc94050f930804b4dde60c5c4764763e034b1197b5326967",
+  "requirements": {
+    "ownerRole": "unit",
+    "ownerPackId": "process-plant",
+    "relatedMembers": [],
+    "connections": []
+  },
+  "physicalApplicability": {
+    "sourceDigest": "aa1cefb9033cb2160615cef5a9d4efad428a07720ff554267ebe302d4a212056",
+    "geometryDigest": "50d8f67fe1b752cf81fb10dc60ba53711449e367c177a1a01e61bbc9592aaf75",
+    "digest": "1ceb2e946558bcb8ec1c99103ceeb095066e42f4101a5158000c7f973d23276b"
+  },
+  "presentation": {
+    "scopes": [
+      {
+        "id": "unit",
+        "label": "PWR unit",
+        "kind": "unit",
+        "bounds": {
+          "min": [
+            -186.72,
+            -60,
+            -0.4
+          ],
+          "max": [
+            105.9,
+            109.32,
+            48
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service",
+          "operating",
+          "refuelling"
+        ]
+      },
+      {
+        "id": "door-assembly/opening/wall/hall-west/D-W1/lower",
+        "label": "D-W1 door assembly",
+        "kind": "assembly",
+        "parentId": "building/turbine-hall",
+        "bounds": {
+          "min": [
+            -44.8,
+            -2,
+            0
+          ],
+          "max": [
+            -42.8,
+            0.46999999999999886,
+            2.7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "door-assembly/opening/wall/hall-south/D-P1/lower",
+        "label": "D-P1 door assembly",
+        "kind": "assembly",
+        "parentId": "building/turbine-hall",
+        "bounds": {
+          "min": [
+            -32.07,
+            10.399999999999999,
+            0
+          ],
+          "max": [
+            -29.599999999999998,
+            12.400000000000006,
+            2.7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "door-assembly/opening/wall/annex-south/D-P3/lower",
+        "label": "D-P3 door assembly",
+        "kind": "assembly",
+        "parentId": "building/feedwater-annex",
+        "bounds": {
+          "min": [
+            -8.799999999999997,
+            26,
+            0
+          ],
+          "max": [
+            -6.329999999999998,
+            27.6,
+            2.7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/turbine-hall",
+        "label": "TURBINE HALL",
+        "kind": "space",
+        "parentId": "building/turbine-hall",
+        "bounds": {
+          "min": [
+            -44,
+            -25.6,
+            0
+          ],
+          "max": [
+            44.00000000000001,
+            10.399999999999999,
+            31.2
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "operating"
+        ]
+      },
+      {
+        "id": "space/feedwater-room",
+        "label": "FEEDWATER PUMP ROOM",
+        "kind": "space",
+        "parentId": "building/feedwater-annex",
+        "bounds": {
+          "min": [
+            -35.599999999999994,
+            11.200000000000003,
+            0
+          ],
+          "max": [
+            -3.6000000000000014,
+            27.200000000000003,
+            6.2
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "building/turbine-hall",
+        "label": "Turbine hall",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -44.8,
+            -26.1,
+            -0.4
+          ],
+          "max": [
+            44.50000000000001,
+            12.400000000000006,
+            31.55
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "operating"
+        ]
+      },
+      {
+        "id": "building/feedwater-annex",
+        "label": "Main-feedwater pump annex",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -36.4,
+            10.799999999999997,
+            -0.4
+          ],
+          "max": [
+            -1.8999999999999986,
+            27.6,
+            6.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "building/auxiliary",
+        "label": "Auxiliary and safety-train building",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -136.72,
+            8.833980422841158,
+            -0.35
+          ],
+          "max": [
+            -49.39999999999999,
+            75.32,
+            16.3
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-a-si",
+        "label": "Train A injection and RHR pump cells",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -135.9,
+            17.5,
+            0
+          ],
+          "max": [
+            -96.9,
+            36.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-a-cooling",
+        "label": "Train A spray and component-cooling cells",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -135.9,
+            37,
+            0
+          ],
+          "max": [
+            -96.9,
+            56,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-a-chemistry",
+        "label": "CVCS charging A and volume control",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -135.9,
+            56.5,
+            0
+          ],
+          "max": [
+            -96.9,
+            74.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-corridor-lower",
+        "label": "Auxiliary access corridor",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -96.4,
+            17.5,
+            0
+          ],
+          "max": [
+            -89.4,
+            74.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-b-si",
+        "label": "Train B injection and RHR pump cells",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -88.9,
+            17.5,
+            0
+          ],
+          "max": [
+            -49.9,
+            36.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-b-cooling",
+        "label": "Train B spray and component-cooling cells",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -88.9,
+            37,
+            0
+          ],
+          "max": [
+            -49.9,
+            56,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-b-chemistry",
+        "label": "CVCS charging B and boric acid",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -88.9,
+            56.5,
+            0
+          ],
+          "max": [
+            -49.9,
+            74.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/aux-afw-a",
+        "label": "Motor-driven auxiliary feedwater A",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -135.9,
+            17.5,
+            8
+          ],
+          "max": [
+            -96.9,
+            36.5,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-afw-b",
+        "label": "Motor-driven auxiliary feedwater B",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -88.9,
+            17.5,
+            8
+          ],
+          "max": [
+            -49.9,
+            36.5,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-afw-turbine",
+        "label": "Turbine-driven auxiliary feedwater room",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -135.9,
+            37,
+            8
+          ],
+          "max": [
+            -96.9,
+            56,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-maintenance",
+        "label": "Auxiliary maintenance and heat-exchanger bay",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -88.9,
+            37,
+            8
+          ],
+          "max": [
+            -49.9,
+            56,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-additive",
+        "label": "Containment-spray additive and chemical service",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -135.9,
+            56.5,
+            8
+          ],
+          "max": [
+            -96.9,
+            74.5,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-radwaste",
+        "label": "Radwaste and sample service context",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -88.9,
+            56.5,
+            8
+          ],
+          "max": [
+            -49.9,
+            74.5,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/aux-corridor-service",
+        "label": "Auxiliary upper access corridor",
+        "kind": "space",
+        "parentId": "building/auxiliary",
+        "bounds": {
+          "min": [
+            -96.4,
+            17.5,
+            8
+          ],
+          "max": [
+            -89.4,
+            74.5,
+            15.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "building/electrical-control",
+        "label": "Electrical and main control building",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -44.72,
+            36,
+            -0.35
+          ],
+          "max": [
+            13.600000000000001,
+            82.32,
+            23.3
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service",
+          "operating"
+        ]
+      },
+      {
+        "id": "space/electrical-corridor-lower",
+        "label": "Electrical/control access corridor",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            56.5,
+            0
+          ],
+          "max": [
+            13.100000000000001,
+            61.5,
+            7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/electrical-corridor-service",
+        "label": "Electrical/control access corridor",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            56.5,
+            8
+          ],
+          "max": [
+            13.100000000000001,
+            61.5,
+            15
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/electrical-corridor-operating",
+        "label": "Electrical/control access corridor",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            56.5,
+            15
+          ],
+          "max": [
+            13.100000000000001,
+            61.5,
+            22
+          ]
+        },
+        "levelIds": [
+          "operating"
+        ]
+      },
+      {
+        "id": "space/electrical-a",
+        "label": "Train A AC switchgear",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            36.5,
+            0
+          ],
+          "max": [
+            -15.899999999999999,
+            55.5,
+            7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/electrical-b",
+        "label": "Train B AC switchgear",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -14.899999999999999,
+            36.5,
+            0
+          ],
+          "max": [
+            13.100000000000001,
+            55.5,
+            7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/load-centres-a",
+        "label": "Train A motor-control centres",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            62,
+            0
+          ],
+          "max": [
+            -15.899999999999999,
+            81.5,
+            7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/load-centres-b",
+        "label": "Train B motor-control centres",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -14.899999999999999,
+            62,
+            0
+          ],
+          "max": [
+            13.100000000000001,
+            81.5,
+            7
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/battery-a",
+        "label": "Battery and inverter room A",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            36.5,
+            8
+          ],
+          "max": [
+            -15.899999999999999,
+            55.5,
+            14.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/battery-b",
+        "label": "Battery and inverter room B",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -14.899999999999999,
+            36.5,
+            8
+          ],
+          "max": [
+            13.100000000000001,
+            55.5,
+            14.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/cable-a",
+        "label": "Cable and relay service A",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            62,
+            8
+          ],
+          "max": [
+            -15.899999999999999,
+            81.5,
+            14.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/cable-b",
+        "label": "Cable and relay service B",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -14.899999999999999,
+            62,
+            8
+          ],
+          "max": [
+            13.100000000000001,
+            81.5,
+            14.5
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "space/control",
+        "label": "Main control room",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            36.5,
+            15
+          ],
+          "max": [
+            13.100000000000001,
+            55.5,
+            22
+          ]
+        },
+        "levelIds": [
+          "operating"
+        ]
+      },
+      {
+        "id": "space/relay-a",
+        "label": "Protection relay room A",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -43.9,
+            62,
+            15
+          ],
+          "max": [
+            -15.899999999999999,
+            81.5,
+            22
+          ]
+        },
+        "levelIds": [
+          "operating"
+        ]
+      },
+      {
+        "id": "space/relay-b",
+        "label": "Protection relay room B",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            -14.899999999999999,
+            62,
+            15
+          ],
+          "max": [
+            13.100000000000001,
+            81.5,
+            22
+          ]
+        },
+        "levelIds": [
+          "operating"
+        ]
+      },
+      {
+        "id": "building/containment",
+        "label": "Reactor containment",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -123.4,
+            -47,
+            -0.35
+          ],
+          "max": [
+            -65.4,
+            11,
+            48
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service",
+          "operating",
+          "refuelling"
+        ]
+      },
+      {
+        "id": "space/reactor-cavity",
+        "label": "Reactor cavity and primary-loop area",
+        "kind": "space",
+        "parentId": "building/containment",
+        "bounds": {
+          "min": [
+            -122.4,
+            -46,
+            0
+          ],
+          "max": [
+            -66.4,
+            10,
+            36
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service",
+          "operating",
+          "refuelling"
+        ]
+      },
+      {
+        "id": "building/steam-gallery",
+        "label": "Steam and feedwater valve gallery",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -64.72,
+            -50,
+            -0.35
+          ],
+          "max": [
+            -45.39999999999999,
+            9.32,
+            22.3
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "operating"
+        ]
+      },
+      {
+        "id": "space/steam-gallery-lower",
+        "label": "Feedwater and auxiliary-feedwater valve gallery",
+        "kind": "space",
+        "parentId": "building/steam-gallery",
+        "bounds": {
+          "min": [
+            -63.9,
+            -49.5,
+            0
+          ],
+          "max": [
+            -45.9,
+            8.5,
+            14
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/steam-gallery-upper",
+        "label": "Main-steam isolation and relief gallery",
+        "kind": "space",
+        "parentId": "building/steam-gallery",
+        "bounds": {
+          "min": [
+            -63.9,
+            -49.5,
+            15
+          ],
+          "max": [
+            -45.9,
+            8.5,
+            22
+          ]
+        },
+        "levelIds": [
+          "operating"
+        ]
+      },
+      {
+        "id": "building/diesel-a",
+        "label": "Emergency diesel building A",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -140.72,
+            86,
+            -0.35
+          ],
+          "max": [
+            -109.4,
+            109.32,
+            9.3
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/diesel-a",
+        "label": "Diesel A machine hall",
+        "kind": "space",
+        "parentId": "building/diesel-a",
+        "bounds": {
+          "min": [
+            -139.9,
+            86.5,
+            0
+          ],
+          "max": [
+            -109.9,
+            102.5,
+            8
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/diesel-a-service",
+        "label": "Fuel/day-tank and ventilation service",
+        "kind": "space",
+        "parentId": "building/diesel-a",
+        "bounds": {
+          "min": [
+            -139.9,
+            103,
+            0
+          ],
+          "max": [
+            -109.9,
+            108.5,
+            8
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "building/diesel-b",
+        "label": "Emergency diesel building B",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -93.72,
+            86,
+            -0.35
+          ],
+          "max": [
+            -62.4,
+            109.32,
+            9.3
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/diesel-b",
+        "label": "Diesel B machine hall",
+        "kind": "space",
+        "parentId": "building/diesel-b",
+        "bounds": {
+          "min": [
+            -92.9,
+            86.5,
+            0
+          ],
+          "max": [
+            -62.9,
+            102.5,
+            8
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/diesel-b-service",
+        "label": "Fuel/day-tank and ventilation service",
+        "kind": "space",
+        "parentId": "building/diesel-b",
+        "bounds": {
+          "min": [
+            -92.9,
+            103,
+            0
+          ],
+          "max": [
+            -62.9,
+            108.5,
+            8
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "building/cooling-water",
+        "label": "Cooling-water intake pump house",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            53.28000000000001,
+            -26,
+            -0.35
+          ],
+          "max": [
+            88.6,
+            2.3200000000000003,
+            9.3
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/cooling-water",
+        "label": "Circulating and service-water pumps",
+        "kind": "space",
+        "parentId": "building/cooling-water",
+        "bounds": {
+          "min": [
+            54.1,
+            -25.5,
+            0
+          ],
+          "max": [
+            88.1,
+            1.5,
+            8
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "building/fuel-service",
+        "label": "Fuel handling and maintenance service",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -186.72,
+            17,
+            -0.35
+          ],
+          "max": [
+            -144.4,
+            75.32,
+            22.3
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service"
+        ]
+      },
+      {
+        "id": "space/fuel-lower",
+        "label": "Fuel-service stores and maintenance",
+        "kind": "space",
+        "parentId": "building/fuel-service",
+        "bounds": {
+          "min": [
+            -185.9,
+            17.5,
+            0
+          ],
+          "max": [
+            -144.9,
+            45.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/fuel-workshop",
+        "label": "Controlled maintenance workshop",
+        "kind": "space",
+        "parentId": "building/fuel-service",
+        "bounds": {
+          "min": [
+            -185.9,
+            46,
+            0
+          ],
+          "max": [
+            -144.9,
+            74.5,
+            7.5
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/fuel-pool",
+        "label": "Fuel handling and pool service context",
+        "kind": "space",
+        "parentId": "building/fuel-service",
+        "bounds": {
+          "min": [
+            -185.9,
+            17.5,
+            8
+          ],
+          "max": [
+            -144.9,
+            73.5,
+            21
+          ]
+        },
+        "levelIds": [
+          "service"
+        ]
+      },
+      {
+        "id": "building/containment-personnel-vestibule",
+        "label": "East containment personnel vestibule",
+        "kind": "building",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -75.76041275883382,
+            -45.831975396591304,
+            -0.3
+          ],
+          "max": [
+            -66.5680246034087,
+            -36.63958724116618,
+            3.75
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/containment-personnel-vestibule",
+        "label": "Containment personnel access vestibule",
+        "kind": "space",
+        "parentId": "building/containment-personnel-vestibule",
+        "bounds": {
+          "min": [
+            -75.40685936824055,
+            -45.47842200599803,
+            0
+          ],
+          "max": [
+            -66.92157799400198,
+            -36.99314063175946,
+            3.2
+          ]
+        },
+        "levelIds": [
+          "lower"
+        ]
+      },
+      {
+        "id": "space/stairwell-electrical",
+        "label": "Electrical stairwell",
+        "kind": "space",
+        "parentId": "building/electrical-control",
+        "bounds": {
+          "min": [
+            3.1000000000000014,
+            71.5,
+            0
+          ],
+          "max": [
+            9.100000000000001,
+            79.5,
+            22
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "service",
+          "operating"
+        ]
+      },
+      {
+        "id": "assembly/turbine-hall-crane",
+        "label": "Illustrative overhead bridge crane",
+        "kind": "assembly",
+        "parentId": "building/turbine-hall",
+        "bounds": {
+          "min": [
+            35.300000000000004,
+            -23.5,
+            23.4
+          ],
+          "max": [
+            37.50000000000001,
+            8.200000000000003,
+            30.3
+          ]
+        },
+        "levelIds": [
+          "operating"
+        ]
+      },
+      {
+        "id": "area/turbine-island",
+        "label": "Turbine hall and feedwater pump annex",
+        "kind": "area",
+        "parentId": "unit",
+        "bounds": {
+          "min": [
+            -44.8,
+            -26.1,
+            -0.4
+          ],
+          "max": [
+            44.50000000000001,
+            27.6,
+            31.55
+          ]
+        },
+        "levelIds": [
+          "lower",
+          "operating"
+        ],
+        "members": [
+          "building/turbine-hall",
+          "building/feedwater-annex"
+        ],
+        "inspectionView": {
+          "bearing": 139.893,
+          "pitch": 57.914,
+          "target": [
+            0,
+            -2,
+            11.5
+          ]
+        }
+      }
+    ],
+    "layers": [
+      {
+        "id": "utility-routes",
+        "label": "Utility routes",
+        "defaultVisible": false
+      },
+      {
+        "id": "roof-structure",
+        "label": "Roof structure",
+        "defaultVisible": false
+      },
+      {
+        "id": "plan-labels",
+        "label": "Plan labels",
+        "defaultVisible": true
+      },
+      {
+        "id": "plan-dimensions",
+        "label": "Dimensions",
+        "defaultVisible": true
+      },
+      {
+        "id": "plan-allowances",
+        "label": "Illustrative work areas",
+        "defaultVisible": true
+      },
+      {
+        "id": "plan-grid",
+        "label": "Structural grid",
+        "defaultVisible": true
+      }
+    ]
+  },
+  "presentationDigest": "6acf865bdb7316796b4beef74270d8ced09a08708e27fe0498aea0350b0c7715"
+}

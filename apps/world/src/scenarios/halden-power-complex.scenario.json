@@ -1,7 +1,7 @@
 {
   "id": "halden-power-complex",
   "title": "Halden four-unit power complex",
-  "description": "Four independently simulated PWR units supply a dedicated 420 kV switchyard tied by three circuits each to Hasle and Tegneby in the Norwegian transmission grid (NO1). Their combined output of about 4.4 GW displaces Norwegian hydro in the dispatch, which keeps the exchange with the rest of the Nordic synchronous area at the winter Operating Point's scheduled export of about 1.5 GW. That area is a synchronous equivalent sharing the island's frequency, inertia and reserves, reached over the real interconnectors: towards SE3 the 420 kV ties Hasle–Borgvik and Halden–Skogssäter next to the switchyard, and further ties to SE1, SE2 and Finland; the equivalent's response reaches Norway over these ties. Plant output and station-service demand participate directly in grid balance, flow and frequency, and an AC load flow of each energised island computes the bus voltages the Plants see at their ports. If the switchyard loses every path to a voltage-forming source, its ports de-energise and the Plants lose offsite power. Local weather evolves from rain through freezing conditions to clearing, with recorded ground probes. Weather is observable context; it does not yet change Plant or Grid physics.",
+  "description": "Four independently simulated PWR units supply a dedicated 420 kV switchyard tied by three circuits each to Hasle and Tegneby in the Norwegian transmission grid (NO1). Their combined output of about 4.4 GW displaces Norwegian hydro in the dispatch, which keeps the exchange with the rest of the Nordic synchronous area at the winter Operating Point's scheduled export of about 1.5 GW. That area is a synchronous equivalent sharing the island's frequency, inertia and reserves, reached over the real interconnectors: towards SE3 the 420 kV ties Hasle\u2013Borgvik and Halden\u2013Skogss\u00e4ter next to the switchyard, and further ties to SE1, SE2 and Finland; the equivalent's response reaches Norway over these ties. Plant output and station-service demand participate directly in grid balance, flow and frequency, and an AC load flow of each energised island computes the bus voltages the Plants see at their ports. If the switchyard loses every path to a voltage-forming source, its ports de-energise and the Plants lose offsite power. Local weather evolves from rain through freezing conditions to clearing, with recorded ground probes. Weather is observable context; it does not yet change Plant or Grid physics.",
   "objectives": [
     "Operate four independent PWR units while monitoring their combined effect on the transmission grid and the export to Sweden.",
     "Assess the starting balance, the tie loading and the reserves before changing dispatch or tripping a unit; this source-derived network is not a calibrated four-unit operating baseline.",
@@ -168,7 +168,7 @@
         {
           "type": "grid",
           "id": "grid:halden-four-unit",
-          "label": "Norway grid · Halden connection",
+          "label": "Norway grid \u00b7 Halden connection",
           "location": [
             11.48,
             59.08
@@ -288,8 +288,8 @@
           "label": "Halden Unit 1 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -306,8 +306,8 @@
           "label": "Halden Unit 2 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -324,8 +324,8 @@
           "label": "Halden Unit 3 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -342,8 +342,8 @@
           "label": "Halden Unit 4 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-4"
@@ -360,8 +360,8 @@
           "label": "Halden shared campus and switchyard",
           "design": {
             "id": "pwr-campus",
-            "revision": "pwr-campus-20261026-r3",
-            "digest": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+            "revision": "pwr-campus-20261027-r4",
+            "digest": "718eabb3209ca4ecdd03a9ebad2ad76c3ac584881c75cb9a4c485506155755d7"
           },
           "members": {
             "grid": "grid:halden-four-unit",

@@ -6,7 +6,7 @@
     "Before the fault, note the export of the four unit bays, the switchyard voltage and the loading of the Hasle and Tegneby circuits and the NO1 corridors (connection-points.list, power-flow.snapshot).",
     "When the switchyard is isolated, confirm that its bays are de-energised (no voltage, no frequency) and that the Plants report loss of offsite power; follow the island frequency, the LFDD stages that operate and the reserves.",
     "Restore offsite power: close one Hasle circuit onto the dead switchyard (dead-bus closing), check that the bays are energised and the Plants draw station service from the grid, then close the remaining five circuits; synchro-check limits the voltage-angle difference across each loop you close.",
-    "Restore the grid: raise hydro output until the frequency is back within the ±100 mHz standard range, then reconnect the load that automatic under-frequency shedding cut, one stage at a time, without another under-frequency excursion, and re-arm each stage."
+    "Restore the grid: raise hydro output until the frequency is back within the \u00b1100 mHz standard range, then reconnect the load that automatic under-frequency shedding cut, one stage at a time, without another under-frequency excursion, and re-arm each stage."
   ],
   "connections": [
     {
@@ -167,7 +167,7 @@
         {
           "type": "grid",
           "id": "grid:halden-four-unit",
-          "label": "Norway grid · Halden connection",
+          "label": "Norway grid \u00b7 Halden connection",
           "location": [
             11.48,
             59.08
@@ -197,8 +197,8 @@
           "label": "Halden Unit 1 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -215,8 +215,8 @@
           "label": "Halden Unit 2 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -233,8 +233,8 @@
           "label": "Halden Unit 3 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -251,8 +251,8 @@
           "label": "Halden Unit 4 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261026-r3",
-            "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+            "revision": "pwr-full-unit-20261027-r4",
+            "digest": "637f25d391d0315b1d1ad71ca9c16d75d30021b162896b582ea92eb12c743035"
           },
           "members": {
             "unit": "plant:halden-4"
@@ -269,8 +269,8 @@
           "label": "Halden shared campus and switchyard",
           "design": {
             "id": "pwr-campus",
-            "revision": "pwr-campus-20261026-r3",
-            "digest": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+            "revision": "pwr-campus-20261027-r4",
+            "digest": "718eabb3209ca4ecdd03a9ebad2ad76c3ac584881c75cb9a4c485506155755d7"
           },
           "members": {
             "grid": "grid:halden-four-unit",
@@ -318,7 +318,7 @@
             "guidance": {
               "id": "offsite-power-briefing",
               "title": "In two minutes, a fault cuts Halden off the grid",
-              "message": "To jump ahead, press the stopwatch next to the clock, “Run at maximum pace for a fixed duration”, and choose +2 min. Then follow the grid frequency on the right.",
+              "message": "To jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. Then follow the grid frequency on the right.",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
@@ -393,7 +393,7 @@
             "guidance": {
               "id": "switchyard-busbar-fault",
               "title": "Halden is cut off from the grid",
-              "message": "All six circuits are open and every turbine has tripped. To restore offsite power, open Assets in the grid panel, search “Hasle circuit 1”, choose it and press Close. Or ask the Leitbild Assistant: “Why did the turbine trip?”",
+              "message": "All six circuits are open and every turbine has tripped. To restore offsite power, open Assets in the grid panel, search \u201cHasle circuit 1\u201d, choose it and press Close. Or ask the Leitbild Assistant: \u201cWhy did the turbine trip?\u201d",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
