@@ -8,6 +8,7 @@
   import type { PackObjectPresentation } from '../../core/packs/protocol.ts'
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
+  import { createPhysicalAnnotationSceneKey } from './annotation-scene.ts'
   import { explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
@@ -63,6 +64,10 @@
   } = $props()
 
   let scenes = $state.raw<ReadonlyArray<PhysicalScenePresentation>>([])
+  const annotationKey = createPhysicalAnnotationSceneKey()
+  const annotationSceneKey = $derived(annotationKey(scenes))
+  // Snapshot only when actual draw/pick geometry changes, not pending UI intent.
+  const annotationScenes = $derived.by(() => { void annotationSceneKey; return untrack(() => scenes) })
   let focusedId = $state<string | null>(null)
   let focusedScopeId = $state<string | null>(null)
   let focusedGroupId = $state<string | null>(null)
@@ -371,7 +376,7 @@
 
   $effect(() => { controller?.setActive(active && documentVisible); controller?.setCameraOwnership(!suspended); if (!active || suspended || !documentVisible) { focusGeneration++; pendingFocus = null; pendingCameraFocus = null; scopeFloorChoice = null; controller?.cancelCamera(); controller?.setNavigationTool('pan'); navigation = 'pan' } })
 
-  const scopedOccurrences = $derived(scenes.filter(scene => scene.status === 'ready').flatMap(scene => (controller?.scene(scene.descriptor.id)?.objects ?? []).filter(occurrence =>
+  const scopedOccurrences = $derived(annotationScenes.filter(scene => scene.status === 'ready').flatMap(scene => (controller?.scene(scene.descriptor.id)?.objects ?? []).filter(occurrence =>
     (focusedId === null || focusedId === scene.descriptor.id) && (focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) && physicalOccurrenceInScope(occurrence, focusedScopeId, scene.descriptor.scopes ?? []) && physicalOccurrenceOnLevel(occurrence, scene.view.levelId) && (occurrence.layerId === undefined || !(scene.view.hiddenLayerIds ?? scene.descriptor.layers?.filter(layer => !layer.defaultVisible).map(layer => layer.id) ?? []).includes(occurrence.layerId)),
   ).map(occurrence => ({ sceneId: scene.descriptor.id, occurrence }))))
   const scopedBySubject = $derived.by(() => {
@@ -404,7 +409,7 @@
   const proposedBadges = $derived.by(() => {
     void screenRevision
     if (!active || suspended || !documentVisible) return []
-    const proposals = scenes.filter(scene => scene.status === 'ready' && scene.view.live).flatMap(scene => {
+    const proposals = annotationScenes.filter(scene => scene.status === 'ready' && scene.view.live).flatMap(scene => {
       const snapshot = snapshots.get(scene.descriptor.id)
       const reading = snapshot?.latest
       if (reading === undefined || reading === null) return []
@@ -436,7 +441,7 @@
     void screenRevision
     if (!active || suspended || !documentVisible || !controller || !draftingCanvas) return []
     const fontSize = Number.parseFloat(getComputedStyle(draftingCanvas).fontSize)
-    const marks: FlowMark[] = [], presentations = new Map(scenes.map(scene => [scene.descriptor.id, scene]))
+    const marks: FlowMark[] = [], presentations = new Map(annotationScenes.map(scene => [scene.descriptor.id, scene]))
     const sceneContexts = new Map<string, { readonly source: PackPhysicalScene; readonly regions: ReturnType<typeof physicalScopeRegions> }>()
     const scopeId = focusedScopeId ?? undefined
     for (const { sceneId, occurrence } of scopedOccurrences) {
@@ -464,7 +469,7 @@
   })
   $effect(() => {
     annotationScheduler?.setActive(active && !suspended && documentVisible)
-    const generation = JSON.stringify([screenRevision, scenes.map(scene => [scene.descriptor.revision, scene.view]), focusedId, focusedScopeId, focusedGroupId])
+    const generation = JSON.stringify([screenRevision, annotationSceneKey, focusedId, focusedScopeId, focusedGroupId])
     const candidates = sparseLayoutBadges(proposedBadges, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
     const marks = sparseLayoutBadges(proposedFlowMarks, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
     annotationScheduler?.update(generation, [...candidates.map(value => ({ key: `status:${value.sceneId}:${value.occurrenceId}:${value.elementId}`, priority: value.rank, value })), ...marks.map(value => ({ key: `flow:${value.key}`, priority: value.rank, value }))])
@@ -623,7 +628,7 @@
     const element = map.getContainer()
     badgeMeasure = document.createElement('canvas').getContext('2d')
     if (badgeMeasure) badgeMeasure.font = `11px ${getComputedStyle(element).fontFamily}`
-    const options = { palette: physicalLayoutPalette(element), planFontFamily: () => getComputedStyle(draftingCanvas ?? element).fontFamily, fitPadding, ...(suspendPickingForNavigation === undefined ? {} : { suspendPickingForNavigation }), onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { scenes = next; overlayDirty = true }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
+    const options = { palette: physicalLayoutPalette(element), planFontFamily: () => getComputedStyle(draftingCanvas ?? element).fontFamily, fitPadding, ...(suspendPickingForNavigation === undefined ? {} : { suspendPickingForNavigation }), onChange: (next: ReadonlyArray<PhysicalScenePresentation>) => { if (annotationKey(next) !== annotationKey(scenes)) overlayDirty = true; scenes = next }, reportError: (error: Error) => onerror(`Physical layout: ${error.message}`) }
     let next: PhysicalSceneController
     try {
       next = createPhysicalSceneController({ ...options, map, beforeId: () => physicalSceneLayerAnchorId(map.getStyle()) })
