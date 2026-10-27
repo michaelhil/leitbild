@@ -4,6 +4,7 @@ import { physicalRenderMeshRanges, preparePhysicalRenderBuffers } from '../src/u
 import { physicalVisibleElements, updatePhysicalOpaqueRunMask } from '../src/ui/map/physical-scene/visible-elements.ts'
 
 const mesh = (id: string, triangles: number, segments: number): PhysicalMesh => ({
+  key: id, bounds: { min: [0, 0, 0], max: [1, 1, 1] },
   object: { id, label: id, kind: 'equipment', levelId: 'floor', positions: [], subjectIds: [] }, offset: [0, 0, 0],
   vertices: new Float64Array(triangles * 3 * 7).map((_, at) => at % 7 === 6 ? 0 : at + 1),
   lines: new Float64Array(segments * 6).map((_, at) => at + 1),
