@@ -67,7 +67,7 @@ try{
   await call('Runtime.enable');await call('Page.enable');await call('Target.setDiscoverTargets',{discover:true});await call('Emulation.setDeviceMetricsOverride',{width:1440,height:913,deviceScaleFactor:dpr,mobile:false});await call('Page.addScriptToEvaluateOnNewDocument',{source:instrumentation});await call('Page.navigate',{url:info.url})
   const mounted=performance.now();while(!await evaluate(`Boolean(document.querySelector('iframe[src*="/world/runs/"]')?.contentDocument?.querySelector('.explorer-controls'))`)){if(performance.now()-mounted>45000)throw Error('World did not mount');await Bun.sleep(50)}
   await inWorld(`d.querySelector('button[aria-label="Close grid overview panel"]')?.click()`)
-  const earlyPlanOnly=process.env.LEITBILD_NATIVE_EARLY_PLAN_ONLY==='1'
+  const earlyPlanOnly=process.env.LEITBILD_NATIVE_EARLY_PLAN_ONLY==='1',sitePlanOnly=process.env.LEITBILD_NATIVE_SITE_PLAN_ONLY==='1'
   if(earlyPlanOnly){
     await scope();await floor('Turbine and main control');await button('Plan');await home();await shot('room-plan.png')
     await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
@@ -78,25 +78,25 @@ try{
   await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'native collection chooser')
   await inWorld(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`)
   await settled(5)
-  await collectionFloor('Turbine and main control');await collectionFloor('Stack',true)
+  if(!sitePlanOnly){await collectionFloor('Turbine and main control');await collectionFloor('Stack',true)
   await movement('map-site-3d-paused','.maplibregl-canvas',true,false)
-  await movement('map-site-3d-playing','.maplibregl-canvas',true,true)
+  await movement('map-site-3d-playing','.maplibregl-canvas',true,true)}
   await execution('paused');await button('Plan');await settled(5);await shot('site-plan.png')
   await movement('map-site-plan-paused','.maplibregl-canvas',false,false)
   await movement('map-site-plan-playing','.maplibregl-canvas',false,true)
-  await execution('paused');await scope();await floor('Turbine and main control');await button('3D');await home();await shot('room-3d.png')
+  if(!sitePlanOnly){await execution('paused');await scope();await floor('Turbine and main control');await button('3D');await home();await shot('room-3d.png')
   await movement('map-room-3d-paused','.maplibregl-canvas',true,false)
   await movement('map-room-3d-playing','.maplibregl-canvas',true,true)
   await execution('paused');await button('Plan');await home();await shot('room-plan.png')
   await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
-  await movement('map-room-plan-playing','.maplibregl-canvas',false,true)
+  await movement('map-room-plan-playing','.maplibregl-canvas',false,true)}
   await execution('paused')
   }
   const beforeExit=await snapshot(),metadata=await inWorld('return {userAgent:w.navigator.userAgent,reportedLogicalCpus:w.navigator.hardwareConcurrency,dpr:w.devicePixelRatio}')
   await call('Page.navigate',{url:'about:blank'});let physicalWorkerTargets:any[]=[];const stopAt=performance.now()+10000
   do{physicalWorkerTargets=(await call('Target.getTargets')).targetInfos.filter((item:any)=>item.type==='worker'&&/preparation-worker|source-compile/.test(item.url));if(!physicalWorkerTargets.length)break;await Bun.sleep(50)}while(performance.now()<stopAt)
   if(physicalWorkerTargets.length||events.length)throw Error('Native map page close left physical worker targets or exceptions')
-  const result={testedAppCommit,runnerCommit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:repository}).stdout.toString().trim(),instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),earlyPlanOnly,profiledWindow:process.env.LEITBILD_NATIVE_PROFILE_WINDOW??null,run:info,metadata,collectionFloors,phases,beforeExit,physicalWorkerTargetsAfterExit:physicalWorkerTargets,exceptions:events,limits:['Actual built Host/World on one native geographic map and one isolated local Run. No product browser or alternate camera; no production Run commands.','View/floor settlement follows actual loading/owner evidence and two painted scheduling frames; no fixed helper settlement sleeps. Motion windows use actual input and RAF, not GPU execution timers.','Canvas fillText records are actual drafting calls. Readable room Plan requires authored HP/LP1/GEN/room captions; whole-site fitting may legitimately reject text that exceeds actual building envelopes. Backing-store counters include observed float32/MSAA renderbuffers and resolve texture, plus Canvas2D RGBA lower bounds; they exclude driver/process overhead.','Resource observers retain primitive metadata and weak resource keys only. Instrumentation adds overhead; annotation spy time is recorded, other callback overhead is not separately attributed. Optional CPU profiling is a separate diagnostic run, not a clean performance sample.','DPR and hardware are recorded per run. This is not WAN, constrained-device or human usability qualification.']}
+  const result={testedAppCommit,runnerCommit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:repository}).stdout.toString().trim(),instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),earlyPlanOnly,sitePlanOnly,profiledWindow:process.env.LEITBILD_NATIVE_PROFILE_WINDOW??null,run:info,metadata,collectionFloors,phases,beforeExit,physicalWorkerTargetsAfterExit:physicalWorkerTargets,exceptions:events,limits:['Actual built Host/World on one native geographic map and one isolated local Run. No product browser or alternate camera; no production Run commands.','View/floor settlement follows actual loading/owner evidence and two painted scheduling frames; no fixed helper settlement sleeps. Motion windows use actual input and RAF, not GPU execution timers.','Canvas fillText records are actual drafting calls. Readable room Plan requires authored HP/LP1/GEN/room captions; whole-site fitting may legitimately reject text that exceeds actual building envelopes. Backing-store counters include observed float32/MSAA renderbuffers and resolve texture, plus Canvas2D RGBA lower bounds; they exclude driver/process overhead.','Resource observers retain primitive metadata and weak resource keys only. Instrumentation adds overhead; annotation spy time is recorded, other callback overhead is not separately attributed. Optional CPU profiling is a separate diagnostic run, not a clean performance sample.','DPR and hardware are recorded per run. This is not WAN, constrained-device or human usability qualification.']}
   await writeFile(join(folder,'receipt.json'),JSON.stringify(result,null,2));console.log('DONE',folder)
 }catch(error){const failure:any={error:String(error),phases,events};try{failure.snapshot=await snapshot()}catch(diagnosticError){failure.diagnosticError=String(diagnosticError)}await writeFile(join(folder,'failure.json'),JSON.stringify(failure,null,2));throw error}
 finally{try{await execution('paused')}finally{socket?.close();chrome.kill();await chrome.exited;await rm(profile,{recursive:true,force:true})}}
