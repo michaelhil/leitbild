@@ -37,11 +37,11 @@ hostTextures.forEach((texture, unit) => { gl.activeTexture(gl.TEXTURE0 + unit); 
 gl.activeTexture(gl.TEXTURE2); gl.viewport(0, 0, canvas.width, canvas.height); gl.enable(gl.SCISSOR_TEST); gl.scissor(2, 3, 12, 13); gl.depthRange(.2, .8)
 const host = state(), results: unknown[] = []
 const clear = () => { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.disable(gl.SCISSOR_TEST); gl.colorMask(true, true, true, true); gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT) }
-const draw = (indexes: number[], opacity: number, _useFractional = true, matrices: ReadonlyArray<Float32Array> = [], projection = identity, flat = true, near = 0) => {
+const draw = (indexes: number[], opacity: number, _useFractional = true, matrices: ReadonlyArray<Float32Array> = [], projection = identity, flat = true, near = 0, overrides: ReadonlyArray<PhysicalDraw['architecture']> = []) => {
   const saved = captureSceneGlState(gl), old = state()
   clear()
   const placements = indexes.map((index, placement) => { const matrix = matrices[placement] ?? identity; return { sceneId: `${assets[index]!.key}/${JSON.stringify([...matrix])}`, asset: assets[index]!, matrix } })
-  const draws: PhysicalDraw[] = placements.map(placement => ({ sceneId: placement.sceneId, asset: placement.asset, meshes: placement.asset.meshes, matrix: new Float32Array(multiply(projection, placement.matrix)), flat, styles: [], architecture: { wallOpacity: opacity, floorOpacity: opacity } }))
+  const draws: PhysicalDraw[] = placements.map((placement, index) => ({ sceneId: placement.sceneId, asset: placement.asset, meshes: placement.asset.meshes, matrix: new Float32Array(multiply(projection, placement.matrix)), flat, styles: [], architecture: overrides[index] ?? { wallOpacity: opacity, floorOpacity: opacity } }))
   const owners = placements.flatMap(placement => placement.asset.meshes.flatMap((mesh, meshIndex) => mesh.object.kind === 'wall' || mesh.object.kind === 'slab' ? [{ placement, mesh, meshIndex, id: `${placement.sceneId}/${meshIndex}` }] : [])).sort((a, b) => a.id.localeCompare(b.id))
   const key = JSON.stringify(owners.map(owner => owner.id))
   let cohort = cohorts.get(key)
@@ -52,7 +52,7 @@ const draw = (indexes: number[], opacity: number, _useFractional = true, matrice
       return { id, sceneId: placement.sceneId, assetKey: placement.asset.key, meshIndex, occurrenceId: mesh.object.id, matrix: multiply(common, multiply(placement.matrix, offset)), vertices: mesh.vertices, lines: mesh.lines, materials: mesh.materials ?? mesh.object.materials ?? [mesh.object.material ?? mesh.object.kind], lineMaterials: mesh.lineMaterials ?? Array.from({ length: mesh.lines.length / 6 }, () => 'line'), ...(mesh.lineStyles ? { lineStyles: mesh.lineStyles } : {}) }
     }) }); bspPrepares++; cohorts.set(key, cohort)
   }
-  try { architecture.setAsset(cohort ?? null); pass.begin(canvas.width, canvas.height); backend.draw(draws, near); architecture.draw(draws, near); pass.composite(null, null, [0, 0, canvas.width, canvas.height]) }
+  try { architecture.setAsset(cohort ?? null); pass.begin(canvas.width, canvas.height); backend.draw(architecture.opaqueDraws(draws), near); architecture.draw(draws, near); pass.composite(null, null, [0, 0, canvas.width, canvas.height]) }
   finally { restoreSceneGlState(gl, saved) }
   const pixels = new Uint8Array(canvas.width * canvas.height * 4); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels); restoreSceneGlState(gl, saved)
   const at = (x: number, y: number) => [...pixels.slice((y * canvas.width + x) * 4, (y * canvas.width + x) * 4 + 4)]
@@ -90,12 +90,12 @@ const withDetail = draw([0, 1, 2], .5), contextAsset = prepare(scene('coarse-con
 const referenceOwner = withDetail.cohort!.owners[0]!, referenceDraw = withDetail.draws.find(value => value.sceneId === referenceOwner.sceneId && value.asset.key === referenceOwner.assetKey)!
 const contextDraw: PhysicalDraw = { ...referenceDraw, asset: contextAsset, meshes: contextAsset.meshes, matrix: outside }
 const contextHost = captureSceneGlState(gl)
-clear(); pass.begin(canvas.width, canvas.height); backend.draw([...withDetail.draws, contextDraw]); architecture.draw([...withDetail.draws, contextDraw]); pass.composite(null, null, [0, 0, canvas.width, canvas.height])
+clear(); pass.begin(canvas.width, canvas.height); backend.draw(architecture.opaqueDraws([...withDetail.draws, contextDraw])); architecture.draw([...withDetail.draws, contextDraw]); pass.composite(null, null, [0, 0, canvas.width, canvas.height])
 const contextPixels = new Uint8Array(withDetail.pixels.length); gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, contextPixels); restoreSceneGlState(gl, contextHost)
 const contextDifferences = contextPixels.reduce((count, value, index) => count + Number(value !== withDetail.pixels[index]), 0)
 results.push({ kind: 'same-scene-overview-does-not-replace-detailed-asset', sameSceneId: contextDraw.sceneId === referenceDraw.sceneId, distinctAsset: contextDraw.asset.key !== referenceDraw.asset.key, differentBytes: contextDifferences, passed: contextDifferences === 0 })
 const withoutBasis = withDetail.draws.filter(draw => draw !== referenceDraw), basisHost = captureSceneGlState(gl)
-clear(); pass.begin(canvas.width, canvas.height); backend.draw(withoutBasis); architecture.draw(withoutBasis, 0, referenceDraw.matrix); pass.composite(null, null, [0, 0, canvas.width, canvas.height])
+clear(); pass.begin(canvas.width, canvas.height); backend.draw(architecture.opaqueDraws(withoutBasis)); architecture.draw(withoutBasis, 0, referenceDraw.matrix); pass.composite(null, null, [0, 0, canvas.width, canvas.height])
 const basisPixel = new Uint8Array(4); gl.readPixels(canvas.width / 2, canvas.height / 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, basisPixel); restoreSceneGlState(gl, basisHost)
 results.push({ kind: 'cohort-basis-remains-valid-when-reference-source-is-not-drawn', referenceId: referenceOwner.sceneId, referenceAbsent: !withoutBasis.some(draw => draw.sceneId === referenceOwner.sceneId && draw.asset.key === referenceOwner.assetKey), pixel: [...basisPixel], expected: [128, 0, 127, 255], passed: [...basisPixel].every((value, channel) => Math.abs(value - [128, 0, 127, 255][channel]!) <= 1) })
 const plane = (id: string, kind: 'wall' | 'slab', material: string, z: (x: number, y: number) => number): number => {
@@ -145,6 +145,30 @@ for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
   if (Math.abs(lineFrame.pixels[at + 1]! - 128) > 1) lineErrors++
 }
 results.push({ kind: 'authored-line-traverses-with-its-far-wall', linePixels, errors: lineErrors, orderDifferentBytes: lineOrderBytes, passed: linePixels > 0 && lineErrors === 0 && lineOrderBytes === 0 })
+const mixedFirst = assets.length; assets.push(prepare(scene('a-mixed-first', 'wall', 'green', 0, -.8, .15)))
+const secondSource = scene('b-mixed-second', 'slab', 'red', 0, -.15, .8), mixedSecond = assets.length
+assets.push(prepare({ ...secondSource, objects: [{ ...secondSource.objects[0]!, edgePolicy: 'authored', featureLines: [{ positions: [-.15, 0, 0, .8, 0, 0], material: 'line' }] }] }))
+const pixelAt = (pixels: Uint8Array, x: number, y: number) => { const px = Math.floor((x + 1) * canvas.width / 2), py = Math.floor((y + 1) * canvas.height / 2), at = (py * canvas.width + px) * 4; return [...pixels.slice(at, at + 4)] }
+for (const firstAlpha of [1, .5, 0]) {
+  const secondAlpha = firstAlpha === .5 ? 1 : .5, overrides = [undefined, { wallOpacity: firstAlpha, floorOpacity: firstAlpha }, { wallOpacity: secondAlpha, floorOpacity: secondAlpha }]
+  const indexes = [0, mixedFirst, mixedSecond], forward = draw(indexes, .5, true, [], identity, true, 0, overrides), reverse = draw([...indexes].reverse(), .5, true, [], identity, true, 0, [...overrides].reverse())
+  const overlapExpected = firstAlpha === 1 ? [0, 255, 0, 255] : firstAlpha === .5 ? [0, 128, 127, 255] : [128, 0, 127, 255], outsideExpected = secondAlpha === 1 ? [255, 0, 0, 255] : [128, 0, 127, 255]
+  const overlap = pixelAt(forward.pixels, 0, .3), outside = pixelAt(forward.pixels, .5, .3)
+  let differences = 0; for (let index = 0; index < forward.pixels.length; index++) if (forward.pixels[index] !== reverse.pixels[index]) differences++
+  let joints = 0, wrongTint = 0
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+    const nx = (x + .5) / canvas.width * 2 - 1, ny = (y + .5) / canvas.height * 2 - 1
+    if (Math.abs(nx) > .1 || Math.abs(ny) > .05) continue
+    const at = (y * canvas.width + x) * 4, actual = [...forward.pixels.slice(at, at + 4)]
+    if (!actual.some((value, channel) => channel < 3 && value < overlapExpected[channel]! - 2)) continue
+    joints++
+    // Established authored-joint intent survives face ownership. Black ink
+    // may attenuate the owning face, but never introduces the tied-out red face.
+    if (firstAlpha > 0 && actual[0]! > 1 || firstAlpha === 0 && actual[1]! > 1) wrongTint++
+  }
+  const authoredLineVertices = forward.cohort!.fragments.filter(fragment => fragment.kind === 'line').reduce((count, fragment) => count + fragment.count, 0)
+  results.push({ kind: 'mixed-alpha-first-source-faces-and-authored-joints', firstAlpha, secondAlpha, overlap, overlapExpected, outside, outsideExpected, differentBytes: differences, jointPixels: joints, wrongTint, authoredLineVertices, passed: differences === 0 && overlap.every((value, channel) => Math.abs(value - overlapExpected[channel]!) <= 1) && outside.every((value, channel) => Math.abs(value - outsideExpected[channel]!) <= 1) && joints > 0 && wrongTint === 0 && authoredLineVertices === 2 })
+}
 const perspectiveBase = assets.length; assets.push(prepare(scene('perspective-blue', 'equipment', 'blue', -.9)))
 const near = .1, far = 10, distance = 3, focal = 1 / Math.tan(Math.PI / 8)
 const perspective = new Float32Array([focal, 0, 0, 0, 0, focal, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, -distance * (far + near) / (near - far) + 2 * far * near / (near - far), distance])
