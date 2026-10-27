@@ -1,16 +1,16 @@
 {
-  "gpuTreeCommit": "17eb59924e5f3b533922db2c9d45bee35cbdaa85",
-  "runtimeCommit": "79cdaf4801b136fd9c7ae4a8b4e71fcdaa2ad473",
-  "fixtureCommit": "9a2ad64b1d063caaa74b42208f97329d25034151",
+  "gpuTreeCommit": "d9e00a897435d0f298ea0a5f5241573d67536599",
+  "runtimeCommit": "cb7f4bb143699d25c9352f99c46954963cb7b76f",
+  "fixtureCommit": "c14bef68fb12bd70de625b51599f23577aca7df1",
   "gpuFilesMatchFrozenTree": true,
   "files": {
-    "src/ui/map/physical-scene/backend.ts": "79a99500e878b01201be1d0251cf4f875471052297ee90cc8dbb1cff66571f21",
-    "src/ui/map/physical-scene/renderer.ts": "c28ff84ed50f17609ecc96b56894b9276fe4c43981ad0c096f4181657bba549a",
+    "src/ui/map/physical-scene/backend.ts": "ff2b9df10d77b2fdbccd8782c3d97ff22235afce55489b13a6703589d14503f8",
+    "src/ui/map/physical-scene/renderer.ts": "41a1d5ec7680879af4b2c39f6274792f4d5f0568a8e4e684f4fbee84a8ef9779",
     "src/ui/map/physical-scene/render-pass.ts": "c3b359387bf1502e3836c8ef3739f729beda6cde2e975db8f9ac613af099d1d9",
-    "src/ui/map/physical-scene/architecture-backend.ts": "df008428af7aeea3f355a6e024bfe60cacf0d92b7ff6fd9d8ed594751a750eac",
+    "src/ui/map/physical-scene/architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce",
     "src/ui/map/physical-scene/architecture-bsp.ts": "c95f4c7d948201aaa9c60aabc5a479784f89d1b93c0b59d337c9c5854224813d",
     "src/ui/map/physical-scene/architecture-bsp-types.ts": "64bf2296059b9ce0b00af90460c3b93075d1a3951fcdb578d36350286e6a91c1",
-    "src/ui/map/physical-scene/architecture-cohort.ts": "727541b4d1d0ba86f72efcbce5af9b6f36df209793ebc38519fa1bf94f5455bd",
+    "src/ui/map/physical-scene/architecture-cohort.ts": "c70da7bb4bc6fe5ec3036b1a800a1c23e4d747397239fe6fad90bd0185646aa9",
     "src/ui/map/physical-scene/plan-projection.ts": "6f7f90afcb42997686a3573ea8101c25032c336120a6dbad855af1057b694e25",
     "src/ui/map/physical-scene/preparation.ts": "da1f2c31d42d615564d4dc86c7f0c6e14880feea8cda6466077166b611544c94",
     "src/ui/map/physical-scene/geometry.ts": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
@@ -22,7 +22,7 @@
     "src/ui/map/physical-scene/architecture-opacity.ts": "6984d13fd4304edc461d46776d04ab93629321f14c3e8a883bbd323df131a333"
   },
   "fixtureFiles": {
-    "tests/browser/physical-scene/opacity-probe.ts": "d3294c34e66d179c3af43fbc5991448dc832dbf6d5749d2eb022177e77942509",
+    "tests/browser/physical-scene/opacity-probe.ts": "64c72fe85c0ef6dc09ee5049c7ea6ecb64bc5b84e8339dbeeab08890d1f24437",
     "scripts/physical-layout/opacity-probe.ts": "7985e1eb224bdc5d16dc413671e2a5748806d9ab05a43d2c46710cecdb2374e0"
   }
 }

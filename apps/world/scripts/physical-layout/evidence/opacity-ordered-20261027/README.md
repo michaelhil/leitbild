@@ -1,13 +1,14 @@
 # Ordered architecture opacity: independent GPU qualification
 
-The actual renderer files match frozen GPU tree `17eb59924`; the application was at `79cdaf480` during this run. `source-manifest.json` verifies every recorded production-file hash against that frozen tree and identifies the exact committed fixture. The compressed executed browser bundle and its SHA256 are retained.
+The actual renderer files match frozen GPU tree `d9e00a897`; the application was at `cb7f4bb14` during this run. `source-manifest.json` verifies every recorded production-file hash against that frozen tree and identifies the exact committed fixture. The compressed executed browser bundle and its SHA256 are retained. This supersedes the earlier 14-case `17eb` qualification by adding mixed opaque/fractional ownership.
 
-Actual Chrome/WebGL2 on this machine, DPR 1 and 2, original hardware 4× MSAA. All 14 cases pass at each DPR:
+Actual Chrome/WebGL2 on this machine, DPR 1 and 2, original hardware 4× MSAA. All 17 cases pass at each DPR:
 
 - Hidden, 50% and opaque wall pixels match independent source-over colour expectations; reversing input submission preserves the complete parallel-overlap image.
 - All 408 DPR1 and 820 DPR2 partially covered silhouette pixels match the independent average of opaque red/blue references exactly. Maximum error is zero. The rejected float OIT path failed these same edge populations.
 - Three intersecting planes and rotated repeated-family placements match independently calculated depth orders. True perspective cyclic overlap preserves the original shader lighting, within one RGBA8 rounding unit.
 - Authored ink on a far wall is attenuated before the nearer surface; reversing submission preserves its image. There are 168/332 observed ink pixels.
+- Partial coplanar overlap preserves the first source's faces with an earlier opaque owner, an earlier fractional owner, or a hidden first owner. Both submission orders yield identical complete images. Original authored joint strokes remain with their declared alpha/tint (24/52 observed joint pixels), with exactly the original two line vertices and no new cut strokes. Whenever a fraction is active, all nonzero architecture participates in this ordered pass; the ordinary all-opaque path remains unchanged.
 - A same-scene coarse overview cannot replace the detailed architecture asset. A cohort's first/reference placement can leave current draws without changing the remaining geometry's frame.
 - Real retained GL Plan uses its semantic depth bands and exact unlit colour: opaque equipment stays blue above fractional architecture and remains the exact pick target.
 - At zero floor opacity, a retained coincident equipment alternative becomes visible and pickable without a VBO upload.

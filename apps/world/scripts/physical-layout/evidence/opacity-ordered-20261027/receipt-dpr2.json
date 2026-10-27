@@ -1404,6 +1404,108 @@
       "passed": true
     },
     {
+      "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+      "firstAlpha": 1,
+      "secondAlpha": 0.5,
+      "overlap": [
+        0,
+        255,
+        0,
+        255
+      ],
+      "overlapExpected": [
+        0,
+        255,
+        0,
+        255
+      ],
+      "outside": [
+        128,
+        0,
+        128,
+        255
+      ],
+      "outsideExpected": [
+        128,
+        0,
+        127,
+        255
+      ],
+      "differentBytes": 0,
+      "jointPixels": 52,
+      "wrongTint": 0,
+      "authoredLineVertices": 2,
+      "passed": true
+    },
+    {
+      "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+      "firstAlpha": 0.5,
+      "secondAlpha": 1,
+      "overlap": [
+        0,
+        128,
+        128,
+        255
+      ],
+      "overlapExpected": [
+        0,
+        128,
+        127,
+        255
+      ],
+      "outside": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "outsideExpected": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "differentBytes": 0,
+      "jointPixels": 52,
+      "wrongTint": 0,
+      "authoredLineVertices": 2,
+      "passed": true
+    },
+    {
+      "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+      "firstAlpha": 0,
+      "secondAlpha": 0.5,
+      "overlap": [
+        128,
+        0,
+        128,
+        255
+      ],
+      "overlapExpected": [
+        128,
+        0,
+        127,
+        255
+      ],
+      "outside": [
+        128,
+        0,
+        128,
+        255
+      ],
+      "outsideExpected": [
+        128,
+        0,
+        127,
+        255
+      ],
+      "differentBytes": 0,
+      "jointPixels": 52,
+      "wrongTint": 0,
+      "authoredLineVertices": 2,
+      "passed": true
+    },
+    {
       "kind": "perspective-cyclic-order-and-original-lighting",
       "samples": [
         {
@@ -1694,30 +1796,30 @@
   },
   "disposal": true,
   "metrics": {
-    "geometryUploads": 13,
+    "geometryUploads": 15,
     "geometryBytes": 0,
     "residentCpuBytes": 0,
-    "draws": 76,
+    "draws": 100,
     "buffers": 0,
     "programs": 0,
     "textures": 0,
     "textureBytes": 0,
     "instanceBytes": 0,
-    "instanceUploads": 72,
-    "statusUploads": 29,
-    "paletteUploads": 13,
-    "evictions": 9,
+    "instanceUploads": 90,
+    "statusUploads": 24,
+    "paletteUploads": 15,
+    "evictions": 11,
     "peakRequiredBytes": 1296,
     "liveBuffersAfterDisposal": 0,
     "liveProgramsAfterDisposal": 0,
     "liveTexturesAfterDisposal": 0,
     "architecture": {
-      "geometryUploads": 8,
-      "orderUploads": 9,
-      "instanceUploads": 19,
-      "statusUploads": 12,
-      "paletteUploads": 8,
-      "draws": 23,
+      "geometryUploads": 9,
+      "orderUploads": 11,
+      "instanceUploads": 25,
+      "statusUploads": 15,
+      "paletteUploads": 9,
+      "draws": 35,
       "geometryBytes": 0,
       "orderBytes": 0,
       "instanceBytes": 0,
@@ -1741,7 +1843,7 @@
       "bytes": 0,
       "textureBytes": 0,
       "allocations": 1,
-      "composites": 25,
+      "composites": 31,
       "liveTextures": 0,
       "livePrograms": 0,
       "liveFramebuffers": 0,
