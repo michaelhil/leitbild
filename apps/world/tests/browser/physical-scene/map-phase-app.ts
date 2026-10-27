@@ -7,6 +7,7 @@ import { defaultPhysicalSceneView, type PhysicalSceneView } from '../../../src/u
 import { physicalArchitectureCohort } from '../../../src/ui/map/physical-scene/architecture-cohort.ts'
 import { preparePhysicalArchitectureBsp } from '../../../src/ui/map/physical-scene/architecture-bsp.ts'
 import { captureSceneGlState, restoreSceneGlState } from '../../../src/ui/map/physical-scene/gl-state.ts'
+import { createPhysicalSceneRenderer } from '../../../src/ui/map/physical-scene/renderer.ts'
 
 // Test-only known geometry. Its packed buffers are shared by both complete
 // renderers; native MapLibre sources, symbols and glyphs are drawn normally.
@@ -49,8 +50,9 @@ async function run(which:'reference'|'candidate', mode:'opaque'|'fractional', pi
   const handle=(which==='candidate'?createPhysicalSceneLayer:referenceLayer)('physical',()=>entries,palette,error=>errors.push(error.message))
   let lastInput:Parameters<CustomLayerInterface['render']>[1]|null=null
   for(const name of ['prerender','render'] as const){const callback=handle.layer[name];if(!callback)continue;handle.layer[name]=function(context,input){lastInput=input;const phase:Phase={name,queries:0,clears:[],drawTargets:[],entryTarget:id(currentDraw),entryViewport:[...viewport]};phases.push(phase);active=phase;try{return callback.call(this,context,input)}finally{active=null}}}
-  if(mode==='fractional'){const cohort=physicalArchitectureCohort(entries)!;handle.setArchitectureBsp(preparePhysicalArchitectureBsp(cohort),cohort.frame)}
   map.addLayer(handle.layer,'native-circle')
+  let cohortKey:string|null=null
+  if(mode==='fractional'){const cohort=physicalArchitectureCohort(entries)!;cohortKey=cohort.key;handle.setArchitectureBsp(preparePhysicalArchitectureBsp(cohort),cohort.frame)}
   const frame=()=>new Promise<void>(resolve=>{map.once('render',()=>resolve());map.triggerRepaint()})
   await new Promise<void>(resolve=>{map.once('idle',()=>resolve());map.triggerRepaint()});await frame();await frame()
   const before=handle.metrics(), pixels=read(gl), native=map.queryRenderedFeatures({layers:['native-circle','native-icon','native-label']}).map(feature=>feature.layer.id)
@@ -62,7 +64,15 @@ async function run(which:'reference'|'candidate', mode:'opaque'|'fractional', pi
   else{const expected=snapshots.get(key)!;if(!expected||expected.length!==pixels.length)throw Error('Reference dimensions differ');for(let at=0;at<pixels.length;at++)differentBytes+=Number(pixels[at]!==expected[at])}
   const image=map.getCanvas().toDataURL('image/png'),phaseLocal:unknown[]=[],glCheckpoints:Array<{name:string,error:number}>=[]
   const check=(name:string)=>glCheckpoints.push({name,error:gl.getError()});check('actual-map-complete')
-  if(which==='candidate'&&mode==='opaque'&&pitch===52&&handle.layer.prerender&&lastInput){
+  const capturedInput=lastInput as Parameters<CustomLayerInterface['render']>[1]|null
+  if(which==='candidate'&&mode==='opaque'&&pitch===52&&handle.layer.prerender&&capturedInput){
+    const initialState=captureSceneGlState(gl),borrowedErrors:string[]=[],borrowed=createPhysicalSceneRenderer(gl,()=>entries,palette,()=>({width:640,height:480}),error=>borrowedErrors.push(error.message)),unpack=gl.createBuffer()!
+    const unpackState=()=>[gl.getParameter(gl.PIXEL_UNPACK_BUFFER_BINDING),gl.getParameter(gl.UNPACK_ROW_LENGTH),gl.getParameter(gl.UNPACK_SKIP_PIXELS),gl.getParameter(gl.UNPACK_SKIP_ROWS),gl.isEnabled(gl.RASTERIZER_DISCARD),gl.isEnabled(gl.SAMPLE_COVERAGE),gl.isEnabled(gl.SAMPLE_ALPHA_TO_COVERAGE),gl.getParameter(gl.SAMPLE_COVERAGE_VALUE),gl.getParameter(gl.SAMPLE_COVERAGE_INVERT),gl.isEnabled(gl.DITHER)]
+    try{
+      gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER,unpack);gl.bufferData(gl.PIXEL_UNPACK_BUFFER,64,gl.STATIC_DRAW);gl.pixelStorei(gl.UNPACK_ROW_LENGTH,19);gl.pixelStorei(gl.UNPACK_SKIP_PIXELS,2);gl.pixelStorei(gl.UNPACK_SKIP_ROWS,1);gl.enable(gl.RASTERIZER_DISCARD);gl.sampleCoverage(.25,true);gl.enable(gl.SAMPLE_COVERAGE);gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);gl.disable(gl.DITHER)
+      const before=unpackState();borrowed.render(capturedInput.defaultProjectionData.mainMatrix);const after=unpackState(),error=gl.getError()
+      phaseLocal.push({kind:'borrowed-render-preserves-nondefault-unpack-raster-sample-state',before:before.slice(1),after:after.slice(1),sameBuffer:before[0]===after[0],geometryUploads:borrowed.metrics().geometryUploads,error,errors:borrowedErrors,passed:before.every((value,index)=>value===after[index])&&borrowed.metrics().geometryUploads>0&&error===0&&borrowedErrors.length===0})
+    }finally{borrowed.dispose();restoreSceneGlState(gl,initialState);gl.deleteBuffer(unpack);check('borrowed-poisoned-state-cleanup')}
     if(devicePixelRatio===1){
       const extension=gl.getExtension('WEBGL_lose_context');if(!extension)throw Error('Required context-loss proof extension unavailable')
       const canvas=map.getCanvas(),lost=new Promise<void>(resolve=>canvas.addEventListener('webglcontextlost',()=>resolve(),{once:true})),restored=new Promise<void>(resolve=>canvas.addEventListener('webglcontextrestored',()=>resolve(),{once:true}))
@@ -72,7 +82,7 @@ async function run(which:'reference'|'candidate', mode:'opaque'|'fractional', pi
       await new Promise<void>(resolve=>{map.once('idle',()=>resolve());map.triggerRepaint()});await frame()
       const restoredPixels=read(gl);let differences=0;for(let at=0;at<pixels.length;at++)differences+=Number(pixels[at]!==restoredPixels[at]);phaseLocal.push({kind:'actual-map-context-restore-public-reinstall-pixels',reinstalled,differences,passed:differences===0});check('context-restored')
     }
-    const state=captureSceneGlState(gl),input=lastInput,texture=gl.createTexture()!,target=gl.createFramebuffer()!
+    const state=captureSceneGlState(gl),input=capturedInput,texture=gl.createTexture()!,target=gl.createFramebuffer()!
     const area=[13,17,gl.drawingBufferWidth,gl.drawingBufferHeight] as const,width=area[2]+40,height=area[3]+40;let disposalBefore=0
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null)
     gl.bindFramebuffer(gl.FRAMEBUFFER,target);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0)
@@ -101,7 +111,7 @@ async function run(which:'reference'|'candidate', mode:'opaque'|'fractional', pi
   }
   const glError=gl.getError(), live=handle.metrics(),width=gl.drawingBufferWidth,height=gl.drawingBufferHeight;map.removeLayer('physical');const disposed=handle.metrics()
   Object.assign(gl,originals);map.remove()
-  const summary={which,mode,pitch,bearing,devicePixelRatio,width,height,differentBytes,physicalPixels,textPixels,iconPixels,native,latest,phaseLocal,glCheckpoints,phases:phases.length,before,after,live,disposed,errors,glError,image}
+  const summary={which,mode,pitch,bearing,devicePixelRatio,width,height,differentBytes,cohortKey,physicalPixels,textPixels,iconPixels,native,latest,phaseLocal,glCheckpoints,phases:phases.length,before,after,live,disposed,errors,glError,image}
   summaries.push(summary);allErrors.push(...errors)
   return summary
 }

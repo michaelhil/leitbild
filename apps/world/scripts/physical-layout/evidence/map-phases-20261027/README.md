@@ -2,7 +2,7 @@
 
 The complete frozen `30fb742e561481faac940e403fc21c44c8537a46` custom layer and its renderer imports are the reference. The candidate contains the `b7d8a9288` offscreen-prerender change. Its receipt HEAD is `c4282c1d6ee05c844bdbba7ac17066f7dfcc05d4`; `git diff b7d8a9288 c4282c1d6 -- apps/world/src` is empty.
 
-All 12 candidate/reference comparisons pass with **zero differing bytes**: opaque and fractional architecture at three actual MapLibre poses, each at DPR 1 and 2. Both sides receive the same packed known geometry. The installed Noto glyph artifact is identical by SHA-256; native MapLibre text, operational circle and registered icon remain visibly above the physical layer. These controlled colours are test data, not a plant-status proposal. Real admitted R5 visual quality has separate original/native evidence.
+All 12 candidate/reference comparisons pass with **zero differing bytes**: opaque and fractional architecture at three actual MapLibre poses, each at DPR 1 and 2. Both sides receive the same packed known geometry. Every fractional cell requires a nonempty cohort key, positive ordered geometry and index bytes, and positive actual ordered draw count (21–22 before capture). Opaque controls require zero ordered draws and no cohort. The installed Noto glyph artifact is identical by SHA-256; native MapLibre text, operational circle and registered icon remain visibly above the physical layer. These controlled colours are test data, not a plant-status proposal. Real admitted R5 visual quality has separate original/native evidence.
 
 The accepted candidate also checks:
 
@@ -12,6 +12,7 @@ The accepted candidate also checks:
 - Pick/palette/highlight invalidation between callbacks; empty and deliberately failed new preparation never composite old colour.
 - An ink-only Plan updates its exact component pick without a GL draw or target clear.
 - Context loss, actual map restoration to idle, and explicit public custom-layer reinstallation recover identical pixels. This is not a claim that a bare custom layer persists automatically through MapLibre's style reload.
+- The generic borrowed renderer preserves a deliberately bound unpack PBO, nonzero row length/skip state, enabled rasterizer discard/sample coverage/alpha-to-coverage, coverage invert/value, and disabled DITHER. Real geometry is uploaded/drawn, the original state returns exactly, and GL error is zero.
 - Warm geometry uploads and target allocations remain unchanged. Final physical buffers, programs and textures are released. Disposal between callbacks does not composite.
 
 The error fixture is confined to tests. It first prepares real buffers, then deliberately throws from the entry reader, checks the reported error and verifies old colour/picks are refused.
@@ -42,4 +43,6 @@ Raw attempts remain under the research `draw-stack-audit-20261027/map-phase/` di
 - `final-b7`: the new context-loss test incorrectly assumed a bare custom layer survives a MapLibre style reload. Later local checks consequently had no layer. It is rejected.
 - `final-b7-public-reinstall`: reinstall was attempted before the restored style had loaded. The driver failed with “Style is not done loading.” The final accepted run waits for actual map idle before public reinstallation.
 
-The accepted raw directory is `final-b7-context-idle`. These were test-lifecycle corrections; no candidate product code was changed during the oracle work.
+The initial fixture and evidence commit `4c18674b1` called `setArchitectureBsp` before `map.addLayer`/`onAdd`; its optional forwarder had no renderer yet. Its six fractional-labelled comparisons are **withdrawn**; their aggregate pass was insufficient. Their raw receipts, summary and executed bundle are retained in `superseded-no-ordered-cohort/`, and all initial raw research output remains in place. The corrected fixture installs the layer first and enforces actual ordered-draw/cohort witnesses for every fractional cell, including A/A.
+
+The accepted raw directory is `final-b7-complete`; corrected A/A is `control-aa-ordered-qualified`. These were test-lifecycle corrections; no candidate product code was changed during the oracle work.

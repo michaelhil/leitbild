@@ -2,11 +2,12 @@
   "passed": true,
   "reference": {
     "root": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-map-phase-oracle-20261027/apps/world",
-    "commit": "30fb742e561481faac940e403fc21c44c8537a46",
+    "commit": "4c18674b1288b13d32d145dc36a70ad174abafaf",
     "files": {
       "layer.ts": "ee9a9008fd94672dafcf8ffdb059cd9a55135542a088446e2162c57f6e10c6f8",
       "renderer.ts": "eaa6489ef685883323c02714c57e130a9e30f8b63a5349eacaf6fa9b7a3c35a3",
       "render-pass.ts": "c3b359387bf1502e3836c8ef3739f729beda6cde2e975db8f9ac613af099d1d9",
+      "gl-state.ts": "42e05a9999413e095ea1367cb32842ac3c8b96e6482432b76e5cf1605ef1cac0",
       "backend.ts": "be0eb90cd848742e694dd9793dd5d272bd56d5361f43cb4d9e65be3cafd8980c",
       "architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce"
     }
@@ -18,6 +19,7 @@
       "layer.ts": "d25d103c86cdfba2b1485fa07156e5ebc71314f6e7886cd7ef8c943b5b0c3f5e",
       "renderer.ts": "ca851b2e7098b64d6096360a25a6fd23341c4689ed839be14858c37b7bbbe4c9",
       "render-pass.ts": "368dcc25b227d2fce9874d5d02512cd4eaad7c868797b542be29303ce8960044",
+      "gl-state.ts": "a081e67f54f15bf833d3687182caef289240c88afcb0c6e3dbbd8821b4c0654c",
       "backend.ts": "be0eb90cd848742e694dd9793dd5d272bd56d5361f43cb4d9e65be3cafd8980c",
       "architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce"
     }
@@ -33,7 +35,7 @@
     "Known packed synthetic geometry uses real MapLibre cameras, native circles and installed Noto native glyph text. Real admitted R5 product geometry is separately qualified.",
     "No private MapLibre painter/context access."
   ],
-  "executionBundleSha256": "73708514de03b454aeb41cc47358012e6184a14167284aa3314ecc17fe1427f7",
+  "executionBundleSha256": "a85e6473067f4eb7af70249b2f73cc740c722e1fe6e117d8f9ec486feedee95d",
   "comparisons": [
     {
       "mode": "opaque",
@@ -43,6 +45,7 @@
       "width": 640,
       "height": 480,
       "differentBytes": 0,
+      "cohortKey": null,
       "physicalPixels": 167834,
       "textPixels": 68,
       "iconPixels": 256,
@@ -96,7 +99,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 0,
+        "orderBytes": 0,
+        "draws": 0
+      }
     },
     {
       "mode": "opaque",
@@ -106,6 +114,7 @@
       "width": 640,
       "height": 480,
       "differentBytes": 0,
+      "cohortKey": null,
       "physicalPixels": 125140,
       "textPixels": 64,
       "iconPixels": 225,
@@ -152,6 +161,36 @@
         }
       ],
       "phaseLocal": [
+        {
+          "kind": "borrowed-render-preserves-nondefault-unpack-raster-sample-state",
+          "before": [
+            19,
+            2,
+            1,
+            true,
+            true,
+            true,
+            0.25,
+            true,
+            false
+          ],
+          "after": [
+            19,
+            2,
+            1,
+            true,
+            true,
+            true,
+            0.25,
+            true,
+            false
+          ],
+          "sameBuffer": true,
+          "geometryUploads": 1,
+          "error": 0,
+          "errors": [],
+          "passed": true
+        },
         {
           "kind": "actual-map-context-restore-public-reinstall-pixels",
           "reinstalled": true,
@@ -254,6 +293,10 @@
           "error": 0
         },
         {
+          "name": "borrowed-poisoned-state-cleanup",
+          "error": 0
+        },
+        {
           "name": "context-restored",
           "error": 0
         },
@@ -283,7 +326,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 0,
+        "orderBytes": 0,
+        "draws": 0
+      }
     },
     {
       "mode": "opaque",
@@ -293,6 +341,7 @@
       "width": 640,
       "height": 480,
       "differentBytes": 0,
+      "cohortKey": null,
       "physicalPixels": 113260,
       "textPixels": 73,
       "iconPixels": 225,
@@ -346,7 +395,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 0,
+        "orderBytes": 0,
+        "draws": 0
+      }
     },
     {
       "mode": "fractional",
@@ -356,8 +410,9 @@
       "width": 640,
       "height": 480,
       "differentBytes": 0,
-      "physicalPixels": 146938,
-      "textPixels": 75,
+      "cohortKey": "architecture-bsp/[null,[[\"[\\\"phase\\\",\\\"map-phase\\\",1]\",\"3d\",[10,60],0,0,[0,0,0]],[\"[\\\"phase\\\",\\\"map-phase\\\",2]\",\"3d\",[10,60],0,0,[0,0,0]]]]",
+      "physicalPixels": 59020,
+      "textPixels": 382,
       "iconPixels": 256,
       "native": [
         "native-label",
@@ -375,6 +430,7 @@
             }
           ],
           "drawTargets": [
+            1,
             1
           ],
           "entryTarget": null,
@@ -409,7 +465,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 1,
+        "orderBytes": 48,
+        "draws": 22
+      }
     },
     {
       "mode": "fractional",
@@ -419,8 +480,9 @@
       "width": 640,
       "height": 480,
       "differentBytes": 0,
-      "physicalPixels": 97419,
-      "textPixels": 71,
+      "cohortKey": "architecture-bsp/[null,[[\"[\\\"phase\\\",\\\"map-phase\\\",1]\",\"3d\",[10,60],0,0,[0,0,0]],[\"[\\\"phase\\\",\\\"map-phase\\\",2]\",\"3d\",[10,60],0,0,[0,0,0]]]]",
+      "physicalPixels": 71837,
+      "textPixels": 387,
       "iconPixels": 225,
       "native": [
         "native-label",
@@ -438,6 +500,7 @@
             }
           ],
           "drawTargets": [
+            1,
             1
           ],
           "entryTarget": null,
@@ -472,7 +535,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 1,
+        "orderBytes": 48,
+        "draws": 22
+      }
     },
     {
       "mode": "fractional",
@@ -482,8 +550,9 @@
       "width": 640,
       "height": 480,
       "differentBytes": 0,
-      "physicalPixels": 80792,
-      "textPixels": 73,
+      "cohortKey": "architecture-bsp/[null,[[\"[\\\"phase\\\",\\\"map-phase\\\",1]\",\"3d\",[10,60],0,0,[0,0,0]],[\"[\\\"phase\\\",\\\"map-phase\\\",2]\",\"3d\",[10,60],0,0,[0,0,0]]]]",
+      "physicalPixels": 70992,
+      "textPixels": 413,
       "iconPixels": 225,
       "native": [
         "native-label",
@@ -501,6 +570,7 @@
             }
           ],
           "drawTargets": [
+            1,
             1
           ],
           "entryTarget": null,
@@ -535,7 +605,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 1,
+        "orderBytes": 48,
+        "draws": 21
+      }
     },
     {
       "mode": "opaque",
@@ -545,6 +620,7 @@
       "width": 1280,
       "height": 960,
       "differentBytes": 0,
+      "cohortKey": null,
       "physicalPixels": 672801,
       "textPixels": 1670,
       "iconPixels": 900,
@@ -598,7 +674,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 0,
+        "orderBytes": 0,
+        "draws": 0
+      }
     },
     {
       "mode": "opaque",
@@ -608,6 +689,7 @@
       "width": 1280,
       "height": 960,
       "differentBytes": 0,
+      "cohortKey": null,
       "physicalPixels": 502059,
       "textPixels": 1678,
       "iconPixels": 900,
@@ -655,6 +737,36 @@
       ],
       "phaseLocal": [
         {
+          "kind": "borrowed-render-preserves-nondefault-unpack-raster-sample-state",
+          "before": [
+            19,
+            2,
+            1,
+            true,
+            true,
+            true,
+            0.25,
+            true,
+            false
+          ],
+          "after": [
+            19,
+            2,
+            1,
+            true,
+            true,
+            true,
+            0.25,
+            true,
+            false
+          ],
+          "sameBuffer": true,
+          "geometryUploads": 1,
+          "error": 0,
+          "errors": [],
+          "passed": true
+        },
+        {
           "kind": "current-non-null-host-framebuffer-offset-viewport",
           "outside": [
             25,
@@ -687,26 +799,26 @@
         },
         {
           "kind": "between-phase-picks-invalidation",
-          "before": 25,
-          "after": 25,
+          "before": 26,
+          "after": 26,
           "passed": true
         },
         {
           "kind": "between-phase-palette-invalidation",
-          "before": 25,
-          "after": 25,
+          "before": 26,
+          "after": 26,
           "passed": true
         },
         {
           "kind": "between-phase-highlight-invalidation",
-          "before": 25,
-          "after": 25,
+          "before": 26,
+          "after": 26,
           "passed": true
         },
         {
           "kind": "empty-frame-does-not-reuse-old-colour",
-          "before": 25,
-          "after": 25,
+          "before": 26,
+          "after": 26,
           "passed": true
         },
         {
@@ -739,14 +851,18 @@
         },
         {
           "kind": "dispose-between-phases-clears-prepared-colour",
-          "before": 25,
-          "after": 25,
+          "before": 26,
+          "after": 26,
           "passed": true
         }
       ],
       "glCheckpoints": [
         {
           "name": "actual-map-complete",
+          "error": 0
+        },
+        {
+          "name": "borrowed-poisoned-state-cleanup",
           "error": 0
         },
         {
@@ -775,7 +891,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 0,
+        "orderBytes": 0,
+        "draws": 0
+      }
     },
     {
       "mode": "opaque",
@@ -785,6 +906,7 @@
       "width": 1280,
       "height": 960,
       "differentBytes": 0,
+      "cohortKey": null,
       "physicalPixels": 454529,
       "textPixels": 1604,
       "iconPixels": 900,
@@ -838,7 +960,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 0,
+        "orderBytes": 0,
+        "draws": 0
+      }
     },
     {
       "mode": "fractional",
@@ -848,8 +975,9 @@
       "width": 1280,
       "height": 960,
       "differentBytes": 0,
-      "physicalPixels": 587974,
-      "textPixels": 1673,
+      "cohortKey": "architecture-bsp/[null,[[\"[\\\"phase\\\",\\\"map-phase\\\",1]\",\"3d\",[10,60],0,0,[0,0,0]],[\"[\\\"phase\\\",\\\"map-phase\\\",2]\",\"3d\",[10,60],0,0,[0,0,0]]]]",
+      "physicalPixels": 237494,
+      "textPixels": 2056,
       "iconPixels": 900,
       "native": [
         "native-label",
@@ -867,6 +995,7 @@
             }
           ],
           "drawTargets": [
+            1,
             1
           ],
           "entryTarget": null,
@@ -901,7 +1030,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 1,
+        "orderBytes": 48,
+        "draws": 21
+      }
     },
     {
       "mode": "fractional",
@@ -911,8 +1045,9 @@
       "width": 1280,
       "height": 960,
       "differentBytes": 0,
-      "physicalPixels": 390736,
-      "textPixels": 1677,
+      "cohortKey": "architecture-bsp/[null,[[\"[\\\"phase\\\",\\\"map-phase\\\",1]\",\"3d\",[10,60],0,0,[0,0,0]],[\"[\\\"phase\\\",\\\"map-phase\\\",2]\",\"3d\",[10,60],0,0,[0,0,0]]]]",
+      "physicalPixels": 288611,
+      "textPixels": 2031,
       "iconPixels": 900,
       "native": [
         "native-label",
@@ -930,6 +1065,7 @@
             }
           ],
           "drawTargets": [
+            1,
             1
           ],
           "entryTarget": null,
@@ -964,7 +1100,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 1,
+        "orderBytes": 48,
+        "draws": 21
+      }
     },
     {
       "mode": "fractional",
@@ -974,8 +1115,9 @@
       "width": 1280,
       "height": 960,
       "differentBytes": 0,
-      "physicalPixels": 324068,
-      "textPixels": 1604,
+      "cohortKey": "architecture-bsp/[null,[[\"[\\\"phase\\\",\\\"map-phase\\\",1]\",\"3d\",[10,60],0,0,[0,0,0]],[\"[\\\"phase\\\",\\\"map-phase\\\",2]\",\"3d\",[10,60],0,0,[0,0,0]]]]",
+      "physicalPixels": 284919,
+      "textPixels": 2122,
       "iconPixels": 900,
       "native": [
         "native-label",
@@ -993,6 +1135,7 @@
             }
           ],
           "drawTargets": [
+            1,
             1
           ],
           "entryTarget": null,
@@ -1027,7 +1170,12 @@
         }
       ],
       "errors": [],
-      "glError": 0
+      "glError": 0,
+      "orderedWitness": {
+        "geometryUploads": 1,
+        "orderBytes": 48,
+        "draws": 21
+      }
     }
   ]
 }

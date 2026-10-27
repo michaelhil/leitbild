@@ -4,43 +4,67 @@
     "sha256": "02a09325fc1dc8865440637fbe053558a891f9c7d604e2f028e86ee375a6038b"
   },
   "control-dpr1.json": {
-    "bytes": 103994,
-    "sha256": "e5e351835d4f6dd928df637e49255a7dde1ee605dbc41920fd89067bd9401608"
+    "bytes": 107388,
+    "sha256": "0db6c67a12a80a654c2ebb9a8ac57a677fcde6c5f089dca62998311de7af995d"
   },
   "summary.json": {
-    "bytes": 22360,
-    "sha256": "c5c44fc30bae2c56f3b10c732851db5dbc8dc5b0c6e3ba74c14c59d01b17ad4d"
+    "bytes": 26638,
+    "sha256": "af0bbe4fb1945d6f1f660bbb1fadcd737aed8a47ab542302657bd3ddc6e60136"
   },
   "executed-app.js.gz": {
-    "bytes": 550757,
-    "sha256": "85823756daba04d8516a3dd16d60bb8155583e416a7f1980be1dcefa193e9eae"
+    "bytes": 551253,
+    "sha256": "7872f3ab37e47ebeaad80252d11bf46e3cefe9c0c21924ac991bc46a4a3b9d42"
   },
   "candidate-opaque-52-31-dpr1.png": {
     "bytes": 26643,
     "sha256": "02a09325fc1dc8865440637fbe053558a891f9c7d604e2f028e86ee375a6038b"
   },
   "candidate-fractional-52-31-dpr1.png": {
-    "bytes": 22055,
-    "sha256": "7b36d95df0d5cdea7c54cec414362bd1f8ebd819d052251433a96f5bcd680a94"
+    "bytes": 29052,
+    "sha256": "842a0e43e3b4793e0540bc606d94ef2388ac4ff5fba920514f1aee13a790f50b"
   },
   "candidate-dpr2.json": {
-    "bytes": 107553,
-    "sha256": "7a7cf4b5313295de3654b6b5b1129c7f1f3e06c909b8053e62d77e86bd054ffd"
+    "bytes": 109929,
+    "sha256": "923c6d66a414f3b35946ad044068ecd46836cbabdcbf1d693a428a3ba7a83724"
   },
   "candidate-dpr1.json": {
-    "bytes": 107746,
-    "sha256": "cd4860398d6b93bc4f344abe92d563e2a637f8399bd0046a0b8ea39dc9d3d513"
+    "bytes": 110126,
+    "sha256": "0868f59e305541641d7ad38ca965a30e933babd570179fa22538019be109de2c"
   },
   "README.md": {
-    "bytes": 4805,
-    "sha256": "10222b228d93b3c6c12744e3d2a950fd56355e012c51afac2e60175a7ff8d577"
+    "bytes": 5917,
+    "sha256": "f2b632915495112dc51e72df11b0ddb0ebebaca4fe596dc620032b3a16bfabbc"
   },
   "reference-fractional-52-31-dpr1.png": {
-    "bytes": 22055,
-    "sha256": "7b36d95df0d5cdea7c54cec414362bd1f8ebd819d052251433a96f5bcd680a94"
+    "bytes": 29052,
+    "sha256": "842a0e43e3b4793e0540bc606d94ef2388ac4ff5fba920514f1aee13a790f50b"
   },
   "control-dpr2.json": {
-    "bytes": 104058,
-    "sha256": "800887f381c8d77c922619cbfa63a50c0ebb993052b558445a72e69562a11c6f"
+    "bytes": 107448,
+    "sha256": "456fe5709cc8a123afb05290d0c54e595f691cb0e367f05cefbea7c200fddc9e"
+  },
+  "superseded-no-ordered-cohort/executed-app.js.gz": {
+    "bytes": 550757,
+    "sha256": "85823756daba04d8516a3dd16d60bb8155583e416a7f1980be1dcefa193e9eae"
+  },
+  "superseded-no-ordered-cohort/control-dpr1.json.gz": {
+    "bytes": 2041,
+    "sha256": "145f9e2dc54074e379e297c6eb4a85ea81f1aac817b0d713450b44eee9b4b9bb"
+  },
+  "superseded-no-ordered-cohort/control-dpr2.json.gz": {
+    "bytes": 2081,
+    "sha256": "d7c185bcb99f2469c9ea6062b6f056e3e7cdb00c4311ffb935b1e5fd34bba2f9"
+  },
+  "superseded-no-ordered-cohort/candidate-dpr2.json.gz": {
+    "bytes": 2625,
+    "sha256": "8799aee3a655021351333105f24ab33396dc56f7f48001f13b478386dff43185"
+  },
+  "superseded-no-ordered-cohort/summary.json.gz": {
+    "bytes": 2201,
+    "sha256": "f6b9341e18b001bcf23eac0fe9b39443822d31b0aa411fe146245373cb6f50ac"
+  },
+  "superseded-no-ordered-cohort/candidate-dpr1.json.gz": {
+    "bytes": 2677,
+    "sha256": "e4adf7995b47de6fd157a72224161459cb3fe7fe8a8cee74bc4d031e334a8d74"
   }
 }
