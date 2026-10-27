@@ -4,7 +4,7 @@
   import { explorerScopeAncestors, explorerScopeBranches, type ExplorerScopeBranch, type ExplorerScopeChoice } from './explorer-model.ts'
 
   let { title, path = title, choices, scopeKey, levels, layers = [], view, status, suspended = false, floorGroups = [], mixedSettings = [], onfloorchange,
-    onscope, onviewchange, onfit, onhome, onoverview, onfind, onclose,
+    onscope, onviewchange, onfit, onhome, onoverview, onfind, onclose, onretry, retryLabel = 'Retry physical layout',
   }: {
     title: string; path?: string; choices: ReadonlyArray<ExplorerScopeChoice>; scopeKey: string | null
     levels: ReadonlyArray<PhysicalLayoutLevel>; view: PhysicalLayoutView; status: string; suspended?: boolean
@@ -14,6 +14,8 @@
     onscope: (key: string | null) => void; onviewchange: (view: PhysicalLayoutView, patch?: Partial<PhysicalLayoutView>) => void
     onfit: () => void; onhome: () => void; onoverview?: (() => void) | undefined; onfind: () => void
     onclose?: (() => void) | undefined
+    onretry?: (() => void) | undefined
+    retryLabel?: string
   } = $props()
   let scopeOpen = $state(false)
   let viewOpen = $state(false)
@@ -83,7 +85,7 @@
       <button type="button" onclick={() => { viewOpen = false; onhome() }}>Home · source view</button>{#if onoverview}<button type="button" onclick={onoverview}>Owner overview</button>{/if}
     </section>
   {/if}
-  <p class="evidence" role="status">{suspended ? 'Inspection suspended while choosing an operational target.' : status}{view.live ? '' : ' · Status layer off'}{view.mode === '3d' && view.levelId === 'all' && levels.length > 0 ? ' · Choose a floor to inspect the interior.' : ''}</p>
+  <p class="evidence" role="status">{#if onretry}<button type="button" aria-label={retryLabel} disabled={suspended} onclick={onretry}>Retry</button>{/if}{suspended ? 'Inspection suspended while choosing an operational target.' : status}{view.live ? '' : ' · Status layer off'}{view.mode === '3d' && view.levelId === 'all' && levels.length > 0 ? ' · Choose a floor to inspect the interior.' : ''}</p>
 </section>
 <style>
   .explorer-controls { color: var(--text); font: inherit; font-size: 12px; }
@@ -100,6 +102,7 @@
   .area-search { display: grid; gap: 4px; }.area-search input { min-width: 0; min-height: 44px; box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--panel); font: inherit; }.area-help { margin: 2px 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
   .area-tree, .area-tree ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }.area-tree ul { margin-top: 5px; margin-left: 12px; padding-left: 5px; border-left: 1px solid var(--border); }.scope-node { display: flex; align-items: stretch; gap: 4px; }.expand-area, .leaf-spacer { flex: 0 0 44px; width: 44px; }.expand-area { padding: 0; font-size: 18px; }.choose-area { flex: 1; min-width: 0; display: grid; gap: 3px; text-align: left; }.choose-area strong { font-weight: 600; overflow-wrap: anywhere; }.choose-area small { font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
   .settings label { display: flex; align-items: center; gap: 8px; min-height: 44px; }.settings input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }.settings .separation { display: grid; grid-template-columns: 1fr auto; }.separation input { grid-column: 1 / -1; width: 100%; min-height: 44px; box-sizing: border-box; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font: inherit; }
+  .evidence button { margin-right: 8px; }
   .evidence { margin: 5px 0 0; color: var(--muted); background: var(--panel); border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.4; }
   @container (max-width: 440px) { .modes button { min-width: 48px; }.action-row { flex: 1 0 auto; }.scope-row { flex-basis: 100%; }.primary-floor { flex-basis: 100%; } }
 </style>

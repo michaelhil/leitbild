@@ -27,6 +27,7 @@
   import { physicalLayoutPalette } from './palette.ts'
   import { drawPhysicalPlanAnnotations, visiblePhysicalPlanAnnotations } from './plan-annotations.ts'
   import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
+  import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
   let { controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
@@ -398,6 +399,13 @@
       : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
   const additionalLayerStatus = $derived((focusedId === null ? scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) : focused ? [focused] : []).map(physicalLayerPreparationText).filter((text): text is string => text !== null).join(' · '))
   const statusText = $derived([baseStatusText, additionalLayerStatus].filter(Boolean).join(' · '))
+  const retryableLayouts = $derived(retryablePhysicalLayouts(scenes, focusedId, focusedGroupId))
+  const retryLabel = $derived(`Retry physical layout: ${retryableLayouts.map(id => scenes.find(scene => scene.descriptor.id === id)?.descriptor.label ?? id).join(', ')}`)
+  const retryFailedLayouts = (): void => {
+    if (suspended) return
+    for (const id of retryableLayouts) controller?.retry(id)
+  }
+
   const chooseScope = (key: string | null, chosenLevel?: string): void => {
     if (suspended) return
     closeInspection(); hover = null; componentsOpen = false; componentScope = null; focusLocations = null; floorChoice = null; scopeFloorChoice = null; pendingFocus = null; pendingCameraFocus = null
@@ -609,7 +617,7 @@
   <canvas class="layout-plan-annotations" bind:this={draftingCanvas} aria-hidden="true"></canvas>
   {#if scenes.length > 0 && focused !== null}
     {#if controlsOpen}<div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
-      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended}
+      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}
