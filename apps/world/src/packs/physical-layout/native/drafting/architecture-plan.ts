@@ -44,7 +44,7 @@ export const compilePlanDrawing=(source:Source,scene:PackPhysicalScene):Physical
     const d=parameters(source,e),w=writer(out,e)
     if(e.kind==='pavement'&&e.surface){for(const polygon of e.surface){const commands=polygon.flatMap(loop=>{const p=loop.map(v=>[v[0]-source.origin[0],v[1]-source.origin[1]]as V2);return[['M',...p[0]!],...p.slice(1).map(point=>['L',...point]),['Z']]as Command[]});createPlanWriter(out,membership(e)).path(commands,{fill:'pavement',fillRule:'evenodd',stroke:'muted',width:.045})}}
     else if(e.kind==='fence'||e.kind==='conductor'){if(e.path)createPlanWriter(out,membership(e)).path(e.path.map((p,i)=>[i?'L':'M',p[0]-source.origin[0],p[1]-source.origin[1]]as Command),{stroke:e.kind==='fence'?'muted':'crane',width:.06,...(e.kind==='fence'?{dash:[.2,.2]}:{})})}
-    else if(e.kind==='equipment')drawEquipmentPlan(out,membership(e),e.equipmentKind!,d.length,d.width,place(e),e.pose.yaw*180/Math.PI)
+    else if(e.kind==='equipment')drawEquipmentPlan(out,membership(e),e.equipmentKind!,d.length,d.width,place(e),e.pose.yaw*180/Math.PI,e.foundation)
     else if(e.kind==='context')w.rect(0,0,d.length,d.width,{fill:e.material??'ground',stroke:'muted',width:.035})
   }
   // Grid axes and chained dimensions refer to actual column/space authorities.
@@ -72,7 +72,7 @@ export const compilePlanDrawing=(source:Source,scene:PackPhysicalScene):Physical
     if(e.kind==='opening'){
       if(source.planIntent?.projectedOpenings.some(o=>o.elementId===e.id&&o.levelIds.includes(floor))){w.rect(0,0,d.length,d.width,{fill:'paper',stroke:'waterbox',width:.045});for(let x=1.4;x<d.length;x+=1.4)w.line(x,0,x,d.width,{stroke:'equipment-line',width:.085});w.line(0,d.width*.25,d.length,d.width*.25,{stroke:'waterbox',width:.045});w.line(0,d.width*.75,d.length,d.width*.75,{stroke:'waterbox',width:.045})}continue
     }
-    if(e.kind==='equipment'){drawEquipmentPlan(out,membership(e),e.equipmentKind!,d.length,d.width,place(e),pose.yaw*180/Math.PI);continue}
+    if(e.kind==='equipment'){drawEquipmentPlan(out,membership(e),e.equipmentKind!,d.length,d.width,place(e),pose.yaw*180/Math.PI,e.foundation);continue}
     if(e.planSymbol==='bearing'){w.rect(0,0,d.length,d.width,S.plinth,.09);w.rect(d.length*.175,d.width*.167,d.length*.65,d.width*.666,S.bearing,.12);w.line(d.length*.225,d.width/2,d.length*.775,d.width/2,S.center);continue}
     if(e.kind==='door'){
       const angle=e.door?.swing??Math.PI/2,r=d.length,end:V2=[r*Math.cos(angle),r*Math.sin(angle)],segments=Math.ceil(Math.abs(angle)/(Math.PI/2))

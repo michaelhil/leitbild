@@ -1,3 +1,4 @@
+import {restorePwrFoundations} from './pwr-foundations.ts'
 import unitSource from '../pwr-full-unit-architecture.source.json'
 import unitBindings from '../pwr-full-unit-architecture.bindings.json'
 import unitCoverage from '../pwr-full-unit-architecture.coverage.json'
@@ -9,7 +10,8 @@ import { physicalSourceSchema, parameters, type Source } from '../native/draftin
 /** Explicit architectural drawing intent over the retained physical facts.
  * Coordinates are authored study assumptions; no OEM/access qualification. */
 export const createPwrDraftingUnitArtifacts=()=>{
- const source=physicalSourceSchema.parse(structuredClone(unitSource))
+ const source=physicalSourceSchema.parse({...structuredClone(unitSource),northAxis:'negative-y'})
+ restorePwrFoundations(source)
  source.layers!.push({id:'plan-grid',label:'Structural grid',defaultVisible:true})
  source.layers!.find(layer=>layer.id==='plan-allowances')!.defaultVisible=true
  source.planIntent={dimensionUnit:'mm',floorJoints:source.elements.filter(e=>e.kind==='slab'&&e.id!=='hatch-cover').map(e=>({elementId:e.id,spacing:[5.5,6]})),grids:[{id:'turbine-hall',buildingId:'building/turbine-hall',spaceId:'space/turbine-hall',levelIds:['lower','operating'],bubbleOffset:2.7,dimensionOffset:1.4,overallOffset:5.4,axes:[...Array.from({length:9},(_,i)=>({id:`axis/${i+1}`,label:String(i+1),axis:'x' as const,elementId:`column/${i}/0.4`,fraction:.5})),{id:'axis/A',label:'A',axis:'y',elementId:'column/0/0.4',fraction:.5},{id:'axis/B',label:'B',axis:'y',elementId:'column/0/36.4',fraction:.5}]}],contexts:[{elementId:'stair/main',levelIds:['operating'],depiction:'projection'},{elementId:'building/feedwater-annex',levelIds:['operating'],depiction:'below'},...source.elements.filter(e=>e.kind==='equipment'&&e.equipmentKind==='lp').map(e=>({elementId:e.id,levelIds:['lower'],depiction:'above' as const})),...source.elements.filter(e=>e.id.startsWith('structure/runway/')||e.id.startsWith('structure/crane/bridge-')||e.id==='structure/crane/trolley').map(e=>({elementId:e.id,levelIds:['operating'],depiction:'above' as const}))],projectedOpenings:source.elements.filter(e=>e.kind==='opening'&&e.id.startsWith('opening/wall/hall-north/W-')).map(e=>({elementId:e.id,levelIds:['operating']})),strokes:[{elementId:'structure/shaftline',levelIds:['operating'],width:.3,material:'equipment-line'}],labelPositions:[{annotationId:'annotation/access-operating',anchor:[46,32.9]},{annotationId:'annotation/access-lower',anchor:[46,32.9]},{annotationId:'annotation/withdrawal',anchor:[77.7,24.6]},...['msr-1','msr-2','stop-valve','cp-a','cp-b','mfw-a','mfw-b'].map(id=>({annotationId:`annotation/label/${id}`,height:.65}))]}
@@ -32,4 +34,4 @@ export const createPwrDraftingUnitArtifacts=()=>{
  for(const annotation of source.planAnnotations)if(annotation.kind==='hatch'){if(annotation.id==='annotation/laydown')annotation.label='CASING / ROTOR LAYDOWN';if(annotation.id==='annotation/withdrawal')annotation.label='ROTOR WITHDRAWAL'}
  return{source:physicalSourceSchema.parse(source),bindings:structuredClone(unitBindings),coverage:structuredClone(unitCoverage)}
 }
-export const createPwrDraftingCampusArtifacts=()=>({source:physicalSourceSchema.parse(structuredClone(campusSource)),bindings:structuredClone(campusBindings),coverage:structuredClone(campusCoverage)})
+export const createPwrDraftingCampusArtifacts=()=>({source:physicalSourceSchema.parse({...structuredClone(campusSource),northAxis:'positive-y'}),bindings:structuredClone(campusBindings),coverage:structuredClone(campusCoverage)})

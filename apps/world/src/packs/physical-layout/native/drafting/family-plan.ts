@@ -1,9 +1,11 @@
 import { createPlanWriter, planStyles as S, type Membership, type V2 } from './primitives.ts'
 import type { PhysicalPlanPrimitive } from '../../../../core/packs/plan-drawing.ts'
+import type { Foundation } from './foundation.ts'
 
 /** Reusable plan symbols, derived from each occurrence's dimensions. These are
  * drawing representations, not extra physical parts or process components. */
-export const drawEquipmentPlan = (output: PhysicalPlanPrimitive[], member: Membership, family: string, width: number, height: number, point: (p:V2)=>V2, rotation: number): void => {
+export const drawEquipmentPlan = (output: PhysicalPlanPrimitive[], member: Membership, family: string, width: number, height: number, point: (p:V2)=>V2, rotation: number, foundation?:Foundation): void => {
+  const begin=output.length
   const nominal:Record<string,V2>={hp:[7,4.8],lp:[9,11.2],generator:[12.5,6],exciter:[4,3.2],msr:[7.4,3],'stop-valve':[1.8,2.1],condenser:[9,15.8],'feed-pump':[12,2.7],'condensate-pump':[5.2,2.6]}
   const [w,h]=nominal[family]??[width,height], originalPoint=point
   point=p=>originalPoint([p[0]*width/w,p[1]*height/h])
@@ -61,5 +63,12 @@ export const drawEquipmentPlan = (output: PhysicalPlanPrimitive[], member: Membe
     // An explicit generic equipment-envelope representation, with its terminals
     // and centreline; never a fabricated detailed machinery family.
     R(0,0,w,h,S.equipment,Math.min(w,h)*.06);R(w*.15,h*.15,w*.7,h*.7,S.fine);L(0,h/2,w,h/2,S.center)
+  }
+  if(foundation){
+    const body=output.splice(begin),draw=createPlanWriter(output,{...member,id:member.id+'/foundation'},originalPoint,rotation),[x,y]=foundation.offset
+    const commands:import('./primitives.ts').Command[]=[['M',x,y],['L',x+foundation.length,y],['L',x+foundation.length,y+foundation.width],['L',x,y+foundation.width],['Z']]
+    for(const h of foundation.holes??[])commands.push(['M',x+h.x,y+h.y],['L',x+h.x+h.length,y+h.y],['L',x+h.x+h.length,y+h.y+h.width],['L',x+h.x,y+h.y+h.width],['Z'])
+    draw.path(commands,{...S.plinth,fillRule:'evenodd'})
+    output.push(...body.filter(p=>p.kind==='text'||p.fill!=='plinth'))
   }
 }

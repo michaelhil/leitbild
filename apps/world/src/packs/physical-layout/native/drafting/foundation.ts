@@ -8,7 +8,7 @@ export interface Foundation {
   readonly width: number
   readonly height: number
   /** Openings are relative to the foundation origin, not the equipment envelope. */
-  readonly holes?: ReadonlyArray<{ readonly x: number; readonly y: number; readonly length: number; readonly width: number }>
+  readonly holes?: ReadonlyArray<{ readonly x: number; readonly y: number; readonly length: number; readonly width: number }> | undefined
 }
 type FoundationElement = Element & { readonly foundation?: Foundation }
 type Point = readonly [number, number]

@@ -30,6 +30,8 @@ export const physicalExplorerRelatedMemberSchema = physicalRelatedMemberRequirem
 }).strict()
 export const physicalExplorerRequirementsSchema = z.object({
   ownerRole: id, ownerPackId: id,
+  /** Explicit new Designs may cover graph links as well as owner components. */
+  includeGraphConnections: z.literal(true).optional(),
   placement: z.object({ anchor: physicalAnchorSchema, bearing: z.number().finite().min(-360).max(360), subjectId: id }).strict().optional(),
   relatedMembers: z.array(physicalExplorerRelatedMemberSchema).max(64),
   connections: z.array(z.object({ system: endpoint, network: endpoint }).strict()).max(64),

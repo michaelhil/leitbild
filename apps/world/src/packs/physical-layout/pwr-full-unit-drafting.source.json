@@ -398,7 +398,16 @@
       "spaceIds": [
         "space/turbine-hall"
       ],
-      "disposition": "installed"
+      "disposition": "installed",
+      "foundation": {
+        "offset": [
+          -0.3,
+          0
+        ],
+        "length": 7.6,
+        "width": 4.8,
+        "height": 0.3
+      }
     },
     {
       "id": "tg-lp-1",
@@ -419,7 +428,24 @@
       "spaceIds": [
         "space/turbine-hall"
       ],
-      "disposition": "installed"
+      "disposition": "installed",
+      "foundation": {
+        "offset": [
+          -0.35,
+          0
+        ],
+        "length": 9.7,
+        "width": 11.2,
+        "height": 0.3,
+        "holes": [
+          {
+            "x": 1.6500000000000008,
+            "y": 1.299999999999999,
+            "length": 6.4,
+            "width": 8.600000000000001
+          }
+        ]
+      }
     },
     {
       "id": "tg-lp-2",
@@ -440,7 +466,24 @@
       "spaceIds": [
         "space/turbine-hall"
       ],
-      "disposition": "installed"
+      "disposition": "installed",
+      "foundation": {
+        "offset": [
+          -0.35,
+          0
+        ],
+        "length": 9.7,
+        "width": 11.2,
+        "height": 0.3,
+        "holes": [
+          {
+            "x": 1.6499999999999972,
+            "y": 1.299999999999999,
+            "length": 6.4,
+            "width": 8.600000000000001
+          }
+        ]
+      }
     },
     {
       "id": "tg-lp-3",
@@ -461,7 +504,24 @@
       "spaceIds": [
         "space/turbine-hall"
       ],
-      "disposition": "installed"
+      "disposition": "installed",
+      "foundation": {
+        "offset": [
+          -0.35,
+          0
+        ],
+        "length": 9.7,
+        "width": 11.2,
+        "height": 0.3,
+        "holes": [
+          {
+            "x": 1.6499999999999972,
+            "y": 1.299999999999999,
+            "length": 6.4,
+            "width": 8.600000000000001
+          }
+        ]
+      }
     },
     {
       "id": "tg-generator",
@@ -482,7 +542,16 @@
       "spaceIds": [
         "space/turbine-hall"
       ],
-      "disposition": "installed"
+      "disposition": "installed",
+      "foundation": {
+        "offset": [
+          -0.25,
+          -0.4
+        ],
+        "length": 13,
+        "width": 8,
+        "height": 0.3
+      }
     },
     {
       "id": "tg-exciter",
@@ -503,7 +572,16 @@
       "spaceIds": [
         "space/turbine-hall"
       ],
-      "disposition": "installed"
+      "disposition": "installed",
+      "foundation": {
+        "offset": [
+          -0.2,
+          0
+        ],
+        "length": 4.4,
+        "width": 3.2,
+        "height": 0.3
+      }
     },
     {
       "id": "msr-1",
@@ -25812,6 +25890,7 @@
       }
     }
   ],
+  "northAxis": "negative-y",
   "planIntent": {
     "dimensionUnit": "mm",
     "floorJoints": [

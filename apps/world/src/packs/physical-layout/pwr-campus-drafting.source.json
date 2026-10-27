@@ -24191,5 +24191,6 @@
       "label": "Illustrative work areas",
       "defaultVisible": false
     }
-  ]
+  ],
+  "northAxis": "positive-y"
 }

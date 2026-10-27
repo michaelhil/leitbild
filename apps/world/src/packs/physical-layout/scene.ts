@@ -33,7 +33,9 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
   const locationValid = attached(owner, data.placement.anchor) && invalidMember === undefined && dependencyFailure === null
   let overviewFootprints = footprints.get(object)
   if (overviewFootprints === undefined && 'requirements' in data) {
-    overviewFootprints = 'physicalApplicability' in data ? explorerBuildingFootprints(data.source) : physicalBuildingFootprints(data.source)
+    const authored = 'physicalApplicability' in data ? explorerBuildingFootprints(data.source) : physicalBuildingFootprints(data.source)
+    overviewFootprints = 'northAxis' in data.source && data.source.northAxis === 'negative-y'
+      ? authored.map(footprint => ({ ...footprint, ring: footprint.ring.map(([x,y]):[number,number]=>[x,-y]) })) : authored
     footprints.set(object, overviewFootprints)
   }
   const inspectionFeatureMetres = physicalInspectionFeatureMetres(data.source)
