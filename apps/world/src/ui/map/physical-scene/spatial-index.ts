@@ -1,5 +1,5 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
-import { rayBox, type Vector3 } from './math.ts'
+import { rayBoxCoordinates, type Vector3 } from './math.ts'
 
 /** Packed transferable hierarchy; SAH determines leaves, never a feature/object admission cap. */
 export interface PhysicalSpatialIndex { readonly bounds: Float64Array; readonly children: Int32Array; readonly ranges: Uint32Array; readonly order: Uint32Array }
@@ -66,23 +66,26 @@ const createPhysicalOverlapSpatialIndex = (values: ReadonlyArray<PhysicalSceneBo
 }
 export const physicalSpatialBytes = (index: PhysicalSpatialIndex): number => index.bounds.byteLength + index.children.byteLength + index.ranges.byteLength + index.order.byteLength
 const distanceToNode = (index: PhysicalSpatialIndex, node: number, origin: Vector3, direction: Vector3): number | null => {
-  const at = node * 6, min = index.bounds.subarray(at, at + 3), max = index.bounds.subarray(at + 3, at + 6), magnitude = Math.max(1, ...min.map(Math.abs), ...max.map(Math.abs)), margin = magnitude * Number.EPSILON * 8
-  return rayBox(origin, direction, { min: [min[0]! - margin, min[1]! - margin, min[2]! - margin], max: [max[0]! + margin, max[1]! + margin, max[2]! + margin] })
+  const at = node * 6, minX = index.bounds[at]!, minY = index.bounds[at + 1]!, minZ = index.bounds[at + 2]!, maxX = index.bounds[at + 3]!, maxY = index.bounds[at + 4]!, maxZ = index.bounds[at + 5]!
+  const magnitude = Math.max(1, Math.abs(minX), Math.abs(minY), Math.abs(minZ), Math.abs(maxX), Math.abs(maxY), Math.abs(maxZ)), margin = magnitude * Number.EPSILON * 8
+  return rayBoxCoordinates(origin, direction, minX - margin, minY - margin, minZ - margin, maxX + margin, maxY + margin, maxZ + margin)
 }
 export const visitPhysicalSpatialRay = (index: PhysicalSpatialIndex, origin: Vector3, direction: Vector3, nearest: () => number, visit: (primitive: number) => void): void => {
   if (!index.order.length) return
-  const pending = [0]
+  // The immutable child distance already paid for sibling ordering remains
+  // exact when that node is popped. Re-evaluate only the caller's nearest bound.
+  const pending = [0], distances = [distanceToNode(index, 0, origin, direction)]
   while (pending.length) {
-    const node = pending.pop()!, distance = distanceToNode(index, node, origin, direction)
+    const node = pending.pop()!, distance = distances.pop() as number | null
     if (distance === null || distance > nearest()) continue
     const left = index.children[node * 2]!, right = index.children[node * 2 + 1]!
     if (left < 0) { const first = index.ranges[node * 2]!, count = index.ranges[node * 2 + 1]!; for (let offset = first; offset < first + count; offset++) visit(index.order[offset]!) }
     else {
       const a = distanceToNode(index, left, origin, direction), b = distanceToNode(index, right, origin, direction)
-      if (a === null) { if (b !== null) pending.push(right) }
-      else if (b === null) pending.push(left)
-      else if (a <= b) pending.push(right, left)
-      else pending.push(left, right)
+      if (a === null) { if (b !== null) { pending.push(right); distances.push(b) } }
+      else if (b === null) { pending.push(left); distances.push(a) }
+      else if (a <= b) { pending.push(right, left); distances.push(b, a) }
+      else { pending.push(left, right); distances.push(a, b) }
     }
   }
 }

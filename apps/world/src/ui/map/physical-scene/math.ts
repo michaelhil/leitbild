@@ -45,25 +45,35 @@ export const localMercatorMatrix = (anchor: readonly [number, number], bearing: 
 
 export const boundsCorners = (bounds: PhysicalSceneBounds): Vector3[] => Array.from({ length: 8 }, (_, index) => [bounds[index & 1 ? 'max' : 'min'][0], bounds[index & 2 ? 'max' : 'min'][1], bounds[index & 4 ? 'max' : 'min'][2]])
 
-export const rayBox = (origin: Vector3, direction: Vector3, bounds: PhysicalSceneBounds): number | null => {
+/** Scalar bounds keep the same axis order and parallel tolerance as rayBox. */
+export const rayBoxCoordinates = (origin: Vector3, direction: Vector3, minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): number | null => {
   let low = 0, high = Infinity
   for (let axis = 0; axis < 3; axis++) {
-    const d = direction[axis]!, o = origin[axis]!
-    if (Math.abs(d) < 1e-10) { if (o < bounds.min[axis]! || o > bounds.max[axis]!) return null; continue }
-    const a = (bounds.min[axis]! - o) / d, b = (bounds.max[axis]! - o) / d
+    const d = direction[axis]!, o = origin[axis]!, min = axis === 0 ? minX : axis === 1 ? minY : minZ, max = axis === 0 ? maxX : axis === 1 ? maxY : maxZ
+    if (Math.abs(d) < 1e-10) { if (o < min || o > max) return null; continue }
+    const a = (min - o) / d, b = (max - o) / d
     low = Math.max(low, Math.min(a, b)); high = Math.min(high, Math.max(a, b))
     if (low > high) return null
   }
   return low
 }
+export const rayBox = (origin: Vector3, direction: Vector3, bounds: PhysicalSceneBounds): number | null => rayBoxCoordinates(origin, direction, bounds.min[0], bounds.min[1], bounds.min[2], bounds.max[0], bounds.max[1], bounds.max[2])
 
-export const rayTriangle = (origin: Vector3, direction: Vector3, a: Vector3, b: Vector3, c: Vector3): number | null => {
-  const e1 = subtract(b, a), e2 = subtract(c, a), p = cross(direction, e2), determinant = dot(e1, p)
+/** One canonical Möller–Trumbore calculation. Keep the original subtraction,
+ * cross/dot arithmetic order and determinant/barycentric/distance predicates. */
+const rayTriangleCoordinates = (origin: Vector3, direction: Vector3, ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number): number | null => {
+  const e1x = bx - ax, e1y = by - ay, e1z = bz - az, e2x = cx - ax, e2y = cy - ay, e2z = cz - az
+  const px = direction[1] * e2z - direction[2] * e2y, py = direction[2] * e2x - direction[0] * e2z, pz = direction[0] * e2y - direction[1] * e2x
+  const determinant = e1x * px + e1y * py + e1z * pz
   if (Math.abs(determinant) < 1e-9) return null
-  const reciprocal = 1 / determinant, t = subtract(origin, a), u = dot(t, p) * reciprocal
+  const reciprocal = 1 / determinant, tx = origin[0] - ax, ty = origin[1] - ay, tz = origin[2] - az, u = (tx * px + ty * py + tz * pz) * reciprocal
   if (u < 0 || u > 1) return null
-  const q = cross(t, e1), v = dot(direction, q) * reciprocal
+  const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x, v = (direction[0] * qx + direction[1] * qy + direction[2] * qz) * reciprocal
   if (v < 0 || u + v > 1) return null
-  const distance = dot(e2, q) * reciprocal
+  const distance = (e2x * qx + e2y * qy + e2z * qz) * reciprocal
   return distance >= 0 ? distance : null
 }
+export const rayTriangle = (origin: Vector3, direction: Vector3, a: Vector3, b: Vector3, c: Vector3): number | null => rayTriangleCoordinates(origin, direction, a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2])
+/** Prepared triangles use three seven-value vertex records. Read their exact
+ * position attributes directly without allocating three temporary vectors. */
+export const rayTrianglePacked = (origin: Vector3, direction: Vector3, vertices: ArrayLike<number>, at: number): number | null => rayTriangleCoordinates(origin, direction, vertices[at]!, vertices[at + 1]!, vertices[at + 2]!, vertices[at + 7]!, vertices[at + 8]!, vertices[at + 9]!, vertices[at + 14]!, vertices[at + 15]!, vertices[at + 16]!)

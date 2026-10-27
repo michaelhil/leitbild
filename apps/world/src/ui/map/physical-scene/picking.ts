@@ -1,6 +1,6 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalMesh } from './geometry.ts'
-import { inverse, normalize, rayBox, rayTriangle, subtract, transform, type Vector3 } from './math.ts'
+import { inverse, normalize, rayBox, rayTrianglePacked, subtract, transform, type Vector3 } from './math.ts'
 import { createPhysicalSpatialIndex, visitPhysicalSpatialRay, type PhysicalSpatialIndex } from './spatial-index.ts'
 
 export interface PhysicalPickEntry { readonly sceneId: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly matrix: ArrayLike<number> }
@@ -9,14 +9,13 @@ export interface PhysicalPickAcceleration { readonly meshes: PhysicalSpatialInde
 const meshIndices = new WeakMap<PhysicalMesh, PhysicalMeshAcceleration>()
 const sceneIndices = new WeakMap<ReadonlyArray<PhysicalMesh>, PhysicalPickAcceleration>()
 const inverses = new WeakMap<ArrayLike<number>, Float64Array>()
-const vertex = (mesh: PhysicalMesh, at: number): Vector3 => [mesh.vertices[at]!, mesh.vertices[at + 1]!, mesh.vertices[at + 2]!]
 export const preparePhysicalMeshAcceleration = (mesh: PhysicalMesh): PhysicalMeshAcceleration => {
   const cached = meshIndices.get(mesh)
   if (cached) return cached
   const bounds: PhysicalSceneBounds[] = []
   for (let at = 0; at < mesh.vertices.length; at += 21) {
-    const a = vertex(mesh, at), b = vertex(mesh, at + 7), c = vertex(mesh, at + 14)
-    bounds.push({ min: [Math.min(a[0], b[0], c[0]), Math.min(a[1], b[1], c[1]), Math.min(a[2], b[2], c[2])], max: [Math.max(a[0], b[0], c[0]), Math.max(a[1], b[1], c[1]), Math.max(a[2], b[2], c[2])] })
+    const values = mesh.vertices
+    bounds.push({ min: [Math.min(values[at]!, values[at + 7]!, values[at + 14]!), Math.min(values[at + 1]!, values[at + 8]!, values[at + 15]!), Math.min(values[at + 2]!, values[at + 9]!, values[at + 16]!)], max: [Math.max(values[at]!, values[at + 7]!, values[at + 14]!), Math.max(values[at + 1]!, values[at + 8]!, values[at + 15]!), Math.max(values[at + 2]!, values[at + 9]!, values[at + 16]!)] })
   }
   const result = { triangles: createPhysicalSpatialIndex(bounds) }; meshIndices.set(mesh, result); return result
 }
@@ -54,7 +53,7 @@ export const pickPhysicalMesh = (entries: ReadonlyArray<PhysicalPickEntry>, poin
       if (boundsDistance === null || boundsDistance > localNearest) continue
       let meshNearest = localNearest, triangleIndex = Infinity
       visitPhysicalSpatialRay(acceleration.triangles[meshIndex]!.triangles, local, direction, () => meshNearest, primitive => {
-        const at = primitive * 21, distance = rayTriangle(local, direction, vertex(mesh, at), vertex(mesh, at + 7), vertex(mesh, at + 14))
+        const at = primitive * 21, distance = rayTrianglePacked(local, direction, mesh.vertices, at)
         if (distance === null || distance > meshNearest || distance === meshNearest && at >= triangleIndex) return
         meshNearest = distance; triangleIndex = at
       })
