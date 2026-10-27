@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { physicalRouteIntersects, routePhysicalConnection, roundedPhysicalRoute, type PhysicalRouteRequest } from '../src/packs/physical-layout/native/routing/route.ts'
+import { physicalRouteIntersects, routePhysicalConnection, roundedPhysicalRoute, validatePhysicalConnectionRoute, type PhysicalRouteRequest } from '../src/packs/physical-layout/native/routing/route.ts'
 import { physicalRoutingSchema } from '../src/packs/physical-layout/native/routing/source.ts'
 
 const request: PhysicalRouteRequest = {
@@ -96,4 +96,15 @@ test('routing is stable under large source-origin translations and refuses non-u
   expect(result.points[0]).toEqual(shifted.from.point); expect(result.points.at(-1)).toEqual(shifted.to.point)
   expect(() => roundedPhysicalRoute(result.points, request.bendRadius, .001)).not.toThrow()
   for (const outward of [[2, 0, 0], [0, 0, 0], [Number.NaN, 0, 1]] as const) expect(() => routePhysicalConnection({ ...request, from: { ...request.from, outward } })).toThrow('unit outward')
+})
+
+test('retained solutions validate current constraints without searching or repairing a stale path', () => {
+  const route = routePhysicalConnection(request)
+  expect(validatePhysicalConnectionRoute(request, route.points)).toEqual({ length: route.length, bends: route.bends })
+  expect(() => validatePhysicalConnectionRoute({ ...request, from: { ...request.from, point: [1.1, 2, 2] } }, route.points)).toThrow('endpoints')
+  expect(() => validatePhysicalConnectionRoute({ ...request, from: { ...request.from, outward: [-1, 0, 0] } }, route.points)).toThrow('outward direction')
+  expect(() => validatePhysicalConnectionRoute({ ...request, via: [[2, 9, 2]] }, route.points)).toThrow('required straight-through waypoint')
+  expect(() => validatePhysicalConnectionRoute({ ...request, obstacles: [...request.obstacles, { id: 'new-cabinet', min: [.9, 1.9, 1.9], max: [1.2, 2.1, 2.1] }] }, route.points)).toThrow('obstacle clearance')
+  expect(() => validatePhysicalConnectionRoute({ ...request, bendRadius: 5 }, route.points)).toThrow('minimum bend radius')
+  expect(() => validatePhysicalConnectionRoute({ ...request, radius: .5 }, route.points)).toThrow('exceed its tube radius')
 })

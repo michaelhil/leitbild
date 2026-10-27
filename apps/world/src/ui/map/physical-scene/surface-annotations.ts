@@ -32,13 +32,14 @@ export const physicalSurfaceAnnotations = (scene: PackPhysicalScene, view: Physi
   if (view.mode !== '3d' || !scene.planAnnotations?.some(annotation => annotation.kind === 'hatch')) return meshes
   const decorations: PhysicalMesh[] = []
   for (const annotation of scene.planAnnotations) {
-    if (annotation.kind !== 'hatch' || view.levelId !== 'all' && !annotation.levelIds.includes(view.levelId)) continue
+    if (annotation.kind !== 'hatch' || view.levelId !== 'all' && !annotation.levelIds.includes(view.levelId) && !annotation.levelIds.includes('site')) continue
     const z = annotation.outline[0]![2]
     if (annotation.outline.some(point => point[2] !== z)) continue // A paper-only nonhorizontal annotation has no floor surface to decorate.
     const outline = annotation.outline.map(point => [point[0], point[1]] as const), indices = earcut(outline.flat(), undefined, 2)
     const minX = Math.min(...outline.map(point => point[0])), maxX = Math.max(...outline.map(point => point[0])), minY = Math.min(...outline.map(point => point[1])), maxY = Math.max(...outline.map(point => point[1]))
     for (const mesh of meshes) {
-      if (mesh.object.kind !== 'slab' && mesh.object.kind !== 'pavement' || mesh.levelId !== undefined && !annotation.levelIds.includes(mesh.levelId)) continue
+      if (mesh.object.kind !== 'slab' && mesh.object.kind !== 'pavement') continue
+      if (mesh.object.levelId === 'site' ? !annotation.levelIds.includes('site') : mesh.levelId !== undefined && !annotation.levelIds.includes(mesh.levelId)) continue
       if (mesh.bounds.min[0] >= maxX || mesh.bounds.max[0] <= minX || mesh.bounds.min[1] >= maxY || mesh.bounds.max[1] <= minY || mesh.bounds.min[2] > z || mesh.bounds.max[2] < z) continue
       if (!mesh.object.scopeIds?.some(id => annotation.scopeIds.includes(id))) continue
       const vertices: number[] = [], roles: string[] = []

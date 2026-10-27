@@ -50,3 +50,13 @@ test('illustrative colour composites against the actual floor material before li
   expect([...physicalMaterialColor(palette, 'surface/access/floor')]).toEqual(expected)
   expect(() => physicalMaterialColor(palette, 'surface/alarm/floor')).toThrow('Invalid physical surface decoration')
 })
+
+test('outdoor work surfaces remain independent of a selected indoor floor', () => {
+  const scene = source()
+  scene.objects = scene.objects.map(object => ({ ...object, levelId: 'site' }))
+  scene.planAnnotations = scene.planAnnotations!.map(annotation => ({ ...annotation, levelIds: ['site'] }))
+  const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'floor' }
+  const meshes = physicalSurfaceAnnotations(scene, view, buildVisibleMeshes(scene, view))
+  expect(meshes.some(mesh => mesh.annotation?.id === 'work-area')).toBe(true)
+  expect(meshes.filter(mesh => mesh.annotation).every(mesh => mesh.object.levelId === 'site' && mesh.offset[2] === 0)).toBe(true)
+})

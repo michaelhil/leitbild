@@ -64,6 +64,7 @@ export const validatePhysicalConnectionRoute = (request: PhysicalRouteRequest, a
   if (points.length < 2 || points.length !== accepted.length) throw Error(`Accepted route contains a zero-length segment: ${request.id}`)
   if (!same(points[0]!, from.point) || !same(points.at(-1)!, to.point)) throw Error(`Accepted route endpoints differ from current terminals: ${request.id}`)
   if (points.some(point => !inside(point, request.envelope))) throw Error(`Accepted route escapes its centreline envelope: ${request.id}`)
+  if (trims.some(value => value > 0) && request.bendRadius <= request.radius) throw Error(`A curved centreline bend radius must exceed its tube radius: ${request.id}`)
   const directions = points.slice(1).map((p, index) => unit(subtract(p, points[index]!))), lastDirection = scale(to.outward, -1)
   const alignmentScale = (index: number) => Math.max(1, ...points[index]!.map(Math.abs), ...points[index + 1]!.map(Math.abs)) / Math.min(1, distance(points[index]!, points[index + 1]!))
   if (!aligned(directions[0]!, from.outward, alignmentScale(0)) || !aligned(directions.at(-1)!, lastDirection, alignmentScale(directions.length - 1))) throw Error(`Accepted route violates a terminal outward direction: ${request.id}`)
