@@ -49,6 +49,14 @@ export const physicalPlanFrame = (points: ReadonlyArray<Point>) => {
   const determinant = frame.a * frame.d - frame.b * frame.c
   return Object.values(frame).every(Number.isFinite) && determinant !== 0 ? frame : null
 }
+/** Painter and glyph picking use exactly the same upright text transform. */
+export const physicalPlanTextFrame = (primitive: Extract<PhysicalPlanPrimitive, { kind: 'text' }>, frame: NonNullable<ReturnType<typeof physicalPlanFrame>>, scale = Math.sqrt(Math.abs(frame.a * frame.d - frame.b * frame.c))) => {
+  const { a, b, c, d, e, f } = frame, rotation = primitive.rotation * Math.PI / 180
+  let angle = Math.atan2(b * Math.cos(rotation) + d * Math.sin(rotation), a * Math.cos(rotation) + c * Math.sin(rotation))
+  if (angle > Math.PI / 2) angle -= Math.PI
+  if (angle < -Math.PI / 2) angle += Math.PI
+  return { x: a * primitive.anchor[0] + c * primitive.anchor[1] + e, y: b * primitive.anchor[0] + d * primitive.anchor[1] + f, angle, scale }
+}
 const paths = new WeakMap<PhysicalPlanPrimitive, Path2D>()
 export const physicalPlanPath = (primitive: Exclude<PhysicalPlanPrimitive, { kind: 'text' }>): Path2D => {
   const cached = paths.get(primitive); if (cached) return cached
@@ -159,10 +167,7 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
       if (architectureOpacity === 0) continue
       setClip(command.kind === 'geometry' && command.clip && scope.regions.length > 0)
       if (command.kind === 'text') {
-        const p = command.primitive, x = a * p.anchor[0] + c * p.anchor[1] + e, y = b * p.anchor[0] + d * p.anchor[1] + f, rotation = p.rotation * Math.PI / 180
-        let angle = Math.atan2(b * Math.cos(rotation) + d * Math.sin(rotation), a * Math.cos(rotation) + c * Math.sin(rotation))
-        if (angle > Math.PI / 2) angle -= Math.PI
-        if (angle < -Math.PI / 2) angle += Math.PI
+        const p = command.primitive, { x, y, angle } = physicalPlanTextFrame(p, frame, scale)
         const cosine = Math.cos(angle), sine = Math.sin(angle)
         context.setTransform(ratio * cosine, ratio * sine, -ratio * sine, ratio * cosine, ratio * x, ratio * y); world = false
         const nextFont = String(p.height * scale) + 'px ' + input.fontFamily, nextAlign = p.align === 'middle' ? 'center' : p.align
