@@ -32,18 +32,21 @@ for (const object of scenario.initialObjects) {
   if (!family) throw Error('The admitted profile has no geometry identity')
   if (families.has(family)) continue
   families.add(family)
+  const filter = process.env.LEITBILD_PREPARATION_PROFILE_FAMILY
+  if (filter && filter !== 'unit' && filter !== 'campus') throw Error('Profile family must be unit or campus')
+  if (filter && object.id !== (filter === 'unit' ? 'layout:halden-1' : 'layout:halden-campus')) continue
   const scene = await loadPhysicalLayoutScene(object), levelId = process.env.LEITBILD_PREPARATION_PROFILE_LEVEL ?? 'all'
   const familyFilter = process.env.LEITBILD_PREPARATION_PROFILE_FAMILY
   if (familyFilter && !(familyFilter === 'unit' ? scene.id === 'layout:halden-1' : familyFilter === 'campus' ? scene.id === 'layout:halden-campus' : false)) continue
   if (levelId !== 'all' && !scene.levels.some(level => level.id === levelId)) continue
-  const base = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId }, cases: PhysicalPreparationView[] = process.env.LEITBILD_PREPARATION_PROFILE_MATRIX ? [
+  const base = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId, ...(process.env.LEITBILD_PREPARATION_PROFILE_VISIBLE_LAYERS === 'default' ? {} : { hiddenLayerIds: [] }) }, cases: PhysicalPreparationView[] = process.env.LEITBILD_PREPARATION_PROFILE_MATRIX ? [
     { ...base, levelId: 'all' }, ...scene.levels.map(level => ({ ...base, levelId: level.id })),
     { ...base, levelId: 'all', cutaway: false }, { ...base, levelId: 'all', separation: 1 },
     ...scene.levels.filter(level => level.id === 'lower' || level.id === 'operating' || scene.id === 'layout:halden-campus').map(level => ({ ...base, mode: '2d' as const, levelId: level.id })),
     ...(scene.scopes?.some(scope => scope.id === 'area/turbine-island') ? ['all', 'lower', 'operating'].map(levelId => ({ ...base, levelId, scopeId: 'area/turbine-island' })) : []),
   ] : [base]
   for (const view of cases) {
-  const caseId = JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation, view.scopeId ?? null]), timings: Record<string, number> = {}
+  const caseId = JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation, view.scopeId ?? null, view.hiddenLayerIds ?? 'defaults']), timings: Record<string, number> = {}
   let last = performance.now()
   const stamp = (name: string) => { const now = performance.now(); timings[name] = now - last; last = now }
   let meshes = buildVisibleMeshes(scene, view); stamp('build')
