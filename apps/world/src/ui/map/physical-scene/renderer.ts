@@ -14,6 +14,7 @@ import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntr
 import { physicalArchitectureOpacity } from './architecture-opacity.ts'
 import { createPhysicalArchitectureBackend } from './architecture-backend.ts'
 import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
+import type { PhysicalArchitectureBspFrame } from './architecture-cohort.ts'
 import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from './plan-picking.ts'
 import { physicalPlanFrame } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
@@ -34,6 +35,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let renderPass: ReturnType<typeof createPhysicalRenderPass> | null = null
   let depthNear = 0
   let highlight: PhysicalSceneHighlight | null = null
+  let architectureFrame: PhysicalArchitectureBspFrame | null = null
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   let planPicking: ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly input: PhysicalPlanPickInput }> = []
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
@@ -109,7 +111,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
           if (meshes !== entry.meshes && entry.asset && !indexedSelections.has(meshes)) { derivePhysicalPickAcceleration(meshes, entry.asset.acceleration); indexedSelections.add(meshes) }
           return { ...entry, meshes }
         }), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
-        const baseProjection = plan ? projectPhysicalPlan(current, mainMatrix) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
+        const baseProjection = plan ? projectPhysicalPlan(current, mainMatrix, architectureFrame?.planDepth) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
         depthNear = plan ? 0 : physicalPerspectiveNear(mainMatrix)
         const projected = baseProjection
         for (const { entry, matrix, meshes } of projected) {
@@ -132,14 +134,28 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         if (!draws.length) return
         before = captureSceneGlState(gl)
         renderPass ??= createPhysicalRenderPass(gl); renderPass.begin(before.viewport[2], before.viewport[3])
-        backend.draw(draws, depthNear); architectureBackend.draw(draws, depthNear)
+        let architectureMatrix: Float32Array | undefined
+        if (architectureFrame) {
+          const common = multiply(mainMatrix, architectureFrame.matrix)
+          if (plan && projected.length) {
+            common[8] = common[9] = common[11] = common[2] = common[6] = 0
+            common[10] = projected[0]!.matrix[10]!; common[14] = projected[0]!.matrix[14]!
+          }
+          architectureMatrix = new Float32Array(common)
+        }
+        backend.draw(draws, depthNear); architectureBackend.draw(draws, depthNear, architectureMatrix)
         renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
       } catch (error) { failed = true; picking = []; planPicking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
       finally { if (before) restoreSceneGlState(gl, before) }
     },
     invalidatePicks(): void { picking = []; planPicking = [] }, pick, cheapProject,
     setHighlight(value: PhysicalSceneHighlight | null): void { highlight = value },
-    setArchitectureBsp(value: PhysicalArchitectureBsp | null): void { architectureBackend.setAsset(value) },
+    setArchitectureBsp(value: PhysicalArchitectureBsp | null, frame: PhysicalArchitectureBspFrame | null): void {
+      if (value && (!frame || frame.matrix.length !== 16 || !frame.matrix.every(Number.isFinite))) throw Error('Architecture cohort requires its actual common-basis placement')
+      if (frame?.planDepth && (!Object.values(frame.planDepth).every(Number.isFinite) || frame.planDepth.span <= 0 || frame.planDepth.domain <= 0)) throw Error('Architecture cohort has an invalid Plan depth domain')
+      architectureFrame = value ? { matrix: frame!.matrix.slice(), ...(frame!.planDepth ? { planDepth: { ...frame!.planDepth } } : {}) } : null
+      architectureBackend.setAsset(value)
+    },
     projectOccurrencePoints(sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string): ReadonlyArray<PhysicalProjectedPoint> {
       if (disposed || failed) return []
       const plan = planPicking.find(candidate => candidate.entry.scene.id === sceneId)

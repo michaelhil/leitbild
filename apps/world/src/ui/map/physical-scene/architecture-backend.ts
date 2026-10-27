@@ -1,5 +1,5 @@
 import { physicalArchitectureOpacity } from './architecture-opacity.ts'
-import { orderedPhysicalArchitectureFragments } from './architecture-bsp.ts'
+import { orderedPhysicalArchitectureFragments, physicalArchitectureBspTraversalBytes } from './architecture-bsp.ts'
 import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
 import { physicalFragmentSource, physicalMaterialColor, physicalVertexSource, type PhysicalDraw } from './backend.ts'
 import { inverse } from './math.ts'
@@ -18,6 +18,7 @@ interface Packet {
  * The original shader owns light, hatches, material and operational emphasis. */
 export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, initialPalette: PhysicalScenePalette) => {
   let palette = initialPalette, bsp: PhysicalArchitectureBsp | null = null, packet: Packet | null = null, program: WebGLProgram | null = null, disposed = false
+  let ownerState = new Float32Array(), ownerPlacementKeys: readonly string[] = []
   let uniforms: Record<string, WebGLUniformLocation | null> = {}
   const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
   const counts = { geometryUploads: 0, orderUploads: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, draws: 0 }
@@ -42,19 +43,20 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
     const handle = gl.createTexture(); if (!handle) throw Error('Unable to allocate architecture material/owner table')
     return { handle, width: 0, height: 0, data: new Float32Array() }
   }
-  const upload = (value: Table, pixels: number, fill: (data: Float32Array) => void): boolean => {
+  const upload = (value: Table, pixels: number, next: Float32Array): boolean => {
     const width = Math.min(maxTextureSize, Math.max(1, pixels)), height = Math.max(1, Math.ceil(pixels / width))
     if (height > maxTextureSize) throw Error('Architecture owner table exceeds this GPU texture allocation')
     const allocate = width !== value.width || height !== value.height
-    const next = new Float32Array(width * height * 4); fill(next)
     const changed = allocate || next.some((item, index) => item !== value.data[index])
     gl.bindTexture(gl.TEXTURE_2D, value.handle)
     if (!changed) return false
-    value.width = width; value.height = height; value.data = next
+    value.width = width; value.height = height
+    if (allocate) value.data = new Float32Array(width * height * 4)
+    value.data.fill(0); value.data.set(next)
     if (allocate) {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, next)
-    } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, next)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, value.data)
+    } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, value.data)
     return true
   }
   const release = (value: Packet): void => {
@@ -98,33 +100,37 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       if (bsp === value) return
       if (bsp?.key === value?.key && value !== null) throw Error('Immutable architecture cohort changed its prepared asset')
       if (packet) release(packet); packet = null; bsp = value
+      ownerState = new Float32Array((value?.owners.length ?? 0) * 12)
+      ownerPlacementKeys = value?.owners.map(owner => JSON.stringify([owner.sceneId, owner.assetKey])) ?? []
     },
     setPalette(value: PhysicalScenePalette): void { palette = value },
-    draw(draws: readonly PhysicalDraw[], depthNear = 0): void {
+    draw(draws: readonly PhysicalDraw[], depthNear = 0, commonMatrix?: Float32Array): void {
       if (disposed) throw Error('Architecture renderer has been disposed')
       if (!bsp || !bsp.owners.length) return
       if (!draws.some(draw => [draw.architecture?.wallOpacity ?? 1, draw.architecture?.floorOpacity ?? 1].some(alpha => alpha > 0 && alpha < 1))) return
       const placementKey = (sceneId: string, assetKey: string): string => JSON.stringify([sceneId, assetKey])
       const byPlacement = new Map(draws.filter(draw => draw.sceneId !== undefined).map(draw => [placementKey(draw.sceneId!, draw.asset.key), draw]))
       const shown = new Map(draws.map(draw => [draw, new Set(draw.meshes.map(mesh => mesh.assetIndex ?? draw.asset.meshes.indexOf(mesh)))]))
-      const basis = bsp.owners[0]!, base = byPlacement.get(placementKey(basis.sceneId, basis.assetKey))
-      if (!base) throw Error('Architecture cohort lost its reference placement')
-      const visible = new Set<number>(), ownerData = new Float32Array(bsp.owners.length * 12)
+      const basis = bsp.owners[0]!, reference = byPlacement.get(placementKey(basis.sceneId, basis.assetKey))
+      const visible = new Set<number>(), ownerData = ownerState; ownerData.fill(0)
+      let visibleDraw: PhysicalDraw | undefined
       bsp.owners.forEach((owner, index) => {
-        const draw = byPlacement.get(placementKey(owner.sceneId, owner.assetKey))
+        const draw = byPlacement.get(ownerPlacementKeys[index]!)
         if (!draw) return
         const mesh = draw.asset.meshes[owner.meshIndex]
         if (!mesh || mesh.object.id !== owner.occurrenceId) throw Error('Architecture owner provenance differs from its prepared source')
         const displayed = shown.get(draw)!.has(owner.meshIndex)
         const alpha = displayed ? physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}) : 0
         if (alpha <= 0 || alpha >= 1) return
-        visible.add(index)
+        visible.add(index); visibleDraw ??= draw
         const at = index * 12, style = draw.styles[owner.meshIndex], color = style?.color ?? palette.defaultMaterial
         ownerData.set([...color, style?.color ? style.emphasis : 0], at); ownerData[at + 7] = alpha
         if (draw.highlight?.occurrenceId === owner.occurrenceId) ownerData.set([...draw.highlight.color, .24], at + 8)
       })
       if (!visible.size) return
-      const projection = inverse(base.matrix), eye = [-projection[8]!, -projection[9]!, -projection[10]!, -projection[11]!] as const
+      const matrix = commonMatrix ?? reference?.matrix
+      if (!matrix) throw Error('Architecture cohort has no reference transform')
+      const projection = inverse(matrix), eye = [-projection[8]!, -projection[9]!, -projection[10]!, -projection[11]!] as const
       const ordered = orderedPhysicalArchitectureFragments(bsp, eye, visible)
       if (!ordered.length) return
       program ??= createProgram(); packet ??= allocate(bsp)
@@ -142,23 +148,25 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, value.order); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW); value.indices = indices; value.runs = runs; counts.orderUploads++
       }
       value.fragments = ordered
-      const instance = new Float32Array(17); instance.set(base.matrix)
+      const instance = new Float32Array(17); instance.set(matrix)
       gl.bindBuffer(gl.ARRAY_BUFFER, value.instance); gl.bufferData(gl.ARRAY_BUFFER, instance, gl.DYNAMIC_DRAW); counts.instanceUploads++
-      gl.activeTexture(gl.TEXTURE1); if (upload(value.objects, bsp.owners.length * 3, data => data.set(ownerData))) counts.statusUploads++
+      gl.activeTexture(gl.TEXTURE1); if (upload(value.objects, bsp.owners.length * 3, ownerData)) counts.statusUploads++
       gl.activeTexture(gl.TEXTURE0)
       const colors = value.roles.map(role => physicalMaterialColor(palette, role)), paletteKey = JSON.stringify(colors)
       if (value.paletteKey !== paletteKey) {
-        if (upload(value.materials, colors.length, data => colors.forEach((color, at) => { const role = value.roles[at]!, pattern = role.startsWith('continuation/') ? -Number(role.split('/')[2]) : role.startsWith('surface/outage/') ? 1 : 0; data.set([...color, pattern], at * 4) }))) counts.paletteUploads++
+        const data = new Float32Array(colors.length * 4)
+        colors.forEach((color, at) => { const role = value.roles[at]!, pattern = role.startsWith('continuation/') ? -Number(role.split('/')[2]) : role.startsWith('surface/outage/') ? 1 : 0; data.set([...color, pattern], at * 4) })
+        if (upload(value.materials, colors.length, data)) counts.paletteUploads++
         value.paletteKey = paletteKey
       } else gl.bindTexture(gl.TEXTURE_2D, value.materials.handle)
       gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform1i(uniforms.uMaterialWidth!, value.materials.width); gl.uniform1i(uniforms.uObjectWidth!, value.objects.width)
-      gl.uniform1i(uniforms.uFlat!, Number(base.flat)); gl.uniform1i(uniforms.uOrdered!, 1); gl.uniform1i(uniforms.uTranslucent!, 1); gl.uniform1f(uniforms.uDepthNear!, depthNear)
+      gl.uniform1i(uniforms.uFlat!, Number(visibleDraw!.flat)); gl.uniform1i(uniforms.uOrdered!, 1); gl.uniform1i(uniforms.uTranslucent!, 1); gl.uniform1f(uniforms.uDepthNear!, depthNear)
       gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1); gl.uniform3f(uniforms.uIllustrationLine!, ...palette.line); gl.lineWidth(palette.lineWidth ?? 1)
       gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.disable(gl.POLYGON_OFFSET_FILL); gl.colorMask(true, true, true, true); gl.enable(gl.BLEND)
       gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
       for (const run of value.runs) { gl.uniform1i(uniforms.uLines!, Number(run.kind === 'line')); gl.depthFunc(run.kind === 'line' ? gl.GEQUAL : gl.GREATER); gl.drawElementsInstanced(run.kind === 'line' ? gl.LINES : gl.TRIANGLES, run.count, gl.UNSIGNED_INT, run.start * 4, 1); counts.draws++ }
     },
-    metrics: () => ({ ...counts, geometryBytes: packet?.vertices.byteLength ?? 0, orderBytes: packet?.indices.byteLength ?? 0, instanceBytes: packet ? 68 : 0, residentCpuBytes: (bsp?.vertices.byteLength ?? 0) + (packet?.vertices.byteLength ?? 0) + (packet?.indices.byteLength ?? 0), buffers: packet ? 3 : 0, programs: program ? 1 : 0, textures: packet ? 2 : 0, textureBytes: packet ? packet.objects.data.byteLength + packet.materials.data.byteLength : 0, ...final }),
+    metrics: () => ({ ...counts, geometryBytes: packet?.vertices.byteLength ?? 0, orderBytes: packet?.indices.byteLength ?? 0, instanceBytes: packet ? 68 : 0, traversalBytes: bsp ? physicalArchitectureBspTraversalBytes(bsp) : 0, residentCpuBytes: (bsp?.vertices.byteLength ?? 0) + (bsp ? physicalArchitectureBspTraversalBytes(bsp) : 0) + ownerState.byteLength + (packet ? packet.vertices.byteLength + packet.indices.byteLength + packet.objects.data.byteLength + packet.materials.data.byteLength : 0), buffers: packet ? 3 : 0, programs: program ? 1 : 0, textures: packet ? 2 : 0, textureBytes: packet ? packet.objects.data.byteLength + packet.materials.data.byteLength : 0, ...final }),
     dispose(): void {
       if (disposed) return
       const prior = packet, priorProgram = program
@@ -166,7 +174,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       final.liveBuffersAfterDisposal = prior ? [prior.solid, prior.order, prior.instance].filter(value => gl.isBuffer(value)).length : 0
       final.liveTexturesAfterDisposal = prior ? [prior.objects.handle, prior.materials.handle].filter(value => gl.isTexture(value)).length : 0
       final.liveProgramsAfterDisposal = priorProgram ? Number(gl.isProgram(priorProgram)) : 0
-      packet = null; bsp = null; program = null; disposed = true
+      packet = null; bsp = null; program = null; ownerState = new Float32Array(); ownerPlacementKeys = []; disposed = true
     },
   }
 }
