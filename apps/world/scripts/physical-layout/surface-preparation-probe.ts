@@ -27,7 +27,7 @@ for (const name of ['pwr-full-unit-explorer', 'pwr-campus-explorer']) {
     const view = { ...defaultPhysicalSceneView(scene.levels), ...variant }, values: unknown[] = [], fingerprints: string[] = [], geometryFingerprints: string[] = []
     for (const [kind, prepare] of [['baseline',baseline.preparePhysicalGeometry],['candidate',preparePhysicalGeometry]] as const) {
       Bun.gc(true); const start = performance.now(), asset = prepare(scene,view,`${name}/${JSON.stringify(variant)}/${kind}`), ms = performance.now()-start
-      const selected = visiblePhysicalSurfaceOwners(asset.meshes,asset.acceleration)
+      const selected = visiblePhysicalSurfaceOwners(asset.meshes)
       const preparedSha256 = fingerprint(asset), geometrySha256 = fingerprint(asset,false); fingerprints.push(preparedSha256); geometryFingerprints.push(geometrySha256)
       values.push({kind,ms,preparedSha256,geometrySha256,sourceObjects:scene.objects.length,preparedFragments:asset.meshes.length,displayedFragments:selected.length,triangles:asset.buffers.vertices.length/24,renderBytes:asset.buffers.vertices.byteLength+asset.buffers.lines.byteLength,indexBytes:physicalSpatialBytes(asset.acceleration.meshes)+asset.acceleration.triangles.reduce((sum,index)=>sum+physicalSpatialBytes(index.triangles),0),ownership:'surfaceOwnership' in asset?asset.surfaceOwnership:undefined})
     }
