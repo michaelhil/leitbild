@@ -10,6 +10,7 @@ interface Packet {
   readonly solid: WebGLBuffer; readonly order: WebGLBuffer; readonly instance: WebGLBuffer; readonly vao: WebGLVertexArrayObject
   readonly objects: Table; readonly materials: Table; readonly vertices: Float32Array; readonly roles: readonly string[]
   indices: Uint32Array; fragments: readonly number[]; paletteKey: string
+  runs: readonly { readonly kind: 'triangle' | 'line'; readonly start: number; readonly count: number }[]
 }
 
 /** Derived architecture only. Correctly ordered faces and authored lines blend
@@ -85,7 +86,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       for (let column = 0; column < 4; column++) { const location = 5 + column; gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, 4, gl.FLOAT, false, 68, column * 16); gl.vertexAttribDivisor(location, 1) }
       gl.enableVertexAttribArray(9); gl.vertexAttribIPointer(9, 1, gl.UNSIGNED_INT, 68, 64); gl.vertexAttribDivisor(9, 1)
       counts.geometryUploads++
-      return { solid, order, instance, vao, objects, materials, vertices, roles, indices: new Uint32Array(), fragments: [], paletteKey: '' }
+      return { solid, order, instance, vao, objects, materials, vertices, roles, indices: new Uint32Array(), fragments: [], runs: [], paletteKey: '' }
     } catch (error) {
       for (const value of [solid, order, instance]) gl.deleteBuffer(value); gl.deleteVertexArray(vao)
       if (objects) gl.deleteTexture(objects.handle); if (materials) gl.deleteTexture(materials.handle); throw error
@@ -129,11 +130,18 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       program ??= createProgram(); packet ??= allocate(bsp)
       const value = packet
       gl.useProgram(program); gl.bindVertexArray(value.vao)
-      if (ordered.length !== value.fragments.length || ordered.some((id, at) => id !== value.fragments[at])) {
+      if (ordered !== value.fragments && (ordered.length !== value.fragments.length || ordered.some((id, at) => id !== value.fragments[at]))) {
         const indices = new Uint32Array(ordered.reduce((sum, id) => sum + bsp!.fragments[id]!.count, 0)); let at = 0
-        for (const id of ordered) { const fragment = bsp.fragments[id]!; for (let index = 0; index < fragment.count; index++) indices[at++] = fragment.first + index }
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, value.order); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW); value.indices = indices; value.fragments = ordered; counts.orderUploads++
+        const runs: { kind: 'triangle' | 'line'; start: number; count: number }[] = []
+        for (const id of ordered) {
+          const fragment = bsp.fragments[id]!, previous = runs.at(-1)
+          if (previous?.kind === fragment.kind) previous.count += fragment.count
+          else runs.push({ kind: fragment.kind, start: at, count: fragment.count })
+          for (let index = 0; index < fragment.count; index++) indices[at++] = fragment.first + index
+        }
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, value.order); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW); value.indices = indices; value.runs = runs; counts.orderUploads++
       }
+      value.fragments = ordered
       const instance = new Float32Array(17); instance.set(base.matrix)
       gl.bindBuffer(gl.ARRAY_BUFFER, value.instance); gl.bufferData(gl.ARRAY_BUFFER, instance, gl.DYNAMIC_DRAW); counts.instanceUploads++
       gl.activeTexture(gl.TEXTURE1); if (upload(value.objects, bsp.owners.length * 3, data => data.set(ownerData))) counts.statusUploads++
@@ -148,10 +156,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1); gl.uniform3f(uniforms.uIllustrationLine!, ...palette.line); gl.lineWidth(palette.lineWidth ?? 1)
       gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.disable(gl.POLYGON_OFFSET_FILL); gl.colorMask(true, true, true, true); gl.enable(gl.BLEND)
       gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-      let start = 0, count = 0, kind: 'triangle' | 'line' | null = null
-      const submit = (): void => { if (count === 0 || kind === null) return; gl.uniform1i(uniforms.uLines!, Number(kind === 'line')); gl.depthFunc(kind === 'line' ? gl.GEQUAL : gl.GREATER); gl.drawElementsInstanced(kind === 'line' ? gl.LINES : gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4, 1); counts.draws++; start += count; count = 0 }
-      for (const id of ordered) { const fragment = bsp.fragments[id]!; if (kind !== fragment.kind) { submit(); kind = fragment.kind }; count += fragment.count }
-      submit()
+      for (const run of value.runs) { gl.uniform1i(uniforms.uLines!, Number(run.kind === 'line')); gl.depthFunc(run.kind === 'line' ? gl.GEQUAL : gl.GREATER); gl.drawElementsInstanced(run.kind === 'line' ? gl.LINES : gl.TRIANGLES, run.count, gl.UNSIGNED_INT, run.start * 4, 1); counts.draws++ }
     },
     metrics: () => ({ ...counts, geometryBytes: packet?.vertices.byteLength ?? 0, orderBytes: packet?.indices.byteLength ?? 0, instanceBytes: packet ? 68 : 0, residentCpuBytes: (bsp?.vertices.byteLength ?? 0) + (packet?.vertices.byteLength ?? 0) + (packet?.indices.byteLength ?? 0), buffers: packet ? 3 : 0, programs: program ? 1 : 0, textures: packet ? 2 : 0, textureBytes: packet ? packet.objects.data.byteLength + packet.materials.data.byteLength : 0, ...final }),
     dispose(): void {
