@@ -62,6 +62,8 @@ export const customShapes: ReadonlyArray<CustomShape> = [
       { file: 'ui/map/physical-scene/canvas-viewport.ts', mark: "canvas.getContext('webgl2'", drawn: 'code' },
       { file: 'ui/map/physical-scene/backend.ts', mark: 'export const createPhysicalBackend', drawn: 'code' },
       { file: 'ui/map/physical-scene/geometry.ts', mark: 'export const buildVisibleMeshes', drawn: 'code' },
+      { file: 'ui/map/physical-scene/plan-picking.ts', mark: 'const canvas = typeof OffscreenCanvas', drawn: 'code' },
+      { file: 'ui/map/physical-scene/plan-picking.ts', mark: "canvas.getContext('2d'", drawn: 'code' },
       { file: 'ui/map/physical-scene/overview.ts', mark: 'export const createPhysicalSceneOverview', drawn: 'code' },
       { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: 'class="layout-plan-annotations"', drawn: 'canvas' },
       { file: 'ui/physical-layout/PhysicalExplorer.svelte', mark: "target.getContext('2d')", drawn: 'code' },

@@ -418,6 +418,21 @@ test('active inspection reuses Plan and spatial assets independently of shared-c
   h.controller.destroy(); expect(h.controller.diagnostics().inspectionWorkingSet.representations).toBe(0)
 })
 
+test('explicit native Plan is ready and interactive without preparing solid geometry or losing spatial reuse', async () => {
+  const h = harness(), value: PackPhysicalScene = { ...scene('ink'), planDrawing: { views: ['lower', 'upper'].map(levelId => ({ levelId, bounds: { min: [0, 0] as [number, number], max: [10, 10] as [number, number] }, primitives: [{ id: `machine/${levelId}`, occurrenceId: 'machine', scopeIds: ['a'], depiction: 'projection' as const, kind: 'path' as const, fill: 'metal', commands: [['M', 0, 0], ['L', 5, 0], ['L', 0, 5], ['Z']], bounds: { min: [0, 0] as [number, number], max: [5, 5] as [number, number] } }] })) } }
+  h.controller.setSources([h.source(value)]); await settled()
+  expect(h.prepares()).toBe(0); expect(h.controller.presentations()[0]!.status).toBe('ready')
+  expect(h.entries()[0]!.asset).toBeUndefined(); expect(h.entries()[0]!.meshes).toEqual([]); expect(h.controller.scene('ink')).toBe(value)
+  const view = { ...defaultPhysicalSceneView(value.levels), mode: '3d' as const, hiddenLayerIds: [] }
+  h.controller.setView('ink', view); await settled(); const count = h.requests.length
+  h.controller.setView('ink', { ...view, mode: '2d' }); await settled()
+  h.controller.setView('ink', { ...view, mode: '2d', levelId: 'upper' }); h.controller.selectScope('ink', 'a'); await settled()
+  expect(h.requests).toHaveLength(count); expect(h.controller.presentations()[0]!).toMatchObject({ status: 'ready', view: { levelId: 'upper', mode: '2d' } })
+  h.controller.setView('ink', { ...view, mode: '2d', levelId: 'lower', hiddenLayerIds: ['utilities'] }); await settled(); expect(h.requests).toHaveLength(count)
+  expect(h.entries()[0]!.scopeId).toBe('a'); h.controller.setStatus('ink', new Map([['ink:machine', { color: [1, 0, 0], emphasis: 1 }]])); expect(h.controller.subjectStyles('ink').get('ink:machine')?.emphasis).toBe(1)
+  h.controller.selectScope('ink'); h.controller.setView('ink', view); await settled(); expect(h.prepares()).toBe(1)
+  h.controller.destroy()
+})
 
 test('Pack-owned default visible layers materialize only for a new view and preserve explicit user choices', async () => {
   const h = harness(), value = scene('policy'), source = h.source(value), descriptor = { ...source.descriptor, layers: [{ id: 'utilities', label: 'Utilities', defaultVisible: false }], viewDefaults: { visibleLayerIds: ['utilities'] } }

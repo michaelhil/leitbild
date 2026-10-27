@@ -1,7 +1,7 @@
 import { MercatorCoordinate } from 'maplibre-gl'
 import { physicalSceneInitialVisibleLayers, type PackPhysicalScene, type PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
-import type { PhysicalMesh } from './geometry.ts'
+import { meshBounds, type PhysicalMesh } from './geometry.ts'
 import { boundsCorners, localMercatorMatrix, transform, type Vector3 } from './math.ts'
 import { createPhysicalInspectionWorkingSet } from './inspection-working-set.ts'
 import { createPhysicalGeometryPreparer, type PhysicalPreparedGeometry } from './preparation.ts'
@@ -16,7 +16,7 @@ import { physicalPlanDrawingBounds } from '../../physical-layout/plan-drawing.ts
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
 import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalSceneHighlight, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle, type PhysicalViewportFitOptions } from './types.ts'
 
-interface Entry { renderRevision: number; source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; preparationAbort?: AbortController | undefined; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; preparedLayers?: ReadonlyArray<string> | undefined; requestedLayers?: ReadonlyArray<string> | undefined; layerFailure?: { layerIds: ReadonlyArray<string>; reason: string } | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean; overviewAbort?: AbortController | undefined; overviewFilter?: { key: string; meshes: ReadonlyArray<PhysicalMesh> } | undefined }
+interface Entry { planSignature?: string; renderRevision: number; source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; preparationAbort?: AbortController | undefined; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; preparedLayers?: ReadonlyArray<string> | undefined; requestedLayers?: ReadonlyArray<string> | undefined; layerFailure?: { layerIds: ReadonlyArray<string>; reason: string } | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean; overviewAbort?: AbortController | undefined; overviewFilter?: { key: string; meshes: ReadonlyArray<PhysicalMesh> } | undefined }
 type Options = Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'>
 const worldBounds = (anchor: readonly [number, number], bearing: number, bounds: PhysicalSceneBounds): PhysicalSceneBounds => {
   const matrix = localMercatorMatrix(anchor, bearing), points = boundsCorners(bounds).map(p => transform(matrix, p))
@@ -39,9 +39,12 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const clearHighlight = (): void => { highlight = null; renderer?.setHighlight(null) }
   const setPlanarity = (value: boolean): void => { const prior = reconcilingCamera; reconcilingCamera = true; try { viewport.setPlanarInspection?.(value) } finally { reconcilingCamera = prior } }
   const syncPlanarity = (): void => setPlanarity(active && cameraOwned && mode === '2d' && [...entries.values()].some(entry => entry.eligible && entry.state === 'ready' && entry.scene?.planDrawing?.views.some(view => view.levelId === entry.view.levelId)))
+  const occurrenceBounds = new WeakMap<PackPhysicalScene['objects'][number], PhysicalSceneBounds>()
   const planPlacements = new WeakMap<PhysicalSceneSource['descriptor'], Float64Array>()
   const emptyStatus: ReadonlyMap<string, PhysicalSubjectStyle> = new Map()
   const disposals: NonNullable<ReturnType<PhysicalViewportRenderer['metrics']>>[] = []
+  const hasPlanInk = (entry: Entry): boolean => entry.view.mode === '2d' && Boolean(entry.scene?.planDrawing?.views.some(view => view.levelId === entry.view.levelId))
+  const readyGeometry = (entry: Entry): boolean => hasPlanInk(entry) || entry.prepared !== null
   const initialView = (source: PhysicalSceneSource): PhysicalSceneView => {
     const descriptor = source.descriptor, visible = new Set(physicalSceneInitialVisibleLayers(descriptor)), base = { ...defaultPhysicalSceneView(descriptor.levels), mode }
     return descriptor.layers ? { ...base, hiddenLayerIds: descriptor.layers.filter(layer => !layer.defaultVisible && !visible.has(layer.id)).map(layer => layer.id) } : base
@@ -61,8 +64,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const drawable = (): PhysicalLayerEntry[] => !active ? [] : [...entries.values()].flatMap(entry => {
     if (focusedId === null && collectionIds !== null && !collectionIds.has(entry.source.descriptor.id)) return []
     if (focusedId !== null && !entries.get(focusedId)?.view.surroundings && entry.source.descriptor.id !== focusedId) return []
-    const result: PhysicalLayerEntry[] = [], detailed = Boolean(entry.scene && entry.prepared && entry.eligible && entry.state === 'ready')
-    if (detailed) result.push({ scene: entry.scene!, meshes: entry.meshes, asset: entry.prepared!, view: entry.view, status: entry.status })
+    const result: PhysicalLayerEntry[] = [], detailed = Boolean(entry.scene && readyGeometry(entry) && entry.eligible && entry.state === 'ready')
+    if (detailed) result.push({ scene: entry.scene!, meshes: entry.meshes, ...(entry.prepared ? { asset: entry.prepared } : {}), ...(entry.scopeId ? { scopeId: entry.scopeId } : {}), view: entry.view, status: entry.status })
     if (!entry.overview || !entry.source.descriptor.locationValid || entry.view.detail === 'hidden') return result
     let meshes = visiblePhysicalSurfaceOwners(entry.overview.asset.meshes, entry.overview.asset.acceleration)
     if (detailed) {
@@ -117,8 +120,18 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     else if (entry.layerFailure && scopedCoverage(entry, physicalLayerUnion(entry.preparedLayers ?? [], entry.layerFailure.layerIds))) entry.layerFailure = undefined
   }
   const cancelOverview = (entry: Entry): void => { entry.overviewAbort?.abort(); entry.overviewAbort = undefined; entry.overviewPreparing = false }
+  const admitPlanInk = (entry: Entry): boolean => {
+    if (!hasPlanInk(entry)) return false
+    if (entry.preparing) cancelPreparation(entry)
+    if (entry.prepared) discardPrepared(entry)
+    const key = JSON.stringify([entry.view.levelId, entry.scopeId ?? null, [...(entry.view.hiddenLayerIds ?? [])].sort()])
+    if (entry.planSignature !== key) { entry.planSignature = key; entry.renderRevision++ }
+    entry.state = !active ? 'hidden' : entry.eligible ? 'ready' : 'distant'
+    return true
+  }
   const prepareView = async (entry: Entry): Promise<void> => {
     if (!entry.scene) return
+    if (admitPlanInk(entry)) { syncPlanarity(); refreshCollectionFit(); reconcile(); viewport.requestRender(); return }
     const expected = ++entry.viewGeneration, sourceGeneration = entry.generation, request = new AbortController()
     entry.preparationAbort = request
     const retained = inspectionWorkingSet.select(entry.source.descriptor.id, entry.view, entry.scopeId)
@@ -192,6 +205,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       else if (entry.failure) { entry.state = 'unavailable'; entry.reason = entry.failure }
       else if (!active || entry.view.detail === 'hidden') entry.state = 'hidden'
       else if (!entry.eligible) { entry.state = 'distant'; entry.reason = d.inspectionFeatureMetres === undefined && !explicitDetail ? 'Automatic inspection scale is not declared; choose a layout scope to inspect it' : undefined }
+      else if (admitPlanInk(entry)) { /* Native ink owns Plan colour and picking; no solid asset is required. */ }
       else if (entry.preparing) entry.state = entry.prepared ? 'ready' : 'loading'
       else if (entry.prepared) {
         entry.state = 'ready'
@@ -203,7 +217,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     }
     const selected = new Set([...entries.values()].filter(entry => entry.source.descriptor.locationValid && entry.view.detail !== 'hidden' && (focusedId !== null ? entry.source.descriptor.id === focusedId : collectionIds !== null ? collectionIds.has(entry.source.descriptor.id) : entry.eligible)).map(entry => entry.source.descriptor.id))
     inspectionWorkingSet.retainScenes(selected)
-    syncPlanarity(); reconcileRenderer(); emit()
+    syncPlanarity(); reconcileRenderer(); refreshCollectionFit(); emit()
   }
   const enqueue = (): void => { if (queued || destroyed) return; queued = true; queueMicrotask(() => { queued = false; reconcile() }) }
   const cleanup = [viewport.on('change', enqueue), viewport.on('resize', enqueue), viewport.on('style', enqueue), viewport.on('idle', enqueue), viewport.on('contextlost', () => { contextLost = true; removeRenderer() }), viewport.on('contextrestored', () => { contextLost = false; enqueue() })]
@@ -211,9 +225,12 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   const padding = (bounds: PhysicalSceneBounds, fit: Omit<PhysicalViewportFitOptions, 'padding'>) => options.fitPadding?.({ bounds, ...fit, ...(viewport.measureFit ? { measure: (padding: PhysicalViewportFitOptions['padding']) => viewport.measureFit!(bounds, { ...fit, padding }) } : {}) }) ?? viewport.surface.getPadding()
   const entryBounds = (entry: Entry, target: PhysicalSceneFocus = {}): PhysicalSceneBounds => {
     const visible = entry.scene && entry.meshes.length ? visiblePhysicalBounds({ scene: entry.scene, meshes: entry.meshes, view: entry.view, status: entry.status }, target) : null
-    const physical = visible ?? (target.occurrenceId ? entry.scene?.objects.find(object => object.id === target.occurrenceId)?.bounds : null) ?? (target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId)?.bounds : null) ?? entry.source.descriptor.bounds
-    const drawing = entry.view.mode === '2d' && entry.scene && !target.occurrenceId ? physicalPlanDrawingBounds(entry.scene, entry.view, target.scopeId ?? entry.scopeId ?? null) : null
-    const presented = drawing ? combinedBounds([physical, drawing]) : physical
+    const object = target.occurrenceId ? entry.scene?.objects.find(object => object.id === target.occurrenceId) : undefined
+    let objectBounds = object?.bounds ?? (object ? occurrenceBounds.get(object) : null)
+    if (!objectBounds && object?.positions.length) { objectBounds = meshBounds(object.positions, 3); occurrenceBounds.set(object, objectBounds) }
+    const physical = visible ?? objectBounds ?? (target.scopeId ? entry.source.descriptor.scopes?.find(scope => scope.id === target.scopeId)?.bounds : null) ?? entry.source.descriptor.bounds
+    const drawing = entry.view.mode === '2d' && entry.scene ? physicalPlanDrawingBounds(entry.scene, entry.view, target.scopeId ?? entry.scopeId ?? null, target.occurrenceId) : null
+    const presented = drawing ? target.occurrenceId ? drawing : combinedBounds([physical, drawing]) : physical
     const bounds = entry.view.mode === '2d' ? { min: [presented.min[0], presented.min[1], 0] as [number, number, number], max: [presented.max[0], presented.max[1], 0] as [number, number, number] } : physical
     return worldBounds(entry.source.descriptor.anchor, entry.source.descriptor.bearing, bounds)
   }
@@ -226,7 +243,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   }
   const fitEntry = (entry: Entry, target: PhysicalSceneFocus, preservePose: boolean): void => {
     pendingFocus = null; pendingCollectionFocus = null; applyFit(entry, target, preservePose)
-    if (!entry.prepared || entry.preparing) pendingFocus = { entry, source: entry.generation, view: entry.viewGeneration, target, preservePose }
+    if (!readyGeometry(entry) || entry.preparing) pendingFocus = { entry, source: entry.generation, view: entry.viewGeneration, target, preservePose }
   }
   const applyCollectionFit = (selected: ReadonlyArray<Entry>, preservePose: boolean): void => {
     const bounds = combinedBounds(selected.map(entry => entryBounds(entry))), fit = { preservePose, mode, bearing: 0, ...(mode === '3d' ? { pitch: 50 } : {}) }
@@ -236,7 +253,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const intent = pendingCollectionFocus
     if (!intent) return
     if (!active || intent.targets.some(({ entry, source }) => entries.get(entry.source.descriptor.id) !== entry || entry.generation !== source || entry.failure)) { pendingCollectionFocus = null; return }
-    if (intent.targets.some(({ entry }) => !entry.prepared || entry.preparing || entry.state !== 'ready')) return
+    if (intent.targets.some(({ entry }) => !readyGeometry(entry) || entry.preparing || entry.state !== 'ready')) return
     pendingCollectionFocus = null; applyCollectionFit(intent.targets.map(target => target.entry), intent.preservePose)
   }
   cleanup.push(viewport.on('movestart', () => { if (!reconcilingCamera) { pendingFocus = null; pendingCollectionFocus = null } }))
@@ -329,7 +346,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       this.selectCollection(selected.map(entry => entry.source.descriptor.id))
       const preservePose = options.preservePose ?? true
       pendingCollectionFocus = null; applyCollectionFit(selected, preservePose)
-      if (selected.some(entry => !entry.prepared || entry.preparing)) pendingCollectionFocus = { targets: selected.map(entry => ({ entry, source: entry.generation })), preservePose }
+      if (selected.some(entry => !readyGeometry(entry) || entry.preparing)) pendingCollectionFocus = { targets: selected.map(entry => ({ entry, source: entry.generation })), preservePose }
     },
     home(sceneId: string, scopeId?: string): void { const entry = requireEntry(sceneId); this.selectScope(sceneId, scopeId); fitEntry(entry, { scopeId }, false) },
     reset(sceneId: string): void { const entry = requireEntry(sceneId); this.setView(sceneId, defaultPhysicalSceneView(entry.source.descriptor.levels)); this.home(sceneId) },
