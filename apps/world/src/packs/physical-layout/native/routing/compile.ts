@@ -4,7 +4,7 @@ import { elementWorld, type Source as ArchitectureSource, type V3 } from '../arc
 import { routePhysicalConnection, roundedPhysicalRoute, validatePhysicalConnectionRoute, type PhysicalRoutedPath, type PhysicalRouteRequest } from './route.ts'
 import type { PhysicalRouting, RoutePoint, RoutingTerminal } from './source.ts'
 
-type Source = ArchitectureSource & { readonly routing?: PhysicalRouting }
+type Source = ArchitectureSource & { readonly routing?: PhysicalRouting | undefined }
 export interface CompiledPhysicalRoute { readonly object: PhysicalSceneObject; readonly centerline: ReadonlyArray<RoutePoint>; readonly solution: PhysicalRoutedPath }
 const subtract = (a: RoutePoint, b: RoutePoint): V3 => a.map((v, i) => v - b[i]!) as V3
 const norm = (v: RoutePoint): V3 => { const length = Math.hypot(...v); if (!length) throw new Error('A route sweep requires a nonzero tangent'); return v.map(n => n / length) as V3 }
