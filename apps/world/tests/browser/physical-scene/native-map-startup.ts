@@ -12,6 +12,7 @@ export const nativeMapStartup = async (openControls = true) => {
   const frame = await wait(() => document.querySelector<HTMLIFrameElement>('iframe[src*="/world/runs/"]'), 'the World Run frame')
   await wait(() => frame.contentDocument?.querySelector('.maplibregl-canvas'), 'the geographic map')
   const doc = frame.contentDocument!
+  await wait(() => !doc.querySelector('.startup-modal-frame'), 'the completed public map startup')
   const viewButton = () => [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => (button.getAttribute('aria-label') === 'View' || button.textContent?.trim() === 'View') && button.getBoundingClientRect().width > 0)
   // Historical diagnostic builds opened the real controls directly. This path
   // is explicitly recorded and cannot satisfy the new clean-start acceptance.
