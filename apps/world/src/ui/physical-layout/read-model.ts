@@ -23,9 +23,13 @@ const elementSchema = z.unknown().transform((input): VignetteElement => {
   return element
 })
 
+// One compiled boundary schema for every declared value. Creating a schema
+// inside the transform repeats schema allocation/JIT for every owner reading.
+const valueHeaderSchema = z.object({ label: z.string().min(1).max(1000), element: elementSchema.optional(), simulated: z.literal(true).optional() }).passthrough()
+
 /** Validate the exact shared display declaration, keeping its qualified label. */
 const valueSchema = z.unknown().transform((input): VignetteValue => {
-  const parsed = z.object({ label: z.string().min(1).max(1000), element: elementSchema.optional(), simulated: z.literal(true).optional() }).passthrough().parse(input)
+  const parsed = valueHeaderSchema.parse(input)
   const { element, simulated, label, ...fields } = parsed
   // An observable's source label is object-local (80 chars); a display's is
   // qualified by its owner's label. All its semantic fields use the owner schema.
@@ -68,13 +72,13 @@ const responseSchema = z.object({
 }).strict().superRefine((response, context) => {
   const subjects = response.subjects.map(subject => subject.elementId)
   if (new Set(subjects).size !== subjects.length) context.addIssue({ code: 'custom', message: 'Duplicate layout live subject' })
-  const refs = response.sample.observations.map(observation => observation.ref)
-  if (new Set(refs).size !== refs.length) context.addIssue({ code: 'custom', message: 'Duplicate layout live observation' })
+  const refs = response.sample.observations.map(observation => observation.ref), acquired = new Set(refs)
+  if (acquired.size !== refs.length) context.addIssue({ code: 'custom', message: 'Duplicate layout live observation' })
   if (response.subjects.some(subject => [...subject.values, ...(subject.topology?.values ?? [])].some(value => !value.ref.startsWith(`${response.scope.objectId}#`)))
     || refs.some(ref => !ref.startsWith(`${response.scope.objectId}#`))
     || response.sample.alerts.some(row => row.objectId !== response.scope.objectId || row.packId !== response.scope.packId)) context.addIssue({ code: 'custom', message: 'Layout live content belongs to another owner' })
   for (const subject of response.subjects) if (subject.topology) {
-    const values = new Set(subject.topology.values.map(value => value.ref)), acquired = new Set(refs)
+    const values = new Set(subject.topology.values.map(value => value.ref))
     if (values.size !== subject.topology.values.length || [...values].some(ref => !acquired.has(ref))) context.addIssue({ code: 'custom', message: 'Layout semantic readings must be unique and acquired' })
     if (subject.topology.bindings.some(binding => [binding.ref, ...(binding.while ? [binding.while] : [])].some(ref => !values.has(ref)))) context.addIssue({ code: 'custom', message: 'Layout semantic binding has no acquired declaration' })
     if (subject.topology.kind === 'node' && subject.topology.connections) {
