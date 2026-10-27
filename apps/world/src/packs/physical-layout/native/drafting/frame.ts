@@ -18,7 +18,7 @@ const object = (value: PhysicalSceneObject): PhysicalSceneObject => ({ ...value,
   ...(value.bounds ? { bounds: bounds(value.bounds) } : {}),
   ...(value.featureLines ? { featureLines: value.featureLines.map(line => ({ ...line, positions: coordinates(line.positions) })) } : {}),
   ...(value.planLines ? { planLines: value.planLines.map(line => ({ ...line, positions: coordinates(line.positions) })) } : {}),
-  ...(value.inspectionBoundary ? { inspectionBoundary: { outward: point(value.inspectionBoundary.outward) } } : {}),
+  ...(value.inspectionBoundary ? { inspectionBoundary: { outward: [value.inspectionBoundary.outward[0], -value.inspectionBoundary.outward[1], 0] as [number, number, 0] } } : {}),
 })
 const annotation = (value: PhysicalPlanAnnotation): PhysicalPlanAnnotation => value.kind === 'label' ? { ...value, anchor: point(value.anchor), rotation: -value.rotation }
   : value.kind === 'dimension' ? { ...value, from: point(value.from), to: point(value.to), offset: point(value.offset) }

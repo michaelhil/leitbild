@@ -5,6 +5,8 @@ import { physicalScopeMembers } from '../map/physical-scene/scopes.ts'
 type Point = { readonly x: number; readonly y: number }
 type Rect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 const selections = new WeakMap<PackPhysicalScene, Map<string, ReadonlyArray<PhysicalPlanPrimitive>>>()
+const sceneObjects = new WeakMap<PackPhysicalScene, ReadonlyMap<string, PackPhysicalScene['objects'][number]>>()
+const paletteInks = new WeakMap<PhysicalScenePalette, ReadonlyMap<string, string>>()
 /** Selection and compilation live exactly as long as the immutable delivery. */
 export const visiblePhysicalPlanDrawing = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null): ReadonlyArray<PhysicalPlanPrimitive> => {
   if (view.mode !== '2d') return []
@@ -65,9 +67,18 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
   const { a, b, c, d, e, f } = frame, scale = Math.sqrt(Math.abs(a * d - b * c)), ratio = input.ratio
   const project = (x: number, y: number): Point => ({ x: a * x + c * y + e, y: b * x + d * y + f })
   const viewport: Rect = { x: 0, y: 0, width: input.width, height: input.height }
-  const materials = input.palette.planMaterials ?? input.palette.materials
-  const ink = (role: string) => { const color = materials[role]; if (!color) throw new Error(`Unknown architectural Plan material: ${role}`); return rgb(color) }
-  const objects = new Map(input.scene.objects.map(object => [object.id, object]))
+  let inks = paletteInks.get(input.palette)
+  if (!inks) { inks = new Map(Object.entries(input.palette.planMaterials ?? input.palette.materials).map(([role, color]) => [role, rgb(color)])); paletteInks.set(input.palette, inks) }
+  const ink = (role: string) => { const value = inks.get(role); if (!value) throw new Error(`Unknown architectural Plan material: ${role}`); return value }
+  let objects = sceneObjects.get(input.scene)
+  if (!objects) { objects = new Map(input.scene.objects.map(object => [object.id, object])); sceneObjects.set(input.scene, objects) }
+  const accents = new Map<string, { readonly color: string; readonly alpha: number } | null>()
+  const accentFor = (id: string) => {
+    if (accents.has(id)) return accents.get(id)
+    const states = objects.get(id)?.subjectIds.map(id => input.status.get(id)) ?? [], state = states[0]
+    const value = state?.color && state.emphasis > 0 && states.every(other => other?.emphasis === state.emphasis && JSON.stringify(other.color) === JSON.stringify(state.color)) ? { color: rgb(state.color), alpha: state.emphasis } : null
+    accents.set(id, value); return value
+  }
   context.save(); context.setTransform(ratio * a, ratio * b, ratio * c, ratio * d, ratio * e, ratio * f)
   context.lineJoin = 'round'; context.lineCap = 'round'
   for (const primitive of primitives) {
@@ -99,11 +110,9 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
     }
     if (primitive.stroke) {
       context.strokeStyle = ink(primitive.stroke); context.lineWidth = primitive.width ?? 1 / scale; context.stroke(path)
-      const object = primitive.occurrenceId ? objects.get(primitive.occurrenceId) : undefined
-      const states = input.view.live && primitive.depiction !== 'above' && primitive.depiction !== 'below' ? object?.subjectIds.map(id => input.status.get(id)) ?? [] : []
-      const state = states[0]
-      if (state?.color && state.emphasis > 0 && states.every(other => other?.emphasis === state.emphasis && JSON.stringify(other.color) === JSON.stringify(state.color))) {
-        context.globalAlpha = state.emphasis; context.strokeStyle = rgb(state.color); context.stroke(path)
+      const accent = input.view.live && primitive.occurrenceId && primitive.depiction !== 'above' && primitive.depiction !== 'below' ? accentFor(primitive.occurrenceId) : null
+      if (accent) {
+        context.globalAlpha = accent.alpha; context.strokeStyle = accent.color; context.stroke(path)
       }
     }
     context.restore()
