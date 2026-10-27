@@ -21,6 +21,8 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
   const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = [], planarity: boolean[] = [], cameraEvents: Array<{kind:'pose';pitch:number|undefined}|{kind:'planarity';value:boolean}> = []
   const listeners = new Map<string, Set<() => void>>(), fits: Parameters<PhysicalViewport['fitWorld']>[1][] = [], fitBounds: PhysicalSceneBounds[] = []
+  // Scope-tagged lifecycle fixtures use open triangles, not tube solids; real
+  // scope clipping/cap closure is qualified separately with closed meshes.
   const viewport: PhysicalViewport = {
     surface: { kind, element: {} as HTMLElement, getSize: () => ({ width: 800, height: 600 }), getPadding: () => ({ top: 0, right: 0, bottom: 0, left: 0 }), on: () => () => {} },
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
@@ -35,7 +37,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
   const hold = () => { let release!: () => void; waitForPreparation = new Promise<void>(resolve => { release = resolve }); return () => { waitForPreparation = null; release() } }
   const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>(), requests: Array<{key:string;view:PhysicalPreparationView;sourceKey:string|undefined;signal:AbortSignal|undefined}> = []
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
-    prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); requests.push({key,view,sourceKey:_sourceKey,signal}); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const base = preparePhysicalGeometry(value, view, key, identity), scopeId = view.scopeId, asset = tagScopedTraces && scopeId ? { ...base, meshes:base.meshes.map(mesh => mesh.object.clipToScope ? { ...mesh, inspectionScopeId:scopeId } : mesh) } : base; cache.set(key, asset); return asset } })
+    prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); requests.push({key,view,sourceKey:_sourceKey,signal}); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const { scopeId, ...unscopedView } = view; const base = preparePhysicalGeometry(value, tagScopedTraces ? unscopedView : view, key, identity), asset = tagScopedTraces && scopeId ? { ...base, meshes:base.meshes.map(mesh => mesh.object.clipToScope ? { ...mesh, inspectionScopeId:scopeId } : mesh) } : base; cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
   return { controller, source, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
@@ -247,10 +249,10 @@ test('opt-in spatial traces prepare per selected scope and transit membership ag
   const h = harness('map', true), value = scene('a')
   value.objects = [{ ...value.objects[0]!, positions:[0,0,0,1,0,8,0,1,8] }, { ...value.objects[1]!, clipToScope:true, positions:[3,0,0,4,0,8,3,1,8] }]
   h.controller.setSources([h.source(value)]); await settled(); const base = h.requests.at(-1)!
-  expect(JSON.parse(base.key.slice(base.key.lastIndexOf('/[')+1))).toEqual(['2d','lower',true,0])
+  expect(JSON.parse(base.key.slice(base.key.lastIndexOf('/[')+1))).toEqual(['2d','lower',true,0,{layers:['utilities']}])
   h.controller.selectScope('a', 'a'); await settled(); const scoped = h.requests.at(-1)!
   expect(scoped.view.scopeId).toBe('a'); expect(scoped.sourceKey).toBe(base.sourceKey)
-  expect(JSON.parse(scoped.key.slice(scoped.key.lastIndexOf('/[')+1))).toEqual(['2d','lower',true,0,'a'])
+  expect(JSON.parse(scoped.key.slice(scoped.key.lastIndexOf('/[')+1))).toEqual(['2d','lower',true,0,'a',{layers:['utilities']}])
   expect(h.entries()[0]!.meshes.map(mesh=>mesh.object.id)).toEqual(['machine','utility'])
   expect(h.entries()[0]!.meshes.find(mesh=>mesh.object.id==='utility')!.object.subjectIds).toEqual(['a:utility'])
   expect(visiblePhysicalBounds(h.entries()[0]!, {scopeId:'a'})!.max[0]).toBe(h.entries()[0]!.meshes.find(mesh=>mesh.object.id==='utility')!.bounds.max[0]); expect(visiblePhysicalBounds(h.entries()[0]!, {scopeId:'a'})!.max[0]).toBeGreaterThan(3)
@@ -266,4 +268,116 @@ test('a superseded scope preparation and camera intent cannot reappear after a n
   h.controller.selectScope('a','b');await settled();expect(older.signal?.aborted).toBe(true)
   release();await settled();expect(h.requests.at(-1)!.view.scopeId).toBe('b');expect(h.entries()[0]!.meshes.every(mesh=>mesh.inspectionScopeId==='b')).toBe(true)
   expect(h.fits).toHaveLength(fits);h.controller.destroy()
+})
+
+const hiddenUtilityScene = (id = 'a') => { const value = scene(id); value.layers![0]!.defaultVisible = false; return value }
+const all3d = (value: PackPhysicalScene) => ({ ...defaultPhysicalSceneView(value.levels), mode: '3d' as const, levelId: 'all' })
+
+test('incremental layer loading keeps valid buffers picks and owner status ready until coverage-qualified replacement', async () => {
+  const h = harness(), value = hiddenUtilityScene(), view = all3d(value)
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', view); await settled()
+  const prior = h.entries()[0]!.asset!, styles = new Map([['a:machine', { color: [.1, .2, .3] as const, emphasis: .5 }]])
+  h.controller.setStatus('a', styles)
+  const release = h.hold(); h.controller.setView('a', { ...view, hiddenLayerIds: [] })
+  expect(h.controller.presentations()[0]).toMatchObject({ status: 'ready', occurrenceCount: 2, layerPreparation: { status: 'loading', layerIds: ['utilities'] } })
+  expect(h.entries()[0]!.asset).toBe(prior); expect(h.entries()[0]!.asset!.acceleration).toBe(prior.acceleration)
+  expect(h.entries()[0]!.meshes.every(mesh => mesh.object.id === 'machine')).toBe(true); expect(h.controller.subjectStyles('a')).toBe(styles)
+  release(); await settled()
+  expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine', 'utility'])
+  expect(h.entries()[0]!.asset!.key).toContain('"layers":["utilities"]')
+  expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); expect(h.controller.subjectStyles('a')).toBe(styles)
+  const prepared = h.prepares(), retained = h.entries()[0]!.asset
+  h.controller.setView('a', view); expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine'])
+  h.controller.setView('a', { ...view, hiddenLayerIds: [] }); await settled()
+  expect(h.prepares()).toBe(prepared); expect(h.entries()[0]!.asset).toBe(retained); h.controller.destroy()
+})
+
+test('hiding a pending layer cancels demand immediately without a fresh job or stale asset replacement', async () => {
+  const h = harness(), value = hiddenUtilityScene(), view = all3d(value)
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', view); await settled()
+  const prior = h.entries()[0]!.asset!, release = h.hold()
+  h.controller.setView('a', { ...view, hiddenLayerIds: [] }); const count = h.prepares(), pending = h.signals.at(-1)!
+  h.controller.setView('a', view)
+  expect(pending.aborted).toBe(true); expect(h.prepares()).toBe(count)
+  expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); expect(h.entries()[0]!.asset).toBe(prior)
+  release(); await settled(); expect(h.entries()[0]!.asset).toBe(prior); expect(h.errors).toEqual([])
+  h.controller.setView('a', { ...view, hiddenLayerIds: [] }); await settled()
+  expect(h.entries()[0]!.meshes.some(mesh => mesh.object.id === 'utility')).toBe(true); h.controller.destroy()
+})
+
+test('cold-start layer expansion supersedes the pending request before a first asset exists', async () => {
+  const h = harness(), release = h.hold(), value = hiddenUtilityScene(), view = all3d(value)
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', view); await settled()
+  const old = h.signals.at(-1)!
+  h.controller.setView('a', { ...view, hiddenLayerIds: [] }); expect(old.aborted).toBe(true)
+  expect(h.requests.at(-1)!.view.hiddenLayerIds).not.toContain('utilities')
+  release(); await settled()
+  expect(h.controller.presentations()[0]!.status).toBe('ready'); expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine', 'utility'])
+  expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
+})
+
+test('incremental layer failure retains current buffers; explicit retry preserves source identity without reloading', async () => {
+  const h = harness(), value = hiddenUtilityScene(), view = all3d(value), source = h.source(value); let loads = 0
+  h.controller.setSources([{ ...source, load: async () => { loads++; return value } }]); h.controller.setView('a', view); await settled()
+  const prior = h.entries()[0]!.asset!, sourceKey = h.requests[0]!.sourceKey
+  h.failPreparation(); h.controller.setView('a', { ...view, hiddenLayerIds: [] }); await settled()
+  expect(h.controller.presentations()[0]).toMatchObject({ status: 'ready', layerPreparation: { status: 'unavailable', layerIds: ['utilities'], reason: 'Preparation rejected' } })
+  expect(h.entries()[0]!.asset).toBe(prior); expect(loads).toBe(1)
+  h.controller.retry('a'); await settled()
+  expect(loads).toBe(1); expect(h.requests.at(-1)!.sourceKey).toBe(sourceKey)
+  expect(h.entries()[0]!.meshes.map(mesh => mesh.object.id)).toEqual(['machine', 'utility']); expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
+})
+
+test('floor and source replacement invalidate pending layers and cannot admit stale owner data', async () => {
+  const h = harness(), value = hiddenUtilityScene(), view = all3d(value)
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', view); await settled()
+  const release = h.hold(); h.controller.setView('a', { ...view, hiddenLayerIds: [] }); const oldLayer = h.signals.at(-1)!
+  h.controller.setView('a', { ...view, levelId: 'upper', hiddenLayerIds: [] }); expect(oldLayer.aborted).toBe(true)
+  const oldFloor = h.signals.at(-1)!, replacement = { ...hiddenUtilityScene(), revision: 'new-source' }
+  replacement.objects = replacement.objects.map(object => ({ ...object, subjectIds: [`new:${object.id}`] }))
+  const next = h.source(replacement)
+  h.controller.setSources([{ ...next, descriptor: { ...next.descriptor, geometryKey: 'new-geometry' } }]); await settled(); expect(oldFloor.aborted).toBe(true)
+  release(); await settled()
+  expect(h.controller.scene('a')).toBe(replacement); expect(h.controller.presentations()[0]).toMatchObject({ status: 'ready', view: { levelId: 'upper' }, descriptor: { revision: 'new-source' } })
+  expect(h.entries()[0]!.asset!.key.startsWith('new-geometry/')).toBe(true)
+  expect(h.entries()[0]!.meshes.every(mesh => mesh.levelId === 'upper' && mesh.object.subjectIds[0]!.startsWith('new:'))).toBe(true); expect(h.errors).toEqual([]); h.controller.destroy()
+})
+
+test('scope changes retain base-only geometry but invalidate a pending scoped layer', async () => {
+  const h = harness('map', true), value = hiddenUtilityScene(), view = all3d(value)
+  value.objects[0]!.scopeIds = ['a', 'b']; value.objects[1]!.clipToScope = true
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', view); await settled()
+  const prior = h.entries()[0]!.asset!, count = h.prepares()
+  h.controller.selectScope('a', 'a'); await settled(); expect(h.prepares()).toBe(count); expect(h.entries()[0]!.asset).toBe(prior)
+  const release = h.hold(); h.controller.setView('a', { ...view, hiddenLayerIds: [] }); const scoped = h.signals.at(-1)!
+  expect(h.requests.at(-1)!.view.scopeId).toBe('a')
+  h.controller.selectScope('a', 'b'); expect(scoped.aborted).toBe(true); expect(h.entries()[0]!.asset).toBe(prior); expect(h.requests.at(-1)!.view.scopeId).toBe('b')
+  release(); await settled()
+  expect(h.entries()[0]!.meshes.filter(mesh => mesh.object.clipToScope).every(mesh => mesh.inspectionScopeId === 'b')).toBe(true)
+  expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
+})
+
+test('shared geometry placements keep independent layer coverage and rebound exact subjects', async () => {
+  const h = harness(), a = hiddenUtilityScene('a'), b = hiddenUtilityScene('b'), view = all3d(a)
+  h.controller.setSources([h.source(a), h.source(b)]); h.controller.setView('a', view); await settled()
+  const bAsset = h.entries().find(entry => entry.scene.id === 'b')!.asset!, release = h.hold()
+  h.controller.setView('a', { ...view, hiddenLayerIds: [] })
+  expect(h.controller.presentations().find(entry => entry.descriptor.id === 'b')!.layerPreparation).toBeUndefined(); expect(h.entries().find(entry => entry.scene.id === 'b')!.asset).toBe(bAsset)
+  release(); await settled(); h.controller.setView('b', { ...view, hiddenLayerIds: [] }); await settled()
+  const first = h.entries().find(entry => entry.scene.id === 'a')!, second = h.entries().find(entry => entry.scene.id === 'b')!
+  expect(first.asset!.buffers).toBe(second.asset!.buffers)
+  expect(first.meshes.map(mesh => mesh.object.subjectIds[0])).toEqual(['a:machine', 'a:utility']); expect(second.meshes.map(mesh => mesh.object.subjectIds[0])).toEqual(['b:machine', 'b:utility']); h.controller.destroy()
+})
+
+
+test('a changed clipping scope can recover failed additional layers without discarding valid base geometry', async () => {
+  const h = harness('map', true), value = hiddenUtilityScene(), view = all3d(value)
+  value.objects[0]!.scopeIds = ['a', 'b']; value.objects[1]!.clipToScope = true
+  h.controller.setSources([h.source(value)]); h.controller.setView('a', view); await settled(); h.controller.selectScope('a', 'a')
+  const prior = h.entries()[0]!.asset!; h.failPreparation(); h.controller.setView('a', { ...view, hiddenLayerIds: [] }); await settled()
+  expect(h.controller.presentations()[0]!.layerPreparation?.status).toBe('unavailable')
+  const release = h.hold(); h.controller.selectScope('a', 'b')
+  expect(h.entries()[0]!.asset).toBe(prior); expect(h.controller.presentations()[0]!.layerPreparation?.status).toBe('loading')
+  expect(h.requests.at(-1)!.view.scopeId).toBe('b'); release(); await settled()
+  expect(h.controller.presentations()[0]!.layerPreparation).toBeUndefined(); h.controller.destroy()
 })
