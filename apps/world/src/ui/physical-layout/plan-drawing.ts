@@ -30,8 +30,8 @@ export const visiblePhysicalPlanDrawing = (scene: PackPhysicalScene, view: Physi
   const result = floor.primitives.filter(primitive => (!primitive.layerId || !hiddenSet.has(primitive.layerId)) && (members === null || (primitive.occurrenceId && objects.get(primitive.occurrenceId)?.clipToScope ? regions.some(region => primitive.bounds.min[0] <= region.max[0] && primitive.bounds.max[0] >= region.min[0] && primitive.bounds.min[1] <= region.max[1] && primitive.bounds.max[1] >= region.min[1]) : primitive.scopeIds.some(id => members.has(id)))))
   selections.set(scene, { key, primitives: result }); return result
 }
-export const physicalPlanDrawingBounds = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null): PhysicalSceneBounds | null => {
-  const primitives = visiblePhysicalPlanDrawing(scene, view, scopeId)
+export const physicalPlanDrawingBounds = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null, occurrenceId?: string): PhysicalSceneBounds | null => {
+  const primitives = visiblePhysicalPlanDrawing(scene, view, scopeId).filter(primitive => occurrenceId === undefined || primitive.occurrenceId === occurrenceId)
   if (!primitives.length) return null
   const min: [number, number, number] = [Infinity, Infinity, 0], max: [number, number, number] = [-Infinity, -Infinity, 0]
   const objects = objectRoster(scene), regions = physicalScopeRegions(scene, scopeId ?? undefined)
