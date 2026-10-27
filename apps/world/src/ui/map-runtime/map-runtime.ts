@@ -21,6 +21,7 @@ import {
 import { createMapDiagnostics } from './map-diagnostics.ts'
 import { createMapErrorRouter } from './map-error-router.ts'
 import { mapPerformanceDiagnostics } from './map-performance-diagnostics.ts'
+import { createMapPickingDemand } from './picking-demand.ts'
 import type {
   MapRuntimeDiagnosticDetail,
   MapRuntimeDiagnosticPhaseReport,
@@ -196,6 +197,10 @@ export const createMapRuntime = async (
   assertCameraInteractionContract(current, config.cameraInteraction)
 
   let overlay: MapboxOverlay | null = null
+  // Deck's MapLibre event adapter does not forward held-button flags to its
+  // hover picker. A consumed navigation drag therefore needs an explicit lease.
+  // Keep this documented experimental Deck property inside its map adapter.
+  const pickingDemand = createMapPickingDemand(true, enabled => overlay?.setProps({ _pickable: enabled }))
   const installDeckOverlay = (): void => {
     diagnostics.start('operational-dynamic', 'Installing deck overlay')
     const nextOverlay = mapPerformanceDiagnostics.measure(
@@ -207,6 +212,7 @@ export const createMapRuntime = async (
         // Layer clicks dispatch inside MapLibre's click event, which is how the map tells an
         // object click from a ground click; 'auto' would turn async on a WebGPU device.
         pickAsync: 'sync',
+        _pickable: pickingDemand.enabled(),
       }),
     )
     overlay = nextOverlay
@@ -229,6 +235,7 @@ export const createMapRuntime = async (
     if (resourcesDestroyed) return
     resourcesDestroyed = true
     destroyed = true
+    pickingDemand.dispose()
     overlay?.setProps({ layers: [] })
     current.remove()
     for (let index = cleanups.length - 1; index >= 0; index -= 1) {
@@ -258,6 +265,7 @@ export const createMapRuntime = async (
   let contextLossTimer: ReturnType<typeof setTimeout> | null = null
   const onContextLost = (event: Event): void => {
     event.preventDefault()
+    pickingDemand.cancelLeases()
     diagnostics.fail('runtime', {
       phase: 'runtime',
       message: 'Vector map WebGL context was lost',
@@ -290,6 +298,8 @@ export const createMapRuntime = async (
     canvas.removeEventListener('webglcontextlost', onContextLost, false)
     canvas.removeEventListener('webglcontextrestored', onContextRestored, false)
   })
+  current.on('style.load', pickingDemand.cancelLeases)
+  cleanups.push(() => current.off('style.load', pickingDemand.cancelLeases))
 
   current.on('click', (event) => {
     const point = geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat)
@@ -364,6 +374,7 @@ export const createMapRuntime = async (
       if (activeOverlay === null) throw new Error('Deck overlay is not installed')
       activeOverlay.setProps({ pickingRadius: radiusPx })
     },
+    suspendPickingForNavigation: pickingDemand.suspend,
     diagnostics: snapshot,
     destroy: () => {
       destroyResources()

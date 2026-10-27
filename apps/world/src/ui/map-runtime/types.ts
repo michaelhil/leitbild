@@ -180,6 +180,8 @@ export interface MapRuntimeHandle {
   readonly setCameraInteraction: (interaction: CameraInteraction) => void
   /** How far around a press the map picks operational objects, in px (`map/map-pointer.ts`, `pickingRadiusFor`). */
   readonly setPickingRadius: (radiusPx: number) => void
+  /** A consumed navigation drag owns pointer intent until the returned release. */
+  readonly suspendPickingForNavigation: () => (() => void)
   readonly diagnostics: () => MapRuntimeDiagnosticsSnapshot
   readonly destroy: () => void
 }

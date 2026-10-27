@@ -11,5 +11,5 @@ export const physicalSceneExtent = (descriptor: PhysicalSceneDescriptor, project
 }
 /** Explicit display-quality policy. Object/scene counts are never admission criteria. */
 export const detailEligible = (projectedError: number, intersects: boolean, _wasEligible: boolean, targetPixelError = 1): boolean => intersects && projectedError > targetPixelError
-export const createPhysicalSceneController = (options: PhysicalSceneControllerOptions) => createPhysicalSceneControllerForViewport(createMapPhysicalViewport(options.map, options.beforeId), options)
+export const createPhysicalSceneController = (options: PhysicalSceneControllerOptions) => createPhysicalSceneControllerForViewport(createMapPhysicalViewport(options.map, options.beforeId, options.suspendPickingForNavigation), options)
 export type PhysicalSceneController = ReturnType<typeof createPhysicalSceneControllerForViewport>

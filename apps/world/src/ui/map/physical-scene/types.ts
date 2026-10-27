@@ -51,6 +51,8 @@ export interface PhysicalSceneControllerOptions {
   readonly palette: PhysicalScenePalette
   /** The physical layer belongs below operational overlays and labels. */
   readonly beforeId: () => string | undefined
+  /** Host picking is suspended only after this viewport consumes a drag. */
+  readonly suspendPickingForNavigation?: () => (() => void)
   readonly onChange: (scenes: ReadonlyArray<PhysicalScenePresentation>) => void
   readonly reportError: (error: Error) => void
   /** Full measured map padding including controls/rails; otherwise the map's current padding plus a small margin. */

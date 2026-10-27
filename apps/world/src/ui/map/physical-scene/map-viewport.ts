@@ -9,8 +9,10 @@ import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer 
 import type { PhysicalViewportFitOptions } from './types.ts'
 
 /** Real MapLibre camera/custom-layer adapter. Canvas mode implements this port independently. */
-export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => string | undefined): PhysicalViewport => {
+export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => string | undefined, suspendPickingForNavigation?: () => (() => void)): PhysicalViewport => {
   const canvas = map.getCanvas(), cleanups = new Set<() => void>()
+  let pickingRelease: (() => void) | null = null
+  const releasePicking = (): void => { const release = pickingRelease; pickingRelease = null; release?.() }
   let revision = 0, activePointer: { id: number; x: number; y: number; startX: number; startY: number; dragged: boolean } | null = null, cancelledPointer: number | null = null, tool: 'pan' | 'orbit' = 'pan'
   const revisionChanged = (): void => { revision++ }; map.on('move', revisionChanged); map.on('resize', revisionChanged)
   let active = true, elevatedInspection = false, priorClamp: boolean | null = null
@@ -70,11 +72,12 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
   }
   const releasePointer = (): void => {
     const owned = activePointer; activePointer = null
+    releasePicking()
     if (owned) { cancelledPointer = owned.id; if (canvas.hasPointerCapture(owned.id)) canvas.releasePointerCapture(owned.id) }
   }
   const pointerDown = (event: PointerEvent): void => {
     clearClickGuard(); cancelledPointer = null
-    if (tool !== 'orbit' || event.button !== 0 || event.defaultPrevented || event.pointerType === 'touch' || activePointer) return
+    if (!active || tool !== 'orbit' || event.button !== 0 || event.defaultPrevented || event.pointerType === 'touch' || activePointer) return
     activePointer = { id: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, dragged: false }
     canvas.setPointerCapture(event.pointerId)
     // Do not cancel pointerdown: compatibility mousedown must reach MapLibre
@@ -87,7 +90,8 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     const owned = activePointer
     if (!owned || owned.id !== event.pointerId || event.defaultPrevented) return
     if (!owned.dragged && Math.hypot(event.clientX - owned.startX, event.clientY - owned.startY) < dragSlop) return
-    owned.dragged = true; event.preventDefault()
+    if (!owned.dragged) { owned.dragged = true; pickingRelease = suspendPickingForNavigation?.() ?? null }
+    event.preventDefault()
     const size = canvas.getBoundingClientRect(), dx = event.clientX - owned.x, dy = event.clientY - owned.y
     owned.x = event.clientX; owned.y = event.clientY
     map.jumpTo({ bearing: map.getBearing() - dx / size.width * 360, pitch: Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() + dy / size.height * 180)) }, { originalEvent: event })
@@ -96,15 +100,21 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     const owned = activePointer
     if (owned?.id === event.pointerId) {
       const consumed = owned.dragged || event.type === 'pointercancel'
-      activePointer = null; if (canvas.hasPointerCapture(owned.id)) canvas.releasePointerCapture(owned.id)
+      activePointer = null; releasePicking(); if (canvas.hasPointerCapture(owned.id)) canvas.releasePointerCapture(owned.id)
       if (consumed) guardCompletedDrag(owned.id)
     } else if (cancelledPointer === event.pointerId) guardCompletedDrag(event.pointerId)
     if (cancelledPointer === event.pointerId) cancelledPointer = null
   }
   const pointerLost = (event: PointerEvent): void => { if (activePointer?.id === event.pointerId) releasePointer() }
+  const resetGesture = (): void => releasePointer()
+  const visibilityChanged = (): void => { if (canvas.ownerDocument?.visibilityState === 'hidden') releasePointer() }
   map.on('mousedown', mouseDown)
+  map.on('style.load', resetGesture)
   canvas.addEventListener('pointerdown', pointerDown); canvas.addEventListener('pointermove', pointerMove); canvas.addEventListener('lostpointercapture', pointerLost)
+  canvas.addEventListener('webglcontextlost', resetGesture)
   endTarget.addEventListener('pointerup', pointerEnd as EventListener, true); endTarget.addEventListener('pointercancel', pointerEnd as EventListener, true)
+  endTarget.addEventListener('blur', resetGesture)
+  canvas.ownerDocument?.addEventListener('visibilitychange', visibilityChanged)
   canvas.addEventListener('click', click, true); canvas.addEventListener('dblclick', click, true)
   const fitPose = (options: PhysicalViewportFitOptions) => ({
     bearing: options.preservePose ? map.getBearing() : options.bearing,
@@ -150,7 +160,7 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     },
     setActive(value) {
       if (active === value) return
-      if (!value) { if (elevatedInspection) pausedPose = currentPose(); active = false; releaseElevation(); syncPlanar(); return }
+      if (!value) { releasePointer(); if (elevatedInspection) pausedPose = currentPose(); active = false; releaseElevation(); syncPlanar(); return }
       active = true; acquireElevation(); syncPlanar()
       if (pausedPose) { const now = currentPose(); if (now.bearing === pausedPose.bearing && now.pitch === pausedPose.pitch && now.zoom === pausedPose.zoom && now.center[0] === pausedPose.center[0] && now.center[1] === pausedPose.center[1]) map.setCenterElevation(pausedPose.elevation); pausedPose = null }
     },
@@ -185,7 +195,7 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
     panBy: (x, y) => map.panBy([x, y], { duration: 0 }),
     setNavigationTool(value) { releasePointer(); tool = value; /* Native camera handlers retain their global contract; mousedown claims this gesture. */ },
     cancelCamera() { map.stop(); releasePointer() },
-    destroy() { releasePlanar(); leaveElevation(); for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
+    destroy() { releasePlanar(); leaveElevation(); for (const cleanup of [...cleanups]) cleanup(); map.off('move', revisionChanged); map.off('resize', revisionChanged); releasePointer(); clearClickGuard(); cancelledPointer = null; map.off('mousedown', mouseDown); map.off('style.load', resetGesture); canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove); canvas.removeEventListener('lostpointercapture', pointerLost); canvas.removeEventListener('webglcontextlost', resetGesture); endTarget.removeEventListener('pointerup', pointerEnd as EventListener, true); endTarget.removeEventListener('pointercancel', pointerEnd as EventListener, true); endTarget.removeEventListener('blur', resetGesture); canvas.ownerDocument?.removeEventListener('visibilitychange', visibilityChanged); canvas.removeEventListener('click', click, true); canvas.removeEventListener('dblclick', click, true) },
   }
   return port
 }
