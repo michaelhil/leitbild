@@ -1,0 +1,130 @@
+{
+  "rawEvidence": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/plan-paint-pair",
+  "files": [
+    {
+      "path": "baseline-dpr1/operating-live-off.json",
+      "bytes": 2266,
+      "sha256": "c5cce549cb8761ed95f9582448290d50f2d164beea7ea84663759b3ed6c6cb61"
+    },
+    {
+      "path": "baseline-dpr1/operating-live-off.png",
+      "bytes": 213068,
+      "sha256": "0463c5f66becb813853da175ac8cd6621f33755eba0574b78a99cec82ff0ea36"
+    },
+    {
+      "path": "baseline-dpr1/receipt.json",
+      "bytes": 32537,
+      "sha256": "d938cb14137b26345ec31496ea3ccf9b992c5a3a70d1b4529c8e0e4c2a789627"
+    },
+    {
+      "path": "baseline-dpr1/site-live-off.json",
+      "bytes": 25634,
+      "sha256": "3565373f29617764092442a8f8d91d986c3fe3254daef3cfbde14bcf58a3508d"
+    },
+    {
+      "path": "baseline-dpr1/site-live-off.png",
+      "bytes": 116733,
+      "sha256": "62426da4eb4c686e4cc4d5e60806ef65911ca3eb5e44547596af3eb4c238b5c7"
+    },
+    {
+      "path": "baseline-dpr2/operating-live-off.json",
+      "bytes": 2296,
+      "sha256": "1ffbb872a8f310b68493a7ba4bf5021378d3b89563d71df0283976ac93354b39"
+    },
+    {
+      "path": "baseline-dpr2/operating-live-off.png",
+      "bytes": 457657,
+      "sha256": "f68175dcfdc08e0ee421bdfcbe0386fbb53fa8fb2693ab85ae2409352917dc4c"
+    },
+    {
+      "path": "baseline-dpr2/receipt.json",
+      "bytes": 32495,
+      "sha256": "77cb6a52932b3b3abe030366b38c5fed96be9245773fda81d0d079351d1a07e4"
+    },
+    {
+      "path": "baseline-dpr2/site-live-off.json",
+      "bytes": 25562,
+      "sha256": "3f3bfbd1ea07694664b9f18ea059a519ba9635a8f70901ab64eebe7bd4b54585"
+    },
+    {
+      "path": "baseline-dpr2/site-live-off.png",
+      "bytes": 298934,
+      "sha256": "1c99e791f0ffb80b3e30b5e99d4973cbda58757a19c3c06e1bc78f49147eec08"
+    },
+    {
+      "path": "baseline-qa-run.json",
+      "bytes": 2272,
+      "sha256": "1fd81d461edcf464da6709fbb45478ef1b903af215aa240a86f0fd9cce65940c"
+    },
+    {
+      "path": "candidate-dpr1/operating-live-off-product.png",
+      "bytes": 277435,
+      "sha256": "cc2a2e9a453660db7e4c96562a0a4267f38faecb4a1bca79cadf2fa6c440b5a9"
+    },
+    {
+      "path": "candidate-dpr1/operating-live-off.json",
+      "bytes": 2266,
+      "sha256": "06a6190bd5bd96f24220738bb49f766342055934cd84a7a56ab9039a070bc6fa"
+    },
+    {
+      "path": "candidate-dpr1/operating-live-off.png",
+      "bytes": 213068,
+      "sha256": "0463c5f66becb813853da175ac8cd6621f33755eba0574b78a99cec82ff0ea36"
+    },
+    {
+      "path": "candidate-dpr1/receipt.json",
+      "bytes": 32537,
+      "sha256": "4b11cc171ad767d1bcf45f247203c090c6f8f8736b246c3d1dc24321ec818506"
+    },
+    {
+      "path": "candidate-dpr1/site-live-off-product.png",
+      "bytes": 298461,
+      "sha256": "101abd7d23baf21c64809012e563d8794fe4e9c65b15296c40a125921bf0a7f5"
+    },
+    {
+      "path": "candidate-dpr1/site-live-off.json",
+      "bytes": 25634,
+      "sha256": "099d9a3897d8cf324c8aaa8c0bf9feda995d2772df69d976f18711a9d5389ef0"
+    },
+    {
+      "path": "candidate-dpr1/site-live-off.png",
+      "bytes": 116733,
+      "sha256": "62426da4eb4c686e4cc4d5e60806ef65911ca3eb5e44547596af3eb4c238b5c7"
+    },
+    {
+      "path": "candidate-dpr2/operating-live-off.json",
+      "bytes": 2296,
+      "sha256": "b2bfea1e5e4f07e16055bb3217e17b926fac1d356eebf3f640d3cbcfdb5a8a7d"
+    },
+    {
+      "path": "candidate-dpr2/operating-live-off.png",
+      "bytes": 457657,
+      "sha256": "f68175dcfdc08e0ee421bdfcbe0386fbb53fa8fb2693ab85ae2409352917dc4c"
+    },
+    {
+      "path": "candidate-dpr2/receipt.json",
+      "bytes": 32495,
+      "sha256": "140e796934f9bc1b81dfbbead32c39f5f6465fc8da93ab8fa0e17ed8fefa1552"
+    },
+    {
+      "path": "candidate-dpr2/site-live-off.json",
+      "bytes": 25562,
+      "sha256": "16b7650572edaaa82e40fcf54fffa8e381439ceb419b35ce8e0bfd8d9a2a3bc3"
+    },
+    {
+      "path": "candidate-dpr2/site-live-off.png",
+      "bytes": 298934,
+      "sha256": "1c99e791f0ffb80b3e30b5e99d4973cbda58757a19c3c06e1bc78f49147eec08"
+    },
+    {
+      "path": "candidate-qa-run.json",
+      "bytes": 2259,
+      "sha256": "30f313d9a091836f4c0032b418ab68cef144d8766e0956702b6906c310195aa9"
+    },
+    {
+      "path": "comparison.json",
+      "bytes": 3200,
+      "sha256": "08348e8a78569fb54184203e91885a16724dff73e21485dfd32efc750ae1f175"
+    }
+  ]
+}
