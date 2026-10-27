@@ -135,7 +135,8 @@ button {
   transition: grid-template-columns 120ms ease;
 }
 
-.app-shell.no-rail {
+.app-shell.no-rail,
+.app-shell.rail-drawer {
   grid-template-columns: minmax(0, 1fr);
 }
 
