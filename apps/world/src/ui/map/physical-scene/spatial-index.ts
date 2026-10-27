@@ -87,6 +87,17 @@ export const visitPhysicalSpatialRay = (index: PhysicalSpatialIndex, origin: Vec
   }
 }
 
+/** Conservative pair eligibility, independent of hierarchy leaf grouping.
+ * Bounds are actual triangle coordinates; the same forward-error reservation
+ * as node traversal permits arithmetic boundary ties without a metric epsilon. */
+export const physicalSpatialBoundsOverlap = (a: PhysicalSceneBounds, b: PhysicalSceneBounds): boolean => {
+  for (let axis = 0; axis < 3; axis++) {
+    const low = a.min[axis]!, high = a.max[axis]!, scale = Math.max(1, Math.abs(low), Math.abs(high), Math.abs(b.min[axis]!), Math.abs(b.max[axis]!)), error = scale * Number.EPSILON * 8
+    if (high < b.min[axis]! - error || low > b.max[axis]! + error) return false
+  }
+  return true
+}
+
 /** Conservative overlap query used during immutable surface preparation. */
 export const visitPhysicalSpatialBounds = (index: PhysicalSpatialIndex, bounds: PhysicalSceneBounds, visit: (primitive: number) => void): void => {
   if (!index.order.length) return
