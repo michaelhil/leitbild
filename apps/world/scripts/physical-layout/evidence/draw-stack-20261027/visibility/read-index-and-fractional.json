@@ -1,0 +1,1053 @@
+{
+  "appCommit": "30fb742e561481faac940e403fc21c44c8537a46",
+  "sourcePins": {
+    "expectedUnitDesign": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "expectedCampusDesign": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+  },
+  "rawFiles": {
+    "read-index-opaque-dpr1": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/read-index-opaque-dpr1/receipt.json",
+      "sha256": "0315559ac733cbc5cf96c5d97931e1409901eea092229ca7edc8dd6b4138f4da",
+      "bytes": 69781
+    },
+    "read-index-opaque-dpr2": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/read-index-opaque-dpr2/receipt.json",
+      "sha256": "483974098d8969b528346972fcfa49ba98e632eef226c5472f48fcc6c3dc8f96",
+      "bytes": 69618
+    },
+    "read-index-fractional-dpr1": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/read-index-fractional-dpr1/receipt.json",
+      "sha256": "922be23a4641b4b453e0e10b18e13bd6fa9606076cbb3c2b143c5b184f9fb180",
+      "bytes": 116475
+    },
+    "partial.json": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/read-index-fractional-gpu-cpu-dpr1/partial.json",
+      "sha256": "26d06e24b1bc003a88c64ff4a367529363c61aa37209ebd27e77a101f5184575",
+      "bytes": 158388
+    },
+    "map-site-3d-fractional-paused.cpuprofile": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/read-index-fractional-gpu-cpu-dpr1/map-site-3d-fractional-paused.cpuprofile",
+      "sha256": "8ecf66b7d1f87be4c10357574b732ca85e7170a42d7c851e9e31e4b6e03f9c01",
+      "bytes": 321431
+    }
+  },
+  "ordinary": [
+    {
+      "name": "map-site-3d-paused",
+      "playing": false,
+      "frames": 243,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000109,
+      "durationMs": 4073.5999999046326,
+      "windowStarted": 7561.200000047684,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 11625.700000047684
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 11625.700000047684
+        }
+      ],
+      "baseDraws": {
+        "calls": 976,
+        "triangleVertices": 767929008,
+        "lineVertices": 122284488
+      },
+      "orderedDraws": {
+        "calls": 0,
+        "indices": 0,
+        "firstAt": null,
+        "lastAt": null
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 1080,
+          "height": 871,
+          "samples": 4,
+          "depthBytes": 15050880,
+          "colorBytes": 15050880,
+          "resolveBytes": 3762720
+        }
+      ],
+      "dpr": 1,
+      "heapEnd": {
+        "usedSize": 187471868,
+        "totalSize": 269664256,
+        "embedderHeapUsedSize": 27054560,
+        "backingStorageSize": 282175811
+      },
+      "summedOwnChromeRssKiBEnd": 2125952,
+      "cameraStartEqualsA8": true
+    },
+    {
+      "name": "map-site-3d-playing",
+      "playing": true,
+      "frames": 243,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000109,
+      "durationMs": 4072.699999809265,
+      "windowStarted": 11895.600000143051,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 15959
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 15959
+        }
+      ],
+      "baseDraws": {
+        "calls": 976,
+        "triangleVertices": 767925936,
+        "lineVertices": 122284392
+      },
+      "orderedDraws": {
+        "calls": 0,
+        "indices": 0,
+        "firstAt": null,
+        "lastAt": null
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 1080,
+          "height": 871,
+          "samples": 4,
+          "depthBytes": 15050880,
+          "colorBytes": 15050880,
+          "resolveBytes": 3762720
+        }
+      ],
+      "dpr": 1,
+      "heapEnd": {
+        "usedSize": 263209280,
+        "totalSize": 322764800,
+        "embedderHeapUsedSize": 68038680,
+        "backingStorageSize": 362127247
+      },
+      "summedOwnChromeRssKiBEnd": 1969568,
+      "cameraStartEqualsA8": true
+    },
+    {
+      "name": "map-site-3d-paused",
+      "playing": false,
+      "frames": 240,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 33.30000000000018,
+      "durationMs": 4052.0999999046326,
+      "windowStarted": 7031.700000047684,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 11074.099999904633
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 11074.099999904633
+        }
+      ],
+      "baseDraws": {
+        "calls": 964,
+        "triangleVertices": 758484621,
+        "lineVertices": 120780898
+      },
+      "orderedDraws": {
+        "calls": 0,
+        "indices": 0,
+        "firstAt": null,
+        "lastAt": null
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 2160,
+          "height": 1742,
+          "samples": 4,
+          "depthBytes": 60203520,
+          "colorBytes": 60203520,
+          "resolveBytes": 15050880
+        }
+      ],
+      "dpr": 2,
+      "heapEnd": {
+        "usedSize": 223277864,
+        "totalSize": 286146560,
+        "embedderHeapUsedSize": 48599944,
+        "backingStorageSize": 363509036
+      },
+      "summedOwnChromeRssKiBEnd": 3043520
+    },
+    {
+      "name": "map-site-3d-playing",
+      "playing": true,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000109,
+      "durationMs": 4054.5,
+      "windowStarted": 11395.5,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 15441.200000047684
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 15441.200000047684
+        }
+      ],
+      "baseDraws": {
+        "calls": 964,
+        "triangleVertices": 758487621,
+        "lineVertices": 120781570
+      },
+      "orderedDraws": {
+        "calls": 0,
+        "indices": 0,
+        "firstAt": null,
+        "lastAt": null
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 2160,
+          "height": 1742,
+          "samples": 4,
+          "depthBytes": 60203520,
+          "colorBytes": 60203520,
+          "resolveBytes": 15050880
+        }
+      ],
+      "dpr": 2,
+      "heapEnd": {
+        "usedSize": 218113648,
+        "totalSize": 278200320,
+        "embedderHeapUsedSize": 48949512,
+        "backingStorageSize": 328082211
+      },
+      "summedOwnChromeRssKiBEnd": 2985440
+    }
+  ],
+  "fractional": [
+    {
+      "name": "map-site-3d-fractional-paused",
+      "playing": false,
+      "frames": 47,
+      "rafMedianMs": 16.700000000000728,
+      "rafP95Ms": 433.39999999999964,
+      "rafMaxMs": 2083.300000000001,
+      "durationMs": 5967.899999856949,
+      "windowStarted": 12712.5,
+      "longTasks": [
+        {
+          "start": 12730,
+          "duration": 169
+        },
+        {
+          "start": 12899.899999856949,
+          "duration": 57
+        },
+        {
+          "start": 13203.199999809265,
+          "duration": 99
+        },
+        {
+          "start": 13361.899999856949,
+          "duration": 82
+        },
+        {
+          "start": 13488,
+          "duration": 61
+        },
+        {
+          "start": 13592.5,
+          "duration": 123
+        },
+        {
+          "start": 13857.899999856949,
+          "duration": 440
+        },
+        {
+          "start": 14315.599999904633,
+          "duration": 57
+        },
+        {
+          "start": 14390.899999856949,
+          "duration": 80
+        },
+        {
+          "start": 14714,
+          "duration": 2100
+        },
+        {
+          "start": 16881.199999809265,
+          "duration": 57
+        },
+        {
+          "start": 16941.099999904633,
+          "duration": 266
+        },
+        {
+          "start": 17237,
+          "duration": 1041
+        },
+        {
+          "start": 18292.5,
+          "duration": 113
+        }
+      ],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 18571.599999904633
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 18571.599999904633
+        }
+      ],
+      "baseDraws": {
+        "calls": 128,
+        "triangleVertices": 95858592,
+        "lineVertices": 14696000
+      },
+      "orderedDraws": {
+        "calls": 65666,
+        "indices": 6574293,
+        "firstAt": 12940.699999809265,
+        "lastAt": 18577.89999985695
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 1080,
+          "height": 871,
+          "samples": 4,
+          "depthBytes": 15050880,
+          "colorBytes": 15050880,
+          "resolveBytes": 3762720
+        }
+      ],
+      "dpr": 1,
+      "heapEnd": {
+        "usedSize": 215258308,
+        "totalSize": 275578880,
+        "embedderHeapUsedSize": 18362544,
+        "backingStorageSize": 340583396
+      },
+      "summedOwnChromeRssKiBEnd": 238864
+    },
+    {
+      "name": "map-site-3d-fractional-playing",
+      "playing": true,
+      "frames": 68,
+      "rafMedianMs": 33.400000000001455,
+      "rafP95Ms": 183.29999999999927,
+      "rafMaxMs": 233.29999999999927,
+      "durationMs": 4190.5,
+      "windowStarted": 23901.39999985695,
+      "longTasks": [
+        {
+          "start": 24015.89999985695,
+          "duration": 59
+        },
+        {
+          "start": 24119.699999809265,
+          "duration": 132
+        },
+        {
+          "start": 24580,
+          "duration": 104
+        },
+        {
+          "start": 24690.599999904633,
+          "duration": 51
+        },
+        {
+          "start": 24752.799999952316,
+          "duration": 122
+        },
+        {
+          "start": 24888.199999809265,
+          "duration": 72
+        },
+        {
+          "start": 25183,
+          "duration": 69
+        },
+        {
+          "start": 25326.5,
+          "duration": 73
+        },
+        {
+          "start": 25436.39999985695,
+          "duration": 83
+        },
+        {
+          "start": 25521.199999809265,
+          "duration": 52
+        },
+        {
+          "start": 25574.199999809265,
+          "duration": 51
+        },
+        {
+          "start": 25665.5,
+          "duration": 196
+        },
+        {
+          "start": 25862.5,
+          "duration": 76
+        },
+        {
+          "start": 25941,
+          "duration": 158
+        },
+        {
+          "start": 26100.199999809265,
+          "duration": 172
+        },
+        {
+          "start": 26282.099999904633,
+          "duration": 227
+        },
+        {
+          "start": 26595.799999952316,
+          "duration": 101
+        },
+        {
+          "start": 26728.099999904633,
+          "duration": 134
+        },
+        {
+          "start": 26863.099999904633,
+          "duration": 107
+        },
+        {
+          "start": 27195.799999952316,
+          "duration": 139
+        },
+        {
+          "start": 27348.799999952316,
+          "duration": 64
+        },
+        {
+          "start": 27443.89999985695,
+          "duration": 101
+        },
+        {
+          "start": 27546.699999809265,
+          "duration": 66
+        },
+        {
+          "start": 27839.5,
+          "duration": 115
+        }
+      ],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 28082
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 28082
+        }
+      ],
+      "baseDraws": {
+        "calls": 240,
+        "triangleVertices": 179733120,
+        "lineVertices": 27555000
+      },
+      "orderedDraws": {
+        "calls": 123043,
+        "indices": 12331803,
+        "firstAt": 23962.699999809265,
+        "lastAt": 28086.39999985695
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 1080,
+          "height": 871,
+          "samples": 4,
+          "depthBytes": 15050880,
+          "colorBytes": 15050880,
+          "resolveBytes": 3762720
+        }
+      ],
+      "dpr": 1,
+      "heapEnd": {
+        "usedSize": 263113244,
+        "totalSize": 337084416,
+        "embedderHeapUsedSize": 34522824,
+        "backingStorageSize": 396036566
+      },
+      "summedOwnChromeRssKiBEnd": 400576
+    },
+    {
+      "name": "map-room-3d-fractional-paused",
+      "playing": false,
+      "frames": 243,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.799999999995634,
+      "rafMaxMs": 16.80000000000291,
+      "durationMs": 4057.2000000476837,
+      "windowStarted": 44284.59999990463,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 48338.09999990463
+        }
+      ],
+      "baseDraws": {
+        "calls": 480,
+        "triangleVertices": 13676400,
+        "lineVertices": 3306240
+      },
+      "orderedDraws": {
+        "calls": 720,
+        "indices": 1329600,
+        "firstAt": 44287.199999809265,
+        "lastAt": 48338.199999809265
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 1080,
+          "height": 871,
+          "samples": 4,
+          "depthBytes": 15050880,
+          "colorBytes": 15050880,
+          "resolveBytes": 3762720
+        }
+      ],
+      "dpr": 1,
+      "heapEnd": {
+        "usedSize": 333256196,
+        "totalSize": 396115968,
+        "embedderHeapUsedSize": 53762576,
+        "backingStorageSize": 477646080
+      },
+      "summedOwnChromeRssKiBEnd": 1245168
+    },
+    {
+      "name": "map-room-3d-fractional-playing",
+      "playing": true,
+      "frames": 241,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.700000000004366,
+      "rafMaxMs": 16.80000000000291,
+      "durationMs": 4038.2000000476837,
+      "windowStarted": 48886.299999952316,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 52921.799999952316
+        }
+      ],
+      "baseDraws": {
+        "calls": 478,
+        "triangleVertices": 13619415,
+        "lineVertices": 3292464
+      },
+      "orderedDraws": {
+        "calls": 717,
+        "indices": 1324060,
+        "firstAt": 48905,
+        "lastAt": 52921.89999985695
+      },
+      "pending": 0,
+      "bspPending": 0,
+      "ownedPhysicalTargets": [
+        {
+          "context": 1,
+          "surface": "maplibregl-canvas",
+          "width": 1080,
+          "height": 871,
+          "samples": 4,
+          "depthBytes": 15050880,
+          "colorBytes": 15050880,
+          "resolveBytes": 3762720
+        }
+      ],
+      "dpr": 1,
+      "heapEnd": {
+        "usedSize": 364612552,
+        "totalSize": 421019648,
+        "embedderHeapUsedSize": 63980432,
+        "backingStorageSize": 481836128
+      },
+      "summedOwnChromeRssKiBEnd": 1298608
+    }
+  ],
+  "fractionalDiagnostic": {
+    "sampleMs": 5438.765,
+    "gpu": {
+      "draw": {
+        "count": 246,
+        "median": 7.000625,
+        "p95": 11.257208,
+        "max": 18.145625
+      },
+      "resolve": {
+        "count": 123,
+        "median": 1.708375,
+        "p95": 3.12975,
+        "max": 4.145166
+      }
+    },
+    "drawClasses": {
+      "base": {
+        "gpu": {
+          "count": 123,
+          "median": 6.575749,
+          "p95": 9.833124,
+          "max": 18.145625
+        },
+        "cpuSubmission": {
+          "count": 123,
+          "median": 2.1000001430511475,
+          "p95": 9.399999856948853,
+          "max": 57.80000019073486
+        },
+        "drawCalls": {
+          "count": 123,
+          "median": 4,
+          "p95": 4,
+          "max": 4
+        }
+      },
+      "ordered": {
+        "gpu": {
+          "count": 123,
+          "median": 7.496541,
+          "p95": 11.466374,
+          "max": 15.888999
+        },
+        "cpuSubmission": {
+          "count": 123,
+          "median": 2,
+          "p95": 8.200000047683716,
+          "max": 12.599999904632568
+        },
+        "drawCalls": {
+          "count": 123,
+          "median": 2045,
+          "p95": 2058,
+          "max": 2058
+        }
+      }
+    },
+    "gpuValid": true,
+    "gpuStates": {
+      "pending": 0,
+      "busyIntervals": 0,
+      "disjointEvents": 0,
+      "aborted": []
+    },
+    "actualOrdered": {
+      "calls": 252024,
+      "indices": 25272426,
+      "firstAt": 12786,
+      "lastAt": 18096.39999985695
+    },
+    "frames": 136,
+    "p95": 100
+  },
+  "fractionalCpuSelf": [
+    {
+      "ms": 1899.662,
+      "function": "getParameter",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 362
+    },
+    {
+      "ms": 717.22,
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 2
+    },
+    {
+      "ms": 206.933,
+      "function": "(garbage collector)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 278
+    },
+    {
+      "ms": 196.882,
+      "function": "Vt",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 10546,
+      "node": 295
+    },
+    {
+      "ms": 194.238,
+      "function": "draw",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 16992,
+      "node": 216
+    },
+    {
+      "ms": 154.137,
+      "function": "On",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 36073,
+      "node": 554
+    },
+    {
+      "ms": 93.565,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 17492,
+      "node": 386
+    },
+    {
+      "ms": 85.11,
+      "function": "(idle)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 230
+    },
+    {
+      "ms": 54.069,
+      "function": "fetch",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 575
+    },
+    {
+      "ms": 48.893,
+      "function": "WebGL2RenderingContext.getParameter",
+      "url": "",
+      "line": 640,
+      "column": 61,
+      "node": 211
+    },
+    {
+      "ms": 46.185,
+      "function": "_",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 13723,
+      "node": 387
+    },
+    {
+      "ms": 41.004,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 37969,
+      "node": 209
+    },
+    {
+      "ms": 30.383,
+      "function": "WebGL2RenderingContext.drawElementsInstanced",
+      "url": "",
+      "line": 150,
+      "column": 70,
+      "node": 221
+    },
+    {
+      "ms": 30.214,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 13921,
+      "node": 449
+    },
+    {
+      "ms": 28.272,
+      "function": "Ft",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 6768,
+      "node": 457
+    },
+    {
+      "ms": 24.829,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 17320,
+      "node": 427
+    },
+    {
+      "ms": 22.901,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 2,
+      "column": 10585,
+      "node": 483
+    },
+    {
+      "ms": 22.151,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 18332,
+      "node": 296
+    },
+    {
+      "ms": 21.898,
+      "function": "Ue",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 2,
+      "column": 6136,
+      "node": 265
+    },
+    {
+      "ms": 20.447,
+      "function": "state",
+      "url": "",
+      "line": 20,
+      "column": 19,
+      "node": 223
+    }
+  ],
+  "fractionalCpuInclusive": [
+    {
+      "ms": 5438.765,
+      "function": "(root)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 1
+    },
+    {
+      "ms": 3461.822,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 187636,
+      "node": 197
+    },
+    {
+      "ms": 3461.822,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 2,
+      "column": 24455,
+      "node": 196
+    },
+    {
+      "ms": 3460.561,
+      "function": "_render",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 184132,
+      "node": 198
+    },
+    {
+      "ms": 3268.704,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 76756,
+      "node": 202
+    },
+    {
+      "ms": 3202.954,
+      "function": "renderLayer",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 80018,
+      "node": 203
+    },
+    {
+      "ms": 3044.896,
+      "function": "sO",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 65276,
+      "node": 207
+    },
+    {
+      "ms": 3034.256,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 43670,
+      "node": 208
+    },
+    {
+      "ms": 3029.439,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 37969,
+      "node": 209
+    },
+    {
+      "ms": 1961.459,
+      "function": "It",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 7425,
+      "node": 210
+    },
+    {
+      "ms": 1949.631,
+      "function": "WebGL2RenderingContext.getParameter",
+      "url": "",
+      "line": 640,
+      "column": 61,
+      "node": 211
+    },
+    {
+      "ms": 1899.662,
+      "function": "getParameter",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 362
+    },
+    {
+      "ms": 733.898,
+      "function": "draw",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-kphuz3Lt.js",
+      "line": 105,
+      "column": 16992,
+      "node": 216
+    },
+    {
+      "ms": 717.22,
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 2
+    },
+    {
+      "ms": 449.449,
+      "function": "flush",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 10409,
+      "node": 127
+    },
+    {
+      "ms": 449.449,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 11183,
+      "node": 126
+    },
+    {
+      "ms": 449.449,
+      "function": "h",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 401,
+      "node": 125
+    },
+    {
+      "ms": 449.449,
+      "function": "st",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 3882,
+      "node": 124
+    },
+    {
+      "ms": 449.449,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 3966,
+      "node": 123
+    },
+    {
+      "ms": 448.362,
+      "function": "#_",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 8287,
+      "node": 128
+    },
+    {
+      "ms": 307.343,
+      "function": "Kt",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 11637,
+      "node": 140
+    },
+    {
+      "ms": 296.052,
+      "function": "cr",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 21050,
+      "node": 142
+    }
+  ],
+  "limits": [
+    "Normal full-Live ON site3D is qualified only for these paused/playing4second windows atDPR1/2; full32matrix/coldtransitions are not yet rerun for30fb.",
+    "Whole-site fractional30fb fails the16.8ms target; scopedroom fractional passes. Failed windows are retained, not relabelled by the faster profiled diagnostic.",
+    "Diagnostic timers/profiler add overhead and alter queue pacing. GPUelapsed intervals include idle waiting forCPUcommands; no GPUutilization claim.",
+    "Driver synchronization dominated sampledCPU but causation is not assigned to a specific getParameter caller property beyond the captured GLstate boundary. State capture remains required.",
+    "All geometry, authored native lines, sourcepins,4\u00d7MSAA and physical camera semantics remain unchanged. No production Run/probe was used."
+  ]
+}
