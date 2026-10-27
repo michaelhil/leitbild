@@ -153,7 +153,7 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
     worldTransform(); context.lineJoin = 'round'; context.lineCap = 'round'; context.textBaseline = 'middle'
     for (const command of stream) {
       if (!visible(command.kind === 'text' ? command.primitive.bounds : command.bounds)) continue
-      const occurrenceId = command.kind === 'text' ? command.primitive.occurrenceId : command.occurrenceId
+      const occurrenceId = command.kind === 'text' ? command.primitive.occurrenceId : command.paint.occurrenceId
       const object = occurrenceId ? objects.get(occurrenceId) : undefined
       const architectureOpacity = object ? physicalArchitectureOpacity(object, input.view) : 1
       if (architectureOpacity === 0) continue
@@ -190,7 +190,7 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
         const accent = input.view.live && command.occurrenceId && p.depiction !== 'above' && p.depiction !== 'below' ? accentFor(command.occurrenceId) : null
         if (accent) { opacity(accent.alpha); strokeInk(accent.color); context.stroke(path) }
       }
-      if (input.highlight?.occurrenceId === command.occurrenceId && p.depiction !== 'above' && p.depiction !== 'below') {
+      if (input.highlight && input.highlight.occurrenceId === command.occurrenceId && p.depiction !== 'above' && p.depiction !== 'below') {
         const color = rgb(input.highlight.color)
         if (p.fill) { opacity(.24); fillInk(color); context.fill(path, fillRule) }
         if (p.stroke) { opacity(1); strokeInk(color); lineWidth(Math.max(p.width ?? 1 / scale, 1.5 / scale)); context.stroke(path) }
