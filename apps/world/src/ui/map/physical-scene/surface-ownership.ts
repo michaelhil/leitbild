@@ -1,6 +1,6 @@
 import type { PhysicalMesh } from './geometry.ts'
 import { meshBounds } from './geometry.ts'
-import { cross, subtract, type Vector3 } from './math.ts'
+import { type Vector3 } from './math.ts'
 import { derivePhysicalPickAcceleration, type PhysicalPickAcceleration } from './picking.ts'
 import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds } from './spatial-index.ts'
 
@@ -16,7 +16,6 @@ export interface PhysicalSurfaceOwnershipDiagnostics {
 type Vertex = readonly [number, number, number, number, number, number, number]
 interface Face { readonly mesh: number; readonly vertices: readonly Vertex[]; readonly axes: readonly [number, number]; readonly normal: Vector3; readonly bounds: ReturnType<typeof meshBounds> }
 interface Region { readonly vertices: readonly Vertex[]; readonly coveredBy: readonly string[] }
-const point = (v: Vertex): Vector3 => [v[0], v[1], v[2]]
 const vertex = (values: ArrayLike<number>, at: number): Vertex => [values[at]!, values[at + 1]!, values[at + 2]!, values[at + 3]!, values[at + 4]!, values[at + 5]!, values[at + 6]!]
 
 /** orient3d's forward-error bound depends on its products, not a metric epsilon. */
@@ -67,24 +66,37 @@ const partition = (region: Region, cover: Face, owner: string): { regions: reado
   pieces.push({ vertices: remaining, coveredBy: [...region.coveredBy, owner] })
   return { regions: pieces, overlap: overlap * Math.hypot(...cover.normal) / Math.abs(cover.normal[3 - axes[0] - axes[1]]!) }
 }
-const append = (output: number[], polygon: readonly Vertex[]): void => { for (let corner = 1; corner < polygon.length - 1; corner++) output.push(...polygon[0]!, ...polygon[corner]!, ...polygon[corner + 1]!) }
+interface Vertices { values: Float64Array; length: number }
+const storage = (capacity: number): Vertices => ({ values: new Float64Array(capacity), length: 0 })
+/** Sequential typed storage avoids constructing a second boxed-number copy of
+ * every prepared triangle. Capacity follows actual geometry; it is not an
+ * admission limit. The final asset owns exactly its used bytes. */
+const append = (output: Vertices, polygon: readonly Vertex[]): void => {
+  const required = output.length + Math.max(0, polygon.length - 2) * 21
+  if (required > output.values.length) { const grown = new Float64Array(Math.max(required, output.values.length * 2)); grown.set(output.values); output.values = grown }
+  for (let corner = 1; corner < polygon.length - 1; corner++) for (const point of [polygon[0]!, polygon[corner]!, polygon[corner + 1]!]) for (let component = 0; component < 7; component++) output.values[output.length++] = point[component]!
+}
+const finish = (vertices: Vertices): Float64Array => vertices.length === vertices.values.length ? vertices.values : vertices.values.slice(0, vertices.length)
+
 
 /** Retain all coincident alternatives. Only the display's visible candidates choose a winner. */
 export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMesh>): { readonly meshes: ReadonlyArray<PhysicalMesh>; readonly diagnostics: PhysicalSurfaceOwnershipDiagnostics } => {
-  const cohorts = new Map<string, Face[]>(), pieces = meshes.map(() => new Map<string, { coveredBy: readonly string[]; vertices: number[] }>()), pairs = new Map<string, { first: string; later: string; area: number }>()
+  const cohorts = new Map<string, Face[]>(), pieces = meshes.map(() => new Map<string, { coveredBy: readonly string[]; vertices: Vertices }>()), pairs = new Map<string, { first: string; later: string; area: number }>()
   let triangles = 0, partitionedTriangles = 0, broadPhaseCandidates = 0, coplanarCandidates = 0
   meshes.forEach((mesh, meshIndex) => {
     const key = `${mesh.planPriority ?? 'physical'}|${mesh.offset.join(',')}`, faces = cohorts.get(key) ?? []
     for (let at = 0; at < mesh.vertices.length; at += 21) {
-      const vertices = [vertex(mesh.vertices, at), vertex(mesh.vertices, at + 7), vertex(mesh.vertices, at + 14)], normal = cross(subtract(point(vertices[1]!), point(vertices[0]!)), subtract(point(vertices[2]!), point(vertices[0]!))), absolute = normal.map(Math.abs), dominant = absolute.indexOf(Math.max(...absolute))
-      if (absolute[dominant] === 0) continue
+      const vertices = [vertex(mesh.vertices, at), vertex(mesh.vertices, at + 7), vertex(mesh.vertices, at + 14)], [a, b, c] = vertices as [Vertex, Vertex, Vertex]
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2], normal: Vector3 = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]
+      const nx = Math.abs(normal[0]), ny = Math.abs(normal[1]), nz = Math.abs(normal[2]), dominant = nx >= ny && nx >= nz ? 0 : ny >= nz ? 1 : 2
+      if (normal[dominant] === 0) continue
       const axes = [(dominant + 1) % 3, (dominant + 2) % 3] as const
-      faces.push({ mesh: meshIndex, vertices, normal, axes, bounds: meshBounds(vertices.flat()) }); triangles++
+      faces.push({ mesh: meshIndex, vertices, normal, axes, bounds: { min: [Math.min(a[0], b[0], c[0]), Math.min(a[1], b[1], c[1]), Math.min(a[2], b[2], c[2])], max: [Math.max(a[0], b[0], c[0]), Math.max(a[1], b[1], c[1]), Math.max(a[2], b[2], c[2])] } }); triangles++
     }
     cohorts.set(key, faces)
   })
   for (const faces of cohorts.values()) {
-    const index = createPhysicalSpatialIndex(faces.map(face => face.bounds))
+    const index = createPhysicalSpatialIndex(faces.map(face => face.bounds), 'overlap')
     faces.forEach((face, faceIndex) => {
       const candidates: number[] = []
       let earlierCandidates = 0
@@ -116,7 +128,7 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
       }
       if (regions.some(region => region.coveredBy.length)) partitionedTriangles++
       const target = pieces[face.mesh]!
-      for (const region of regions) { const key = JSON.stringify(region.coveredBy), group = target.get(key) ?? { coveredBy: region.coveredBy, vertices: [] }; append(group.vertices, region.vertices); target.set(key, group) }
+      for (const region of regions) { const key = JSON.stringify(region.coveredBy), group = target.get(key) ?? { coveredBy: region.coveredBy, vertices: storage(key === '[]' ? meshes[face.mesh]!.vertices.length : Math.max(0, region.vertices.length - 2) * 21) }; append(group.vertices, region.vertices); target.set(key, group) }
     })
   }
   const result: PhysicalMesh[] = []
@@ -124,8 +136,9 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
     const groups = pieces[index]!, base = groups.get('[]')
     // Authored strokes remain attached to their occurrence; depth occlusion still
     // applies. Candidate patches contain solids only and never duplicate strokes.
-    result.push({ ...mesh, vertices: Float64Array.from(base?.vertices ?? []), bounds: base?.vertices.length ? meshBounds(base.vertices) : mesh.bounds })
-    for (const [key, group] of groups) if (key !== '[]') result.push({ ...mesh, vertices: Float64Array.from(group.vertices), bounds: meshBounds(group.vertices), lines: new Float64Array(), lineMaterials: [], lineStyles: [], occludedBy: group.coveredBy })
+    const baseVertices = base ? finish(base.vertices) : new Float64Array()
+    result.push({ ...mesh, vertices: baseVertices, bounds: baseVertices.length ? meshBounds(baseVertices) : mesh.bounds })
+    for (const [key, group] of groups) if (key !== '[]') { const vertices = finish(group.vertices); result.push({ ...mesh, vertices, bounds: meshBounds(vertices), lines: new Float64Array(), lineMaterials: [], lineStyles: [], occludedBy: group.coveredBy }) }
   })
   return { meshes: result, diagnostics: { broadPhaseCandidates, coplanarCandidates, triangles, partitionedTriangles, retainedCandidates: result.length - meshes.length, coincidentPairs: [...pairs.values()] } }
 }

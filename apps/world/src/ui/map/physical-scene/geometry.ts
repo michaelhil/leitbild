@@ -196,7 +196,15 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
       const high = variant.high, low = variant.low ?? baseLow
       const vertices: number[] = [], segments: Array<[Vertex, Vertex]> = []
       const count = object.indices?.length ?? object.positions.length / 3
-      for (let index = 0; index < count; index += 3) {
+      // With no clipping planes, indexed authored normals are already the
+      // exact delivery. Avoid constructing and clipping transient triangle
+      // arrays only to copy the same seven values back into the output.
+      if (!Number.isFinite(low) && !Number.isFinite(high) && object.normals?.length === object.positions.length) {
+        for (let index = 0; index < count; index++) {
+          const id = object.indices?.[index] ?? index, at = id * 3
+          vertices.push(object.positions[at]!, object.positions[at + 1]!, object.positions[at + 2]!, object.normals[at]!, object.normals[at + 1]!, object.normals[at + 2]!, object.materialIndices?.[id] ?? 0)
+        }
+      } else       for (let index = 0; index < count; index += 3) {
         const ids = [0, 1, 2].map(offset => object.indices?.[index + offset] ?? index + offset)
         const points = ids.map(id => position(object.positions.slice(id * 3, id * 3 + 3)))
         const normal = normalize(cross(subtract(points[1]!, points[0]!), subtract(points[2]!, points[0]!)))

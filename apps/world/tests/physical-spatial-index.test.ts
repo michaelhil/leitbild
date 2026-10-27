@@ -60,3 +60,15 @@ test('SAH hierarchy preserves exact winners on long, dense and degenerate geomet
   }
   expect(pickPhysicalMesh(entries, { x: NaN, y: 1 }, 1000, 700)).toBeNull()
 })
+
+test('overlap-heavy SAH separates parallel routes along transverse axes instead of retaining one large leaf', async () => {
+  const { createPhysicalSpatialIndex, visitPhysicalSpatialBounds } = await import('../src/ui/map/physical-scene/spatial-index.ts')
+  const values = Array.from({ length: 64 }, (_, id) => { const y = (id % 32 * 17) % 32; return { min: [0, y, 0] as [number, number, number], max: [1000, y + .1, .01] as [number, number, number] } })
+  const ray = createPhysicalSpatialIndex(values), overlap = createPhysicalSpatialIndex(values, 'overlap'), query = { min: [499, 13.02, 0] as [number, number, number], max: [501, 13.08, .01] as [number, number, number] }
+  const candidates = (index: typeof ray) => { const ids: number[] = []; visitPhysicalSpatialBounds(index, query, id => ids.push(id)); return ids }
+  const all = candidates(ray), refined = candidates(overlap), exact = values.flatMap((box, id) => box.min.every((v, axis) => v <= query.max[axis]!) && box.max.every((v, axis) => v >= query.min[axis]!) ? [id] : [])
+  expect(refined.length).toBeLessThan(all.length)
+  expect(exact.every(id => refined.includes(id))).toBe(true)
+  expect(overlap.order.length).toBe(values.length)
+  expect(new Set(overlap.order).size).toBe(values.length)
+})
