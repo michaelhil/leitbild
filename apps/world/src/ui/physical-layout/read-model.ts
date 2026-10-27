@@ -35,8 +35,9 @@ const valueSchema = z.unknown().transform((input): VignetteValue => {
 })
 const operationalReadings = { bindings: z.array(topologyBindingSchema), values: z.array(valueSchema) }
 const connectionEnd = z.object({ elementId: text, label: text, port: text }).strict()
+const incidentConnection = z.object({ id: text, from: connectionEnd, to: connectionEnd, medium: topologyMediumSchema, directed: z.boolean() }).strict()
 const subjectTopologySchema = z.discriminatedUnion('kind', [
-  z.object({ ...operationalReadings, kind: z.literal('node'), class: topologyNodeClassSchema, equipmentKind: text }).strict(),
+  z.object({ ...operationalReadings, kind: z.literal('node'), class: topologyNodeClassSchema, equipmentKind: text, connections: z.array(incidentConnection).optional() }).strict(),
   z.object({ ...operationalReadings, kind: z.literal('connection'), from: connectionEnd, to: connectionEnd, medium: topologyMediumSchema, directed: z.boolean() }).strict(),
 ])
 
@@ -76,6 +77,11 @@ const responseSchema = z.object({
     const values = new Set(subject.topology.values.map(value => value.ref)), acquired = new Set(refs)
     if (values.size !== subject.topology.values.length || [...values].some(ref => !acquired.has(ref))) context.addIssue({ code: 'custom', message: 'Layout semantic readings must be unique and acquired' })
     if (subject.topology.bindings.some(binding => [binding.ref, ...(binding.while ? [binding.while] : [])].some(ref => !values.has(ref)))) context.addIssue({ code: 'custom', message: 'Layout semantic binding has no acquired declaration' })
+    if (subject.topology.kind === 'node' && subject.topology.connections) {
+      const connections = subject.topology.connections
+      if (new Set(connections.map(connection => connection.id)).size !== connections.length) context.addIssue({ code: 'custom', message: 'Duplicate component-level connection' })
+      if (connections.some(connection => connection.from.elementId !== subject.elementId && connection.to.elementId !== subject.elementId)) context.addIssue({ code: 'custom', message: 'Component-level connection does not meet its owner subject' })
+    }
   }
 })
 

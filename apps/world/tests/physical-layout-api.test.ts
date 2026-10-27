@@ -72,6 +72,24 @@ describe('Real PWR layout display boundary', () => {
           expect(subject.topology!.bindings.some(binding=>binding.role==='flow')).toBe(true)
           expect(resolvePhysicalSubjectOperation(subject,parsed.sample.observations,false).flows.length).toBeGreaterThan(0)
         }
+        const expectedIncident: Record<string, string[]> = {
+          mainSteamHeader: [...['a','b','c','d'].map(loop=>`msiv-${loop}-to-main-steam-header`),'main-steam-header-to-turbine-stop-valve','main-steam-header-to-turbine-bypass-valve'],
+          feedwaterHeader: ['main-feedwater-pump-a-to-header','main-feedwater-pump-b-to-header',...['a','b','c','d'].map(loop=>`feedwater-header-to-control-valve-${loop}`)],
+          auxFeedwaterHeader: ['motor-afw-pump-to-header','turbine-afw-pump-to-header','motor-afw-pump-b-to-header',...['a','b','c','d'].map(loop=>`aux-feedwater-header-to-valve-${loop}`)],
+          safetyInjectionHeader: ['safety-injection-pump-a-to-header','safety-injection-pump-b-to-header',...['a','b','c','d'].map(loop=>`safety-injection-header-to-cold-leg-${loop}`)],
+          containmentSprayHeader: ['containment-spray-pump-a-to-header','containment-spray-pump-b-to-header','containment-spray-header-to-containment'],
+          rhrHeader: ['rhr-pump-a-to-header','rhr-pump-b-to-header','rhr-header-to-isolation-valve'],
+          pressurizerReliefHeader: ['pressurizer-relief-to-tank','pressurizer-safety-valves-to-tank','pressurizer-relief-header-to-tank'],
+          turbine: ['turbine-stop-valve-to-turbine','turbine-exhaust-to-condenser','turbine-generator-to-unit-aux-transformer'],
+        }
+        for (const [id, expected] of Object.entries(expectedIncident)) {
+          const node=parsed.subjects.find(subject=>subject.elementId===id)!,topology=node.topology!
+          if(topology.kind!=='node')throw Error(`Expected component topology: ${id}`)
+          expect(topology.connections!.map(connection=>connection.id).sort()).toEqual(expected.sort())
+          expect(topology.connections!.every(connection=>(connection.from.elementId===id||connection.to.elementId===id)&&connection.from.label&&connection.to.label&&connection.from.port&&connection.to.port)).toBe(true)
+          const operation=resolvePhysicalSubjectOperation(node,parsed.sample.observations,false)
+          expect(operation.componentConnections).toEqual(topology.connections!);expect(operation.connection).toBeNull()
+        }
         const electrical=parsed.subjects.find(subject=>subject.elementId==='unit-bus-a-to-mainFeedwaterPumpA')!,electricalOperation=resolvePhysicalSubjectOperation(electrical,parsed.sample.observations,false)
         expect(electricalOperation.flows).toEqual([])
         expect(electricalOperation.conducting).not.toBeNull()

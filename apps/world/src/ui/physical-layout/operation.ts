@@ -1,6 +1,6 @@
 import { numberText, unitSymbol, type Observation } from '../../core/observation/model.ts'
 import type { TopologyBinding } from '../../core/observation/topology.ts'
-import type { LayoutOperationalSubject, LayoutSubjectTopology } from '../../features/displays/layout/operation.ts'
+import type { LayoutIncidentConnection, LayoutOperationalSubject, LayoutSubjectTopology } from '../../features/displays/layout/operation.ts'
 import type { VignetteValue } from '../../features/displays/compose/model.ts'
 import { activeState } from '../displays/active-state.ts'
 
@@ -30,6 +30,8 @@ export interface PhysicalPositionOperation extends Reading { readonly fraction: 
 export interface PhysicalSubjectOperation {
   readonly subjectId: string
   readonly label: string
+  /** Exact incident owner links; these describe the component, not internal physical branches. */
+  readonly componentConnections: ReadonlyArray<LayoutIncidentConnection> | null
   readonly connection: Extract<LayoutSubjectTopology, { kind: 'connection' }> | null
   /** One unambiguous owner flow; multiple independent readings are not merged. */
   readonly flow: PhysicalFlowOperation | null
@@ -48,7 +50,7 @@ export interface PhysicalSubjectOperation {
  * missing, uncertain or frozen sample cannot become a stopped pump/empty pipe. */
 export const resolvePhysicalSubjectOperation = (subject: LayoutOperationalSubject, observations: ReadonlyArray<Observation>, stale: boolean): PhysicalSubjectOperation => {
   const topology = subject.topology
-  const empty: PhysicalSubjectOperation = { subjectId: subject.elementId, label: subject.label, connection: null, flow: null, flows: [], equipment: null, conducting: null }
+  const empty: PhysicalSubjectOperation = { subjectId: subject.elementId, label: subject.label, componentConnections: null, connection: null, flow: null, flows: [], equipment: null, conducting: null }
   if (!topology) return empty
   let declared = declarationIndices.get(topology), observed = sampleIndices.get(observations)
   if (!declared) { declared = new Map(topology.values.map(value => [value.ref, value])); declarationIndices.set(topology, declared) }
@@ -104,6 +106,6 @@ export const resolvePhysicalSubjectOperation = (subject: LayoutOperationalSubjec
     return { ...reading, word, fraction, ...(binding.group ? { group: binding.group } : {}) }
   })
   const conducting = states('conducting')
-  return { ...empty, connection: topology.kind === 'connection' ? topology : null, flows, flow: flows.length === 1 ? flows[0]! : null, conducting,
+  return { ...empty, componentConnections: topology.kind === 'node' ? topology.connections ?? null : null, connection: topology.kind === 'connection' ? topology : null, flows, flow: flows.length === 1 ? flows[0]! : null, conducting,
     equipment: topology.kind === 'node' ? { class: topology.class, kind: topology.equipmentKind, running: states('running'), conducting, positions } : null }
 }

@@ -5,6 +5,9 @@ import type { TopologyBinding } from '../src/core/observation/topology.ts'
 import type { VignetteValue } from '../src/features/displays/compose/model.ts'
 import type { LayoutOperationalSubject, LayoutSubjectTopology } from '../src/features/displays/layout/operation.ts'
 import { resolvePhysicalSubjectOperation } from '../src/ui/physical-layout/operation.ts'
+import { layoutSubjectTopologies, layoutTopologyRefs } from '../src/features/displays/layout/topology.ts'
+import { topologyGraphSchema } from '../src/core/observation/topology.ts'
+import { physicalOperationContext } from '../src/ui/physical-layout/operation-presentation.ts'
 import { layoutLiveResponseSchema } from '../src/ui/physical-layout/read-model.ts'
 
 const at = isoTimestampSchema.parse('2026-10-28T00:00:00Z')
@@ -88,4 +91,40 @@ test('client boundary refuses cross-owner, unacquired and undeclared semantic bi
   const foreign = { ...flow, ref: 'plant:other#flow' }
   expect(layoutLiveResponseSchema.safeParse({ ...response, subjects: [{ ...response.subjects[0], topology: { ...s.topology, values: [foreign] } }] }).success).toBe(false)
   expect(layoutLiveResponseSchema.safeParse({ ...response, subjects: [{ ...response.subjects[0], topology: { ...s.topology, bindings: [{ role: 'flow', ref: 'plant:one#not-read' }] } }] }).success).toBe(false)
+})
+
+
+test('node connections are exact incident owner links, with element aliases and no extra observation acquisition', () => {
+  const flow = value('header.flow')
+  const graph = topologyGraphSchema.parse({ objectId: 'plant:one', revision: 'same-owner', family: 'flow', media: [{ id: 'water', label: 'Water', kind: 'fluid' }], groups: [], boundaries: [],
+    nodes: ['header-node', 'valve-node', 'unrelated-node', 'isolated-node'].map((id, index) => ({ id, element: ['header', 'valve', 'unrelated', 'isolated'][index], label: id, rank: id, kind: 'header', class: 'junction', ports: [{ id: 'port', rank: 'port', media: ['water'], direction: 'both' }], bindings: index ? [] : [binding('flow', flow)] })),
+    edges: [{ id: 'header-to-valve', rank: 'one', from: { node: 'header-node', port: 'port' }, to: { node: 'valve-node', port: 'port' }, medium: 'water', directed: true, bindings: [] },
+      { id: 'unrelated-loop', rank: 'two', from: { node: 'unrelated-node', port: 'port' }, to: { node: 'unrelated-node', port: 'port' }, medium: 'water', directed: false, bindings: [] }] })
+  const projected = layoutSubjectTopologies(graph, ['header', 'valve', 'unrelated', 'isolated', 'header-to-valve']), header = projected.get('header')!
+  expect(header.kind).toBe('node'); if (header.kind !== 'node') throw Error('Expected node')
+  expect(header.connections).toEqual([{ id: 'header-to-valve', from: { elementId: 'header', label: 'header-node', port: 'port' }, to: { elementId: 'valve', label: 'valve-node', port: 'port' }, medium: graph.media[0]!, directed: true }])
+  expect(layoutTopologyRefs(header)).toEqual([flow.ref]);expect(layoutTopologyRefs(projected.get('header-to-valve')!)).toEqual([])
+  const unrelated = projected.get('unrelated')!; expect(unrelated.kind === 'node' && unrelated.connections).toHaveLength(1)
+  const isolated = projected.get('isolated')!; expect(isolated.kind === 'node' && isolated.connections).toEqual([])
+  const operation = resolvePhysicalSubjectOperation({ elementId: 'header', label: 'Header', topology: { ...header, values: [flow] } }, [observation(flow, 10)], false)
+  expect(operation.connection).toBeNull(); expect(operation.flow?.direction).toBe('unknown')
+  expect(physicalOperationContext(operation)[0]).toEqual({ label: 'Component-level connection', value: 'header-node · port → valve-node · port · Water' })
+})
+
+test('component-level context distinguishes omitted topology connectivity from an explicitly empty declaration', () => {
+  const node = subject([], [], true)
+  expect(physicalOperationContext(resolvePhysicalSubjectOperation(node, [], false))).toEqual([])
+  const topology = node.topology!; if (topology.kind !== 'node') throw Error('Expected node')
+  expect(physicalOperationContext(resolvePhysicalSubjectOperation({ ...node, topology: { ...topology, connections: [] } }, [], false))).toEqual([{ label: 'Component-level connections', value: 'None declared in owner topology' }])
+})
+
+test('client rejects duplicate/nonincident node connectivity and retains exact current-owner acquisition scope', () => {
+  const node = subject([], [], true), topology = node.topology!; if (topology.kind !== 'node') throw Error('Expected node')
+  const connection = { id: 'pump-to-valve', from: { elementId: 'pump', label: 'Pump', port: 'out' }, to: { elementId: 'valve', label: 'Valve', port: 'in' }, medium: { id: 'water', label: 'Water', kind: 'fluid' }, directed: true }
+  const response = { scope: { runId: 'run-test', layoutObjectId: 'layout:one', revision: 'rev', objectId: 'plant:one', packId: 'process-plant', modelDigest: 'a'.repeat(64), epoch: 'epoch', sequence: 1 }, acquiredAt: at,
+    sample: { at: { at, clock: 'simulation', paused: true }, observations: [], alerts: [], entities: {}, slots: {}, maps: {} }, subjects: [{ ...node, values: [], word: null, devices: [], topology: { ...topology, connections: [connection] } }] }
+  expect(layoutLiveResponseSchema.safeParse(response).success).toBe(true)
+  for (const connections of [[connection, connection], [{ ...connection, from: { ...connection.from, elementId: 'foreign-node' } }], [{ ...connection, objectId: 'plant:other' }]]) {
+    expect(layoutLiveResponseSchema.safeParse({ ...response, subjects: [{ ...response.subjects[0], topology: { ...topology, connections } }] }).success).toBe(false)
+  }
 })

@@ -18,6 +18,10 @@ export const physicalOperationContext = (operation: PhysicalSubjectOperation | u
     const { from, to, medium } = operation.connection
     context.push({ label: 'From', value: `${from.label} · ${from.port}` }, { label: 'To', value: `${to.label} · ${to.port}` }, { label: 'Medium', value: medium.label })
   }
+  if (operation.componentConnections !== null) {
+    if (!operation.componentConnections.length) context.push({ label: 'Component-level connections', value: 'None declared in owner topology' })
+    for (const { from, to, medium, directed } of operation.componentConnections) context.push({ label: 'Component-level connection', value: `${from.label} · ${from.port} ${directed ? '→' : '↔'} ${to.label} · ${to.port} · ${medium.label}` })
+  }
   if (operation.flow) {
     const flow = operation.flow
     const direction = flow.state === 'stopped' ? 'No flow' : flow.direction === 'forward' ? 'From → To' : flow.direction === 'reverse' ? 'To → From' : flow.state === 'flowing' ? 'Flowing · direction not measured' : 'Unknown'
