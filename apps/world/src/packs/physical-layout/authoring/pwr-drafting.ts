@@ -1,15 +1,19 @@
 import {restorePwrFoundations} from './pwr-foundations.ts'
 import {authorPwrRouting} from './pwr-routing.ts'
-import {physicalCorrespondenceSchema} from '../model.ts'
+import {physicalCorrespondenceSchema,canonicalPhysicalJson} from '../model.ts'
+import {createHash} from 'node:crypto'
 import {physicalCoverageEvidenceSchema} from '../coverage.ts'
 import {authorPwrCampusExport} from './pwr-export.ts'
+import {compilePhysicalScene,physicalObjectsBounds} from '../native/drafting/compile-scene.ts'
+import {physicalSceneShapeFacts} from '../source-validation.ts'
 import unitSource from '../pwr-full-unit-architecture.source.json'
 import unitBindings from '../pwr-full-unit-architecture.bindings.json'
 import unitCoverage from '../pwr-full-unit-architecture.coverage.json'
 import campusSource from '../pwr-campus-architecture.source.json'
 import campusBindings from '../pwr-campus-architecture.bindings.json'
 import campusCoverage from '../pwr-campus-architecture.coverage.json'
-import { physicalSourceSchema, parameters } from '../native/drafting/source.ts'
+import { physicalSourceSchema, physicalSourceFacts, parameters } from '../native/drafting/source.ts'
+import arrangement from '../pwr-campus.arrangement.json'
 
 /** Explicit architectural drawing intent over the retained physical facts.
  * Coordinates are authored study assumptions; no OEM/access qualification. */
@@ -25,7 +29,7 @@ const createUnit=()=>{
  const swings:Record<string,number>={'D-W1a':-1,'D-W1b':1,'D-N1':1,'D-P1a':1,'D-P1b':-1,'D-P3a':-1,'D-P3b':1}
  for(const[name,sign]of Object.entries(swings)){const e=source.elements.find(e=>e.id===`door/${name}`);if(!e)throw Error(`Original access leaf missing: ${name}`);e.planDoorPose='open';e.door={swing:sign*Math.PI/2}}
  source.planIntent.strokes.push(...source.elements.filter(e=>e.member?.kind==='tube'&&e.layerId==='utility-routes').map(e=>({elementId:e.id,levelIds:[e.levelId],width:.13,material:e.material??'pipe'})))
- source.planIntent.sections=[{id:'A-A',label:'A–A',levelIds:['lower','operating'],scopeIds:[source.rootScope.id,'building/turbine-hall','space/turbine-hall'],anchor:[46.2,44.2],horizontalAxis:'x',elementIds:source.elements.filter(e=>e.equipmentKind==='lp'||e.equipmentKind==='condenser'||e.id.startsWith('pier/')).map(e=>e.id),floorIds:['lower','operating'],scale:.5}]
+ source.planIntent.sections=[{id:'A-A',label:'A–A',levelIds:['lower','operating'],scopeIds:[source.rootScope.id,'building/turbine-hall','space/turbine-hall'],anchor:[46.2,44.2],horizontalAxis:'x',elementIds:source.elements.filter(e=>e.equipmentKind==='lp'||e.equipmentKind==='condenser'||e.id.startsWith('pier/')).map(e=>e.id),floorIds:['lower','operating'],scale:1,verticalScale:.65}]
  // The structural grid supplies these clear/chained measurements once.
  source.planAnnotations=source.planAnnotations!.filter(a=>a.id!=='annotation/hatch-cover'&&!(a.kind==='dimension'&&a.measure.elementId==='space/turbine-hall'))
  const hatch=source.elements.find(e=>e.id==='hatch-cover')!;hatch.planSymbol='hatch';hatch.planTag='FLOOR HATCH'
@@ -56,6 +60,10 @@ let unitArtifacts:ReturnType<typeof createUnit>|undefined
 export const createPwrDraftingUnitArtifacts=()=>structuredClone(unitArtifacts??=createUnit())
 export const createPwrDraftingCampusArtifacts=()=>{
  const source=physicalSourceSchema.parse({...structuredClone(campusSource),northAxis:'positive-y'}),unit=createPwrDraftingUnitArtifacts(),bindings=physicalCorrespondenceSchema.array().parse(structuredClone(campusBindings)),coverage=physicalCoverageEvidenceSchema.parse(structuredClone(campusCoverage))
- authorPwrCampusExport(source,unit.source,unit.bindings,bindings,coverage)
+ const scene=compilePhysicalScene('authoring-dependency',{...unit,design:{digest:'authoring'},owner:{objectId:'authoring'},placement:{anchor:[0,0],bearing:0},bounds:{min:[-1e9,-1e9,-1e9],max:[1e9,1e9,1e9]}})
+ authorPwrCampusExport(source,unit.source,physicalObjectsBounds(scene.objects),bindings,coverage)
+ const physicalSourceDigest=createHash('sha256').update(canonicalPhysicalJson(physicalSourceFacts(unit.source))).digest('hex')
+ const physicalShapeDigest=createHash('sha256').update(canonicalPhysicalJson(physicalSceneShapeFacts(scene.objects))).digest('hex')
+ source.sourceDependencies=arrangement.units.map(member=>({role:member.role,sourceId:unit.source.id,physicalSourceDigest,physicalShapeDigest}))
  return{source:physicalSourceSchema.parse(source),bindings,coverage}
 }

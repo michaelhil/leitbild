@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261027-r4",
-    "digest": "71e3c77ffc69eb14f54c26caeeb7839c441c7ac36fb88035e04758198113ed26"
+    "digest": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82"
   },
-  "sourceDigest": "091500dbe44cce6785cc68527a758206d79595628e86b8c6d7662f21ce5c9ee7",
+  "sourceDigest": "9cf1c1f1e45fe2b7091619f6657d55e48f264936e236549417da4938714ee042",
   "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
@@ -14,7 +14,7 @@
     "min": [
       -186.72,
       -109.32,
-      -3.189999819943383
+      -3.1900000000000004
     ],
     "max": [
       105.9,
@@ -25,7 +25,7 @@
   "profile": "drafting",
   "compiler": {
     "id": "physical-layout-native-drafting",
-    "digest": "cc14f7e2007beb21f0bc8bbba0d7211e6ef028ceef042774ba2e8aaf6b388df8"
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
   },
   "coverageDigest": "14eb837c4ff2a700b999efb0d2366cea9c99f14eac7b369a9342a8195b3056ba",
   "requirements": {
@@ -37,8 +37,8 @@
   },
   "physicalApplicability": {
     "sourceDigest": "591524cbc91c2fb224cc8fa104b5f8f4a3ad220bf6d8e2d0635663a7bf8b3239",
-    "geometryDigest": "3c6d04e7600430b0c1a9e2702b8c592922a05a2190284b3b39df297f29cc6401",
-    "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
+    "geometryDigest": "6982d3ed25036fc38cf6ca39c129e1fb79ed7175cbc3f79cc311fb9250e4efc4",
+    "digest": "2701e1bbec95fd107f0bd2ae38741392afcac2153502da9a2d5bb7088348cef6"
   },
   "presentation": {
     "scopes": [
@@ -50,7 +50,7 @@
           "min": [
             -186.72,
             -109.32,
-            -3.189999819943383
+            -3.1900000000000004
           ],
           "max": [
             105.9,
@@ -1393,5 +1393,5 @@
       }
     ]
   },
-  "presentationDigest": "dd05d0db56f5c405ac5650fb586dafa46020615be6ad26dc485cd08b79bd0412"
+  "presentationDigest": "9d42af32414aee52b3d09275a43d915ac426352787d056e6985e7a107b46024a"
 }

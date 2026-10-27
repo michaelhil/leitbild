@@ -130,6 +130,8 @@ export type ArchitecturePhysicalLayoutData = z.infer<typeof architectureLayoutDa
 export const draftingLayoutDataSchema = explorerLayoutShape.extend({ compiler: z.object({ id: z.literal(draftingPhysicalCompilerRef.id), digest: z.literal(draftingPhysicalCompilerRef.digest) }).strict(), source: draftingPhysicalSourceSchema }).superRefine((data, context) => {
   validateExplorer(data, context, data.source.routing?.connections.map(connection => connection.id) ?? [])
   if(data.source.routing && !data.requirements.includeGraphConnections)context.addIssue({code:'custom',message:'Routed graph connections require explicit owner connection coverage'})
+  for(const dependency of data.source.sourceDependencies??[]){const member=data.requirements.relatedMembers.find(member=>member.role===dependency.role);if(!member?.physicalLayout||member.physicalLayout.physical.id!==dependency.sourceId)context.addIssue({code:'custom',message:`Derived source witness needs its exact physical member requirement: ${dependency.role}`})}
+  for(const member of data.requirements.relatedMembers)if(member.physicalLayout&&!data.source.sourceDependencies?.some(witness=>witness.role===member.role))context.addIssue({code:'custom',message:`Physical member dependency needs an authored source/shape witness: ${member.role}`})
 })
 export type DraftingPhysicalLayoutData = z.infer<typeof draftingLayoutDataSchema>
 export type RetainedPhysicalLayoutData = PhysicalLayoutData | CampusPhysicalLayoutData | ExplorerPhysicalLayoutData | ArchitecturePhysicalLayoutData | DraftingPhysicalLayoutData

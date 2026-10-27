@@ -39,7 +39,7 @@ export const drawEquipmentPlan = (output: PhysicalPlanPrimitive[], member: Membe
   }else if(family==='condenser'){
     R(0,0,w,h,{fill:'hood',stroke:'equipment-line',width:.08},.18);R(.3,1.8,w-.6,h-3.6,S.equipment,.06);R(.4,.15,w-.8,1.4,{fill:'waterbox',stroke:'rib',width:.055},.08);R(.4,h-1.55,w-.8,1.4,{fill:'waterbox',stroke:'rib',width:.055},.08)
     for(let x=.8;x<w-.5;x+=.42)L(x,2.1,x,h-2.1,{stroke:'rib',width:.028})
-    R(1.3,3.6,w-2.6,h-7.2,{stroke:'context-line',width:.045,dash:[.25,.15],hatch:{material:'rib',spacing:.5,width:.025,angle:45}})
+    R(1.3,3.6,w-2.6,h-7.2,{stroke:'context-line',width:.045,dash:[.25,.15],hatch:{material:'rib',spacing:.5,width:.025,angle:-45}})
     L(1.3,3.6,w-1.3,h-3.6,S.context);L(w-1.3,3.6,1.3,h-3.6,S.context);R(w-1.7,h*.45,2.4,2.4,{fill:'machine',stroke:'rib',width:.055},.16)
     for(const y of [1,h-1])for(const x of [w*.3,w*.7]){E(x,y,.39,.39,S.equipment);E(x,y,.18,.18,S.fine)}bolts(.95)
   }else if(family==='feed-pump'||family==='condensate-pump'||family==='pump'||family==='reactor-coolant-pump'){
@@ -49,7 +49,7 @@ export const drawEquipmentPlan = (output: PhysicalPlanPrimitive[], member: Membe
     if(big){
       draw.path([['M',.3,py-.7],['L',.8,py-1.05],['L',4.4,py-1.05],['L',4.9,py-.65],['L',4.9,py+.65],['L',4.4,py+1.05],['L',.8,py+1.05],['L',.3,py+.7],['Z']],S.casing)
       for(let x=1.15;x<=4.15;x+=.46)draw.line(x,py-.9,x,py+.9,S.rib)
-      draw.rect(.9,py-1.25,.6,.5,S.equipment);draw.rect(3.75,py+.75,.65,.6,S.equipment);draw.rect(4.9,py-.33,1.3,.66,{fill:'light',stroke:'rib',width:.05,hatch:{material:'rib',spacing:.23,width:.025,angle:45}},.14)
+      draw.rect(.9,py-1.25,.6,.5,S.equipment);draw.rect(3.75,py+.75,.65,.6,S.equipment);draw.rect(4.9,py-.33,1.3,.66,{fill:'light',stroke:'rib',width:.05,hatch:{material:'rib',spacing:.23,width:.025,angle:-45}},.14)
       draw.rect(.15,py-.5,.3,1,S.bearing,.06);draw.rect(6.5,.2,5.2,baseH-.4,S.motor,.22);for(let x=6.9;x<11.4;x+=.33)draw.line(x,.32,x,baseH-.32,S.rib);draw.rect(11.05,-.05,.62,.5,S.terminal,.04)
     }else{
       draw.path([['M',.3,py-.55],['C',.1,py-1.25,2.05,py-1.35,2.2,py-.25],['C',2.4,py+1.05,.9,py+1.25,.4,py+.5],['L',.2,py+.5],['L',.2,py-.55],['Z']],S.casing)

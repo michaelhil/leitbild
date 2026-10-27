@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261027-r4",
-    "digest": "5929a7c5c9ec61712821dc7fb37305bb32a63f210ba117c64a82fd9ff456185a"
+    "digest": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84"
   },
-  "sourceDigest": "d66a8899222fe9f75f61196432c889983b89cbe6254603aa524c1cfe718e33f1",
+  "sourceDigest": "2749beac0d6ab0d279a7ebdb28f46e2aa5a712417aed99ac4b7f78663a5d9303",
   "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
   "modelRequirement": {
     "modelRef": "electric-grid.halden.four-unit",
@@ -14,7 +14,7 @@
     "min": [
       -839,
       -320.05196152422707,
-      -1.6305255888325767
+      -0.3
     ],
     "max": [
       900.06,
@@ -25,7 +25,7 @@
   "profile": "drafting",
   "compiler": {
     "id": "physical-layout-native-drafting",
-    "digest": "cc14f7e2007beb21f0bc8bbba0d7211e6ef028ceef042774ba2e8aaf6b388df8"
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
   },
   "coverageDigest": "dfe40716a532424de813652434af9c704ade79bc4d17be671b9374ab47011986",
   "requirements": {
@@ -52,7 +52,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
+            "digest": "2701e1bbec95fd107f0bd2ae38741392afcac2153502da9a2d5bb7088348cef6"
           },
           "bearing": 0
         }
@@ -69,7 +69,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
+            "digest": "2701e1bbec95fd107f0bd2ae38741392afcac2153502da9a2d5bb7088348cef6"
           },
           "bearing": 0
         }
@@ -86,7 +86,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
+            "digest": "2701e1bbec95fd107f0bd2ae38741392afcac2153502da9a2d5bb7088348cef6"
           },
           "bearing": 0
         }
@@ -103,7 +103,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
+            "digest": "2701e1bbec95fd107f0bd2ae38741392afcac2153502da9a2d5bb7088348cef6"
           },
           "bearing": 0
         }
@@ -153,9 +153,9 @@
     ]
   },
   "physicalApplicability": {
-    "sourceDigest": "40cd0bdc1db5cf2780ffdb1d84a23ba4334eddab061a0e24979cb77ba2592223",
-    "geometryDigest": "1d082af9582265a31497cab8ebba07932d4e615871d4c1fc0161622f1c9aa927",
-    "digest": "559d960f362dfb51dd732c85af7f734310f2c81f373aa208d937c72cb62ae3c6"
+    "sourceDigest": "bb9dc6c4804583c07fdc09e4d1d59f7b9e03980ac8b38d10855c72239ed1c9c9",
+    "geometryDigest": "e669c54baefc3c9d73e7bd35540b1dcb5fe079317a8de1d8dad8720578bdd765",
+    "digest": "48b1fe728ab842b29e3292d3ce4df179a781719e5801c5b75543dea75f8c95a5"
   },
   "presentation": {
     "scopes": [
@@ -167,7 +167,7 @@
           "min": [
             -839,
             -320.05196152422707,
-            -1.6305255888325767
+            -0.3
           ],
           "max": [
             900.06,
@@ -1229,11 +1229,11 @@
           "min": [
             -555.0072435575252,
             656.130052619259,
-            -1.6305255888325767
+            -0.3
           ],
           "max": [
             -433.44157085073005,
-            789.9444477394317,
+            801.2544477394317,
             15.993749164133463
           ]
         },
@@ -1251,11 +1251,11 @@
           "min": [
             -155.05227224499674,
             433.70811937078986,
-            -1.6305255888325767
+            -0.3
           ],
           "max": [
             -33.4925070409208,
-            567.5155432587875,
+            578.8255432587875,
             15.992827984336154
           ]
         },
@@ -1273,11 +1273,11 @@
           "min": [
             244.90269920038176,
             211.29915015265738,
-            -1.6305255888325767
+            -0.3
           ],
           "max": [
             366.4565577138674,
-            345.0996037668442,
+            356.4096037668442,
             15.991906931177246
           ]
         },
@@ -1295,11 +1295,11 @@
           "min": [
             644.8576707763012,
             -11.09685680590974,
-            -1.6305255888325767
+            -0.3
           ],
           "max": [
             766.4056234111692,
-            122.69662749264604,
+            134.00662749264603,
             15.99098600463237
           ]
         },
@@ -1337,5 +1337,5 @@
       }
     ]
   },
-  "presentationDigest": "719de254c5ca53905ae039e27df4a85988445a47a4bea71d74e5b66b113c9d38"
+  "presentationDigest": "0417c967a4b5070c993a6bc39cafc6588238c77b8c001b66527169d28db3aef1"
 }

@@ -8,6 +8,7 @@ import { physicalSourceSchema, physicalSourceFacts, type V3 } from '../../src/pa
 import { compilePhysicalScene } from '../../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import { physicalApplicabilityContent } from '../../src/packs/physical-layout/applicability.ts'
 import { physicalSceneShapeFacts } from '../../src/packs/physical-layout/source-validation.ts'
+import {physicalSourceDependencyFailure} from '../../src/packs/physical-layout/source-dependencies.ts'
 
 const directory = new URL('../../src/packs/physical-layout/', import.meta.url)
 const read = (name: string): Promise<unknown> => Bun.file(new URL(name, directory)).json()
@@ -22,6 +23,8 @@ for (const stem of ['pwr-full-unit-drafting', 'pwr-campus-drafting']) {
   const issues = physicalCoverageIssues({ evidence: coverage, physicalIds: [...source.elements.map(element => element.id),...(source.routing?.connections.map(connection=>connection.id)??[])], ownerSubjectIds: coverage.dispositions.map(entry => entry.subjectId), bindings })
   if (issues.length) throw new Error(`${stem}: ${issues.join('; ')}`)
   const previous = await read(stem === 'pwr-full-unit-drafting' ? 'pwr-full-unit-explorer.requirements.json' : 'pwr-campus-explorer.requirements.json') as { relatedMembers: Array<Record<string, unknown>> }
+  const dependencyFailure=physicalSourceDependencyFailure(source.sourceDependencies??[],unit?previous.relatedMembers.map(member=>({role:String(member.role),sourceId:unit!.design.id,physicalSourceDigest:unit!.physicalApplicability.sourceDigest,physicalShapeDigest:unit!.physicalApplicability.geometryDigest})):[])
+  if(dependencyFailure)throw Error(`${stem}: ${dependencyFailure}`)
   const requirements = physicalExplorerRequirementsSchema.parse(unit === undefined ? {...previous,...(source.routing?{includeGraphConnections:true}:{})} : { ...previous, relatedMembers: previous.relatedMembers.map(({ physicalLayout: _previous, ...member }) => ({ ...member, physicalLayout: { physical: { id: unit!.design.id, digest: unit!.physicalApplicability.digest }, bearing: 0 } })) })
   outputs.push({ name: `${stem}.requirements.json`, value: requirements })
   const scene = compilePhysicalScene('admission', { source, bindings, design: { digest: 'admission' }, owner: { objectId: 'admission' }, placement: { anchor: [0, 0], bearing: 0 }, bounds: { min: [-1e9, -1e9, -1e9], max: [1e9, 1e9, 1e9] } })
