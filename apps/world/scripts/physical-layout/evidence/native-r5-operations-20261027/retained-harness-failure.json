@@ -1,0 +1,11 @@
+{
+  "passed": false,
+  "error": "Error: Timed out exact fresh owner card",
+  "cause": "Test substring matching accepted a nearby Pressurizer relief route while seeking the Pressurizer body; test also used a stale Plan projection after public focus chose3D context. Product code was unchanged.",
+  "expected": "pressurizer",
+  "actualIframe": {
+    "src": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/embed/physical-layout.inspection#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22a31f9fc6-1961-469c-927c-bb456326dfc1%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-94c67255-e555-443c-a9db-4f8e7996dbdf%22%7D%2C%22viewType%22%3A%22physical-layout.inspection%22%2C%22title%22%3A%22Pressurizer%20to%20Pressurizer%20Relief%20Header%22%2C%22height%22%3A400%2C%22state%22%3A%22%7B%5C%22layoutObjectId%5C%22%3A%5C%22layout%3Ahalden-1%5C%22%2C%5C%22revision%5C%22%3A%5C%2295c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22packId%5C%22%3A%5C%22process-plant%5C%22%2C%5C%22modelDigest%5C%22%3A%5C%2247b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea%5C%22%2C%5C%22elementId%5C%22%3A%5C%22pressurizer-relief-to-tank%5C%22%2C%5C%22label%5C%22%3A%5C%22Pressurizer%20to%20Pressurizer%20Relief%20Header%5C%22%2C%5C%22delivery%5C%22%3A%5C%22host%5C%22%2C%5C%22channel%5C%22%3A%5C%223683a1fd-90d7-4489-90cc-627ca0d4bf5b%5C%22%7D%22%7D",
+    "text": "Paused \u00b7 readings fresh\nClose\nPressurizer to Pressurizer Relief Header\nIn window \u203a\nFrom\nPORV \u00b7 out\nTo\nPressurizer Relief Header \u00b7 inletA\nMedium\nPrimary relief\nFlow\nNo flow \u00b7 0 kg/s\nPORV tailpipe temp\nHalden Unit 1 \u00b7 Pressurizer PORV tailpipe temperature \u00b7 PZR \u2192 Relief header"
+  },
+  "correction": "Exact strong-label equality and actual active3D projection; consolidated full replay passed."
+}
