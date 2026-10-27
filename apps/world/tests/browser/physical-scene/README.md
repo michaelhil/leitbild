@@ -26,3 +26,11 @@ accent. An independent GPU witness requires unchanged solid interior pixels,
 changed contours, unchanged geometry-upload count and actual deleted resources
 in both Plan and 3D. The technical pass certifies these checks; visual acceptance
 still requires inspecting the side-by-side images and the full product UI.
+
+## Native Plan raster qualification
+
+Run `LEITBILD_ORIGINAL_PLAN_DIR=/absolute/path/to/turbine-hall-trial bun run scripts/physical-layout/plan-raster-comparison-probe.ts`. `LEITBILD_PLAN_RASTER_DIR` chooses its evidence directory. The source is the current admitted Halden scenario; the original SVG sheets are the retained 23 October architectural browser trial, whose hashes enter the receipt.
+
+The test bundles the production Canvas painter twice. Its ordered reference replaces only the retained stream compilation with one source primitive per command; this change exists in the test bundler and has no production flag. The inert reference port throws if it is used outside this bundle. Both versions retain the same clipping, labels, hatches, material palette, status, transforms and layer selection. Thirty-six cases compare every RGBA byte across both floors, layer toggles, controlled status, and Home/pan/rotation. The permitted difference is zero. A technical failure remains a failure even if its image looks close. Isolated multi-path batches are also tested, recording source identities and bounds so that native antialias coverage can be distinguished from lost source features.
+
+The two original/native sheet images use the same useful metre scale and complete original sheet extent. This specific reference fixture accounts for the retained original unit authoring origin `[44.4,26,0]` and its canonical northward coordinate conversion; it is not a product camera policy. Visual inspection must separately assess architectural detail, source additions and drawing presentation. Byte equality of the two native painters alone cannot certify the original's visual quality.
