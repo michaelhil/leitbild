@@ -12,9 +12,14 @@ const testedAppCommit=Bun.spawnSync(['git','rev-parse',testedRef],{cwd:repositor
 await mkdir(folder,{recursive:true})
 const built=await Bun.build({entrypoints:[resolve(import.meta.dir,'../../tests/browser/physical-scene/native-map-product-instrumentation.ts')],target:'browser',format:'iife',minify:false})
 if(!built.success)throw new AggregateError(built.logs,'Native map observer build failed')
+const runnerSha256=createHash('sha256').update(await Bun.file(import.meta.path).arrayBuffer().then(buffer=>new Uint8Array(buffer))).digest('hex')
+const replayPath=process.env.LEITBILD_NATIVE_REPLAY_INPUT,replay=replayPath?await Bun.file(resolve(replayPath)).json():null
+const gpuDiagnostic=process.env.LEITBILD_NATIVE_GPU_DIAGNOSTIC==='1'
+const matchedCamera=process.env.LEITBILD_NATIVE_MATCHED_CAMERA==='1',resourceDiagnostic=process.env.LEITBILD_NATIVE_RESOURCE_DIAGNOSTIC==='1'
 const allLayersOn=process.env.LEITBILD_NATIVE_ALL_LAYERS_ON==='1'
 const layerSelections:any[]=[]
-const instrumentation=await built.outputs[0]!.text(),profile=await mkdtemp(join(tmpdir(),'leitbild-native-map-product-')),phases:any[]=[],events:any[]=[],collectionFloors:any[]=[]
+let gpuSource='';if(gpuDiagnostic){const gpu=await Bun.build({entrypoints:[resolve(import.meta.dir,'../../tests/browser/physical-scene/native-map-gpu-instrumentation.ts')],target:'browser',format:'iife',minify:false});if(!gpu.success)throw new AggregateError(gpu.logs,'GPU diagnostic observer build failed');gpuSource=await gpu.outputs[0]!.text()}
+const instrumentation=await built.outputs[0]!.text()+'\n'+gpuSource,profile=await mkdtemp(join(tmpdir(),'leitbild-native-map-product-')),phases:any[]=[],events:any[]=[],collectionFloors:any[]=[]
 const chrome=Bun.spawn(['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','--headless=new','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'--window-size=1440,1000',`--force-device-scale-factor=${dpr}`,'about:blank'],{stdout:'ignore',stderr:Bun.file(join(folder,'chrome.stderr.log'))})
 let socket:WebSocket|null=null,count=0
 const pending=new Map<number,{resolve:(value:any)=>void;reject:(error:unknown)=>void}>(),call=(method:string,params:any={}):Promise<any>=>new Promise((resolve,reject)=>{const id=++count;pending.set(id,{resolve,reject});socket!.send(JSON.stringify({id,method,params}))})
@@ -62,16 +67,24 @@ const collectionFloor = async (label:string,restore=false) => {
 const execution=async(playback:'paused'|'playing')=>{const response=await fetch(new URL(`/api/workspaces/${info.workspaceId}/capabilities/world.simulation-run.execution.set/invoke`,info.url),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resource:info.resource,input:{playback}})});if(!response.ok)throw Error(await response.text());const value=await response.json();if(value.result.playback!==playback)throw Error('Execution capability did not apply the requested local state');return value.result}
 const snapshot=()=>inWorld('return q.snapshot()')
 const shot=async(name:string)=>{const value=await call('Page.captureScreenshot',{format:'png'});await writeFile(join(folder,name),Buffer.from(value.data,'base64'))}
+const resources=async()=>{
+  if(!resourceDiagnostic)return null
+  const heap=await call('Runtime.getHeapUsage'),performanceMetrics=await call('Performance.getMetrics'),processTable=Bun.spawnSync(['ps','-Ao','pid=,ppid=,rss=']).stdout.toString().trim().split('\n').map(line=>{const [pid,ppid,rssKiB]=line.trim().split(/\s+/).map(Number);return{pid:pid!,ppid:ppid!,rssKiB:rssKiB!}}),owned=new Set([chrome.pid]);let changed=true
+  while(changed){changed=false;for(const row of processTable)if(owned.has(row.ppid)&&!owned.has(row.pid)){owned.add(row.pid);changed=true}}
+  const processes=processTable.filter(row=>owned.has(row.pid))
+  return{heap,performanceMetrics:performanceMetrics.metrics,isolatedChromeProcesses:processes,sumRssKiB:processes.reduce((sum,row)=>sum+row.rssKiB,0),limits:'RSS is a sum of own Chrome process mappings, not unique physical memory/PSS; page-isolate heap excludes worker isolates and does not equal prepared/driver bytes.'}
+}
 const movement=async(name:string,selector:string,orbit:boolean,playing:boolean)=>{
   if(orbit)await button('Orbit')
   if(playing){await execution('playing');if(name.includes('room'))await until(`return /Live ·/.test(d.querySelector('.explorer-controls .evidence')?.textContent??'')`,'live owner session')}else await execution('paused')
-  await settled();await inWorld('q.reset()')
+  await settled();if(matchedCamera)await home();const poseStart=(matchedCamera||replay)?{native:(await snapshot()).nativeCameraProjection,plan:(await snapshot()).firstActualPlanInkTransform}:null,resourcesStart=await resources();if(gpuDiagnostic)await inWorld('w.__nativePhysicalGpuProof.reset()');await inWorld('q.reset()')
   const point=await evaluate(`(()=>{const f=document.querySelector('iframe[src*="/world/runs/"]'),a=f.getBoundingClientRect(),b=f.contentDocument.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:a.x+b.x+b.width*.27,y:a.y+b.y+b.height*.46}})()`)
   const profileThis=process.env.LEITBILD_NATIVE_PROFILE_WINDOW===name
   if(profileThis){await call('Profiler.enable');await call('Profiler.start')}
   await call('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1})
-  const start=performance.now();let moves=0
-  while(performance.now()-start<4000){await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x+Math.sin(moves*.18)*65,y:point.y+Math.cos(moves*.15)*22,button:'left',buttons:1});moves++;await Bun.sleep(16)}
+  const start=performance.now(),replayWindow=replay?.phases?.find((phase:any)=>phase.name===name);if(replay&&!replayWindow)throw Error('Replay input lacks '+name);let moves=0
+  while(replayWindow?moves<replayWindow.moves:performance.now()-start<4000){if(replayWindow){const remaining=start+moves*4000/replayWindow.moves-performance.now();if(remaining>0)await Bun.sleep(remaining)}await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x+(matchedCamera?Math.sin((performance.now()-start)/4000*Math.PI*6):Math.sin(moves*.18))*65,y:point.y+(matchedCamera?Math.sin((performance.now()-start)/4000*Math.PI*4):Math.cos(moves*.15))*22,button:'left',buttons:1});moves++;if(!replayWindow)await Bun.sleep(16)}if(replayWindow&&performance.now()-start<4000)await Bun.sleep(4000-(performance.now()-start))
+  if(matchedCamera)await call('Input.dispatchMouseEvent',{type:'mouseMoved',...point,button:'left',buttons:1})
   await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1})
   if(profileThis){const profile=await call('Profiler.stop');await writeFile(join(folder,`${name}.cpuprofile`),JSON.stringify(profile.profile))}
   const value=await snapshot(),processWindows=await inWorld(`return w.document.querySelectorAll('.display-window').length`)
@@ -84,17 +97,17 @@ const movement=async(name:string,selector:string,orbit:boolean,playing:boolean)=
   }
   if(name.includes('plan')&&value.drawnTextAngles.some((text:any)=>text.min < -Math.PI/2||text.max > Math.PI/2))throw Error(`Plan ${name} painted upside-down text`)
   if(!name.includes('plan')&&(!value.ownedPhysicalTargets.length||value.ownedPhysicalTargets.some((target:any)=>target.depthBytes<=0)))throw Error(`${name} lacks the actual floating 3D target`)
-  phases.push({name,playing,moves,processWindows,...value});console.log(name,JSON.stringify({p95:value.rafP95Ms,frames:value.frames,longTasks:value.longTasks.length,texts:value.drawnTexts.length,targets:value.ownedPhysicalTargets,drafting:value.draftingCanvases}));await writeFile(join(folder,'partial.json'),JSON.stringify({phases},null,2))
+  phases.push({name,playing,moves,processWindows,poseStart,poseEnd:(matchedCamera||replay)?{native:value.nativeCameraProjection,plan:value.firstActualPlanInkTransform}:null,resourcesStart,resourcesEnd:await resources(),gpu:gpuDiagnostic?await inWorld('return w.__nativePhysicalGpuProof.settle()'):null,...value});console.log(name,JSON.stringify({p95:value.rafP95Ms,frames:value.frames,longTasks:value.longTasks.length,texts:value.drawnTexts.length,targets:value.ownedPhysicalTargets,drafting:value.draftingCanvases}));await writeFile(join(folder,'partial.json'),JSON.stringify({phases},null,2))
   if(profileThis&&process.env.LEITBILD_NATIVE_PROFILE_ONLY==='1')throw Error('Requested diagnostic-only CPU profile completed; this run does not issue a qualification verdict')
 }
 try{
   let port=0;const chromeStarted=performance.now();while(performance.now()-chromeStarted<45000){try{port=Number((await readFile(join(profile,'DevToolsActivePort'),'utf8')).split('\n')[0])}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}if(port)break;if(chrome.exitCode!==null)throw Error(`Isolated Chrome exited before CDP was ready: ${chrome.exitCode}`);await Bun.sleep(50)}if(!port)throw Error('Isolated Chrome did not start within the test startup deadline')
   const target=await(await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json();socket=new WebSocket(target.webSocketDebuggerUrl);await new Promise<void>((resolve,reject)=>{socket!.onopen=()=>resolve();socket!.onerror=reject})
   socket.onmessage=event=>{const message=JSON.parse(String(event.data)),request=pending.get(message.id);if(request){pending.delete(message.id);message.error?request.reject(message.error):request.resolve(message.result)}else if(message.method==='Runtime.exceptionThrown')events.push(message.params.exceptionDetails)}
-  await call('Runtime.enable');await call('Page.enable');await call('Target.setDiscoverTargets',{discover:true});await call('Emulation.setDeviceMetricsOverride',{width:1440,height:913,deviceScaleFactor:dpr,mobile:false});await call('Page.addScriptToEvaluateOnNewDocument',{source:instrumentation});await call('Page.navigate',{url:info.url})
+  await call('Runtime.enable');if(resourceDiagnostic)await call('Performance.enable');await call('Page.enable');await call('Target.setDiscoverTargets',{discover:true});await call('Emulation.setDeviceMetricsOverride',{width:1440,height:913,deviceScaleFactor:dpr,mobile:false});await call('Page.addScriptToEvaluateOnNewDocument',{source:`window.__nativeMapDiagnosticConfiguration={pose:${Boolean(matchedCamera||replay)}};\n${instrumentation}`} );await call('Page.navigate',{url:info.url})
   const startup=await evaluate(`(${nativeMapStartup.toString()})(true)`)
   await inWorld(`d.querySelector('button[aria-label="Close grid overview panel"]')?.click()`)
-  const earlyPlanOnly=process.env.LEITBILD_NATIVE_EARLY_PLAN_ONLY==='1',sitePlanOnly=process.env.LEITBILD_NATIVE_SITE_PLAN_ONLY==='1'
+  const earlyPlanOnly=process.env.LEITBILD_NATIVE_EARLY_PLAN_ONLY==='1',sitePlanOnly=process.env.LEITBILD_NATIVE_SITE_PLAN_ONLY==='1',site3dOnly=process.env.LEITBILD_NATIVE_ONLY_SITE_3D==='1'
   if(earlyPlanOnly){
     await scope();await floor('Turbine and main control');await button('Plan');await home();await shot('room-plan.png')
     await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
@@ -109,7 +122,7 @@ try{
   if(!sitePlanOnly){await collectionFloor('Turbine and main control');await collectionFloor('Stack',true)
   await movement('map-site-3d-paused','.maplibregl-canvas',true,false)
   await movement('map-site-3d-playing','.maplibregl-canvas',true,true)}
-  await execution('paused');await button('Plan');await settled(5);await shot('site-plan.png')
+  if(!site3dOnly){await execution('paused');await button('Plan');await settled(5);await shot('site-plan.png')
   await movement('map-site-plan-paused','.maplibregl-canvas',false,false)
   await movement('map-site-plan-playing','.maplibregl-canvas',false,true)
   if(!sitePlanOnly){await execution('paused');await scope();await floor('Turbine and main control');await button('3D');await home();await shot('room-3d.png')
@@ -118,13 +131,13 @@ try{
   await execution('paused');await button('Plan');await home();await shot('room-plan.png')
   await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
   await movement('map-room-plan-playing','.maplibregl-canvas',false,true)}
-  await execution('paused')
+  await execution('paused')}
   }
   const beforeExit=await snapshot(),metadata=await inWorld('return {userAgent:w.navigator.userAgent,reportedLogicalCpus:w.navigator.hardwareConcurrency,dpr:w.devicePixelRatio}')
   await call('Page.navigate',{url:'about:blank'});let physicalWorkerTargets:any[]=[];const stopAt=performance.now()+10000
   do{physicalWorkerTargets=(await call('Target.getTargets')).targetInfos.filter((item:any)=>item.type==='worker'&&/preparation-worker|source-compile/.test(item.url));if(!physicalWorkerTargets.length)break;await Bun.sleep(50)}while(performance.now()<stopAt)
   if(physicalWorkerTargets.length||events.length)throw Error('Native map page close left physical worker targets or exceptions')
-  const result={testedAppCommit,runnerCommit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:repository}).stdout.toString().trim(),instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),earlyPlanOnly,sitePlanOnly,profiledWindow:process.env.LEITBILD_NATIVE_PROFILE_WINDOW??null,run:info,metadata,startup,allLayersOn,layerSelections,collectionFloors,phases,beforeExit,physicalWorkerTargetsAfterExit:physicalWorkerTargets,exceptions:events,limits:['Actual built Host/World on one native geographic map and one isolated local Run. No product browser or alternate camera; no production Run commands.','View/floor settlement follows actual loading/owner evidence and two painted scheduling frames; no fixed helper settlement sleeps. Motion windows use actual input and RAF, not GPU execution timers.','Canvas fillText records are actual drafting calls. Readable room Plan requires authored HP/LP1/GEN/room captions; whole-site fitting may legitimately reject text that exceeds actual building envelopes. Backing-store counters include observed float32/MSAA renderbuffers and resolve texture, plus Canvas2D RGBA lower bounds; they exclude driver/process overhead.','Resource observers retain primitive metadata and weak resource keys only. Instrumentation adds overhead; annotation spy time is recorded, other callback overhead is not separately attributed. Optional CPU profiling is a separate diagnostic run, not a clean performance sample.','DPR and hardware are recorded per run. This is not WAN, constrained-device or human usability qualification.']}
+  const result={testedAppCommit,runnerSha256,runnerCommit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:repository}).stdout.toString().trim(),instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),earlyPlanOnly,sitePlanOnly,site3dOnly,matchedCamera,resourceDiagnostic,gpuDiagnostic,replayInput:replayPath?{path:resolve(replayPath),sha256:createHash('sha256').update(new Uint8Array(await Bun.file(resolve(replayPath)).arrayBuffer())).digest('hex'),method:'Original move counts and position formula; original event timestamps were not recorded, so commands are spaced uniformly over the original4second interval.'}:null,profiledWindow:process.env.LEITBILD_NATIVE_PROFILE_WINDOW??null,run:info,metadata,startup,allLayersOn,layerSelections,collectionFloors,phases,beforeExit,physicalWorkerTargetsAfterExit:physicalWorkerTargets,exceptions:events,limits:['Actual built Host/World on one native geographic map and one isolated local Run. No product browser or alternate camera; no production Run commands.','View/floor settlement follows actual loading/owner evidence and two painted scheduling frames; no fixed helper settlement sleeps. Motion windows use actual input and RAF, not GPU execution timers.','Canvas fillText records are actual drafting calls. Readable room Plan requires authored HP/LP1/GEN/room captions; whole-site fitting may legitimately reject text that exceeds actual building envelopes. Backing-store counters include observed float32/MSAA renderbuffers and resolve texture, plus Canvas2D RGBA lower bounds; they exclude driver/process overhead.','Resource observers retain primitive metadata and weak resource keys only. Instrumentation adds overhead; annotation spy time is recorded, other callback overhead is not separately attributed. Optional CPU profiling is a separate diagnostic run, not a clean performance sample.',...(gpuDiagnostic?['GPU elapsed queries and per-pass observers make this a diagnostic run, not a clean frame-budget qualification. Draw/resolve intervals are distinct; clear/composite are excluded and unsupported/disjoint/busy/aborted states are retained.']:[]),'DPR and hardware are recorded per run. This is not WAN, constrained-device or human usability qualification.']}
   await writeFile(join(folder,'receipt.json'),JSON.stringify(result,null,2));console.log('DONE',folder)
-}catch(error){const failure:any={error:String(error),phases,events};try{failure.snapshot=await snapshot()}catch(diagnosticError){failure.diagnosticError=String(diagnosticError)}await writeFile(join(folder,'failure.json'),JSON.stringify(failure,null,2));throw error}
+}catch(error){const failure:any={error:String(error),testedAppCommit,runnerSha256,instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),phases,events};try{failure.snapshot=await snapshot()}catch(diagnosticError){failure.diagnosticError=String(diagnosticError)}await writeFile(join(folder,'failure.json'),JSON.stringify(failure,null,2));throw error}
 finally{try{await execution('paused')}finally{socket?.close();chrome.kill();await chrome.exited;await rm(profile,{recursive:true,force:true})}}
