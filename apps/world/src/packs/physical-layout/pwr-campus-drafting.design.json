@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261027-r4",
-    "digest": "7a3b980824157fe3677d4dc6a328ae579208709ee8cd1deaae026ca5a00c7d73"
+    "digest": "31212a9041269647dfe8dfc8113cff4a998c9bed1a7fe729486d4957b63ff6bd"
   },
-  "sourceDigest": "eb6d7ac8a1927f16d57bdbee215c1c36655d22d62412337f97321025b8b15139",
+  "sourceDigest": "f8741790c6ca7fd77bc957ba52112bed667ad7bd978713a184567c62d7531d2a",
   "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
   "modelRequirement": {
     "modelRef": "electric-grid.halden.four-unit",
@@ -25,7 +25,7 @@
   "profile": "drafting",
   "compiler": {
     "id": "physical-layout-native-drafting",
-    "digest": "ac70f704e122e7c71977240dab58b4fa3079b29f5d3b015d51b58885cf75f284"
+    "digest": "323aaffca12f713766478ecf44de14f5def45ba081a7ae9085617173f286188d"
   },
   "coverageDigest": "9cafb704ff9e51894a438fa5f5ead40a3b2d758fa14e0a1c0ed7712da1ff867b",
   "requirements": {
@@ -52,7 +52,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "2752c689a83b6f1b4d7000bedc17fd762d7a8a1a8139df531508b1c8059d4f95"
+            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
           },
           "bearing": 0
         }
@@ -69,7 +69,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "2752c689a83b6f1b4d7000bedc17fd762d7a8a1a8139df531508b1c8059d4f95"
+            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
           },
           "bearing": 0
         }
@@ -86,7 +86,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "2752c689a83b6f1b4d7000bedc17fd762d7a8a1a8139df531508b1c8059d4f95"
+            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
           },
           "bearing": 0
         }
@@ -103,7 +103,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "2752c689a83b6f1b4d7000bedc17fd762d7a8a1a8139df531508b1c8059d4f95"
+            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
           },
           "bearing": 0
         }
@@ -153,9 +153,9 @@
     ]
   },
   "physicalApplicability": {
-    "sourceDigest": "36ec879da9d33a802e0bb0e06974597904e83c760d5276caf44102e5221a7eae",
-    "geometryDigest": "a838212e9dd45a8c575d605a2cd88a7d5a1015d5a60a1f9d1c22a90a6d4b1de1",
-    "digest": "dcd4dfb73ca53a55f260be2169719fd995fd29f859e815e9cffa5bd975269825"
+    "sourceDigest": "7ab126ff7a4e54cde3bf3711ae76d0558c6a56d642f03f5819492c433827edf3",
+    "geometryDigest": "179243edf4941d0cdad34158f0fafc0e64fe950c31f0ac31069db8536a771804",
+    "digest": "e4269814ebbedfc7e1b0c52d1874f06a240a8508b2a9f9bb7c05e747b827fe02"
   },
   "presentation": {
     "scopes": [

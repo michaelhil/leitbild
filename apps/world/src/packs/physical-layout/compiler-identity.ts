@@ -18,5 +18,5 @@ export const architecturePhysicalCompilerRef = { id: 'physical-layout-native-arc
 
 // Explicit vector drafting extends the retained physical architecture without
 // reinterpreting earlier source/compiler pairs.
-export const draftingPhysicalCompilerFiles = [...architecturePhysicalCompilerFiles, 'drafting/source.ts', 'drafting/primitives.ts', 'drafting/family-plan.ts', 'drafting/architecture-plan.ts', 'drafting/compile-scene.ts', 'drafting/solid.ts', 'drafting/foundation.ts', 'drafting/frame.ts', 'routing/source.ts', 'routing/route.ts'] as const
-export const draftingPhysicalCompilerRef = { id: 'physical-layout-native-drafting', digest: 'ac70f704e122e7c71977240dab58b4fa3079b29f5d3b015d51b58885cf75f284' } as const
+export const draftingPhysicalCompilerFiles = [...architecturePhysicalCompilerFiles, 'drafting/source.ts', 'drafting/primitives.ts', 'drafting/family-plan.ts', 'drafting/architecture-plan.ts', 'drafting/compile-scene.ts', 'drafting/solid.ts', 'drafting/foundation.ts', 'drafting/frame.ts', 'drafting/orientation.ts', 'drafting/section-plan.ts', 'routing/source.ts', 'routing/route.ts', 'routing/search.ts', 'routing/round.ts', 'routing/vector.ts', 'routing/self-clearance.ts', 'routing/compile.ts'] as const
+export const draftingPhysicalCompilerRef = { id: 'physical-layout-native-drafting', digest: '323aaffca12f713766478ecf44de14f5def45ba081a7ae9085617173f286188d' } as const

@@ -2,10 +2,10 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261027-r4",
-    "digest": "7ce54967049143a4171f04ac0960d270dab4d5b92fc88ca029863c9bd0d4a29b"
+    "digest": "d3183da10eaaabba477a9cf83673581250c5f21078b0a695357bb9a3c6536dc3"
   },
-  "sourceDigest": "46e18700ea02ada41ddd1c7b77f796e31913845bad6c38f9c312fb08fad0eb39",
-  "bindingDigest": "32122fb7b371c124844edf6eaa2c6e3f7c4829e2ec4bbd3b53aca33a9eb5f4f8",
+  "sourceDigest": "091500dbe44cce6785cc68527a758206d79595628e86b8c6d7662f21ce5c9ee7",
+  "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
     "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
@@ -14,7 +14,7 @@
     "min": [
       -186.72,
       -109.32,
-      -0.4
+      -3.1900000000000004
     ],
     "max": [
       105.9,
@@ -25,19 +25,20 @@
   "profile": "drafting",
   "compiler": {
     "id": "physical-layout-native-drafting",
-    "digest": "ac70f704e122e7c71977240dab58b4fa3079b29f5d3b015d51b58885cf75f284"
+    "digest": "323aaffca12f713766478ecf44de14f5def45ba081a7ae9085617173f286188d"
   },
-  "coverageDigest": "38a8ff6b3eef1b7efc94050f930804b4dde60c5c4764763e034b1197b5326967",
+  "coverageDigest": "14eb837c4ff2a700b999efb0d2366cea9c99f14eac7b369a9342a8195b3056ba",
   "requirements": {
     "ownerRole": "unit",
     "ownerPackId": "process-plant",
+    "includeGraphConnections": true,
     "relatedMembers": [],
     "connections": []
   },
   "physicalApplicability": {
-    "sourceDigest": "b744f148568e7ea48efdb7d462a06179b0419d0a5470b6e74ead30b440ceea1a",
-    "geometryDigest": "db855373419f9e323db45986c4deb55ca27e82942d11f2f520d72ddf20d71ffa",
-    "digest": "2752c689a83b6f1b4d7000bedc17fd762d7a8a1a8139df531508b1c8059d4f95"
+    "sourceDigest": "591524cbc91c2fb224cc8fa104b5f8f4a3ad220bf6d8e2d0635663a7bf8b3239",
+    "geometryDigest": "fce4f11fcb1a215f028a583cf3960d0f4a71316b9d4877f294b5b33b339945e8",
+    "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
   },
   "presentation": {
     "scopes": [
@@ -49,7 +50,7 @@
           "min": [
             -186.72,
             -109.32,
-            -0.4
+            -3.1900000000000004
           ],
           "max": [
             105.9,
@@ -1330,7 +1331,33 @@
             2,
             11.5
           ]
-        }
+        },
+        "levelInspectionViews": [
+          {
+            "levelId": "operating",
+            "view": {
+              "bearing": 37.24225999999999,
+              "pitch": 52.75774,
+              "target": [
+                -0.3999999999999986,
+                8,
+                18
+              ]
+            }
+          },
+          {
+            "levelId": "lower",
+            "view": {
+              "bearing": 40.10704999999996,
+              "pitch": 49.89295,
+              "target": [
+                -0.3999999999999986,
+                1,
+                5
+              ]
+            }
+          }
+        ]
       }
     ],
     "layers": [
@@ -1366,5 +1393,5 @@
       }
     ]
   },
-  "presentationDigest": "13dcc0de2aedfaded409961e0e9140eeafb03cb84dfabf6e25913ae7b47d486d"
+  "presentationDigest": "9d42af32414aee52b3d09275a43d915ac426352787d056e6985e7a107b46024a"
 }

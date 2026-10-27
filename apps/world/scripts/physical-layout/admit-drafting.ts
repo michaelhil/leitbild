@@ -19,10 +19,10 @@ const check = Bun.argv.includes('--check'), outputs: Array<{ name: string; value
 let unit: Extract<PhysicalCatalogManifest, { profile: 'drafting' }> | undefined
 for (const stem of ['pwr-full-unit-drafting', 'pwr-campus-drafting']) {
   const source = physicalSourceSchema.parse(await read(`${stem}.source.json`)), bindings = physicalCorrespondenceSchema.array().parse(await read(`${stem}.bindings.json`)), coverage = physicalCoverageEvidenceSchema.parse(await read(`${stem}.coverage.json`))
-  const issues = physicalCoverageIssues({ evidence: coverage, physicalIds: source.elements.map(element => element.id), ownerSubjectIds: coverage.dispositions.map(entry => entry.subjectId), bindings })
+  const issues = physicalCoverageIssues({ evidence: coverage, physicalIds: [...source.elements.map(element => element.id),...(source.routing?.connections.map(connection=>connection.id)??[])], ownerSubjectIds: coverage.dispositions.map(entry => entry.subjectId), bindings })
   if (issues.length) throw new Error(`${stem}: ${issues.join('; ')}`)
   const previous = await read(stem === 'pwr-full-unit-drafting' ? 'pwr-full-unit-explorer.requirements.json' : 'pwr-campus-explorer.requirements.json') as { relatedMembers: Array<Record<string, unknown>> }
-  const requirements = physicalExplorerRequirementsSchema.parse(unit === undefined ? previous : { ...previous, relatedMembers: previous.relatedMembers.map(({ physicalLayout: _previous, ...member }) => ({ ...member, physicalLayout: { physical: { id: unit!.design.id, digest: unit!.physicalApplicability.digest }, bearing: 0 } })) })
+  const requirements = physicalExplorerRequirementsSchema.parse(unit === undefined ? {...previous,...(source.routing?{includeGraphConnections:true}:{})} : { ...previous, relatedMembers: previous.relatedMembers.map(({ physicalLayout: _previous, ...member }) => ({ ...member, physicalLayout: { physical: { id: unit!.design.id, digest: unit!.physicalApplicability.digest }, bearing: 0 } })) })
   outputs.push({ name: `${stem}.requirements.json`, value: requirements })
   const scene = compilePhysicalScene('admission', { source, bindings, design: { digest: 'admission' }, owner: { objectId: 'admission' }, placement: { anchor: [0, 0], bearing: 0 }, bounds: { min: [-1e9, -1e9, -1e9], max: [1e9, 1e9, 1e9] } })
   const min: V3 = [Infinity, Infinity, Infinity], max: V3 = [-Infinity, -Infinity, -Infinity]

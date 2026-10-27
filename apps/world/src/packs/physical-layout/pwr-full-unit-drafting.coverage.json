@@ -1,9 +1,9 @@
 {
-  "scope": "owner",
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
     "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
   },
+  "scope": "owner",
   "dispositions": [
     {
       "subjectId": "atmosphere",
@@ -1039,6 +1039,1312 @@
       "physicalElementIds": [
         "equipment/volumeControlTank"
       ]
+    },
+    {
+      "subjectId": "core-to-vessel-thermal",
+      "disposition": "functional",
+      "reason": "Thermal exchange inside the reactor assembly is not a pipe or electrical span.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "pressurizer-surge-line",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/pressurizer-surge-line"
+      ]
+    },
+    {
+      "subjectId": "pressurizer-relief-to-tank",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/pressurizer-relief-to-tank"
+      ]
+    },
+    {
+      "subjectId": "pressurizer-safety-valves-to-tank",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/pressurizer-safety-valves-to-tank"
+      ]
+    },
+    {
+      "subjectId": "pressurizer-relief-header-to-tank",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/pressurizer-relief-header-to-tank"
+      ]
+    },
+    {
+      "subjectId": "rcs-hot-leg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-hot-leg-a"
+      ]
+    },
+    {
+      "subjectId": "rcs-cold-leg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-cold-leg-a"
+      ]
+    },
+    {
+      "subjectId": "rcp-a-to-core",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcp-a-to-core"
+      ]
+    },
+    {
+      "subjectId": "rcs-hot-leg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-hot-leg-b"
+      ]
+    },
+    {
+      "subjectId": "rcs-cold-leg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-cold-leg-b"
+      ]
+    },
+    {
+      "subjectId": "rcp-b-to-core",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcp-b-to-core"
+      ]
+    },
+    {
+      "subjectId": "rcs-hot-leg-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-hot-leg-c"
+      ]
+    },
+    {
+      "subjectId": "rcs-cold-leg-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-cold-leg-c"
+      ]
+    },
+    {
+      "subjectId": "rcp-c-to-core",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcp-c-to-core"
+      ]
+    },
+    {
+      "subjectId": "rcs-hot-leg-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-hot-leg-d"
+      ]
+    },
+    {
+      "subjectId": "rcs-cold-leg-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-cold-leg-d"
+      ]
+    },
+    {
+      "subjectId": "rcp-d-to-core",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcp-d-to-core"
+      ]
+    },
+    {
+      "subjectId": "feedwater-tank-to-main-feedwater-pump-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-tank-to-main-feedwater-pump-a"
+      ]
+    },
+    {
+      "subjectId": "feedwater-tank-to-main-feedwater-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-tank-to-main-feedwater-pump-b"
+      ]
+    },
+    {
+      "subjectId": "main-feedwater-pump-a-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/main-feedwater-pump-a-to-header"
+      ]
+    },
+    {
+      "subjectId": "main-feedwater-pump-b-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/main-feedwater-pump-b-to-header"
+      ]
+    },
+    {
+      "subjectId": "feedwater-header-to-control-valve-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-header-to-control-valve-a"
+      ]
+    },
+    {
+      "subjectId": "feedwater-control-valve-a-to-sg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-control-valve-a-to-sg-a"
+      ]
+    },
+    {
+      "subjectId": "sg-a-steam-to-msiv-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-a-steam-to-msiv-a"
+      ]
+    },
+    {
+      "subjectId": "msiv-a-to-main-steam-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/msiv-a-to-main-steam-header"
+      ]
+    },
+    {
+      "subjectId": "feedwater-header-to-control-valve-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-header-to-control-valve-b"
+      ]
+    },
+    {
+      "subjectId": "feedwater-control-valve-b-to-sg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-control-valve-b-to-sg-b"
+      ]
+    },
+    {
+      "subjectId": "sg-b-steam-to-msiv-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-b-steam-to-msiv-b"
+      ]
+    },
+    {
+      "subjectId": "msiv-b-to-main-steam-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/msiv-b-to-main-steam-header"
+      ]
+    },
+    {
+      "subjectId": "feedwater-header-to-control-valve-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-header-to-control-valve-c"
+      ]
+    },
+    {
+      "subjectId": "feedwater-control-valve-c-to-sg-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-control-valve-c-to-sg-c"
+      ]
+    },
+    {
+      "subjectId": "sg-c-steam-to-msiv-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-c-steam-to-msiv-c"
+      ]
+    },
+    {
+      "subjectId": "msiv-c-to-main-steam-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/msiv-c-to-main-steam-header"
+      ]
+    },
+    {
+      "subjectId": "feedwater-header-to-control-valve-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-header-to-control-valve-d"
+      ]
+    },
+    {
+      "subjectId": "feedwater-control-valve-d-to-sg-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/feedwater-control-valve-d-to-sg-d"
+      ]
+    },
+    {
+      "subjectId": "sg-d-steam-to-msiv-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-d-steam-to-msiv-d"
+      ]
+    },
+    {
+      "subjectId": "msiv-d-to-main-steam-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/msiv-d-to-main-steam-header"
+      ]
+    },
+    {
+      "subjectId": "main-steam-header-to-turbine-stop-valve",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/main-steam-header-to-turbine-stop-valve"
+      ]
+    },
+    {
+      "subjectId": "main-steam-header-to-turbine-bypass-valve",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/main-steam-header-to-turbine-bypass-valve"
+      ]
+    },
+    {
+      "subjectId": "turbine-bypass-valve-to-condenser",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-bypass-valve-to-condenser"
+      ]
+    },
+    {
+      "subjectId": "turbine-stop-valve-to-turbine",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-stop-valve-to-turbine"
+      ]
+    },
+    {
+      "subjectId": "turbine-exhaust-to-condenser",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-exhaust-to-condenser"
+      ]
+    },
+    {
+      "subjectId": "condenser-to-condensate-pump-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/condenser-to-condensate-pump-a"
+      ]
+    },
+    {
+      "subjectId": "condensate-pump-a-to-feedwater-tank",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/condensate-pump-a-to-feedwater-tank"
+      ]
+    },
+    {
+      "subjectId": "condenser-to-condensate-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/condenser-to-condensate-pump-b"
+      ]
+    },
+    {
+      "subjectId": "condensate-pump-b-to-feedwater-tank",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/condensate-pump-b-to-feedwater-tank"
+      ]
+    },
+    {
+      "subjectId": "condenser-to-hotwell-reject-valve",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/condenser-to-hotwell-reject-valve"
+      ]
+    },
+    {
+      "subjectId": "hotwell-reject",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/hotwell-reject"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-tank-to-motor-pump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-tank-to-motor-pump"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-tank-to-turbine-pump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-tank-to-turbine-pump"
+      ]
+    },
+    {
+      "subjectId": "motor-afw-pump-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/motor-afw-pump-to-header"
+      ]
+    },
+    {
+      "subjectId": "turbine-afw-pump-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-afw-pump-to-header"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-header-to-valve-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-header-to-valve-a"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-valve-a-to-sg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-valve-a-to-sg-a"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-header-to-valve-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-header-to-valve-b"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-valve-b-to-sg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-valve-b-to-sg-b"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-header-to-valve-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-header-to-valve-c"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-valve-c-to-sg-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-valve-c-to-sg-c"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-header-to-valve-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-header-to-valve-d"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-valve-d-to-sg-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-valve-d-to-sg-d"
+      ]
+    },
+    {
+      "subjectId": "vct-to-charging-pump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/vct-to-charging-pump"
+      ]
+    },
+    {
+      "subjectId": "boric-acid-tank-to-injection-valve",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/boric-acid-tank-to-injection-valve"
+      ]
+    },
+    {
+      "subjectId": "boric-acid-injection-to-charging-pump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/boric-acid-injection-to-charging-pump"
+      ]
+    },
+    {
+      "subjectId": "charging-pump-to-cold-leg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/charging-pump-to-cold-leg-a"
+      ]
+    },
+    {
+      "subjectId": "rcs-letdown",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rcs-letdown"
+      ]
+    },
+    {
+      "subjectId": "letdown-to-vct",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/letdown-to-vct"
+      ]
+    },
+    {
+      "subjectId": "aux-feedwater-tank-to-motor-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/aux-feedwater-tank-to-motor-pump-b"
+      ]
+    },
+    {
+      "subjectId": "motor-afw-pump-b-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/motor-afw-pump-b-to-header"
+      ]
+    },
+    {
+      "subjectId": "vct-to-charging-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/vct-to-charging-pump-b"
+      ]
+    },
+    {
+      "subjectId": "charging-pump-b-to-cold-leg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/charging-pump-b-to-cold-leg-b"
+      ]
+    },
+    {
+      "subjectId": "rwst-to-safety-injection-pump-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rwst-to-safety-injection-pump-a"
+      ]
+    },
+    {
+      "subjectId": "rwst-to-safety-injection-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rwst-to-safety-injection-pump-b"
+      ]
+    },
+    {
+      "subjectId": "safety-injection-pump-a-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-injection-pump-a-to-header"
+      ]
+    },
+    {
+      "subjectId": "safety-injection-pump-b-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-injection-pump-b-to-header"
+      ]
+    },
+    {
+      "subjectId": "safety-injection-header-to-cold-leg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-injection-header-to-cold-leg-a"
+      ]
+    },
+    {
+      "subjectId": "safety-injection-header-to-cold-leg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-injection-header-to-cold-leg-b"
+      ]
+    },
+    {
+      "subjectId": "safety-injection-header-to-cold-leg-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-injection-header-to-cold-leg-c"
+      ]
+    },
+    {
+      "subjectId": "safety-injection-header-to-cold-leg-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-injection-header-to-cold-leg-d"
+      ]
+    },
+    {
+      "subjectId": "rwst-to-containment-spray-pump-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rwst-to-containment-spray-pump-a"
+      ]
+    },
+    {
+      "subjectId": "rwst-to-containment-spray-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rwst-to-containment-spray-pump-b"
+      ]
+    },
+    {
+      "subjectId": "containment-spray-pump-a-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/containment-spray-pump-a-to-header"
+      ]
+    },
+    {
+      "subjectId": "containment-spray-pump-b-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/containment-spray-pump-b-to-header"
+      ]
+    },
+    {
+      "subjectId": "containment-spray-header-to-containment",
+      "disposition": "functional",
+      "reason": "This graph exchange terminates in the modelled containment medium; no separate conduit/nozzle hardware is authored.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "containment-sump-to-rhr-pump-a",
+      "disposition": "functional",
+      "reason": "This graph exchange terminates in the modelled containment medium; no separate conduit/nozzle hardware is authored.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "containment-sump-to-rhr-pump-b",
+      "disposition": "functional",
+      "reason": "This graph exchange terminates in the modelled containment medium; no separate conduit/nozzle hardware is authored.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "rhr-pump-a-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rhr-pump-a-to-header"
+      ]
+    },
+    {
+      "subjectId": "rhr-pump-b-to-header",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rhr-pump-b-to-header"
+      ]
+    },
+    {
+      "subjectId": "rhr-header-to-isolation-valve",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rhr-header-to-isolation-valve"
+      ]
+    },
+    {
+      "subjectId": "rhr-isolation-valve-to-cold-leg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/rhr-isolation-valve-to-cold-leg-a"
+      ]
+    },
+    {
+      "subjectId": "vessel-release-to-containment",
+      "disposition": "functional",
+      "reason": "This graph exchange terminates in the modelled containment medium; no separate conduit/nozzle hardware is authored.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "safety-accumulator-a-to-cold-leg-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-accumulator-a-to-cold-leg-a"
+      ]
+    },
+    {
+      "subjectId": "safety-accumulator-b-to-cold-leg-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-accumulator-b-to-cold-leg-b"
+      ]
+    },
+    {
+      "subjectId": "safety-accumulator-c-to-cold-leg-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-accumulator-c-to-cold-leg-c"
+      ]
+    },
+    {
+      "subjectId": "safety-accumulator-d-to-cold-leg-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-accumulator-d-to-cold-leg-d"
+      ]
+    },
+    {
+      "subjectId": "sg-a-steam-to-relief-valve-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-a-steam-to-relief-valve-a"
+      ]
+    },
+    {
+      "subjectId": "steam-generator-relief-valve-a-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: steamGeneratorReliefValveA.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-b-steam-to-relief-valve-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-b-steam-to-relief-valve-b"
+      ]
+    },
+    {
+      "subjectId": "steam-generator-relief-valve-b-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: steamGeneratorReliefValveB.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-c-steam-to-relief-valve-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-c-steam-to-relief-valve-c"
+      ]
+    },
+    {
+      "subjectId": "steam-generator-relief-valve-c-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: steamGeneratorReliefValveC.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-d-steam-to-relief-valve-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-d-steam-to-relief-valve-d"
+      ]
+    },
+    {
+      "subjectId": "steam-generator-relief-valve-d-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: steamGeneratorReliefValveD.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "ultimate-heat-sink-to-circulating-water-pump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/ultimate-heat-sink-to-circulating-water-pump"
+      ]
+    },
+    {
+      "subjectId": "circulating-water-pump-to-condenser",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/circulating-water-pump-to-condenser"
+      ]
+    },
+    {
+      "subjectId": "condenser-to-cooling-water-discharge",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/condenser-to-cooling-water-discharge"
+      ]
+    },
+    {
+      "subjectId": "turbine-generator-to-unit-aux-transformer",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-generator-to-unit-aux-transformer"
+      ]
+    },
+    {
+      "subjectId": "offsite-grid-to-unit-aux-transformer",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: offsiteGrid.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "unit-aux-transformer-to-offsite-breaker-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-aux-transformer-to-offsite-breaker-a"
+      ]
+    },
+    {
+      "subjectId": "unit-aux-transformer-to-offsite-breaker-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-aux-transformer-to-offsite-breaker-b"
+      ]
+    },
+    {
+      "subjectId": "offsite-breaker-a-to-safety-bus-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/offsite-breaker-a-to-safety-bus-a"
+      ]
+    },
+    {
+      "subjectId": "offsite-breaker-b-to-safety-bus-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/offsite-breaker-b-to-safety-bus-b"
+      ]
+    },
+    {
+      "subjectId": "unit-aux-transformer-to-unit-bus-breaker-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-aux-transformer-to-unit-bus-breaker-a"
+      ]
+    },
+    {
+      "subjectId": "unit-aux-transformer-to-unit-bus-breaker-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-aux-transformer-to-unit-bus-breaker-b"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-breaker-a-to-unit-bus-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-breaker-a-to-unit-bus-a"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-breaker-b-to-unit-bus-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-breaker-b-to-unit-bus-b"
+      ]
+    },
+    {
+      "subjectId": "diesel-generator-a-to-breaker-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/diesel-generator-a-to-breaker-a"
+      ]
+    },
+    {
+      "subjectId": "diesel-generator-b-to-breaker-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/diesel-generator-b-to-breaker-b"
+      ]
+    },
+    {
+      "subjectId": "diesel-breaker-a-to-safety-bus-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/diesel-breaker-a-to-safety-bus-a"
+      ]
+    },
+    {
+      "subjectId": "diesel-breaker-b-to-safety-bus-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/diesel-breaker-b-to-safety-bus-b"
+      ]
+    },
+    {
+      "subjectId": "battery-a-to-inverter-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/battery-a-to-inverter-a"
+      ]
+    },
+    {
+      "subjectId": "battery-b-to-inverter-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/battery-b-to-inverter-b"
+      ]
+    },
+    {
+      "subjectId": "inverter-a-to-controls-load-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/inverter-a-to-controls-load-a"
+      ]
+    },
+    {
+      "subjectId": "inverter-b-to-controls-load-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/inverter-b-to-controls-load-b"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-a-to-rcpA",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-a-to-rcpA"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-a-to-rcpC",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-a-to-rcpC"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-a-to-mainFeedwaterPumpA",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-a-to-mainFeedwaterPumpA"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-auxFeedwaterPumpMotor",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-auxFeedwaterPumpMotor"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-auxFeedwaterPumpMotorB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-auxFeedwaterPumpMotorB"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-a-to-condensatePumpA",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-a-to-condensatePumpA"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-a-to-circulatingWaterPump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-a-to-circulatingWaterPump"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-b-to-rcpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-b-to-rcpB"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-b-to-rcpD",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-b-to-rcpD"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-b-to-mainFeedwaterPumpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-b-to-mainFeedwaterPumpB"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-b-to-condensatePumpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-b-to-condensatePumpB"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-chargingPump",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-chargingPump"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-chargingPumpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-chargingPumpB"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-safetyInjectionPumpA",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-safetyInjectionPumpA"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-safetyInjectionPumpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-safetyInjectionPumpB"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-containmentSprayPumpA",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-containmentSprayPumpA"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-containmentSprayPumpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-containmentSprayPumpB"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-rhrPumpA",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-rhrPumpA"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-rhrPumpB",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-rhrPumpB"
+      ]
+    },
+    {
+      "subjectId": "unit-bus-a-to-pressurizer-heater",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/unit-bus-a-to-pressurizer-heater"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-pressurizer-porv-block-valve",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-pressurizer-porv-block-valve"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-pressurizer-backup-heater-breaker-a"
+      ]
+    },
+    {
+      "subjectId": "pressurizer-backup-heater-breaker-a-to-pressurizer",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/pressurizer-backup-heater-breaker-a-to-pressurizer"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-load-centres-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-load-centres-a"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-ccw-pump-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-ccw-pump-a"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-sw-pump-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-sw-pump-a"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-a-to-fan-coolers-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-a-to-fan-coolers-a"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-load-centres-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-load-centres-b"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-ccw-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-ccw-pump-b"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-sw-pump-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-sw-pump-b"
+      ]
+    },
+    {
+      "subjectId": "safety-bus-b-to-fan-coolers-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/safety-bus-b-to-fan-coolers-b"
+      ]
+    },
+    {
+      "subjectId": "sg-b-steam-to-turbine-afw-steam-valve-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-b-steam-to-turbine-afw-steam-valve-b"
+      ]
+    },
+    {
+      "subjectId": "turbine-afw-steam-valve-b-to-pump-turbine",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-afw-steam-valve-b-to-pump-turbine"
+      ]
+    },
+    {
+      "subjectId": "sg-c-steam-to-turbine-afw-steam-valve-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-c-steam-to-turbine-afw-steam-valve-c"
+      ]
+    },
+    {
+      "subjectId": "turbine-afw-steam-valve-c-to-pump-turbine",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/turbine-afw-steam-valve-c-to-pump-turbine"
+      ]
+    },
+    {
+      "subjectId": "turbine-afw-pump-turbine-exhaust-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: auxFeedwaterPumpTurbine.driveSteamExhaust. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-a-steam-to-safety-valves-a",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-a-steam-to-safety-valves-a"
+      ]
+    },
+    {
+      "subjectId": "main-steam-safety-valves-a-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: mainSteamSafetyValveA.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-b-steam-to-safety-valves-b",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-b-steam-to-safety-valves-b"
+      ]
+    },
+    {
+      "subjectId": "main-steam-safety-valves-b-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: mainSteamSafetyValveB.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-c-steam-to-safety-valves-c",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-c-steam-to-safety-valves-c"
+      ]
+    },
+    {
+      "subjectId": "main-steam-safety-valves-c-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: mainSteamSafetyValveC.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
+    },
+    {
+      "subjectId": "sg-d-steam-to-safety-valves-d",
+      "disposition": "direct",
+      "reason": "Illustrative graph-exact installation. Port placement, clearance and missing diameters are authored assumptions; the accepted 3D route is validated against the declared equipment/column obstacle set. Civil penetrations and maintenance qualification are not asserted.",
+      "physicalElementIds": [
+        "connection/sg-d-steam-to-safety-valves-d"
+      ]
+    },
+    {
+      "subjectId": "main-steam-safety-valves-d-to-atmosphere",
+      "disposition": "boundary",
+      "reason": "Exact graph endpoint is outside the placed installation: mainSteamSafetyValveD.outlet. No physical endpoint body or placed peer is declared.",
+      "physicalElementIds": []
     }
   ],
   "contextElements": [
@@ -3273,6 +4579,6 @@
   ],
   "evidence": {
     "accuracy": "illustrative",
-    "origin": "Conceptual full-unit arrangement for the exact four-loop executable PWR, authored 25 October 2026. Accepted turbine geometry retained; system/building relationships follow generic nuclear-plant references. The containment uses 32 closed, ordinary wall facets with real personnel/hatch voids, approximating its ellipse within 0.56m. Civil dimensions, access, nozzle positions and routing remain authored illustration, not surveyed, as-built, maintenance or safety qualification."
+    "origin": "Conceptual full-unit arrangement for the exact four-loop executable PWR, authored 25 October 2026. Accepted turbine geometry retained; system/building relationships follow generic nuclear-plant references. The containment uses 32 closed, ordinary wall facets with real personnel/hatch voids, approximating its ellipse within 0.56m. Civil dimensions, access, nozzle positions and routing remain authored illustration, not surveyed, as-built, maintenance or safety qualification. Exact graph connection coverage and accepted authoring-time route solutions are included. Geometry is illustrative and does not qualify wall/floor penetrations."
   }
 }

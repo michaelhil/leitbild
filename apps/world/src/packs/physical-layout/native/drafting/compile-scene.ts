@@ -6,6 +6,7 @@ import { architectureLayers, elementWorld, parameters, type V3 } from './source.
 export { architectureLayers } from './source.ts'
 import { solid } from './solid.ts'
 import { physicalScopeManifest } from '../../scope-manifest.ts'
+import {compilePhysicalRoutes,appendPhysicalRouteDrawing} from '../routing/compile.ts'
 
 export interface PhysicalCompilerInput {
   readonly source: Source
@@ -120,18 +121,21 @@ const areaManifest = (source: Source, input: ReturnType<typeof physicalScopeMani
       bounds: { min: [0, 1, 2].map(axis => Math.min(...members.map(member => member.bounds.min[axis]!))) as V3, max: [0, 1, 2].map(axis => Math.max(...members.map(member => member.bounds.max[axis]!))) as V3 },
       levelIds: source.levels.filter(level => members.some(member => member.levelIds.includes(level.id))).map(level => level.id),
       ...(area.inspectionView ? { inspectionView: { ...area.inspectionView, ...(area.inspectionView.target ? { target: area.inspectionView.target.map((value, axis) => value - source.origin[axis]!) as V3 } : {}) } } : {}),
+      ...(area.levelInspectionViews ? {levelInspectionViews:area.levelInspectionViews.map(item=>({...item,view:{...item.view,...(item.view.target?{target:item.view.target.map((value,axis)=>value-source.origin[axis]!)as V3}:{})}}))}:{}),
     }
   })
   return { ...input, scopes: [...input.scopes, ...areas] }
 }
 export const compilePhysicalScene = (id: string, data: PhysicalSceneInput): PackPhysicalScene => {
+ const scopeSource={...data.source,levels:data.source.levels.map(level=>({...level,elevation:level.elevation-data.source.origin[2]}))}
+ const base=areaManifest(data.source,inspectionManifest(data.source,physicalScopeManifest(scopeSource,compilePhysicalObjects(data)))),routes=compilePhysicalRoutes(data.source,base.objects),objects=[...base.objects,...routes.map(route=>route.object)]
  const scene:PackPhysicalScene={
   id, revision: data.design.digest, targetObjectId: data.owner.objectId,
   anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: physicalDraftingAuthoringBounds(data.bounds,data.source.northAxis),
-  levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
+  levels: data.source.levels.map(level => ({ ...level, elevation:level.elevation-data.source.origin[2], cutHeight: level.elevation + level.cutHeight-data.source.origin[2] })),
   layers: data.source.layers ?? architectureLayers,
   planAnnotations: compilePlanAnnotations(data.source),
-  ...areaManifest(data.source, inspectionManifest(data.source, physicalScopeManifest(data.source, compilePhysicalObjects(data)))),
+  ...base,objects,scopes:base.scopes.map(scope=>scope.id===data.source.rootScope.id?{...scope,bounds:physicalObjectsBounds(objects)}:scope),
 }
- return packPhysicalSceneSchema.parse(normalizePhysicalDraftingScene({...scene,planDrawing:compilePlanDrawing(data.source,scene)},data.source.northAxis))
+ return packPhysicalSceneSchema.parse(normalizePhysicalDraftingScene({...scene,planDrawing:appendPhysicalRouteDrawing(scene,compilePlanDrawing(data.source,scene),routes)},data.source.northAxis))
 }
