@@ -9,7 +9,7 @@ export const preparePhysicalRenderBuffers = (meshes: ReadonlyArray<PhysicalMesh>
   meshes.forEach((mesh, objectIndex) => {
     for (let at = 0; at < mesh.vertices.length; at += 7) {
       for (let component = 0; component < 6; component++) vertices[solidAt + component] = mesh.vertices[at + component]!
-      vertices[solidAt + 6] = role(mesh.object.materials?.[mesh.vertices[at + 6]!] ?? mesh.object.material ?? mesh.object.kind); vertices[solidAt + 7] = objectIndex; solidAt += 8
+      vertices[solidAt + 6] = role(mesh.materials?.[mesh.vertices[at + 6]!] ?? mesh.object.materials?.[mesh.vertices[at + 6]!] ?? mesh.object.material ?? mesh.object.kind); vertices[solidAt + 7] = objectIndex; solidAt += 8
     }
     for (let at = 0; at < mesh.lines.length; at += 3) {
       lines[lineAt] = mesh.lines[at]!; lines[lineAt + 1] = mesh.lines[at + 1]!; lines[lineAt + 2] = mesh.lines[at + 2]!; lines[lineAt + 3] = role(mesh.lineMaterials?.[Math.floor(at / 6)] ?? 'line'); lines[lineAt + 4] = objectIndex

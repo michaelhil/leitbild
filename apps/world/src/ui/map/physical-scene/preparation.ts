@@ -2,6 +2,7 @@ import type { PackPhysicalScene } from '../../../core/packs/scene.ts'
 import { copyPhysicalSceneForTransfer } from '../../../core/packs/scene-transfer.ts'
 import { preparePhysicalSurfaceOwnership, type PhysicalSurfaceOwnershipDiagnostics } from './surface-ownership.ts'
 import { buildVisibleMeshes, type PhysicalMesh } from './geometry.ts'
+import { physicalSurfaceAnnotations } from './surface-annotations.ts'
 import { admitPhysicalPickAcceleration, preparePhysicalPickAcceleration, type PhysicalPickAcceleration } from './picking.ts'
 import type { PhysicalSceneView } from './types.ts'
 import { preparePhysicalRenderBuffers, type PhysicalRenderBuffers } from './render-buffers.ts'
@@ -16,7 +17,7 @@ export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: Physica
 }
 /** Shared with the module worker and explicit offline/test preparation ports. */
 export const preparePhysicalGeometry = (scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity = key): PhysicalPreparedGeometry => {
-  const owned = preparePhysicalSurfaceOwnership(buildVisibleMeshes(scene, view)), meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
+  const owned = preparePhysicalSurfaceOwnership(physicalSurfaceAnnotations(scene, view, buildVisibleMeshes(scene, view))), meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
   return { key, identity, meshes, acceleration: preparePhysicalPickAcceleration(meshes), buffers: preparePhysicalRenderBuffers(meshes), surfaceOwnership: owned.diagnostics }
 }
 type WireMesh = Omit<PhysicalMesh, 'object'> & { readonly objectIndex: number }

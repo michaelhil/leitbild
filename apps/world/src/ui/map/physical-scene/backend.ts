@@ -3,7 +3,20 @@ import type { PhysicalRenderPassMetrics } from './render-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import { physicalPreparedGeometryBytes } from './preparation.ts'
-import type { PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
+import type { Color, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
+
+/** Quiet illustrative surface colour, precomposited against its actual material
+ * before the common lighting pass. No second coincident translucent surface. */
+export const physicalMaterialColor = (palette: PhysicalScenePalette, role: string): Color => {
+  if (role === 'line') return palette.line
+  if (role.startsWith('surface/')) {
+    const [, accent, material] = role.split('/')
+    if (accent !== 'access' && accent !== 'outage' || !material) throw Error(`Invalid physical surface decoration role: ${role}`)
+    const base = palette.materials[material] ?? palette.defaultMaterial, overlay = palette.materials[accent] ?? palette.defaultMaterial
+    return base.map((value, axis) => value * .58 + overlay[axis]! * .42) as unknown as Color
+  }
+  return palette.materials[role] ?? palette.defaultMaterial
+}
 
 const vertexSource = `#version 300 es
 precision highp float;
@@ -18,6 +31,7 @@ layout(location=9) in uint instanceData;
 uniform sampler2D uObjects;
 uniform int uObjectWidth;
 out vec3 vNormal;
+out vec2 vLocalPosition;
 out float vCameraDepth;
 flat out int vMaterial;
 flat out int vObject;
@@ -28,6 +42,7 @@ void main(){
   vec4 placement=objectData(i+1);
   gl_Position=placement.w<.5?vec4(2.,2.,2.,1.):instanceMatrix*vec4(position+placement.xyz,1.);
   vCameraDepth=gl_Position.w;
+  vLocalPosition=position.xy;
   vNormal=normal;vMaterial=int(materialIndex);vObject=i;vStroke=strokeStyle;
 }
 `
@@ -35,6 +50,7 @@ const fragmentSource = `#version 300 es
 precision highp float;
 precision highp int;
 in vec3 vNormal;
+in vec2 vLocalPosition;
 in float vCameraDepth;
 flat in int vMaterial;
 flat in int vObject;
@@ -47,6 +63,7 @@ uniform float uDepthNear;
 uniform bool uFlat;
 uniform bool uLines;
 uniform vec2 uLineOpacity;
+uniform vec3 uIllustrationLine;
 out vec4 outColor;
 void main(){
   // Original clip coordinates still own clipping and screen coverage. A
@@ -56,7 +73,8 @@ void main(){
   vec3 n=normalize(vNormal);
   // Preserve the accepted illustration's Y-up lighting in scene-local Z-up.
   float light=uFlat?1.:.60+.10*n.z+.28*max(dot(n,normalize(vec3(-.45,.55,.88))),0.)+.12*max(dot(n,normalize(vec3(.65,-.8,.4))),0.);
-  vec3 material=texelFetch(uMaterials,ivec2(vMaterial%uMaterialWidth,vMaterial/uMaterialWidth),0).rgb;
+  vec4 surface=texelFetch(uMaterials,ivec2(vMaterial%uMaterialWidth,vMaterial/uMaterialWidth),0);
+  vec3 material=surface.rgb;
   vec4 state=texelFetch(uObjects,ivec2(vObject%uObjectWidth,vObject/uObjectWidth),0);
   float edgeAlpha=uFlat||vStroke>1.5?1.:vStroke>.5?uLineOpacity.y:uLineOpacity.x;
   // Operational severity accents the existing drawing contours. Recolouring
@@ -64,7 +82,17 @@ void main(){
   // neighbouring machines into one opaque alarm block. The owner-qualified
   // status badge remains the explicit alarm/count target in either view.
   vec3 edge=mix(material,state.rgb,state.a);
-  outColor=vec4(uLines?edge:material*light,uLines?max(edgeAlpha,state.a):1.);
+  vec3 solid=material*light;
+  if(!uLines&&surface.a>.5){
+    // Hatch is part of the owning floor fragment's material. Its local metre
+    // coordinates are stable under pan/orbit; derivatives keep a fine stroke
+    // without another coincident depth-tested line surface.
+    float phase=(vLocalPosition.x-vLocalPosition.y)/.8;
+    float width=fwidth(phase);
+    float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
+    solid=mix(solid,uIllustrationLine,ink*uLineOpacity.x);
+  }
+  outColor=vec4(uLines?edge:solid,uLines?max(edgeAlpha,state.a):1.);
 }
 `
 export interface PhysicalBackendMetrics {
@@ -105,7 +133,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Physical scene program linking failed')
   } catch (error) { if (program) gl.deleteProgram(program); throw error }
   finally { for (const shader of shaders) gl.deleteShader(shader) }
-  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uLineOpacity'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
+  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
   const metrics: PhysicalBackendMetrics = { geometryUploads: 0, geometryBytes: 0, residentCpuBytes: 0, draws: 0, buffers: 0, programs: 1, textures: 0, textureBytes: 0, instanceBytes: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, evictions: 0, peakRequiredBytes: 0, liveBuffersAfterDisposal: null, liveProgramsAfterDisposal: null, liveTexturesAfterDisposal: null }
   const texture = (): Texture => { const value = gl.createTexture(); if (!value) throw new Error('Unable to allocate physical material/status table'); metrics.textures++; return { texture: value, width: 0, height: 0, data: new Float32Array() } }
   const dimensions = (pixels: number) => { const width = Math.min(maxTextureSize, Math.max(1, pixels)), height = Math.max(1, Math.ceil(pixels / width)); if (height > maxTextureSize) throw new Error('Physical instance table exceeds this GPU texture allocation') ; return { width, height } }
@@ -119,10 +147,10 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, value.width, value.height, gl.RGBA, gl.FLOAT, value.data)
   }
   const updatePalette = (asset: Asset): void => {
-    const colors = asset.roles.map(role => role === 'line' ? palette.line : palette.materials[role] ?? palette.defaultMaterial), signature = JSON.stringify(colors)
+    const colors = asset.roles.map(role => physicalMaterialColor(palette, role)), signature = JSON.stringify(colors)
     if (signature === asset.paletteSignature) return
     const allocation = resizeTexture(asset.materials, colors.length)
-    colors.forEach((color, index) => asset.materials.data.set([color[0], color[1], color[2], 1], index * 4))
+    colors.forEach((color, index) => asset.materials.data.set([color[0], color[1], color[2], asset.roles[index]!.startsWith('surface/outage/') ? 1 : 0], index * 4))
     gl.activeTexture(gl.TEXTURE0); uploadTexture(asset.materials, allocation); asset.paletteSignature = signature; metrics.paletteUploads++
   }
   const release = (asset: Asset): void => {
@@ -171,6 +199,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, requiredBytes); const required = new Set(groups.keys()); evictUnused(required)
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.GEQUAL); gl.depthMask(true); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true); gl.useProgram(ownedProgram); gl.uniform1f(uniforms.uDepthNear!, depthNear)
       gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1)
+      gl.uniform3f(uniforms.uIllustrationLine!, ...palette.line)
       gl.lineWidth(palette.lineWidth ?? 1)
       // Populate each retained asset's complete instance/status table once.
       for (const [key, list] of groups) {

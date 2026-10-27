@@ -6,6 +6,10 @@ import type { PhysicalSceneView } from './types.ts'
 /** xyz, normal xyz, material-role index. Colours are assigned by the active token palette. */
 type Vertex = [number, number, number, number, number, number, number]
 export interface PhysicalMesh {
+  /** Source annotation decorating this occurrence's actual surface, never another physical object. */
+  readonly annotation?: { readonly id: string; readonly layerId?: string; readonly scopeIds: ReadonlyArray<string> }
+  /** Presentation roles for a decorated surface; source occurrence materials remain unchanged. */
+  readonly materials?: ReadonlyArray<string>
   /** Complementary view variants of an authored enclosure boundary. */
   readonly inspectionPart?: 'full' | 'cut'
   /** Earlier visible mesh keys that own this coincident display candidate. */
