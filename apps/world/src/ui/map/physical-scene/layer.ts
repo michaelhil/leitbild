@@ -6,15 +6,15 @@ import type { PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneView, P
 import type { Vector3 } from './math.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 
-export interface PhysicalLayerEntry { readonly scene: PackPhysicalScene; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly asset?: PhysicalPreparedGeometry; readonly view: PhysicalSceneView; readonly status: ReadonlyMap<string, PhysicalSubjectStyle> }
-export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void) => {
+export interface PhysicalLayerEntry { readonly scene: PackPhysicalScene; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly asset?: PhysicalPreparedGeometry; readonly view: PhysicalSceneView; readonly status: ReadonlyMap<string, PhysicalSubjectStyle>; readonly scopeId?: string }
+export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void, planFontFamily?: () => string) => {
   let renderer: ReturnType<typeof createPhysicalSceneRenderer> | null = null, gl: WebGL2RenderingContext | null = null
   let finalMetrics: ReturnType<ReturnType<typeof createPhysicalSceneRenderer>['metrics']> | null = null
   const dispose = (): void => { if (!renderer) return; renderer.dispose(); finalMetrics = renderer.metrics(); renderer = null }
   const layer: CustomLayerInterface = {
     // The physical model owns depth; MapLibre receives only the colour overlay.
     id, type: 'custom', renderingMode: '2d',
-    onAdd(map: MapLibreMap, context) { gl = context; try { renderer = createPhysicalSceneRenderer(context, entries, palette, () => map.getCanvas().getBoundingClientRect(), reportError) } catch (error) { reportError(error instanceof Error ? error : new Error(String(error))) } },
+    onAdd(map: MapLibreMap, context) { gl = context; try { renderer = createPhysicalSceneRenderer(context, entries, palette, () => map.getCanvas().getBoundingClientRect(), reportError, planFontFamily ?? (() => getComputedStyle(map.getCanvas()).fontFamily)) } catch (error) { reportError(error instanceof Error ? error : new Error(String(error))) } },
     render(_context, input) { renderer?.render(input.defaultProjectionData.mainMatrix) }, onRemove: dispose,
   }
   return { layer, dispose, setPalette: (next: PhysicalScenePalette) => renderer?.setPalette(next), setHighlight: (target: PhysicalSceneHighlight | null) => renderer?.setHighlight(target), retainGeometryIdentities: (identities: ReadonlySet<string>) => renderer?.retainGeometryIdentities(identities), invalidatePicks: () => renderer?.invalidatePicks(), metrics: () => renderer?.metrics() ?? finalMetrics, pick: (point: { x: number; y: number }) => renderer?.pick(point) ?? null,

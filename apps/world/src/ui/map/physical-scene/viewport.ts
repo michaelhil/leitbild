@@ -26,7 +26,7 @@ export interface PhysicalViewport {
   readonly intersectsBounds: (bounds: PhysicalSceneBounds, mode: '2d' | '3d') => boolean
   readonly projectGeographic: (point: { lng: number; lat: number }) => { x: number; y: number }
   readonly requestRender: () => void
-  readonly installRenderer: (entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void) => PhysicalViewportRenderer
+  readonly installRenderer: (entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void, planFontFamily?: () => string) => PhysicalViewportRenderer
   readonly registered: (renderer: PhysicalViewportRenderer) => boolean
   readonly orderRenderer: () => void
   readonly removeRenderer: (renderer: PhysicalViewportRenderer) => void

@@ -147,7 +147,7 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
       return overlapsPhysicalFootprint(bounds, physicalHeightFootprint(frame.ground, frame.eye, bounds.min[2], bounds.max[2]))
     },
     on: subscribe, ready: () => Boolean(map.isStyleLoaded()), projectGeographic: point => map.project(point), requestRender: () => map.triggerRepaint(),
-    installRenderer(entries, palette, reportError) { if (map.getLayer(physicalSceneLayerId)) map.removeLayer(physicalSceneLayerId); installed = createPhysicalSceneLayer(physicalSceneLayerId, entries, palette, reportError); const before = beforeId(); map.addLayer(installed.layer, before && map.getLayer(before) ? before : undefined); return installed },
+    installRenderer(entries, palette, reportError, planFontFamily) { if (map.getLayer(physicalSceneLayerId)) map.removeLayer(physicalSceneLayerId); installed = createPhysicalSceneLayer(physicalSceneLayerId, entries, palette, reportError, planFontFamily); const before = beforeId(); map.addLayer(installed.layer, before && map.getLayer(before) ? before : undefined); return installed },
     registered: renderer => renderer === installed && Boolean(map.getLayer(physicalSceneLayerId)),
     orderRenderer() { const before = beforeId(); if (before && map.getLayer(before) && map.getLayer(physicalSceneLayerId)) { const order = map.getLayersOrder(); if (order.indexOf(physicalSceneLayerId) > order.indexOf(before)) map.moveLayer(physicalSceneLayerId, before) } },
     removeRenderer(renderer) { const lost = installed?.context()?.isContextLost(); renderer.dispose(); if (renderer === installed) { if (!lost && map.getLayer(physicalSceneLayerId)) map.removeLayer(physicalSceneLayerId); installed = null } },

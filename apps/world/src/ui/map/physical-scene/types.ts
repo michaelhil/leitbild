@@ -60,6 +60,8 @@ export interface PhysicalSceneControllerOptions {
   readonly suspendPickingForNavigation?: () => (() => void)
   readonly onChange: (scenes: ReadonlyArray<PhysicalScenePresentation>) => void
   readonly reportError: (error: Error) => void
+  /** The native Plan host supplies the exact font used by its painter. */
+  readonly planFontFamily?: () => string
   /** Full measured map padding including controls/rails; otherwise the map's current padding plus a small margin. */
   readonly fitPadding?: (request?: PhysicalSceneFitRequest) => { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
   readonly prepare?: PhysicalGeometryPreparer
