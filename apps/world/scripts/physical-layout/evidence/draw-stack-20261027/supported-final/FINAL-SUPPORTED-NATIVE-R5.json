@@ -1,0 +1,2992 @@
+{
+  "schema": "leitbild-final-supported-native-r5",
+  "recordedAt": "2026-10-27T23:40:09.142598+00:00",
+  "testedAppCommit": "954af6cf2fcf5df924a6935780fde293b4049386",
+  "qaBranch": "codex/physical-plan-954a-qa-20261028",
+  "qaHeadBeforeEvidence": "add24ea304e0374823028ea8ff66915a6d1bd549",
+  "productionSourceDiffExitCode": 0,
+  "productionSourceTrees": {
+    "apps/world/src": "a491e6a04c6d8aeffd785059d4ddb7a1b132cd32",
+    "apps/leitbild/src": "57cccd850b176bd85604c97dcef5719efb352350",
+    "apps/agents/src": "1a66f2c8ae03ca236c45245c205b1dbc21ffcdb2"
+  },
+  "sourceFiles": [
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/physical-layout/PhysicalExplorer.svelte",
+      "sha256": "4fa4659d0b9e0063cde8b2cc97686fa6ae3c798bceedef051d573728e7517896",
+      "bytes": 76507
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/physical-layout/paint-coalescer.ts",
+      "sha256": "974dfb439362aa52ac3f34e3a46cf93ddc33a3eb366a986c310f4573c3f7d8cc",
+      "bytes": 1648
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/physical-layout/plan-drawing.ts",
+      "sha256": "849dd1e9b9daee27f26540f13966f3265b4f714565b802269c994fa016c9578b",
+      "bytes": 17543
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/map/physical-scene/scene-controller.ts",
+      "sha256": "dc3bf57859173d2eaac3bdd360675499ddfe823caf9ffee7cfc14ef03c8b5722",
+      "bytes": 49359
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/map/physical-scene/renderer.ts",
+      "sha256": "534cd01efcc2d2972343be119782478523b18e54ecad8119c009bf6c2da39fe6",
+      "bytes": 19037
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/map/physical-scene/backend.ts",
+      "sha256": "be0eb90cd848742e694dd9793dd5d272bd56d5361f43cb4d9e65be3cafd8980c",
+      "bytes": 26368
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/map/physical-scene/plan-picking.ts",
+      "sha256": "23ee99986d890c3c0360fd019ae09f9cd45d9c11b29d7e80beafa6e2ed8bf182",
+      "bytes": 16330
+    }
+  ],
+  "sourcePins": {
+    "unitDesign": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "campusDesign": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+    "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "hardware": {
+    "browser": "HeadlessChrome156",
+    "reportedLogicalCpus": 8,
+    "dprs": [
+      1,
+      2
+    ],
+    "cssViewport": [
+      1440,
+      1000
+    ],
+    "native4xMsaaDepth": "DEPTH_COMPONENT32F"
+  },
+  "supportedScope": "One native geographic map UI. Opaque architecture/cutaway; fractional opacity controls withdrawn. Defaults include authored utility routes; all-declared-layer cases separately enable every declared layer.",
+  "motion": {
+    "validWindows": 32,
+    "maxRafP95Ms": 16.799999999999272,
+    "longTaskCount": 0,
+    "acceptanceRafP95BudgetMs": 20,
+    "measuredObservation": "Native Canvas methods during Plan windows; one exact-context clear timestamp and one-shot first model affine/microtask completion. Source, fonts, captions, pose and coverage witnessed outside window. Ordinary3D resource/draw observers remain.",
+    "windows": [
+      {
+        "name": "map-site-3d-paused",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 243,
+        "durationMs": 4074.9000000953674,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 149,
+        "clearIntervalMs": {
+          "count": 148,
+          "median": 27.200000047683716,
+          "p95": 42.700000047683716,
+          "max": 116.29999995231628
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 5818.5,
+          "matrix": [
+            0.9871028452593128,
+            -0.16008739138660819,
+            0.16008739138660819,
+            0.9871028452593128,
+            322.2313232421875,
+            286.3576354980469
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 972,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2786016,
+          "after": 2357408
+        }
+      },
+      {
+        "name": "map-site-3d-playing",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 242,
+        "durationMs": 4054.899999856949,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 125,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 140,
+        "clearIntervalMs": {
+          "count": 139,
+          "median": 30.699999809265137,
+          "p95": 46.5,
+          "max": 66.79999995231628
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 10185.200000047684,
+          "matrix": [
+            0.9871028452593128,
+            -0.16008739138660819,
+            0.16008739138660819,
+            0.9871028452593128,
+            322.2313232421875,
+            286.3576354980469
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 972,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2340624,
+          "after": 2092800
+        }
+      },
+      {
+        "name": "map-site-plan-paused",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 243,
+        "durationMs": 4074,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 140,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 143,
+        "clearIntervalMs": {
+          "count": 142,
+          "median": 31.09999990463257,
+          "p95": 34.5,
+          "max": 64.5
+        },
+        "completePaintsWithAffine": 143,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 15028.5,
+          "matrix": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 151,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2075296,
+          "after": 2143104
+        }
+      },
+      {
+        "name": "map-site-plan-playing",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 242,
+        "durationMs": 4066.600000143051,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 33.400000000001455,
+        "actualSentMoves": 145,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 153,
+        "clearIntervalMs": {
+          "count": 152,
+          "median": 29.5,
+          "p95": 34.90000009536743,
+          "max": 64.09999990463257
+        },
+        "completePaintsWithAffine": 153,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 19709.89999985695,
+          "matrix": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 150,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2158704,
+          "after": 2097888
+        }
+      },
+      {
+        "name": "map-room-3d-paused",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 242,
+        "durationMs": 4039.2999999523163,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 124,
+        "clearIntervalMs": {
+          "count": 123,
+          "median": 33.10000014305115,
+          "p95": 35.799999952316284,
+          "max": 38.200000047683716
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 25374.5,
+          "matrix": [
+            -0.7904290269266705,
+            0.6125536330736736,
+            -0.6125536330736736,
+            -0.7904290269266705,
+            175.75375366210938,
+            644.6439819335938
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 476,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2306816,
+          "after": 2268720
+        }
+      },
+      {
+        "name": "map-room-3d-playing",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4028.5999999046326,
+        "rafP95Ms": 16.700000000004366,
+        "rafMaxMs": 16.799999999999272,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 131,
+        "clearIntervalMs": {
+          "count": 130,
+          "median": 32.59999990463257,
+          "p95": 47.5,
+          "max": 65.80000019073486
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 30526.5,
+          "matrix": [
+            -0.7904290269266705,
+            0.6125536330736736,
+            -0.6125536330736736,
+            -0.7904290269266705,
+            175.75375366210938,
+            644.6439819335938
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 478,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2143888,
+          "after": 1949296
+        }
+      },
+      {
+        "name": "map-room-plan-paused",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4037.2000000476837,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.800000000000182,
+        "actualSentMoves": 122,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 232,
+        "clearIntervalMs": {
+          "count": 231,
+          "median": 17.0,
+          "p95": 32.80000019073486,
+          "max": 35.40000009536743
+        },
+        "completePaintsWithAffine": 232,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 2534.2000000476837,
+          "matrix": [
+            10.419270515441895,
+            0,
+            0,
+            -10.419270515441895,
+            514.9642333984375,
+            445.8198547363281
+          ]
+        },
+        "observedOwnedTargets": [],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2365088,
+          "after": 2392864
+        }
+      },
+      {
+        "name": "map-room-plan-playing",
+        "case": "default",
+        "dpr": 1,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4031.399999856949,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 122,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 251,
+        "clearIntervalMs": {
+          "count": 250,
+          "median": 13.949999928474426,
+          "p95": 33.09999990463257,
+          "max": 34.19999980926514
+        },
+        "completePaintsWithAffine": 251,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 7469.400000095367,
+          "matrix": [
+            3.6698191165924072,
+            0,
+            0,
+            -3.6698191165924072,
+            886.9490966796875,
+            404.830322265625
+          ]
+        },
+        "observedOwnedTargets": [],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2319024,
+          "after": 2310976
+        }
+      },
+      {
+        "name": "map-site-3d-paused",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 243,
+        "durationMs": 4074.199999809265,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 124,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 137,
+        "clearIntervalMs": {
+          "count": 136,
+          "median": 26.649999976158142,
+          "p95": 60.799999952316284,
+          "max": 172.0
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 6016.599999904633,
+          "matrix": [
+            1.9742290992190255,
+            -0.32003041073753485,
+            0.32003041073753485,
+            1.9742290992190255,
+            644.4682006835938,
+            571.8377685546875
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 976,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2900048,
+          "after": 2134832
+        }
+      },
+      {
+        "name": "map-site-3d-playing",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4032.4000000953674,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 123,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 153,
+        "clearIntervalMs": {
+          "count": 152,
+          "median": 25.75,
+          "p95": 44.700000047683716,
+          "max": 68.20000004768372
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 10385.199999809265,
+          "matrix": [
+            1.9742290992190255,
+            -0.32003041073753485,
+            0.32003041073753485,
+            1.9742290992190255,
+            644.4682006835938,
+            571.8377685546875
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 968,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2140736,
+          "after": 1898496
+        }
+      },
+      {
+        "name": "map-site-plan-paused",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4064.399999856949,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 33.400000000001455,
+        "actualSentMoves": 130,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 133,
+        "clearIntervalMs": {
+          "count": 132,
+          "median": 32.65000009536743,
+          "p95": 36.30000019073486,
+          "max": 43.40000009536743
+        },
+        "completePaintsWithAffine": 133,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 15225.199999809265,
+          "matrix": [
+            1.0702122449874878,
+            0,
+            0,
+            -1.0702122449874878,
+            396.98736572265625,
+            434.6149597167969
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 151,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1834048,
+          "after": 1863008
+        }
+      },
+      {
+        "name": "map-site-plan-playing",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 244,
+        "durationMs": 4081.9000000953674,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 134,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 147,
+        "clearIntervalMs": {
+          "count": 146,
+          "median": 31.0,
+          "p95": 34.90000009536743,
+          "max": 40.09999990463257
+        },
+        "completePaintsWithAffine": 147,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 19941.599999904633,
+          "matrix": [
+            1.1514254808425903,
+            0,
+            0,
+            -1.1514254808425903,
+            348.1163635253906,
+            453.4206848144531
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 150,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1806240,
+          "after": 1859520
+        }
+      },
+      {
+        "name": "map-room-3d-paused",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 242,
+        "durationMs": 4054.4000000953674,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 123,
+        "clearIntervalMs": {
+          "count": 122,
+          "median": 33.30000019073486,
+          "p95": 36.30000019073486,
+          "max": 46.5
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 25772.299999952316,
+          "matrix": [
+            -1.5811451701053236,
+            1.2247366864157403,
+            -1.2247366864157403,
+            -1.5811451701053236,
+            351.51678466796875,
+            1288.1168212890625
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 482,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2004624,
+          "after": 1892608
+        }
+      },
+      {
+        "name": "map-room-3d-playing",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4030.399999856949,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 132,
+        "clearIntervalMs": {
+          "count": 131,
+          "median": 31.90000009536743,
+          "p95": 46.799999952316284,
+          "max": 79.09999990463257
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 30690.5,
+          "matrix": [
+            -1.5811451701053236,
+            1.2247366864157403,
+            -1.2247366864157403,
+            -1.5811451701053236,
+            351.51678466796875,
+            1288.1168212890625
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 478,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1797312,
+          "after": 1558832
+        }
+      },
+      {
+        "name": "map-room-plan-paused",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 242,
+        "durationMs": 4049,
+        "rafP95Ms": 16.799999999995634,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 122,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 234,
+        "clearIntervalMs": {
+          "count": 233,
+          "median": 16.90000009536743,
+          "p95": 32.59999990463257,
+          "max": 35.200000047683716
+        },
+        "completePaintsWithAffine": 234,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 35238.199999809265,
+          "matrix": [
+            20.83854103088379,
+            0,
+            0,
+            -20.83854103088379,
+            1029.928466796875,
+            944.6475219726562
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1573968,
+          "after": 1478352
+        }
+      },
+      {
+        "name": "map-room-plan-playing",
+        "case": "default",
+        "dpr": 2,
+        "allDeclaredLayersOn": false,
+        "rafFrames": 241,
+        "durationMs": 4024.899999856949,
+        "rafP95Ms": 16.799999999995634,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 123,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 254,
+        "clearIntervalMs": {
+          "count": 253,
+          "median": 8.099999904632568,
+          "p95": 33.09999990463257,
+          "max": 34.200000047683716
+        },
+        "completePaintsWithAffine": 254,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 40176.59999990463,
+          "matrix": [
+            8.00732707977295,
+            0,
+            0,
+            -8.00732707977295,
+            1075.7457275390625,
+            442.8319396972656
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1736208,
+          "after": 1741632
+        }
+      },
+      {
+        "name": "map-site-3d-paused",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 242,
+        "durationMs": 4057.5999999046326,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 124,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 138,
+        "clearIntervalMs": {
+          "count": 137,
+          "median": 31.09999990463257,
+          "p95": 46.5,
+          "max": 66.29999995231628
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 10576.200000047684,
+          "matrix": [
+            0.9871028452593128,
+            -0.16008739138660819,
+            0.16008739138660819,
+            0.9871028452593128,
+            322.2313232421875,
+            286.3576354980469
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 972,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2851728,
+          "after": 2978080
+        }
+      },
+      {
+        "name": "map-site-3d-playing",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 242,
+        "durationMs": 4057.5999999046326,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 124,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 134,
+        "clearIntervalMs": {
+          "count": 133,
+          "median": 31.299999952316284,
+          "p95": 46.69999980926514,
+          "max": 193.40000009536743
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 14893,
+          "matrix": [
+            0.9871028452593128,
+            -0.16008739138660819,
+            0.16008739138660819,
+            0.9871028452593128,
+            322.2313232421875,
+            286.3576354980469
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 972,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2874272,
+          "after": 2441728
+        }
+      },
+      {
+        "name": "map-site-plan-paused",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 242,
+        "durationMs": 4068.4000000953674,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 33.29999999999927,
+        "actualSentMoves": 139,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 142,
+        "clearIntervalMs": {
+          "count": 141,
+          "median": 31.40000009536743,
+          "p95": 34.200000047683716,
+          "max": 48.700000047683716
+        },
+        "completePaintsWithAffine": 142,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 19586.700000047684,
+          "matrix": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 151,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2149744,
+          "after": 1992528
+        }
+      },
+      {
+        "name": "map-site-plan-playing",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 242,
+        "durationMs": 4074.5,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 33.400000000001455,
+        "actualSentMoves": 144,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 156,
+        "clearIntervalMs": {
+          "count": 155,
+          "median": 29.200000047683716,
+          "p95": 34.200000047683716,
+          "max": 47.200000047683716
+        },
+        "completePaintsWithAffine": 156,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 24286.200000047684,
+          "matrix": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 150,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1998016,
+          "after": 1998304
+        }
+      },
+      {
+        "name": "map-room-3d-paused",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4021.4000000953674,
+        "rafP95Ms": 16.700000000004366,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 120,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 122,
+        "clearIntervalMs": {
+          "count": 121,
+          "median": 33.09999990463257,
+          "p95": 35.60000014305115,
+          "max": 46.299999952316284
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 30067.300000190735,
+          "matrix": [
+            -0.7904290269266705,
+            0.6125536330736736,
+            -0.6125536330736736,
+            -0.7904290269266705,
+            175.75375366210938,
+            644.6439819335938
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 476,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2264816,
+          "after": 2055104
+        }
+      },
+      {
+        "name": "map-room-3d-playing",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4028.7999999523163,
+        "rafP95Ms": 16.700000000004366,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 131,
+        "clearIntervalMs": {
+          "count": 130,
+          "median": 32.75,
+          "p95": 46.700000047683716,
+          "max": 54.40000009536743
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 34888.60000014305,
+          "matrix": [
+            -0.7904290269266705,
+            0.6125536330736736,
+            -0.6125536330736736,
+            -0.7904290269266705,
+            175.75375366210938,
+            644.6439819335938
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 478,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2050432,
+          "after": 2038944
+        }
+      },
+      {
+        "name": "map-room-plan-paused",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4027.399999856949,
+        "rafP95Ms": 16.700000000004366,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 236,
+        "clearIntervalMs": {
+          "count": 235,
+          "median": 17.09999990463257,
+          "p95": 32.59999990463257,
+          "max": 35.10000014305115
+        },
+        "completePaintsWithAffine": 236,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 39366.800000190735,
+          "matrix": [
+            10.419270515441895,
+            0,
+            0,
+            -10.419270515441895,
+            514.9642333984375,
+            472.8198547363281
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2036048,
+          "after": 1951392
+        }
+      },
+      {
+        "name": "map-room-plan-playing",
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4038,
+        "rafP95Ms": 16.700000000004366,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 122,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 255,
+        "clearIntervalMs": {
+          "count": 254,
+          "median": 5.650000095367432,
+          "p95": 33.0,
+          "max": 34.40000009536743
+        },
+        "completePaintsWithAffine": 255,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 44355.10000014305,
+          "matrix": [
+            3.9996166229248047,
+            0,
+            0,
+            -3.9996166229248047,
+            537.875,
+            222.2787628173828
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1946000,
+          "after": 1487008
+        }
+      },
+      {
+        "name": "map-site-3d-paused",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4042,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "actualSentMoves": 122,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 145,
+        "clearIntervalMs": {
+          "count": 144,
+          "median": 27.149999856948853,
+          "p95": 44,
+          "max": 167.89999985694885
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 11371.099999904633,
+          "matrix": [
+            1.9742290992190255,
+            -0.32003041073753485,
+            0.32003041073753485,
+            1.9742290992190255,
+            644.4682006835938,
+            571.8377685546875
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 968,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 2849760,
+          "after": 1650864
+        }
+      },
+      {
+        "name": "map-site-3d-playing",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 244,
+        "durationMs": 4079.7999999523163,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 124,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 151,
+        "clearIntervalMs": {
+          "count": 150,
+          "median": 27.0,
+          "p95": 45.09999990463257,
+          "max": 60.60000014305115
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 15865.399999856949,
+          "matrix": [
+            1.9742290992190255,
+            -0.32003041073753485,
+            0.32003041073753485,
+            1.9742290992190255,
+            644.4682006835938,
+            571.8377685546875
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 1,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 980,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1831056,
+          "after": 1800016
+        }
+      },
+      {
+        "name": "map-site-plan-paused",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 245,
+        "durationMs": 4082.2999999523163,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.799999999999272,
+        "actualSentMoves": 141,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 144,
+        "clearIntervalMs": {
+          "count": 143,
+          "median": 31.100000143051147,
+          "p95": 34.59999990463257,
+          "max": 38.700000047683716
+        },
+        "completePaintsWithAffine": 144,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 20791,
+          "matrix": [
+            1.0702122449874878,
+            0,
+            0,
+            -1.0702122449874878,
+            396.98736572265625,
+            434.6149597167969
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 151,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1926336,
+          "after": 2023616
+        }
+      },
+      {
+        "name": "map-site-plan-playing",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 246,
+        "durationMs": 4117.700000047684,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 135,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 146,
+        "clearIntervalMs": {
+          "count": 145,
+          "median": 31.600000143051147,
+          "p95": 35.5,
+          "max": 66.59999990463257
+        },
+        "completePaintsWithAffine": 146,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 25823.699999809265,
+          "matrix": [
+            1.1514254808425903,
+            0,
+            0,
+            -1.1514254808425903,
+            348.1163635253906,
+            453.4206848144531
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 150,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1997328,
+          "after": 1856144
+        }
+      },
+      {
+        "name": "map-room-3d-paused",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4024.4000000953674,
+        "rafP95Ms": 16.799999999995634,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 120,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 120,
+        "clearIntervalMs": {
+          "count": 119,
+          "median": 33.299999952316284,
+          "p95": 37.5,
+          "max": 59.700000047683716
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 31715.199999809265,
+          "matrix": [
+            -1.5811451701053236,
+            1.2247366864157403,
+            -1.2247366864157403,
+            -1.5811451701053236,
+            351.51678466796875,
+            1288.1168212890625
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 474,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1932848,
+          "after": 1615504
+        }
+      },
+      {
+        "name": "map-room-3d-playing",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4031.399999856949,
+        "rafP95Ms": 16.700000000004366,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": false,
+        "actualClears": 129,
+        "clearIntervalMs": {
+          "count": 128,
+          "median": 32.5,
+          "p95": 47.09999990463257,
+          "max": 66.5
+        },
+        "completePaintsWithAffine": 0,
+        "actualPlanInkStartTransform": {
+          "method": "stroke",
+          "at": 36996.09999990463,
+          "matrix": [
+            -1.5811451701053236,
+            1.2247366864157403,
+            -1.2247366864157403,
+            -1.5811451701053236,
+            351.51678466796875,
+            1288.1168212890625
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "outsideWindowFontWitnessCount": 0,
+        "roomAuthoredCaptionsVerified": null,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 478,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1495104,
+          "after": 1314416
+        }
+      },
+      {
+        "name": "map-room-plan-paused",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 242,
+        "durationMs": 4043.7000000476837,
+        "rafP95Ms": 16.799999999995634,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 121,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 222,
+        "clearIntervalMs": {
+          "count": 221,
+          "median": 17.299999952316284,
+          "p95": 33.200000047683716,
+          "max": 34.60000014305115
+        },
+        "completePaintsWithAffine": 222,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 43610.299999952316,
+          "matrix": [
+            20.83854103088379,
+            0,
+            0,
+            -20.83854103088379,
+            1029.928466796875,
+            944.6475219726562
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1372400,
+          "after": 1389280
+        }
+      },
+      {
+        "name": "map-room-plan-playing",
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "allDeclaredLayersOn": true,
+        "rafFrames": 241,
+        "durationMs": 4024.7000000476837,
+        "rafP95Ms": 16.799999999995634,
+        "rafMaxMs": 16.80000000000291,
+        "actualSentMoves": 122,
+        "longTasks": [],
+        "minimalPlanCanvasObservation": true,
+        "actualClears": 254,
+        "clearIntervalMs": {
+          "count": 253,
+          "median": 7.299999952316284,
+          "p95": 32.80000019073486,
+          "max": 33.80000019073486
+        },
+        "completePaintsWithAffine": 254,
+        "actualPlanInkStartTransform": {
+          "method": "fill",
+          "at": 48635.299999952316,
+          "matrix": [
+            8.012792587280273,
+            0,
+            0,
+            -8.012792587280273,
+            1075.7427978515625,
+            443.0067138671875
+          ]
+        },
+        "observedOwnedTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "outsideWindowFontWitnessCount": 37,
+        "roomAuthoredCaptionsVerified": true,
+        "pendingSolidJobs": 0,
+        "pendingBspJobs": 0,
+        "orderedDrawCalls": 0,
+        "actualBaseDrawCalls": 0,
+        "errors": [],
+        "ownChromeProcessRssSumKiB": {
+          "before": 1391920,
+          "after": 1423760
+        }
+      }
+    ],
+    "receipts": [
+      {
+        "case": "default",
+        "dpr": 1,
+        "receipt": {
+          "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/default-dpr1/partial.json",
+          "sha256": "f52947f1d8cdb20795c75d2ef1229ba02547888fd4e1b63bd579e725e6e793fe",
+          "bytes": 1154610
+        },
+        "runnerCommit": null,
+        "runnerSha256": null,
+        "instrumentationSha256": null,
+        "completeRun": false,
+        "workersAfterExit": null,
+        "runtimeExceptions": null
+      },
+      {
+        "case": "default",
+        "dpr": 1,
+        "receipt": {
+          "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/default-dpr1-room-plan-complete/receipt.json",
+          "sha256": "b29a8b06b7b1e8aefdf7d9a52a3553f456c431a62034dc3348a6e91cc712e2fa",
+          "bytes": 870492
+        },
+        "runnerCommit": "add24ea304e0374823028ea8ff66915a6d1bd549",
+        "runnerSha256": "96c7683791cfebe721d2f8258f8ff3590d15d4d7d4f9c3341ed3e921a8ca2d9a",
+        "instrumentationSha256": "b8bc4ee7b9b09d0b5101073e32b456235bac6ca21c3e772b51da2ec0b6a4863e",
+        "completeRun": true,
+        "workersAfterExit": [],
+        "runtimeExceptions": []
+      },
+      {
+        "case": "default",
+        "dpr": 2,
+        "receipt": {
+          "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/default-dpr2/receipt.json",
+          "sha256": "0de114e044201cb160a1aa0be02a1460272dd3a4e52214e013071a9797a4921e",
+          "bytes": 2127214
+        },
+        "runnerCommit": "add24ea304e0374823028ea8ff66915a6d1bd549",
+        "runnerSha256": "96c7683791cfebe721d2f8258f8ff3590d15d4d7d4f9c3341ed3e921a8ca2d9a",
+        "instrumentationSha256": "b8bc4ee7b9b09d0b5101073e32b456235bac6ca21c3e772b51da2ec0b6a4863e",
+        "completeRun": true,
+        "workersAfterExit": [],
+        "runtimeExceptions": []
+      },
+      {
+        "case": "all-declared-layers",
+        "dpr": 1,
+        "receipt": {
+          "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/all-layers-dpr1/receipt.json",
+          "sha256": "faef3e7efff43154573e18e15e1f88f3aee8e18c16c274e01adb267e3db17507",
+          "bytes": 2148716
+        },
+        "runnerCommit": "add24ea304e0374823028ea8ff66915a6d1bd549",
+        "runnerSha256": "96c7683791cfebe721d2f8258f8ff3590d15d4d7d4f9c3341ed3e921a8ca2d9a",
+        "instrumentationSha256": "b8bc4ee7b9b09d0b5101073e32b456235bac6ca21c3e772b51da2ec0b6a4863e",
+        "completeRun": true,
+        "workersAfterExit": [],
+        "runtimeExceptions": []
+      },
+      {
+        "case": "all-declared-layers",
+        "dpr": 2,
+        "receipt": {
+          "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/all-layers-dpr2/receipt.json",
+          "sha256": "c5d161a5b6a22a85d97d3e5afaa3c85dbb31bd142aa09b1949d5d89ed0242299",
+          "bytes": 2147412
+        },
+        "runnerCommit": "add24ea304e0374823028ea8ff66915a6d1bd549",
+        "runnerSha256": "96c7683791cfebe721d2f8258f8ff3590d15d4d7d4f9c3341ed3e921a8ca2d9a",
+        "instrumentationSha256": "b8bc4ee7b9b09d0b5101073e32b456235bac6ca21c3e772b51da2ec0b6a4863e",
+        "completeRun": true,
+        "workersAfterExit": [],
+        "runtimeExceptions": []
+      }
+    ]
+  },
+  "highRatePlan": {
+    "receipt": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/site-plan-high-rate-dpr1/receipt.json",
+      "sha256": "751c28132987d55d6a8290ec9a49a1f465b452c6a398795c647f7fc7a5806c86",
+      "bytes": 599413
+    },
+    "analysis": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/site-plan-high-rate-dpr1/freshness-analysis.json",
+      "sha256": "0756508c59f92932d7bf2e3c76594346fef908c16fd8065ede35fd9e01d62a6f",
+      "bytes": 101536
+    },
+    "summary": {
+      "rafP95Ms": 16.700000000000728,
+      "frames": 243,
+      "longTasks": 0,
+      "sentMoves": 224,
+      "actualReceivedHeldMoves": 225,
+      "receivedHz": 55.63696877674202,
+      "receivedIntervalMs": {
+        "count": 224,
+        "median": 16.700000047683716,
+        "p95": 26.699999809265137,
+        "max": 31.40000009536743
+      },
+      "paints": 222,
+      "changingTransforms": 214,
+      "clearIntervalMs": {
+        "count": 221,
+        "median": 16.800000190734863,
+        "p95": 27.0,
+        "max": 39.299999952316284
+      },
+      "synchronousPaintCompletionUpperboundMs": {
+        "count": 222,
+        "median": 6.400000095367432,
+        "p95": 7.300000190734863,
+        "max": 8.299999952316284
+      },
+      "latestInputTimestampToCompletionMs": {
+        "count": 221,
+        "median": 11.800000190734863,
+        "p95": 13.5,
+        "max": 28.600000143051147
+      },
+      "closestHeldInputTranslationErrorPx": {
+        "count": 221,
+        "median": 0.3393377724843051,
+        "p95": 0.6295497782724699,
+        "max": 0.8028815365455378
+      },
+      "sameTransformConsecutive": 2,
+      "cameraLinearUnchanged": true,
+      "submittedDeadlineIntervalsMs": {
+        "count": 223,
+        "median": 16.66666666666606,
+        "p95": 33.33333333333212,
+        "max": 33.33333333333394
+      },
+      "limits": [
+        "Canvas completion is a queueMicrotask timestamp after synchronous full-paint call, not physical screen presentation.",
+        "Nearest prior input translation match assumes fixed-zoom/bearing flat pan; raw values/errors retained, no new latency acceptance threshold.",
+        "Held inputs may be coalesced by MapLibre/browser. No claim that every input gets a separate full paint.",
+        "Nearest-position matching aliases the repeated sinusoidal path: its4.02smax is an ambiguous old spatialmatch, not provenoldink. Latestreceivedinput comparison is authoritative; its errors andtimestamps are independentlyreported."
+      ],
+      "latestHeldInputTranslationErrorPx": {
+        "count": 221,
+        "median": 0.3393377724843051,
+        "p95": 0.6295497782724699,
+        "max": 0.8028815365455378
+      },
+      "latestInputEarlyHalfLatencyMs": {
+        "count": 110,
+        "median": 12.049999952316284,
+        "p95": 13.900000095367432,
+        "max": 28.600000143051147
+      },
+      "latestInputLateHalfLatencyMs": {
+        "count": 111,
+        "median": 11.700000047683716,
+        "p95": 13.099999904632568,
+        "max": 14.299999952316284
+      }
+    }
+  },
+  "coldAndTransitions": {
+    "receipt": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/cold-transitions-dpr1/receipt.json",
+      "sha256": "227e358f9f0f3bd7d20298701b4283f575877086dd711d30a27164c61431d848",
+      "bytes": 152897
+    },
+    "hostNavigationMs": {
+      "firstRequested3dDraw": 3949.300048828125,
+      "allRequiredSourcesFirst3dDraw": 5509.699951171875,
+      "allRequiredSourcesGpuFence": 5538.5
+    },
+    "actionColdMs": {
+      "first3dDraw": 2189.4000000953674,
+      "allRequiredSourcesFirst3dDraw": 3749.7999999523163,
+      "allRequiredSourcesGpuFence": 3778.5999999046326
+    },
+    "actions": [
+      {
+        "name": "cold-native-full-site-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "readyCount": 5,
+          "sourceInstances": [
+            1,
+            4
+          ]
+        },
+        "actionToFirstDrawMs": 2189.4000000953674,
+        "actionToAllRequiredSourcesFirstDrawMs": 3749.7999999523163,
+        "actionToGpuCompletedMs": 3778.5999999046326,
+        "solidPreparationJobs": 2
+      },
+      {
+        "name": "all-utility-first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "readyCount": 5,
+          "layers": [
+            "utility-routes"
+          ]
+        },
+        "actionToFirstInkMs": 55.59999990463257,
+        "actionToPaintOpportunityMs": 315.2000000476837,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "all-utility-return-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "readyCount": 5,
+          "sourceInstances": [
+            1,
+            4
+          ],
+          "layers": [
+            "utility-routes"
+          ]
+        },
+        "actionToFirstDrawMs": 60.90000009536743,
+        "actionToAllRequiredSourcesFirstDrawMs": 61.09999990463257,
+        "actionToGpuCompletedMs": 75.29999995231628,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "all-utility-warm-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "readyCount": 5,
+          "layers": [
+            "utility-routes"
+          ]
+        },
+        "actionToFirstInkMs": 12.5,
+        "actionToPaintOpportunityMs": 209.10000014305115,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "all-utility-gc-return-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "readyCount": 5,
+          "sourceInstances": [
+            1,
+            4
+          ],
+          "layers": [
+            "utility-routes"
+          ]
+        },
+        "actionToFirstDrawMs": 64.40000009536743,
+        "actionToAllRequiredSourcesFirstDrawMs": 64.40000009536743,
+        "actionToGpuCompletedMs": 82.40000009536743,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "first-turbine-hall-focus",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d"
+        },
+        "actionToFirstDrawMs": 1078.7999999523163,
+        "actionToAllRequiredSourcesFirstDrawMs": 1078.7999999523163,
+        "actionToGpuCompletedMs": 1090.2000000476837,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7371.5,
+          "actionToFreshMs": 1093.0999999046326,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "solidPreparationJobs": 1
+      },
+      {
+        "name": "first-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 298.2999999523163,
+        "actionToAllRequiredSourcesFirstDrawMs": 298.2999999523163,
+        "actionToGpuCompletedMs": 313.7000000476837,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7687.200000047684,
+          "actionToFreshMs": 314.7000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 1
+      },
+      {
+        "name": "first-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all"
+        },
+        "actionToFirstDrawMs": 14.300000190734863,
+        "actionToAllRequiredSourcesFirstDrawMs": 14.300000190734863,
+        "actionToGpuCompletedMs": 30.100000143051147,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7719.299999952316,
+          "actionToFreshMs": 31,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "gc-return-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 17.09999990463257,
+        "actionToAllRequiredSourcesFirstDrawMs": 17.09999990463257,
+        "actionToGpuCompletedMs": 34.59999990463257,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7838.5,
+          "actionToFreshMs": 36.299999952316284,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "gc-return-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all"
+        },
+        "actionToFirstDrawMs": 18.40000009536743,
+        "actionToAllRequiredSourcesFirstDrawMs": 18.40000009536743,
+        "actionToGpuCompletedMs": 32.60000014305115,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7970.200000047684,
+          "actionToFreshMs": 34.40000009536743,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "first-uncut-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": false
+        },
+        "actionToFirstDrawMs": 906.6000001430511,
+        "actionToAllRequiredSourcesFirstDrawMs": 906.6000001430511,
+        "actionToGpuCompletedMs": 929,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 8904.100000143051,
+          "actionToFreshMs": 932.2000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "solidPreparationJobs": 1
+      },
+      {
+        "name": "gc-return-cutaway-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true
+        },
+        "actionToFirstDrawMs": 17.299999952316284,
+        "actionToAllRequiredSourcesFirstDrawMs": 17.299999952316284,
+        "actionToGpuCompletedMs": 29.90000009536743,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 9036.900000095367,
+          "actionToFreshMs": 31.90000009536743,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d"
+        },
+        "actionToFirstInkMs": 16.799999952316284,
+        "actionToPaintOpportunityMs": 45.200000047683716,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 9096.700000047684,
+          "actionToFreshMs": 58.299999952316284,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "first-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "levelId": "operating"
+        },
+        "actionToFirstInkMs": 6.599999904632568,
+        "actionToPaintOpportunityMs": 37.09999990463257,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 9135.200000047684,
+          "actionToFreshMs": 37.59999990463257,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "first-plan-lower",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "levelId": "lower"
+        },
+        "actionToFirstInkMs": 17.59999990463257,
+        "actionToPaintOpportunityMs": 51,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 9188.5,
+          "actionToFreshMs": 52.299999952316284,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "gc-return-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "levelId": "operating"
+        },
+        "actionToFirstInkMs": 19.399999856948853,
+        "actionToPaintOpportunityMs": 48,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 9350.600000143051,
+          "actionToFreshMs": 48.700000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 0
+      },
+      {
+        "name": "return-3d-operating",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 19,
+        "actionToAllRequiredSourcesFirstDrawMs": 19,
+        "actionToGpuCompletedMs": 36.299999952316284,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 9388.799999952316,
+          "actionToFreshMs": 37.39999985694885,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "solidPreparationJobs": 0
+      }
+    ],
+    "gc": [
+      {
+        "name": "before-all-utility-3d-return",
+        "before": {
+          "jobs": 4,
+          "sources": 2,
+          "at": 6034.900000095367
+        },
+        "after": {
+          "jobs": 4,
+          "sources": 2,
+          "at": 6132
+        }
+      },
+      {
+        "name": "before-operating-return",
+        "before": {
+          "jobs": 6,
+          "sources": 2,
+          "at": 7720.299999952316
+        },
+        "after": {
+          "jobs": 6,
+          "sources": 2,
+          "at": 7801
+        }
+      },
+      {
+        "name": "before-stack-return",
+        "before": {
+          "jobs": 6,
+          "sources": 2,
+          "at": 7842
+        },
+        "after": {
+          "jobs": 6,
+          "sources": 2,
+          "at": 7935.5
+        }
+      },
+      {
+        "name": "before-cutaway-return",
+        "before": {
+          "jobs": 7,
+          "sources": 2,
+          "at": 8905.700000047684
+        },
+        "after": {
+          "jobs": 7,
+          "sources": 2,
+          "at": 9002.600000143051
+        }
+      },
+      {
+        "name": "before-plan-return",
+        "before": {
+          "jobs": 7,
+          "sources": 2,
+          "at": 9204.600000143051
+        },
+        "after": {
+          "jobs": 7,
+          "sources": 2,
+          "at": 9301.5
+        }
+      }
+    ],
+    "sourceCompileJobs": [
+      {
+        "worker": 1,
+        "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "started": 1590.9000000953674,
+        "postMs": 1.5999999046325684,
+        "transferBytes": 0,
+        "responseAt": 2764.5,
+        "responseMs": 1173.5999999046326,
+        "ok": true,
+        "occurrences": 719,
+        "planLevels": [
+          {
+            "levelId": "lower",
+            "primitives": 2223
+          },
+          {
+            "levelId": "service",
+            "primitives": 908
+          },
+          {
+            "levelId": "operating",
+            "primitives": 1089
+          },
+          {
+            "levelId": "refuelling",
+            "primitives": 155
+          }
+        ],
+        "terminatedAt": 2764.5
+      },
+      {
+        "worker": 2,
+        "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "started": 1608.7000000476837,
+        "postMs": 1.5,
+        "transferBytes": 0,
+        "responseAt": 2369.4000000953674,
+        "responseMs": 760.7000000476837,
+        "ok": true,
+        "occurrences": 540,
+        "planLevels": [
+          {
+            "levelId": "campus-ground",
+            "primitives": 788
+          },
+          {
+            "levelId": "admin-upper",
+            "primitives": 523
+          }
+        ],
+        "terminatedAt": 2369.5
+      }
+    ],
+    "preparationJobs": [
+      {
+        "worker": 3,
+        "id": 1,
+        "kind": "register",
+        "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+        "started": 2378.2999999523163,
+        "postMs": 6.799999952316284,
+        "transferBytes": 27598236,
+        "responseAt": 2492,
+        "responseMs": 113.70000004768372,
+        "responseKind": "registered"
+      },
+      {
+        "worker": 3,
+        "id": 2,
+        "kind": "prepare",
+        "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "plan-allowances",
+            "roof-structure"
+          ]
+        },
+        "started": 2492.100000143051,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 3704.2000000476837,
+        "responseMs": 1212.0999999046326,
+        "responseKind": "prepared",
+        "cpuBytes": 56501704,
+        "meshes": 1879,
+        "renderBytes": 18587088
+      },
+      {
+        "worker": 4,
+        "id": 3,
+        "kind": "register",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "started": 2774.2999999523163,
+        "postMs": 19.200000047683716,
+        "transferBytes": 24626016,
+        "responseAt": 2926.2999999523163,
+        "responseMs": 152,
+        "responseKind": "registered"
+      },
+      {
+        "worker": 4,
+        "id": 4,
+        "kind": "prepare",
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure"
+          ]
+        },
+        "started": 2926.2999999523163,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 5225.200000047684,
+        "responseMs": 2298.9000000953674,
+        "responseKind": "prepared",
+        "cpuBytes": 97411832,
+        "meshes": 3853,
+        "renderBytes": 29142096
+      },
+      {
+        "worker": 4,
+        "id": 5,
+        "kind": "prepare",
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure"
+          ],
+          "scopeId": "area/turbine-island"
+        },
+        "started": 6284.799999952316,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 7334.100000143051,
+        "responseMs": 1049.3000001907349,
+        "responseKind": "prepared",
+        "cpuBytes": 49508872,
+        "meshes": 3087,
+        "renderBytes": 15575952
+      },
+      {
+        "worker": 4,
+        "id": 6,
+        "kind": "prepare",
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "operating",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure"
+          ],
+          "scopeId": "area/turbine-island"
+        },
+        "started": 7374.5,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 7658.200000047684,
+        "responseMs": 283.7000000476837,
+        "responseKind": "prepared",
+        "cpuBytes": 13927396,
+        "meshes": 796,
+        "renderBytes": 4414896
+      },
+      {
+        "worker": 4,
+        "id": 7,
+        "kind": "prepare",
+        "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",false,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": false,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure"
+          ],
+          "scopeId": "area/turbine-island"
+        },
+        "started": 7974.600000143051,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 8861.799999952316,
+        "responseMs": 887.1999998092651,
+        "responseKind": "prepared",
+        "cpuBytes": 46954384,
+        "meshes": 2101,
+        "renderBytes": 14726544
+      }
+    ],
+    "backgroundBspJobCount": 0,
+    "pendingSolid": 0,
+    "pendingBsp": 0,
+    "sourceCohorts": [
+      {
+        "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+        "instances": 1
+      },
+      {
+        "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+        "instances": 4
+      }
+    ],
+    "workerTargetsAfterExit": [],
+    "exceptions": []
+  },
+  "qualityReferences": {
+    "actual793Versus954PlanCanvas": "Four exact RGBA comparisons, site and operating Plan at DPR1/2; same source/native affine/palette/font with Live off. Independent UX agent receipt paths below.",
+    "receipts": [
+      {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/plan-paint-pair/baseline-dpr1/receipt.json",
+        "sha256": "d938cb14137b26345ec31496ea3ccf9b992c5a3a70d1b4529c8e0e4c2a789627",
+        "bytes": 32537
+      },
+      {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/plan-paint-pair/baseline-dpr2/receipt.json",
+        "sha256": "77cb6a52932b3b3abe030366b38c5fed96be9245773fda81d0d079351d1a07e4",
+        "bytes": 32495
+      },
+      {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/plan-paint-pair/candidate-dpr1/receipt.json",
+        "sha256": "4b11cc171ad767d1bcf45f247203c090c6f8f8736b246c3d1dc24321ec818506",
+        "bytes": 32537
+      },
+      {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/plan-paint-pair/candidate-dpr2/receipt.json",
+        "sha256": "140e796934f9bc1b81dfbbead32c39f5f6465fc8da93ab8fa0e17ed8fefa1552",
+        "bytes": 32495
+      }
+    ]
+  },
+  "retainedFailuresAndControls": [
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/default-dpr1/receipt.json",
+        "sha256": "c7a8285c1a74a667d4371018bd24146aeb2693d2360e31d57b67cee7e492bec3",
+        "bytes": 269519
+      },
+      "reason": "Original fully observed supported app: two site Plan p95 failures66.6\u201366.7ms; other six windows pass."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-profile-dpr1/partial.json",
+        "sha256": "157fa8d1fe8f3d7e5394e5c986d3945d9701330c947cb0e9b33b87d65f069bac",
+        "bytes": 50197
+      },
+      "reason": "Intentional diagnostic-only CPU profile; no clean verdict."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-live-off-dpr1/receipt.json",
+        "sha256": "fd40ea65df06dc026c46fe396fab6d0bc9e66293720dbf84165b446fad9443e4",
+        "bytes": 300236
+      },
+      "reason": "Public Live-off control33.4ms, two complete ink clears per RAF."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-minimal-dpr1/receipt.json",
+        "sha256": "1cb29f420ae10311de416cbc3ab2b3f3a502eda31c640241dd7569e29a4e6f88",
+        "bytes": 290676
+      },
+      "reason": "Native-Canvas minimal control133.3ms; high variance retained."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/site-plan-dpr1/receipt.json",
+        "sha256": "c9319f4139604d1702c4bb75b9a877fbfd4740adfcb99f2a3fdbe765a41fcab5",
+        "bytes": 305650
+      },
+      "reason": "Candidate full per-command observer33.3\u201333.4ms. Material instrumentation overhead; preserved and not relabelled clean product timing."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/site-plan-minimal-dpr1/receipt.json",
+        "sha256": "324a2c94eccf20ca58ec958ffde4a268df74e154298de07b5336c550bc8530c1",
+        "bytes": 255346
+      },
+      "reason": "Initial candidate minimal control16.8ms, input cadence~30Hz. Higher-rate trial recorded separately."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/default-dpr1/failure.json",
+        "sha256": "c62d9e8efc1d7e61873302ccb57d79619a310f17a0b4ca69c6e2d7dc3b91f6ec",
+        "bytes": 1286406
+      },
+      "reason": "Test-only post-window font-witness wrongly awaited five layouts in one focused scope. Six preceding valid windows retained; only missing room pair rerun."
+    },
+    {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/default-dpr1-room-plan/failure.json",
+        "sha256": "1315b59bc6d96495a428307c0594d348253ca1140ed43c7d8506192fec241a1e",
+        "bytes": 126252
+      },
+      "reason": "Same harness error persisted because first edit used wrong workdir/path; correction explicitly verified before final room pair."
+    }
+  ],
+  "machineStart": {
+    "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-954/machine-start.json",
+    "sha256": "cf6544f6b6b6168df5aa82eb33a3a018c8d4d5d87044b0e7b1b49ba21ab3f5d7",
+    "bytes": 1485
+  },
+  "limits": [
+    "Local loopback single machine and browser; not WAN or constrained-device qualification.",
+    "Full-site cold completion remains5.54s in this sample. No claim that cold loading is solved or that this sequential sample establishes a controlled speedup.",
+    "A RAF is not proof of Plan ink freshness or physical display presentation. Higher-rate trial separately records received input and actual changing affine/Canvas completion; neither is a monitor scanout timestamp.",
+    "The original awaiting-CDP-plus16ms input loop delivered~30\u201345Hz. Higher-rate trial delivered55.64Hz; not every attempted60Hz deadline or input receives an independent paint. No new end-to-end input latency threshold is imposed.",
+    "Per-command Canvas observation materially perturbs Plan. Its33ms candidate result remains retained; minimally observed Plan timing is reported separately.",
+    "DefaultDPR1 is composed of six valid windows from a retained partial run plus the missing two room Plan windows after the test-only count error was corrected. No valid window was repeated to select a faster outcome.",
+    "Prepared cpuBytes include typed render/picking ownership, with renderBytes a subset; do not add them as independent allocations. Owned renderbuffer/texture/Canvas dimensions are lower-bound backing-store observations, not total GPU memory.",
+    "Own Chrome process RSS sums include shared mappings and are not physical memory/PSS; heap metrics exclude workers and do not equal prepared or driver bytes.",
+    "No unrelated Chrome/Zen processes were killed or assigned causality. Machine pressure is a timestamped snapshot, not a per-frame causal explanation.",
+    "No source, compiler, native primitive, font, projection, MSAA, source order or quality limit was changed by the paint invalidation/coalescer. Exact source hashes and independent pixel proof retained."
+  ],
+  "cleanup": {
+    "allOwnedChromeClosed": true,
+    "allMeasuredPageWorkerTargetsAfterExit": [],
+    "localQaStack": "Stopped only owned launcher11821 and its Host/World/Agents children; fixture state and evidence preserved.",
+    "ownedPortsClosed": {
+      "43148": true,
+      "60049": true,
+      "60050": true,
+      "60051": true
+    }
+  }
+}
