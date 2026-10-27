@@ -2,15 +2,14 @@ import {restorePwrFoundations} from './pwr-foundations.ts'
 import {authorPwrRouting} from './pwr-routing.ts'
 import {physicalCorrespondenceSchema} from '../model.ts'
 import {physicalCoverageEvidenceSchema} from '../coverage.ts'
-import arrangement from '../pwr-campus.arrangement.json'
-import {localPointAtAnchor} from '../native/campus/author-campus.ts'
+import {authorPwrCampusExport} from './pwr-export.ts'
 import unitSource from '../pwr-full-unit-architecture.source.json'
 import unitBindings from '../pwr-full-unit-architecture.bindings.json'
 import unitCoverage from '../pwr-full-unit-architecture.coverage.json'
 import campusSource from '../pwr-campus-architecture.source.json'
 import campusBindings from '../pwr-campus-architecture.bindings.json'
 import campusCoverage from '../pwr-campus-architecture.coverage.json'
-import { physicalSourceSchema, parameters, elementWorld, type V3 } from '../native/drafting/source.ts'
+import { physicalSourceSchema, parameters } from '../native/drafting/source.ts'
 
 /** Explicit architectural drawing intent over the retained physical facts.
  * Coordinates are authored study assumptions; no OEM/access qualification. */
@@ -56,13 +55,7 @@ const createUnit=()=>{
 let unitArtifacts:ReturnType<typeof createUnit>|undefined
 export const createPwrDraftingUnitArtifacts=()=>structuredClone(unitArtifacts??=createUnit())
 export const createPwrDraftingCampusArtifacts=()=>{
- const source=physicalSourceSchema.parse({...structuredClone(campusSource),northAxis:'positive-y'}),unit=createPwrDraftingUnitArtifacts().source,transformer=unit.elements.find(e=>e.id==='equipment/unitAuxTransformer')!,d=parameters(unit,transformer),pose=elementWorld(unit,transformer)
- for(const member of arrangement.units)for(let phase=0;phase<3;phase++){
-  // Same three authored bushing tips as the reusable transformer family,
-  // transformed through the unit's declared frame and geographic placement.
-  const x=(.3+phase*.2)*d.length,y=.29*d.width,z=.96*d.height,raw:V3=[pose.position[0]+Math.cos(pose.yaw)*x-Math.sin(pose.yaw)*y-unit.origin[0],pose.position[1]+Math.sin(pose.yaw)*x+Math.cos(pose.yaw)*y-unit.origin[1],pose.position[2]+z-unit.origin[2]],local:V3=[raw[0],unit.northAxis==='negative-y'?-raw[1]:raw[1],raw[2]],end=localPointAtAnchor(arrangement.siteAnchor as[number,number],member.anchor as[number,number],local),conductor=source.elements.find(e=>e.id===`conductor/${member.role}-phase-${phase+1}`)!
-  conductor.path![conductor.path!.length-1]=end
-  conductor.path![conductor.path!.length-2]![1]=end[1]
- }
- return{source:physicalSourceSchema.parse(source),bindings:structuredClone(campusBindings),coverage:structuredClone(campusCoverage)}
+ const source=physicalSourceSchema.parse({...structuredClone(campusSource),northAxis:'positive-y'}),unit=createPwrDraftingUnitArtifacts(),bindings=physicalCorrespondenceSchema.array().parse(structuredClone(campusBindings)),coverage=physicalCoverageEvidenceSchema.parse(structuredClone(campusCoverage))
+ authorPwrCampusExport(source,unit.source,unit.bindings,bindings,coverage)
+ return{source:physicalSourceSchema.parse(source),bindings,coverage}
 }

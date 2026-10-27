@@ -428,5 +428,145 @@
     "physicalElementId": "conductor/tegneby-3-phase-3",
     "elementId": "branch:curated-halden-pwr-tegneby-3",
     "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/unit-1/export-gsu",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-1/export-lv-1",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-1/generator-export-1",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-1/export-lv-2",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-1/generator-export-2",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-1/export-lv-3",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-1/generator-export-3",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/unit-2/export-gsu",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-2/export-lv-1",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-2/generator-export-1",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-2/export-lv-2",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-2/generator-export-2",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-2/export-lv-3",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-2/generator-export-3",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/unit-3/export-gsu",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-3/export-lv-1",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-3/generator-export-1",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-3/export-lv-2",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-3/generator-export-2",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-3/export-lv-3",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-3/generator-export-3",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/unit-4/export-gsu",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-4/export-lv-1",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-4/generator-export-1",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-4/export-lv-2",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-4/generator-export-2",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "terminal/unit-4/export-lv-3",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-4/generator-export-3",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
   }
 ]

@@ -2,10 +2,10 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261027-r4",
-    "digest": "31212a9041269647dfe8dfc8113cff4a998c9bed1a7fe729486d4957b63ff6bd"
+    "digest": "5929a7c5c9ec61712821dc7fb37305bb32a63f210ba117c64a82fd9ff456185a"
   },
-  "sourceDigest": "f8741790c6ca7fd77bc957ba52112bed667ad7bd978713a184567c62d7531d2a",
-  "bindingDigest": "34733dce50030bb65df5e03c9579fa29a543ef51256902b460e5dcf37ddeccd6",
+  "sourceDigest": "d66a8899222fe9f75f61196432c889983b89cbe6254603aa524c1cfe718e33f1",
+  "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
   "modelRequirement": {
     "modelRef": "electric-grid.halden.four-unit",
     "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
@@ -14,7 +14,7 @@
     "min": [
       -839,
       -320.05196152422707,
-      -0.2
+      -1.6305255888325767
     ],
     "max": [
       900.06,
@@ -25,9 +25,9 @@
   "profile": "drafting",
   "compiler": {
     "id": "physical-layout-native-drafting",
-    "digest": "323aaffca12f713766478ecf44de14f5def45ba081a7ae9085617173f286188d"
+    "digest": "cc14f7e2007beb21f0bc8bbba0d7211e6ef028ceef042774ba2e8aaf6b388df8"
   },
-  "coverageDigest": "9cafb704ff9e51894a438fa5f5ead40a3b2d758fa14e0a1c0ed7712da1ff867b",
+  "coverageDigest": "dfe40716a532424de813652434af9c704ade79bc4d17be671b9374ab47011986",
   "requirements": {
     "ownerRole": "grid",
     "ownerPackId": "electric-grid",
@@ -52,7 +52,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
+            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
           },
           "bearing": 0
         }
@@ -69,7 +69,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
+            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
           },
           "bearing": 0
         }
@@ -86,7 +86,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
+            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
           },
           "bearing": 0
         }
@@ -103,7 +103,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "4acd258546daad03cfc6fdae3a473ef55470774ab23c2d828164f66513a541e8"
+            "digest": "9aabe1383e4d46a20af738d3d2aaec6a6307f1ba1b8e742b4db10f9b8fcea77d"
           },
           "bearing": 0
         }
@@ -153,9 +153,9 @@
     ]
   },
   "physicalApplicability": {
-    "sourceDigest": "7ab126ff7a4e54cde3bf3711ae76d0558c6a56d642f03f5819492c433827edf3",
-    "geometryDigest": "179243edf4941d0cdad34158f0fafc0e64fe950c31f0ac31069db8536a771804",
-    "digest": "e4269814ebbedfc7e1b0c52d1874f06a240a8508b2a9f9bb7c05e747b827fe02"
+    "sourceDigest": "40cd0bdc1db5cf2780ffdb1d84a23ba4334eddab061a0e24979cb77ba2592223",
+    "geometryDigest": "1d082af9582265a31497cab8ebba07932d4e615871d4c1fc0161622f1c9aa927",
+    "digest": "559d960f362dfb51dd732c85af7f734310f2c81f373aa208d937c72cb62ae3c6"
   },
   "presentation": {
     "scopes": [
@@ -167,7 +167,7 @@
           "min": [
             -839,
             -320.05196152422707,
-            -0.2
+            -1.6305255888325767
           ],
           "max": [
             900.06,
@@ -1219,6 +1219,94 @@
         "levelIds": [
           "campus-ground"
         ]
+      },
+      {
+        "id": "assembly/unit-1/export-gsu",
+        "label": "Unit 1 generator step-up export installation",
+        "kind": "assembly",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -555.0072435575252,
+            656.130052619259,
+            -1.6305255888325767
+          ],
+          "max": [
+            -433.44157085073005,
+            789.9444477394317,
+            15.993749164133463
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "assembly/unit-2/export-gsu",
+        "label": "Unit 2 generator step-up export installation",
+        "kind": "assembly",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            -155.05227224499674,
+            433.70811937078986,
+            -1.6305255888325767
+          ],
+          "max": [
+            -33.4925070409208,
+            567.5155432587875,
+            15.992827984336154
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "assembly/unit-3/export-gsu",
+        "label": "Unit 3 generator step-up export installation",
+        "kind": "assembly",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            244.90269920038176,
+            211.29915015265738,
+            -1.6305255888325767
+          ],
+          "max": [
+            366.4565577138674,
+            345.0996037668442,
+            15.991906931177246
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
+      },
+      {
+        "id": "assembly/unit-4/export-gsu",
+        "label": "Unit 4 generator step-up export installation",
+        "kind": "assembly",
+        "parentId": "site",
+        "bounds": {
+          "min": [
+            644.8576707763012,
+            -11.09685680590974,
+            -1.6305255888325767
+          ],
+          "max": [
+            766.4056234111692,
+            122.69662749264604,
+            15.99098600463237
+          ]
+        },
+        "levelIds": [
+          "campus-ground",
+          "admin-upper"
+        ]
       }
     ],
     "layers": [
@@ -1249,5 +1337,5 @@
       }
     ]
   },
-  "presentationDigest": "178ac95bd8a4c1cc3881fa906b26de5f40e3370848c78cdc900c5ffc793a8c55"
+  "presentationDigest": "719de254c5ca53905ae039e27df4a85988445a47a4bea71d74e5b66b113c9d38"
 }

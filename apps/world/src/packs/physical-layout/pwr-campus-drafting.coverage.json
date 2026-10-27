@@ -111,7 +111,7 @@
     {
       "subjectId": "unit-1-420kv",
       "disposition": "assembly",
-      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "reason": "One aggregate Grid unit-export subject is represented by a distinct campus-owned generator step-up transformer, its LV/HV terminations, generator phase corridors and switchyard export bay/feeders. This is not the separate 80 MW process-model unit auxiliary transformer. Ratings, protection, penetrations and installation engineering are not inferred.",
       "physicalElementIds": [
         "conductor/unit-1-phase-1",
         "conductor/unit-1-phase-2",
@@ -120,13 +120,20 @@
         "yard/unit-1/disconnector",
         "yard/unit-1/phase-1",
         "yard/unit-1/phase-2",
-        "yard/unit-1/phase-3"
+        "yard/unit-1/phase-3",
+        "equipment/unit-1/export-gsu",
+        "terminal/unit-1/export-lv-1",
+        "conductor/unit-1/generator-export-1",
+        "terminal/unit-1/export-lv-2",
+        "conductor/unit-1/generator-export-2",
+        "terminal/unit-1/export-lv-3",
+        "conductor/unit-1/generator-export-3"
       ]
     },
     {
       "subjectId": "unit-2-420kv",
       "disposition": "assembly",
-      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "reason": "One aggregate Grid unit-export subject is represented by a distinct campus-owned generator step-up transformer, its LV/HV terminations, generator phase corridors and switchyard export bay/feeders. This is not the separate 80 MW process-model unit auxiliary transformer. Ratings, protection, penetrations and installation engineering are not inferred.",
       "physicalElementIds": [
         "conductor/unit-2-phase-1",
         "conductor/unit-2-phase-2",
@@ -135,13 +142,20 @@
         "yard/unit-2/disconnector",
         "yard/unit-2/phase-1",
         "yard/unit-2/phase-2",
-        "yard/unit-2/phase-3"
+        "yard/unit-2/phase-3",
+        "equipment/unit-2/export-gsu",
+        "terminal/unit-2/export-lv-1",
+        "conductor/unit-2/generator-export-1",
+        "terminal/unit-2/export-lv-2",
+        "conductor/unit-2/generator-export-2",
+        "terminal/unit-2/export-lv-3",
+        "conductor/unit-2/generator-export-3"
       ]
     },
     {
       "subjectId": "unit-3-420kv",
       "disposition": "assembly",
-      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "reason": "One aggregate Grid unit-export subject is represented by a distinct campus-owned generator step-up transformer, its LV/HV terminations, generator phase corridors and switchyard export bay/feeders. This is not the separate 80 MW process-model unit auxiliary transformer. Ratings, protection, penetrations and installation engineering are not inferred.",
       "physicalElementIds": [
         "conductor/unit-3-phase-1",
         "conductor/unit-3-phase-2",
@@ -150,13 +164,20 @@
         "yard/unit-3/disconnector",
         "yard/unit-3/phase-1",
         "yard/unit-3/phase-2",
-        "yard/unit-3/phase-3"
+        "yard/unit-3/phase-3",
+        "equipment/unit-3/export-gsu",
+        "terminal/unit-3/export-lv-1",
+        "conductor/unit-3/generator-export-1",
+        "terminal/unit-3/export-lv-2",
+        "conductor/unit-3/generator-export-2",
+        "terminal/unit-3/export-lv-3",
+        "conductor/unit-3/generator-export-3"
       ]
     },
     {
       "subjectId": "unit-4-420kv",
       "disposition": "assembly",
-      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "reason": "One aggregate Grid unit-export subject is represented by a distinct campus-owned generator step-up transformer, its LV/HV terminations, generator phase corridors and switchyard export bay/feeders. This is not the separate 80 MW process-model unit auxiliary transformer. Ratings, protection, penetrations and installation engineering are not inferred.",
       "physicalElementIds": [
         "conductor/unit-4-phase-1",
         "conductor/unit-4-phase-2",
@@ -165,7 +186,14 @@
         "yard/unit-4/disconnector",
         "yard/unit-4/phase-1",
         "yard/unit-4/phase-2",
-        "yard/unit-4/phase-3"
+        "yard/unit-4/phase-3",
+        "equipment/unit-4/export-gsu",
+        "terminal/unit-4/export-lv-1",
+        "conductor/unit-4/generator-export-1",
+        "terminal/unit-4/export-lv-2",
+        "conductor/unit-4/generator-export-2",
+        "terminal/unit-4/export-lv-3",
+        "conductor/unit-4/generator-export-3"
       ]
     }
   ],
@@ -2853,10 +2881,42 @@
     {
       "physicalElementId": "pavement/pedestrian",
       "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "assembly/unit-1/export-gsu",
+      "reason": "Campus-owned physical export assembly; one existing Grid export subject owns its installation. No extra process component or operational reading is invented."
+    },
+    {
+      "physicalElementId": "pad/unit-1/export-gsu",
+      "reason": "Illustrative export-transformer foundation and service allowance, separate from the unit auxiliary transformer."
+    },
+    {
+      "physicalElementId": "assembly/unit-2/export-gsu",
+      "reason": "Campus-owned physical export assembly; one existing Grid export subject owns its installation. No extra process component or operational reading is invented."
+    },
+    {
+      "physicalElementId": "pad/unit-2/export-gsu",
+      "reason": "Illustrative export-transformer foundation and service allowance, separate from the unit auxiliary transformer."
+    },
+    {
+      "physicalElementId": "assembly/unit-3/export-gsu",
+      "reason": "Campus-owned physical export assembly; one existing Grid export subject owns its installation. No extra process component or operational reading is invented."
+    },
+    {
+      "physicalElementId": "pad/unit-3/export-gsu",
+      "reason": "Illustrative export-transformer foundation and service allowance, separate from the unit auxiliary transformer."
+    },
+    {
+      "physicalElementId": "assembly/unit-4/export-gsu",
+      "reason": "Campus-owned physical export assembly; one existing Grid export subject owns its installation. No extra process component or operational reading is invented."
+    },
+    {
+      "physicalElementId": "pad/unit-4/export-gsu",
+      "reason": "Illustrative export-transformer foundation and service allowance, separate from the unit auxiliary transformer."
     }
   ],
   "evidence": {
     "accuracy": "illustrative",
-    "origin": "Conceptual shared campus authored 25 October 2026 around retained four-unit and switchyard anchors. Building dimensions, bay arrangement, circuit support sharing, conductor sag and access geometry are illustrative; no surveyed or electrical-clearance qualification."
+    "origin": "Conceptual shared campus authored 25 October 2026 around retained four-unit and switchyard anchors. Building dimensions, bay arrangement, circuit support sharing, conductor sag and access geometry are illustrative; no surveyed or electrical-clearance qualification. Separate campus-owned generator step-up installations derive their generator phase terminals from the exact related unit physical model. Export phase routing is authored and clearance-checked against conservative building envelopes; the hall exit is an explicitly illustrative penetration, not a qualified design."
   }
 }
