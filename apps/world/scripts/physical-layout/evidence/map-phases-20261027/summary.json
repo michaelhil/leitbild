@@ -1,0 +1,1033 @@
+{
+  "passed": true,
+  "reference": {
+    "root": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-map-phase-oracle-20261027/apps/world",
+    "commit": "30fb742e561481faac940e403fc21c44c8537a46",
+    "files": {
+      "layer.ts": "ee9a9008fd94672dafcf8ffdb059cd9a55135542a088446e2162c57f6e10c6f8",
+      "renderer.ts": "eaa6489ef685883323c02714c57e130a9e30f8b63a5349eacaf6fa9b7a3c35a3",
+      "render-pass.ts": "c3b359387bf1502e3836c8ef3739f729beda6cde2e975db8f9ac613af099d1d9",
+      "backend.ts": "be0eb90cd848742e694dd9793dd5d272bd56d5361f43cb4d9e65be3cafd8980c",
+      "architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce"
+    }
+  },
+  "candidate": {
+    "root": "/Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world",
+    "commit": "c4282c1d6ee05c844bdbba7ac17066f7dfcc05d4",
+    "files": {
+      "layer.ts": "d25d103c86cdfba2b1485fa07156e5ebc71314f6e7886cd7ef8c943b5b0c3f5e",
+      "renderer.ts": "ca851b2e7098b64d6096360a25a6fd23341c4689ed839be14858c37b7bbbe4c9",
+      "render-pass.ts": "368dcc25b227d2fce9874d5d02512cd4eaad7c868797b542be29303ce8960044",
+      "backend.ts": "be0eb90cd848742e694dd9793dd5d272bd56d5361f43cb4d9e65be3cafd8980c",
+      "architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce"
+    }
+  },
+  "glyphs": {
+    "source": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/map-phase/candidate-b7-live/noto-0-255.pbf",
+    "bytes": 76580,
+    "sha256": "ef1f38a3f1978591e846e9eaddf8a54f7047f546fc6aaed7872cc53151a5de78",
+    "requests": 25
+  },
+  "limits": [
+    "Functional exact-pixel gate, no timing claim.",
+    "Known packed synthetic geometry uses real MapLibre cameras, native circles and installed Noto native glyph text. Real admitted R5 product geometry is separately qualified.",
+    "No private MapLibre painter/context access."
+  ],
+  "executionBundleSha256": "73708514de03b454aeb41cc47358012e6184a14167284aa3314ecc17fe1427f7",
+  "comparisons": [
+    {
+      "mode": "opaque",
+      "pitch": 0,
+      "bearing": 0,
+      "devicePixelRatio": 1,
+      "width": 640,
+      "height": 480,
+      "differentBytes": 0,
+      "physicalPixels": 167834,
+      "textPixels": 68,
+      "iconPixels": 256,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "opaque",
+      "pitch": 52,
+      "bearing": 31,
+      "devicePixelRatio": 1,
+      "width": 640,
+      "height": 480,
+      "differentBytes": 0,
+      "physicalPixels": 125140,
+      "textPixels": 64,
+      "iconPixels": 225,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        }
+      ],
+      "phaseLocal": [
+        {
+          "kind": "actual-map-context-restore-public-reinstall-pixels",
+          "reinstalled": true,
+          "differences": 0,
+          "passed": true
+        },
+        {
+          "kind": "current-non-null-host-framebuffer-offset-viewport",
+          "outside": [
+            25,
+            50,
+            75,
+            255
+          ],
+          "inside": [
+            245,
+            0,
+            0,
+            255
+          ],
+          "phase": {
+            "name": "render",
+            "queries": 0,
+            "clears": [],
+            "drawTargets": [
+              3
+            ],
+            "entryTarget": 3,
+            "entryViewport": [
+              13,
+              17,
+              640,
+              480
+            ]
+          },
+          "passed": true
+        },
+        {
+          "kind": "between-phase-picks-invalidation",
+          "before": 22,
+          "after": 22,
+          "passed": true
+        },
+        {
+          "kind": "between-phase-palette-invalidation",
+          "before": 22,
+          "after": 22,
+          "passed": true
+        },
+        {
+          "kind": "between-phase-highlight-invalidation",
+          "before": 22,
+          "after": 22,
+          "passed": true
+        },
+        {
+          "kind": "empty-frame-does-not-reuse-old-colour",
+          "before": 22,
+          "after": 22,
+          "passed": true
+        },
+        {
+          "kind": "ink-only-frame-updates-plan-pick-without-gl-target",
+          "hit": "base",
+          "phases": [
+            {
+              "name": "prerender",
+              "queries": 0,
+              "draws": 0,
+              "clears": 0
+            },
+            {
+              "name": "render",
+              "queries": 0,
+              "draws": 0,
+              "clears": 0
+            }
+          ],
+          "passed": true
+        },
+        {
+          "kind": "failed-new-prepare-cannot-composite-old-colour",
+          "uploads": 1,
+          "errors": [
+            "Intentional phase preparation refusal"
+          ],
+          "composites": 0,
+          "passed": true
+        },
+        {
+          "kind": "dispose-between-phases-clears-prepared-colour",
+          "before": 22,
+          "after": 22,
+          "passed": true
+        }
+      ],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        },
+        {
+          "name": "context-restored",
+          "error": 0
+        },
+        {
+          "name": "alternate-target-complete",
+          "error": 0
+        },
+        {
+          "name": "before-map-plan-frame",
+          "error": 0
+        },
+        {
+          "name": "map-plan-frame",
+          "error": 0
+        },
+        {
+          "name": "local-state-restored",
+          "error": 0
+        },
+        {
+          "name": "intentional-failure-cleanup",
+          "error": 0
+        },
+        {
+          "name": "disposed-between-phases",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "opaque",
+      "pitch": 63,
+      "bearing": -137,
+      "devicePixelRatio": 1,
+      "width": 640,
+      "height": 480,
+      "differentBytes": 0,
+      "physicalPixels": 113260,
+      "textPixels": 73,
+      "iconPixels": 225,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "fractional",
+      "pitch": 0,
+      "bearing": 0,
+      "devicePixelRatio": 1,
+      "width": 640,
+      "height": 480,
+      "differentBytes": 0,
+      "physicalPixels": 146938,
+      "textPixels": 75,
+      "iconPixels": 256,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "fractional",
+      "pitch": 52,
+      "bearing": 31,
+      "devicePixelRatio": 1,
+      "width": 640,
+      "height": 480,
+      "differentBytes": 0,
+      "physicalPixels": 97419,
+      "textPixels": 71,
+      "iconPixels": 225,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "fractional",
+      "pitch": 63,
+      "bearing": -137,
+      "devicePixelRatio": 1,
+      "width": 640,
+      "height": 480,
+      "differentBytes": 0,
+      "physicalPixels": 80792,
+      "textPixels": 73,
+      "iconPixels": 225,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            640,
+            480
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "opaque",
+      "pitch": 0,
+      "bearing": 0,
+      "devicePixelRatio": 2,
+      "width": 1280,
+      "height": 960,
+      "differentBytes": 0,
+      "physicalPixels": 672801,
+      "textPixels": 1670,
+      "iconPixels": 900,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "opaque",
+      "pitch": 52,
+      "bearing": 31,
+      "devicePixelRatio": 2,
+      "width": 1280,
+      "height": 960,
+      "differentBytes": 0,
+      "physicalPixels": 502059,
+      "textPixels": 1678,
+      "iconPixels": 900,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        }
+      ],
+      "phaseLocal": [
+        {
+          "kind": "current-non-null-host-framebuffer-offset-viewport",
+          "outside": [
+            25,
+            50,
+            75,
+            255
+          ],
+          "inside": [
+            245,
+            0,
+            0,
+            255
+          ],
+          "phase": {
+            "name": "render",
+            "queries": 0,
+            "clears": [],
+            "drawTargets": [
+              2
+            ],
+            "entryTarget": 2,
+            "entryViewport": [
+              13,
+              17,
+              1280,
+              960
+            ]
+          },
+          "passed": true
+        },
+        {
+          "kind": "between-phase-picks-invalidation",
+          "before": 25,
+          "after": 25,
+          "passed": true
+        },
+        {
+          "kind": "between-phase-palette-invalidation",
+          "before": 25,
+          "after": 25,
+          "passed": true
+        },
+        {
+          "kind": "between-phase-highlight-invalidation",
+          "before": 25,
+          "after": 25,
+          "passed": true
+        },
+        {
+          "kind": "empty-frame-does-not-reuse-old-colour",
+          "before": 25,
+          "after": 25,
+          "passed": true
+        },
+        {
+          "kind": "ink-only-frame-updates-plan-pick-without-gl-target",
+          "hit": "base",
+          "phases": [
+            {
+              "name": "prerender",
+              "queries": 0,
+              "draws": 0,
+              "clears": 0
+            },
+            {
+              "name": "render",
+              "queries": 0,
+              "draws": 0,
+              "clears": 0
+            }
+          ],
+          "passed": true
+        },
+        {
+          "kind": "failed-new-prepare-cannot-composite-old-colour",
+          "uploads": 1,
+          "errors": [
+            "Intentional phase preparation refusal"
+          ],
+          "composites": 0,
+          "passed": true
+        },
+        {
+          "kind": "dispose-between-phases-clears-prepared-colour",
+          "before": 25,
+          "after": 25,
+          "passed": true
+        }
+      ],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        },
+        {
+          "name": "alternate-target-complete",
+          "error": 0
+        },
+        {
+          "name": "before-map-plan-frame",
+          "error": 0
+        },
+        {
+          "name": "map-plan-frame",
+          "error": 0
+        },
+        {
+          "name": "local-state-restored",
+          "error": 0
+        },
+        {
+          "name": "intentional-failure-cleanup",
+          "error": 0
+        },
+        {
+          "name": "disposed-between-phases",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "opaque",
+      "pitch": 63,
+      "bearing": -137,
+      "devicePixelRatio": 2,
+      "width": 1280,
+      "height": 960,
+      "differentBytes": 0,
+      "physicalPixels": 454529,
+      "textPixels": 1604,
+      "iconPixels": 900,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "fractional",
+      "pitch": 0,
+      "bearing": 0,
+      "devicePixelRatio": 2,
+      "width": 1280,
+      "height": 960,
+      "differentBytes": 0,
+      "physicalPixels": 587974,
+      "textPixels": 1673,
+      "iconPixels": 900,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "fractional",
+      "pitch": 52,
+      "bearing": 31,
+      "devicePixelRatio": 2,
+      "width": 1280,
+      "height": 960,
+      "differentBytes": 0,
+      "physicalPixels": 390736,
+      "textPixels": 1677,
+      "iconPixels": 900,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    },
+    {
+      "mode": "fractional",
+      "pitch": 63,
+      "bearing": -137,
+      "devicePixelRatio": 2,
+      "width": 1280,
+      "height": 960,
+      "differentBytes": 0,
+      "physicalPixels": 324068,
+      "textPixels": 1604,
+      "iconPixels": 900,
+      "native": [
+        "native-label",
+        "native-icon",
+        "native-circle"
+      ],
+      "latest": [
+        {
+          "name": "prerender",
+          "queries": 0,
+          "clears": [
+            {
+              "mask": 16640,
+              "target": 1
+            }
+          ],
+          "drawTargets": [
+            1
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        },
+        {
+          "name": "render",
+          "queries": 0,
+          "clears": [],
+          "drawTargets": [
+            null
+          ],
+          "entryTarget": null,
+          "entryViewport": [
+            0,
+            0,
+            1280,
+            960
+          ]
+        }
+      ],
+      "phaseLocal": [],
+      "glCheckpoints": [
+        {
+          "name": "actual-map-complete",
+          "error": 0
+        }
+      ],
+      "errors": [],
+      "glError": 0
+    }
+  ]
+}

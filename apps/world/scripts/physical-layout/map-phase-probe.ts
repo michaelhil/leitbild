@@ -5,6 +5,10 @@ import {createRequire} from 'node:module'
 import {createHash} from 'node:crypto'
 
 const root=join(import.meta.dir,'../..'), referenceRoot=process.env.LEITBILD_MAP_PHASE_REFERENCE_ROOT??root,candidateRoot=process.env.LEITBILD_MAP_PHASE_CANDIDATE_ROOT??root
+const frozenReference='30fb742e561481faac940e403fc21c44c8537a46'
+const referenceDifference=Bun.spawnSync(['git','diff','--exit-code',frozenReference,'--','src'],{cwd:referenceRoot})
+const untrackedReference=Bun.spawnSync(['git','ls-files','--others','--exclude-standard','--','src'],{cwd:referenceRoot}).stdout.toString().trim()
+if(referenceDifference.exitCode!==0||untrackedReference)throw Error('The Map phase reference must retain the complete frozen 30fb World source, including uncommitted files')
 const output=process.env.LEITBILD_MAP_PHASE_DIR??await mkdtemp(join(tmpdir(),'leitbild-map-phase-'))
 await mkdir(output,{recursive:true})
 const entry=join(root,'tests/browser/physical-scene/map-phase-app.ts'),reference=join(root,'tests/browser/physical-scene/map-phase-reference.ts')
@@ -54,7 +58,7 @@ try{for(const dpr of (single?[1]:[1,2])){
     await writeFile(join(output,`receipt-dpr${dpr}.json`),JSON.stringify(receipt,null,2));runs.push(receipt)
   }finally{socket?.close();chrome.kill();await chrome.exited;await rm(profile,{recursive:true,force:true})}
 }
-const hash=async(path:string)=>createHash('sha256').update(await readFile(path)).digest('hex'),paths=['layer.ts','renderer.ts','render-pass.ts','backend.ts','architecture-backend.ts']
+const hash=async(path:string)=>createHash('sha256').update(await readFile(path)).digest('hex'),paths=['layer.ts','renderer.ts','render-pass.ts','gl-state.ts','backend.ts','architecture-backend.ts']
 const provenance=async(base:string)=>({root:base,commit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:base}).stdout.toString().trim(),files:Object.fromEntries(await Promise.all(paths.map(async file=>[file,await hash(join(base,'src/ui/map/physical-scene',file))])))})
 const expectSplit=process.env.LEITBILD_MAP_PHASE_EXPECT_SPLIT==='1'
 const passed=runs.every(run=>!run.errors.length&&run.summaries.every((item:any)=>!item.errors.length&&!item.glError&&item.glCheckpoints.every((point:any)=>point.error===0)&&item.phaseLocal.every((test:any)=>test.passed)&&item.before.geometryUploads===item.after.geometryUploads&&item.before.renderPass?.allocations===item.after.renderPass?.allocations&&item.disposed.liveBuffersAfterDisposal===0&&item.disposed.liveTexturesAfterDisposal===0&&item.disposed.liveProgramsAfterDisposal===0&&item.physicalPixels>100&&item.textPixels>10&&item.iconPixels>10&&item.native.includes('native-circle')&&item.native.includes('native-icon')&&item.native.includes('native-label')&&(item.which==='reference'||item.differentBytes===0&&(!expectSplit||item.latest.some((phase:any)=>phase.name==='prerender')&&item.latest.filter((phase:any)=>phase.name==='render').every((phase:any)=>phase.queries===0&&phase.clears.length===0&&phase.drawTargets.every((target:number|null)=>target===phase.entryTarget))))))
