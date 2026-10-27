@@ -1,0 +1,903 @@
+{
+  "schema": "leitbild-native-plan-793-checkpoint",
+  "recordedAt": "2026-10-27T23:03:54.184220+00:00",
+  "testedAppCommit": "793743c00e49d7578544bb4164b9077cde8e01d7",
+  "sourcePins": {
+    "unitDesign": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "campusDesign": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+    "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "sourceFiles": [
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/physical-layout/PhysicalExplorer.svelte",
+      "sha256": "2264741992a05a3689e4fb5cf6fc68f362fd7827dac020090f20f43dbf8ccf28",
+      "bytes": 73851
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/physical-layout/plan-drawing.ts",
+      "sha256": "849dd1e9b9daee27f26540f13966f3265b4f714565b802269c994fa016c9578b",
+      "bytes": 17543
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027/apps/world/src/ui/map/physical-scene/plan-picking.ts",
+      "sha256": "23ee99986d890c3c0360fd019ae09f9cd45d9c11b29d7e80beafa6e2ed8bf182",
+      "bytes": 16330
+    }
+  ],
+  "hardware": {
+    "browser": "HeadlessChrome156",
+    "devicePixelRatio": 1,
+    "reportedLogicalCpus": 8,
+    "nativeTarget": [
+      1080,
+      871
+    ],
+    "samples": 4
+  },
+  "runs": {
+    "default": {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/default-dpr1/receipt.json",
+        "sha256": "c7a8285c1a74a667d4371018bd24146aeb2693d2360e31d57b67cee7e492bec3",
+        "bytes": 269519
+      },
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "durationMs": 4078.899999856949,
+          "frames": 244,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000109,
+          "moves": 122,
+          "annotationObserverMs": 0.40000009536743164,
+          "planSubmissionMs": 3.600001573562622,
+          "planSubmissions": 1849,
+          "fillTextCalls": 66,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 2,
+            "cpuMs": 2.700000047683716,
+            "whileHeld": 2,
+            "heldCpuMs": 2.700000047683716,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            0.9871028452593128,
+            -0.16008739138660819,
+            0.16008739138660819,
+            0.9871028452593128,
+            322.2313232421875,
+            286.3576354980469
+          ],
+          "reportedEndPlanTransform": [
+            0.9871028452591863,
+            -0.16008739138738853,
+            0.16008739138738853,
+            0.9871028452591863,
+            322.2313232421875,
+            286.3576354980469
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "durationMs": 4083,
+          "frames": 244,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "moves": 122,
+          "annotationObserverMs": 0.2999999523162842,
+          "planSubmissionMs": 3.9999992847442627,
+          "planSubmissions": 1962,
+          "fillTextCalls": 84,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 2,
+            "cpuMs": 1.4000000953674316,
+            "whileHeld": 2,
+            "heldCpuMs": 1.4000000953674316,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            0.9871028452593128,
+            -0.16008739138660819,
+            0.16008739138660819,
+            0.9871028452593128,
+            322.2313232421875,
+            286.3576354980469
+          ],
+          "reportedEndPlanTransform": [
+            0.9871028452592924,
+            -0.16008739138673472,
+            0.16008739138673472,
+            0.9871028452592924,
+            322.2313232421875,
+            286.3576354980469
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "durationMs": 4120.700000047684,
+          "frames": 110,
+          "rafMedianMs": 33.30000000000291,
+          "rafP95Ms": 66.70000000000073,
+          "rafMaxMs": 83.29999999999927,
+          "moves": 103,
+          "annotationObserverMs": 70.29999804496765,
+          "planSubmissionMs": 1332.7000091075897,
+          "planSubmissions": 3191873,
+          "fillTextCalls": 178839,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 15.5,
+            "whileHeld": 1,
+            "heldCpuMs": 15.5,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ],
+          "reportedEndPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "durationMs": 4103.099999904633,
+          "frames": 109,
+          "rafMedianMs": 33.39999999999782,
+          "rafP95Ms": 66.60000000000218,
+          "rafMaxMs": 116.60000000000218,
+          "moves": 104,
+          "annotationObserverMs": 80.89999890327454,
+          "planSubmissionMs": 1305.5999937057495,
+          "planSubmissions": 3164025,
+          "fillTextCalls": 177341,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 19.399999856948853,
+            "whileHeld": 1,
+            "heldCpuMs": 19.399999856948853,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ],
+          "reportedEndPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "durationMs": 4047.4000000953674,
+          "frames": 242,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "moves": 122,
+          "annotationObserverMs": 0,
+          "planSubmissionMs": 2.90000057220459,
+          "planSubmissions": 1271,
+          "fillTextCalls": 0,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 2,
+            "cpuMs": 3.200000047683716,
+            "whileHeld": 2,
+            "heldCpuMs": 3.200000047683716,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            -0.7904290269266705,
+            0.6125536330736736,
+            -0.6125536330736736,
+            -0.7904290269266705,
+            175.75375366210938,
+            644.6439819335938
+          ],
+          "reportedEndPlanTransform": [
+            -0.7904290269237038,
+            0.6125536330775019,
+            -0.6125536330775019,
+            -0.7904290269237038,
+            175.75375366210938,
+            644.6439819335938
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "durationMs": 4052.4000000953674,
+          "frames": 242,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "moves": 122,
+          "annotationObserverMs": 0,
+          "planSubmissionMs": 1.8000004291534424,
+          "planSubmissions": 1274,
+          "fillTextCalls": 0,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 2,
+            "cpuMs": 1.7000000476837158,
+            "whileHeld": 2,
+            "heldCpuMs": 1.7000000476837158,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            -0.7904290269266705,
+            0.6125536330736736,
+            -0.6125536330736736,
+            -0.7904290269266705,
+            175.75375366210938,
+            644.6439819335938
+          ],
+          "reportedEndPlanTransform": [
+            -0.7904290269199002,
+            0.6125536330824098,
+            -0.6125536330824098,
+            -0.7904290269199002,
+            175.75375366210938,
+            644.6439819335938
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "durationMs": 4035.7000000476837,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "moves": 121,
+          "annotationObserverMs": 7.700000047683716,
+          "planSubmissionMs": 112.99999737739563,
+          "planSubmissions": 306641,
+          "fillTextCalls": 16018,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 2.5,
+            "whileHeld": 1,
+            "heldCpuMs": 2.5,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            10.419270515441895,
+            0,
+            0,
+            -10.419270515441895,
+            514.9642333984375,
+            472.8198547363281
+          ],
+          "reportedEndPlanTransform": [
+            10.419270515441895,
+            0,
+            0,
+            -10.419270515441895,
+            514.9642333984375,
+            472.81988525390625
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "durationMs": 4035.600000143051,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "moves": 123,
+          "annotationObserverMs": 6.000000715255737,
+          "planSubmissionMs": 138.1000018119812,
+          "planSubmissions": 373762,
+          "fillTextCalls": 19549,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 1.0999999046325684,
+            "whileHeld": 1,
+            "heldCpuMs": 1.0999999046325684,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            10.419270515441895,
+            0,
+            0,
+            -10.419270515441895,
+            514.9642333984375,
+            472.8198547363281
+          ],
+          "reportedEndPlanTransform": [
+            10.419270515441895,
+            0,
+            0,
+            -10.419270515441895,
+            514.9642333984375,
+            472.81988525390625
+          ]
+        }
+      ]
+    },
+    "profile": {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-profile-dpr1/partial.json",
+        "sha256": "157fa8d1fe8f3d7e5394e5c986d3945d9701330c947cb0e9b33b87d65f069bac",
+        "bytes": 50197
+      },
+      "phases": [
+        {
+          "name": "map-site-plan-paused",
+          "durationMs": 4559,
+          "frames": 118,
+          "rafMedianMs": 33.30000000000109,
+          "rafP95Ms": 66.70000000000073,
+          "rafMaxMs": 316.59999999999945,
+          "moves": 107,
+          "annotationObserverMs": 81.00000095367432,
+          "planSubmissionMs": 1406.9999856948853,
+          "planSubmissions": 3337576,
+          "fillTextCalls": 187006,
+          "path2DConstructed": 0,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 7.799999952316284,
+            "whileHeld": 1,
+            "heldCpuMs": 7.799999952316284,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 1,
+            "totalMs": 70,
+            "maxMs": 70
+          },
+          "startPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ],
+          "reportedEndPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            201.21083068847656,
+            218.6641082763672
+          ]
+        }
+      ]
+    },
+    "liveOff": {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-live-off-dpr1/receipt.json",
+        "sha256": "fd40ea65df06dc026c46fe396fab6d0bc9e66293720dbf84165b446fad9443e4",
+        "bytes": 300236
+      },
+      "phases": [
+        {
+          "name": "map-site-plan-live-off-paused",
+          "durationMs": 4088.699999809265,
+          "frames": 151,
+          "rafMedianMs": 33.29999999999927,
+          "rafP95Ms": 33.399999999999636,
+          "rafMaxMs": 50,
+          "moves": 147,
+          "annotationObserverMs": 84.90000104904175,
+          "planSubmissionMs": 1557.000010251999,
+          "planSubmissions": 3893736,
+          "fillTextCalls": 218148,
+          "path2DConstructed": 0,
+          "planClears": 294,
+          "planMethodCounts": {
+            "clearRect": 294,
+            "fill": 874650,
+            "stroke": 2616894,
+            "fillText": 218148,
+            "strokeText": 183750
+          },
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 1.5,
+            "whileHeld": 1,
+            "heldCpuMs": 1.5,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ],
+          "reportedEndPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ],
+          "paintFrameCounts": {
+            "framesWithClear": 147,
+            "maxClearsPerRaf": 2,
+            "distinctFirstWorldTransforms": 147,
+            "maxRepeatedFirstWorldTransform": 2
+          }
+        },
+        {
+          "name": "map-site-plan-live-off-playing",
+          "durationMs": 4049.0999999046326,
+          "frames": 146,
+          "rafMedianMs": 33.29999999999927,
+          "rafP95Ms": 33.400000000001455,
+          "rafMaxMs": 66.70000000000073,
+          "moves": 142,
+          "annotationObserverMs": 79.60000348091125,
+          "planSubmissionMs": 1529.7000160217285,
+          "planSubmissions": 3733466,
+          "fillTextCalls": 209244,
+          "path2DConstructed": 0,
+          "planClears": 282,
+          "planMethodCounts": {
+            "clearRect": 282,
+            "fill": 838456,
+            "stroke": 2509234,
+            "fillText": 209244,
+            "strokeText": 176250
+          },
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 1.2000000476837158,
+            "whileHeld": 1,
+            "heldCpuMs": 1.2000000476837158,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 0,
+            "totalMs": 0,
+            "maxMs": 0
+          },
+          "startPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ],
+          "reportedEndPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ],
+          "paintFrameCounts": {
+            "framesWithClear": 141,
+            "maxClearsPerRaf": 2,
+            "distinctFirstWorldTransforms": 141,
+            "maxRepeatedFirstWorldTransform": 2
+          }
+        }
+      ]
+    },
+    "minimal": {
+      "receipt": {
+        "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-minimal-dpr1/receipt.json",
+        "sha256": "1cb29f420ae10311de416cbc3ab2b3f3a502eda31c640241dd7569e29a4e6f88",
+        "bytes": 290676
+      },
+      "phases": [
+        {
+          "name": "map-site-plan-paused",
+          "durationMs": 4325.699999809265,
+          "frames": 67,
+          "rafMedianMs": 66.59999999999854,
+          "rafP95Ms": 133.29999999999927,
+          "rafMaxMs": 150.10000000000218,
+          "moves": 55,
+          "annotationObserverMs": 0,
+          "planSubmissionMs": 0,
+          "planSubmissions": 0,
+          "fillTextCalls": 0,
+          "path2DConstructed": 0,
+          "planClears": 0,
+          "planMethodCounts": {},
+          "minimalCanvasObservation": true,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 4.8999998569488525,
+            "whileHeld": 1,
+            "heldCpuMs": 4.8999998569488525,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 63,
+            "totalMs": 3827,
+            "maxMs": 80
+          },
+          "startPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ],
+          "reportedEndPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            198.94265747070312,
+            218.1269073486328
+          ],
+          "actualMinimalClearCadence": {
+            "count": 134,
+            "intervalMedianMs": 31.700000047683716,
+            "intervalP95Ms": 45.200000047683716,
+            "intervalMaxMs": 115.80000019073486,
+            "intervalDefinition": "Consecutive full-canvas clears, not unique camera frames. Two clears may occur within a RAF."
+          },
+          "postWindowObservedPlanTransform": [
+            0.5343599915504456,
+            0,
+            0,
+            -0.5343599915504456,
+            204.5195770263672,
+            219.30099487304688
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "durationMs": 4482.599999904633,
+          "frames": 73,
+          "rafMedianMs": 66.59999999999854,
+          "rafP95Ms": 133.29999999999927,
+          "rafMaxMs": 150,
+          "moves": 51,
+          "annotationObserverMs": 0,
+          "planSubmissionMs": 0,
+          "planSubmissions": 0,
+          "fillTextCalls": 0,
+          "path2DConstructed": 0,
+          "planClears": 0,
+          "planMethodCounts": {},
+          "minimalCanvasObservation": true,
+          "readPixels": {
+            "calls": 1,
+            "cpuMs": 60.200000047683716,
+            "whileHeld": 1,
+            "heldCpuMs": 60.200000047683716,
+            "buttonObservationValid": true
+          },
+          "orderedDraws": {
+            "frames": 0,
+            "calls": 0,
+            "indices": 0,
+            "firstAt": null,
+            "lastAt": null
+          },
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "longTasks": {
+            "count": 57,
+            "totalMs": 3673,
+            "maxMs": 107
+          },
+          "startPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ],
+          "reportedEndPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ],
+          "actualMinimalClearCadence": {
+            "count": 125,
+            "intervalMedianMs": 34.90000009536743,
+            "intervalP95Ms": 56.19999980926514,
+            "intervalMaxMs": 100.89999985694885,
+            "intervalDefinition": "Consecutive full-canvas clears, not unique camera frames. Two clears may occur within a RAF."
+          },
+          "postWindowObservedPlanTransform": [
+            0.5749666094779968,
+            0,
+            0,
+            -0.5749666094779968,
+            174.5071563720703,
+            227.52975463867188
+          ]
+        }
+      ]
+    }
+  },
+  "profile": {
+    "raw": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-profile-dpr1/map-site-plan-paused.cpuprofile",
+      "sha256": "9a04a297f27d74a22b8d9b267c31ab0ccb5f714934bc24b33d5e69b134ce1e8d",
+      "bytes": 226304
+    },
+    "sampleMs": 4440.1,
+    "painterInclusiveMsApprox": 2429.6,
+    "nativeObservedSubmissionMs": 1407.0,
+    "textAngleObserverMs": 81.0,
+    "measureTextSelfMs": 10.041,
+    "repeatedDeckReads": false,
+    "initialDeckReadSelfMs": 7.523,
+    "finding": "Full painter and Canvas drawing dominate sampled work. No material textIndexFor/spatial-index chain was observed; named measureText samples came from Explorer label layout."
+  },
+  "findings": [
+    "Default DPR1 six non-site-Plan windows passed16.7\u201316.8ms p95; both site-Plan windows failed66.6\u201366.7ms. All eight default windows had zero reported longtasks.",
+    "Public Live status off kept matching per-window initial Plan transforms and all native geometry/routes. It measured33.4ms p95 paused andplaying, still over16.8ms. This is a sequential control, not randomized causal attribution.",
+    "Full observation recorded exactly two first-world ink transforms per unique transform and up to two clears per RAF with Live off. Duplicate full native ink redraw is a concrete structural issue.",
+    "Minimal observer restored nativefill/stroke/fillText/strokeText and Path2D during motion. Only context-identity clearRect timestamps remained. Both windows failed133.3ms p95 and positive clear cadence was retained; command/text counters were intentionallyzero. This prevents treating the original failure as wholly per-command observer overhead.",
+    "Per-window start frames were bit-identical across default, Live-off and minimal runs. Motion event counts/timing differ with actual scheduling; minimal post-window witness gestures are outside the recorded window. This does not claim bit-identical trajectories or final camera pose.",
+    "Observed RAF and clear cadence differ. No draw-count or native-paint-time value is fabricated for the unwrapped minimal window.",
+    "No productioncode/source/geometry was changed. No failure or partial profile was replaced."
+  ],
+  "limits": [
+    "These local tests do not establish a universal frame guarantee. Minimal and fully observed samples show material run variance.",
+    "Native planSubmissionMs covers synchronous wrapped API submission, not asynchronous Canvas raster/GPU execution; total observer overhead is not separately measured.",
+    "The machine snapshot named machine-during.json completed AFTER the isolated Chrome process had already exited. It is post-closure evidence, not contemporaneous pressure attribution.",
+    "Other user Chrome/Zen processes were left untouched. No external process is blamed for these results.",
+    "Remaining DPR2/all-layer/cold gates were held when the supported DPR1 Plan failure was observed. No final whole-product pass is claimed."
+  ],
+  "otherEvidence": [
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/site-plan-minimal-dpr1/machine-during.json",
+      "sha256": "94d5c3318e77662fe3ac70efa732ccede594b50dbe52bb5835810cc9d04e068a",
+      "bytes": 51666
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/final-793/default-dpr1-machine-before.json",
+      "sha256": "d2c220d0cc3d8dc2de72a8816c9bc615cf9410f50a61568241cfccbc3e166fda",
+      "bytes": 2024
+    }
+  ],
+  "ownedCleanup": {
+    "isolatedChromeExited": true,
+    "workerTargetsAfterExit": [],
+    "localQaServerRetainedForTeam": 43148,
+    "fixtureStatePreserved": true
+  }
+}
