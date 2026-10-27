@@ -77,7 +77,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     const meshes = separated ? prepared.meshes.map(mesh => ({ ...mesh, offset: mesh.offset.map(value => value * entry.view.separation) as unknown as readonly [number, number, number] })) : prepared.meshes
     const filtered = !hidden.size && !entry.scopeId ? meshes : meshes.filter(mesh => {
       const layerId = mesh.annotation?.layerId ?? mesh.object.layerId, scopes = mesh.annotation?.scopeIds ?? mesh.object.scopeIds
-      return !(layerId && hidden.has(layerId)) && (!entry.scopeId || scopes?.some(id => members!.has(id)))
+      return !(layerId && hidden.has(layerId)) && (!entry.scopeId || mesh.inspectionScopeId === entry.scopeId || scopes?.some(id => members!.has(id)))
     })
     if (filtered !== prepared.meshes) derivePhysicalPickAcceleration(filtered, prepared.acceleration)
     // Authored full/cut boundary alternatives must reach the camera-facing
@@ -90,7 +90,8 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
     if (!entry.scene) return
     const expected = ++entry.viewGeneration, sourceGeneration = entry.generation, request = new AbortController()
     entry.preparationAbort = request
-    const view = { ...entry.view, separation: entry.view.levelId === 'all' && entry.view.separation > 0 ? 1 : 0 }, identity = identityFor(entry, sourceGeneration), key = `${identity}/${JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation])}`
+    const scopeId = entry.scopeId && entry.scene.objects.some(object => object.clipToScope) ? entry.scopeId : undefined
+    const view = { ...entry.view, ...(scopeId ? { scopeId } : {}), separation: entry.view.levelId === 'all' && entry.view.separation > 0 ? 1 : 0 }, identity = identityFor(entry, sourceGeneration), key = `${identity}/${JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation, ...(scopeId ? [scopeId] : [])])}`
     entry.state = 'loading'; entry.preparing = true; renderer?.invalidatePicks(); emit()
     try {
       const prepared = await prepare(entry.scene, view, key, identity, `${identity}/detail`, request.signal)
@@ -231,16 +232,30 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       const signature = JSON.stringify([...status].sort(([a], [b]) => a.localeCompare(b))); if (signature === entry.signature) return; entry.signature = signature; entry.status = status; if (active && entry.eligible && entry.view.live) viewport.requestRender()
     },
     setPalette(next: PhysicalScenePalette): void { if (JSON.stringify(next) === JSON.stringify(palette)) return; palette = next; renderer?.setPalette(next); viewport.requestRender() },
-    selectScope(sceneId: string, scopeId?: string): void { const entry = requireEntry(sceneId); if (scopeId && !entry.source.descriptor.scopes?.some(scope => scope.id === scopeId)) throw new Error(`Unknown physical scope: ${scopeId}`); focusedId = sceneId; forcedId = sceneId; collectionIds = null; pendingCollectionFocus = null; if (entry.scopeId !== scopeId) entry.renderRevision++; entry.scopeId = scopeId; if (entry.prepared) entry.meshes = filteredMeshes(entry, entry.prepared); renderer?.invalidatePicks(); reconcile(); viewport.requestRender() },
+    selectScope(sceneId: string, scopeId?: string): void {
+      const entry = requireEntry(sceneId)
+      if (scopeId && !entry.source.descriptor.scopes?.some(scope => scope.id === scopeId)) throw new Error(`Unknown physical scope: ${scopeId}`)
+      focusedId = sceneId; forcedId = sceneId; collectionIds = null; pendingCollectionFocus = null
+      if (entry.scopeId !== scopeId) {
+        pendingFocus = null; entry.renderRevision++
+        if (entry.scene?.objects.some(object => object.clipToScope)) { cancelPreparation(entry); entry.prepared = null; entry.meshes = [] }
+      }
+      entry.scopeId = scopeId
+      if (entry.prepared) entry.meshes = filteredMeshes(entry, entry.prepared)
+      renderer?.invalidatePicks(); reconcile(); viewport.requestRender()
+    },
     selectCollection(sceneIds?: ReadonlyArray<string>): void {
       const selected = new Set(sceneIds ?? entries.keys())
       for (const id of selected) requireEntry(id)
       if (focusedId === null && collectionIds !== null && selected.size === collectionIds.size && [...selected].every(id => collectionIds!.has(id))) return
       pendingFocus = null; pendingCollectionFocus = null; focusedId = null; forcedId = null; collectionIds = selected
       for (const entry of entries.values()) {
+        const changedScope = entry.scopeId !== undefined && entry.scene?.objects.some(object => object.clipToScope)
+        const changedLevel = mode === '3d' && selected.has(entry.source.descriptor.id) && entry.view.levelId !== 'all'
         if (entry.scopeId !== undefined) entry.renderRevision++
         entry.scopeId = undefined
-        if (mode === '3d' && selected.has(entry.source.descriptor.id) && entry.view.levelId !== 'all') { entry.view = { ...entry.view, levelId: 'all' }; cancelPreparation(entry); entry.prepared = null; entry.meshes = [] }
+        if (changedLevel) entry.view = { ...entry.view, levelId: 'all' }
+        if (changedScope || changedLevel) { cancelPreparation(entry); entry.prepared = null; entry.meshes = [] }
         else if (entry.prepared) entry.meshes = filteredMeshes(entry, entry.prepared)
       }
       renderer?.invalidatePicks(); reconcile(); viewport.requestRender()

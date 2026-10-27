@@ -97,7 +97,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
 /** Focus uses actual displayed fragment bounds, including level separation offsets. */
 export const visiblePhysicalBounds = (entry: PhysicalLayerEntry, target: PhysicalSceneFocus = {}): PhysicalSceneBounds | null => {
   const members = target.scopeId === undefined ? null : physicalScopeMembers(entry.scene.scopes ?? [], target.scopeId)
-  const meshes = entry.meshes.filter(mesh => (target.occurrenceId === undefined || mesh.object.id === target.occurrenceId) && (target.levelId === undefined || mesh.levelId === target.levelId) && (members === null || mesh.object.scopeIds?.some(id => members.has(id))))
+  const meshes = entry.meshes.filter(mesh => (target.occurrenceId === undefined || mesh.object.id === target.occurrenceId) && (target.levelId === undefined || mesh.levelId === target.levelId) && (members === null || mesh.inspectionScopeId === target.scopeId || (mesh.annotation?.scopeIds ?? mesh.object.scopeIds)?.some(id => members.has(id))))
   if (!meshes.length) return null
   const min: [number, number, number] = [Infinity, Infinity, Infinity], max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
   for (const mesh of meshes) for (let axis = 0; axis < 3; axis++) { min[axis] = Math.min(min[axis]!, mesh.bounds.min[axis]! + mesh.offset[axis]!); max[axis] = Math.max(max[axis]!, mesh.bounds.max[axis]! + mesh.offset[axis]!) }

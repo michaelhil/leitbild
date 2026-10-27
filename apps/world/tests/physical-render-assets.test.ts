@@ -1,13 +1,14 @@
 import { expect, test } from 'bun:test'
 import type { PackPhysicalScene, PhysicalSceneBounds } from '../src/core/packs/scene.ts'
 import { createPhysicalSceneControllerForViewport } from '../src/ui/map/physical-scene/scene-controller.ts'
-import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
+import { preparePhysicalGeometry, type PhysicalPreparationView } from '../src/ui/map/physical-scene/preparation.ts'
 import { pickPhysicalMesh } from '../src/ui/map/physical-scene/picking.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
 import { createPhysicalOverviewScene, physicalOverviewContextMeshes } from '../src/ui/map/physical-scene/overview-geometry.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import type { PhysicalViewport } from '../src/ui/map/physical-scene/viewport.ts'
 import type { PhysicalLayerEntry } from '../src/ui/map/physical-scene/layer.ts'
+import { visiblePhysicalBounds } from '../src/ui/map/physical-scene/renderer.ts'
 import { localMercatorMatrix, transform } from '../src/ui/map/physical-scene/math.ts'
 
 const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObjectId: id, anchor: [0, 0], bearing: 0,
@@ -15,7 +16,7 @@ const scene = (id: string): PackPhysicalScene => ({ id, revision: 'r', targetObj
   scopes: [{ id: 'a', label: 'A', kind: 'building', bounds: { min: [0, 0, 0], max: [5, 10, 8] }, levelIds: ['lower', 'upper'] }, { id: 'b', label: 'B', kind: 'building', bounds: { min: [5, 0, 0], max: [10, 10, 8] }, levelIds: ['lower', 'upper'] }],
   layers: [{ id: 'utilities', label: 'Utilities', defaultVisible: true }],
   objects: ['machine', 'utility'].map((key, index) => ({ id: key, label: key, kind: 'equipment', levelId: 'lower', scopeIds: [index ? 'b' : 'a'], ...(index ? { layerId: 'utilities' } : {}), positions: [0, 0, 0, 5, 0, 8, 0, 5, 8], subjectIds: [`${id}:${key}`], material: 'metal' })) })
-const harness = (kind: 'map' | 'canvas' = 'canvas') => {
+const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => {
   let projectScale = 1_000_000
   let getEntries: () => ReadonlyArray<PhysicalLayerEntry> = () => [], prepares = 0, paletteUpdates = 0
   const tools: string[] = [], poses: Parameters<PhysicalViewport['setPose']>[0][] = [], signals: Array<AbortSignal | undefined> = [], planarity: boolean[] = [], cameraEvents: Array<{kind:'pose';pitch:number|undefined}|{kind:'planarity';value:boolean}> = []
@@ -32,11 +33,11 @@ const harness = (kind: 'map' | 'canvas' = 'canvas') => {
   const errors: Error[] = []
   let waitForPreparation: Promise<void> | null = null
   const hold = () => { let release!: () => void; waitForPreparation = new Promise<void>(resolve => { release = resolve }); return () => { waitForPreparation = null; release() } }
-  const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>()
+  const cache = new Map<string, ReturnType<typeof preparePhysicalGeometry>>(), requests: Array<{key:string;view:PhysicalPreparationView;sourceKey:string|undefined;signal:AbortSignal|undefined}> = []
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
-    prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const asset = preparePhysicalGeometry(value, view, key, identity); cache.set(key, asset); return asset } })
+    prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); requests.push({key,view,sourceKey:_sourceKey,signal}); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const base = preparePhysicalGeometry(value, view, key, identity), scopeId = view.scopeId, asset = tagScopedTraces && scopeId ? { ...base, meshes:base.meshes.map(mesh => mesh.object.clipToScope ? { ...mesh, inspectionScopeId:scopeId } : mesh) } : base; cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, fits, fitBounds, tools, poses, signals, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -239,4 +240,30 @@ test('hiding a first coplanar owner reveals the retained alternative for exact p
   expect(target()).toBe('machine'); const before = h.prepares(), buffers = h.entries()[0]!.asset!.buffers
   h.controller.setView('a', { ...view, hiddenLayerIds: ['utilities'] }); expect(target()).toBe('utility'); expect(h.prepares()).toBe(before); expect(h.entries()[0]!.asset!.buffers).toBe(buffers)
   h.controller.setView('a', view); expect(target()).toBe('machine'); h.controller.selectScope('a','b'); expect(target()).toBe('utility'); h.controller.destroy()
+})
+
+
+test('opt-in spatial traces prepare per selected scope and transit membership agrees with focused camera bounds', async () => {
+  const h = harness('map', true), value = scene('a')
+  value.objects = [{ ...value.objects[0]!, positions:[0,0,0,1,0,8,0,1,8] }, { ...value.objects[1]!, clipToScope:true, positions:[3,0,0,4,0,8,3,1,8] }]
+  h.controller.setSources([h.source(value)]); await settled(); const base = h.requests.at(-1)!
+  expect(JSON.parse(base.key.slice(base.key.lastIndexOf('/[')+1))).toEqual(['2d','lower',true,0])
+  h.controller.selectScope('a', 'a'); await settled(); const scoped = h.requests.at(-1)!
+  expect(scoped.view.scopeId).toBe('a'); expect(scoped.sourceKey).toBe(base.sourceKey)
+  expect(JSON.parse(scoped.key.slice(scoped.key.lastIndexOf('/[')+1))).toEqual(['2d','lower',true,0,'a'])
+  expect(h.entries()[0]!.meshes.map(mesh=>mesh.object.id)).toEqual(['machine','utility'])
+  expect(h.entries()[0]!.meshes.find(mesh=>mesh.object.id==='utility')!.object.subjectIds).toEqual(['a:utility'])
+  expect(visiblePhysicalBounds(h.entries()[0]!, {scopeId:'a'})!.max[0]).toBe(h.entries()[0]!.meshes.find(mesh=>mesh.object.id==='utility')!.bounds.max[0]); expect(visiblePhysicalBounds(h.entries()[0]!, {scopeId:'a'})!.max[0]).toBeGreaterThan(3)
+  h.controller.selectScope('a','b'); await settled(); expect(h.entries()[0]!.meshes.map(mesh=>mesh.object.id)).toEqual(['utility'])
+  const count=h.prepares(); h.controller.selectCollection(); await settled(); expect(h.requests.at(-1)!.key).toBe(base.key); expect(h.prepares()).toBe(count)
+  expect(h.entries()[0]!.meshes.every(mesh=>mesh.inspectionScopeId===undefined)).toBe(true); h.controller.destroy()
+})
+
+test('a superseded scope preparation and camera intent cannot reappear after a newer scope selection', async () => {
+  const h=harness('map',true), value=scene('a');value.objects=[{...value.objects[1]!,clipToScope:true}]
+  h.controller.setSources([h.source(value)]);await settled();const release=h.hold()
+  h.controller.home('a','a');await settled();const older=h.requests.at(-1)!,fits=h.fits.length
+  h.controller.selectScope('a','b');await settled();expect(older.signal?.aborted).toBe(true)
+  release();await settled();expect(h.requests.at(-1)!.view.scopeId).toBe('b');expect(h.entries()[0]!.meshes.every(mesh=>mesh.inspectionScopeId==='b')).toBe(true)
+  expect(h.fits).toHaveLength(fits);h.controller.destroy()
 })
