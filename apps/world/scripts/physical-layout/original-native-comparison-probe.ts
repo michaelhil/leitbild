@@ -63,6 +63,13 @@ try {
     phases.push(evaluation.result.value)
     const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, `${mode}${status ? '-status' : ''}.png`), Buffer.from(shot.data, 'base64'))
   }
+  const actualCapDetails: unknown[] = []
+  for (const kind of ['scope', 'floor']) {
+    const evaluation = await call('Runtime.evaluate', { expression: `window.originalNativeComparison.capDetail('${kind}')`, awaitPromise: true, returnByValue: true, timeout: 180_000 })
+    if (evaluation.exceptionDetails) throw Error(JSON.stringify(evaluation.exceptionDetails))
+    actualCapDetails.push(evaluation.result.value)
+    const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(output, `actual-${kind}-cap.png`), Buffer.from(shot.data, 'base64'))
+  }
   const sourceFiles = ['src/ui/map/physical-scene/backend.ts', 'src/ui/map/physical-scene/geometry.ts', 'src/ui/map/physical-scene/scope-regions.ts', 'src/ui/map/physical-scene/scope-clipping.ts', 'src/ui/map/physical-scene/surface-annotations.ts', 'src/ui/map/physical-scene/render-buffers.ts', 'src/ui/map/physical-scene/preparation.ts', 'src/ui/map/physical-scene/surface-ownership.ts', 'src/ui/map/physical-scene/scene-controller.ts', 'src/ui/map/physical-scene/map-viewport.ts', 'tests/fixtures/physical-scope-route.ts', 'tests/browser/physical-scene/original-native-comparison-app.ts', 'tests/browser/physical-scene/original-reference-renderer.ts']
   const hashes: Record<string, string> = {}
   for (const file of sourceFiles) hashes[file] = createHash('sha256').update(await readFile(join(root, file))).digest('hex')
@@ -73,7 +80,7 @@ try {
   if (capEvaluation.exceptionDetails) throw Error(JSON.stringify(capEvaluation.exceptionDetails))
   const { image, ...scopeCaps } = capEvaluation.result.value
   await writeFile(join(output, 'scope-cap.png'), Buffer.from(image.split(',')[1], 'base64'))
-  const receipt = { phases, statusContours, scopeCaps, source: { revision: scene.revision, geometryKey: descriptor.geometryKey, objects: scene.objects.length, hash: createHash('sha256').update(JSON.stringify(scene)).digest('hex') }, provenance: { root, commit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim(), dirty: Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: root }).stdout.toString(), hashes }, passed: statusContours.passed && scopeCaps.passed && phases.every(phase => !phase.errors.length && phase.originalViewport.width === phase.nativeViewport.width && phase.originalViewport.height === phase.nativeViewport.height && phase.statusWitness.changedPixels > 0 && phase.statusWitness.geometryUploadsBefore === phase.statusWitness.geometryUploadsAfter) }
+  const receipt = { phases, actualCapDetails, statusContours, scopeCaps, source: { revision: scene.revision, geometryKey: descriptor.geometryKey, objects: scene.objects.length, hash: createHash('sha256').update(JSON.stringify(scene)).digest('hex') }, provenance: { root, commit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim(), dirty: Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: root }).stdout.toString(), hashes }, passed: statusContours.passed && scopeCaps.passed && phases.every(phase => !phase.errors.length && phase.originalViewport.width === phase.nativeViewport.width && phase.originalViewport.height === phase.nativeViewport.height && phase.statusWitness.changedPixels > 0 && phase.statusWitness.geometryUploadsBefore === phase.statusWitness.geometryUploadsAfter) }
   await writeFile(join(output, 'receipt.json'), JSON.stringify(receipt, null, 2))
   console.log(JSON.stringify({ output, passed: receipt.passed, phases: phases.map(({ mode, status, nativeCamera, statusWitness }) => ({ mode, status, nativeCamera, statusWitness })) }, null, 2))
   if (!receipt.passed) process.exitCode = 1

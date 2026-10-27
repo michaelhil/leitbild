@@ -58,10 +58,10 @@ current.width = reference.width = width; current.height = reference.height = hei
     return { levelId, groups: stream.length, differences }
   },
   async original(levelId: string) {
-    await this.phase(levelId, 'all', false, 'home')
+    await this.phase(levelId, 'without-utilities', false, 'home')
     const object = document.querySelector<HTMLImageElement>('#original')!
     document.body.classList.add('original')
     await new Promise<void>((resolve, reject) => { object.onload = () => resolve(); object.onerror = () => reject(Error('Original authored Plan did not load')); object.src = `/original-${levelId}.svg` })
-    return { levelId, sourceRevision: scene.revision, nativeViewport: { width, height }, reference: 'Original authored SVG, original complete sheet extent; native explicit Plan uses identical metre scale and extent' }
+    return { levelId, sourceRevision: scene.revision, nativeViewport: { width, height }, matchingLayers: { utilities: false, original: 'Frozen SVG utilities group is display:none', native: 'utility-routes hidden' }, reference: 'Original authored SVG, original complete sheet extent; native explicit Plan uses identical metre scale and extent. The original 2D sheet shows operating doors which its original 3D source assigns only to ground level; this retained semantic difference is not falsified by adding upper physical doors.' }
   },
 }

@@ -1,4 +1,4 @@
-import { Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
+import { Map as MapLibreMap, MercatorCoordinate, setWorkerUrl } from 'maplibre-gl'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor } from '../../../src/core/packs/scene.ts'
 import { createPhysicalSceneController } from '../../../src/ui/map/physical-scene/controller.ts'
 import { physicalLayoutPalette } from '../../../src/ui/physical-layout/palette.ts'
@@ -66,6 +66,31 @@ const waitReady = async () => {
     const pose = controller.cameraPose(), size = mapElement.getBoundingClientRect(), originalSize = originalCanvas.getBoundingClientRect()
     document.querySelector('#native-caption')!.textContent = `Native MapLibre camera · ${mode} · bearing ${pose.bearing.toFixed(2)}° · pitch ${pose.pitch.toFixed(2)}° · source ${scene.revision.slice(0, 12)}${status ? ' · controlled alarm contour input' : ''}`
     return { mode, status, errors, originalCamera: camera, nativeCamera: pose, originalViewport: { width: originalSize.width, height: originalSize.height }, nativeViewport: { width: size.width, height: size.height }, nativeMetrics: controller.metrics(), statusWitness: { changedPixels, unchangedPixels, geometryUploadsBefore: uploads, geometryUploadsAfter: controller.metrics()!.geometryUploads }, note: 'The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity.' }
+  },
+  async capDetail(kind: 'scope' | 'floor') {
+    await loaded
+    const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: kind === 'floor' ? 'lower' : 'all', live: false, hiddenLayerIds: [] }
+    controller.setView(scene.id, view); controller.setStatus(scene.id, new Map()); controller.home(scene.id, 'area/turbine-island'); await waitReady()
+    const prepared = preparePhysicalGeometry(scene, { ...view, scopeId: 'area/turbine-island' }, 'actual-cap-detail', 'actual-cap-detail')
+    const candidates = prepared.meshes.filter(mesh => mesh.object.clipToScope && mesh.materials?.some(role => role.startsWith('continuation/'))).flatMap(mesh => {
+      const groups = new Map<string, { points: number[][]; normal: readonly [number, number, number] }>()
+      for (let at = 0; at < mesh.vertices.length; at += 21) {
+        const role = mesh.materials![mesh.vertices[at + 6]!]!
+        if (!role.startsWith('continuation/')) continue
+        const normal = [mesh.vertices[at + 3]!, mesh.vertices[at + 4]!, mesh.vertices[at + 5]!] as const
+        if ((kind === 'floor') !== (Math.abs(normal[2]) === 1)) continue
+        const axis = normal.findIndex(v => v !== 0), coordinate = mesh.vertices[at + axis]!, key = `${normal.join(',')}/${coordinate}`
+        let group = groups.get(key); if (!group) { group = { points: [], normal }; groups.set(key, group) }
+        for (const offset of [0, 7, 14]) group.points.push([mesh.vertices[at + offset]!, mesh.vertices[at + offset + 1]!, mesh.vertices[at + offset + 2]!])
+      }
+      return [...groups.values()].map(group => ({ object: mesh.object, normal: group.normal, center: [0, 1, 2].map(axis => (Math.min(...group.points.map(p => p[axis]!)) + Math.max(...group.points.map(p => p[axis]!))) / 2) as [number, number, number] }))
+    }).sort((a, b) => b.object.spatialPath!.radius - a.object.spatialPath!.radius)
+    const cap = candidates[0]; if (!cap) throw Error(`The admitted source has no actual ${kind} cap to inspect`)
+    const world = transform(localMercatorMatrix(scene.anchor, scene.bearing), cap.center), mercator = new MercatorCoordinate(world[0], world[1], world[2]), radius = cap.object.spatialPath!.radius
+    const zoom = Math.log2(128 / (radius * 2 * mercator.meterInMercatorCoordinateUnits() * 512)), bearing = Math.abs(cap.normal[2]) === 1 ? 0 : Math.atan2(-cap.normal[0], -cap.normal[1]) * 180 / Math.PI + scene.bearing
+    map.setCenterClampedToGround(false); map.setCenterElevation(cap.center[2]); map.jumpTo({ center: mercator.toLngLat(), zoom, bearing, pitch: kind === 'floor' ? 0 : 55 }); await frames()
+    document.querySelector('#native-caption')!.textContent = `Actual source ${kind} cut · ${cap.object.id} · graph ${cap.object.subjectIds.join(', ')}`
+    return { kind, occurrenceId: cap.object.id, subjects: cap.object.subjectIds, sourceRevision: scene.revision, radius, center: cap.center, normal: cap.normal, camera: controller.cameraPose(), errors }
   },
   statusContours() {
     const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256
