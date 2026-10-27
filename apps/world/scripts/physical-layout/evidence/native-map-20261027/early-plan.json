@@ -1,0 +1,549 @@
+{
+  "qualification": "INTERIM DIAGNOSTIC ONLY",
+  "items": [
+    {
+      "receiptPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/early-plan-dpr1-retry/receipt.json",
+      "receiptSha256": "7d6c504fea09f14a69bddac3d74f62c6d80c42deb830c8cb22c8c195fad0c838",
+      "testedAppCommit": "d569e94f4e4ad8a7a3e3bd63e699805dd1122b04",
+      "runnerCommit": "d569e94f4e4ad8a7a3e3bd63e699805dd1122b04",
+      "instrumentationSha256": "61e89cb34372da66ba8f6ee51be28e784247cc56cb209703652131f3a2d9716f",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "phase": {
+        "name": "map-room-plan-paused",
+        "durationMs": 4025.0999999046326,
+        "frames": 241,
+        "rafMedianMs": 16.69999999999891,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.80000000000109,
+        "longTasks": [],
+        "planSubmissionMs": 47.40000104904175,
+        "planSubmissions": 92403,
+        "path2DConstructed": 0,
+        "fillTextCalls": 4498,
+        "drawnTexts": [
+          "1",
+          "11 000 mm",
+          "2",
+          "2 m ACCESS SPINE",
+          "3",
+          "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+          "36 000 mm",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "88 000 mm",
+          "9",
+          "A",
+          "B",
+          "CASING / ROTOR LAYDOWN",
+          "EXC",
+          "FLOOR HATCH",
+          "GEN",
+          "HP",
+          "LP 1",
+          "LP 2",
+          "LP 3",
+          "MSR 1",
+          "MSR 2",
+          "ROTOR WITHDRAWAL",
+          "S \u00b7 DN",
+          "TSV",
+          "TURBINE HALL"
+        ],
+        "drawnTextAngles": [
+          {
+            "text": "FLOOR HATCH",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "1",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "2",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "3",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "4",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "5",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "6",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "7",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "8",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "9",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "11 000 mm",
+            "min": 0,
+            "max": 0,
+            "count": 976
+          },
+          {
+            "text": "A",
+            "min": 0,
+            "max": 0,
+            "count": 114
+          },
+          {
+            "text": "B",
+            "min": 0,
+            "max": 0,
+            "count": 114
+          },
+          {
+            "text": "88 000 mm",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "36 000 mm",
+            "min": 1.5707963267948966,
+            "max": 1.5707963267948966,
+            "count": 122
+          },
+          {
+            "text": "S \u00b7 DN",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "HP",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "LP 1",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "LP 2",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "LP 3",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "GEN",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "EXC",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "MSR 1",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "MSR 2",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "TSV",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "TURBINE HALL",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "CASING / ROTOR LAYDOWN",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "ROTOR WITHDRAWAL",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "2 m ACCESS SPINE",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          }
+        ],
+        "ownedPhysicalTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 1080,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 15050880,
+            "colorBytes": 15050880,
+            "resolveBytes": 3762720
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 1080,
+            "height": 871,
+            "rgbaBytesLowerBound": 3762720
+          }
+        ],
+        "pending": 0,
+        "activePhysicalWorkers": 1,
+        "errors": [],
+        "viewport": {
+          "width": 1440,
+          "height": 871,
+          "dpr": 1,
+          "reportedLogicalCpus": 8
+        },
+        "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "workerTargetsAfterExit": [],
+      "exceptions": [],
+      "imagePath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/early-plan-dpr1-retry/room-plan.png",
+      "imageSha256": "3ce1c575d287e50f442ee606059a09792acc2b5f684b98f58f07d584b8ba88a4"
+    },
+    {
+      "receiptPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/early-plan-dpr2/receipt.json",
+      "receiptSha256": "880823d6b7590a09fbed3292915ffcc2d064ad5c4102683c97aea3fbf15937f0",
+      "testedAppCommit": "d569e94f4e4ad8a7a3e3bd63e699805dd1122b04",
+      "runnerCommit": "91d434482f84d755a353113243f403f69721391b",
+      "instrumentationSha256": "61e89cb34372da66ba8f6ee51be28e784247cc56cb209703652131f3a2d9716f",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "phase": {
+        "name": "map-room-plan-paused",
+        "durationMs": 4036.2999999523163,
+        "frames": 241,
+        "rafMedianMs": 16.699999999999818,
+        "rafP95Ms": 16.700000000000728,
+        "rafMaxMs": 16.800000000000182,
+        "longTasks": [],
+        "planSubmissionMs": 52.400001764297485,
+        "planSubmissions": 92384,
+        "path2DConstructed": 0,
+        "fillTextCalls": 4490,
+        "drawnTexts": [
+          "1",
+          "11 000 mm",
+          "2",
+          "2 m ACCESS SPINE",
+          "3",
+          "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+          "36 000 mm",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "88 000 mm",
+          "9",
+          "A",
+          "B",
+          "CASING / ROTOR LAYDOWN",
+          "EXC",
+          "FLOOR HATCH",
+          "GEN",
+          "HP",
+          "LP 1",
+          "LP 2",
+          "LP 3",
+          "MSR 1",
+          "MSR 2",
+          "ROTOR WITHDRAWAL",
+          "S \u00b7 DN",
+          "TSV",
+          "TURBINE HALL"
+        ],
+        "drawnTextAngles": [
+          {
+            "text": "FLOOR HATCH",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "1",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "2",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "3",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "4",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "5",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "6",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "7",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "8",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "9",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "11 000 mm",
+            "min": 0,
+            "max": 0,
+            "count": 976
+          },
+          {
+            "text": "A",
+            "min": 0,
+            "max": 0,
+            "count": 114
+          },
+          {
+            "text": "B",
+            "min": 0,
+            "max": 0,
+            "count": 114
+          },
+          {
+            "text": "88 000 mm",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "36 000 mm",
+            "min": 1.5707963267948966,
+            "max": 1.5707963267948966,
+            "count": 114
+          },
+          {
+            "text": "S \u00b7 DN",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "HP",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "LP 1",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "LP 2",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "LP 3",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "GEN",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "EXC",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "MSR 1",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "MSR 2",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "TSV",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "TURBINE HALL",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "CASING / ROTOR LAYDOWN",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "ROTOR WITHDRAWAL",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          },
+          {
+            "text": "2 m ACCESS SPINE",
+            "min": 0,
+            "max": 0,
+            "count": 122
+          }
+        ],
+        "ownedPhysicalTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "pending": 0,
+        "activePhysicalWorkers": 1,
+        "errors": [],
+        "viewport": {
+          "width": 1440,
+          "height": 871,
+          "dpr": 2,
+          "reportedLogicalCpus": 8
+        },
+        "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "workerTargetsAfterExit": [],
+      "exceptions": [],
+      "imagePath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/early-plan-dpr2/room-plan.png",
+      "imageSha256": "e834a7ac4d764ff46d32022af8ef359e782569656e9d980ba1a52771fbacaba6"
+    }
+  ]
+}
