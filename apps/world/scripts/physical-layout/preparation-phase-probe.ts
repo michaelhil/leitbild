@@ -15,6 +15,7 @@ import { physicalSurfaceAnnotations } from '../../src/ui/map/physical-scene/surf
 import { preparePhysicalSurfaceOwnership } from '../../src/ui/map/physical-scene/surface-ownership.ts'
 import { preparePhysicalPickAcceleration } from '../../src/ui/map/physical-scene/picking.ts'
 import { preparePhysicalRenderBuffers } from '../../src/ui/map/physical-scene/render-buffers.ts'
+import type { PhysicalPreparationView } from '../../src/ui/map/physical-scene/preparation.ts'
 import { defaultPhysicalSceneView } from '../../src/ui/map/physical-scene/types.ts'
 
 const sourceHashes = Object.fromEntries(await Promise.all(['geometry', 'scope-clipping', 'surface-annotations', 'surface-ownership', 'spatial-index', 'picking', 'render-buffers'].map(async name => [name, createHash('sha256').update(await Bun.file(join(import.meta.dir, '../../src/ui/map/physical-scene/' + name + '.ts')).text()).digest('hex')])))
@@ -32,8 +33,17 @@ for (const object of scenario.initialObjects) {
   if (families.has(family)) continue
   families.add(family)
   const scene = await loadPhysicalLayoutScene(object), levelId = process.env.LEITBILD_PREPARATION_PROFILE_LEVEL ?? 'all'
+  const familyFilter = process.env.LEITBILD_PREPARATION_PROFILE_FAMILY
+  if (familyFilter && !(familyFilter === 'unit' ? scene.id === 'layout:halden-1' : familyFilter === 'campus' ? scene.id === 'layout:halden-campus' : false)) continue
   if (levelId !== 'all' && !scene.levels.some(level => level.id === levelId)) continue
-  const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId }, timings: Record<string, number> = {}
+  const base = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId }, cases: PhysicalPreparationView[] = process.env.LEITBILD_PREPARATION_PROFILE_MATRIX ? [
+    { ...base, levelId: 'all' }, ...scene.levels.map(level => ({ ...base, levelId: level.id })),
+    { ...base, levelId: 'all', cutaway: false }, { ...base, levelId: 'all', separation: 1 },
+    ...scene.levels.filter(level => level.id === 'lower' || level.id === 'operating' || scene.id === 'layout:halden-campus').map(level => ({ ...base, mode: '2d' as const, levelId: level.id })),
+    ...(scene.scopes?.some(scope => scope.id === 'area/turbine-island') ? ['all', 'lower', 'operating'].map(levelId => ({ ...base, levelId, scopeId: 'area/turbine-island' })) : []),
+  ] : [base]
+  for (const view of cases) {
+  const caseId = JSON.stringify([view.mode, view.levelId, view.cutaway, view.separation, view.scopeId ?? null]), timings: Record<string, number> = {}
   let last = performance.now()
   const stamp = (name: string) => { const now = performance.now(); timings[name] = now - last; last = now }
   let meshes = buildVisibleMeshes(scene, view); stamp('build')
@@ -51,15 +61,16 @@ for (const object of scenario.initialObjects) {
   hash.update(JSON.stringify({ roles: buffers.roles, objectCount: buffers.objectCount }))
   const exactGeometrySha256 = hash.copy().digest('hex')
   for (const index of [acceleration.meshes, ...acceleration.triangles.map(item => item.triangles)]) { bytes(index.bounds); bytes(index.children); bytes(index.ranges); bytes(index.order) }
-  const profile = { sceneId: scene.id, design: scene.revision, levelId, objects: scene.objects.length, meshes: meshes.length, timings, totalMs: Object.values(timings).reduce((sum, value) => sum + value, 0), exactGeometrySha256, exactGeometryAndPickingSha256: hash.digest('hex'), ownership: owned.diagnostics, note: 'CPU stage attribution only; no browser cold-load or interaction performance claim. Exact hash covers ordered geometry, materials, conditional ownership and picking arrays.' }
+  const profile = { sceneId: scene.id, design: scene.revision, levelId: view.levelId, caseId, objects: scene.objects.length, meshes: meshes.length, timings, totalMs: Object.values(timings).reduce((sum, value) => sum + value, 0), exactGeometrySha256, exactGeometryAndPickingSha256: hash.digest('hex'), ownership: owned.diagnostics, note: 'CPU stage attribution only; no browser cold-load or interaction performance claim. Exact hash covers ordered geometry, materials, conditional ownership and picking arrays.' }
   profiles.push(profile)
+  }
 }
 const result = { sourceHashes, commit: Bun.spawnSync(['git', 'rev-parse', 'HEAD']).stdout.toString().trim(), dirty: Bun.spawnSync(['git', 'status', '--porcelain']).stdout.toString(), profiles }
 const baselinePath = process.env.LEITBILD_PREPARATION_BASELINE_RECEIPT
 if (baselinePath) {
   const baseline = await Bun.file(baselinePath).json() as typeof result
   for (const profile of profiles) {
-    const prior = baseline.profiles.find(row => row.design === profile.design && row.levelId === profile.levelId)
+    const prior = baseline.profiles.find(row => row.design === profile.design && row.levelId === profile.levelId && (!row.caseId || row.caseId === profile.caseId))
     if (!prior || prior.exactGeometryAndPickingSha256 !== profile.exactGeometryAndPickingSha256) throw Error('Preparation changed exact geometry or picking arrays: ' + profile.design + '/' + profile.levelId)
   }
 }
