@@ -163,7 +163,11 @@ const simulationRunResponse = async (
   readonly scenario?: CompiledScenario
 }> => {
   const snapshot = runtime.snapshot()
-  const [scenario, summary] = await Promise.all([registry.compiledScenarioForRun(runtime.id), registry.summary(runtime.id)])
+  // Join/get/reset already holds the loaded runtime. Its Scenario was checked
+  // against the retained manifest before construction; reuse that exact live
+  // artifact rather than rereading and hashing the same file for each response.
+  const scenario = registry.loadedCompiledScenario(runtime.id)
+  const summary = await registry.summary(runtime.id)
   return {
     id: runtime.id,
     snapshot: isSideView(sees) ? sideViewOfSnapshot(snapshot, sees) : snapshot,

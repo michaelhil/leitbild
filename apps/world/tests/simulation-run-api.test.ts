@@ -218,6 +218,40 @@ const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
   for (const runtime of registry.list()) await registry.close(runtime.id)
 }
 
+test('join, snapshot and reset return the exact admitted live Scenario without rereading its retained file', async () => {
+  const registry = await createTestRegistry()
+  try {
+    const created = await createRun(registry)
+    const retained = JSON.parse(JSON.stringify(await registry.compiledScenarioForRun(created.id)))
+    const selected: SimulationRunId[] = []
+    const liveOnly: SimulationRunRegistry = {
+      ...registry,
+      compiledScenarioForRun: async () => { throw new Error('The loaded response must not reread the retained Scenario') },
+      loadedCompiledScenario: id => { selected.push(id); return registry.loadedCompiledScenario(id) },
+    }
+    await registry.close(created.id)
+    expect(() => registry.loadedCompiledScenario(created.id)).toThrow('Simulation Run is not loaded')
+    const joined = await callRoute<{ scenario: unknown }>(liveOnly, runPath(created.id))
+    expect(joined.status).toBe(200)
+    expect(joined.body.scenario).toEqual(retained)
+    const firstLoaded = registry.loadedCompiledScenario(created.id)
+    const snapshot = await callRoute<{ scenario: unknown }>(liveOnly, runPath(created.id, '/snapshot'))
+    expect(snapshot.status).toBe(200)
+    expect(snapshot.body.scenario).toEqual(retained)
+    const reset = await callRoute<{ scenario: unknown }>(liveOnly, runPath(created.id, '/reset'), { method: 'POST' })
+    expect(reset.status).toBe(200)
+    expect(reset.body.scenario).toEqual(retained)
+    expect(registry.loadedCompiledScenario(created.id)).not.toBe(firstLoaded)
+    expect(selected).toEqual([created.id, created.id, created.id])
+    const missingLoaded: SimulationRunRegistry = {
+      ...liveOnly,
+      loadedCompiledScenario: () => { throw new Error('The admitted live Scenario is unavailable') },
+    }
+    await expect(callRoute(missingLoaded, runPath(created.id, '/snapshot')))
+      .rejects.toThrow('The admitted live Scenario is unavailable')
+  } finally { await registry.shutdown() }
+})
+
 describe('Simulation Run API', () => {
   test('copies an ordinary Run without a second execution REST surface', async () => {
     const registry = await createTestRegistry()
