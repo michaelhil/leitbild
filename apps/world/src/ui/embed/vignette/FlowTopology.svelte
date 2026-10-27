@@ -214,11 +214,11 @@
     embeddedDisplayFrame().reportFill(fillReason, faceplate.kind === 'open' || overlays.length > 0)
   }
 
-  const openFaceplate = (key: string, at: { readonly x: number; readonly y: number } | null = null, origin: string | null = null): void => {
+  const openFaceplate = (key: string, at: { readonly x: number; readonly y: number } | null = null, origin?: string | null): void => {
     if (pinned(key)) { show({ overlays: raisedOverlay(overlays, key) }); return }
     anchor = key.startsWith('#') ? null : itemBox(key)
     openedAt = at
-    returnItem = origin ?? (key.startsWith('#') ? returnItem : key)
+    returnItem = origin !== undefined ? origin : key.startsWith('#') ? returnItem : key
     show({ faceplate: nextFaceplate(faceplate, { kind: 'pressed', item: key }) })
   }
   const closeFaceplate = (returnFocus: boolean): void => {
@@ -273,7 +273,7 @@
       notice = `${element} cannot be opened: ${error instanceof Error ? error.message : String(error)}`
     }
   }
-  /** A press on an item's body or a row naming it: its detail in the window; with no window to walk in, its faceplate. */
+  /** Explicit deeper navigation keeps its host routing; ordinary inspection never calls it. */
   const openDetail = (element: string, item: string | null): void => {
     if (opening !== 'window') { openFaceplate(item ?? `#${element}`); return }
     void openDefault(element, item)
@@ -467,13 +467,15 @@
 {#snippet card(key: string, overlay: PinnedOverlay | null)}
   {@const element = elementOf(key)}
   {@const group = groupKey(key)}
+  {#key JSON.stringify([runId, section.objectId, section.packId, key])}
   <Faceplate {runId} objectId={section.objectId} packId={section.packId} elementId={element} name={faceplateName(key)} word={wordOf(key)} title={from.title}
     readings={group ? null : readings.get(element) ?? null} {alerts} alertElements={group ? membersOf(key).map(member => member.element) : [element]} {group} related={relatedOf(key)}
     anchor={overlay === null ? (key.startsWith('#') ? null : anchor) : null} at={overlay === null ? openedAt : null} avoid={overlay === null ? overlays.map(entry => ({ x: entry.x, y: entry.y, width: entry.width / zoom, height: (heights[entry.item] ?? 160) / zoom })) : []} {zoom} {room} {frozen} {opening} pending={pendingOf(key) !== undefined} pinned={overlay}
     onclose={closeFaceplate} onpin={place => pin(key, place)} onoverlay={(change, height) => changeOverlay(key, change, height)} ontouched={() => { if (overlay !== null) show({ overlays: raisedOverlay(overlays, key) }) }}
     onsize={height => grown(key, overlay, height)}
     ondetail={target => { if (overlay === null) closeFaceplate(false); void openDefault(target, null) }}
-    onfaceplate={(target, name) => { elementNames = { ...elementNames, [`#${target}`]: name }; openFaceplate(`#${target}`, cardPlace(key, overlay)) }} />
+    onfaceplate={(target, name) => { elementNames = { ...elementNames, [`#${target}`]: name }; openFaceplate(`#${target}`, cardPlace(key, overlay), overlay === null ? returnItem : key.startsWith('#') ? itemOf(target) ?? null : key) }} />
+  {/key}
 {/snippet}
 
 <div class="frame">

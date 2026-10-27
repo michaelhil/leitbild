@@ -112,6 +112,8 @@ export const createVignetteSession = (config: {
   readonly state: string
   readonly routes: VignetteRoutes
   readonly onChange: (snapshot: VignetteSnapshot) => void
+  /** Current-value-only inspections do not acquire or retain unrequested records. */
+  readonly readHistory?: boolean
   readonly schedule?: ScheduleTimer
   readonly wallNow?: () => number
 }) => {
@@ -159,7 +161,7 @@ export const createVignetteSession = (config: {
 
   const absorb = (view: VignetteView, sample: VignetteSample, fresh: boolean): void => {
     const drawn = viewWithLeads(view, sample)
-    const series = keptAfter(snapshot.series, shownSeries(drawn), sample, fresh)
+    const series = config.readHistory === false ? new Map<string, DrawnSeries>() : keptAfter(snapshot.series, shownSeries(drawn), sample, fresh)
     const { recordsDue: _drawn, ...rest } = snapshot
     replace({ ...rest, phase: 'live', view: drawn, latest: sample, series, sampleError: null, lastSampleWallMs: wallNow() })
   }
@@ -179,7 +181,7 @@ export const createVignetteSession = (config: {
     // The records it draws now (its lead rows as the last sample drew them): all of them with the sample after the one
     // that drew its values on open or after a gap, else only those not kept yet and not asked for (a row that appeared
     // when its lead changed).
-    const shown = shownSeries(snapshot.view ?? view)
+    const shown = config.readHistory === false ? [] : shownSeries(snapshot.view ?? view)
     const horizon = widestWindow(shown)
     const at = presence?.at ?? snapshot.latest?.at.at
     const first = due === 'values' && horizon > 0

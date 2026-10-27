@@ -8,8 +8,8 @@ import type { DisplayOpening, ViewHost } from '../view-host.ts'
 
 // An element's faceplate (L2, plan v5 §3) an interactive drawing opens on one
 // of its items, the overlays a person pins from it, and where they stand. Its
-// magnifier, or Shift+Enter on the item, opens the item's faceplate; a second
-// press of the magnifier, Esc, a press outside it and its item, focus leaving
+// symbol or text, Enter or Space, opens the item's faceplate; a second
+// press on the same item, Esc, a press outside it and its item, focus leaving
 // the display or the display being put away closes it. Its pin keeps it on
 // the display as an overlay a person drags by its header and resizes by its
 // corner, which stays until its pin is pressed again; several may stand at
@@ -24,7 +24,7 @@ export type FaceplateState =
   | { readonly kind: 'open'; readonly item: string }
 
 export type FaceplateEvent =
-  /** The magnifier, Shift+Enter on the item, or a request to show the element (selection.ts). */
+  /** The component or its text, keyboard activation, or a request to show it (selection.ts). */
   | { readonly kind: 'pressed'; readonly item: string }
   /** Esc, a press outside it and its item, focus leaving the display, the display put away. */
   | { readonly kind: 'dismissed' }

@@ -15,7 +15,7 @@ const levelPen: Pen = { ref: 'unit-1#level', label: 'Unit 1 · Level', quantity:
 const trendOf = (pens: ReadonlyArray<Pen>): VignetteView => ({ title: 'Level', sections: [{ kind: 'trend', rows: 4, horizonMs: 600_000, strips: [pens] }] })
 const view = trendOf([levelPen])
 
-const harness = (presence: (at: string) => RunPresence | null) => {
+const harness = (presence: (at: string) => RunPresence | null, readHistory = true) => {
   let wall = 0
   let runMs = Date.parse('2026-10-21T10:00:00.000Z')
   const timers: Array<{ at: number; run: () => void; cancelled: boolean }> = []
@@ -40,6 +40,7 @@ const harness = (presence: (at: string) => RunPresence | null) => {
   const session = createVignetteSession({
     runId: 'run-1' as SimulationRunId,
     state: '{"title":"Level"}',
+    readHistory,
     routes: {
       presence: async () => { calls.push('presence'); return presence(new Date(runMs).toISOString()) },
       view: async () => { calls.push('view'); return view },
@@ -78,6 +79,23 @@ const harness = (presence: (at: string) => RunPresence | null) => {
 const loaded = (at: string): RunPresence => ({ loaded: true, at })
 
 describe('vignette session', () => {
+  test('a current-value-only inspection never acquires records, including after a hidden gap', async () => {
+    const run = harness(loaded, false)
+    run.session.start(); await run.settle()
+    expect(run.calls).toEqual(['presence', 'view', 'sample'])
+    expect(run.last().recordsDue).toBeUndefined()
+    await run.advance(2 * SAMPLE_INTERVAL_MS)
+    run.session.setVisible(false); await run.advance(GAP_MS + SAMPLE_INTERVAL_MS)
+    const hidden = run.calls.length
+    await run.advance(SAMPLE_INTERVAL_MS)
+    expect(run.calls).toHaveLength(hidden)
+    run.session.setVisible(true); await run.settle(); await run.advance(SAMPLE_INTERVAL_MS)
+    expect(run.calls.some(call => call.startsWith('history'))).toBe(false)
+    expect(run.snapshots.some(snapshot => snapshot.recordsDue)).toBe(false)
+    expect(run.last().series.size).toBe(0)
+    expect(run.last().phase).toBe('live')
+    run.session.close(); expect(run.pending()).toBe(0)
+  })
   test('presence first, the view once, the values, the history with the sample straight after, then a sample a second', async () => {
     const run = harness(loaded)
     run.session.start()

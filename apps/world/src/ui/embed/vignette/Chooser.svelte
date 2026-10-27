@@ -3,8 +3,8 @@
   import { faceplatePlacement, type Box } from './popover.ts'
   import './openbridge.ts'
 
-  // What a press on a drawn item opens where it names several things (a flow
-  // group's members, a stop's far ends in a flow or a network drawing): a
+  // What a press on a continuation opens where it names several targets
+  // (far ends in a flow or a network drawing): a
   // short list beside the item, each entry opening its own. It takes focus on
   // its first entry as it opens; Esc closes it first (before a faceplate or
   // Back) and returns focus to the item; a press outside it and its item, or

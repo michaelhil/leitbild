@@ -135,7 +135,7 @@
       {:else if section.family === 'flow'}
         <FlowTopology {section} {observations} alerts={latest?.alerts ?? []} series={snapshot.series} {now} {palette} {frozen} {runId} {from} {fit} />
       {:else}
-        <NetworkTopology {section} {observations} {palette} {frozen} {fit} />
+        {#key JSON.stringify([runId, section.objectId, section.packId])}<NetworkTopology {section} {observations} alerts={latest?.alerts ?? []} {runId} {from} {palette} {frozen} {fit} />{/key}
       {/if}
     </div>
 {/snippet}
