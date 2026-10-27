@@ -33,7 +33,7 @@
   import { requestedPhysicalLayoutView, physicalOpacityPreparationText } from './view-intent.ts'
   import { createPhysicalHoverIntent } from './hover-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
-  import { physicalOperationContext, physicalOperationWord } from './operation-presentation.ts'
+  import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
   import { physicalRouteDisplayPaths, physicalRouteScreenMarks } from './route-marks.ts'
   import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
   import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
@@ -410,7 +410,7 @@
       const stale = frozenScenes.has(scene.descriptor.id), operations = operationsFor(reading, stale)
       return reading.subjects.flatMap(subject => {
         const status = statusesFor(reading, stale).get(subject.elementId)!
-        const operationWord = physicalOperationWord(operations.get(subject.elementId))
+        const operationWord = physicalOperationBadgeWord(operations.get(subject.elementId), showStateWords)
         if (!stale && status.quality === 'good' && status.census.total === 0 && !showStateWords && operationWord === null) return []
         return (scopedBySubject.get(scene.descriptor.id)?.get(subject.elementId) ?? []).flatMap(occurrence => {
           const point = controller?.cheapProject(scene.descriptor.id, occurrence.id)

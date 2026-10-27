@@ -7,7 +7,7 @@ import type { LayoutOperationalSubject, LayoutSubjectTopology } from '../src/fea
 import { resolvePhysicalSubjectOperation } from '../src/ui/physical-layout/operation.ts'
 import { layoutSubjectTopologies, layoutTopologyRefs } from '../src/features/displays/layout/topology.ts'
 import { topologyGraphSchema } from '../src/core/observation/topology.ts'
-import { physicalOperationContext } from '../src/ui/physical-layout/operation-presentation.ts'
+import { physicalOperationContext, physicalOperationBadgeWord, physicalOperationWord } from '../src/ui/physical-layout/operation-presentation.ts'
 import { layoutLiveResponseSchema } from '../src/ui/physical-layout/read-model.ts'
 
 const at = isoTimestampSchema.parse('2026-10-28T00:00:00Z')
@@ -17,6 +17,18 @@ const binding = (role: TopologyBinding['role'], declaration: VignetteValue, patc
 const subject = (bindings: TopologyBinding[], values: VignetteValue[], node = false): LayoutOperationalSubject => ({ elementId: node ? 'pump' : 'pipe', label: node ? 'Pump' : 'Pump to valve', topology: {
   bindings, values, ...(node ? { kind: 'node', class: 'mover', equipmentKind: 'centrifugal-pump' } : { kind: 'connection', from: { elementId: 'pump', label: 'Pump', port: 'outlet' }, to: { elementId: 'valve', label: 'Valve', port: 'inlet' }, medium: { id: 'feedwater', label: 'Feedwater', kind: 'fluid' }, directed: true }),
 } as LayoutSubjectTopology })
+
+test('default state words follow actuating topology classes while repeated converter labels remain opt-in', () => {
+  const run = value('running', { quantity: 'state', unit: '', valueType: 'boolean' }), source = subject([binding('running', run)], [run], true)
+  const mover = resolvePhysicalSubjectOperation(source, [observation(run, true)], false)
+  expect(physicalOperationBadgeWord(mover, false)).toBe(physicalOperationWord(mover))
+  const converter = { ...mover, equipment: { ...mover.equipment!, class: 'converter' as const } }
+  expect(physicalOperationBadgeWord(converter, false)).toBeNull()
+  expect(physicalOperationBadgeWord(converter, true)).toBe(physicalOperationWord(converter))
+  const control = { ...mover, equipment: { ...mover.equipment!, class: 'switch' as const } }
+  expect(physicalOperationBadgeWord(control, false)).toBe(physicalOperationWord(control))
+  expect(physicalOperationContext(converter).some(row => row.label === 'Equipment')).toBe(true)
+})
 
 test('actual signed flow follows admitted endpoint order and exact zero, without a UI no-flow band', () => {
   const flow = value('pipe.flow'), s = subject([binding('flow', flow)], [flow])

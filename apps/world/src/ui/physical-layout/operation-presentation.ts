@@ -10,6 +10,12 @@ export const physicalOperationWord = (operation: PhysicalSubjectOperation | unde
   return null
 }
 
+/** Actuating flow movers/switches expose their state by default. Ordinary
+ * converter/assembly words stay opt-in so one turbine subject's many casings
+ * do not bury the architectural drawing under repeated normal labels. */
+export const physicalOperationBadgeWord = (operation: PhysicalSubjectOperation | undefined, ordinary: boolean): string | null =>
+  ordinary || operation?.equipment?.class === 'mover' || operation?.equipment?.class === 'switch' ? physicalOperationWord(operation) : null
+
 /** The same context accompanies the pointer label and the existing faceplate. */
 export const physicalOperationContext = (operation: PhysicalSubjectOperation | undefined): ReadonlyArray<{ readonly label: string; readonly value: string }> => {
   if (!operation) return []
