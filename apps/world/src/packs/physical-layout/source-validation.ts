@@ -12,7 +12,15 @@ export const physicalSceneShapeFacts = (objects: PackPhysicalScene['objects']) =
   positions: object.indices ? Array.from(object.indices).flatMap(index => [object.positions[index * 3]!, object.positions[index * 3 + 1]!, object.positions[index * 3 + 2]!]) : Array.isArray(object.positions) ? object.positions : Array.from(object.positions),
 })))
 
-export const physicalContentHash = async (value: unknown): Promise<string> => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalPhysicalJson(value))))).map(value => value.toString(16).padStart(2, '0')).join('')
+const hashCanonicalJson = async (json:string):Promise<string>=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json)))).map(value => value.toString(16).padStart(2, '0')).join('')
+export const physicalContentHash = async (value: unknown): Promise<string> => hashCanonicalJson(canonicalPhysicalJson(value))
+
+/** This frozen fact shape is emitted in canonical field order already. Avoid a
+ * second recursive clone/sort of every coordinate, while retaining the exact
+ * unchanged rounding/index-expansion authority above. Byte-equivalence tests
+ * cover plain/typed/indexed geometry and the admitted profile fingerprints. */
+export const physicalSceneShapeHash = async (objects: PackPhysicalScene['objects']): Promise<string> =>
+  hashCanonicalJson(JSON.stringify(physicalSceneShapeFacts(objects)))
 
 /** Verify every retained instance even when another placement warmed the asset cache. */
 export const validateRetainedPhysicalSource = async (data: RetainedPhysicalLayoutData): Promise<void> => {

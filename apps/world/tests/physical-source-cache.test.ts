@@ -14,8 +14,11 @@ import { physicalSourceFacts } from '../src/packs/physical-layout/native/archite
 import { physicalApplicabilityContent } from '../src/packs/physical-layout/applicability.ts'
 import { loadPhysicalSourceAsset } from '../src/packs/physical-layout/source-loader.ts'
 import { loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
+import {pwrArchitectureUnitPhysicalDesignRef,pwrArchitectureCampusPhysicalDesignRef} from '../src/packs/physical-layout/design.ts'
 
-const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(normalOperation),[processPlantPack,electricGridPack,weatherPack,physicalLayoutPack],{routing:createDirectRoutingAdapter()})
+const retainedScenario=structuredClone(normalOperation)
+for(const pack of retainedScenario.packs)if(pack.id==='physical-layout')for(const item of pack.items){const layout=item as unknown as{design:{id:string;revision:string;digest:string}};layout.design=layout.design.id==='pwr-campus'?pwrArchitectureCampusPhysicalDesignRef:pwrArchitectureUnitPhysicalDesignRef}
+const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(retainedScenario),[processPlantPack,electricGridPack,weatherPack,physicalLayoutPack],{routing:createDirectRoutingAdapter()})
 const data = (id: string) => architectureLayoutDataSchema.parse(scenario.initialObjects.find(object=>object.id===id)!.packData)
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 // A distinct, fully admitted Design guarantees the pending test is cold. It

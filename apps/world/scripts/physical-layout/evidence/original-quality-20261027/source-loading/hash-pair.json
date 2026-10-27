@@ -1,0 +1,187 @@
+{
+  "classification": "controlled CPU hash attribution over identical frozen R4 scenes; alternating order with pre-call GC; no end-to-end latency claim",
+  "rows": [
+    {
+      "id": "layout:halden-1",
+      "round": 0,
+      "pair": [
+        {
+          "kind": "baseline",
+          "ms": 115.55162500000006
+        },
+        {
+          "kind": "candidate",
+          "ms": 99.338209
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-1",
+      "round": 1,
+      "pair": [
+        {
+          "kind": "candidate",
+          "ms": 93.07616699999994
+        },
+        {
+          "kind": "baseline",
+          "ms": 104.0786250000001
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-1",
+      "round": 2,
+      "pair": [
+        {
+          "kind": "baseline",
+          "ms": 102.45325000000003
+        },
+        {
+          "kind": "candidate",
+          "ms": 93.6768340000001
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-1",
+      "round": 3,
+      "pair": [
+        {
+          "kind": "candidate",
+          "ms": 93.11625000000004
+        },
+        {
+          "kind": "baseline",
+          "ms": 102.33754200000021
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-1",
+      "round": 4,
+      "pair": [
+        {
+          "kind": "baseline",
+          "ms": 102.34812499999998
+        },
+        {
+          "kind": "candidate",
+          "ms": 92.51549999999997
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-1",
+      "round": 5,
+      "pair": [
+        {
+          "kind": "candidate",
+          "ms": 99.30858399999988
+        },
+        {
+          "kind": "baseline",
+          "ms": 106.77870799999982
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "round": 0,
+      "pair": [
+        {
+          "kind": "baseline",
+          "ms": 44.48750000000018
+        },
+        {
+          "kind": "candidate",
+          "ms": 35.46725000000015
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "round": 1,
+      "pair": [
+        {
+          "kind": "candidate",
+          "ms": 36.832540999999765
+        },
+        {
+          "kind": "baseline",
+          "ms": 46.916957999999795
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "round": 2,
+      "pair": [
+        {
+          "kind": "baseline",
+          "ms": 42.998875000000226
+        },
+        {
+          "kind": "candidate",
+          "ms": 35.9675000000002
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "round": 3,
+      "pair": [
+        {
+          "kind": "candidate",
+          "ms": 37.24104200000011
+        },
+        {
+          "kind": "baseline",
+          "ms": 42.86670800000002
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "round": 4,
+      "pair": [
+        {
+          "kind": "baseline",
+          "ms": 43.29558300000008
+        },
+        {
+          "kind": "candidate",
+          "ms": 37.183166999999685
+        }
+      ]
+    },
+    {
+      "id": "layout:halden-campus",
+      "round": 5,
+      "pair": [
+        {
+          "kind": "candidate",
+          "ms": 35.54183299999977
+        },
+        {
+          "kind": "baseline",
+          "ms": 41.0595830000002
+        }
+      ]
+    }
+  ],
+  "baseline": "17cc50229",
+  "runtime": "Bun 1.4.0 / macOS arm64",
+  "designs": {
+    "pwr-full-unit-drafting": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261027-r4",
+      "digest": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82"
+    },
+    "pwr-campus-drafting": {
+      "id": "pwr-campus",
+      "revision": "pwr-campus-20261027-r4",
+      "digest": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84"
+    }
+  }
+}
