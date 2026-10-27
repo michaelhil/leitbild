@@ -6,6 +6,7 @@ import type { Vector3 } from './math.ts'
 import { createPhysicalSceneLayer } from './layer.ts'
 import { physicalSceneLayerId } from './order.ts'
 import type { PhysicalViewport, PhysicalViewportEvent, PhysicalViewportRenderer } from './viewport.ts'
+import type { PhysicalViewportFitOptions } from './types.ts'
 
 /** Real MapLibre camera/custom-layer adapter. Canvas mode implements this port independently. */
 export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => string | undefined): PhysicalViewport => {
@@ -105,6 +106,19 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
   canvas.addEventListener('pointerdown', pointerDown); canvas.addEventListener('pointermove', pointerMove); canvas.addEventListener('lostpointercapture', pointerLost)
   endTarget.addEventListener('pointerup', pointerEnd as EventListener, true); endTarget.addEventListener('pointercancel', pointerEnd as EventListener, true)
   canvas.addEventListener('click', click, true); canvas.addEventListener('dblclick', click, true)
+  const fitPose = (options: PhysicalViewportFitOptions) => ({
+    bearing: options.preservePose ? map.getBearing() : options.bearing,
+    pitch: options.mode === '2d' ? 0 : Math.max(map.getMinPitch(), Math.min(options.preservePose ? map.getPitch() : options.pitch ?? 50, map.getMaxPitch())),
+  })
+  const geographicBounds = (bounds: PhysicalSceneBounds): [[number, number], [number, number]] => {
+    const west = new MercatorCoordinate(bounds.min[0], bounds.max[1]).toLngLat(), east = new MercatorCoordinate(bounds.max[0], bounds.min[1]).toLngLat()
+    return [[west.lng, west.lat], [east.lng, east.lat]]
+  }
+  const perspectiveFit = (bounds: PhysicalSceneBounds, options: PhysicalViewportFitOptions) => {
+    const { bearing, pitch } = fitPose(options), size = canvas.getBoundingClientRect(), inherited = map.getPadding()
+    const fit = fitPhysicalPerspective({ bounds, ...(options.target ? { target: options.target } : {}), width: size.width, height: size.height, padding: options.padding, verticalFieldOfView: map.getVerticalFieldOfView() * Math.PI / 180, bearing, pitch, projectionOffset: { x: ((inherited.left ?? 0) - (inherited.right ?? 0)) / size.width, y: ((inherited.bottom ?? 0) - (inherited.top ?? 0)) / size.height }, nearRatio: map.transform.nearZ / map.transform.cameraToCenterDistance })
+    return { fit, bearing, pitch }
+  }
   let installed: ReturnType<typeof createPhysicalSceneLayer> | null = null
   const port: PhysicalViewport = {
     surface: { kind: 'map', element: canvas, getSize: () => { const r = canvas.getBoundingClientRect(); return { width: r.width, height: r.height } }, getPadding: () => { const p = map.getPadding(); return { top: p.top ?? 0, right: p.right ?? 0, bottom: p.bottom ?? 0, left: p.left ?? 0 } }, on: (event, listener) => subscribe(event === 'move' ? 'change' : event, listener) },
@@ -141,23 +155,27 @@ export const createMapPhysicalViewport = (map: MapLibreMap, beforeId: () => stri
       if (pausedPose) { const now = currentPose(); if (now.bearing === pausedPose.bearing && now.pitch === pausedPose.pitch && now.zoom === pausedPose.zoom && now.center[0] === pausedPose.center[0] && now.center[1] === pausedPose.center[1]) map.setCenterElevation(pausedPose.elevation); pausedPose = null }
     },
     setPlanarInspection(value) { planarInspection = value; syncPlanar() },
+    measureFit(bounds, options) {
+      if (options.mode === '2d') {
+        const camera = map.cameraForBounds(geographicBounds(bounds), { padding: options.padding, bearing: fitPose(options).bearing })
+        if (camera?.zoom === undefined || !Number.isFinite(camera.zoom)) throw new Error('The native map cannot fit this architectural Plan')
+        return camera.zoom
+      }
+      return -perspectiveFit(bounds, options).fit.distance
+    },
     fitWorld(bounds, options) {
-      const bearing = options.preservePose ? map.getBearing() : options.bearing
-      const requestedPitch = options.preservePose ? map.getPitch() : options.pitch ?? 50
       // Fit the camera the public host can actually apply. Authored poses remain
       // host-independent; native pitch constraints must precede the solve.
-      const pitch = options.mode === '2d' ? 0 : Math.max(map.getMinPitch(), Math.min(requestedPitch, map.getMaxPitch()))
       if (options.mode === '2d') {
+        const { bearing, pitch } = fitPose(options)
         leaveElevation()
         if (map.getCenterElevation() !== 0) map.jumpTo({ elevation: 0 })
-        const west = new MercatorCoordinate(bounds.min[0], bounds.max[1]).toLngLat(), east = new MercatorCoordinate(bounds.max[0], bounds.min[1]).toLngLat()
-        map.fitBounds([[west.lng, west.lat], [east.lng, east.lat]], { padding: options.padding, bearing, pitch, duration: 0 }); return
+        map.fitBounds(geographicBounds(bounds), { padding: options.padding, bearing, pitch, duration: 0 }); return
       }
       elevatedInspection = true; acquireElevation()
-      const size = canvas.getBoundingClientRect(), inherited = map.getPadding()
       // Read the pinned host's public typed projection quantities. Native near
       // clipping is part of fitting, not a guessed ratio or a depth workaround.
-      const fit = fitPhysicalPerspective({ bounds, ...(options.target ? { target: options.target } : {}), width: size.width, height: size.height, padding: options.padding, verticalFieldOfView: map.getVerticalFieldOfView() * Math.PI / 180, bearing, pitch, projectionOffset: { x: ((inherited.left ?? 0) - (inherited.right ?? 0)) / size.width, y: ((inherited.bottom ?? 0) - (inherited.top ?? 0)) / size.height }, nearRatio: map.transform.nearZ / map.transform.cameraToCenterDistance })
+      const { fit, bearing, pitch } = perspectiveFit(bounds, options)
       const optical = new MercatorCoordinate(...fit.target), eye = new MercatorCoordinate(...fit.eye), destination = optical.toLngLat(), from = eye.toLngLat()
       const destinationScale = MercatorCoordinate.fromLngLat(destination).meterInMercatorCoordinateUnits(), eyeScale = MercatorCoordinate.fromLngLat(from).meterInMercatorCoordinateUnits()
       const camera = map.calculateCameraOptionsFromTo(from, eye.z / eyeScale, destination, optical.z / destinationScale)

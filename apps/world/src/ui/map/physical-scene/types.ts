@@ -52,7 +52,7 @@ export interface PhysicalSceneControllerOptions {
   readonly onChange: (scenes: ReadonlyArray<PhysicalScenePresentation>) => void
   readonly reportError: (error: Error) => void
   /** Full measured map padding including controls/rails; otherwise the map's current padding plus a small margin. */
-  readonly fitPadding?: () => { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
+  readonly fitPadding?: (request?: PhysicalSceneFitRequest) => { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
   readonly prepare?: PhysicalGeometryPreparer
   /** Representation error in CSS pixels; display quality policy, never a scene-count cap. */
   readonly quality?: { readonly pixelError: number }
@@ -66,6 +66,20 @@ export interface PhysicalSceneSurface {
   readonly on: (event: 'move' | 'render' | 'resize' | 'movestart', listener: () => void) => () => void
 }
 export interface PhysicalSceneFocus { readonly scopeId?: string | undefined; readonly occurrenceId?: string | undefined; readonly levelId?: string | undefined; readonly preservePose?: boolean | undefined }
+export interface PhysicalViewportFitOptions {
+  readonly padding: { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
+  readonly preservePose: boolean
+  readonly mode: '2d' | '3d'
+  readonly bearing: number
+  readonly pitch?: number
+  readonly target?: readonly [number, number, number]
+}
+/** Measured UI covers choose a rectangle using the actual host camera fit. */
+export interface PhysicalSceneFitRequest extends Omit<PhysicalViewportFitOptions, 'padding'> {
+  readonly bounds: PhysicalSceneBounds
+  /** Larger scores mean a larger displayed model: native Plan zoom or negative 3D distance. */
+  readonly measure?: (padding: PhysicalViewportFitOptions['padding']) => number
+}
 export interface PhysicalProjectedPoint { readonly x: number; readonly y: number; readonly depth: number; readonly visible: boolean }
 export interface PhysicalCanvasControllerOptions extends Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'> { readonly canvas: HTMLCanvasElement }
 export const defaultPhysicalSceneView = (levels: ReadonlyArray<PhysicalSceneLevel>): PhysicalSceneView => ({ mode: '2d', levelId: levels[0]?.id ?? 'all', cutaway: true, separation: 0, detail: 'auto', live: true, surroundings: false })

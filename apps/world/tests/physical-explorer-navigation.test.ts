@@ -106,6 +106,18 @@ test('external operational padding and occluding inspectors are preserved by phy
   expect(rect.x + rect.width).toBeLessThanOrEqual(1168)
 })
 
+test('a wide architectural target chooses the larger actual drawing scale below floating tools rather than a tall narrow strip', () => {
+  const size = { width: 920, height: 650 }, padding = { top: 80, right: 0, bottom: 0, left: 0 }
+  const covers = [{ x: 528, y: 88, width: 380, height: 200 }]
+  const oldObjective = physicalExplorerFitRect(size, padding, covers)!
+  const targetMeasure = (p: typeof padding) => Math.min((size.width - p.left - p.right) / 120, (size.height - p.top - p.bottom) / 50)
+  const actualTarget = physicalExplorerFitRect(size, padding, covers, 12, targetMeasure)!
+  expect(oldObjective.width).toBe(504)
+  expect(actualTarget).toEqual({ x: 12, y: 300, width: 896, height: 338 })
+  const result = physicalExplorerFitPadding(size, padding, covers, targetMeasure)
+  expect(targetMeasure(result)).toBeGreaterThan(targetMeasure({ left: oldObjective.x, top: oldObjective.y, right: size.width - oldObjective.x - oldObjective.width, bottom: size.height - oldObjective.y - oldObjective.height }))
+})
+
 test('the real Plan adapter and pinned MapLibre fit do not retain camera-fit padding as a UI cover', () => {
   const fake = createFakeMapStyle(), reserved = { top: 80, right: 100, bottom: 0, left: 0 }
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ width: 1280, height: 720 }) })

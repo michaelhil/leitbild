@@ -1,7 +1,6 @@
-import type { Vector3 } from './math.ts'
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import type { PhysicalLayerEntry } from './layer.ts'
-import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, PhysicalScenePalette, PhysicalSceneSurface } from './types.ts'
+import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, PhysicalScenePalette, PhysicalSceneSurface, PhysicalViewportFitOptions } from './types.ts'
 import type { PhysicalBackendMetrics } from './backend.ts'
 export type PhysicalViewportEvent = 'change' | 'resize' | 'render' | 'movestart' | 'style' | 'idle' | 'contextlost' | 'contextrestored'
 export interface PhysicalViewportRenderer {
@@ -34,7 +33,8 @@ export interface PhysicalViewport {
   readonly setPlanarInspection?: (active: boolean) => void
   readonly setPose: (patch: Partial<Pick<PhysicalCameraPose, 'pitch' | 'bearing' | 'zoom' | 'center' | 'elevation'>>) => void
   /** Bounds in normalized Mercator world coordinates, including elevation. */
-  readonly fitWorld: (bounds: PhysicalSceneBounds, options: { padding: { top: number; right: number; bottom: number; left: number }; preservePose: boolean; mode: '2d' | '3d'; bearing: number; pitch?: number; target?: Vector3 }) => void
+  readonly measureFit?: (bounds: PhysicalSceneBounds, options: PhysicalViewportFitOptions) => number
+  readonly fitWorld: (bounds: PhysicalSceneBounds, options: PhysicalViewportFitOptions) => void
   readonly panBy: (x: number, y: number) => void
   readonly setNavigationTool: (tool: 'pan' | 'orbit') => void
   readonly cancelCamera: () => void

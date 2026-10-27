@@ -11,7 +11,7 @@
   import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
-  import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette } from '../map/physical-scene/types.ts'
+  import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette, PhysicalSceneFitRequest } from '../map/physical-scene/types.ts'
   import { physicalSceneLayerAnchorId } from '../map/physical-scene/order.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -107,13 +107,13 @@
   let overlayDirty = true
   let cameraSignature = ''
   let focusGeneration = 0
-  const fitPadding = () => {
+  const fitPadding = (request?: PhysicalSceneFitRequest) => {
     const padding = reservedPadding
     const surface = controller?.surface.element.getBoundingClientRect(), tools = toolsElement?.getBoundingClientRect(), camera = cameraElement?.getBoundingClientRect()
     if (!surface) return padding
     const covers = [tools, camera].filter((cover): cover is DOMRect => cover !== undefined).map(cover => ({ x: cover.left - surface.left, y: cover.top - surface.top, width: cover.width, height: cover.height }))
     if (inspected !== null) covers.push({ ...cardPoint, width: inspectionWidth, height: allocatedInspectionHeight })
-    return physicalExplorerFitPadding(surface, { ...padding, top: Math.max(padding.top, clearTop > surface.top ? clearTop - surface.top + 8 : 0) }, covers)
+    return physicalExplorerFitPadding(surface, { ...padding, top: Math.max(padding.top, clearTop > surface.top ? clearTop - surface.top + 8 : 0) }, covers, request?.measure)
   }
   const afterPanels = async (work: () => void): Promise<void> => {
     const generation = ++focusGeneration
@@ -411,16 +411,16 @@
     if (suspended) return
     const scene = focused
     if (!scene) return
-    const changedRepresentation = scene.view.mode !== next.mode
+    const changedRepresentation = scene.view.mode !== next.mode, changedFloor = scene.view.levelId !== next.levelId
     pendingCameraFocus = null
     closeInspection(); hover = null
     if (next.mode === '2d') { navigation = 'pan'; controller?.setNavigationTool('pan') }
     if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
     if (next.mode === '2d' && scene.view.levelId === 'all') next = { ...next, levelId: rememberedPlanFloor.get(scene.descriptor.id) ?? scopeLevels[0]?.id ?? scene.descriptor.levels[0]!.id }
     controller?.setView(scene.descriptor.id, next)
-    if (changedRepresentation && (focusedId !== null || collectionInspection)) {
+    if ((changedRepresentation || changedFloor) && (focusedId !== null || collectionInspection)) {
       const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds
-      void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: false }) })
+      void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: !changedRepresentation }); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: !changedRepresentation }) })
     }
   }
   const fit = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
