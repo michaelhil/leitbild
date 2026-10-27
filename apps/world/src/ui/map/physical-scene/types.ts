@@ -42,6 +42,8 @@ export interface PhysicalScenePresentation {
   readonly reason?: string
   /** Display geometry generation; it is independent of immutable source revision. */
   readonly renderRevision?: number
+  /** An incremental mesh request retains the currently valid geometry. */
+  readonly layerPreparation?: { readonly status: 'loading' | 'unavailable'; readonly layerIds: ReadonlyArray<string>; readonly reason?: string }
   readonly occurrenceCount: number
 }
 export interface PhysicalSceneControllerOptions {
