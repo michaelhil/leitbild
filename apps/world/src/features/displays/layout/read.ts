@@ -5,6 +5,7 @@ import { declarationOf, declaredRefs, valueOf, visibleObject } from '../compose/
 import { planLead, readLeads } from '../compose/defaults.ts'
 import type { VignetteElement, VignetteSample, VignetteValue } from '../compose/model.ts'
 import { sampleVignette, type ViewRun } from '../compose/view.ts'
+import type { LayoutSubjectTopology } from './operation.ts'
 
 export const layoutReadInputSchema = z.object({
   layoutObjectId: z.string().min(1).max(200),
@@ -17,6 +18,7 @@ export interface LayoutSubjectReading {
   readonly values: ReadonlyArray<VignetteValue>
   readonly word: string | null
   readonly devices: ReadonlyArray<VignetteElement>
+  readonly topology?: LayoutSubjectTopology
 }
 export interface LayoutReading {
   readonly scope: {

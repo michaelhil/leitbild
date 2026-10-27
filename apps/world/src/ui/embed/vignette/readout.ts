@@ -6,6 +6,8 @@
 import type { Priority } from '../../../core/model/alerts.ts'
 import { criterionWords, numberShown, numberText, unitSymbol, type Observable, type Observation, type Quantity } from '../../../core/observation/model.ts'
 import { clockText, durationText } from './format.ts'
+import { activeState } from '../../displays/active-state.ts'
+export { activeState } from '../../displays/active-state.ts'
 
 type Threshold = Observable['thresholds'][number]
 
@@ -95,13 +97,6 @@ export interface ReadingLook {
  * declared state says `active`; never inferred from the order of the states.
  * Where no declared state says it, an enum value reads neither (null).
  */
-export const activeState = (value: Observation['value'] | undefined, states: Observable['states']): boolean | null => {
-  if (typeof value === 'boolean') return value
-  const entries = states ?? []
-  if (typeof value !== 'string' || !entries.some(entry => entry.active === true)) return null
-  return entries.find(entry => entry.value === value)?.active === true
-}
-
 const stateWord = (value: string | boolean, states: Observable['states']): string =>
   states?.find(state => state.value === String(value))?.label ?? (typeof value === 'boolean' ? (value ? 'yes' : 'no') : value)
 

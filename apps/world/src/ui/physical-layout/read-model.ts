@@ -5,6 +5,7 @@ import { observationElementSchema } from '../../core/observation/capabilities.ts
 import { observableSchema, observationSchema, stampSchema } from '../../core/observation/model.ts'
 import type { VignetteElement, VignetteSample, VignetteValue } from '../../features/displays/compose/model.ts'
 import type { AlertRow } from '../../features/displays/alerts/rows.ts'
+import { topologyBindingSchema, topologyMediumSchema, topologyNodeClassSchema } from '../../core/observation/topology.ts'
 
 const text = z.string().min(1).max(300)
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
@@ -32,6 +33,12 @@ const valueSchema = z.unknown().transform((input): VignetteValue => {
   const { element: _element, tag: _tag, meaningfulWhile: _meaningful, lead: _lead, ...shown } = value
   return { ...shown, label, ...(element === undefined ? {} : { element }), ...(simulated === undefined ? {} : { simulated }) }
 })
+const operationalReadings = { bindings: z.array(topologyBindingSchema), values: z.array(valueSchema) }
+const connectionEnd = z.object({ elementId: text, label: text, port: text }).strict()
+const subjectTopologySchema = z.discriminatedUnion('kind', [
+  z.object({ ...operationalReadings, kind: z.literal('node'), class: topologyNodeClassSchema, equipmentKind: text }).strict(),
+  z.object({ ...operationalReadings, kind: z.literal('connection'), from: connectionEnd, to: connectionEnd, medium: topologyMediumSchema, directed: z.boolean() }).strict(),
+])
 
 const alertRowSchema = z.object({
   key: text, objectId: objectIdSchema, objectLabel: text, packId: text, categoryId: text,
@@ -56,15 +63,20 @@ const sampleSchema = z.object({
 
 const responseSchema = z.object({
   scope: layoutLiveScopeSchema, acquiredAt: z.string().datetime({ offset: true }), sample: sampleSchema,
-  subjects: z.array(z.object({ elementId: z.string().min(1).max(200), label: text, values: z.array(valueSchema).max(16), word: z.string().min(1).max(300).nullable(), devices: z.array(elementSchema).max(64) }).strict()).min(1),
+  subjects: z.array(z.object({ elementId: z.string().min(1).max(200), label: text, values: z.array(valueSchema).max(16), word: z.string().min(1).max(300).nullable(), devices: z.array(elementSchema).max(64), topology: subjectTopologySchema.optional() }).strict()).min(1),
 }).strict().superRefine((response, context) => {
   const subjects = response.subjects.map(subject => subject.elementId)
   if (new Set(subjects).size !== subjects.length) context.addIssue({ code: 'custom', message: 'Duplicate layout live subject' })
   const refs = response.sample.observations.map(observation => observation.ref)
   if (new Set(refs).size !== refs.length) context.addIssue({ code: 'custom', message: 'Duplicate layout live observation' })
-  if (response.subjects.some(subject => subject.values.some(value => !value.ref.startsWith(`${response.scope.objectId}#`)))
+  if (response.subjects.some(subject => [...subject.values, ...(subject.topology?.values ?? [])].some(value => !value.ref.startsWith(`${response.scope.objectId}#`)))
     || refs.some(ref => !ref.startsWith(`${response.scope.objectId}#`))
     || response.sample.alerts.some(row => row.objectId !== response.scope.objectId || row.packId !== response.scope.packId)) context.addIssue({ code: 'custom', message: 'Layout live content belongs to another owner' })
+  for (const subject of response.subjects) if (subject.topology) {
+    const values = new Set(subject.topology.values.map(value => value.ref)), acquired = new Set(refs)
+    if (values.size !== subject.topology.values.length || [...values].some(ref => !acquired.has(ref))) context.addIssue({ code: 'custom', message: 'Layout semantic readings must be unique and acquired' })
+    if (subject.topology.bindings.some(binding => [binding.ref, ...(binding.while ? [binding.while] : [])].some(ref => !values.has(ref)))) context.addIssue({ code: 'custom', message: 'Layout semantic binding has no acquired declaration' })
+  }
 })
 
 export type LayoutLiveResponse = Omit<z.output<typeof responseSchema>, 'sample'> & { readonly sample: VignetteSample }

@@ -25,7 +25,7 @@ const end = z.object({ node: id, port: id }).strict()
  * level. `trace`: a reading the drawing traces over its last ten minutes with its item (a tank's or an exchanger's
  * level, a core's exit temperature).
  */
-const bindings = z.array(z.object({
+export const topologyBindingSchema = z.object({
   role: z.enum(['flow', 'loading', 'level', 'conducting', 'available', 'running', 'position', 'value', 'stopped', 'program']),
   ref: observableRefSchema,
   word: z.string().min(1).max(4).optional(),
@@ -33,9 +33,15 @@ const bindings = z.array(z.object({
   group: z.string().min(1).max(40).optional(),
   commanded: z.literal(true).optional(),
   trace: z.literal(true).optional(),
-}).strict()).max(16)
+}).strict()
+export type TopologyBinding = z.output<typeof topologyBindingSchema>
+const bindings = z.array(topologyBindingSchema).max(16)
 
 export const topologyNodeClassSchema = z.enum(['source', 'sink', 'store', 'transfer', 'converter', 'switch', 'mover', 'bus', 'junction', 'boundary'])
+export const topologyMediumSchema = z.object({
+  id, label: z.string().min(1).max(40), kind: z.enum(['fluid', 'steam', 'gas', 'heat', 'electric-ac', 'electric-dc', 'signal']),
+  level: z.object({ value: z.number().finite(), unit: z.string().min(1).max(8) }).strict().optional(),
+}).strict()
 
 export const topologyGraphSchema = z.object({
   objectId: objectIdSchema,
@@ -43,10 +49,7 @@ export const topologyGraphSchema = z.object({
   family: z.enum(['flow', 'network']),
   /** Credits for licensed data the graph is drawn from. */
   attribution: z.string().min(1).max(300).optional(),
-  media: z.array(z.object({
-    id, label: z.string().min(1).max(40), kind: z.enum(['fluid', 'steam', 'gas', 'heat', 'electric-ac', 'electric-dc', 'signal']),
-    level: z.object({ value: z.number().finite(), unit: z.string().min(1).max(8) }).strict().optional(),
-  }).strict()).min(1).max(64),
+  media: z.array(topologyMediumSchema).min(1).max(64),
   groups: z.array(z.object({
     id, label: z.string().min(1).max(120), shortLabel: z.string().min(1).max(24).optional(), kind: z.string().min(1).max(40),
     parent: id.optional(), lane: z.object({ key: z.string().min(1).max(64), order: z.number().int() }).strict().optional(),
