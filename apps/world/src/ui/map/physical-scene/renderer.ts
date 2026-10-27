@@ -1,5 +1,6 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import { createPhysicalBackend, type PhysicalDraw } from './backend.ts'
+import { createPhysicalPreparedResidency } from './prepared-residency.ts'
 import { createPhysicalRenderPass } from './render-pass.ts'
 import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import { projectPhysicalPlan } from './plan-projection.ts'
@@ -23,6 +24,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   const initial = captureSceneGlState(gl)
   let backend: ReturnType<typeof createPhysicalBackend>
   try { backend = createPhysicalBackend(gl, palette) } finally { restoreSceneGlState(gl, initial) }
+  const cpu = createPhysicalPreparedResidency()
   let renderPass: ReturnType<typeof createPhysicalRenderPass> | null = null
   let depthNear = 0
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
@@ -53,8 +55,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       if (disposed || failed) return
       let before: ReturnType<typeof captureSceneGlState> | null = null
       try {
-        const draws: PhysicalDraw[] = []; picking = []
-        const current = entries().map(entry => {
+        const draws: PhysicalDraw[] = []; picking = []; const presented = entries(); cpu.update(presented.flatMap(entry => entry.asset ? [entry.asset] : []))
+        const current = presented.map(entry => {
           const boundary = visiblePhysicalInspectionBoundaries(entry.meshes, multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)))
           const meshes = visiblePhysicalSurfaceOwners(boundary, entry.asset?.acceleration)
           if (meshes !== entry.meshes && entry.asset && !indexedSelections.has(meshes)) { derivePhysicalPickAcceleration(meshes, entry.asset.acceleration); indexedSelections.add(meshes) }
@@ -86,9 +88,9 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },
     setPalette: backend.setPalette,
-    retainGeometryIdentities(identities: ReadonlySet<string>): void { const before = captureSceneGlState(gl); try { backend.retainGeometryIdentities(identities) } finally { restoreSceneGlState(gl, before) } },
-    metrics: () => { const owned = renderPass?.metrics(), base = backend.metrics; return { ...base, programs: base.programs + (owned?.programs ?? 0), textures: base.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + (owned?.textureBytes ?? 0), renderPass: owned ?? null, depthNear, liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (owned?.livePrograms ?? 0), liveTexturesAfterDisposal: base.liveTexturesAfterDisposal === null ? null : base.liveTexturesAfterDisposal + (owned?.liveTextures ?? 0) } },
-    dispose(): void { if (disposed) return; disposed = true; backend.dispose(); renderPass?.dispose(); picking = [] },
+    retainGeometryIdentities(identities: ReadonlySet<string>): void { cpu.retainIdentities(identities); const before = captureSceneGlState(gl); try { backend.retainGeometryIdentities(identities) } finally { restoreSceneGlState(gl, before) } },
+    metrics: () => { const owned = renderPass?.metrics(), base = backend.metrics; return { ...base, residentCpuBytes: cpu.metrics().residentBytes, cpuResidency: cpu.metrics(), programs: base.programs + (owned?.programs ?? 0), textures: base.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + (owned?.textureBytes ?? 0), renderPass: owned ?? null, depthNear, liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (owned?.livePrograms ?? 0), liveTexturesAfterDisposal: base.liveTexturesAfterDisposal === null ? null : base.liveTexturesAfterDisposal + (owned?.liveTextures ?? 0) } },
+    dispose(): void { if (disposed) return; disposed = true; backend.dispose(); renderPass?.dispose(); cpu.clear(); picking = [] },
   }
 }
 

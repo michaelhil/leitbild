@@ -2,7 +2,6 @@ import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import type { PhysicalRenderPassMetrics } from './render-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
-import { physicalPreparedGeometryBytes } from './preparation.ts'
 import type { Color, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 /** Quiet illustrative surface colour, precomposited against its actual material
@@ -96,6 +95,7 @@ void main(){
 }
 `
 export interface PhysicalBackendMetrics {
+  readonly cpuResidency?: import('./prepared-residency.ts').PhysicalPreparedResidencyMetrics
   readonly renderPass?: PhysicalRenderPassMetrics | null
   geometryUploads: number; geometryBytes: number; residentCpuBytes: number; draws: number; buffers: number; programs: number
   textures: number; textureBytes: number; instanceBytes: number; instanceUploads: number; statusUploads: number; paletteUploads: number; evictions: number; peakRequiredBytes: number
@@ -110,9 +110,6 @@ export interface PhysicalDraw {
 }
 interface Texture { readonly texture: WebGLTexture; width: number; height: number; data: Float32Array }
 interface Asset {
-  /** The same CPU variant remains reusable for exactly this GPU residency. */
-  readonly sourceAsset: PhysicalPreparedGeometry
-  readonly cpuBytes: number
   readonly identity: string; readonly solid: WebGLBuffer; readonly lines: WebGLBuffer; readonly instances: WebGLBuffer; readonly vao: WebGLVertexArrayObject; readonly lineVao: WebGLVertexArrayObject
   readonly count: number; readonly lineCount: number; readonly geometryBytes: number; readonly materials: Texture; readonly objects: Texture
   instanceData: Float32Array; instanceWords: Uint32Array; lastUsed: number; roles: ReadonlyArray<string>; paletteSignature: string
@@ -155,7 +152,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
   }
   const release = (asset: Asset): void => {
     gl.deleteBuffer(asset.solid); gl.deleteBuffer(asset.lines); gl.deleteBuffer(asset.instances); gl.deleteVertexArray(asset.vao); gl.deleteVertexArray(asset.lineVao); gl.deleteTexture(asset.materials.texture); gl.deleteTexture(asset.objects.texture)
-    metrics.geometryBytes -= asset.geometryBytes; metrics.residentCpuBytes -= asset.cpuBytes; metrics.instanceBytes -= asset.instanceData.byteLength; metrics.textureBytes -= asset.materials.data.byteLength + asset.objects.data.byteLength; metrics.buffers -= 3; metrics.textures -= 2
+    metrics.geometryBytes -= asset.geometryBytes; metrics.instanceBytes -= asset.instanceData.byteLength; metrics.textureBytes -= asset.materials.data.byteLength + asset.objects.data.byteLength; metrics.buffers -= 3; metrics.textures -= 2
   }
   const createAsset = (draw: PhysicalDraw): Asset => {
     const solid = gl.createBuffer(), lines = gl.createBuffer(), instances = gl.createBuffer(), vao = gl.createVertexArray(), lineVao = gl.createVertexArray()
@@ -171,9 +168,8 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     for (const [location, components, offset] of [[0, 3, 0], [2, 1, 12], [3, 1, 16], [4, 1, 20]] as const) { gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, components, gl.FLOAT, false, 24, offset) }
     gl.disableVertexAttribArray(1); setupInstances()
     const geometryBytes = draw.asset.buffers.vertices.byteLength + draw.asset.buffers.lines.byteLength
-    const sourceAsset = draw.asset.sourceAsset ?? draw.asset, cpuBytes = physicalPreparedGeometryBytes(sourceAsset)
-    const value: Asset = { sourceAsset, cpuBytes, identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials, objects, instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
-    metrics.geometryUploads++; metrics.geometryBytes += geometryBytes; metrics.residentCpuBytes += cpuBytes; metrics.buffers += 3; return value
+    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials, objects, instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
+    metrics.geometryUploads++; metrics.geometryBytes += geometryBytes; metrics.buffers += 3; return value
     } catch (error) { for (const buffer of [solid, lines, instances]) gl.deleteBuffer(buffer); gl.deleteVertexArray(vao); gl.deleteVertexArray(lineVao); for (const table of [materials, objects]) if (table) { gl.deleteTexture(table.texture); metrics.textures-- }; throw error }
   }
   const setObject = (data: Float32Array, at: number, values: ReadonlyArray<number>): boolean => { let changed = false; for (let component = 0; component < values.length; component++) if (data[at + component] !== Math.fround(values[component]!)) { data[at + component] = values[component]!; changed = true }; return changed }

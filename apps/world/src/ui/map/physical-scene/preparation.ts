@@ -46,13 +46,13 @@ interface PendingView { readonly sourceKey: string; readonly identity: string; r
 const released = (): Error => Object.assign(new Error('Physical preparation source lease was released'), { name: 'AbortError' })
 
 /** Owned typed storage only; shared buffers are counted once, not once per view. */
-const preparedBuffers = (value: PhysicalPreparedGeometry): ReadonlySet<ArrayBufferLike> => {
+export const physicalPreparedGeometryBuffers = (value: PhysicalPreparedGeometry): ReadonlySet<ArrayBufferLike> => {
   const buffers = new Set<ArrayBufferLike>([value.buffers.vertices.buffer, value.buffers.lines.buffer])
   for (const mesh of value.meshes) for (const values of [mesh.vertices, mesh.lines]) if (ArrayBuffer.isView(values)) buffers.add(values.buffer)
   for (const index of [value.acceleration.meshes, ...value.acceleration.triangles.map(item => item.triangles)]) for (const values of [index.bounds, index.children, index.ranges, index.order]) buffers.add(values.buffer)
   return buffers
 }
-export const physicalPreparedGeometryBytes = (value: PhysicalPreparedGeometry): number => [...preparedBuffers(value)].reduce((bytes, buffer) => bytes + buffer.byteLength, 0)
+export const physicalPreparedGeometryBytes = (value: PhysicalPreparedGeometry): number => [...physicalPreparedGeometryBuffers(value)].reduce((bytes, buffer) => bytes + buffer.byteLength, 0)
 
 /** Reserve one reported logical CPU for the UI; no model-count or arbitrary worker cap. */
 export const physicalPreparationWorkerBudget = (reported?: number): number => {
@@ -68,8 +68,8 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
 }, hardwareConcurrency: () => number | undefined = () => typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency) => {
   const sources = new Map<string, Source>(), clients = new Map<number, Client>(), jobs = new Map<number, Job>()
   const workers = new Set<WorkerSlot>(), affinity = new Map<string, WorkerSlot>(), workerBudget = physicalPreparationWorkerBudget(hardwareConcurrency())
-  // Active views and resident GPU assets own the strong CPU lease. The pool
-  // only discovers those assets; eviction can collect unused view variants.
+  // Active views and the renderer-owned CPU working set hold strong leases.
+  // This pool only discovers assets; eviction can collect unused view variants.
   const shared = new Map<string, { readonly sourceKey: string; readonly identity: string; readonly value: WeakRef<PhysicalPreparedGeometry> }>()
   const pending = new Map<string, PendingView>(), viewQueue: number[] = []
   let sequence = 0, clientSequence = 0, registrations = 0, viewRequests = 0, transferredBytes = 0, cacheHits = 0, skippedViews = 0
@@ -215,7 +215,7 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
   }
   const diagnostics = (): PhysicalPreparationPoolMetrics => {
     const retained = [...shared.values()].flatMap(entry => { const value = entry.value.deref(); return value ? [value] : [] })
-    const buffers = new Set(retained.flatMap(value => [...preparedBuffers(value)]))
+    const buffers = new Set(retained.flatMap(value => [...physicalPreparedGeometryBuffers(value)]))
     return { workerAlive: workers.size > 0, workerCount: workers.size, workerBudget, activeWorkers: [...workers].filter(worker => worker.activeView !== null).length, clients: clients.size, registeredSources: [...sources.values()].filter(source => source.registered).length, registeredBytes: [...sources.values()].reduce((bytes, source) => bytes + source.bytes, 0), leases: [...sources.values()].reduce((sum, source) => sum + source.owners.size, 0), inFlightJobs: jobs.size, pinnedSources: [...sources.values()].filter(source => source.pins > 0).length, registrations, viewRequests, transferredBytes, retainedViews: retained.length, retainedViewBytes: [...buffers].reduce((bytes, buffer) => bytes + buffer.byteLength, 0), cacheHits, queuedViews: viewQueue.length, skippedViews }
   }
   return {
