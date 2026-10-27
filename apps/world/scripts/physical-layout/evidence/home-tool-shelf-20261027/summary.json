@@ -1,0 +1,535 @@
+{
+  "tested": {
+    "baseline": "20a10558a6978cd1bca678a41f6f25c401fb718e",
+    "candidate": "a1c56446436943963478f4d6dadbd950ea8d0139",
+    "backend": "Candidate API process remained273c; only the built World UI changed; no source/Run mutations."
+  },
+  "limits": [
+    "Untimed functional UI proof: debugger pauses deliberately invalidate performance timings.",
+    "Own paused loopback Runs; no playback or operational commands.",
+    "Original source bounds, authored focus, bearing/pitch and fit scorer retained.",
+    "Narrow loading text occupies15.390625px additional real dock height; ready Home uses the released space.",
+    "320px has limited drawing height because of real toolbar plus expanded native attribution; this is not a large-model readability claim."
+  ],
+  "desktop1280Rail280": {
+    "baselinePadding": {
+      "top": 94.390625,
+      "right": 348,
+      "bottom": 66,
+      "left": 12
+    },
+    "candidatePadding": {
+      "top": 115,
+      "right": 51,
+      "bottom": 66,
+      "left": 12
+    },
+    "baselineClearWidth": 640,
+    "candidateClearWidth": 937,
+    "baselinePreferredFocusScreenX": 612,
+    "candidatePreferredFocusScreenX": 760.5,
+    "baselineDistance": 0.00000912585446185758,
+    "candidateDistance": 0.000009443807665992869,
+    "distanceIncreasePercent": 3.4840924262402595,
+    "planCoversExactlyEqual": true
+  },
+  "variants": [
+    {
+      "case": "1280-280",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "map": {
+        "x": 280,
+        "y": 0,
+        "width": 1000,
+        "height": 678
+      },
+      "tools": {
+        "x": 292,
+        "y": 8,
+        "width": 976,
+        "height": 95
+      },
+      "camera": {
+        "x": 944,
+        "y": 59,
+        "width": 324,
+        "height": 44
+      },
+      "pendingAtHome": true,
+      "pendingPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 66,
+        "left": 12
+      },
+      "readyPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 66,
+        "left": 12
+      },
+      "pendingDistance": 0.000009443807665992869,
+      "readyDistance": 0.000009443807665992869,
+      "pendingAndReadySamePhysicalIntent": true,
+      "pendingAndReadySameInput": true,
+      "physicalIntentMatchesDesktopBaseline": true,
+      "cameraTargetsContainedAndAtLeast44px": true,
+      "hidden": {
+        "hidden": true,
+        "mapPresent": true
+      },
+      "restored": {
+        "tools": true,
+        "camera": true,
+        "overflow": false
+      },
+      "plan": {
+        "levelId": "operating",
+        "map": {
+          "x": 280,
+          "y": 0,
+          "width": 1000,
+          "height": 678
+        },
+        "tools": {
+          "x": 292,
+          "y": 8,
+          "width": 976,
+          "height": 74.390625
+        },
+        "cameraPresent": false
+      },
+      "exceptions": []
+    },
+    {
+      "case": "1280-360",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "map": {
+        "x": 360,
+        "y": 0,
+        "width": 920,
+        "height": 678
+      },
+      "tools": {
+        "x": 372,
+        "y": 8,
+        "width": 896,
+        "height": 95
+      },
+      "camera": {
+        "x": 944,
+        "y": 59,
+        "width": 324,
+        "height": 44
+      },
+      "pendingAtHome": true,
+      "pendingPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 86,
+        "left": 12
+      },
+      "readyPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 86,
+        "left": 12
+      },
+      "pendingDistance": 0.000009687625796020817,
+      "readyDistance": 0.000009687625796020817,
+      "pendingAndReadySamePhysicalIntent": true,
+      "pendingAndReadySameInput": true,
+      "physicalIntentMatchesDesktopBaseline": true,
+      "cameraTargetsContainedAndAtLeast44px": true,
+      "hidden": {
+        "hidden": true,
+        "mapPresent": true
+      },
+      "restored": {
+        "tools": true,
+        "camera": true,
+        "overflow": false
+      },
+      "plan": {
+        "levelId": "operating",
+        "map": {
+          "x": 360,
+          "y": 0,
+          "width": 920,
+          "height": 678
+        },
+        "tools": {
+          "x": 372,
+          "y": 8,
+          "width": 896,
+          "height": 74.390625
+        },
+        "cameraPresent": false
+      },
+      "exceptions": []
+    },
+    {
+      "case": "1440-280",
+      "viewport": {
+        "width": 1440,
+        "height": 720
+      },
+      "map": {
+        "x": 280,
+        "y": 0,
+        "width": 1160,
+        "height": 678
+      },
+      "tools": {
+        "x": 292,
+        "y": 8,
+        "width": 1136,
+        "height": 95
+      },
+      "camera": {
+        "x": 1104,
+        "y": 59,
+        "width": 324,
+        "height": 44
+      },
+      "pendingAtHome": true,
+      "pendingPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 66,
+        "left": 12
+      },
+      "readyPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 66,
+        "left": 12
+      },
+      "pendingDistance": 0.000009443807665992869,
+      "readyDistance": 0.000009443807665992869,
+      "pendingAndReadySamePhysicalIntent": true,
+      "pendingAndReadySameInput": true,
+      "physicalIntentMatchesDesktopBaseline": true,
+      "cameraTargetsContainedAndAtLeast44px": true,
+      "hidden": {
+        "hidden": true,
+        "mapPresent": true
+      },
+      "restored": {
+        "tools": true,
+        "camera": true,
+        "overflow": false
+      },
+      "plan": {
+        "levelId": "operating",
+        "map": {
+          "x": 280,
+          "y": 0,
+          "width": 1160,
+          "height": 678
+        },
+        "tools": {
+          "x": 292,
+          "y": 8,
+          "width": 1136,
+          "height": 74.390625
+        },
+        "cameraPresent": false
+      },
+      "exceptions": []
+    },
+    {
+      "case": "1440-360",
+      "viewport": {
+        "width": 1440,
+        "height": 720
+      },
+      "map": {
+        "x": 360,
+        "y": 0,
+        "width": 1080,
+        "height": 678
+      },
+      "tools": {
+        "x": 372,
+        "y": 8,
+        "width": 1056,
+        "height": 95
+      },
+      "camera": {
+        "x": 1104,
+        "y": 59,
+        "width": 324,
+        "height": 44
+      },
+      "pendingAtHome": true,
+      "pendingPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 66,
+        "left": 12
+      },
+      "readyPadding": {
+        "top": 115,
+        "right": 51,
+        "bottom": 66,
+        "left": 12
+      },
+      "pendingDistance": 0.000009443807665992869,
+      "readyDistance": 0.000009443807665992869,
+      "pendingAndReadySamePhysicalIntent": true,
+      "pendingAndReadySameInput": true,
+      "physicalIntentMatchesDesktopBaseline": true,
+      "cameraTargetsContainedAndAtLeast44px": true,
+      "hidden": {
+        "hidden": true,
+        "mapPresent": true
+      },
+      "restored": {
+        "tools": true,
+        "camera": true,
+        "overflow": false
+      },
+      "plan": {
+        "levelId": "operating",
+        "map": {
+          "x": 360,
+          "y": 0,
+          "width": 1080,
+          "height": 678
+        },
+        "tools": {
+          "x": 372,
+          "y": 8,
+          "width": 1056,
+          "height": 74.390625
+        },
+        "cameraPresent": false
+      },
+      "exceptions": []
+    },
+    {
+      "case": "390",
+      "viewport": {
+        "width": 390,
+        "height": 720
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 625
+      },
+      "tools": {
+        "x": 8,
+        "y": 8,
+        "width": 374,
+        "height": 239.78125
+      },
+      "camera": {
+        "x": 8,
+        "y": 203.78125,
+        "width": 324,
+        "height": 44
+      },
+      "pendingAtHome": true,
+      "pendingPadding": {
+        "top": 275.171875,
+        "right": 51,
+        "bottom": 146,
+        "left": 12
+      },
+      "readyPadding": {
+        "top": 259.78125,
+        "right": 51,
+        "bottom": 146,
+        "left": 12
+      },
+      "pendingDistance": 0.000019710966551850092,
+      "readyDistance": 0.000018327124637839233,
+      "pendingAndReadySamePhysicalIntent": true,
+      "pendingAndReadySameInput": false,
+      "physicalIntentMatchesDesktopBaseline": true,
+      "cameraTargetsContainedAndAtLeast44px": true,
+      "hidden": {
+        "hidden": true,
+        "mapPresent": true
+      },
+      "restored": {
+        "tools": true,
+        "camera": true,
+        "overflow": false
+      },
+      "plan": {
+        "levelId": "operating",
+        "map": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 625
+        },
+        "tools": {
+          "x": 8,
+          "y": 8,
+          "width": 374,
+          "height": 174.390625
+        },
+        "cameraPresent": false
+      },
+      "exceptions": []
+    },
+    {
+      "case": "320",
+      "viewport": {
+        "width": 320,
+        "height": 720
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 577
+      },
+      "tools": {
+        "x": 8,
+        "y": 8,
+        "width": 304,
+        "height": 239.78125
+      },
+      "camera": {
+        "x": 8,
+        "y": 203.78125,
+        "width": 304,
+        "height": 44
+      },
+      "pendingAtHome": true,
+      "pendingPadding": {
+        "top": 275.171875,
+        "right": 51,
+        "bottom": 186,
+        "left": 12
+      },
+      "readyPadding": {
+        "top": 259.78125,
+        "right": 51,
+        "bottom": 186,
+        "left": 12
+      },
+      "pendingDistance": 0.000030417963498072342,
+      "readyDistance": 0.000026850245702692345,
+      "pendingAndReadySamePhysicalIntent": true,
+      "pendingAndReadySameInput": false,
+      "physicalIntentMatchesDesktopBaseline": true,
+      "cameraTargetsContainedAndAtLeast44px": true,
+      "hidden": {
+        "hidden": true,
+        "mapPresent": true
+      },
+      "restored": {
+        "tools": true,
+        "camera": true,
+        "overflow": false
+      },
+      "plan": {
+        "levelId": "operating",
+        "map": {
+          "x": 0,
+          "y": 0,
+          "width": 320,
+          "height": 577
+        },
+        "tools": {
+          "x": 8,
+          "y": 8,
+          "width": 304,
+          "height": 174.390625
+        },
+        "cameraPresent": false
+      },
+      "exceptions": []
+    }
+  ],
+  "files": [
+    {
+      "path": "baseline-20a-1280-280.json",
+      "bytes": 32526,
+      "sha256": "b5dec6a85a9dbfe3d3654dc080a6e33d4214b28f1906e3037e55d6df2489ba56"
+    },
+    {
+      "path": "baseline-20a-home.png",
+      "bytes": 240350,
+      "sha256": "054a9a87977dbecdd2122eb67c94a857462e4bd3589f08870ccb53088e2dc8a3"
+    },
+    {
+      "path": "baseline-20a-plan.png",
+      "bytes": 159142,
+      "sha256": "fbb322578164f474461c2980adc354b016fec051394603f41778648fe359d658"
+    },
+    {
+      "path": "candidate-a1c-1280-280.json",
+      "bytes": 32337,
+      "sha256": "4a796c633cc0980ddd37b0ffd249e347b4500e8bd3e465103e4a3630381cd5eb"
+    },
+    {
+      "path": "candidate-a1c-1280-360.json",
+      "bytes": 32293,
+      "sha256": "7cc827183242a8587242937df95a23f15aeaa15d50325a33d381c5a6d3049e4a"
+    },
+    {
+      "path": "candidate-a1c-1440-280.json",
+      "bytes": 32333,
+      "sha256": "ead66ed44e82d71f79ec5af01619d145a60463acc1e115202f9271db5f6e6f21"
+    },
+    {
+      "path": "candidate-a1c-1440-360.json",
+      "bytes": 32339,
+      "sha256": "4339a2d418e3a73170342e4dda4d302e6592e16e1d9d6d3d66b6175ddd9661f6"
+    },
+    {
+      "path": "candidate-a1c-390.json",
+      "bytes": 32513,
+      "sha256": "8e163210cfff7e93c9913f4f15e9451155407f064dae02a55e172024bf37154a"
+    },
+    {
+      "path": "candidate-a1c-320.json",
+      "bytes": 19839,
+      "sha256": "85a171eba880f76416ab3e63d4dc60cc74b6df05956f2f6b396fade0de667044"
+    },
+    {
+      "path": "candidate-a1c-home.png",
+      "bytes": 227560,
+      "sha256": "7c25801aec044f5ad59937998d0a3c1e71cb371e6899e7866e6283b3a580e23b"
+    },
+    {
+      "path": "candidate-a1c-plan.png",
+      "bytes": 159060,
+      "sha256": "18389a066b359a17badcf78856c5329b0afbe86e01d02b8b7785b9024e94b6ba"
+    },
+    {
+      "path": "candidate-a1c-home-320.png",
+      "bytes": 67806,
+      "sha256": "d915f9f8f0f5447fb4e1baa5d6b84194d945833ce28eebf721dffdba18ddda1f"
+    },
+    {
+      "path": "candidate-a1c-controls-hidden-320.png",
+      "bytes": 63348,
+      "sha256": "c0f19ab3ab78aa0a8597bd0ec993a7bd5d9c346da24e452c93e8b2fbf2eea94c"
+    },
+    {
+      "path": "drawer-before-320.json",
+      "bytes": 3232,
+      "sha256": "33dee5863d8028a4835725b47c3f33af4034e6272c67a02058289b9670579cc4"
+    },
+    {
+      "path": "drawer-before-320.png",
+      "bytes": 45320,
+      "sha256": "cb074a6d1b4162e18cb6b52fa0a934ef66a49eb1692371ea414ae42ac1885daf"
+    }
+  ]
+}
