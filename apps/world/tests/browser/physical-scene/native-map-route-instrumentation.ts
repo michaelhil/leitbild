@@ -48,12 +48,14 @@
     if (s.vao && s.array) { if (args[0] === 0) vaos.set(s.vao, s.array); if (args[0] === 5 && buffers.has(vaos.get(s.vao)!)) { instanceVao.set(s.vao, s.array); instanceBuffers.add(s.array) } }
     return attribute.apply(this, args)
   }
-  const draw = WebGL2RenderingContext.prototype.drawArraysInstanced
-  WebGL2RenderingContext.prototype.drawArraysInstanced = function (...args: Parameters<WebGL2RenderingContext['drawArraysInstanced']>) {
-    const result = draw.apply(this, args), s = state(this), buffer = s.vao ? vaos.get(s.vao) : undefined, meta = buffer ? buffers.get(buffer) : undefined, instance = s.vao ? instanceVao.get(s.vao) : undefined, values = instance ? matrices.get(instance) : undefined
-    if (args[0] === this.TRIANGLES && meta && projectedByKey.has(meta.key) && values) { q.points=projectedByKey.get(meta.key);q.key=meta.key;q.currentDrawKey=meta.key;q.lastDrawAt=performance.now();q.matrix = Array.from(values.slice(0, 16)); q.instances = args[3] }
-    return result
+  const observeDraw = (gl: WebGL2RenderingContext, mode: number, count: number, instances: number): void => {
+    const s = state(gl), buffer = s.vao ? vaos.get(s.vao) : undefined, meta = buffer ? buffers.get(buffer) : undefined, instance = s.vao ? instanceVao.get(s.vao) : undefined, values = instance ? matrices.get(instance) : undefined
+    if (mode === gl.TRIANGLES && count > 0 && meta && projectedByKey.has(meta.key) && values) { q.points=projectedByKey.get(meta.key);q.key=meta.key;q.currentDrawKey=meta.key;q.lastDrawAt=performance.now();q.matrix = Array.from(values.slice(0, 16)); q.instances = instances }
   }
+  const draw = WebGL2RenderingContext.prototype.drawArraysInstanced
+  WebGL2RenderingContext.prototype.drawArraysInstanced = function (...args: Parameters<WebGL2RenderingContext['drawArraysInstanced']>) { const result = draw.apply(this, args); observeDraw(this, args[0], args[2], args[3]); return result }
+  const indexedDraw = WebGL2RenderingContext.prototype.drawElementsInstanced
+  WebGL2RenderingContext.prototype.drawElementsInstanced = function (...args: Parameters<WebGL2RenderingContext['drawElementsInstanced']>) { const result = indexedDraw.apply(this, args); observeDraw(this, args[0], args[1], args[4]); return result }
   q.projected = () => {
     const m = q.matrix, canvas = document.querySelector<HTMLCanvasElement>('.maplibregl-canvas'); if (!m || !canvas || q.instances !== 1) return []
     const box = canvas.getBoundingClientRect(), seen = new Set<string>()
