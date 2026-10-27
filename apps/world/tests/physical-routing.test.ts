@@ -26,7 +26,7 @@ test('terminal escape exempts only its own equipment and preserves the specified
   expect(() => routePhysicalConnection({ ...request, from: { point: [2, 2, 2], outward: [1, 0, 0], obstacleId: 'pump' }, obstacles: [own, { id: 'other', min: [2.1, 1, 1], max: [4, 3, 3] }] })).toThrow('nozzle exit is blocked')
 })
 test('routing constraints refuse stale terminals, duplicate ids and diagonal nozzle directions', () => {
-  const data = { terminals: [{ id: 'a', elementId: 'pump', subjectId: 'pump', port: 'outlet', local: [2, 1, 1], outward: [1, 0, 0] }, { id: 'b', elementId: 'tank', subjectId: 'tank', port: 'inlet', local: [0, 1, 1], outward: [-1, 0, 0] }], connections: [{ id: 'pipe', graphConnectionId: 'supply', from: 'a', to: 'b', kind: 'pipe', diameter: .2, clearance: .1, bendRadius: .4, envelope: request.envelope, material: 'pipe', layerId: 'piping' }], obstacleElementIds: ['pump', 'tank'] }
+  const data = { geometryTolerance: .01, terminals: [{ id: 'a', elementId: 'pump', subjectId: 'pump', port: 'outlet', local: [2, 1, 1], outward: [1, 0, 0] }, { id: 'b', elementId: 'tank', subjectId: 'tank', port: 'inlet', local: [0, 1, 1], outward: [-1, 0, 0] }], connections: [{ id: 'pipe', graphConnectionId: 'supply', from: 'a', to: 'b', kind: 'pipe', diameter: .2, clearance: .1, bendRadius: .4, envelope: request.envelope, material: 'pipe', layerId: 'piping' }], obstacleElementIds: ['pump', 'tank'] }
   expect(physicalRoutingSchema.safeParse(data).success).toBe(true)
   expect(physicalRoutingSchema.safeParse({ ...data, connections: [{ ...data.connections[0], to: 'gone' }] }).success).toBe(false)
   expect(physicalRoutingSchema.safeParse({ ...data, terminals: [{ ...data.terminals[0], outward: [1, 1, 0] }, data.terminals[1]] }).success).toBe(false)

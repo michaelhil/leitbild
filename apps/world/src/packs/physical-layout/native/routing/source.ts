@@ -10,11 +10,14 @@ export const routingConnectionSchema = z.object({
   id, graphConnectionId: id, from: id, to: id, kind: z.enum(['pipe', 'electrical']),
   diameter: z.number().finite().positive(), clearance: z.number().finite().nonnegative(), bendRadius: z.number().finite().positive(),
   envelope: routingBoundsSchema, via: z.array(point).optional(),
+  /** Accepted authoring result; retained compilation validates it, never searches. */
+  solution: z.array(point).min(2).optional(),
   material: z.enum(['pipe', 'steam', 'crane']), layerId: id,
 }).strict().refine(value => value.from !== value.to, 'A connection needs distinct terminals')
 /** Source authoring constraints, not numerical solver geometry. Ports retain the
  * graph's exact component/port identity; the accepted centerline is reproducible. */
 export const physicalRoutingSchema = z.object({
+  geometryTolerance: z.number().finite().positive(),
   terminals: z.array(routingTerminalSchema), connections: z.array(routingConnectionSchema), obstacleElementIds: z.array(id),
 }).strict().superRefine((network, context) => {
   const issue = (message: string) => context.addIssue({ code: 'custom', message })
