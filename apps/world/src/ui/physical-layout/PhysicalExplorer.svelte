@@ -80,6 +80,8 @@
   let componentScope = $state<{ readonly sceneId: string; readonly label: string; readonly subjectIds: ReadonlyArray<string> } | null>(null)
   let filter = $state('')
   let hover = $state<PhysicalSceneHit | null>(null)
+  let hoverLabelElement = $state<HTMLElement | null>(null)
+  let hoverLabelSize = $state.raw({ width: 0, height: 0 })
   let hoverDismissTimer: ReturnType<typeof setTimeout> | null = null
   const retainHover = (): void => { if (hoverDismissTimer !== null) clearTimeout(hoverDismissTimer); hoverDismissTimer = null }
   const dismissHoverSoon = (): void => { retainHover(); hoverIntent.clear(); hoverDismissTimer = setTimeout(() => { hoverDismissTimer = null; hover = null }, 200) }
@@ -231,6 +233,17 @@
     if (hover === null || hover.subjectIds.length !== 1) return []
     const reading = snapshots.get(hover.sceneId)?.latest
     return reading ? physicalOperationContext(operationsFor(reading, frozenScenes.has(hover.sceneId)).get(hover.subjectIds[0]!)) : []
+  })
+  const hoverPoint = $derived.by(() => {
+    const point = hover?.screen ?? { x: 0, y: 0 }, box = hoverLabelSize
+    return { x: Math.max(8, Math.min(size.width - box.width - 8, point.x + 16)), y: point.y + 16 + box.height <= size.height - 8 ? point.y + 16 : Math.max(8, Math.min(size.height - box.height - 8, point.y - box.height - 16)) }
+  })
+  $effect(() => {
+    const element = hoverLabelElement
+    if (!element) return
+    const measure = (): void => { const box = element.getBoundingClientRect(); if (box.width !== hoverLabelSize.width || box.height !== hoverLabelSize.height) hoverLabelSize = { width: box.width, height: box.height } }
+    const observer = new ResizeObserver(measure); observer.observe(element); measure()
+    return () => observer.disconnect()
   })
   $effect(() => {
     const color = draftingPalette?.materials.selection
@@ -732,7 +745,7 @@
   {#each badges as badge (`${badge.sceneId}:${badge.occurrenceId}:${badge.elementId}`)}
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
   {/each}
-  {#if hover !== null && !suspended && inspected === null}<div class="layout-hover-label" style:left={`${Math.max(8, Math.min(size.width - Math.min(300, size.width - 16) - 8, hover.screen.x + 16))}px`} style:top={`${Math.max(8, hover.screen.y - 24)}px`}><strong>{hover.label}</strong>{#each hoverContext as context}<small><b>{context.label}</b> {context.value}</small>{/each}<small>Click to inspect · pause here to open</small></div>{/if}
+  {#if hover !== null && !suspended && inspected === null}<div bind:this={hoverLabelElement} class="layout-hover-label" style:left={`${hoverPoint.x}px`} style:top={`${hoverPoint.y}px`}><strong>{hover.label}</strong>{#each hoverContext as context}<small><b>{context.label}</b> {context.value}</small>{/each}<small>Click to inspect · pause here to open</small></div>{/if}
   {#if inspectionSource !== null && inspected !== null && !suspended}<div class="layout-inspection" style:left={`${cardPoint.x}px`} style:top={`${cardPoint.y}px`} style:width={`${inspectionWidth}px`} style:height={`${allocatedInspectionHeight}px`}>{#key inspectionSource}<iframe bind:this={inspectionFrame} title={`Inspect ${inspected.label}`} src={inspectionSource} allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'" referrerpolicy="same-origin"></iframe>{/key}</div>{/if}
 </div>
 
@@ -744,7 +757,7 @@
   .layout-components { display: grid; gap: 6px; width: min(440px, 100%); margin-left: auto; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }
   .component-row { display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border); padding-top: 4px; }.component-row > span { flex: 1; min-width: 0; display: grid; gap: 3px; }.component-row strong, .component-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.component-row small { color: var(--muted); font-size: 10px; }.component-row button { flex: none; padding: 6px; }
   .layout-status { position: absolute; z-index: 4; pointer-events: auto; min-width: 44px; min-height: 44px; font-size: 11px; transform: translate(-50%, -50%); padding: 0; background: transparent; border: 0; }.layout-status span { display: inline-block; max-width: 96px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); }
-  .layout-hover-label { position: absolute; z-index: 4; pointer-events: none; max-width: min(300px, calc(100% - 16px)); padding: 7px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 11px; box-shadow: var(--shadow-floating); }.layout-hover-label strong,.layout-hover-label small { display: block; overflow-wrap: anywhere; }.layout-hover-label small { color: var(--muted); margin-top: 3px; }
+  .layout-hover-label { position: absolute; z-index: 4; pointer-events: none; box-sizing: border-box; width: max-content; max-width: min(300px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: hidden; padding: 7px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 11px; box-shadow: var(--shadow-floating); }.layout-hover-label strong,.layout-hover-label small { display: block; overflow-wrap: anywhere; }.layout-hover-label small { color: var(--muted); margin-top: 3px; }
   .layout-inspection { position: absolute; z-index: 8; width: min(360px, calc(100% - 16px)); box-sizing: border-box; pointer-events: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; box-shadow: var(--shadow-floating); }.layout-inspection iframe { display: block; width: 100%; height: 100%; border: 0; }
   @container (max-width: 440px) { .layout-tools { left: 8px; right: 8px !important; }.component-row { flex-wrap: wrap; }.component-row > span { flex-basis: 100%; }.component-row button { flex: 1; } }
 </style>
