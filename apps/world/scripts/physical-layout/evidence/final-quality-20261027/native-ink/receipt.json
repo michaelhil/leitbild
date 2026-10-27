@@ -1,0 +1,2104 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "done": true,
+      "passed": true,
+      "results": [
+        {
+          "name": "evenodd filled0",
+          "hit": {
+            "primitiveId": "ring",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 310,
+            "y": 390
+          }
+        },
+        {
+          "name": "evenodd hole0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "curve inside0",
+          "hit": {
+            "primitiveId": "curve",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 340,
+            "y": 390
+          }
+        },
+        {
+          "name": "control hull is not hit0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 340,
+            "y": 306
+          }
+        },
+        {
+          "name": "rotated ellipse inside0",
+          "hit": {
+            "primitiveId": "ellipse",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 430,
+            "y": 270
+          }
+        },
+        {
+          "name": "ellipse bbox is not hit0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400,
+            "y": 240
+          }
+        },
+        {
+          "name": "actual dash0",
+          "hit": {
+            "primitiveId": "dash",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 295,
+            "y": 300
+          }
+        },
+        {
+          "name": "dash gap0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 325,
+            "y": 300
+          }
+        },
+        {
+          "name": "opaque architecture occludes0",
+          "hit": {
+            "primitiveId": "wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occluded": true
+          },
+          "expected": null,
+          "blocker": "wall",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent wall admits behind0",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "graph bound architecture remains target0",
+          "hit": {
+            "primitiveId": "bound-wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occurrenceId": "wall",
+            "occluded": false
+          },
+          "expected": "wall",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "invisible bound architecture admits visible equipment0",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent floor admits behind0",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            178,
+            77,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "anonymous opaque blocker0",
+          "hit": {
+            "primitiveId": "anonymous-overlay",
+            "occluded": true
+          },
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "hatch line0",
+          "hit": {
+            "primitiveId": "hatch",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 370,
+            "y": 360
+          }
+        },
+        {
+          "name": "hatch gap0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 370,
+            "y": 345
+          }
+        },
+        {
+          "name": "clipped route inside0",
+          "hit": {
+            "primitiveId": "clipped-route",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 370,
+            "y": 300
+          }
+        },
+        {
+          "name": "clipped route outside0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 280,
+            "y": 300
+          }
+        },
+        {
+          "name": "native glyph coverage0",
+          "hit": {
+            "primitiveId": "native-glyph",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "miss": null,
+          "positive": {
+            "x": 397.5,
+            "y": 259.5
+          },
+          "hole": {
+            "x": 398.5,
+            "y": 267.5
+          }
+        },
+        {
+          "name": "evenodd filled73",
+          "hit": {
+            "primitiveId": "ring",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 268.8889716279939,
+            "y": 230.28702961976865
+          }
+        },
+        {
+          "name": "evenodd hole73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "curve inside73",
+          "hit": {
+            "primitiveId": "curve",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 279.1219812932897,
+            "y": 263.7576960784749
+          }
+        },
+        {
+          "name": "control hull is not hit73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 372.8398473776672,
+            "y": 235.10526901564668
+          }
+        },
+        {
+          "name": "rotated ellipse inside73",
+          "hit": {
+            "primitiveId": "ellipse",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 443.7036761240021,
+            "y": 323.23765679341045
+          }
+        },
+        {
+          "name": "ellipse bbox is not hit73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 466.9413329174125,
+            "y": 279.53398066940844
+          }
+        },
+        {
+          "name": "actual dash73",
+          "hit": {
+            "primitiveId": "dash",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 364.18446617146475,
+            "y": 182.85266739452817
+          }
+        },
+        {
+          "name": "dash gap73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 374.41747583676056,
+            "y": 216.3233338532344
+          }
+        },
+        {
+          "name": "opaque architecture occludes73",
+          "hit": {
+            "primitiveId": "wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occluded": true
+          },
+          "expected": null,
+          "blocker": "wall",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent wall admits behind73",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "graph bound architecture remains target73",
+          "hit": {
+            "primitiveId": "bound-wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occurrenceId": "wall",
+            "occluded": false
+          },
+          "expected": "wall",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "invisible bound architecture admits visible equipment73",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent floor admits behind73",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            178,
+            77,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "anonymous opaque blocker73",
+          "hit": {
+            "primitiveId": "anonymous-overlay",
+            "occluded": true
+          },
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "hatch line73",
+          "hit": {
+            "primitiveId": "hatch",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 322.8256574172917,
+            "y": 286.99535287188536
+          }
+        },
+        {
+          "name": "hatch gap73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 339.5609906466449,
+            "y": 281.8788480392375
+          }
+        },
+        {
+          "name": "clipped route inside73",
+          "hit": {
+            "primitiveId": "clipped-route",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 389.76699033470425,
+            "y": 266.5293335412938
+          }
+        },
+        {
+          "name": "clipped route outside73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 359.0679613388169,
+            "y": 166.11733416517504
+          }
+        },
+        {
+          "name": "native glyph coverage73",
+          "hit": {
+            "primitiveId": "native-glyph",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "miss": null,
+          "positive": {
+            "x": 406.5,
+            "y": 261.5
+          },
+          "hole": {
+            "x": 406.5,
+            "y": 272.5
+          }
+        },
+        {
+          "name": "evenodd filled185",
+          "hit": {
+            "primitiveId": "ring",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 546.2523095133196,
+            "y": 177.2797410285482
+          }
+        },
+        {
+          "name": "evenodd hole185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "curve inside185",
+          "hit": {
+            "primitiveId": "curve",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 501.42354809919095,
+            "y": 173.35773260490356
+          }
+        },
+        {
+          "name": "control hull is not hit185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 490.4419245129861,
+            "y": 298.8782645644635
+          }
+        },
+        {
+          "name": "rotated ellipse inside185",
+          "hit": {
+            "primitiveId": "ellipse",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 351.2492301622269,
+            "y": 340.90675299048394
+          }
+        },
+        {
+          "name": "ellipse bbox is not hit185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 392.15598315271086,
+            "y": 389.65752282825713
+          }
+        },
+        {
+          "name": "actual dash185",
+          "hit": {
+            "primitiveId": "dash",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 556.90066494945,
+            "y": 313.72702948275617
+          }
+        },
+        {
+          "name": "dash gap185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 512.0719035353214,
+            "y": 309.80502105911154
+          }
+        },
+        {
+          "name": "opaque architecture occludes185",
+          "hit": {
+            "primitiveId": "wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occluded": true
+          },
+          "expected": null,
+          "blocker": "wall",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent wall admits behind185",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "graph bound architecture remains target185",
+          "hit": {
+            "primitiveId": "bound-wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occurrenceId": "wall",
+            "occluded": false
+          },
+          "expected": "wall",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "invisible bound architecture admits visible equipment185",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent floor admits behind185",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            178,
+            77,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "anonymous opaque blocker185",
+          "hit": {
+            "primitiveId": "anonymous-overlay",
+            "occluded": true
+          },
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "hatch line185",
+          "hit": {
+            "primitiveId": "hatch",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 452.6727782614178,
+            "y": 214.2644855953875
+          }
+        },
+        {
+          "name": "hatch gap185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 450.71177404959553,
+            "y": 236.67886630245178
+          }
+        },
+        {
+          "name": "clipped route inside185",
+          "hit": {
+            "primitiveId": "clipped-route",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 444.8287614141286,
+            "y": 303.9220084236446
+          }
+        },
+        {
+          "name": "clipped route outside185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 579.3150456565143,
+            "y": 315.68803369457845
+          }
+        },
+        {
+          "name": "native glyph coverage185",
+          "hit": {
+            "primitiveId": "native-glyph",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "miss": null,
+          "positive": {
+            "x": 392.5,
+            "y": 239.5
+          },
+          "hole": {
+            "x": 401.5,
+            "y": 250.5
+          }
+        }
+      ],
+      "failures": [],
+      "ratio": 1,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+    },
+    {
+      "done": true,
+      "passed": true,
+      "results": [
+        {
+          "name": "evenodd filled0",
+          "hit": {
+            "primitiveId": "ring",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 310,
+            "y": 390
+          }
+        },
+        {
+          "name": "evenodd hole0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "curve inside0",
+          "hit": {
+            "primitiveId": "curve",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 340,
+            "y": 390
+          }
+        },
+        {
+          "name": "control hull is not hit0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 340,
+            "y": 306
+          }
+        },
+        {
+          "name": "rotated ellipse inside0",
+          "hit": {
+            "primitiveId": "ellipse",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 430,
+            "y": 270
+          }
+        },
+        {
+          "name": "ellipse bbox is not hit0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400,
+            "y": 240
+          }
+        },
+        {
+          "name": "actual dash0",
+          "hit": {
+            "primitiveId": "dash",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 295,
+            "y": 300
+          }
+        },
+        {
+          "name": "dash gap0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 325,
+            "y": 300
+          }
+        },
+        {
+          "name": "opaque architecture occludes0",
+          "hit": {
+            "primitiveId": "wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occluded": true
+          },
+          "expected": null,
+          "blocker": "wall",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent wall admits behind0",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "graph bound architecture remains target0",
+          "hit": {
+            "primitiveId": "bound-wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occurrenceId": "wall",
+            "occluded": false
+          },
+          "expected": "wall",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "invisible bound architecture admits visible equipment0",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent floor admits behind0",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            178,
+            77,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "anonymous opaque blocker0",
+          "hit": {
+            "primitiveId": "anonymous-overlay",
+            "occluded": true
+          },
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "hatch line0",
+          "hit": {
+            "primitiveId": "hatch",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 370,
+            "y": 360
+          }
+        },
+        {
+          "name": "hatch gap0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 370,
+            "y": 345
+          }
+        },
+        {
+          "name": "clipped route inside0",
+          "hit": {
+            "primitiveId": "clipped-route",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 370,
+            "y": 300
+          }
+        },
+        {
+          "name": "clipped route outside0",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 280,
+            "y": 300
+          }
+        },
+        {
+          "name": "native glyph coverage0",
+          "hit": {
+            "primitiveId": "native-glyph",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "miss": null,
+          "positive": {
+            "x": 395.25,
+            "y": 259.75
+          },
+          "hole": {
+            "x": 398.25,
+            "y": 267.25
+          }
+        },
+        {
+          "name": "evenodd filled73",
+          "hit": {
+            "primitiveId": "ring",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 268.8889716279939,
+            "y": 230.28702961976865
+          }
+        },
+        {
+          "name": "evenodd hole73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "curve inside73",
+          "hit": {
+            "primitiveId": "curve",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 279.1219812932897,
+            "y": 263.7576960784749
+          }
+        },
+        {
+          "name": "control hull is not hit73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 372.8398473776672,
+            "y": 235.10526901564668
+          }
+        },
+        {
+          "name": "rotated ellipse inside73",
+          "hit": {
+            "primitiveId": "ellipse",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 443.7036761240021,
+            "y": 323.23765679341045
+          }
+        },
+        {
+          "name": "ellipse bbox is not hit73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 466.9413329174125,
+            "y": 279.53398066940844
+          }
+        },
+        {
+          "name": "actual dash73",
+          "hit": {
+            "primitiveId": "dash",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 364.18446617146475,
+            "y": 182.85266739452817
+          }
+        },
+        {
+          "name": "dash gap73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 374.41747583676056,
+            "y": 216.3233338532344
+          }
+        },
+        {
+          "name": "opaque architecture occludes73",
+          "hit": {
+            "primitiveId": "wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occluded": true
+          },
+          "expected": null,
+          "blocker": "wall",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent wall admits behind73",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "graph bound architecture remains target73",
+          "hit": {
+            "primitiveId": "bound-wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occurrenceId": "wall",
+            "occluded": false
+          },
+          "expected": "wall",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "invisible bound architecture admits visible equipment73",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent floor admits behind73",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            178,
+            77,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "anonymous opaque blocker73",
+          "hit": {
+            "primitiveId": "anonymous-overlay",
+            "occluded": true
+          },
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400,
+            "y": 300
+          }
+        },
+        {
+          "name": "hatch line73",
+          "hit": {
+            "primitiveId": "hatch",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 322.8256574172917,
+            "y": 286.99535287188536
+          }
+        },
+        {
+          "name": "hatch gap73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 339.5609906466449,
+            "y": 281.8788480392375
+          }
+        },
+        {
+          "name": "clipped route inside73",
+          "hit": {
+            "primitiveId": "clipped-route",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 389.76699033470425,
+            "y": 266.5293335412938
+          }
+        },
+        {
+          "name": "clipped route outside73",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 359.0679613388169,
+            "y": 166.11733416517504
+          }
+        },
+        {
+          "name": "native glyph coverage73",
+          "hit": {
+            "primitiveId": "native-glyph",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "miss": null,
+          "positive": {
+            "x": 407.25,
+            "y": 261.25
+          },
+          "hole": {
+            "x": 413.25,
+            "y": 271.25
+          }
+        },
+        {
+          "name": "evenodd filled185",
+          "hit": {
+            "primitiveId": "ring",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 546.2523095133196,
+            "y": 177.2797410285482
+          }
+        },
+        {
+          "name": "evenodd hole185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "curve inside185",
+          "hit": {
+            "primitiveId": "curve",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 501.42354809919095,
+            "y": 173.35773260490356
+          }
+        },
+        {
+          "name": "control hull is not hit185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 490.4419245129861,
+            "y": 298.8782645644635
+          }
+        },
+        {
+          "name": "rotated ellipse inside185",
+          "hit": {
+            "primitiveId": "ellipse",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 351.2492301622269,
+            "y": 340.90675299048394
+          }
+        },
+        {
+          "name": "ellipse bbox is not hit185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 392.15598315271086,
+            "y": 389.65752282825713
+          }
+        },
+        {
+          "name": "actual dash185",
+          "hit": {
+            "primitiveId": "dash",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 556.90066494945,
+            "y": 313.72702948275617
+          }
+        },
+        {
+          "name": "dash gap185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 512.0719035353214,
+            "y": 309.80502105911154
+          }
+        },
+        {
+          "name": "opaque architecture occludes185",
+          "hit": {
+            "primitiveId": "wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occluded": true
+          },
+          "expected": null,
+          "blocker": "wall",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent wall admits behind185",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "graph bound architecture remains target185",
+          "hit": {
+            "primitiveId": "bound-wall-overlay",
+            "ownerOccurrenceId": "wall",
+            "occurrenceId": "wall",
+            "occluded": false
+          },
+          "expected": "wall",
+          "pixel": [
+            0,
+            204,
+            51,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "invisible bound architecture admits visible equipment185",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "transparent floor admits behind185",
+          "hit": {
+            "primitiveId": "equipment",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            0,
+            178,
+            77,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "anonymous opaque blocker185",
+          "hit": {
+            "primitiveId": "anonymous-overlay",
+            "occluded": true
+          },
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "point": {
+            "x": 400.00000000000006,
+            "y": 300
+          }
+        },
+        {
+          "name": "hatch line185",
+          "hit": {
+            "primitiveId": "hatch",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "expected": "machine",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 452.6727782614178,
+            "y": 214.2644855953875
+          }
+        },
+        {
+          "name": "hatch gap185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 450.71177404959553,
+            "y": 236.67886630245178
+          }
+        },
+        {
+          "name": "clipped route inside185",
+          "hit": {
+            "primitiveId": "clipped-route",
+            "ownerOccurrenceId": "route",
+            "occurrenceId": "route",
+            "occluded": false
+          },
+          "expected": "route",
+          "pixel": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "point": {
+            "x": 444.8287614141286,
+            "y": 303.9220084236446
+          }
+        },
+        {
+          "name": "clipped route outside185",
+          "hit": null,
+          "expected": null,
+          "pixel": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "point": {
+            "x": 579.3150456565143,
+            "y": 315.68803369457845
+          }
+        },
+        {
+          "name": "native glyph coverage185",
+          "hit": {
+            "primitiveId": "native-glyph",
+            "ownerOccurrenceId": "machine",
+            "occurrenceId": "machine",
+            "occluded": false
+          },
+          "miss": null,
+          "positive": {
+            "x": 396.25,
+            "y": 239.25
+          },
+          "hole": {
+            "x": 401.25,
+            "y": 250.25
+          }
+        }
+      ],
+      "failures": [],
+      "ratio": 2,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+    }
+  ],
+  "appBundleSha256": "c31eb6921fb8243dd74d6c29031c66230ca99852c2d6215337a4174e6e7264f0",
+  "limitations": [
+    "Actual native Canvas2D geometry/glyph/paint-order tests at DPR1/2; no performance or full-product UI claim.",
+    "Synthetic test-only scene draws with the same production architectural painter and shared paths. No production Run or API is contacted."
+  ]
+}

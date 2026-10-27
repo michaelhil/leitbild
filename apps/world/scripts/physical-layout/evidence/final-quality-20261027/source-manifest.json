@@ -1,0 +1,63 @@
+{
+  "testedProductionCommit": "2a2755715162fc2335cf958fc08c14eebb0322f3",
+  "guardOnlyFixtureCommit": "4151fa9cb17236a20580c4dcf22ad70fa840112d",
+  "production": {
+    "src/ui/physical-layout/PhysicalExplorer.svelte": "ad5cfbf8c86a7bae0a18e4bf86dbb98958c188e394fdd53eeff6edce30a8ac66",
+    "src/ui/physical-layout/plan-drawing.ts": "849dd1e9b9daee27f26540f13966f3265b4f714565b802269c994fa016c9578b",
+    "src/ui/physical-layout/plan-paint-stream.ts": "f4199a6af9682baeb58e7f83aea82797443a4d9f3a3f86b8e1aafab04be22107",
+    "src/ui/physical-layout/route-marks.ts": "d63ea604851cba971ec97085d5cbc5ee9f43fe8ed745325a28a7d4b57587c48c",
+    "src/ui/physical-layout/operation.ts": "ffec03ee1fa440fa26840f872b986490bbe2c50dfcabff1378f49b9bb576a03d",
+    "src/ui/map/physical-scene/backend.ts": "24f343ac103ea3ca61548d88abd893d466f5dcdafac5854aba8de034d3d483ae",
+    "src/ui/map/physical-scene/renderer.ts": "3914a0eca85020899c47b3fbc3c1b3720da7922021ddca0aa3499c41183d50f7",
+    "src/ui/map/physical-scene/object-table.ts": "a7bcf0457cec42493bc5cb764a5deee8ce80279a429d268b56a6052936f64fa6",
+    "src/ui/map/physical-scene/subject-styles.ts": "9c38624ad059b5621462785932b1d76a3e15bbc2ad7ce225521e1ff04c336b67",
+    "src/ui/map/physical-scene/occurrence-projection.ts": "a2339e0cdd480c59c1dbd4cb29e28455a6686d3a9b27d011f4c8e687ef616caa",
+    "src/ui/map/physical-scene/render-pass.ts": "c3b359387bf1502e3836c8ef3739f729beda6cde2e975db8f9ac613af099d1d9",
+    "src/ui/map/physical-scene/architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce",
+    "src/ui/map/physical-scene/architecture-bsp.ts": "c95f4c7d948201aaa9c60aabc5a479784f89d1b93c0b59d337c9c5854224813d",
+    "src/ui/map/physical-scene/architecture-bsp-types.ts": "64bf2296059b9ce0b00af90460c3b93075d1a3951fcdb578d36350286e6a91c1",
+    "src/ui/map/physical-scene/architecture-cohort.ts": "c70da7bb4bc6fe5ec3036b1a800a1c23e4d747397239fe6fad90bd0185646aa9",
+    "src/ui/map/physical-scene/plan-projection.ts": "6f7f90afcb42997686a3573ea8101c25032c336120a6dbad855af1057b694e25",
+    "src/ui/map/physical-scene/preparation.ts": "da1f2c31d42d615564d4dc86c7f0c6e14880feea8cda6466077166b611544c94",
+    "src/ui/map/physical-scene/geometry.ts": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
+    "src/ui/map/physical-scene/surface-ownership.ts": "240f6f5c38d71c2d085c4dae742b7746ef2e425219f15e9678a635ab154a1e98",
+    "src/ui/map/physical-scene/picking.ts": "6c8aa7685592b2c8feadae7ddf544bfc0111a777f8a3bfa1b62bda09bb48d41f",
+    "src/ui/map/physical-scene/plan-picking.ts": "23ee99986d890c3c0360fd019ae09f9cd45d9c11b29d7e80beafa6e2ed8bf182",
+    "src/ui/map/physical-scene/render-buffers.ts": "bf335c55c4b5630c417e079c2d1c24e8a85f69b47340032b98eec7f77f3d8657",
+    "src/ui/map/physical-scene/math.ts": "fae79036b79cf003b40fcae44c09a44bef3dff7be6ffce0ba3df368227a3d10c",
+    "src/ui/map/physical-scene/gl-state.ts": "42e05a9999413e095ea1367cb32842ac3c8b96e6482432b76e5cf1605ef1cac0",
+    "src/ui/map/physical-scene/architecture-opacity.ts": "6984d13fd4304edc461d46776d04ab93629321f14c3e8a883bbd323df131a333",
+    "src/ui/map/physical-scene/scene-controller.ts": "717111b8d60f6e6bd401a61a98c43e1541b95ffed15273e3be5faef5cb1b0d09",
+    "src/ui/map/physical-scene/map-viewport.ts": "3c0fc7fd0fa410bd1c13a2ccfabb9f4b70fd5cf0d3992a184c1cd6d9a91c2b28"
+  },
+  "fixtures": {
+    "scripts/physical-layout/plan-raster-comparison-probe.ts": "f4f9d3a48d5adbc93ce46d4997481e7b5139473aca805374a194f84c3f16de43",
+    "scripts/physical-layout/original-native-comparison-probe.ts": "2e85e196b0e6d1392cd0f295b6d2a6b4e56d1aca138a8b18b3a3e410a8be21bf",
+    "scripts/physical-layout/plan-picking-probe.ts": "ea5dc6bdf3d4b5858eb01696852b2e3373113d09d04d952f6a91a4c9552ee7c8",
+    "scripts/physical-layout/opacity-probe.ts": "7985e1eb224bdc5d16dc413671e2a5748806d9ab05a43d2c46710cecdb2374e0",
+    "tests/browser/physical-scene/plan-raster-comparison-app.ts": "66222a49ad4d084464e6c29b1818fa17d5d6bd07d3f8ae9c0e8fa6af177e403e",
+    "tests/browser/physical-scene/original-native-comparison-app.ts": "e653c107ceb27da6d32c2a0759558a38ce3ef107519c66c7dcc7ae90125f4e6c",
+    "tests/browser/physical-scene/plan-picking-app.ts": "6e8ffe849ff5a54b1cc4d66e2aba1fd561def42599a4a3d3223ccc45f427e4e9",
+    "tests/browser/physical-scene/opacity-probe.ts": "64c72fe85c0ef6dc09ee5049c7ea6ecb64bc5b84e8339dbeeab08890d1f24437"
+  },
+  "executedOpacityBundleSha256": "978a3ade50fa10a6d52562efbcdebc1684669ca66799cf6faa31a3dce0fb2272",
+  "retainedArtifacts": {
+    "native-plan/receipt.json": "577d4ab66fc50109847697ef18f78fd281805565bebbf651005b05f7a9d68f2b",
+    "native-plan/operating-original-native.png": "c37b079d3987c8c88c1c7f69be08ad40e467b5780d312046d4d42c7357dcf66f",
+    "native-plan/lower-original-native.png": "68f31838cb9eac11fd0fb2c3cad2da6af22f9a9ba705f2f62aea93d5db3ff830",
+    "native-3d/receipt.json": "018a5c6eb08d0e82b35bb3ecca0d6bce1255f356efcfcfd6205dbdf8cb05d5b7",
+    "native-3d/all.png": "e9c492be83a0a62dd850ced94b9da09308ec114e229ae313190e7b1d6a6c70c3",
+    "native-3d/operating.png": "a6853fcc1f00ad3a2f0683c62f0364c704d2945ebeddbb7f2b2257d182e7dd60",
+    "native-3d/lower.png": "9f4f50a61de8384f5c3610ba316b9920ed294ba3b265550616e8a4c472420241",
+    "native-3d/operating-status.png": "bd8ed89316523aeff2eaacf9fa133fbe09a202472deb328860dccb26461b26c8",
+    "native-ink/receipt.json": "37c7cc777d6e18bb3417147058ab80a05e9f5b310e72610fbaa48f52aca01f08",
+    "ordered-opacity/summary.json": "6f38ab65497b20d1f8d8d6a50d3c795beafa60f728de10a7a27fd08e5c3f986b",
+    "ordered-opacity/receipt-dpr1.json": "ecda5ae0ec61546d92582cf64a68ad1e2479ffb274dbd164cdeac43f53404290",
+    "ordered-opacity/receipt-dpr2.json": "8463239a4918b7039c62fc4a04ebcfb104ee9a118c6a1ef3aa1c8c1b2fbf68f9",
+    "failed-singleton-guard.log": "a7e617b0dd42191fc4a0472247b280300d6a7edcf6423b07bb5a68a22a4678f5"
+  },
+  "originalReferences": {
+    "halden-1-lower.svg": "7db1f49557d7c70590c5733ab973ae26b302ecf8a5d7d5259f8112a19a31d776",
+    "halden-1-operating.svg": "4c2a67f5e68ccbbef72c1e482051d92591adb2a2fe8c795b28dffffb05b3f745"
+  }
+}

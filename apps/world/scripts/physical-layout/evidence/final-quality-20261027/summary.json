@@ -1,0 +1,85 @@
+{
+  "testedProductionCommit": "2a2755715162fc2335cf958fc08c14eebb0322f3",
+  "guardOnlyFixtureCommit": "4151fa9cb17236a20580c4dcf22ad70fa840112d",
+  "source": {
+    "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "objects": 719,
+    "hash": "5fb4a80f97b902f61ef1731e4bd195d5fe075a576802cbd5239e95ae9fdbdd5b"
+  },
+  "nativeInk": {
+    "passed": true,
+    "casesPerDpr": [
+      57,
+      57
+    ]
+  },
+  "nativePlan": {
+    "passed": true,
+    "phases": 36,
+    "differingPixels": 0,
+    "dpr": 1
+  },
+  "nativeMap3d": {
+    "passed": true,
+    "phases": 6,
+    "statusContours": {
+      "results": [
+        {
+          "mode": "2d",
+          "changedContours": 588,
+          "preservedInterior": 1024,
+          "changedInterior": 0,
+          "geometryUploadsBefore": 1,
+          "geometryUploadsAfter": 1,
+          "error": 0,
+          "liveBuffers": 0,
+          "liveTextures": 0,
+          "livePrograms": 0
+        },
+        {
+          "mode": "3d",
+          "changedContours": 588,
+          "preservedInterior": 1024,
+          "changedInterior": 0,
+          "geometryUploadsBefore": 1,
+          "geometryUploadsAfter": 1,
+          "error": 0,
+          "liveBuffers": 0,
+          "liveTextures": 0,
+          "livePrograms": 0
+        }
+      ],
+      "passed": true
+    },
+    "scopeCapsPassed": true,
+    "dpr": 1
+  },
+  "orderedOpacity": {
+    "passed": true,
+    "casesPerDpr": [
+      17,
+      17
+    ],
+    "samples": [
+      4,
+      4
+    ],
+    "edgeFailures": [
+      0,
+      0
+    ],
+    "disposed": [
+      true,
+      true
+    ]
+  },
+  "limits": [
+    "Functional quality/resource gates, not a performance qualification.",
+    "Pixel equality compares optimized native Plan commands with independently singleton native commands, not native images with original SVGs.",
+    "Original/native image comparison uses each genuine host camera; same viewport, recorded poses, no reflected camera substitution.",
+    "Controlled status colours are fixture input, not live plant readings.",
+    "Original operating sheet doors differ from retained floor attribution; no fictitious upper-floor doors were added.",
+    "The first Plan singleton guard failed closed before Chrome; exact moved-boundary adaptation is recorded separately.",
+    "A later changed backend requires its own equivalent raster/depth/ownership qualification."
+  ]
+}
