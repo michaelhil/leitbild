@@ -1,0 +1,1333 @@
+{
+  "purpose": "Same retained final R4 source checkpoint comparison; not final startup/layer-demand acceptance",
+  "baseline": {
+    "receipt": {
+      "researchPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-17cc/cold/receipt.json",
+      "bytes": 129213,
+      "sha256": "041d6b5d526ee1e739b6f4a17d4960fb60e11792bba04b3f9a801cfd66cebf39"
+    },
+    "app": "17cc5022987f32ecfa3cf2e90ffb3dcf25a479d9",
+    "runner": "17cc5022987f32ecfa3cf2e90ffb3dcf25a479d9",
+    "observerSha256": "021e3d7fbf2056f8d0552e47f55b92b051b8d9f51d53e86d2ed74b99904a0b36",
+    "mounted": {
+      "navigationToControlsMs": 2025.9114590000001,
+      "world": {
+        "at": 1744.5,
+        "pending": 0,
+        "jobs": 0,
+        "sources": 0
+      }
+    },
+    "hostNavigationToFirstDrawMs": 5413.099853515625,
+    "hostNavigationToAllSourcesDrawMs": 6961.099853515625,
+    "hostNavigationToAllSourcesGpuMs": 7045.199951171875,
+    "sourceCompile": [
+      {
+        "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "ms": 1346.2000000476837,
+        "objects": 744
+      },
+      {
+        "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "ms": 887.8999998569489,
+        "objects": 540
+      }
+    ],
+    "actions": [
+      {
+        "name": "cold-native-full-site-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 3311.5,
+        "actionToAllRequiredSourcesFirstDrawMs": 4859.5,
+        "actionToGpuCompletedMs": 4943.600000143051,
+        "preparedResponseMs": 3267.5,
+        "pending": 0,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0]",
+            "ms": 2190.2999999523163,
+            "renderBytes": 18587088
+          },
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0]",
+            "ms": 3240,
+            "renderBytes": 29784720
+          }
+        ]
+      },
+      {
+        "name": "first-turbine-hall-focus",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 1569,
+        "actionToAllRequiredSourcesFirstDrawMs": 1569,
+        "actionToGpuCompletedMs": 1579.5,
+        "preparedResponseMs": 1549.7999999523163,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,\"area/turbine-island\"]",
+            "ms": 1536.7000000476837,
+            "renderBytes": 16233936
+          }
+        ]
+      },
+      {
+        "name": "first-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 614.5,
+        "actionToAllRequiredSourcesFirstDrawMs": 614.5,
+        "actionToGpuCompletedMs": 627.9000000953674,
+        "preparedResponseMs": 596.5,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\"]",
+            "ms": 552.6999998092651,
+            "renderBytes": 4612032
+          }
+        ]
+      },
+      {
+        "name": "first-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 36.10000014305115,
+        "actionToAllRequiredSourcesFirstDrawMs": 36.10000014305115,
+        "actionToGpuCompletedMs": 43.40000009536743,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "gc-return-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 35.5,
+        "actionToAllRequiredSourcesFirstDrawMs": 35.5,
+        "actionToGpuCompletedMs": 42.59999990463257,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "gc-return-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 38.39999985694885,
+        "actionToAllRequiredSourcesFirstDrawMs": 38.39999985694885,
+        "actionToGpuCompletedMs": 46.59999990463257,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "first-uncut-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 1401.5999999046326,
+        "actionToAllRequiredSourcesFirstDrawMs": 1401.5999999046326,
+        "actionToGpuCompletedMs": 1425.3999998569489,
+        "preparedResponseMs": 1386.5,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",false,0,\"area/turbine-island\"]",
+            "ms": 1357.9000000953674,
+            "renderBytes": 15387792
+          }
+        ]
+      },
+      {
+        "name": "gc-return-cutaway-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 40.10000014305115,
+        "actionToAllRequiredSourcesFirstDrawMs": 40.10000014305115,
+        "actionToGpuCompletedMs": 45.90000009536743,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 1277.2999999523163,
+        "actionToPaintOpportunityMs": 1315.5,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"lower\",true,0,\"area/turbine-island\"]",
+            "ms": 1262.3999998569489,
+            "renderBytes": 15076176
+          }
+        ]
+      },
+      {
+        "name": "first-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 398,
+        "actionToPaintOpportunityMs": 420.89999985694885,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"operating\",true,0,\"area/turbine-island\"]",
+            "ms": 392.09999990463257,
+            "renderBytes": 5653248
+          }
+        ]
+      },
+      {
+        "name": "first-plan-lower",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 5.699999809265137,
+        "actionToPaintOpportunityMs": 25.09999990463257,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": []
+      },
+      {
+        "name": "gc-return-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 8.299999952316284,
+        "actionToPaintOpportunityMs": 24.699999809265137,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": []
+      },
+      {
+        "name": "return-3d-operating",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 516.2000000476837,
+        "actionToAllRequiredSourcesFirstDrawMs": 516.2000000476837,
+        "actionToGpuCompletedMs": 535,
+        "preparedResponseMs": 494.7000000476837,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\"]",
+            "ms": 490,
+            "renderBytes": 4612032
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "workersAfterExit": []
+  },
+  "candidate": {
+    "receipt": {
+      "researchPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/candidate-7aa/cold/receipt.json",
+      "bytes": 124734,
+      "sha256": "9c3f5e7a898a2152c88f79b6e9189e63161ecb999b51926c6bbcf1296e419646"
+    },
+    "app": "7aa8370ddd1188810fd8e085d5725b9427ac76b1",
+    "runner": "4a66025d118c6d0d6b318af2f15659f829a07a5c",
+    "observerSha256": "021e3d7fbf2056f8d0552e47f55b92b051b8d9f51d53e86d2ed74b99904a0b36",
+    "mounted": {
+      "navigationToControlsMs": 2004.774375,
+      "world": {
+        "at": 1745.3999998569489,
+        "pending": 0,
+        "jobs": 0,
+        "sources": 0
+      }
+    },
+    "hostNavigationToFirstDrawMs": 4487.300048828125,
+    "hostNavigationToAllSourcesDrawMs": 6227.199951171875,
+    "hostNavigationToAllSourcesGpuMs": 6255.900146484375,
+    "sourceCompile": [
+      {
+        "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "ms": 1273.5,
+        "objects": 744
+      },
+      {
+        "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "ms": 821.7000000476837,
+        "objects": 540
+      }
+    ],
+    "actions": [
+      {
+        "name": "cold-native-full-site-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 2411.4000000953674,
+        "actionToAllRequiredSourcesFirstDrawMs": 4151.299999952316,
+        "actionToGpuCompletedMs": 4180,
+        "preparedResponseMs": 2374.5,
+        "pending": 0,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0]",
+            "ms": 1349.2000000476837,
+            "renderBytes": 18587088
+          },
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0]",
+            "ms": 2535.4000000953674,
+            "renderBytes": 29784720
+          }
+        ]
+      },
+      {
+        "name": "first-turbine-hall-focus",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 1305.5,
+        "actionToAllRequiredSourcesFirstDrawMs": 1305.5,
+        "actionToGpuCompletedMs": 1317.5999999046326,
+        "preparedResponseMs": 1285,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,\"area/turbine-island\"]",
+            "ms": 1270.9000000953674,
+            "renderBytes": 16233936
+          }
+        ]
+      },
+      {
+        "name": "first-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 381.09999990463257,
+        "actionToAllRequiredSourcesFirstDrawMs": 381.09999990463257,
+        "actionToGpuCompletedMs": 395.5,
+        "preparedResponseMs": 364.69999980926514,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\"]",
+            "ms": 333.69999980926514,
+            "renderBytes": 4612032
+          }
+        ]
+      },
+      {
+        "name": "first-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 33.200000047683716,
+        "actionToAllRequiredSourcesFirstDrawMs": 33.200000047683716,
+        "actionToGpuCompletedMs": 39.700000047683716,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "gc-return-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 35.299999952316284,
+        "actionToAllRequiredSourcesFirstDrawMs": 35.299999952316284,
+        "actionToGpuCompletedMs": 41.39999985694885,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "gc-return-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 37.89999985694885,
+        "actionToAllRequiredSourcesFirstDrawMs": 37.89999985694885,
+        "actionToGpuCompletedMs": 45.799999952316284,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "first-uncut-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 1020,
+        "actionToAllRequiredSourcesFirstDrawMs": 1020,
+        "actionToGpuCompletedMs": 1037.9000000953674,
+        "preparedResponseMs": 1000.7000000476837,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": false,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",false,0,\"area/turbine-island\"]",
+            "ms": 977,
+            "renderBytes": 15387792
+          }
+        ]
+      },
+      {
+        "name": "gc-return-cutaway-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 32.200000047683716,
+        "actionToAllRequiredSourcesFirstDrawMs": 32.200000047683716,
+        "actionToGpuCompletedMs": 37.5,
+        "preparedResponseMs": null,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior.",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": []
+      },
+      {
+        "name": "first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 983,
+        "actionToPaintOpportunityMs": 1023.8999998569489,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"lower\",true,0,\"area/turbine-island\"]",
+            "ms": 966.0999999046326,
+            "renderBytes": 15076176
+          }
+        ]
+      },
+      {
+        "name": "first-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 352,
+        "actionToPaintOpportunityMs": 378.10000014305115,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"operating\",true,0,\"area/turbine-island\"]",
+            "ms": 345.5,
+            "renderBytes": 5653248
+          }
+        ]
+      },
+      {
+        "name": "first-plan-lower",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 7,
+        "actionToPaintOpportunityMs": 30.299999952316284,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": []
+      },
+      {
+        "name": "gc-return-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "actionToFirstInkMs": 9.700000047683716,
+        "actionToPaintOpportunityMs": 28.5,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "prepareResponses": []
+      },
+      {
+        "name": "return-3d-operating",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "actionToFirstDrawMs": 396,
+        "actionToAllRequiredSourcesFirstDrawMs": 396,
+        "actionToGpuCompletedMs": 411.59999990463257,
+        "preparedResponseMs": 378.19999980926514,
+        "pending": 0,
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+        "glError": 0,
+        "gpuBufferFromPriorResponse": true,
+        "prepareResponses": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,\"area/turbine-island\"]",
+            "ms": 371.89999985694885,
+            "renderBytes": 4612032
+          }
+        ]
+      }
+    ],
+    "exceptions": [],
+    "workersAfterExit": []
+  },
+  "motion": [
+    {
+      "receipt": {
+        "researchPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/candidate-7aa/motion-dpr1/receipt.json",
+        "bytes": 79285,
+        "sha256": "b3dc7c24727fb27d80f6011e3638ffac4a149f524164479c9fb10ad746150dfe"
+      },
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "app": "7aa8370ddd1188810fd8e085d5725b9427ac76b1",
+      "observerSha256": "4ed7b0c43bbf758e2b65a93228261531d435c24c93d02ca0739b9632f8081063",
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "frames": 236,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.399999999999636,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "frames": 239,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.29999999999927,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "frames": 238,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 50,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "frames": 242,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "frames": 241,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.799999999999272,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ]
+        }
+      ],
+      "actualRoomCaptionStrings": [
+        "+15.00 m",
+        "1",
+        "11 000 mm",
+        "2",
+        "2 m ACCESS SPINE",
+        "3",
+        "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+        "36 000 mm",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "88 000 mm",
+        "9",
+        "A",
+        "A\u2013A / LEVEL RELATIONSHIP",
+        "B",
+        "CASING / ROTOR LAYDOWN",
+        "CONDENSER",
+        "CONDENSERS BELOW THE DECK",
+        "EXC",
+        "FLOOR HATCH",
+        "GEN",
+        "HP",
+        "LP 1",
+        "LP 2",
+        "LP 3",
+        "LP EXHAUSTS",
+        "MSR 1",
+        "MSR 2",
+        "ROTOR WITHDRAWAL",
+        "S \u00b7 DN",
+        "Schematic section \u00b7 heights are study assumptions",
+        "TSV",
+        "TURBINE HALL",
+        "\u00b10.00 m"
+      ],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 6,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 282,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 7,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": []
+    },
+    {
+      "receipt": {
+        "researchPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/candidate-7aa/motion-dpr2/receipt.json",
+        "bytes": 79418,
+        "sha256": "a69cecd3fdd056bbad7e8af6aebfa82ddfc74dc3a77457b6078c2246398f4093"
+      },
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "app": "7aa8370ddd1188810fd8e085d5725b9427ac76b1",
+      "observerSha256": "4ed7b0c43bbf758e2b65a93228261531d435c24c93d02ca0739b9632f8081063",
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "frames": 238,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.399999999999636,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-3d-playing",
+          "frames": 237,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.30000000000109,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-paused",
+          "frames": 237,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 50,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "frames": 234,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 83.29999999999927,
+          "longTasks": [
+            {
+              "start": 23960.700000047684,
+              "duration": 88
+            }
+          ],
+          "pending": 0,
+          "errors": [],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-3d-playing",
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-paused",
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "pending": 0,
+          "errors": [],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ]
+        }
+      ],
+      "actualRoomCaptionStrings": [
+        "+15.00 m",
+        "1",
+        "11 000 mm",
+        "2",
+        "2 m ACCESS SPINE",
+        "3",
+        "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+        "36 000 mm",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "88 000 mm",
+        "9",
+        "A",
+        "A\u2013A / LEVEL RELATIONSHIP",
+        "B",
+        "CASING / ROTOR LAYDOWN",
+        "CONDENSER",
+        "CONDENSERS BELOW THE DECK",
+        "EXC",
+        "FLOOR HATCH",
+        "GEN",
+        "HP",
+        "LP 1",
+        "LP 2",
+        "LP 3",
+        "LP EXHAUSTS",
+        "MSR 1",
+        "MSR 2",
+        "ROTOR WITHDRAWAL",
+        "S \u00b7 DN",
+        "Schematic section \u00b7 heights are study assumptions",
+        "TSV",
+        "TURBINE HALL",
+        "\u00b10.00 m"
+      ],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 6,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 278,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 7,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": []
+    }
+  ],
+  "limits": [
+    "One alternating checkpoint pair, not a distribution or universal device claim. Both were own restarted local services/fresh Chrome profiles, same retained paused Run and exact source pins.",
+    "The7aa checkpoint combines cap correctness, source-adapter and preparation optimization plus compact UI. Separate exact-array/cap proof establishes quality; the timing pair alone does not isolate one optimization.",
+    "Both actual source families must draw (unit four instances, campus one), then a newly placed GPU fence completes. Canvas Plan milestones are actual ink plus two RAF paint opportunities, not a WebGL completion claim.",
+    "Local Run transfer was uncompressed loopback. Production Caddy already negotiates zstd/gzip; this does not estimate WAN transfer.",
+    "DPR2 site-Plan-playing contains one88ms long task. The unprofiled receipt cannot attribute its stack. All other15 candidate motion windows have none.",
+    "The retained source includes hidden utility routes in preparation. New layer-demand/default-startup behavior is not accepted by this checkpoint.",
+    "Reported typed/renderbuffer bytes are not process RSS or total driver memory."
+  ]
+}
