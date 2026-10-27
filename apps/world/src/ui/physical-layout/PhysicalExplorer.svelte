@@ -32,7 +32,7 @@
   import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
   import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
-  import { requestedPhysicalLayoutView, physicalOpacityPreparationText } from './view-intent.ts'
+  import { requestedPhysicalLayoutView } from './view-intent.ts'
   import { createPhysicalHoverIntent } from './hover-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
@@ -513,8 +513,7 @@
     : latest?.failure ?? (latest?.phase === 'inactive' ? 'Run not loaded; layout is not live' : latest?.phase === 'missing' ? 'Run missing' : latest?.latest === null || latest === null ? 'Waiting for live owner status'
       : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
   const additionalLayerStatus = $derived((focusedId === null ? scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) : focused ? [focused] : []).map(physicalLayerPreparationText).filter((text): text is string => text !== null).join(' · '))
-  const opacityStatus = $derived(physicalOpacityPreparationText(focusedId === null ? collectionScenes : focused ? [focused] : []))
-  const statusText = $derived([baseStatusText, additionalLayerStatus, opacityStatus].filter(Boolean).join(' · '))
+  const statusText = $derived([baseStatusText, additionalLayerStatus].filter(Boolean).join(' · '))
   const retryableLayouts = $derived(retryablePhysicalLayouts(scenes, focusedId, focusedGroupId))
   const retryLabel = $derived(`Retry physical layout: ${retryableLayouts.map(id => objects.find(object => object.id === scenes.find(scene => scene.descriptor.id === id)?.descriptor.targetObjectId)?.label ?? id).join(', ')}`)
   const retryFailedLayouts = (): void => {
