@@ -61,3 +61,14 @@ test('empty and line-only cohorts are real supported inputs; malformed identity/
  const lines=prepare({key:'lines',sources:[source('near',[],{lines:[0,0,2,1,0,2]}),source('far',[],{lines:[0,0,0,1,0,0]})]});expect(owners(lines,[0,0,1,0])).toEqual([1,0])
  const one=quad('id',0,0,1,1);expect(()=>prepare({key:'bad',sources:[one,one]})).toThrow('provenance');expect(()=>prepare({key:'bad',sources:[{...one,vertices:[NaN]}]})).toThrow('numeric');expect(()=>prepare({key:'bad',sources:[{...one,matrix:[1]}]})).toThrow('affine');expect(()=>ordered(empty,[0,0,NaN,1],new Set())).toThrow('camera')
 })
+
+
+test('repeatedly split authored lines retain their support plane and exact zero remnants create no false stroke',()=>{
+ const x=Number.MIN_VALUE,wall=source('wall',[x,0,0,x,1,0,x,0,1]),line=source('line',[],{lines:[1,.2,.2,0,.2,.2]}),bsp=prepare({key:'rounded-line-remnant',sources:[wall,line]}),fragments=bsp.fragments.filter(f=>f.kind==='line')
+ expect(fragments).toHaveLength(1);expect(fragments[0]!.count).toBe(2);expect(bsp.vertices[(fragments[0]!.first+1)*9]).toBe(0)
+})
+
+test('homogeneous camera comparison avoids division by a tiny finite w',()=>{
+ const bsp=prepare({key:'camera-at-infinity',sources:[quad('far',-1,-1,1,1),quad('near',-1,-1,1,1,2)]})
+ expect(owners(bsp,[1,0,1,Number.MIN_VALUE])).toEqual(owners(bsp,[1,0,1,0]));expect(()=>ordered(bsp,[0,0,0,0],new Set())).toThrow('camera')
+})

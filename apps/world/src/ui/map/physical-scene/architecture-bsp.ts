@@ -8,7 +8,7 @@ import type { PhysicalArchitectureBsp, PhysicalArchitectureBspFragment, Physical
 type Vertex = readonly [number, number, number, number, number, number, number, number, number]
 interface Plane { readonly points: readonly [Vector3, Vector3, Vector3]; readonly normal: Vector3; readonly axes: readonly [number, number] }
 interface Polygon { readonly vertices: readonly Vertex[]; readonly plane: Plane; readonly owner: number; readonly material: string; readonly ordinal: number }
-interface Line { readonly vertices: readonly [Vertex, Vertex]; readonly owner: number; readonly material: string; readonly style: 'feature' | 'context' | 'section'; readonly ordinal: number }
+interface Line { readonly plane: Plane; readonly vertices: readonly [Vertex, Vertex]; readonly owner: number; readonly material: string; readonly style: 'feature' | 'context' | 'section'; readonly ordinal: number }
 interface Region { readonly vertices: readonly Vertex[]; readonly blockers: readonly number[] }
 const position = (v: Vertex): Vector3 => [v[0], v[1], v[2]]
 const cross = (a: Vector3, b: Vector3): Vector3 => [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
@@ -94,10 +94,7 @@ const validateInput = (input: PhysicalArchitectureBspInput): void => {
  * every primitive is partitioned; no object/plane/fragment population is capped. */
 const choosePlane = (polygons: readonly Polygon[],lines: readonly Line[]): Plane => {
   if(!polygons.length){
-    const [a,b]=lines[0]!.vertices,direction=subtract(position(b),position(a)),magnitudes=direction.map(Math.abs),axis=magnitudes.indexOf(Math.min(...magnitudes)),c=[a[0],a[1],a[2]];c[axis]=a[axis]===0?1:0
-    const plane=makePlane(position(a),position(b),c as unknown as Vector3)
-    if(!plane)throw new Error('Architecture BSP line cannot define a partition')
-    return plane
+    return lines[0]!.plane
   }
   const groups: Polygon[][]=[[],[],[]]
   for(const polygon of polygons){const axis=3-polygon.plane.axes[0]-polygon.plane.axes[1];groups[axis]!.push(polygon)}
@@ -129,7 +126,10 @@ export const preparePhysicalArchitectureBsp = (input: PhysicalArchitectureBspInp
     for(let at=0;at<source.lines.length;at+=6){
       const a=transformVertex(source.lines,at,source.matrix,false),b=transformVertex(source.lines,at+3,source.matrix,false);inputLines++
       if(a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2])continue
-      lines.push({vertices:[a,b],owner,material:source.lineMaterials?.[at/6]??'line',style:source.lineStyles?.[at/6]??'feature',ordinal:at/6})
+      const direction=subtract(position(b),position(a)),magnitudes=direction.map(Math.abs),axis=magnitudes.indexOf(Math.min(...magnitudes)),c=[a[0],a[1],a[2]];c[axis]=a[axis]===0?1:0
+      const plane=makePlane(position(a),position(b),c as unknown as Vector3)
+      if(!plane)throw new Error('Architecture BSP authored line cannot define a partition')
+      lines.push({plane,vertices:[a,b],owner,material:source.lineMaterials?.[at/6]??'line',style:source.lineStyles?.[at/6]??'feature',ordinal:at/6})
     }
   })
   const nodes: PhysicalArchitectureBspNode[]=[],fragments: PhysicalArchitectureBspFragment[]=[],values: number[]=[]
@@ -155,7 +155,8 @@ export const preparePhysicalArchitectureBsp = (input: PhysicalArchitectureBspInp
       else{const result=splitPolygon(polygon.vertices,distances);if(polygonArea(result.front,polygon.plane.axes)>0)front.push({...polygon,vertices:result.front});if(polygonArea(result.back,polygon.plane.axes)>0)back.push({...polygon,vertices:result.back});splitPolygons++}
     }
     for(const line of task.lines){
-      const a=line.vertices[0],b=line.vertices[1],da=signedDistance(plane,position(a)),db=signedDistance(plane,position(b))
+      const a=line.vertices[0],b=line.vertices[1];if(a[0]===b[0]&&a[1]===b[1]&&a[2]===b[2])continue
+      const da=line.plane===plane?0:signedDistance(plane,position(a)),db=line.plane===plane?0:signedDistance(plane,position(b))
       if(da===0&&db===0)onLines.push(line)
       else if(da>=0&&db>=0)frontLines.push(line)
       else if(da<=0&&db<=0)backLines.push(line)
@@ -186,9 +187,11 @@ export const preparePhysicalArchitectureBsp = (input: PhysicalArchitectureBspInp
  * Iteration avoids a JS recursion limit for a legitimate deep source partition. */
 export const orderedPhysicalArchitectureFragments = (bsp: PhysicalArchitectureBsp,eye: readonly [number,number,number,number],visibleOwners: ReadonlySet<number>): readonly number[] => {
   if(eye.length!==4||!eye.every(Number.isFinite))throw new Error('Architecture BSP requires a finite homogeneous camera')
+  const eyeScale=Math.max(...eye.map(Math.abs));if(eyeScale===0)throw new Error('Architecture BSP camera has no point or direction')
+  const e=eye.map(value=>value/eyeScale)
   const result: number[]=[],stack: Array<{node:number;emit:boolean}>=bsp.root<0?[]:[{node:bsp.root,emit:false}]
   while(stack.length){const task=stack.pop()!,node=bsp.nodes[task.node]!;if(task.emit){for(const id of node.fragments){const fragment=bsp.fragments[id]!;if(visibleOwners.has(fragment.ownerIndex)&&!fragment.occludedBy.some(owner=>visibleOwners.has(owner)))result.push(id)}continue}
-    const w=eye[3],a=node.plane[0],direction=w===0?[eye[0],eye[1],eye[2]]:[eye[0]/w-a[0],eye[1]/w-a[1],eye[2]/w-a[2]],side=node.normal[0]*direction[0]!+node.normal[1]*direction[1]!+node.normal[2]*direction[2]!
+    const a=node.plane[0],normalScale=Math.max(...node.normal.map(Math.abs)),direction=[e[0]!-a[0]*e[3]!,e[1]!-a[1]*e[3]!,e[2]!-a[2]*e[3]!],side=(node.normal[0]/normalScale*direction[0]!+node.normal[1]/normalScale*direction[1]!+node.normal[2]/normalScale*direction[2]!)*(eye[3]<0?-1:1)
     const far=side>=0?node.back:node.front,near=side>=0?node.front:node.back
     if(near>=0)stack.push({node:near,emit:false});stack.push({node:task.node,emit:true});if(far>=0)stack.push({node:far,emit:false})
   }
