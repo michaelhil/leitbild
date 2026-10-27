@@ -4,6 +4,7 @@
   import type { Map as MapLibreMap } from 'maplibre-gl'
   import type { OperationalObject, SimulationRunId } from '../../core/model/index.ts'
   import { objectIdSchema } from '../../core/model/index.ts'
+  import type { PackPhysicalScene } from '../../core/packs/scene.ts'
   import type { PackObjectPresentation } from '../../core/packs/protocol.ts'
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
@@ -34,7 +35,7 @@
   import { createPhysicalHoverIntent } from './hover-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
-  import { physicalRouteDisplayPaths, physicalRouteScreenMarks } from './route-marks.ts'
+  import { physicalRouteInspectionPaths, physicalRouteScreenMarks } from './route-marks.ts'
   import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
   import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
@@ -430,24 +431,32 @@
     })
     return proposals
   })
+  const flowScopeRegions = new WeakMap<PackPhysicalScene, { readonly scopeId: string | undefined; readonly regions: ReturnType<typeof physicalScopeRegions> }>()
   const proposedFlowMarks = $derived.by((): ReadonlyArray<FlowMark> => {
     void screenRevision
     if (!active || suspended || !documentVisible || !controller || !draftingCanvas) return []
     const fontSize = Number.parseFloat(getComputedStyle(draftingCanvas).fontSize)
-    const marks: FlowMark[] = []
+    const marks: FlowMark[] = [], presentations = new Map(scenes.map(scene => [scene.descriptor.id, scene]))
+    const sceneContexts = new Map<string, { readonly source: PackPhysicalScene; readonly regions: ReturnType<typeof physicalScopeRegions> }>()
+    const scopeId = focusedScopeId ?? undefined
     for (const { sceneId, occurrence } of scopedOccurrences) {
       if (!occurrence.spatialPath || occurrence.subjectIds.length !== 1) continue
-      const presentation = scenes.find(scene => scene.descriptor.id === sceneId), source = controller.scene(sceneId), reading = snapshots.get(sceneId)?.latest
-      if (!presentation?.view.live || !source || !reading) continue
+      const presentation = presentations.get(sceneId), reading = snapshots.get(sceneId)?.latest
+      if (!presentation?.view.live || !reading) continue
+      let context = sceneContexts.get(sceneId)
+      if (!context) {
+        const source = controller.scene(sceneId); if (!source) continue
+        let cached = flowScopeRegions.get(source)
+        if (!cached || cached.scopeId !== scopeId) { cached = { scopeId, regions: physicalScopeRegions(source, scopeId) }; flowScopeRegions.set(source, cached) }
+        context = { source, regions: cached.regions }; sceneContexts.set(sceneId, context)
+      }
       const operation = operationsFor(reading, frozenScenes.has(sceneId)).get(occurrence.subjectIds[0]!)
       if (!operation?.connection) continue
       const flow = operation.flow, conducting = operation.conducting
       const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'deenergized' : 'unknown'
-      const view = presentation.view, regions = physicalScopeRegions(source, focusedScopeId ?? undefined)
-      const floors = view.levelId === 'all' && view.separation > 0 && occurrence.inspectionLevels?.length ? occurrence.inspectionLevels.map(volume => ({ id: volume.levelId, volume })) : [{ id: view.levelId === 'all' ? undefined : view.levelId, volume: view.levelId === 'all' || occurrence.levelId === 'site' ? undefined : occurrence.inspectionLevels?.find(volume => volume.levelId === view.levelId) }]
       let ordinal = 0
-      for (const floor of floors) for (const path of physicalRouteDisplayPaths(occurrence.spatialPath.points, occurrence.clipToScope ? regions : [], floor.volume)) {
-        const points = controller.projectOccurrencePoints(sceneId, occurrence.id, path, floor.id)
+      for (const path of physicalRouteInspectionPaths(occurrence, context.regions, presentation.view)) {
+        const points = controller.projectOccurrencePoints(sceneId, occurrence.id, path.points, path.levelId)
         for (const mark of physicalRouteScreenMarks(points, size, fontSize)) marks.push({ ...mark, kind: 'flow', key: `${sceneId}:${occurrence.id}:${ordinal++}`, sceneId, occurrenceId: occurrence.id, glyph, rank: 0 })
       }
     }

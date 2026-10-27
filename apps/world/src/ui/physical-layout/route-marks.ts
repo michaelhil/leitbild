@@ -1,10 +1,28 @@
 import type { Vector3 } from '../map/physical-scene/math.ts'
 import type { PhysicalProjectedPoint } from '../map/physical-scene/types.ts'
 interface Region { readonly min: Vector3; readonly max: Vector3 }
+type RoutePaths = ReadonlyArray<ReadonlyArray<Vector3>>
+type Floor = { readonly low: number; readonly high: number }
+const noRegions: ReadonlyArray<Region> = []
+const sameRegions = (left: ReadonlyArray<Region>, right: ReadonlyArray<Region>): boolean => left === right || left.length === right.length && left.every((box, index) => box.min.every((value, axis) => value === right[index]!.min[axis]) && box.max.every((value, axis) => value === right[index]!.max[axis]))
+// One current geometric selection per immutable source path, never all visited
+// floors/scopes. Weak keys cannot retain an unloaded source/session.
+const displayPaths = new WeakMap<ReadonlyArray<Vector3>, { readonly regions: ReadonlyArray<Region>; readonly low: number | undefined; readonly high: number | undefined; readonly paths: RoutePaths }>()
 
 /** Clip the displayed centreline to the same spatial union and floor volume.
  * Closed interval endpoints retain truthful continuation positions. */
-export const physicalRouteDisplayPaths = (points: ReadonlyArray<Vector3>, regions: ReadonlyArray<Region>, floor?: { readonly low: number; readonly high: number }): ReadonlyArray<ReadonlyArray<Vector3>> => {
+export const physicalRouteDisplayPaths = (points: ReadonlyArray<Vector3>, regions: ReadonlyArray<Region>, floor?: Floor): RoutePaths => {
+  const previous = displayPaths.get(points)
+  if (previous && previous.low === floor?.low && previous.high === floor?.high && sameRegions(previous.regions, regions)) return previous.paths
+  const paths = clipRouteDisplayPaths(points, regions, floor)
+  displayPaths.set(points, { regions, low: floor?.low, high: floor?.high, paths })
+  return paths
+}
+const clipRouteDisplayPaths = (points: ReadonlyArray<Vector3>, regions: ReadonlyArray<Region>, floor?: Floor): RoutePaths => {
+  if (points.length < 2) return []
+  // With no inspection volume, every segment and authored duplicate point is
+  // already the exact displayed path. Borrow it without copying its vertices.
+  if (!regions.length && !floor) return [points]
   const boxes = regions.length ? regions : [{ min: [-Infinity, -Infinity, -Infinity] as const, max: [Infinity, Infinity, Infinity] as const }]
   const paths: Vector3[][] = []
   for (let index = 1; index < points.length; index++) {
@@ -33,6 +51,29 @@ export const physicalRouteDisplayPaths = (points: ReadonlyArray<Vector3>, region
   return paths
 }
 
+
+interface RouteOccurrence {
+  readonly spatialPath?: { readonly points: ReadonlyArray<Vector3> } | undefined
+  readonly clipToScope?: boolean | undefined
+  readonly levelId: string
+  readonly inspectionLevels?: ReadonlyArray<Floor & { readonly levelId: string }> | undefined
+}
+export interface PhysicalRouteInspectionPath { readonly levelId: string | undefined; readonly points: ReadonlyArray<Vector3> }
+const inspectionPaths = new WeakMap<RouteOccurrence, { readonly regions: ReadonlyArray<Region>; readonly levelId: string; readonly separated: boolean; readonly paths: ReadonlyArray<PhysicalRouteInspectionPath> }>()
+/** All concurrently displayed floors form ONE current selection. Retain their
+ * static clipping across camera, live-state and opacity changes; projection
+ * still uses the actual current camera and separation magnitude. */
+export const physicalRouteInspectionPaths = (occurrence: RouteOccurrence, regions: ReadonlyArray<Region>, view: { readonly levelId: string; readonly separation: number }): ReadonlyArray<PhysicalRouteInspectionPath> => {
+  if (!occurrence.spatialPath) return []
+  const selectedRegions = occurrence.clipToScope ? regions : noRegions, separated = view.levelId === 'all' && view.separation > 0
+  const previous = inspectionPaths.get(occurrence)
+  if (previous && previous.levelId === view.levelId && previous.separated === separated && sameRegions(previous.regions, selectedRegions)) return previous.paths
+  const floors = separated && occurrence.inspectionLevels?.length ? occurrence.inspectionLevels.map(volume => ({ id: volume.levelId, volume })) : [{ id: view.levelId === 'all' ? undefined : view.levelId, volume: view.levelId === 'all' || occurrence.levelId === 'site' ? undefined : occurrence.inspectionLevels?.find(volume => volume.levelId === view.levelId) }]
+  const paths = floors.flatMap(floor => physicalRouteDisplayPaths(occurrence.spatialPath!.points, selectedRegions, floor.volume).map(points => ({ levelId: floor.id, points })))
+  inspectionPaths.set(occurrence, { regions: selectedRegions, levelId: view.levelId, separated, paths })
+  return paths
+}
+
 /** Screen spacing is a legibility policy derived from the actual font size,
  * not an entity-count cutoff. Viewport clipping bounds off-screen work. */
 export const physicalRouteScreenMarks = (points: ReadonlyArray<PhysicalProjectedPoint>, viewport: { readonly width: number; readonly height: number }, fontSize: number): ReadonlyArray<{ readonly point: { readonly x: number; readonly y: number }; readonly angle: number }> => {
@@ -41,13 +82,14 @@ export const physicalRouteScreenMarks = (points: ReadonlyArray<PhysicalProjected
   let distance = 0, next = spacing / 2
   for (let index = 1; index < points.length; index++) {
     const a = points[index - 1]!, b = points[index]!
-    if (![a.x, a.y, b.x, b.y, a.depth, b.depth].every(Number.isFinite) || a.depth < -1 && b.depth < -1 || a.depth > 1 && b.depth > 1) continue
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y) || !Number.isFinite(a.depth) || !Number.isFinite(b.depth) || a.depth < -1 && b.depth < -1 || a.depth > 1 && b.depth > 1) continue
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy)
     if (length === 0) continue
     let low = 0, high = 1
-    for (const [start, delta, limit] of [[a.x, dx, viewport.width], [a.y, dy, viewport.height]]) {
-      if (delta === 0) { if (start! < 0 || start! > limit!) { high = -1; break } }
-      else { const first = -start! / delta!, last = (limit! - start!) / delta!; low = Math.max(low, Math.min(first, last)); high = Math.min(high, Math.max(first, last)) }
+    for (let axis = 0; axis < 2; axis++) {
+      const start = axis === 0 ? a.x : a.y, delta = axis === 0 ? dx : dy, limit = axis === 0 ? viewport.width : viewport.height
+      if (delta === 0) { if (start < 0 || start > limit) { high = -1; break } }
+      else { const first = -start / delta, last = (limit - start) / delta; low = Math.max(low, Math.min(first, last)); high = Math.min(high, Math.max(first, last)) }
     }
     if (high > low) {
       let at = Math.max(next, Math.ceil((distance + low * length - spacing / 2) / spacing) * spacing + spacing / 2)
