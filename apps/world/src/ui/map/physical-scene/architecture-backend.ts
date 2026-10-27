@@ -20,6 +20,10 @@ interface Packet {
 export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, initialPalette: PhysicalScenePalette) => {
   let palette = initialPalette, bsp: PhysicalArchitectureBsp | null = null, packet: Packet | null = null, program: WebGLProgram | null = null, disposed = false
   let ownerState = new Float32Array(), ownerPlacementKeys: readonly string[] = []
+  // The current immutable membership/style roster owns the table, not the
+  // camera. Weak references do not retain a withdrawn prepared geometry.
+  type OwnerStamp = { readonly scene: string | undefined; readonly asset: WeakRef<PhysicalDraw['asset']>; readonly meshes: WeakRef<PhysicalDraw['meshes']>; readonly styles: WeakRef<PhysicalDraw['styles']>; readonly wall: number; readonly floor: number; readonly highlight: string }
+  let ownerStamps: readonly OwnerStamp[] | null = null, ownerDefault = '', visibleOwners = new Set<number>(), firstVisiblePlacement: string | undefined
   let members = new Map<string, Set<number>>()
   let opaqueSelections = new WeakMap<readonly PhysicalMesh[], Map<ReadonlySet<number>, readonly PhysicalMesh[]>>()
   let uniforms: Record<string, WebGLUniformLocation | null> = {}
@@ -104,6 +108,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       if (bsp?.key === value?.key && value !== null) throw Error('Immutable architecture cohort changed its prepared asset')
       if (packet) release(packet); packet = null; bsp = value
       ownerState = new Float32Array((value?.owners.length ?? 0) * 12)
+      ownerStamps = null; ownerDefault = ''; visibleOwners = new Set(); firstVisiblePlacement = undefined
       ownerPlacementKeys = value?.owners.map(owner => JSON.stringify([owner.sceneId, owner.assetKey])) ?? []
       members = new Map(); opaqueSelections = new WeakMap()
       value?.owners.forEach((owner, index) => { const key = ownerPlacementKeys[index]!, group = members.get(key) ?? new Set<number>(); group.add(owner.meshIndex); members.set(key, group) })
@@ -130,28 +135,37 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       if (!draws.some(draw => [draw.architecture?.wallOpacity ?? 1, draw.architecture?.floorOpacity ?? 1].some(alpha => alpha > 0 && alpha < 1))) return
       const placementKey = (sceneId: string, assetKey: string): string => JSON.stringify([sceneId, assetKey])
       const byPlacement = new Map(draws.filter(draw => draw.sceneId !== undefined).map(draw => [placementKey(draw.sceneId!, draw.asset.key), draw]))
-      const shown = new Map(draws.map(draw => [draw, new Set(draw.meshes.map(mesh => mesh.assetIndex ?? draw.asset.meshes.indexOf(mesh)))]))
       const basis = bsp.owners[0]!, reference = byPlacement.get(placementKey(basis.sceneId, basis.assetKey))
-      const visible = new Set<number>(), ownerData = ownerState; ownerData.fill(0)
-      let visibleDraw: PhysicalDraw | undefined
-      bsp.owners.forEach((owner, index) => {
-        const draw = byPlacement.get(ownerPlacementKeys[index]!)
-        if (!draw) return
-        const mesh = draw.asset.meshes[owner.meshIndex]
-        if (!mesh || mesh.object.id !== owner.occurrenceId) throw Error('Architecture owner provenance differs from its prepared source')
-        const displayed = shown.get(draw)!.has(owner.meshIndex)
-        const alpha = displayed ? physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}) : 0
-        if (alpha <= 0) return
-        visible.add(index); visibleDraw ??= draw
-        const at = index * 12, style = draw.styles[owner.meshIndex], color = style?.color ?? palette.defaultMaterial
-        ownerData.set([...color, style?.color ? style.emphasis : 0], at); ownerData[at + 7] = alpha
-        if (draw.highlight?.occurrenceId === owner.occurrenceId) ownerData.set([...draw.highlight.color, .24], at + 8)
+      const highlightKey = (draw: PhysicalDraw): string => draw.highlight ? JSON.stringify([draw.highlight.occurrenceId, ...draw.highlight.color]) : ''
+      const defaultKey = JSON.stringify(palette.defaultMaterial)
+      const ownerChanged = ownerDefault !== defaultKey || ownerStamps?.length !== draws.length || draws.some((draw, index) => {
+        const prior = ownerStamps![index]!
+        return prior.scene !== draw.sceneId || prior.asset.deref() !== draw.asset || prior.meshes.deref() !== draw.meshes || prior.styles.deref() !== draw.styles || prior.wall !== (draw.architecture?.wallOpacity ?? 1) || prior.floor !== (draw.architecture?.floorOpacity ?? 1) || prior.highlight !== highlightKey(draw)
       })
-      if (!visible.size) return
+      if (ownerChanged) {
+        const shown = new Map(draws.map(draw => [draw, new Set(draw.meshes.map(mesh => mesh.assetIndex ?? draw.asset.meshes.indexOf(mesh)))]))
+        visibleOwners = new Set(); firstVisiblePlacement = undefined; ownerState.fill(0)
+        bsp.owners.forEach((owner, index) => {
+          const draw = byPlacement.get(ownerPlacementKeys[index]!)
+          if (!draw) return
+          const mesh = draw.asset.meshes[owner.meshIndex]
+          if (!mesh || mesh.object.id !== owner.occurrenceId) throw Error('Architecture owner provenance differs from its prepared source')
+          const displayed = shown.get(draw)!.has(owner.meshIndex)
+          const alpha = displayed ? physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}) : 0
+          if (alpha <= 0) return
+          visibleOwners.add(index); firstVisiblePlacement ??= ownerPlacementKeys[index]!
+          const at = index * 12, style = draw.styles[owner.meshIndex], color = style?.color ?? palette.defaultMaterial
+          ownerState.set([...color, style?.color ? style.emphasis : 0], at); ownerState[at + 7] = alpha
+          if (draw.highlight?.occurrenceId === owner.occurrenceId) ownerState.set([...draw.highlight.color, .24], at + 8)
+        })
+        ownerStamps = draws.map(draw => ({ scene: draw.sceneId, asset: new WeakRef(draw.asset), meshes: new WeakRef(draw.meshes), styles: new WeakRef(draw.styles), wall: draw.architecture?.wallOpacity ?? 1, floor: draw.architecture?.floorOpacity ?? 1, highlight: highlightKey(draw) })); ownerDefault = defaultKey
+      }
+      if (!visibleOwners.size) return
+      const visibleDraw = byPlacement.get(firstVisiblePlacement!)!
       const matrix = commonMatrix ?? reference?.matrix
       if (!matrix) throw Error('Architecture cohort has no reference transform')
       const projection = inverse(matrix), eye = [-projection[8]!, -projection[9]!, -projection[10]!, -projection[11]!] as const
-      const ordered = orderedPhysicalArchitectureFragments(bsp, eye, visible)
+      const ordered = orderedPhysicalArchitectureFragments(bsp, eye, visibleOwners)
       if (!ordered.length) return
       program ??= createProgram(); packet ??= allocate(bsp)
       const value = packet
@@ -170,7 +184,9 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       value.fragments = ordered
       const instance = new Float32Array(17); instance.set(matrix)
       gl.bindBuffer(gl.ARRAY_BUFFER, value.instance); gl.bufferData(gl.ARRAY_BUFFER, instance, gl.DYNAMIC_DRAW); counts.instanceUploads++
-      gl.activeTexture(gl.TEXTURE1); if (upload(value.objects, bsp.owners.length * 3, ownerData)) counts.statusUploads++
+      gl.activeTexture(gl.TEXTURE1)
+      if (ownerChanged || value.objects.width === 0) { if (upload(value.objects, bsp.owners.length * 3, ownerState)) counts.statusUploads++ }
+      else gl.bindTexture(gl.TEXTURE_2D, value.objects.handle)
       gl.activeTexture(gl.TEXTURE0)
       const colors = value.roles.map(role => physicalMaterialColor(palette, role)), paletteKey = JSON.stringify(colors)
       if (value.paletteKey !== paletteKey) {
@@ -180,7 +196,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
         value.paletteKey = paletteKey
       } else gl.bindTexture(gl.TEXTURE_2D, value.materials.handle)
       gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform1i(uniforms.uMaterialWidth!, value.materials.width); gl.uniform1i(uniforms.uObjectWidth!, value.objects.width)
-      gl.uniform1i(uniforms.uFlat!, Number(visibleDraw!.flat)); gl.uniform1i(uniforms.uOrdered!, 1); gl.uniform1i(uniforms.uArchitecturePass!, 1); gl.uniform1f(uniforms.uDepthNear!, depthNear)
+      gl.uniform1i(uniforms.uFlat!, Number(visibleDraw.flat)); gl.uniform1i(uniforms.uOrdered!, 1); gl.uniform1i(uniforms.uArchitecturePass!, 1); gl.uniform1f(uniforms.uDepthNear!, depthNear)
       gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1); gl.uniform3f(uniforms.uIllustrationLine!, ...palette.line); gl.lineWidth(palette.lineWidth ?? 1)
       gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.disable(gl.POLYGON_OFFSET_FILL); gl.colorMask(true, true, true, true); gl.enable(gl.BLEND)
       gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
@@ -194,7 +210,7 @@ export const createPhysicalArchitectureBackend = (gl: WebGL2RenderingContext, in
       final.liveBuffersAfterDisposal = prior ? [prior.solid, prior.order, prior.instance].filter(value => gl.isBuffer(value)).length : 0
       final.liveTexturesAfterDisposal = prior ? [prior.objects.handle, prior.materials.handle].filter(value => gl.isTexture(value)).length : 0
       final.liveProgramsAfterDisposal = priorProgram ? Number(gl.isProgram(priorProgram)) : 0
-      packet = null; bsp = null; program = null; ownerState = new Float32Array(); ownerPlacementKeys = []; members.clear(); opaqueSelections = new WeakMap(); disposed = true
+      packet = null; bsp = null; program = null; ownerState = new Float32Array(); ownerPlacementKeys = []; ownerStamps = null; visibleOwners.clear(); firstVisiblePlacement = undefined; members.clear(); opaqueSelections = new WeakMap(); disposed = true
     },
   }
 }
