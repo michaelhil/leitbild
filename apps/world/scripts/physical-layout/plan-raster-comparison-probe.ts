@@ -20,8 +20,8 @@ const layout = scenario.initialObjects.find(object => object.id === 'layout:hald
 const descriptor = describePhysicalLayoutScene(layout, scenario.initialObjects)!, scene = await loadPhysicalLayoutScene(layout)
 if (!descriptor?.locationValid) throw Error('The admitted physical scene has no valid placement')
 const painterFile = join(root, 'src/ui/physical-layout/plan-drawing.ts'), painterSource = await readFile(painterFile, 'utf8')
-const batched = 'stream = compilePhysicalPlanPaint(primitives, objects, pathFor)', ordered = 'stream = primitives.flatMap(primitive => compilePhysicalPlanPaint([primitive], objects, pathFor))'
-if (!painterSource.includes(batched)) throw Error('The independent Plan stream reference no longer matches the production compilation boundary')
+const batched = 'stream = compilePhysicalPlanPaint(primitives, objectRoster(scene), physicalPlanPath)', ordered = 'stream = primitives.flatMap(primitive => compilePhysicalPlanPaint([primitive], objectRoster(scene), physicalPlanPath))'
+if (painterSource.split(batched).length !== 2) throw Error('The independent Plan stream reference no longer matches the unique production compilation boundary')
 const bundle = await Bun.build({ entrypoints: [join(root, 'tests/browser/physical-scene/plan-raster-comparison-app.ts')], outdir: built, target: 'browser', format: 'esm', minify: true, naming: { entry: 'app.[ext]' }, plugins: [{ name: 'ordered-plan-reference', setup(build) { build.onLoad({ filter: /plan-ordered-reference\.ts$/ }, () => ({ contents: painterSource.replace(batched, ordered).replace(/from '([^']+)'/g, (statement, specifier) => specifier.startsWith('.') ? `from ${JSON.stringify(resolve(dirname(painterFile), specifier))}` : statement), loader: 'ts', resolveDir: dirname(painterFile) })) } }] })
 if (!bundle.success) throw new AggregateError(bundle.logs, 'Plan raster comparison build failed')
 const originalDirectory = process.env.LEITBILD_ORIGINAL_PLAN_DIR
