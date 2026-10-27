@@ -27018,7 +27018,8 @@
           "lower",
           "operating"
         ],
-        "scale": 0.5
+        "scale": 1,
+        "verticalScale": 0.65
       }
     ]
   },
