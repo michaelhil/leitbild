@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { orderedPhysicalArchitectureFragments as ordered, preparePhysicalArchitectureBsp as prepare } from '../src/ui/map/physical-scene/architecture-bsp.ts'
+import { orderedPhysicalArchitectureFragments as ordered, preparePhysicalArchitectureBsp as prepare, physicalArchitectureBspTraversalBytes } from '../src/ui/map/physical-scene/architecture-bsp.ts'
 import { preparePhysicalSurfaceOwnership, visiblePhysicalSurfaceOwners } from '../src/ui/map/physical-scene/surface-ownership.ts'
 import { meshBounds, type PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
 import type { PhysicalArchitectureBsp, PhysicalArchitectureBspSource } from '../src/ui/map/physical-scene/architecture-bsp-types.ts'
@@ -99,4 +99,10 @@ test('retained traversal reuses exact topology order and invalidates camera-side
  const reversed=ordered(bsp,[0,0,-10,1],visible);expect(reversed).not.toBe(first);expect(reversed.map(id=>bsp.fragments[id]!.ownerIndex)).toEqual([1,1,0,0])
  visible.delete(0);const changed=ordered(bsp,[0,0,-10,1],visible);expect(changed).not.toBe(reversed);expect(changed.map(id=>bsp.fragments[id]!.ownerIndex)).toEqual([1,1]);expect(ordered(bsp,[.2,.3,-9,1],visible)).toBe(changed)
  expect(()=>ordered(bsp,[0,0,10,1],new Set([bsp.owners.length]))).toThrow('unknown owner')
+})
+
+
+test('traversal retained typed-byte inventory follows its actual node and owner population',()=>{
+ const bsp=prepare({key:'typed-storage',sources:[quad('floor',0,0,1,1)]});expect(physicalArchitectureBspTraversalBytes(bsp)).toBe(0)
+ ordered(bsp,[0,0,1,1],new Set([0]));expect(physicalArchitectureBspTraversalBytes(bsp)).toBe(bsp.nodes.length*3*Float64Array.BYTES_PER_ELEMENT+bsp.nodes.length*2+bsp.owners.length*2)
 })

@@ -229,3 +229,10 @@ export const orderedPhysicalArchitectureFragments = (bsp: PhysicalArchitectureBs
   state.previousOwners.set(active);state.previousSides.set(sides);state.order=result
   return result
 }
+
+/** Retained traversal typed storage only; JS arrays/objects are not RSS or heap
+ * estimates. Backends add this to their separately measured geometry buffers. */
+export const physicalArchitectureBspTraversalBytes = (bsp: PhysicalArchitectureBsp): number => {
+  const state=traversals.get(bsp)
+  return state?state.normals.byteLength+state.currentOwners.byteLength+state.previousOwners.byteLength+state.currentSides.byteLength+state.previousSides.byteLength:0
+}
