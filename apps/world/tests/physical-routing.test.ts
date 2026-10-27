@@ -17,7 +17,7 @@ test('3D routing rises over a wall that blocks every plan-only path, with conser
   expect(routePhysicalConnection(request)).toEqual(result)
 })
 test('routing refuses a completely sealed authored volume instead of drawing through it', () => {
-  expect(() => routePhysicalConnection({ ...request, obstacles: [{ id: 'sealed', min: [4, -1, -1], max: [6, 11, 11] }] })).toThrow('No clearance-safe 3D route')
+  expect(() => routePhysicalConnection({ ...request, obstacles: [{ id: 'sealed', min: [4, -1, -1], max: [6, 11, 11] }] })).toThrow('No clearance-safe, bend-feasible 3D route')
 })
 test('terminal escape exempts only its own equipment and preserves the specified port direction', () => {
   const own = { id: 'pump', min: [0, 1, 1] as const, max: [2, 3, 3] as const }
@@ -30,4 +30,70 @@ test('routing constraints refuse stale terminals, duplicate ids and diagonal noz
   expect(physicalRoutingSchema.safeParse(data).success).toBe(true)
   expect(physicalRoutingSchema.safeParse({ ...data, connections: [{ ...data.connections[0], to: 'gone' }] }).success).toBe(false)
   expect(physicalRoutingSchema.safeParse({ ...data, terminals: [{ ...data.terminals[0], outward: [1, 1, 0] }, data.terminals[1]] }).success).toBe(false)
+})
+
+test('a nozzle facing away from its destination keeps its real exit direction and uses bend-feasible return geometry', () => {
+  const result = routePhysicalConnection({ ...request, from: { point: [1, 2, 2], outward: [-1, 0, 0] }, obstacles: [] })
+  expect(result.points[1]![0]).toBeLessThan(1)
+  expect(result.bends).toBeGreaterThan(0)
+  expect(() => roundedPhysicalRoute(result.points, request.bendRadius, .001)).not.toThrow()
+})
+
+test('ordered via points beyond the destination survive simplification and true-radius fillets', () => {
+  const via = [[15, 2, 2], [14, 5, 2]] as const
+  const result = routePhysicalConnection({ ...request, obstacles: [], envelope: { min: [0, 0, 0], max: [20, 10, 10] }, via })
+  const rounded = roundedPhysicalRoute(result.points, request.bendRadius, .001)
+  let previous = -1
+  for (const point of via) {
+    const index = rounded.findIndex(p => p.every((value, axis) => Math.abs(value - point[axis]!) < 1e-12))
+    expect(index).toBeGreaterThan(previous); previous = index
+    expect(result.points.some(p => p.every((value, axis) => value === point[axis]))).toBe(true)
+  }
+})
+
+test('circular elbows have the actual authored radius and tolerance, with exact tangent endpoints', () => {
+  const tolerance = .001, result = roundedPhysicalRoute([[0, 0, 0], [2, 0, 0], [2, 2, 0]], 1, tolerance), arc = result.slice(1, -1)
+  expect(arc[0]).toEqual([1, 0, 0]); expect(arc.at(-1)).toEqual([2, 1, 0])
+  for (const point of arc) expect(Math.hypot(point[0] - 1, point[1] - 1)).toBeCloseTo(1, 12)
+  for (let index = 1; index < arc.length; index++) {
+    const a = arc[index - 1]!, b = arc[index]!, chord = Math.hypot(b[0] - a[0], b[1] - a[1])
+    expect(1 - Math.sqrt(1 - chord * chord / 4)).toBeLessThanOrEqual(tolerance)
+  }
+  expect(() => roundedPhysicalRoute([[0, 0, 0], [.2, 0, 0], [.2, .2, 0]], 1, tolerance)).toThrow('minimum bend radius')
+  expect(() => roundedPhysicalRoute([[0, 0, 0], [1, 0, 0], [0, 0, 0]], .1, tolerance)).toThrow('180-degree')
+  expect(() => roundedPhysicalRoute([[0, 0, 0], [2, 0, 0], [2, .6, 0], [4, .6, 0]], .4, tolerance)).toThrow('minimum bend radius')
+})
+
+test('rotated unit nozzle directions use a ray exit from their own equipment envelope', () => {
+  const d = Math.SQRT1_2, from = { point: [2, 3, 2] as const, outward: [d, d, 0] as const, obstacleId: 'pump' }, to = { point: [9, 6, 2] as const, outward: [-d, -d, 0] as const, obstacleId: 'tank' }
+  const obstacles = [{ id: 'pump', min: [0, 1, 1] as const, max: [2, 3, 3] as const }, { id: 'tank', min: [9, 6, 1] as const, max: [11, 8, 3] as const }]
+  const result = routePhysicalConnection({ ...request, from, to, obstacles, envelope: { min: [-1, 0, 0], max: [15, 12, 10] } })
+  const first = result.points[1]!
+  expect(first[0] - from.point[0]).toBeCloseTo(first[1] - from.point[1], 12)
+  expect(first[0]).toBeGreaterThan(from.point[0])
+  const rounded = roundedPhysicalRoute(result.points, request.bendRadius, .001)
+  for (const obstacle of obstacles) {
+    const reserved = { min: obstacle.min.map(value => value - .2) as unknown as [number, number, number], max: obstacle.max.map(value => value + .2) as unknown as [number, number, number] }
+    for (let index = 1; index < rounded.length; index++) if (!(obstacle.id === 'pump' && index === 1) && !(obstacle.id === 'tank' && index === rounded.length - 1)) expect(physicalRouteIntersects(rounded[index - 1]!, rounded[index]!, reserved)).toBe(false)
+  }
+})
+
+test('waypoints on nozzle stubs and after bends remain actual sampled centreline points', () => {
+  for (const via of [[[1.2, 2, 2], [8.8, 2, 2]], [[3, 3, 2], [6, 4, 2]]] as const) {
+    const result = routePhysicalConnection({ ...request, obstacles: [], via })
+    const rounded = roundedPhysicalRoute(result.points, request.bendRadius, .001)
+    for (const point of via) expect(rounded.some(p => p.every((v, axis) => Math.abs(v - point[axis]!) < 1e-12))).toBe(true)
+  }
+})
+
+test('routing is stable under large source-origin translations and refuses non-unit terminal vectors', () => {
+  const shift = (p: readonly [number, number, number]) => p.map(v => v + 1_000_000) as [number, number, number]
+  const shifted: PhysicalRouteRequest = { ...request,
+    from: { ...request.from, point: shift(request.from.point) }, to: { ...request.to, point: shift(request.to.point) },
+    envelope: { min: shift(request.envelope.min), max: shift(request.envelope.max) }, obstacles: request.obstacles.map(box => ({ ...box, min: shift(box.min), max: shift(box.max) })),
+  }
+  const result = routePhysicalConnection(shifted)
+  expect(result.points[0]).toEqual(shifted.from.point); expect(result.points.at(-1)).toEqual(shifted.to.point)
+  expect(() => roundedPhysicalRoute(result.points, request.bendRadius, .001)).not.toThrow()
+  for (const outward of [[2, 0, 0], [0, 0, 0], [Number.NaN, 0, 1]] as const) expect(() => routePhysicalConnection({ ...request, from: { ...request.from, outward } })).toThrow('unit outward')
 })
