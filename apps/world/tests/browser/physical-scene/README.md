@@ -9,3 +9,20 @@ The app uses the production native scene compiler and renderer, the actual retai
 The receipt records source hashes, actual browser/GPU/viewport/AA, shared GL state comparison, preceding color/depth/stencil sentinels, triangle picking, distinct floor fragments, status-only pixel change without geometry upload, twenty mount/dispose cycles, twenty full style replacements and one forced context restoration. Every retained disposal checks actual WebGL buffer/program handles after deletion. A deliberate shared-buffer clear must be detected. A 350 ms stationary observation after 500 ms recovery quiescence includes repeated identical status refreshes. The final 638×720 viewport verifies both fitted plans and all eight corners of the real 3D source volume. The 3D camera uses a conservative volume sphere and public MapLibre FOV/camera APIs, rather than pretending a flat footprint fits its height. This is one desktop profile, not a fleet performance or total browser/driver memory qualification.
 
 Shader status changes in this test are controlled test inputs. They are never production plant status. Saved PNGs include diagnostic sentinel rectangles and an explicit test banner.
+
+## Original-versus-native visual comparison
+
+Run `bun run scripts/physical-layout/original-native-comparison-probe.ts` to capture
+the frozen 23 October original beside the current admitted source in the real
+MapLibre viewport. Both panels have equal CSS dimensions. The original uses its
+actual All/Operating/Lower camera presets; the map uses the authored inspection
+area's Home. The receipt records both poses, dimensions, source identity and
+module hashes. It never reflects a camera matrix to conceal a coordinate-frame
+difference. `LEITBILD_PHYSICAL_COMPARISON_DIR` selects the output directory and
+`LEITBILD_PHYSICAL_COMPARISON_DPR` selects the test DPR.
+
+Six PNGs cover all three level selections with and without a controlled status
+accent. An independent GPU witness requires unchanged solid interior pixels,
+changed contours, unchanged geometry-upload count and actual deleted resources
+in both Plan and 3D. The technical pass certifies these checks; visual acceptance
+still requires inspecting the side-by-side images and the full product UI.
