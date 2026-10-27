@@ -1,5 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { PhysicalGeometryPreparer } from './preparation.ts'
+import type {PhysicalArchitectureBspPreparer} from './architecture-bsp-types.ts'
 import type { PackPhysicalScene, PackPhysicalSceneDescriptor, PhysicalSceneBounds, PhysicalSceneLevel } from '../../../core/packs/scene.ts'
 
 export type Color = readonly [number, number, number]
@@ -31,6 +32,7 @@ export interface PhysicalSceneHighlight { readonly sceneId: string; readonly occ
 /** Owner-qualified severity accent for drawing contours; solid material is architectural truth. */
 export interface PhysicalSubjectStyle { readonly color: Color | null; readonly emphasis: number }
 export type PhysicalSceneDescriptor = PackPhysicalSceneDescriptor
+export interface PhysicalArchitectureOpacity {readonly wallOpacity:number;readonly floorOpacity:number}
 export interface PhysicalSceneSource { readonly descriptor: PhysicalSceneDescriptor; readonly load: () => Promise<PackPhysicalScene> }
 export interface PhysicalSceneHit {
   readonly sceneId: string
@@ -49,6 +51,8 @@ export interface PhysicalScenePresentation {
   readonly renderRevision?: number
   /** An incremental mesh request retains the currently valid geometry. */
   readonly layerPreparation?: { readonly status: 'loading' | 'unavailable'; readonly layerIds: ReadonlyArray<string>; readonly reason?: string }
+  /** view is actually applied; fractional requested styles remain explicit until ordered geometry is ready. */
+  readonly opacityPreparation?: {readonly status:'loading'|'unavailable';readonly requested:PhysicalArchitectureOpacity;readonly reason?:string}
   readonly occurrenceCount: number
 }
 export interface PhysicalSceneControllerOptions {
@@ -65,6 +69,7 @@ export interface PhysicalSceneControllerOptions {
   /** Full measured map padding including controls/rails; otherwise the map's current padding plus a small margin. */
   readonly fitPadding?: (request?: PhysicalSceneFitRequest) => { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
   readonly prepare?: PhysicalGeometryPreparer
+  readonly prepareArchitecture?: PhysicalArchitectureBspPreparer
   /** Representation error in CSS pixels; display quality policy, never a scene-count cap. */
   readonly quality?: { readonly pixelError: number }
 }

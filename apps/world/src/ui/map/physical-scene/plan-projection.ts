@@ -17,6 +17,14 @@ const envelope = (meshes: ReadonlyArray<PhysicalMesh>): Envelope => {
   const result = { min, max, priority }; envelopes.set(meshes, result); return result
 }
 type Point = readonly [number, number]
+/** Camera-independent authored Plan depth bands, shared by ordered blending. */
+export interface PhysicalPlanDepthDomain {readonly low:number;readonly high:number;readonly span:number;readonly priority:number;readonly domain:number}
+export const physicalPlanDepthDomain=(entries:ReadonlyArray<PhysicalLayerEntry>):PhysicalPlanDepthDomain|null=>{
+  const values=entries.filter(entry=>entry.meshes.length).map(entry=>envelope(entry.meshes))
+  if(!values.length)return null
+  const low=Math.min(...values.map(value=>value.min[2])),high=Math.max(...values.map(value=>value.max[2])),span=high>low?high-low:1,priority=Math.max(...values.map(value=>value.priority))
+  return{low,high,span,priority,domain:(2*priority+3)*span}
+}
 /** Clip the authored XY envelope to the actual camera frustum before choosing depth scale. */
 const visibleMinimumW = (matrix: Float64Array, bounds: Envelope): number => {
   let polygon: ReadonlyArray<Point> = [[bounds.min[0], bounds.min[1]], [bounds.max[0], bounds.min[1]], [bounds.max[0], bounds.max[1]], [bounds.min[0], bounds.max[1]]]
@@ -34,11 +42,10 @@ const visibleMinimumW = (matrix: Float64Array, bounds: Envelope): number => {
 }
 
 /** Plan has an illustration depth domain; physical source heights remain unchanged. */
-export const projectPhysicalPlan = (entries: ReadonlyArray<PhysicalLayerEntry>, mainMatrix: ArrayLike<number>): ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly matrix: Float64Array; readonly meshes: ReadonlyArray<PhysicalMesh> }> => {
+export const projectPhysicalPlan = (entries: ReadonlyArray<PhysicalLayerEntry>, mainMatrix: ArrayLike<number>,depthDomain?:PhysicalPlanDepthDomain): ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly matrix: Float64Array; readonly meshes: ReadonlyArray<PhysicalMesh> }> => {
   const source = entries.filter(entry => entry.meshes.length).map(entry => ({ entry, bounds: envelope(entry.meshes), matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)) }))
   if (!source.length) return []
-  const low = Math.min(...source.map(value => value.bounds.min[2])), high = Math.max(...source.map(value => value.bounds.max[2])), span = high > low ? high - low : 1
-  const priority = Math.max(...source.map(value => value.bounds.priority)), domain = (2 * priority + 3) * span
+  const {low,span,domain}=depthDomain??physicalPlanDepthDomain(entries)!
   const scale = Math.min(...source.map(value => visibleMinimumW(value.matrix, value.bounds)))
   if (!(scale > 0) || !Number.isFinite(scale)) return []
   return source.map(({ entry, matrix }) => {

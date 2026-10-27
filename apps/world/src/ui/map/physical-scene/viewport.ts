@@ -3,10 +3,13 @@ import type { PhysicalLayerEntry } from './layer.ts'
 import type { PhysicalCameraPose, PhysicalProjectedPoint, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneSurface, PhysicalViewportFitOptions } from './types.ts'
 import type { Vector3 } from './math.ts'
 import type { PhysicalBackendMetrics } from './backend.ts'
+import type {PhysicalArchitectureBsp} from './architecture-bsp-types.ts'
+import type {PhysicalArchitectureBspFrame} from './architecture-cohort.ts'
 export type PhysicalViewportEvent = 'change' | 'resize' | 'render' | 'movestart' | 'style' | 'idle' | 'contextlost' | 'contextrestored'
 export interface PhysicalViewportRenderer {
   readonly setPalette: (palette: PhysicalScenePalette) => void
   readonly setHighlight: (target: PhysicalSceneHighlight | null) => void
+  readonly setArchitectureBsp: (asset: PhysicalArchitectureBsp|null,frame:PhysicalArchitectureBspFrame|null) => void
   readonly retainGeometryIdentities: (identities: ReadonlySet<string>) => void
   readonly dispose: () => void
   readonly invalidatePicks: () => void
