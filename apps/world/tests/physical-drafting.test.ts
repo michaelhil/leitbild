@@ -5,12 +5,14 @@ import {physicalSourceFacts,physicalSourceSchema} from '../src/packs/physical-la
 import {physicalSourceFacts as oldFacts} from '../src/packs/physical-layout/native/architecture/source.ts'
 import {compilePhysicalScene} from '../src/packs/physical-layout/native/architecture/compile-scene.ts'
 import {compilePlanDrawing} from '../src/packs/physical-layout/native/drafting/architecture-plan.ts'
+import {compilePhysicalScene as compileDraftingScene} from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import {drawEquipmentPlan} from '../src/packs/physical-layout/native/drafting/family-plan.ts'
 import type {PhysicalPlanPrimitive} from '../src/core/packs/plan-drawing.ts'
 const artifacts=createPwrDraftingUnitArtifacts()
 const scene=(source=artifacts.source)=>compilePhysicalScene('test',{...artifacts,source,design:{digest:'test'},owner:{objectId:'plant:test'},placement:{anchor:[0,0],bearing:0},bounds:{min:[-1000,-1000,-1000],max:[1000,1000,1000]}})
 const physical=scene(),drawing=compilePlanDrawing(artifacts.source,physical)
 describe('Native source-derived architectural drafting',()=>{
+ test('full delivered drawing passes the strict core scene boundary',()=>{const value=compileDraftingScene('draft',{...artifacts,design:{digest:'draft'},owner:{objectId:'plant:test'},placement:{anchor:[0,0],bearing:0},bounds:physical.bounds});expect(value.planDrawing!.views.map(v=>v.levelId)).toEqual(artifacts.source.levels.map(l=>l.id));expect(value.objects).toEqual(physical.objects)})
  test('new drawing intent preserves the complete retained physical authority',()=>{expect(physicalSourceFacts(artifacts.source)).toEqual(oldFacts(physicalSourceSchema.parse(retained)));expect(artifacts.bindings.every(binding=>physical.objects.some(object=>object.id===binding.physicalElementId))).toBe(true)})
  test('every primitive has valid identity, physical scope and a finite presentation envelope',()=>{const ids=new Set(physical.objects.map(o=>o.id)),scopes=new Set(physical.scopes!.map(s=>s.id));for(const view of drawing.views){expect(new Set(view.primitives.map(p=>p.id)).size).toBe(view.primitives.length);for(const p of view.primitives){expect([...p.bounds.min,...p.bounds.max].every(Number.isFinite)).toBe(true);expect(p.scopeIds.every(s=>scopes.has(s))).toBe(true);if(p.occurrenceId)expect(ids.has(p.occurrenceId)).toBe(true);for(const axis of[0,1]){expect(p.bounds.min[axis]!).toBeGreaterThanOrEqual(view.bounds.min[axis]!);expect(p.bounds.max[axis]!).toBeLessThanOrEqual(view.bounds.max[axis]!)}}}})
  test('upper machinery never becomes an opaque lower-floor projection',()=>{const lower=drawing.views.find(v=>v.levelId==='lower')!;expect(lower.primitives.some(p=>p.occurrenceId==='tg-generator')).toBe(false);const lp=lower.primitives.filter(p=>p.occurrenceId==='tg-lp-1');expect(lp.length).toBeGreaterThan(0);expect(lp.every(p=>p.depiction==='above'&&p.kind==='path'&&p.fill===undefined&&p.dash!.length>0)).toBe(true)})

@@ -43,7 +43,7 @@ export const compilePlanDrawing=(source:Source,scene:PackPhysicalScene):Physical
   for(const e of source.elements.filter(e=>e.levelId==='site'&&e.disposition!=='removed')){
     const d=parameters(source,e),w=writer(out,e)
     if(e.kind==='pavement'&&e.surface){for(const polygon of e.surface){const commands=polygon.flatMap(loop=>{const p=loop.map(v=>[v[0]-source.origin[0],v[1]-source.origin[1]]as V2);return[['M',...p[0]!],...p.slice(1).map(point=>['L',...point]),['Z']]as Command[]});createPlanWriter(out,membership(e)).path(commands,{fill:'pavement',fillRule:'evenodd',stroke:'muted',width:.045})}}
-    else if(e.kind==='fence'||e.kind==='conductor'){if(e.path)createPlanWriter(out,membership(e)).path(e.path.map((p,i)=>[i?'L':'M',p[0]-source.origin[0],p[1]-source.origin[1]]as Command),{stroke:e.kind==='fence'?'muted':'crane',width:.06,dash:e.kind==='fence'?[.2,.2]:[]})}
+    else if(e.kind==='fence'||e.kind==='conductor'){if(e.path)createPlanWriter(out,membership(e)).path(e.path.map((p,i)=>[i?'L':'M',p[0]-source.origin[0],p[1]-source.origin[1]]as Command),{stroke:e.kind==='fence'?'muted':'crane',width:.06,...(e.kind==='fence'?{dash:[.2,.2]}:{})})}
     else if(e.kind==='equipment')drawEquipmentPlan(out,membership(e),e.equipmentKind!,d.length,d.width,place(e),e.pose.yaw*180/Math.PI)
     else if(e.kind==='context')w.rect(0,0,d.length,d.width,{fill:e.material??'ground',stroke:'muted',width:.035})
   }

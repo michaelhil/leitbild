@@ -1,7 +1,7 @@
 import type { PhysicalPlanPrimitive } from '../../../../core/packs/plan-drawing.ts'
 
 export type V2 = [number, number]
-export type Command = ['M' | 'L', number, number] | ['Q', number, number, number, number] | ['C', number, number, number, number, number, number] | ['Z']
+export type Command = ['M', number, number] | ['L', number, number] | ['Q', number, number, number, number] | ['C', number, number, number, number, number, number] | ['Z']
 export type Paint = { fill?: string; fillRule?:'nonzero'|'evenodd'; stroke?: string; width?: number; dash?: number[]; opacity?: number; hatch?: { material: string; spacing: number; width: number; angle: number } }
 export type Membership = { id: string; scopeIds: string[]; occurrenceId?: string; layerId?: string; depiction: PhysicalPlanPrimitive['depiction'] }
 export const drawingBounds = (points: ReadonlyArray<readonly[number,number]>, padding = 0) => {const min:V2=[Infinity,Infinity],max:V2=[-Infinity,-Infinity];for(const point of points)for(const axis of[0,1]as const){min[axis]=Math.min(min[axis],point[axis]-padding);max[axis]=Math.max(max[axis],point[axis]+padding)}return{min,max}}

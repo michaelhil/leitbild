@@ -1,0 +1,432 @@
+[
+  {
+    "physicalElementId": "conductor/unit-1-phase-1",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-1-phase-2",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-1-phase-3",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-2-phase-1",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-2-phase-2",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-2-phase-3",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-3-phase-1",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-3-phase-2",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-3-phase-3",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-4-phase-1",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-4-phase-2",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/unit-4-phase-3",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/bus--20-1",
+    "elementId": "bus:curated-halden-pwr-switchyard@420",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/bus--20-2",
+    "elementId": "bus:curated-halden-pwr-switchyard@420",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/bus--20-3",
+    "elementId": "bus:curated-halden-pwr-switchyard@420",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/bus-20-1",
+    "elementId": "bus:curated-halden-pwr-switchyard@420",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/bus-20-2",
+    "elementId": "bus:curated-halden-pwr-switchyard@420",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/bus-20-3",
+    "elementId": "bus:curated-halden-pwr-switchyard@420",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-1/breaker",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-1/disconnector",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-1/phase-1",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-1/phase-2",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-1/phase-3",
+    "elementId": "unit-1-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-2/breaker",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-2/disconnector",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-2/phase-1",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-2/phase-2",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-2/phase-3",
+    "elementId": "unit-2-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-3/breaker",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-3/disconnector",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-3/phase-1",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-3/phase-2",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-3/phase-3",
+    "elementId": "unit-3-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-4/breaker",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-4/disconnector",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-4/phase-1",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-4/phase-2",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/unit-4/phase-3",
+    "elementId": "unit-4-420kv",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-1/breaker",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-1/disconnector",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-1/phase-1",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-1/phase-2",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-1/phase-3",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-2/breaker",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-2/disconnector",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-2/phase-1",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-2/phase-2",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-2/phase-3",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-3/breaker",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-3/disconnector",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-3/phase-1",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-3/phase-2",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/hasle-3/phase-3",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-1/breaker",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-1/disconnector",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-1/phase-1",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-1/phase-2",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-1/phase-3",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-2/breaker",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-2/disconnector",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-2/phase-1",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-2/phase-2",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-2/phase-3",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-3/breaker",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-3/disconnector",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-3/phase-1",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-3/phase-2",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "yard/tegneby-3/phase-3",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-1-phase-1",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-1-phase-2",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-1-phase-3",
+    "elementId": "branch:curated-halden-pwr-hasle-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-2-phase-1",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-2-phase-2",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-2-phase-3",
+    "elementId": "branch:curated-halden-pwr-hasle-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-3-phase-1",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-3-phase-2",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/hasle-3-phase-3",
+    "elementId": "branch:curated-halden-pwr-hasle-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-1-phase-1",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-1-phase-2",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-1-phase-3",
+    "elementId": "branch:curated-halden-pwr-tegneby-1",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-2-phase-1",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-2-phase-2",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-2-phase-3",
+    "elementId": "branch:curated-halden-pwr-tegneby-2",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-3-phase-1",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-3-phase-2",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "conductor/tegneby-3-phase-3",
+    "elementId": "branch:curated-halden-pwr-tegneby-3",
+    "relation": "partOf"
+  }
+]
