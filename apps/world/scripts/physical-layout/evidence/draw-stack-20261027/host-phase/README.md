@@ -13,3 +13,11 @@ The generic borrowed renderer keeps full state capture/restore. This source revi
 The [b7 checkpoint](b7-checkpoint.json) preserves actual built-app measurements. Ordinary full Live ON site3D passes at16.8 ms p95 paused/playing on DPR1. Whole-site fractional remains a severe failure:749.9/716.5 ms p95, while the scoped room passes16.7/16.8 ms. The phase/API correction therefore does not close the full-site performance gate.
 
 The new profile no longer shows native getParameter as a hot function. Initial Deckmousedown readPixels is20.38 ms and postrelease hover2.57 ms. Mesh-subset acceleration reconstruction, architecture owner-row work, traversal and native/driver intervals remain. GPUqueries record about2,045 ordered draws per render. ScriptDuration and ThreadTime deltas differ materially, so CPUarithmetic samples alone cannot explain the stalls. Actual native call walltime is the next diagnostic; no utilization claim is inferred from unassigned `(program)` samples.
+
+## Fractional controls withdrawn
+
+The [9b decision receipt](9b-fractional-decision.json) preserves failed full-site Live ON/OFF windows and the bounded native-call diagnostic. Live OFF did not restore the frame budget. It retained the same starting physical matrices and opacity, and actual ordered render counts are reported separately from RAF frames.
+
+Two MapLibre line-program compilation-status queries consumed1,858.4 ms of the1,976.2 ms measured native GLwalltime; the largest was1,745.3 ms. In contrast,16,421 actual ordered draw submissions totaled4.9 ms in nativecallwalltime. These timings include possible driver waits. The diagnostic also records memorypressure rising fromlevel2 to4, free metric19% to5%, and wired pages growing from564,826 to781,249 (16KiB pages) over its before/after interval. This supports a pressure/driver interaction as an open cause, not a demonstrated arithmetic fix or blame on unrelated apps.
+
+Per the user's steering, fractional transparency is withdrawn from production controls for this release. Opaque architecture and inspection cutaway remain. The dormant research backend and its quality evidence are retained; no shader, native-line or ordering redesign is adopted to force a frame pass.

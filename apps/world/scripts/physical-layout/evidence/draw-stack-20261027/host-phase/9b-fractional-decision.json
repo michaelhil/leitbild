@@ -1,0 +1,1562 @@
+{
+  "appSource": "9b907f6ae",
+  "rawFiles": {
+    "on": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/stable-roster-fractional-on-dpr1/receipt.json",
+      "sha256": "9351bf2f461714512ff42c81fcdc333d6b4a11118dc19e0081c4c0e99d93702e",
+      "bytes": 77548
+    },
+    "off": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/stable-roster-fractional-off-dpr1/partial.json",
+      "sha256": "5be9604d2205a07f1b8cc719333c7fd61e5bf6890f5c015440d3b8df94fe8c8e",
+      "bytes": 56157
+    },
+    "offFailure": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/stable-roster-fractional-off-dpr1/failure.json",
+      "sha256": "9c94f04728aee3193f6707905ede279ed46598205200bf0b2f56beb398c3f7ce",
+      "bytes": 73220
+    },
+    "wall": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/stable-roster-native-wall-dpr1/partial.json",
+      "sha256": "727349d03c53bde81a524e7647161efdb4dc865c7d4d85c6ab1edf922e996404",
+      "bytes": 81655
+    }
+  },
+  "liveOn": [
+    {
+      "name": "map-site-3d-fractional-paused",
+      "frames": 66,
+      "durationMs": 17121.799999952316,
+      "rafP95Ms": 1716.5999999999985,
+      "longTasks": [
+        {
+          "start": 12126.799999952316,
+          "duration": 165
+        },
+        {
+          "start": 12693.600000143051,
+          "duration": 192
+        },
+        {
+          "start": 12886.5,
+          "duration": 211
+        },
+        {
+          "start": 13236.900000095367,
+          "duration": 113
+        },
+        {
+          "start": 13370.600000143051,
+          "duration": 168
+        },
+        {
+          "start": 13649.100000143051,
+          "duration": 444
+        },
+        {
+          "start": 14097.200000047684,
+          "duration": 105
+        },
+        {
+          "start": 14228.799999952316,
+          "duration": 70
+        },
+        {
+          "start": 14303.400000095367,
+          "duration": 60
+        },
+        {
+          "start": 14372.100000143051,
+          "duration": 122
+        },
+        {
+          "start": 14515.700000047684,
+          "duration": 91
+        },
+        {
+          "start": 14712.799999952316,
+          "duration": 73
+        },
+        {
+          "start": 14905,
+          "duration": 83
+        },
+        {
+          "start": 15147.600000143051,
+          "duration": 67
+        },
+        {
+          "start": 15244.5,
+          "duration": 51
+        },
+        {
+          "start": 15316,
+          "duration": 57
+        },
+        {
+          "start": 15400.400000095367,
+          "duration": 153
+        },
+        {
+          "start": 15669.5,
+          "duration": 530
+        },
+        {
+          "start": 16231.200000047684,
+          "duration": 214
+        },
+        {
+          "start": 16875,
+          "duration": 287
+        },
+        {
+          "start": 17902.10000014305,
+          "duration": 145
+        },
+        {
+          "start": 18047.900000095367,
+          "duration": 56
+        },
+        {
+          "start": 18144.60000014305,
+          "duration": 183
+        },
+        {
+          "start": 18328.400000095367,
+          "duration": 404
+        },
+        {
+          "start": 18804,
+          "duration": 50
+        },
+        {
+          "start": 18855.700000047684,
+          "duration": 56
+        },
+        {
+          "start": 18913.200000047684,
+          "duration": 55
+        },
+        {
+          "start": 19027.400000095367,
+          "duration": 73
+        },
+        {
+          "start": 19391.60000014305,
+          "duration": 933
+        },
+        {
+          "start": 20368.10000014305,
+          "duration": 387
+        },
+        {
+          "start": 20759.5,
+          "duration": 114
+        },
+        {
+          "start": 20892.60000014305,
+          "duration": 78
+        },
+        {
+          "start": 21375.10000014305,
+          "duration": 50
+        },
+        {
+          "start": 21648.700000047684,
+          "duration": 52
+        },
+        {
+          "start": 21964.60000014305,
+          "duration": 2066
+        },
+        {
+          "start": 24298.5,
+          "duration": 56
+        },
+        {
+          "start": 24366.900000095367,
+          "duration": 642
+        },
+        {
+          "start": 25060.400000095367,
+          "duration": 285
+        },
+        {
+          "start": 25345.900000095367,
+          "duration": 119
+        },
+        {
+          "start": 25484.799999952316,
+          "duration": 63
+        },
+        {
+          "start": 25559.299999952316,
+          "duration": 67
+        },
+        {
+          "start": 25674.60000014305,
+          "duration": 189
+        },
+        {
+          "start": 26400.5,
+          "duration": 919
+        },
+        {
+          "start": 27320.10000014305,
+          "duration": 64
+        },
+        {
+          "start": 27442.400000095367,
+          "duration": 185
+        },
+        {
+          "start": 27891.900000095367,
+          "duration": 215
+        },
+        {
+          "start": 28500.60000014305,
+          "duration": 100
+        },
+        {
+          "start": 28613.400000095367,
+          "duration": 67
+        }
+      ],
+      "baseDraws": {
+        "calls": 168,
+        "triangleVertices": 125812032,
+        "lineVertices": 19288500
+      },
+      "orderedDraws": {
+        "frames": 42,
+        "calls": 86054,
+        "indices": 8628250,
+        "firstAt": 12340.400000095367,
+        "lastAt": 29154.200000047684
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 29142.799999952316
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 29142.900000095367
+        }
+      ],
+      "callsPerOrderedFrame": 2048.904761904762,
+      "indicesPerOrderedFrame": 205434.52380952382
+    },
+    {
+      "name": "map-site-3d-fractional-playing",
+      "frames": 11,
+      "durationMs": 4335.700000047684,
+      "rafP95Ms": 1349.8999999999942,
+      "longTasks": [
+        {
+          "start": 71488.60000014305,
+          "duration": 58
+        },
+        {
+          "start": 72147.79999995232,
+          "duration": 77
+        },
+        {
+          "start": 72225.10000014305,
+          "duration": 52
+        },
+        {
+          "start": 72310.90000009537,
+          "duration": 110
+        },
+        {
+          "start": 72554.5,
+          "duration": 84
+        },
+        {
+          "start": 72689.20000004768,
+          "duration": 393
+        },
+        {
+          "start": 73118.60000014305,
+          "duration": 95
+        },
+        {
+          "start": 73937.29999995232,
+          "duration": 378
+        },
+        {
+          "start": 74365.40000009537,
+          "duration": 70
+        },
+        {
+          "start": 74897.60000014305,
+          "duration": 59
+        },
+        {
+          "start": 75024.20000004768,
+          "duration": 193
+        }
+      ],
+      "baseDraws": {
+        "calls": 24,
+        "triangleVertices": 17972256,
+        "lineVertices": 2755500
+      },
+      "orderedDraws": {
+        "frames": 6,
+        "calls": 12277,
+        "indices": 1229445,
+        "firstAt": 71572.40000009537,
+        "lastAt": 75748.10000014305
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 75725
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 75725
+        }
+      ],
+      "callsPerOrderedFrame": 2046.1666666666667,
+      "indicesPerOrderedFrame": 204907.5
+    }
+  ],
+  "liveOff": [
+    {
+      "name": "map-site-3d-fractional-live-off-paused",
+      "frames": 23,
+      "durationMs": 6550.5,
+      "rafP95Ms": 1550,
+      "longTasks": [
+        {
+          "start": 11202,
+          "duration": 1879
+        },
+        {
+          "start": 13098.299999952316,
+          "duration": 130
+        },
+        {
+          "start": 13280.700000047684,
+          "duration": 95
+        },
+        {
+          "start": 13439.400000095367,
+          "duration": 66
+        },
+        {
+          "start": 13669.799999952316,
+          "duration": 375
+        },
+        {
+          "start": 14108.799999952316,
+          "duration": 209
+        },
+        {
+          "start": 14429.299999952316,
+          "duration": 50
+        },
+        {
+          "start": 14575.100000143051,
+          "duration": 272
+        },
+        {
+          "start": 15067,
+          "duration": 282
+        },
+        {
+          "start": 15999.400000095367,
+          "duration": 177
+        },
+        {
+          "start": 16210,
+          "duration": 358
+        },
+        {
+          "start": 16670.5,
+          "duration": 318
+        },
+        {
+          "start": 16990.10000014305,
+          "duration": 56
+        }
+      ],
+      "baseDraws": {
+        "calls": 76,
+        "triangleVertices": 56916864,
+        "lineVertices": 8725750
+      },
+      "orderedDraws": {
+        "frames": 19,
+        "calls": 39012,
+        "indices": 3905041,
+        "firstAt": 10656.400000095367,
+        "lastAt": 17108.700000047684
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 17105.5
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 17105.5
+        }
+      ],
+      "callsPerOrderedFrame": 2053.2631578947367,
+      "indicesPerOrderedFrame": 205528.47368421053,
+      "sameStartingMvpAsLiveOn": true
+    },
+    {
+      "name": "map-site-3d-fractional-live-off-playing",
+      "frames": 16,
+      "durationMs": 11106.300000190735,
+      "rafP95Ms": 1500,
+      "longTasks": [
+        {
+          "start": 23514,
+          "duration": 1599
+        },
+        {
+          "start": 25201,
+          "duration": 179
+        },
+        {
+          "start": 25396.200000047684,
+          "duration": 953
+        },
+        {
+          "start": 26389.5,
+          "duration": 672
+        },
+        {
+          "start": 27096.299999952316,
+          "duration": 592
+        },
+        {
+          "start": 27717,
+          "duration": 50
+        },
+        {
+          "start": 27798,
+          "duration": 617
+        },
+        {
+          "start": 28504.700000047684,
+          "duration": 320
+        },
+        {
+          "start": 28826.400000095367,
+          "duration": 65
+        },
+        {
+          "start": 28932.60000014305,
+          "duration": 161
+        },
+        {
+          "start": 29117.700000047684,
+          "duration": 82
+        },
+        {
+          "start": 29338.400000095367,
+          "duration": 94
+        },
+        {
+          "start": 29747.60000014305,
+          "duration": 71
+        },
+        {
+          "start": 29997.400000095367,
+          "duration": 189
+        },
+        {
+          "start": 30261.400000095367,
+          "duration": 1557
+        },
+        {
+          "start": 31831.700000047684,
+          "duration": 446
+        },
+        {
+          "start": 32301,
+          "duration": 365
+        }
+      ],
+      "baseDraws": {
+        "calls": 52,
+        "triangleVertices": 38940768,
+        "lineVertices": 5970250
+      },
+      "orderedDraws": {
+        "frames": 13,
+        "calls": 26628,
+        "indices": 2663085,
+        "firstAt": 25318.200000047684,
+        "lastAt": 34574
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 34572.5
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 34572.5
+        }
+      ],
+      "callsPerOrderedFrame": 2048.3076923076924,
+      "indicesPerOrderedFrame": 204852.6923076923,
+      "sameStartingMvpAsLiveOn": true
+    }
+  ],
+  "wallDiagnostic": {
+    "elapsedMs": 6397.200000047684,
+    "nativeWallMs": 1976.2000007629395,
+    "innerBookkeepingMs": 233.90000200271606,
+    "outerExtraMs": 286.6999990940094,
+    "existingObserverPlusOuterProbeMs": 52.799997091293335,
+    "methods": [
+      {
+        "method": "bindTexture/other",
+        "calls": 368,
+        "wallMs": 0.8999996185302734,
+        "maxMs": 0.5999999046325684,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindFramebuffer/other",
+        "calls": 36,
+        "wallMs": 2.5999999046325684,
+        "maxMs": 1.4000000953674316,
+        "slowCalls": 2
+      },
+      {
+        "method": "getParameter/other",
+        "calls": 1,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "checkFramebufferStatus/other",
+        "calls": 1,
+        "wallMs": 0.20000004768371582,
+        "maxMs": 0.20000004768371582,
+        "slowCalls": 0
+      },
+      {
+        "method": "viewport/other",
+        "calls": 36,
+        "wallMs": 2.0999999046325684,
+        "maxMs": 2.0999999046325684,
+        "slowCalls": 1
+      },
+      {
+        "method": "enable/other",
+        "calls": 226,
+        "wallMs": 0.09999990463256836,
+        "maxMs": 0.09999990463256836,
+        "slowCalls": 0
+      },
+      {
+        "method": "clear/other",
+        "calls": 14,
+        "wallMs": 2.799999952316284,
+        "maxMs": 2.299999952316284,
+        "slowCalls": 1
+      },
+      {
+        "method": "bindBuffer/other",
+        "calls": 1971,
+        "wallMs": 6.5,
+        "maxMs": 2.299999952316284,
+        "slowCalls": 3
+      },
+      {
+        "method": "bufferSubData/other",
+        "calls": 455,
+        "wallMs": 11.899998903274536,
+        "maxMs": 4.700000047683716,
+        "slowCalls": 2
+      },
+      {
+        "method": "bindVertexArray/other",
+        "calls": 2018,
+        "wallMs": 2.6000001430511475,
+        "maxMs": 0.9000000953674316,
+        "slowCalls": 0
+      },
+      {
+        "method": "activeTexture/other",
+        "calls": 48,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform1i/other",
+        "calls": 504,
+        "wallMs": 2.4000000953674316,
+        "maxMs": 2.1000001430511475,
+        "slowCalls": 1
+      },
+      {
+        "method": "blendFuncSeparate/other",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "drawArraysInstanced/other",
+        "calls": 32,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "disable/other",
+        "calls": 346,
+        "wallMs": 2.4000000953674316,
+        "maxMs": 2.299999952316284,
+        "slowCalls": 1
+      },
+      {
+        "method": "readPixels/other",
+        "calls": 2,
+        "wallMs": 16.399999856948853,
+        "maxMs": 15.599999904632568,
+        "slowCalls": 1
+      },
+      {
+        "method": "colorMask/other",
+        "calls": 144,
+        "wallMs": 0.09999990463256836,
+        "maxMs": 0.09999990463256836,
+        "slowCalls": 0
+      },
+      {
+        "method": "depthMask/other",
+        "calls": 48,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "depthFunc/other",
+        "calls": 32,
+        "wallMs": 0.10000014305114746,
+        "maxMs": 0.10000014305114746,
+        "slowCalls": 0
+      },
+      {
+        "method": "useProgram/physical-base",
+        "calls": 8,
+        "wallMs": 1.2000000476837158,
+        "maxMs": 1.0999999046325684,
+        "slowCalls": 1
+      },
+      {
+        "method": "uniform1f/physical-base",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindSampler/physical-base",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform1i/physical-base",
+        "calls": 112,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform2f/physical-base",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform3f/physical-base",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindBuffer/physical-base",
+        "calls": 82,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bufferData/physical-base",
+        "calls": 18,
+        "wallMs": 6.400000095367432,
+        "maxMs": 3.5,
+        "slowCalls": 3
+      },
+      {
+        "method": "activeTexture/physical-base",
+        "calls": 48,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindTexture/physical-base",
+        "calls": 48,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "depthMask/physical-base",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "disable/physical-base",
+        "calls": 48,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "depthFunc/physical-base",
+        "calls": 32,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindVertexArray/physical-base",
+        "calls": 34,
+        "wallMs": 0.10000014305114746,
+        "maxMs": 0.10000014305114746,
+        "slowCalls": 0
+      },
+      {
+        "method": "drawElementsInstanced/physical-base",
+        "calls": 32,
+        "wallMs": 1.0999999046325684,
+        "maxMs": 1.0999999046325684,
+        "slowCalls": 1
+      },
+      {
+        "method": "enable/physical-base",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "blendEquationSeparate/physical-base",
+        "calls": 16,
+        "wallMs": 0.10000014305114746,
+        "maxMs": 0.10000014305114746,
+        "slowCalls": 0
+      },
+      {
+        "method": "blendFuncSeparate/physical-base",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "useProgram/ordered",
+        "calls": 8,
+        "wallMs": 0.09999990463256836,
+        "maxMs": 0.09999990463256836,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindVertexArray/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindBuffer/ordered",
+        "calls": 11,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bufferData/ordered",
+        "calls": 11,
+        "wallMs": 3.799999713897705,
+        "maxMs": 1.8999998569488525,
+        "slowCalls": 2
+      },
+      {
+        "method": "activeTexture/ordered",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindTexture/ordered",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindSampler/ordered",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform1i/ordered",
+        "calls": 16477,
+        "wallMs": 6,
+        "maxMs": 0.7999999523162842,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform1f/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform2f/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform3f/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "enable/ordered",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "depthMask/ordered",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "disable/ordered",
+        "calls": 32,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "colorMask/ordered",
+        "calls": 16,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "blendEquationSeparate/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "blendFuncSeparate/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "depthFunc/ordered",
+        "calls": 16421,
+        "wallMs": 5.5000011920928955,
+        "maxMs": 0.40000009536743164,
+        "slowCalls": 0
+      },
+      {
+        "method": "drawElementsInstanced/ordered",
+        "calls": 16421,
+        "wallMs": 4.8999998569488525,
+        "maxMs": 0.20000004768371582,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindFramebuffer/ordered",
+        "calls": 32,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "blitFramebuffer/ordered",
+        "calls": 8,
+        "wallMs": 0.10000014305114746,
+        "maxMs": 0.10000014305114746,
+        "slowCalls": 0
+      },
+      {
+        "method": "viewport/ordered",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "clear/ordered",
+        "calls": 8,
+        "wallMs": 2.299999952316284,
+        "maxMs": 2.200000047683716,
+        "slowCalls": 1
+      },
+      {
+        "method": "useProgram/other",
+        "calls": 322,
+        "wallMs": 3.0999999046325684,
+        "maxMs": 2.9000000953674316,
+        "slowCalls": 1
+      },
+      {
+        "method": "uniformMatrix4fv/other",
+        "calls": 7474,
+        "wallMs": 17.900001049041748,
+        "maxMs": 11.300000190734863,
+        "slowCalls": 2
+      },
+      {
+        "method": "drawElements/other",
+        "calls": 3853,
+        "wallMs": 3.1000001430511475,
+        "maxMs": 1.7000000476837158,
+        "slowCalls": 1
+      },
+      {
+        "method": "uniform1f/other",
+        "calls": 174,
+        "wallMs": 0.10000014305114746,
+        "maxMs": 0.10000014305114746,
+        "slowCalls": 0
+      },
+      {
+        "method": "uniform2f/other",
+        "calls": 101,
+        "wallMs": 0.09999990463256836,
+        "maxMs": 0.09999990463256836,
+        "slowCalls": 0
+      },
+      {
+        "method": "blendEquationSeparate/other",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bindSampler/other",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "drawArrays/other",
+        "calls": 8,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "texSubImage2D/physical-base",
+        "calls": 1,
+        "wallMs": 1.4000000953674316,
+        "maxMs": 1.4000000953674316,
+        "slowCalls": 1
+      },
+      {
+        "method": "texSubImage2D/ordered",
+        "calls": 3,
+        "wallMs": 2.200000286102295,
+        "maxMs": 1.4000000953674316,
+        "slowCalls": 1
+      },
+      {
+        "method": "drawElementsInstanced/other",
+        "calls": 4,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "bufferData/other",
+        "calls": 260,
+        "wallMs": 1.3999993801116943,
+        "maxMs": 0.8999998569488525,
+        "slowCalls": 0
+      },
+      {
+        "method": "texSubImage2D/other",
+        "calls": 22,
+        "wallMs": 4.6000001430511475,
+        "maxMs": 4.6000001430511475,
+        "slowCalls": 1
+      },
+      {
+        "method": "texImage2D/other",
+        "calls": 22,
+        "wallMs": 0.3000004291534424,
+        "maxMs": 0.10000014305114746,
+        "slowCalls": 0
+      },
+      {
+        "method": "getShaderParameter/other",
+        "calls": 2,
+        "wallMs": 1858.3999998569489,
+        "maxMs": 1745.2999999523163,
+        "slowCalls": 2
+      },
+      {
+        "method": "getProgramParameter/other",
+        "calls": 1,
+        "wallMs": 0,
+        "maxMs": 0,
+        "slowCalls": 0
+      },
+      {
+        "method": "getUniformLocation/other",
+        "calls": 29,
+        "wallMs": 0.8999998569488525,
+        "maxMs": 0.8999998569488525,
+        "slowCalls": 0
+      }
+    ],
+    "slow": [
+      {
+        "name": "readPixels",
+        "label": "other",
+        "context": 1,
+        "started": 11213,
+        "durationMs": 15.599999904632568,
+        "args": [
+          291,
+          470,
+          1,
+          1,
+          6408,
+          5121,
+          {
+            "typedBytes": 4
+          }
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.readPixels (<anonymous>:150:54)\n    at proto.<computed> [as readPixels] (<anonymous>:67:30)\n    at Mx (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:79034)\n    at e.readPixelsToArrayWebGL (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:84081)\n    at hv._drawAndSample (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1528:118439)\n    at hv._pickClosestObject (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1528:113486)\n    at hv.pickObject (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1528:110027)\n    at Wx._pick (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:96502)\n    at Wx._pickPointSync (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:95165)"
+      },
+      {
+        "name": "texSubImage2D",
+        "label": "physical-base",
+        "context": 2,
+        "started": 11330.199999809265,
+        "durationMs": 1.4000000953674316,
+        "args": [
+          3553,
+          0,
+          0,
+          0,
+          16384,
+          3,
+          6408,
+          5126,
+          {
+            "typedBytes": 786432
+          }
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as texSubImage2D] (<anonymous>:67:30)\n    at h (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:2260)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:8172)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42256)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "bufferData",
+        "label": "physical-base",
+        "context": 2,
+        "started": 11341.399999856949,
+        "durationMs": 3.5,
+        "args": [
+          34963,
+          {
+            "typedBytes": 2630988
+          },
+          35048
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bufferData (<anonymous>:178:22)\n    at proto.<computed> [as bufferData] (<anonymous>:67:30)\n    at x (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:5961)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:8536)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42256)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)"
+      },
+      {
+        "name": "bufferData",
+        "label": "ordered",
+        "context": 2,
+        "started": 11408.899999856949,
+        "durationMs": 1.7999999523162842,
+        "args": [
+          34963,
+          {
+            "typedBytes": 822828
+          },
+          35048
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bufferData (<anonymous>:178:22)\n    at proto.<computed> [as bufferData] (<anonymous>:67:30)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:20464)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42283)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "texSubImage2D",
+        "label": "ordered",
+        "context": 2,
+        "started": 11412.199999809265,
+        "durationMs": 1.4000000953674316,
+        "args": [
+          3553,
+          0,
+          0,
+          0,
+          16384,
+          2,
+          6408,
+          5126,
+          {
+            "typedBytes": 524288
+          }
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as texSubImage2D] (<anonymous>:67:30)\n    at x (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:15608)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:20761)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42283)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "viewport",
+        "label": "other",
+        "context": 2,
+        "started": 13041.099999904633,
+        "durationMs": 2.0999999046325684,
+        "args": [
+          0,
+          0,
+          1080,
+          871
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as viewport] (<anonymous>:67:30)\n    at NE.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:25881)\n    at e.setBaseState (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:83028)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:184274)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:24463"
+      },
+      {
+        "name": "bindBuffer",
+        "label": "other",
+        "context": 2,
+        "started": 13050.399999856949,
+        "durationMs": 2.200000047683716,
+        "args": [
+          34962,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bindBuffer (<anonymous>:164:24)\n    at proto.<computed> [as bindBuffer] (<anonymous>:67:30)\n    at LE.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:26564)\n    at uE.bind (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:21207)\n    at uE.updateData (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:21394)\n    at ZS.updateBucketOpacities (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:528500)\n    at ZS.updateLayerOpacities (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:525053)\n    at Pw._updatePlacement (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:800:100107)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185584)"
+      },
+      {
+        "name": "bufferSubData",
+        "label": "other",
+        "context": 2,
+        "started": 13054.099999904633,
+        "durationMs": 4.700000047683716,
+        "args": [
+          34962,
+          0,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as bufferSubData] (<anonymous>:67:30)\n    at uE.updateData (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:21403)\n    at ZS.updateBucketOpacities (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:528500)\n    at ZS.updateLayerOpacities (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:525053)\n    at Pw._updatePlacement (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:800:100107)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185584)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:24463"
+      },
+      {
+        "name": "bindBuffer",
+        "label": "other",
+        "context": 2,
+        "started": 13061.799999952316,
+        "durationMs": 1,
+        "args": [
+          34962,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bindBuffer (<anonymous>:164:24)\n    at proto.<computed> [as bindBuffer] (<anonymous>:67:30)\n    at LE.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:26564)\n    at new uE (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:21020)\n    at ZE.createVertexBuffer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:32028)\n    at hp.upload (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:270905)\n    at Fx.upload (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:468520)\n    at e.prepare (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:483937)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77150)"
+      },
+      {
+        "name": "texSubImage2D",
+        "label": "other",
+        "context": 2,
+        "started": 13067.899999856949,
+        "durationMs": 4.6000001430511475,
+        "args": [
+          3553,
+          0,
+          0,
+          0,
+          1,
+          1,
+          6408,
+          5121,
+          {
+            "typedBytes": 4
+          }
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as texSubImage2D] (<anonymous>:67:30)\n    at pf.update (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:246829)\n    at new pf (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:246151)\n    at Fx.upload (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:468609)\n    at e.prepare (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:483937)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77150)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:24463"
+      },
+      {
+        "name": "bindFramebuffer",
+        "label": "other",
+        "context": 2,
+        "started": 13079.599999904633,
+        "durationMs": 1.0999999046325684,
+        "args": [
+          36160,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bindFramebuffer (<anonymous>:319:21)\n    at proto.<computed> [as bindFramebuffer] (<anonymous>:67:30)\n    at Object.begin (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:4191)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42081)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "useProgram",
+        "label": "physical-base",
+        "context": 2,
+        "started": 13082.5,
+        "durationMs": 1.0999999046325684,
+        "args": [
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.useProgram (<anonymous>:226:25)\n    at proto.<computed> [as useProgram] (<anonymous>:67:30)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:7176)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42256)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "bufferData",
+        "label": "physical-base",
+        "context": 2,
+        "started": 13085.399999856949,
+        "durationMs": 1,
+        "args": [
+          34962,
+          {
+            "typedBytes": 272
+          },
+          35048
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bufferData (<anonymous>:178:22)\n    at proto.<computed> [as bufferData] (<anonymous>:67:30)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:8064)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42256)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "drawElementsInstanced",
+        "label": "physical-base",
+        "context": 2,
+        "started": 13088.5,
+        "durationMs": 1.0999999046325684,
+        "args": [
+          4,
+          657747,
+          5125,
+          0,
+          4
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.drawElementsInstanced (<anonymous>:246:34)\n    at proto.<computed> [as drawElementsInstanced] (<anonymous>:67:30)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:9206)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42256)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "clear",
+        "label": "ordered",
+        "context": 2,
+        "started": 13101.899999856949,
+        "durationMs": 2.200000047683716,
+        "args": [
+          16640
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as clear] (<anonymous>:67:30)\n    at ZE.clear (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:32618)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77985)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:24463"
+      },
+      {
+        "name": "getShaderParameter",
+        "label": "other",
+        "context": 2,
+        "started": 13115.299999952316,
+        "durationMs": 1745.2999999523163,
+        "args": [
+          null,
+          35713
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as getShaderParameter] (<anonymous>:67:30)\n    at new qw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:137)\n    at e.useProgram (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:82579)\n    at DD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:50266)\n    at Object.wD [as line] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:48987)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80293)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673"
+      },
+      {
+        "name": "getShaderParameter",
+        "label": "other",
+        "context": 2,
+        "started": 15035.5,
+        "durationMs": 113.09999990463257,
+        "args": [
+          null,
+          35713
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as getShaderParameter] (<anonymous>:67:30)\n    at new qw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:417)\n    at e.useProgram (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:82579)\n    at DD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:50266)\n    at Object.wD [as line] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:48987)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80293)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673"
+      },
+      {
+        "name": "useProgram",
+        "label": "other",
+        "context": 2,
+        "started": 15297.599999904633,
+        "durationMs": 2.9000000953674316,
+        "args": [
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.useProgram (<anonymous>:226:25)\n    at proto.<computed> [as useProgram] (<anonymous>:67:30)\n    at jE.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:25480)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:1292)\n    at DD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:51086)\n    at Object.wD [as line] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:48987)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80293)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)"
+      },
+      {
+        "name": "uniformMatrix4fv",
+        "label": "other",
+        "context": 2,
+        "started": 15303.599999904633,
+        "durationMs": 3.9000000953674316,
+        "args": [
+          null,
+          null,
+          {
+            "typedBytes": 64
+          }
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as uniformMatrix4fv] (<anonymous>:67:30)\n    at Wu.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:220644)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:1659)\n    at DD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:51086)\n    at Object.wD [as line] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:48987)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80293)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673"
+      },
+      {
+        "name": "bindBuffer",
+        "label": "other",
+        "context": 2,
+        "started": 15325.5,
+        "durationMs": 2.299999952316284,
+        "args": [
+          34962,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bindBuffer (<anonymous>:164:24)\n    at proto.<computed> [as bindBuffer] (<anonymous>:67:30)\n    at LE.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:26564)\n    at uE.bind (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:21207)\n    at Iw.freshBind (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:800:104311)\n    at Iw.bind (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:800:103655)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:1941)\n    at DD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:51086)\n    at Object.wD [as line] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:48987)"
+      },
+      {
+        "name": "drawElements",
+        "label": "other",
+        "context": 2,
+        "started": 15332.599999904633,
+        "durationMs": 1.7000000476837158,
+        "args": [
+          4,
+          198,
+          5123,
+          0
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as drawElements] (<anonymous>:67:30)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:2012)\n    at DD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:51086)\n    at Object.wD [as line] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:48987)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80293)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:24463"
+      },
+      {
+        "name": "bufferSubData",
+        "label": "other",
+        "context": 2,
+        "started": 15341.399999856949,
+        "durationMs": 4.700000047683716,
+        "args": [
+          34962,
+          0,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as bufferSubData] (<anonymous>:67:30)\n    at uE.updateData (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:21403)\n    at TS (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:501938)\n    at cD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:40243)\n    at Object.nD [as symbol] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:35919)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80177)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)\n    at http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:187673"
+      },
+      {
+        "name": "disable",
+        "label": "other",
+        "context": 2,
+        "started": 15356.299999952316,
+        "durationMs": 2.299999952316284,
+        "args": [
+          2960
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as disable] (<anonymous>:67:30)\n    at bE.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:23636)\n    at ZE.setStencilMode (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:33017)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:1330)\n    at lD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:41837)\n    at cD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:41539)\n    at Object.nD [as symbol] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:35919)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80177)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)"
+      },
+      {
+        "name": "uniform1i",
+        "label": "other",
+        "context": 2,
+        "started": 15359.699999809265,
+        "durationMs": 2.1000001430511475,
+        "args": [
+          null,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.uniform1i (<anonymous>:243:22)\n    at proto.<computed> [as uniform1i] (<anonymous>:67:30)\n    at K.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:218972)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:1728)\n    at lD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:41837)\n    at cD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:41539)\n    at Object.nD [as symbol] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:35919)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80177)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)"
+      },
+      {
+        "name": "uniformMatrix4fv",
+        "label": "other",
+        "context": 2,
+        "started": 15379.699999809265,
+        "durationMs": 11.300000190734863,
+        "args": [
+          null,
+          null,
+          {
+            "typedBytes": 128
+          }
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as uniformMatrix4fv] (<anonymous>:67:30)\n    at Wu.set (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:2:220644)\n    at qw.draw (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:1728)\n    at lD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:41837)\n    at cD (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:41539)\n    at Object.nD [as symbol] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:35919)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80177)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:78993)\n    at Lk._render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:185686)"
+      },
+      {
+        "name": "clear",
+        "label": "other",
+        "context": 1,
+        "started": 15429.899999856949,
+        "durationMs": 2.299999952316284,
+        "args": [
+          17664
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at proto.<computed> [as clear] (<anonymous>:67:30)\n    at http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:65190\n    at Fb (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:37152)\n    at bx.clear (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:65150)\n    at new bx (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:63529)\n    at xx.beginRenderPass (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1530:66038)\n    at e.beginRenderPass (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:780:315)\n    at av._render (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1528:1827)\n    at av.render (http://127.0.0.1:43148/assets/world/OperationalMap-eEi7_jUt.js:1528:105178)"
+      },
+      {
+        "name": "bindFramebuffer",
+        "label": "other",
+        "context": 2,
+        "started": 15735.399999856949,
+        "durationMs": 1.4000000953674316,
+        "args": [
+          36160,
+          null
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bindFramebuffer (<anonymous>:319:21)\n    at proto.<computed> [as bindFramebuffer] (<anonymous>:67:30)\n    at Object.begin (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:4191)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42081)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "bufferData",
+        "label": "physical-base",
+        "context": 2,
+        "started": 15740.599999904633,
+        "durationMs": 1.2999999523162842,
+        "args": [
+          34962,
+          {
+            "typedBytes": 272
+          },
+          35048
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bufferData (<anonymous>:178:22)\n    at proto.<computed> [as bufferData] (<anonymous>:67:30)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:101:8064)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42256)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      },
+      {
+        "name": "bufferData",
+        "label": "ordered",
+        "context": 2,
+        "started": 15770.299999952316,
+        "durationMs": 1.8999998569488525,
+        "args": [
+          34963,
+          {
+            "typedBytes": 823428
+          },
+          35048
+        ],
+        "stack": "Error\n    at proto.<computed> (<anonymous>:47:221)\n    at WebGL2RenderingContext.bufferData (<anonymous>:178:22)\n    at proto.<computed> [as bufferData] (<anonymous>:67:30)\n    at Object.draw (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:20464)\n    at E (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42283)\n    at Object.prepareFrame (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:42579)\n    at Object.prerender (http://127.0.0.1:43148/assets/world/PhysicalExplorer-DrxACFyQ.js:105:46152)\n    at Object.sO [as custom] (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:66208)\n    at e.renderLayer (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:80491)\n    at e.render (http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js:802:77739)"
+      }
+    ],
+    "limits": [
+      "Native calls are timed inside pre-existing product/GPU observers. Labels describe the bound program, not responsibility for earlier queued work.",
+      "Outer extra excludes measured native time; it includes original observers plus this diagnostic wrapper. Subtracting measured inner bookkeeping still includes outer timer overhead and clock quantization.",
+      "All >=1ms native calls retain stacks, without a count cap. Every watched call is aggregated. Threshold is diagnostic only.",
+      "This observer perturbs pacing and cannot issue a clean frame-budget verdict. Native walltime can include driver/GPU waits; it is not CPU utilization."
+    ]
+  },
+  "machineBefore": {
+    "atUtc": "2026-10-27T22:39:02.958Z",
+    "readings": [
+      {
+        "command": [
+          "sysctl",
+          "vm.swapusage",
+          "kern.memorystatus_vm_pressure_level"
+        ],
+        "wallMs": 3.7817919999997684,
+        "exitCode": 0,
+        "stdout": "vm.swapusage: total = 12288.00M  used = 11187.75M  free = 1100.25M  (encrypted)\nkern.memorystatus_vm_pressure_level: 2\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "vm_stat"
+        ],
+        "wallMs": 2.572707999999693,
+        "exitCode": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                4052.\nPages active:                             95752.\nPages inactive:                           86080.\nPages speculative:                         8891.\nPages throttled:                              0.\nPages wired down:                        564826.\nPages purgeable:                              2.\n\"Translation faults\":               28232206714.\nPages copy-on-write:                  642627437.\nPages zero filled:                   8938111452.\nPages reactivated:                   9372587876.\nPages purged:                         389918108.\nFile-backed pages:                        68300.\nAnonymous pages:                         122423.\nPages stored in compressor:             1746302.\nPages occupied by compressor:            252084.\nDecompressions:                     10048939689.\nCompressions:                       11005552463.\nPageins:                              487665673.\nPageouts:                              10285333.\nSwapins:                              128365417.\nSwapouts:                             141470998.\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "memory_pressure",
+          "-Q"
+        ],
+        "wallMs": 2.5890830000007554,
+        "exitCode": 0,
+        "stdout": "The system has 17179869184 (1048576 pages with a page size of 16384).\nSystem-wide memory free percentage: 19%\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "machineAfter": {
+    "atUtc": "2026-10-27T22:39:08.444Z",
+    "readings": [
+      {
+        "command": [
+          "sysctl",
+          "vm.swapusage",
+          "kern.memorystatus_vm_pressure_level"
+        ],
+        "wallMs": 29.479166000000987,
+        "exitCode": 0,
+        "stdout": "vm.swapusage: total = 14336.00M  used = 13279.19M  free = 1056.81M  (encrypted)\nkern.memorystatus_vm_pressure_level: 4\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "vm_stat"
+        ],
+        "wallMs": 8.146667000000889,
+        "exitCode": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                3513.\nPages active:                             33124.\nPages inactive:                           28802.\nPages speculative:                         2935.\nPages throttled:                              0.\nPages wired down:                        781249.\nPages purgeable:                             16.\n\"Translation faults\":               28233018313.\nPages copy-on-write:                  642627972.\nPages zero filled:                   8938132951.\nPages reactivated:                   9372838253.\nPages purged:                         389923050.\nFile-backed pages:                        24907.\nAnonymous pages:                          39954.\nPages stored in compressor:             1808827.\nPages occupied by compressor:            161913.\nDecompressions:                     10049850126.\nCompressions:                       11006535757.\nPageins:                              487765255.\nPageouts:                              10285631.\nSwapins:                              128376929.\nSwapouts:                             141616342.\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "memory_pressure",
+          "-Q"
+        ],
+        "wallMs": 61.06983399999808,
+        "exitCode": 0,
+        "stdout": "The system has 17179869184 (1048576 pages with a page size of 16384).\nSystem-wide memory free percentage: 5%\n",
+        "stderr": ""
+      }
+    ]
+  },
+  "limits": [
+    "Fractional LiveOFF window values are valid partial observations; cleanup returned module_outcome_unknown. A published localexecution.read afterward confirmed paused. EntireOFF invocation is not claimed cleanly completed.",
+    "Native-call diagnostic perturbs pacing and intentionally stops after one namedwindow. No acceptance pass is issued.",
+    "The biggest native stall is MapLibre line shader compilation-status query under contemporaneous critical memorypressure; not attributed automatically to ourdrawloop, shaderarithmetic, or a particular unrelatedprocess.",
+    "No shader/quads/reordering redesign was adopted. User authorized withdrawing fractional controls; ordinary opaque/cutaway stays supported."
+  ]
+}
