@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
-const root = join(import.meta.dir, '../..'), output = process.env.LEITBILD_OPACITY_PROBE_DIR ?? await mkdtemp(join(tmpdir(), 'leitbild-opacity-proof-'))
+const root = join(import.meta.dir, '../..'), rendererRoot = process.env.LEITBILD_OPACITY_RENDERER_ROOT ?? root, output = process.env.LEITBILD_OPACITY_PROBE_DIR ?? await mkdtemp(join(tmpdir(), 'leitbild-opacity-proof-'))
 await mkdir(output, { recursive: true })
-const bundle = await Bun.build({ entrypoints: [join(root, 'tests/browser/physical-scene/opacity-probe.ts')], outdir: join(output, 'dist'), target: 'browser', format: 'esm', naming: 'app.js' })
+const entry = join(root, 'tests/browser/physical-scene/opacity-probe.ts')
+const bundle = await Bun.build({ entrypoints: [entry], outdir: join(output, 'dist'), target: 'browser', format: 'esm', naming: 'app.js', plugins: [{ name: 'frozen-renderer-under-test', setup(build) { build.onLoad({ filter: /opacity-probe\.ts$/ }, async args => args.path === entry ? { contents: (await readFile(args.path, 'utf8')).replaceAll("'../../../src/", `'${rendererRoot}/src/`), loader: 'ts' } : undefined) } }] })
 if (!bundle.success) throw new AggregateError(bundle.logs, 'Opacity probe build failed')
 const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: request => new URL(request.url).pathname === '/app.js' ? new Response(Bun.file(bundle.outputs[0]!.path)) : new Response('<!doctype html><canvas></canvas><pre></pre><script type="module" src="/app.js"></script>', { headers: { 'content-type': 'text/html' } }) })
 const runs = []
@@ -32,9 +33,10 @@ try {
       runs.push(result)
     } finally { socket?.close(); chrome.kill(); await chrome.exited; await rm(profile, { recursive: true, force: true }) }
   }
-  const files = ['backend.ts', 'renderer.ts', 'render-pass.ts', 'transparency-pass.ts', 'gl-state.ts', 'architecture-opacity.ts'].map(file => `src/ui/map/physical-scene/${file}`)
-  files.push('tests/browser/physical-scene/opacity-probe.ts', 'scripts/physical-layout/opacity-probe.ts')
-  const provenance = { commit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim(), files: Object.fromEntries(await Promise.all(files.map(async file => [file, createHash('sha256').update(await readFile(join(root, file))).digest('hex')]))) }
+  const files = ['backend.ts', 'renderer.ts', 'render-pass.ts', 'architecture-backend.ts', 'architecture-bsp.ts', 'architecture-bsp-types.ts', 'gl-state.ts', 'architecture-opacity.ts'].map(file => `src/ui/map/physical-scene/${file}`)
+  const fixtureFiles = ['tests/browser/physical-scene/opacity-probe.ts', 'scripts/physical-layout/opacity-probe.ts']
+  const hashes = async (base: string, paths: string[]) => Object.fromEntries(await Promise.all(paths.map(async file => [file, createHash('sha256').update(await readFile(join(base, file))).digest('hex')])))
+  const provenance = { commit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: rendererRoot }).stdout.toString().trim(), rendererRoot, files: await hashes(rendererRoot, files), fixtureCommit: Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: root }).stdout.toString().trim(), fixtureFiles: await hashes(root, fixtureFiles) }
   await writeFile(join(output, 'summary.json'), JSON.stringify({ passed: runs.every(value => value.passed), provenance, runs }, null, 2))
   console.log(JSON.stringify({ output, passed: runs.every(value => value.passed), negativeCapability: runs.map(value => value.negativeCapability), runs: runs.map(value => ({ device: value.device, results: value.results, disposal: value.disposal })) }, null, 2))
   if (runs.some(value => !value.passed)) process.exitCode = 1
