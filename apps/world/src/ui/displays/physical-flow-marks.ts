@@ -1,4 +1,4 @@
-export type PhysicalFlowGlyph = 'forward' | 'reverse' | 'stopped' | 'unknown' | 'conducting' | 'isolated'
+export type PhysicalFlowGlyph = 'forward' | 'reverse' | 'stopped' | 'unknown' | 'conducting' | 'deenergized'
 
 /** Native-map spatial annotation, independent of alarm colour. The existing
  * route's exact pick/occlusion decides whether this mark can be painted. */
@@ -15,7 +15,7 @@ export const drawPhysicalFlowMark = (context: CanvasRenderingContext2D, mark: { 
       context.fillStyle = style.paper; context.strokeStyle = style.ink; context.lineWidth = 1.3
       context.beginPath(); context.arc(0, 0, radius, 0, Math.PI * 2); context.fill(); context.stroke()
       context.font = `${style.fontSize}px ${style.fontFamily}`; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillStyle = style.ink
-      context.fillText(mark.glyph === 'stopped' ? '0' : mark.glyph === 'conducting' ? 'E' : mark.glyph === 'isolated' ? '×' : '?', 0, .5)
+      context.fillText(mark.glyph === 'stopped' ? '0' : mark.glyph === 'conducting' ? 'E' : mark.glyph === 'deenergized' ? '×' : '?', 0, .5)
     }
   } finally { context.restore() }
 }

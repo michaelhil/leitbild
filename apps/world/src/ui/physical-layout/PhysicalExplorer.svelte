@@ -428,7 +428,7 @@
       const operation = operationsFor(reading, frozenScenes.has(sceneId)).get(occurrence.subjectIds[0]!)
       if (!operation?.connection) continue
       const flow = operation.flow, conducting = operation.conducting
-      const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'isolated' : 'unknown'
+      const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'deenergized' : 'unknown'
       const view = presentation.view, regions = physicalScopeRegions(source, focusedScopeId ?? undefined)
       const floors = view.levelId === 'all' && view.separation > 0 && occurrence.inspectionLevels?.length ? occurrence.inspectionLevels.map(volume => ({ id: volume.levelId, volume })) : [{ id: view.levelId === 'all' ? undefined : view.levelId, volume: view.levelId === 'all' || occurrence.levelId === 'site' ? undefined : occurrence.inspectionLevels?.find(volume => volume.levelId === view.levelId) }]
       let ordinal = 0

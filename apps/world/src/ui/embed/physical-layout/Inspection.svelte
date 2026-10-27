@@ -11,6 +11,7 @@
   import { physicalOperationContext } from '../../physical-layout/operation-presentation.ts'
   import { createPageVisibility, embeddedDisplayFrame, trackVisibility, type DisplayOpening } from '../view-host.ts'
   import Faceplate from '../vignette/Faceplate.svelte'
+  import ElementFaceplate from '../vignette/ElementFaceplate.svelte'
   import type { FaceplateReadings } from '../vignette/faceplate.ts'
   import { FACEPLATE_MARGIN } from '../vignette/popover.ts'
   import { provideOpening } from '../vignette/opening.svelte.ts'
@@ -25,6 +26,7 @@
   let hostAvailableHeight = $state<number | null>(null)
   let where = $state<DisplayOpening | null>(null)
   let activeElement = $state('')
+  let activeName = $state('')
   let closed = $state(false)
   let failureElement = $state<HTMLElement | null>(null)
   let session: LayoutLiveSession | null = null
@@ -54,9 +56,8 @@
     failure = null
     void opening.element(parsed.state.objectId, element, 'detail').then(reason => { failure = reason })
   }
-  const inspect = (element: string): void => {
-    if (snapshot.latest?.subjects.some(subject => subject.elementId === element)) activeElement = element
-    else detail(element)
+  const inspect = (element: string, name: string): void => {
+    activeElement = element; activeName = name; failure = null
   }
   $effect(() => {
     const element = failureElement
@@ -68,7 +69,7 @@
   })
 
   runOnMount(() => {
-    try { parsed = layoutInspectionExpected(envelope); activeElement = parsed.state.elementId } catch (error) {
+    try { parsed = layoutInspectionExpected(envelope); activeElement = parsed.state.elementId; activeName = parsed.state.label } catch (error) {
       failure = error instanceof Error ? error.message : String(error)
       return stop
     }
@@ -125,6 +126,18 @@
   {#if snapshot.phase === 'failed' && snapshot.latest === null}
     <p bind:this={failureElement} class="failure" role="alert">No current owner sample is available. This quick look will retry while visible.</p>
   {:else if parsed.state.delivery !== 'host' || hostAvailableHeight !== null}
+  {#key JSON.stringify([runId, parsed.state.objectId, parsed.state.packId, activeElement])}
+  {#if subject === undefined && activeElement !== parsed.state.elementId}
+    <!-- A related device is a new exact owner subject, not the housing's
+         forwarded readings. One visible on-demand card reads it directly. -->
+    <ElementFaceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
+      name={activeName} title={activeName} context={[{ label: 'In', value: parsed.state.label }]}
+      alerts={snapshot.latest?.sample.alerts ?? []} {frozen} opening={where}
+      zoom={1} room={layoutInspectionContentRoom(viewport.width, hostAvailableHeight ?? viewport.height)} anchor={null} item={() => []}
+      showHistory={false} maxWidth={Math.max(240, viewport.width - 16)}
+      onclose={close} ondetail={detail} oninspect={inspect}
+      onsize={height => hostMessage({ type: 'world:layout-inspection-size', height: Math.ceil(height + 44 + 2 * FACEPLATE_MARGIN) })} />
+  {:else}
   <Faceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
     name={subject?.label ?? parsed.state.label} {word} title={subject?.label ?? envelope.title} {readings} {context}
     alerts={snapshot.latest?.sample.alerts ?? []} alertElements={[activeElement]} group={false}
@@ -134,6 +147,8 @@
     onclose={close} onpin={() => { throw new Error('This map faceplate has no pin canvas') }} onoverlay={() => { throw new Error('This map faceplate has no overlay canvas') }}
     ontouched={() => {}} onsize={height => hostMessage({ type: 'world:layout-inspection-size', height: Math.ceil(height + 44 + 2 * FACEPLATE_MARGIN) })}
     ondetail={detail} onfaceplate={inspect} />
+  {/if}
+  {/key}
   {/if}
 {:else if failure !== null}
   <p bind:this={failureElement} class="failure" role="alert">This quick look cannot be shown: {failure}</p>
