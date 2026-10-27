@@ -88,7 +88,7 @@ const movement=async(name:string,selector:string,orbit:boolean,playing:boolean)=
   await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1})
   if(profileThis){const profile=await call('Profiler.stop');await writeFile(join(folder,`${name}.cpuprofile`),JSON.stringify(profile.profile))}
   const value=await snapshot(),processWindows=await inWorld(`return w.document.querySelectorAll('.display-window').length`)
-  if(!value.frames||!(value.rafMedianMs>0)||processWindows||value.pending||value.errors.length)throw Error(`Invalid actual native-map motion window ${name}`)
+  if((matchedCamera||replay)&&!value.inputButtons.length)throw Error('Diagnostic captured no trusted DOM input evidence');if(!value.frames||!(value.rafMedianMs>0)||processWindows||value.pending||value.errors.length)throw Error(`Invalid actual native-map motion window ${name}`)
   if(allLayersOn&&!name.includes('plan')){if(!value.physicalDraws.length)throw Error('No current physical VBO draw witnessed');for(const draw of value.physicalDraws){const family=value.declaredSources.find((source:any)=>draw.key.startsWith(source.geometryKey+'/[')),parts=JSON.parse(draw.key.slice(draw.key.lastIndexOf('/[')+1)),coverage=parts.find((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&Array.isArray(part.layers))?.layers;if(!family||!coverage||family.meshLayerIds.some((id:string)=>!coverage.includes(id)))throw Error(`Actual GPU draw ${draw.key} does not cover every requested source mesh layer`)}}
   if(name.includes('plan')&&!value.draftingCanvases.some((canvas:any)=>canvas.width>0&&canvas.height>0))throw Error(`Plan window ${name} did not allocate its applicable drafting surface`)
   if(name.includes('room-plan')||name.includes('return-plan')){
