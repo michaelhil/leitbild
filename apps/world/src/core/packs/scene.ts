@@ -229,6 +229,9 @@ export const physicalOverviewFootprintSchema = z.object({
   return first[0] === last[0] && first[1] === last[1]
 }, 'Overview footprint rings must be closed')
 export type PhysicalOverviewFootprint = z.infer<typeof physicalOverviewFootprintSchema>
+export const physicalSceneViewDefaultsSchema = z.object({ visibleLayerIds: z.array(identifierSchema) }).strict()
+  .refine(value => new Set(value.visibleLayerIds).size === value.visibleLayerIds.length, 'Initial visible layer references must be unique')
+export type PhysicalSceneViewDefaults = z.infer<typeof physicalSceneViewDefaultsSchema>
 
 /** Cheap placement/LOD/owner metadata; obtaining it never compiles triangle geometry. */
 export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'objects'> {
@@ -251,4 +254,15 @@ export interface PackPhysicalSceneDescriptor extends Omit<PackPhysicalScene, 'ob
     readonly network: { readonly objectId: string; readonly portId: string }
   }>
   readonly overviewFootprints?: ReadonlyArray<PhysicalOverviewFootprint>
+  /** Current Pack-owned UI policy, separate from retained physical/source defaults.
+   * A viewer materializes it only when creating an initial local view. */
+  readonly viewDefaults?: PhysicalSceneViewDefaults
+}
+
+/** Validate a Pack's proposed initial view without changing admitted layers. */
+export const physicalSceneInitialVisibleLayers = (descriptor: Pick<PackPhysicalSceneDescriptor, 'layers' | 'viewDefaults'>): ReadonlyArray<string> => {
+  if (descriptor.viewDefaults === undefined) return []
+  const defaults = physicalSceneViewDefaultsSchema.parse(descriptor.viewDefaults), declared = new Set(descriptor.layers?.map(layer => layer.id) ?? [])
+  if (defaults.visibleLayerIds.some(id => !declared.has(id))) throw Error('Initial physical view refers to an undeclared source layer')
+  return defaults.visibleLayerIds
 }

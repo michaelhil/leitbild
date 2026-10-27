@@ -7,9 +7,11 @@ import { physicalLayoutDependencyFailure } from './dependencies.ts'
 import { explorerBuildingFootprints } from './explorer-footprints.ts'
 import { loadPhysicalSourceAsset } from './source-loader.ts'
 import { physicalInspectionFeatureMetres } from './inspection-feature.ts'
+import { physicalLayoutViewDefaults } from './view-defaults.ts'
 
 const parsed = new WeakMap<OperationalObject, RetainedPhysicalLayoutData>()
 const footprints = new WeakMap<OperationalObject, ReturnType<typeof physicalBuildingFootprints>>()
+const viewDefaults = new WeakMap<OperationalObject, ReturnType<typeof physicalLayoutViewDefaults>>()
 const dataFor = (object: OperationalObject): RetainedPhysicalLayoutData => {
   const cached = parsed.get(object)
   if (cached) return cached
@@ -39,6 +41,8 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
     footprints.set(object, overviewFootprints)
   }
   const inspectionFeatureMetres = physicalInspectionFeatureMetres(data.source)
+  let initialView = viewDefaults.get(object)
+  if (initialView === undefined) { initialView = physicalLayoutViewDefaults(data.source, 'presentation' in data ? data.presentation.layers : undefined); viewDefaults.set(object, initialView) }
   return {
     id: object.id, revision: data.design.digest, targetObjectId: data.owner.objectId,
     geometryKey: `${physicalLayoutPackId}/${data.design.digest}`,
@@ -49,6 +53,7 @@ export const describePhysicalLayoutScene = (object: OperationalObject, objects: 
     anchor: data.placement.anchor, bearing: data.placement.bearing, bounds: data.bounds,
     levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })),
     subjectIds: data.coverage.representedSubjectIds, modelDigest: data.owner.modelDigest,
+    viewDefaults: initialView,
     ...('presentation' in data ? { scopes: data.presentation.scopes, layers: data.presentation.layers, ...(data.group === undefined ? {} : { group: data.group }) } : {}),
     ...(relatedMembers.length === 0 ? {} : { relatedTargets: relatedMembers.map(member => ({ objectId: member.objectId, packId: member.packId, modelDigest: member.modelDigest })) }),
     ...('requirements' in data && data.requirements.connections.length > 0 ? { requiredConnections: physicalRequiredConnections(data) } : {}),
