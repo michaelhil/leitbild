@@ -36,7 +36,7 @@
   import { createPhysicalHoverIntent } from './hover-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
-  import { physicalRouteInspectionPaths, physicalRouteScreenMarks } from './route-marks.ts'
+  import { physicalRouteInspectionPaths, createPhysicalRouteScreenMarks } from './route-marks.ts'
   import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
   import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
@@ -467,8 +467,9 @@
       }
       let ordinal = 0
       for (const path of physicalRouteInspectionPaths(occurrence, context.regions, presentation.view)) {
-        const points = controller.projectOccurrencePoints(sceneId, occurrence.id, path.points, path.levelId)
-        for (const mark of physicalRouteScreenMarks(points, size, fontSize)) marks.push({ ...mark, kind: 'flow', key: `${sceneId}:${occurrence.id}:${ordinal++}`, sceneId, occurrenceId: occurrence.id, elementId: occurrence.subjectIds[0]!, rank: 0 })
+        const projected = createPhysicalRouteScreenMarks(size, fontSize)
+        controller.visitOccurrencePoints(sceneId, occurrence.id, path.points, projected.add, path.levelId)
+        for (const mark of projected.marks) marks.push({ ...mark, kind: 'flow', key: `${sceneId}:${occurrence.id}:${ordinal++}`, sceneId, occurrenceId: occurrence.id, elementId: occurrence.subjectIds[0]!, rank: 0 })
       }
     }
     return marks

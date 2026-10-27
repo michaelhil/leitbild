@@ -17,9 +17,9 @@ import { createPhysicalArchitectureBackend } from './architecture-backend.ts'
 import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
 import type { PhysicalArchitectureBspFrame } from './architecture-cohort.ts'
 import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from './plan-picking.ts'
-import {createPhysicalOccurrenceMeshIndex,projectPhysicalSpatialPoints} from './occurrence-projection.ts'
+import {createPhysicalOccurrenceMeshIndex,visitPhysicalSpatialPoints} from './occurrence-projection.ts'
 import { physicalPlanFrame } from '../../physical-layout/plan-drawing.ts'
-import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
+import type { PhysicalProjectedPoint, PhysicalProjectedPointVisitor, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 /** Shared drawing/picking core. Hosts provide an actual GL context, matrix and surface size. */
 export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, size: () => { width: number; height: number }, reportError: (error: Error) => void, planFontFamily: () => string = () => 'sans-serif') => {
@@ -152,18 +152,19 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       architectureFrame = value ? { matrix: frame!.matrix.slice(), ...(frame!.planDepth ? { planDepth: { ...frame!.planDepth } } : {}) } : null
       architectureBackend.setAsset(value)
     },
-    projectOccurrencePoints(sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string): ReadonlyArray<PhysicalProjectedPoint> {
-      if (disposed || failed) return []
+    visitOccurrencePoints(sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, visit: PhysicalProjectedPointVisitor, levelId?: string): void {
+      if (disposed || failed) return
       const plan = planPicking.find(candidate => candidate.entry.scene.id === sceneId)
       if (plan) {
-        if (levelId !== undefined && levelId !== plan.entry.view.levelId || !physicalPlanOccurrenceBounds(plan.input, occurrenceId)) return []
+        if (levelId !== undefined && levelId !== plan.entry.view.levelId || !physicalPlanOccurrenceBounds(plan.input, occurrenceId)) return
         const f = plan.input.frame
-        return points.map(point => { const x = f.a * point[0] + f.c * point[1] + f.e, y = f.b * point[0] + f.d * point[1] + f.f; return { x, y, depth: 0, visible: x >= 0 && y >= 0 && x <= plan.input.width && y <= plan.input.height } })
+        for (const point of points) { const x = f.a * point[0] + f.c * point[1] + f.e, y = f.b * point[0] + f.d * point[1] + f.f; visit(x, y, 0, x >= 0 && y >= 0 && x <= plan.input.width && y <= plan.input.height) }
+        return
       }
       const entry = picking.find(candidate => candidate.sceneId === sceneId)
       const mesh=entry?occurrenceMeshes.first(entry.meshes,occurrenceId,levelId):undefined
-      if (!entry || !mesh) return []
-      return projectPhysicalSpatialPoints(entry.matrix,mesh.offset,renderedRectangle,points)
+      if (!entry || !mesh) return
+      visitPhysicalSpatialPoints(entry.matrix,mesh.offset,renderedRectangle,points,visit)
     },
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },

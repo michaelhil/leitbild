@@ -76,27 +76,38 @@ export const physicalRouteInspectionPaths = (occurrence: RouteOccurrence, region
 
 /** Screen spacing is a legibility policy derived from the actual font size,
  * not an entity-count cutoff. Viewport clipping bounds off-screen work. */
-export const physicalRouteScreenMarks = (points: ReadonlyArray<PhysicalProjectedPoint>, viewport: { readonly width: number; readonly height: number }, fontSize: number): ReadonlyArray<{ readonly point: { readonly x: number; readonly y: number }; readonly angle: number }> => {
+export const createPhysicalRouteScreenMarks = (viewport: { readonly width: number; readonly height: number }, fontSize: number) => {
   if (!(fontSize > 0) || !Number.isFinite(fontSize)) throw Error('Flow marks need a finite positive display font size')
   const output: Array<{ point: { x: number; y: number }; angle: number }> = [], spacing = fontSize * 8
-  let distance = 0, next = spacing / 2
-  for (let index = 1; index < points.length; index++) {
-    const a = points[index - 1]!, b = points[index]!
-    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y) || !Number.isFinite(a.depth) || !Number.isFinite(b.depth) || a.depth < -1 && b.depth < -1 || a.depth > 1 && b.depth > 1) continue
-    const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy)
-    if (length === 0) continue
-    let low = 0, high = 1
-    for (let axis = 0; axis < 2; axis++) {
-      const start = axis === 0 ? a.x : a.y, delta = axis === 0 ? dx : dy, limit = axis === 0 ? viewport.width : viewport.height
-      if (delta === 0) { if (start < 0 || start > limit) { high = -1; break } }
-      else { const first = -start / delta, last = (limit - start) / delta; low = Math.max(low, Math.min(first, last)); high = Math.min(high, Math.max(first, last)) }
-    }
-    if (high > low) {
-      let at = Math.max(next, Math.ceil((distance + low * length - spacing / 2) / spacing) * spacing + spacing / 2)
-      while (at <= distance + high * length) { const part = (at - distance) / length; output.push({ point: { x: a.x + dx * part, y: a.y + dy * part }, angle: Math.atan2(dy, dx) }); at += spacing }
-      next = at
-    }
-    distance += length
+  let distance = 0, next = spacing / 2, hasPrevious = false, previousX = 0, previousY = 0, previousDepth = 0
+  return {
+    marks: output as ReadonlyArray<{ readonly point: { readonly x: number; readonly y: number }; readonly angle: number }>,
+    add(x: number, y: number, depth: number): void {
+      const ax = previousX, ay = previousY, az = previousDepth, first = !hasPrevious
+      previousX = x; previousY = y; previousDepth = depth; hasPrevious = true
+      if (first || !Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(az) || !Number.isFinite(depth) || az < -1 && depth < -1 || az > 1 && depth > 1) return
+      const dx = x - ax, dy = y - ay, length = Math.hypot(dx, dy)
+      if (length === 0) return
+      let low = 0, high = 1
+      for (let axis = 0; axis < 2; axis++) {
+        const start = axis === 0 ? ax : ay, delta = axis === 0 ? dx : dy, limit = axis === 0 ? viewport.width : viewport.height
+        if (delta === 0) { if (start < 0 || start > limit) { high = -1; break } }
+        else { const first = -start / delta, last = (limit - start) / delta; low = Math.max(low, Math.min(first, last)); high = Math.min(high, Math.max(first, last)) }
+      }
+      if (high > low) {
+        let at = Math.max(next, Math.ceil((distance + low * length - spacing / 2) / spacing) * spacing + spacing / 2)
+        while (at <= distance + high * length) { const part = (at - distance) / length; output.push({ point: { x: ax + dx * part, y: ay + dy * part }, angle: Math.atan2(dy, dx) }); at += spacing }
+        next = at
+      }
+      distance += length
+    },
   }
-  return output
+}
+
+/** Array input remains useful for independent geometric tests. Live drawing
+ * feeds the same accumulator directly from the projection visitor. */
+export const physicalRouteScreenMarks = (points: ReadonlyArray<PhysicalProjectedPoint>, viewport: { readonly width: number; readonly height: number }, fontSize: number): ReadonlyArray<{ readonly point: { readonly x: number; readonly y: number }; readonly angle: number }> => {
+  const result = createPhysicalRouteScreenMarks(viewport, fontSize)
+  for (const point of points) result.add(point.x, point.y, point.depth)
+  return result.marks
 }

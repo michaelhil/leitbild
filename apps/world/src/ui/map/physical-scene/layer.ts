@@ -2,7 +2,7 @@ import type { CustomLayerInterface, Map as MapLibreMap } from 'maplibre-gl'
 import type { PackPhysicalScene } from '../../../core/packs/scene.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import { createPhysicalSceneRenderer } from './renderer.ts'
-import type { PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneView, PhysicalSubjectStyle } from './types.ts'
+import type { PhysicalProjectedPointVisitor, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneView, PhysicalSubjectStyle } from './types.ts'
 import type { Vector3 } from './math.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import type {PhysicalArchitectureBsp} from './architecture-bsp-types.ts'
@@ -23,5 +23,5 @@ export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArra
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null,
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => renderer?.visibleAt(sceneId, occurrenceId, point) ?? false,
     project: (sceneId: string, occurrenceId: string, levelId?: string) => renderer?.project(sceneId, occurrenceId, levelId) ?? null,
-    projectOccurrencePoints: (sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string) => renderer?.projectOccurrencePoints(sceneId, occurrenceId, points, levelId) ?? [], context: () => gl }
+    visitOccurrencePoints: (sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, visit: PhysicalProjectedPointVisitor, levelId?: string) => renderer?.visitOccurrencePoints(sceneId, occurrenceId, points, visit, levelId), context: () => gl }
 }

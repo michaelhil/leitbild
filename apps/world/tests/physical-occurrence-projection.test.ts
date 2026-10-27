@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test'
-import { createPhysicalOccurrenceMeshIndex, projectPhysicalSpatialPoints } from '../src/ui/map/physical-scene/occurrence-projection.ts'
+import type { PhysicalProjectedPoint } from '../src/ui/map/physical-scene/types.ts'
+import { createPhysicalOccurrenceMeshIndex, visitPhysicalSpatialPoints } from '../src/ui/map/physical-scene/occurrence-projection.ts'
+const projectPhysicalSpatialPoints = (matrix:ArrayLike<number>, offset:Vector3, rectangle:{width:number;height:number}, points:ReadonlyArray<Vector3>):ReadonlyArray<PhysicalProjectedPoint> => { const values: PhysicalProjectedPoint[] = []; visitPhysicalSpatialPoints(matrix,offset,rectangle,points,(x,y,depth,visible)=>values.push({x,y,depth,visible})); return values }
 import { transform, type Vector3 } from '../src/ui/map/physical-scene/math.ts'
 import type { PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
 const mesh=(id:string,level:string,offset:Vector3=[0,0,0]):PhysicalMesh=>({key:id+'/'+level,object:{id,label:id,kind:'pipe',levelId:level,positions:[],subjectIds:[id]},vertices:[],lines:[0,0,0,1,1,1],levelId:level,offset,bounds:{min:[0,0,0],max:[1,1,1]}})

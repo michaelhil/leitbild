@@ -96,6 +96,7 @@ export interface PhysicalSceneFitRequest extends Omit<PhysicalViewportFitOptions
   /** Larger scores mean a larger displayed model: native Plan zoom or negative 3D distance. */
   readonly measure?: (padding: PhysicalViewportFitOptions['padding']) => number
 }
+export type PhysicalProjectedPointVisitor = (x: number, y: number, depth: number, visible: boolean) => void
 export interface PhysicalProjectedPoint { readonly x: number; readonly y: number; readonly depth: number; readonly visible: boolean }
 export interface PhysicalCanvasControllerOptions extends Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'> { readonly canvas: HTMLCanvasElement }
 export const defaultPhysicalSceneView = (levels: ReadonlyArray<PhysicalSceneLevel>): PhysicalSceneView => ({ mode: '2d', levelId: levels[0]?.id ?? 'all', cutaway: true, separation: 0, detail: 'auto', live: true, surroundings: false })

@@ -18,7 +18,7 @@ import { physicalScopeMembers } from './scopes.ts'
 import { visiblePhysicalSurfaceOwners } from './surface-ownership.ts'
 import { physicalPlanDrawingBounds } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalViewport, PhysicalViewportRenderer } from './viewport.ts'
-import { defaultPhysicalSceneView, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalSceneHighlight, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle, type PhysicalViewportFitOptions } from './types.ts'
+import { defaultPhysicalSceneView, type PhysicalProjectedPointVisitor, type PhysicalSceneControllerOptions, type PhysicalSceneFocus, type PhysicalSceneHighlight, type PhysicalScenePalette, type PhysicalScenePresentation, type PhysicalSceneSource, type PhysicalSceneView, type PhysicalSubjectStyle, type PhysicalViewportFitOptions } from './types.ts'
 
 interface Entry { requestedOpacity?:PhysicalArchitectureOpacity; opaqueOpacity?:PhysicalArchitectureOpacity; planSignature?: string; renderRevision: number; source: PhysicalSceneSource; generation: number; viewGeneration: number; scene: PackPhysicalScene | null; prepared: PhysicalPreparedGeometry | null; meshes: ReadonlyArray<PhysicalMesh>; view: PhysicalSceneView; status: ReadonlyMap<string, PhysicalSubjectStyle>; signature: string; state: PhysicalScenePresentation['status']; reason?: string | undefined; loading: boolean; preparing?: boolean; preparationAbort?: AbortController | undefined; eligible: boolean; failure?: string | undefined; scopeId?: string | undefined; preparedLayers?: ReadonlyArray<string> | undefined; requestedLayers?: ReadonlyArray<string> | undefined; layerFailure?: { layerIds: ReadonlyArray<string>; reason: string } | undefined; overview?: { scene: PackPhysicalScene; asset: PhysicalPreparedGeometry } | undefined; overviewPreparing?: boolean; overviewAbort?: AbortController | undefined; overviewFilter?: { key: string; meshes: ReadonlyArray<PhysicalMesh> } | undefined }
 type Options = Omit<PhysicalSceneControllerOptions, 'map' | 'beforeId'>
@@ -409,7 +409,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       if (JSON.stringify(highlight) === JSON.stringify(next)) return
       highlight = next; renderer?.setHighlight(next); viewport.requestRender()
     },
-    projectOccurrencePoints: (sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string) => active ? renderer?.projectOccurrencePoints(sceneId, occurrenceId, points, levelId) ?? [] : [],
+    visitOccurrencePoints: (sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, visit: PhysicalProjectedPointVisitor, levelId?: string): void => { if (active) renderer?.visitOccurrencePoints(sceneId, occurrenceId, points, visit, levelId) },
     pick: (point: { x: number; y: number }) => active ? renderer?.pick(point) ?? null : null,
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => active ? renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null : null,
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => active && (renderer?.visibleAt(sceneId, occurrenceId, point) ?? false),

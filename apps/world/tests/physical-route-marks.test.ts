@@ -1,6 +1,6 @@
 import type { PhysicalProjectedPoint } from '../src/ui/map/physical-scene/types.ts'
 import { expect, test } from 'bun:test'
-import { physicalRouteDisplayPaths, physicalRouteInspectionPaths, physicalRouteScreenMarks } from '../src/ui/physical-layout/route-marks.ts'
+import { physicalRouteDisplayPaths, physicalRouteInspectionPaths, physicalRouteScreenMarks, createPhysicalRouteScreenMarks } from '../src/ui/physical-layout/route-marks.ts'
 import { physicalArchitectureOpacity } from '../src/ui/map/physical-scene/architecture-opacity.ts'
 import { changePhysicalLayoutView, initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
 
@@ -100,6 +100,9 @@ test('scalar screen clipping matches the frozen sampler exactly through bends, i
   const fixtures: PhysicalProjectedPoint[][] = [[], [point(1, 1)], [point(0, 0), point(0, 0), point(100, 0), point(100, 100)], [point(-0, -0), point(-100, -0), point(-100, 100)], [point(NaN, 0), point(0, 0), point(Infinity, 10), point(200, 20)], [point(0, 0, -2), point(100, 100, -1), point(200, 0, 1), point(0, 100, 2), point(200, 100, NaN)]]
   for (let index = 0; index < 100; index++) fixtures.push(Array.from({ length: 30 }, () => point((random() - .5) * 2000, (random() - .5) * 2000, (random() - .5) * 4)))
   for (const points of fixtures) for (const viewport of [{ width: 0, height: 0 }, { width: 400, height: 200 }, { width: 1937, height: 1027 }]) for (const fontSize of [7, 11.5, 23]) {
-    expect(physicalRouteScreenMarks(points, viewport, fontSize)).toEqual(priorScreenMarks(points, viewport, fontSize))
+    const expected = priorScreenMarks(points, viewport, fontSize), stream = createPhysicalRouteScreenMarks(viewport, fontSize)
+    for (const point of points) stream.add(point.x, point.y, point.depth)
+    expect(stream.marks).toEqual(expected)
+    expect(physicalRouteScreenMarks(points, viewport, fontSize)).toEqual(expected)
   }
 })

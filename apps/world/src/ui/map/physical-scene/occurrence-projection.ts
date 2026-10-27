@@ -1,6 +1,6 @@
 import type { PhysicalMesh } from './geometry.ts'
 import type { Vector3 } from './math.ts'
-import type { PhysicalProjectedPoint } from './types.ts'
+import type { PhysicalProjectedPointVisitor } from './types.ts'
 
 /** Immutable displayed mesh arrays are the visibility/generation boundary.
  * Preserve source order, including empty solid patches with authored strokes. */
@@ -28,8 +28,10 @@ export const createPhysicalOccurrenceMeshIndex = () => {
 
 /** Exact same arithmetic order as transform(matrix, point + offset), without
  * constructing intermediate position/normalised-coordinate arrays per point. */
-export const projectPhysicalSpatialPoints = (matrix:ArrayLike<number>,offset:Vector3,rectangle:{readonly width:number;readonly height:number},points:ReadonlyArray<Vector3>):ReadonlyArray<PhysicalProjectedPoint>=>points.map(point=>{
+export const visitPhysicalSpatialPoints = (matrix:ArrayLike<number>,offset:Vector3,rectangle:{readonly width:number;readonly height:number},points:ReadonlyArray<Vector3>,visit:PhysicalProjectedPointVisitor):void=>{
+ for(const point of points){
   const x=point[0]+offset[0],y=point[1]+offset[1],z=point[2]+offset[2],w=matrix[3]!*x+matrix[7]!*y+matrix[11]!*z+matrix[15]!
   const px=(matrix[0]!*x+matrix[4]!*y+matrix[8]!*z+matrix[12]!)/w,py=(matrix[1]!*x+matrix[5]!*y+matrix[9]!*z+matrix[13]!)/w,pz=(matrix[2]!*x+matrix[6]!*y+matrix[10]!*z+matrix[14]!)/w
-  return{x:(px+1)*rectangle.width/2,y:(1-py)*rectangle.height/2,depth:pz,visible:Math.abs(px)<=1&&Math.abs(py)<=1&&Math.abs(pz)<=1}
-})
+  visit((px+1)*rectangle.width/2,(1-py)*rectangle.height/2,pz,Math.abs(px)<=1&&Math.abs(py)<=1&&Math.abs(pz)<=1)
+ }
+}

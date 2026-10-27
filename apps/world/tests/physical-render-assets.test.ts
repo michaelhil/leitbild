@@ -34,7 +34,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false,arch
     ready: () => true, on(event, fn) { const list = listeners.get(event) ?? new Set(); list.add(fn); listeners.set(event, list); return () => { list.delete(fn) } },
     intersectsBounds: () => boundsVisible,
     projectGeographic: point => ({ x: 400 + point.lng * projectScale, y: 300 + point.lat * projectScale }), requestRender() { renders++ }, registered: () => true, orderRenderer() {}, removeRenderer() {},
-    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setArchitectureBsp(value) {architectureAssets.push(value)}, setPalette() { paletteUpdates++ }, setHighlight(value) { highlights.push(value) }, projectOccurrencePoints(sceneId, occurrenceId, points, levelId) { projectionCalls.push({ sceneId, occurrenceId, points, levelId }); return points.map(point => ({ x: point[0], y: point[1], depth: point[2], visible: true })) }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
+    installRenderer(entries, _palette, reportError) { rendererError = reportError; getEntries = entries; return { setArchitectureBsp(value) {architectureAssets.push(value)}, setPalette() { paletteUpdates++ }, setHighlight(value) { highlights.push(value) }, visitOccurrencePoints(sceneId, occurrenceId, points, visit, levelId) { projectionCalls.push({ sceneId, occurrenceId, points, levelId }); for (const point of points) visit(point[0], point[1], point[2], true) }, retainGeometryIdentities() {}, dispose() {}, invalidatePicks() {}, metrics: () => null, pick: () => null, cheapProject: () => null, visibleAt: () => false, project: () => null } },
     cameraPose: () => ({ center: [0, 0], pitch: 0, bearing: 0, zoom: 1, revision: 0 }), setPose(patch) { poses.push(patch); cameraEvents.push({kind:'pose',pitch:patch.pitch}) }, setPlanarInspection(value) { planarity.push(value); cameraEvents.push({kind:'planarity',value}) }, fitWorld(bounds, options) { fitBounds.push(bounds); fits.push(options) }, panBy() {}, setNavigationTool(value) { tools.push(value) }, cancelCamera() {}, destroy() {},
   }
   let failPreparation = false, rendererError: ((error: Error) => void) | null = null
@@ -449,10 +449,13 @@ test('transient highlights and occurrence path projection never request new geom
   h.controller.setHighlight(highlight); expect(h.highlights.at(-1)).toEqual(highlight)
   const renders = h.renders(), forwarded = h.highlights.length
   h.controller.setHighlight({ ...highlight, color: [...highlight.color] }); expect(h.renders()).toBe(renders); expect(h.highlights).toHaveLength(forwarded)
-  expect(h.controller.projectOccurrencePoints('a', 'machine', [[1, 2, 3]], 'upper')).toEqual([{ x: 1, y: 2, depth: 3, visible: true }])
+  const projected: unknown[] = []
+  h.controller.visitOccurrencePoints('a', 'machine', [[1, 2, 3]], (x, y, depth, visible) => projected.push({ x, y, depth, visible }), 'upper')
+  expect(projected).toEqual([{ x: 1, y: 2, depth: 3, visible: true }])
   expect(h.projectionCalls.at(-1)).toEqual({ sceneId: 'a', occurrenceId: 'machine', points: [[1, 2, 3]], levelId: 'upper' })
   h.controller.setView('a', { ...h.controller.presentations()[0]!.view, wallOpacity: .2, floorOpacity: .4 }); await settled(); expect(h.prepares()).toBe(prepares)
-  h.controller.setActive(false); expect(h.highlights.at(-1)).toBeNull(); expect(h.controller.projectOccurrencePoints('a', 'machine', [[1, 2, 3]])).toEqual([])
+  h.controller.setActive(false); expect(h.highlights.at(-1)).toBeNull()
+  h.controller.visitOccurrencePoints('a', 'machine', [[1, 2, 3]], () => { throw Error('Inactive projection visitor must not run') })
   h.controller.setActive(true); await settled(); h.controller.setHighlight(highlight)
   h.controller.setSources([{ ...source, descriptor: { ...source.descriptor, revision: 'next' }, load: async () => ({ ...value, revision: 'next' }) }]); expect(h.highlights.at(-1)).toBeNull(); await settled()
   h.controller.setHighlight(highlight); h.controller.setSources([]); expect(h.highlights.at(-1)).toBeNull()
