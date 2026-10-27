@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { physicalPlanDrawingSchema } from './plan-drawing.ts'
+export type { PhysicalPlanPrimitive, PhysicalPlanDrawing } from './plan-drawing.ts'
 
 const vector3Schema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()])
 const coordinatesSchema = z.union([
@@ -128,6 +130,8 @@ export const packPhysicalSceneSchema = z.object({
   group: z.object({ id: identifierSchema, label: z.string().min(1).max(300) }).strict().optional(),
   objects: z.array(physicalSceneObjectSchema).max(20_000),
   planAnnotations: z.array(physicalPlanAnnotationSchema).optional(),
+  /** Complete architectural Plan presentation; its extents are not physical bounds. */
+  planDrawing: physicalPlanDrawingSchema.optional(),
 }).strict().superRefine((scene, context) => {
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
   const levelIds = new Set(scene.levels.map(level => level.id))
@@ -160,6 +164,14 @@ export const packPhysicalSceneSchema = z.object({
   if (new Set(scene.objects.map(object => object.id)).size !== scene.objects.length) issue('Occurrence IDs must be unique')
   let coordinateCount = 0
   const occurrenceIds = new Set(scene.objects.map(object => object.id))
+  for (const view of scene.planDrawing?.views ?? []) {
+    if (!levelIds.has(view.levelId)) issue(`Unknown drawing floor: ${view.levelId}`)
+    for (const primitive of view.primitives) {
+      if (primitive.scopeIds.some(id => !scopes.has(id))) issue(`Unknown drawing scope: ${primitive.id}`)
+      if (primitive.occurrenceId !== undefined && !occurrenceIds.has(primitive.occurrenceId)) issue(`Unknown drawing occurrence: ${primitive.id}`)
+      if (primitive.layerId !== undefined && !layers.has(primitive.layerId)) issue(`Unknown drawing layer: ${primitive.id}`)
+    }
+  }
   if (new Set((scene.planAnnotations ?? []).map(annotation => annotation.id)).size !== (scene.planAnnotations?.length ?? 0)) issue('Plan annotation IDs must be unique')
   for (const annotation of scene.planAnnotations ?? []) {
     if (new Set(annotation.levelIds).size !== annotation.levelIds.length || annotation.levelIds.some(id => id !== 'site' && !levelIds.has(id))) issue(`Unknown or duplicate annotation level: ${annotation.id}`)
