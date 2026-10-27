@@ -40,3 +40,9 @@ test('actual module worker returns equivalent geometry and exits with no retaine
  const input=fixture(),prepare=createPhysicalArchitectureBspPreparer(),expected=preparePhysicalArchitectureBsp(input),actual=await prepare(input)
  expect(actual).toEqual(expected);expect(prepare.diagnostics()).toEqual({workers:0,pending:0});expect(input.sources[0]!.vertices.length).toBe(21);prepare.destroy()
 })
+
+
+test('omitted authored line metadata uses the exact engine default role/style and remains admissible',()=>{
+ const input=fixture(),source=input.sources[0]!,defaulted={...input,sources:[{...source,lineMaterials:undefined,lineStyles:undefined}]},result=preparePhysicalArchitectureBsp(defaulted),line=result.fragments.find(f=>f.kind==='line')!
+ expect(line.material).toBe('wall');expect(line.strokeStyle).toBe('feature');expect(admitPhysicalArchitectureBsp(result,defaulted)).toBe(result)
+})

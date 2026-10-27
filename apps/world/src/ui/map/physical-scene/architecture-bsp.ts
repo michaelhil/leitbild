@@ -50,7 +50,7 @@ const splitPolygon = (vertices: readonly Vertex[],distances: readonly number[]):
 const bounds = (vertices: readonly Vertex[]): PhysicalSceneBounds => {
   const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity]
   for(const v of vertices)for(let axis=0;axis<3;axis++){min[axis]=Math.min(min[axis]!,v[axis]!);max[axis]=Math.max(max[axis]!,v[axis]!)}
-  return {min:min as unknown as Vector3,max:max as unknown as Vector3}
+  return {min:min as [number,number,number],max:max as [number,number,number]}
 }
 const partitionRegion = (region: Region,cover: Polygon): {readonly regions: readonly Region[];readonly overlap: boolean} => {
   if(region.blockers.includes(cover.owner))return {regions:[region],overlap:false}

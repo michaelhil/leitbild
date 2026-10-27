@@ -42,7 +42,7 @@ export const admitPhysicalArchitectureBsp = (value: PhysicalArchitectureBsp,inpu
 /** Own the worker copies; caller/prepared assets remain attached and reusable. */
 export const copyPhysicalArchitectureBspInput = (input: PhysicalArchitectureBspInput): {readonly input:PhysicalArchitectureBspInput;readonly transfers:ArrayBuffer[]} => {
   const copies=new Map<ArrayLike<number>,Float64Array>(),transfers:ArrayBuffer[]=[]
-  const copy=(values:ArrayLike<number>):Float64Array=>{let result=copies.get(values);if(!result){result=Float64Array.from(values);copies.set(values,result);transfers.push(result.buffer)}return result}
+  const copy=(values:ArrayLike<number>):Float64Array=>{let result=copies.get(values);if(!result){result=Float64Array.from(values);copies.set(values,result);transfers.push(result.buffer as ArrayBuffer)}return result}
   return {input:{key:input.key,sources:input.sources.map(source=>({...source,matrix:copy(source.matrix),vertices:copy(source.vertices),lines:copy(source.lines)}))},transfers}
 }
 
