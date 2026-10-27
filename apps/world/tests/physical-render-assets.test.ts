@@ -194,7 +194,10 @@ test('a cancelled collection camera intent cannot reframe the map after late sou
 test('Plan painting reads the existing presentation styles without acquiring separate truth', async () => {
   const h = harness(), value = scene('a'); h.controller.setSources([h.source(value)]); await settled()
   const status = new Map([['a:machine', { color: [.1, .2, .3] as const, emphasis: .5 }]])
-  h.controller.setStatus('a', status); expect(h.controller.subjectStyles('a')).toBe(status)
+  expect(h.controller.setStatus('a', status)).toBe(true); expect(h.controller.subjectStyles('a')).toBe(status)
+  expect(h.controller.setStatus('a', new Map(status))).toBe(false)
+  expect(h.controller.setStatus('a', new Map([['a:machine', { color: [.3, .2, .1], emphasis: .5 }]]))).toBe(true)
+  expect(h.controller.setStatus('missing', status)).toBe(false)
   expect(h.controller.subjectStyles('missing').size).toBe(0); h.controller.destroy()
 })
 

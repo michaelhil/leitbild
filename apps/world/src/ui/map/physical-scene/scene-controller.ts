@@ -353,10 +353,11 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
       }
       renderer?.invalidatePicks(); if (mode === '2d') { if (active && cameraOwned) viewport.cancelCamera(); viewport.setNavigationTool('pan') }; if (changedMode && active && cameraOwned) viewport.setPose({ pitch: mode === '2d' ? 0 : 50, ...(mode === '2d' ? { elevation: 0, bearing: focusedId === null ? 0 : requireEntry(focusedId).source.descriptor.bearing } : {}) }); reconcile(); viewport.requestRender()
     },
-    setStatus(sceneId: string, status: ReadonlyMap<string, PhysicalSubjectStyle>): void {
-      const entry = entries.get(sceneId); if (!entry) return
+    setStatus(sceneId: string, status: ReadonlyMap<string, PhysicalSubjectStyle>): boolean {
+      const entry = entries.get(sceneId); if (!entry) return false
       for (const style of status.values()) if (!Number.isFinite(style.emphasis) || style.emphasis < 0 || style.emphasis > 1 || style.color?.some(value => !Number.isFinite(value) || value < 0 || value > 1)) throw new Error('Invalid physical status presentation')
-      const signature = JSON.stringify([...status].sort(([a], [b]) => a.localeCompare(b))); if (signature === entry.signature) return; entry.signature = signature; entry.status = status; if (active && entry.eligible && entry.view.live) viewport.requestRender()
+      const signature = JSON.stringify([...status].sort(([a], [b]) => a.localeCompare(b))); if (signature === entry.signature) return false; entry.signature = signature; entry.status = status; if (active && entry.eligible && entry.view.live) viewport.requestRender()
+      return true
     },
     setPalette(next: PhysicalScenePalette): void { if (JSON.stringify(next) === JSON.stringify(palette)) return; palette = next; renderer?.setPalette(next); viewport.requestRender() },
     selectScope(sceneId: string, scopeId?: string): void {

@@ -9,6 +9,7 @@
   import { createPhysicalSceneController, type PhysicalSceneController } from '../map/physical-scene/controller.ts'
   import { createPhysicalAnnotationScheduler } from './annotation-scheduler.ts'
   import { createPhysicalAnnotationSceneKey } from './annotation-scene.ts'
+  import { createPhysicalPaintCoalescer } from './paint-coalescer.ts'
   import { explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
@@ -68,6 +69,11 @@
   const annotationSceneKey = $derived(annotationKey(scenes))
   // Snapshot only when actual draw/pick geometry changes, not pending UI intent.
   const annotationScenes = $derived.by(() => { void annotationSceneKey; return untrack(() => scenes) })
+  // Controller reconciliation can emit a new presentation array without
+  // changing any painted fact. Raw array identity is not a paint request.
+  const paintSceneKey = $derived(JSON.stringify([annotationSceneKey, scenes.map(scene => [scene.view.wallOpacity ?? 1, scene.view.floorOpacity ?? 1])]))
+  const paintScenes = $derived.by(() => { void paintSceneKey; return untrack(() => scenes) })
+  let paintRevision = $state(0)
   let focusedId = $state<string | null>(null)
   let focusedScopeId = $state<string | null>(null)
   let focusedGroupId = $state<string | null>(null)
@@ -76,6 +82,8 @@
   let draftingCanvas = $state<HTMLCanvasElement | null>(null)
   let draftingColors = $state.raw<{ line: string; allowance: string; access: string } | null>(null)
   let draftingPalette = $state.raw<PhysicalScenePalette | null>(null)
+  const paintQueue = createPhysicalPaintCoalescer<() => void>({ flush: tick, paint: work => work(), reportError: error => onerror(error.message) })
+  runOnMount(() => () => paintQueue.destroy())
   let controls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraElement = $state<HTMLElement | null>(null)
@@ -290,28 +298,46 @@
   })
   $effect(() => { void theme; const element = controller?.surface.element; if (!element) return; const palette = untrack(() => physicalLayoutPalette(element)); draftingPalette = palette; untrack(() => { controller?.setPalette(palette); overviewLayer?.setPalette(palette) }); const color = (role: string) => `rgb(${palette.materials[role]!.map(channel => channel * 255).join(' ')})`; draftingColors = { line: color('line'), allowance: color('outage'), access: color('access') } })
   $effect(() => {
-    void screenRevision
+    void screenRevision; void paintRevision
     const current = controller, target = draftingCanvas, colors = draftingColors, palette = draftingPalette, width = size.width, height = size.height
-    if (!target || !current || !colors || !palette) return
-    const drafting = !active || suspended || !documentVisible ? [] : scenes.flatMap(presentation => {
+    if (!target || !current || !colors || !palette) { paintQueue.cancel(); return }
+    const sceneViews = paintScenes, marks = flowMarks, selection = highlighted, scopeId = focusedScopeId
+    const intent = { scene: paintSceneKey, screen: screenRevision, style: paintRevision, focus: focusedId, group: focusedGroupId, active, suspended, documentVisible, theme, runId, perspectiveEpoch, objects, bindings, hiddenCategoryIds, tools: toolsBox, camera: cameraBox }
+    const pose = JSON.stringify(current.cameraPose()), ratio = window.devicePixelRatio || 1
+    const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
+    const drafting = !active || suspended || !documentVisible ? [] : sceneViews.flatMap(presentation => {
       if (presentation.status !== 'ready' || presentation.view.mode !== '2d' || focusedId !== null && presentation.descriptor.id !== focusedId || focusedGroupId !== null && presentation.descriptor.group?.id !== focusedGroupId) return []
       const scene = current.scene(presentation.descriptor.id)
-      return scene && (visiblePhysicalPlanDrawing(scene, presentation.view, focusedScopeId).length || visiblePhysicalPlanAnnotations(scene, presentation.view, focusedScopeId).length) ? [{ scene, view: presentation.view }] : []
+      return scene && (visiblePhysicalPlanDrawing(scene, presentation.view, scopeId).length || visiblePhysicalPlanAnnotations(scene, presentation.view, scopeId).length) ? [{ scene, view: presentation.view, status: current.subjectStyles(scene.id) }] : []
     })
-    if (!drafting.length && !flowMarks.length) { if (target.width || target.height) { target.width = 0; target.height = 0 }; return }
-    const context = target.getContext('2d'); if (!context) { onerror('Architectural Plan annotations require a Canvas 2D context'); return }
-    const ratio = window.devicePixelRatio || 1, pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
-    if (target.width !== pixelWidth || target.height !== pixelHeight) { target.width = pixelWidth; target.height = pixelHeight }
-    context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height)
-    const style = getComputedStyle(target), fontSize = Number.parseFloat(style.fontSize), occupied: Array<{ x: number; y: number; width: number; height: number }> = []
-    const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
-    for (const { scene, view } of drafting) {
-      if (scene.planDrawing) drawPhysicalPlanDrawing(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, ratio, palette, fontFamily: style.fontFamily, status: current.subjectStyles(scene.id), highlight: highlighted?.sceneId === scene.id && palette.materials.selection ? { ...highlighted, color: palette.materials.selection } : null })
-      else drawPhysicalPlanAnnotations(context, { scene, view, scopeId: focusedScopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
-    }
-    context.setTransform(ratio, 0, 0, ratio, 0, 0)
-    const css = (color: readonly number[]) => `rgb(${color.map(channel => channel * 255).join(' ')})`
-    for (const mark of flowMarks) drawPhysicalFlowMark(context, mark, { ink: css(palette.materials.dark!), paper: css(scenes.find(scene => scene.descriptor.id === mark.sceneId)?.view.mode === '2d' ? palette.planMaterials!.paper! : palette.materials.ground!), fontSize, fontFamily: style.fontFamily })
+    paintQueue.request(() => {
+      if (controller !== current || draftingCanvas !== target) return
+      // A promise or source event can supersede an intent before the next
+      // reactive effect replaces it. Never combine old ink/evidence with the
+      // controller's newly changed source or camera projection.
+      if (paintSceneKey !== intent.scene || screenRevision !== intent.screen || paintRevision !== intent.style
+        || focusedId !== intent.focus || focusedGroupId !== intent.group || focusedScopeId !== scopeId
+        || active !== intent.active || suspended !== intent.suspended || documentVisible !== intent.documentVisible
+        || theme !== intent.theme || draftingPalette !== palette || draftingColors !== colors
+        || runId !== intent.runId || perspectiveEpoch !== intent.perspectiveEpoch || objects !== intent.objects || bindings !== intent.bindings || hiddenCategoryIds !== intent.hiddenCategoryIds
+        || toolsBox !== intent.tools || cameraBox !== intent.camera || flowMarks !== marks || highlighted !== selection
+        || size.width !== width || size.height !== height || (window.devicePixelRatio || 1) !== ratio
+        || JSON.stringify(current.cameraPose()) !== pose
+        || drafting.some(value => current.scene(value.scene.id) !== value.scene || current.subjectStyles(value.scene.id) !== value.status)) return
+      if (!drafting.length && !marks.length) { if (target.width || target.height) { target.width = 0; target.height = 0 }; return }
+      const context = target.getContext('2d'); if (!context) { onerror('Architectural Plan annotations require a Canvas 2D context'); return }
+      const pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
+      if (target.width !== pixelWidth || target.height !== pixelHeight) { target.width = pixelWidth; target.height = pixelHeight }
+      context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height)
+      const style = getComputedStyle(target), fontSize = Number.parseFloat(style.fontSize), occupied: Array<{ x: number; y: number; width: number; height: number }> = []
+      for (const { scene, view, status } of drafting) {
+        if (scene.planDrawing) drawPhysicalPlanDrawing(context, { scene, view, scopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, ratio, palette, fontFamily: style.fontFamily, status, highlight: selection?.sceneId === scene.id && palette.materials.selection ? { ...selection, color: palette.materials.selection } : null })
+        else drawPhysicalPlanAnnotations(context, { scene, view, scopeId, project: points => current.projectPlanPoints(scene.id, points), width, height, covers, ...colors, font: `${fontSize}px ${style.fontFamily}`, fontSize }, occupied)
+      }
+      context.setTransform(ratio, 0, 0, ratio, 0, 0)
+      const css = (color: readonly number[]) => `rgb(${color.map(channel => channel * 255).join(' ')})`
+      for (const mark of marks) drawPhysicalFlowMark(context, mark, { ink: css(palette.materials.dark!), paper: css(sceneViews.find(scene => scene.descriptor.id === mark.sceneId)?.view.mode === '2d' ? palette.planMaterials!.paper! : palette.materials.ground!), fontSize, fontFamily: style.fontFamily })
+    })
   })
   $effect(() => { overviewLayer?.update(!active || suspended ? [] : scenes) })
   $effect(() => { onDetailedOwners(!active || suspended ? [] : scenes.filter(scene => scene.status === 'ready').map(scene => scene.descriptor.targetObjectId)) })
@@ -359,7 +385,7 @@
       const previous = appliedStatus.get(scene.descriptor.id)
       if (previous?.reading === reading && previous?.stale === stale && previous?.palette === palette) continue
       const styles = new Map(reading ? [...statusesFor(reading, stale)].map(([id, status]) => [id, physicalSubjectStyle(status, palette)] as const) : [])
-      untrack(() => current.setStatus(scene.descriptor.id, styles))
+      untrack(() => { if (current.setStatus(scene.descriptor.id, styles)) paintRevision += 1 })
       appliedStatus.set(scene.descriptor.id, { reading, stale, palette })
     }
   })
@@ -402,6 +428,7 @@
   let showStateWords = $state(false)
   type Badge = { readonly kind: 'status'; readonly sceneId: string; readonly elementId: string; readonly label: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly width: number; readonly color: string; readonly word: string; readonly chip: string; readonly alarms: number; readonly rank: number }
   type FlowMark = { readonly kind: 'flow'; readonly key: string; readonly sceneId: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly angle: number; readonly glyph: PhysicalFlowGlyph; readonly rank: number }
+  const noFlowMarks: ReadonlyArray<FlowMark> = []
   let testedBadges = $state.raw<ReadonlyArray<Badge>>([])
   let testedFlowMarks = $state.raw<ReadonlyArray<FlowMark>>([])
   let pendingBadges = $state(0)
@@ -494,7 +521,7 @@
     const marks = sparseLayoutBadges(proposedFlowMarks, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
     annotationScheduler?.update(generation, [...candidates.map(value => ({ key: `status:${value.sceneId}:${value.occurrenceId}:${value.elementId}`, priority: value.rank, value })), ...marks.map(value => ({ key: `flow:${value.key}`, priority: value.rank, value }))])
   })
-  const flowMarks = $derived.by(() => { const visible = new Set(testedFlowMarks.map(mark => mark.key)); return proposedFlowMarks.filter(mark => visible.has(mark.key)) })
+  const flowMarks = $derived.by(() => { const visible = new Set(testedFlowMarks.map(mark => mark.key)); const next = proposedFlowMarks.filter(mark => visible.has(mark.key)); return next.length ? next : noFlowMarks })
   const badges = $derived.by(() => {
     const visible = new Set(testedBadges.map(value => `${value.sceneId}:${value.occurrenceId}:${value.elementId}`))
     return sparseLayoutBadges(proposedBadges.filter(value => visible.has(`${value.sceneId}:${value.occurrenceId}:${value.elementId}`)), size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
