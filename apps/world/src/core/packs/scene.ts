@@ -118,6 +118,7 @@ export const physicalSceneObjectSchema = z.object({
   if (object.normals && object.normals.length !== object.positions.length) issue('Normals must match positions')
   if (object.materialIndices && (!object.materials || object.materialIndices.length !== vertices || object.materialIndices.some(index => index >= object.materials!.length))) issue('Material indices must address one palette role per vertex')
   for (const line of object.planLines ?? []) if (line.positions.length % 6) issue('Plan lines must contain xyz segment pairs')
+  if (object.clipToScope && !object.spatialPath) issue('A scoped spatial trace requires its actual source path')
 })
 
 /** Immutable delivery geometry; state is read separately from the owning Run. */

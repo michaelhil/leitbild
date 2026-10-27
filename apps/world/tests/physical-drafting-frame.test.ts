@@ -31,7 +31,7 @@ test('presentation bounds may exceed physical walls, and fit follows actual floo
   expect(physicalPlanDrawingBounds(scene, view, 'room')).toEqual({ min: [-2, -2, 0], max: [6, 0, 0] })
   expect(visiblePhysicalPlanDrawing(scene, { ...view, hiddenLayerIds: ['notes'] }, 'room')).toEqual([])
   expect(visiblePhysicalPlanDrawing(scene, { ...view, mode: '3d' }, 'room')).toEqual([])
-  expect(visiblePhysicalPlanDrawing(scene, view, 'absent')).toEqual([])
+  expect(() => visiblePhysicalPlanDrawing(scene, view, 'absent')).toThrow('Unknown physical inspection scope')
   expect(visiblePhysicalPlanDrawing(scene, view, 'room')).toBe(visiblePhysicalPlanDrawing(scene, view, 'room'))
 })
 test('native Plan uses an exact nonsingular affine frame for source-local curves, including north-up screen reflection', () => {
