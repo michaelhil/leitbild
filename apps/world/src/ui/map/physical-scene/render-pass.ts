@@ -1,5 +1,3 @@
-import { createPhysicalTransparencyPass, type PhysicalTransparencyPhase } from './transparency-pass.ts'
-
 export interface PhysicalRenderPassMetrics {
   readonly depthFormat: 'float32'; readonly samples: number; readonly programs: number; readonly textures: number; readonly framebuffers: number; readonly renderbuffers: number; readonly bytes: number; readonly textureBytes: number; readonly allocations: number; readonly composites: number
   readonly liveTextures: number | null; readonly livePrograms: number | null; readonly liveFramebuffers: number | null; readonly liveRenderbuffers: number | null
@@ -15,14 +13,8 @@ export const createPhysicalRenderPass = (gl: WebGL2RenderingContext) => {
   try {
     for (const [kind, source] of [[gl.VERTEX_SHADER, '#version 300 es\nprecision highp float;out vec2 uv;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));uv=p;gl_Position=vec4(p*2.-1.,0.,1.);}'], [gl.FRAGMENT_SHADER, `#version 300 es
 precision highp float;
-in vec2 uv;uniform sampler2D image;uniform sampler2D accumulated;uniform sampler2D revealed;uniform bool transparency;out vec4 color;
-void main(){
-  vec4 base=texture(image,uv);
-  if(!transparency){color=base;return;}
-  vec4 sum=texture(accumulated,uv);float alpha=1.-texture(revealed,uv).r;
-  vec3 tint=sum.a>0.?sum.rgb/sum.a:vec3(0.);
-  color=vec4(tint*alpha+base.rgb*(1.-alpha),alpha+base.a*(1.-alpha));
-}`]] as const) {
+in vec2 uv;uniform sampler2D image;out vec4 color;
+void main(){color=texture(image,uv);}`]] as const) {
       const shader = gl.createShader(kind); if (!shader) throw Error('Unable to allocate physical composite shader')
       shaders.push(shader); gl.shaderSource(shader, source); gl.compileShader(shader)
       if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader) ?? 'physical composite shader compilation failed')
@@ -33,14 +25,11 @@ void main(){
     vao = gl.createVertexArray(); if (!vao) throw Error('Unable to allocate physical composite vertex array')
   } catch (error) { if (vao) gl.deleteVertexArray(vao); if (program) gl.deleteProgram(program); throw error }
   finally { for (const shader of shaders) gl.deleteShader(shader) }
-  const ownedProgram = program, ownedVao = vao, image = gl.getUniformLocation(ownedProgram, 'image'), accumulated = gl.getUniformLocation(ownedProgram, 'accumulated'), revealed = gl.getUniformLocation(ownedProgram, 'revealed'), transparent = gl.getUniformLocation(ownedProgram, 'transparency')
+  const ownedProgram = program, ownedVao = vao, image = gl.getUniformLocation(ownedProgram, 'image')
   interface Targets { width: number; height: number; samples: number; texture: WebGLTexture; draw: WebGLFramebuffer; resolve: WebGLFramebuffer; depth: WebGLRenderbuffer; color: WebGLRenderbuffer | null }
   let targets: Targets | null = null, disposed = false, allocations = 0, composites = 0
-  let transparency: ReturnType<typeof createPhysicalTransparencyPass> | null = null, transparencyFrame = false
-  const transparencyFinal = { liveTextures: 0, liveFramebuffers: 0, liveRenderbuffers: 0 }
   const final = { liveTextures: null as number | null, livePrograms: null as number | null, liveFramebuffers: null as number | null, liveRenderbuffers: null as number | null }
   const releaseTargets = (value: Targets): void => {
-    if (transparency) { transparency.dispose(); const state = transparency.metrics(); transparencyFinal.liveTextures = state.liveTextures ?? 0; transparencyFinal.liveFramebuffers = state.liveFramebuffers ?? 0; transparencyFinal.liveRenderbuffers = state.liveRenderbuffers ?? 0; transparency = null }
     gl.deleteTexture(value.texture); gl.deleteRenderbuffer(value.depth); if (value.color) gl.deleteRenderbuffer(value.color)
     gl.deleteFramebuffer(value.resolve); if (value.draw !== value.resolve) gl.deleteFramebuffer(value.draw)
   }
@@ -68,14 +57,8 @@ void main(){
     begin(width: number, height: number): void {
       if (disposed) throw Error('physical pass has been disposed')
       if (!targets || targets.width !== width || targets.height !== height || targets.samples !== samples) { if (targets) releaseTargets(targets); targets = null; targets = allocate(width, height, samples) }
-      transparencyFrame = false
       gl.bindFramebuffer(gl.FRAMEBUFFER, targets.draw); gl.viewport(0, 0, width, height); gl.disable(gl.SCISSOR_TEST); gl.depthRange(0, 1); gl.colorMask(true, true, true, true); gl.depthMask(true)
       gl.clearColor(0, 0, 0, 0); gl.clearDepth(0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-    },
-    beginTransparency(phase: PhysicalTransparencyPhase): void {
-      if (!targets) throw Error('Physical depth must be initialized before architecture transparency')
-      transparency ??= createPhysicalTransparencyPass(gl, targets)
-      transparencyFrame = true; transparency.begin(phase)
     },
     composite(draw: WebGLFramebuffer | null, read: WebGLFramebuffer | null, viewport: readonly [number, number, number, number]): void {
       if (!targets) throw Error('physical render target was not initialized')
@@ -83,23 +66,20 @@ void main(){
         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, targets.draw); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, targets.resolve)
         gl.blitFramebuffer(0, 0, targets.width, targets.height, 0, 0, targets.width, targets.height, gl.COLOR_BUFFER_BIT, gl.NEAREST)
       }
-      if (transparencyFrame) transparency!.resolve()
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read); gl.viewport(...viewport)
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND)
       gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.colorMask(true, true, true, true)
       gl.useProgram(ownedProgram); gl.bindVertexArray(ownedVao); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets.texture); gl.bindSampler(0, null); gl.uniform1i(image, 0)
-      gl.uniform1i(transparent, Number(transparencyFrame)); gl.uniform1i(accumulated, 1); gl.uniform1i(revealed, 2)
-      if (transparencyFrame) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, transparency!.textures.accumulated); gl.bindSampler(1, null); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, transparency!.textures.revealed); gl.bindSampler(2, null) }
       gl.drawArrays(gl.TRIANGLES, 0, 3); composites++
     },
-    metrics: (): PhysicalRenderPassMetrics => { const extra = transparency?.metrics(); return { depthFormat: 'float32', samples: targets?.samples ?? samples, programs: disposed ? 0 : 1, textures: (targets ? 1 : 0) + (extra?.textures ?? 0), framebuffers: (targets ? targets.draw === targets.resolve ? 1 : 2 : 0) + (extra?.framebuffers ?? 0), renderbuffers: (targets ? targets.color ? 2 : 1 : 0) + (extra?.renderbuffers ?? 0), bytes: (targets ? targets.width * targets.height * 4 * (1 + (targets.color ? targets.samples * 2 : 1)) : 0) + (extra?.bytes ?? 0), textureBytes: (targets ? targets.width * targets.height * 4 : 0) + (extra?.textureBytes ?? 0), allocations, composites, ...final } },
+    metrics: (): PhysicalRenderPassMetrics => ({ depthFormat: 'float32', samples: targets?.samples ?? samples, programs: disposed ? 0 : 1, textures: targets ? 1 : 0, framebuffers: targets ? targets.draw === targets.resolve ? 1 : 2 : 0, renderbuffers: targets ? targets.color ? 2 : 1 : 0, bytes: targets ? targets.width * targets.height * 4 * (1 + (targets.color ? targets.samples * 2 : 1)) : 0, textureBytes: targets ? targets.width * targets.height * 4 : 0, allocations, composites, ...final }),
     dispose(): void {
       if (disposed) return
       const prior = targets; if (prior) releaseTargets(prior); targets = null
       gl.deleteProgram(ownedProgram); gl.deleteVertexArray(ownedVao); disposed = true
-      final.liveTextures = (prior ? Number(gl.isTexture(prior.texture)) : 0) + transparencyFinal.liveTextures; final.livePrograms = Number(gl.isProgram(ownedProgram))
-      final.liveFramebuffers = (prior ? Number(gl.isFramebuffer(prior.draw)) + (prior.draw !== prior.resolve ? Number(gl.isFramebuffer(prior.resolve)) : 0) : 0) + transparencyFinal.liveFramebuffers
-      final.liveRenderbuffers = (prior ? Number(gl.isRenderbuffer(prior.depth)) + (prior.color ? Number(gl.isRenderbuffer(prior.color)) : 0) : 0) + transparencyFinal.liveRenderbuffers
+      final.liveTextures = prior ? Number(gl.isTexture(prior.texture)) : 0; final.livePrograms = Number(gl.isProgram(ownedProgram))
+      final.liveFramebuffers = prior ? Number(gl.isFramebuffer(prior.draw)) + (prior.draw !== prior.resolve ? Number(gl.isFramebuffer(prior.resolve)) : 0) : 0
+      final.liveRenderbuffers = prior ? Number(gl.isRenderbuffer(prior.depth)) + (prior.color ? Number(gl.isRenderbuffer(prior.color)) : 0) : 0
     },
   }
 }
