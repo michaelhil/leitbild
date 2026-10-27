@@ -134,6 +134,16 @@
     }
     return draw.apply(this, args)
   }
+  const elements = WebGL2RenderingContext.prototype.drawElementsInstanced
+  WebGL2RenderingContext.prototype.drawElementsInstanced = function (...args: Parameters<WebGL2RenderingContext['drawElementsInstanced']>) {
+    const interval = contexts.get(this)?.active
+    if (interval) {
+      interval.drawCalls++
+      if (args[0] === this.TRIANGLES) interval.triangleVertices += args[1] * args[4]
+      else if (args[0] === this.LINES) interval.lineVertices += args[1] * args[4]
+    }
+    return elements.apply(this, args)
+  }
   const blit = WebGL2RenderingContext.prototype.blitFramebuffer
   WebGL2RenderingContext.prototype.blitFramebuffer = function (...args: Parameters<WebGL2RenderingContext['blitFramebuffer']>) {
     const context = contexts.get(this), physicalResolve = context?.active?.phase === 'draw'

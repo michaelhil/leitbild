@@ -77,11 +77,10 @@
   } as typeof WebGL2RenderingContext.prototype.bufferData
   const attrib = WebGL2RenderingContext.prototype.vertexAttribPointer
   WebGL2RenderingContext.prototype.vertexAttribPointer = function (...args: Parameters<WebGL2RenderingContext['vertexAttribPointer']>) { const b = state(this); if (args[0] === 0 && b.vao && b.array) vaos.set(b.vao, b.array); return attrib.apply(this, args) }
-  const draw = WebGL2RenderingContext.prototype.drawArraysInstanced
-  WebGL2RenderingContext.prototype.drawArraysInstanced = function (...args: Parameters<WebGL2RenderingContext['drawArraysInstanced']>) {
-    const result = draw.apply(this, args), started = performance.now(), current = q.current, vao = state(this).vao, buffer = vao ? vaos.get(vao) : null, meta = buffer ? buffers.get(buffer) : null
-    if (meta && args[0] === this.TRIANGLES) {
-      const item = { at: started, key: meta.key, sourceKey: meta.sourceKey, preparedReceivedAt: meta.received, vertices: args[2], instances: args[3], surface: this.canvas instanceof HTMLCanvasElement ? this.canvas.className : 'offscreen' }
+  const physicalDraw = (gl: WebGL2RenderingContext, mode: number, vertices: number, instances: number): void => {
+    const started = performance.now(), current = q.current, vao = state(gl).vao, buffer = vao ? vaos.get(vao) : null, meta = buffer ? buffers.get(buffer) : null
+    if (meta && mode === gl.TRIANGLES && vertices > 0) {
+      const item = { at: started, key: meta.key, sourceKey: meta.sourceKey, preparedReceivedAt: meta.received, vertices, instances, surface: gl.canvas instanceof HTMLCanvasElement ? gl.canvas.className : 'offscreen' }
       q.draws.push(item)
       if (current && !current.finished && item.at >= current.started && matches(item.key, current.expected) && (!current.surface || item.surface.includes(current.surface))) {
         current.firstDraw ??= item
@@ -93,7 +92,7 @@
           // All rendering/Plan compositing in this JS frame precedes this fence.
           queueMicrotask(() => {
             if (q.current !== current || current.finished) return
-            const gl = this, fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush()
+            const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush()
             if (!fence) { current.reject(Error('GPU completion fence unavailable')); return }
             const check = () => {
               if (current.finished) { gl.deleteSync(fence); return }
@@ -111,8 +110,11 @@
         }
       }
     }
-    q.overheadMs += performance.now() - started; return result
+    q.overheadMs += performance.now() - started
   }
+  const draw = WebGL2RenderingContext.prototype.drawArraysInstanced, elements = WebGL2RenderingContext.prototype.drawElementsInstanced
+  WebGL2RenderingContext.prototype.drawArraysInstanced = function (...args: Parameters<WebGL2RenderingContext['drawArraysInstanced']>) { const result = draw.apply(this, args); physicalDraw(this, args[0], args[2], args[3]); return result }
+  WebGL2RenderingContext.prototype.drawElementsInstanced = function (...args: Parameters<WebGL2RenderingContext['drawElementsInstanced']>) { const result = elements.apply(this, args); physicalDraw(this, args[0], args[1], args[4]); return result }
 
   const planCandidate = () => {
     const current=q.current
