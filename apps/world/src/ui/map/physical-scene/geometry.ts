@@ -154,6 +154,11 @@ export const buildVisibleMeshes = (scene: PackPhysicalScene, view: PhysicalScene
     if (object.kind === 'space' || object.kind === 'opening' || object.kind === 'assembly' || (view.cutaway && object.kind === 'roof')) continue
     const bands = selected ? [selected] : view.separation > 0 && object.levelId !== 'site' ? levels : [null]
     for (const level of bands) {
+      // The compiler derives occurrence membership from positive overlap with
+      // authored floor volumes. A bottom face exactly on the next floor is not
+      // equipment on this floor, even though inclusive triangle clipping would
+      // retain that face as a misleading opaque rectangle.
+      if (level && object.levelId !== 'site' && object.levelIds && !object.levelIds.includes(level.id)) continue
       const authoredVolume = level ? object.inspectionLevels?.find(volume => volume.levelId === level.id) : undefined
       if (level && object.inspectionLevels && !authoredVolume) continue
       // A deck belongs to the floor it supports, even when its thickness extends below that elevation.

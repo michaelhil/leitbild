@@ -58,8 +58,13 @@ void main(){
   float light=uFlat?1.:.60+.10*n.z+.28*max(dot(n,normalize(vec3(-.45,.55,.88))),0.)+.12*max(dot(n,normalize(vec3(.65,-.8,.4))),0.);
   vec3 material=texelFetch(uMaterials,ivec2(vMaterial%uMaterialWidth,vMaterial/uMaterialWidth),0).rgb;
   vec4 state=texelFetch(uObjects,ivec2(vObject%uObjectWidth,vObject/uObjectWidth),0);
-  float alpha=!uLines||uFlat||vStroke>1.5?1.:vStroke>.5?uLineOpacity.y:uLineOpacity.x;
-  outColor=vec4(uLines?material:mix(material,state.rgb,state.a)*light,alpha);
+  float edgeAlpha=uFlat||vStroke>1.5?1.:vStroke>.5?uLineOpacity.y:uLineOpacity.x;
+  // Operational severity accents the existing drawing contours. Recolouring
+  // solid faces destroys the authored material hierarchy and, in Plan, turns
+  // neighbouring machines into one opaque alarm block. The owner-qualified
+  // status badge remains the explicit alarm/count target in either view.
+  vec3 edge=mix(material,state.rgb,state.a);
+  outColor=vec4(uLines?edge:material*light,uLines?max(edgeAlpha,state.a):1.);
 }
 `
 export interface PhysicalBackendMetrics {

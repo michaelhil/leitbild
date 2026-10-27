@@ -23,6 +23,7 @@ export interface PhysicalSceneView {
   readonly surroundings?: boolean
   readonly hiddenLayerIds?: ReadonlyArray<string>
 }
+/** Owner-qualified severity accent for drawing contours; solid material is architectural truth. */
 export interface PhysicalSubjectStyle { readonly color: Color | null; readonly emphasis: number }
 export type PhysicalSceneDescriptor = PackPhysicalSceneDescriptor
 export interface PhysicalSceneSource { readonly descriptor: PhysicalSceneDescriptor; readonly load: () => Promise<PackPhysicalScene> }

@@ -155,6 +155,19 @@ describe('Model-driven native architecture restoration', () => {
     for (const object of compiled.objects.filter(object => object.id.startsWith('structure/runway/'))) expect(Math.hypot(...object.inspectionBoundary!.outward)).toBe(1)
   })
 
+  test('an upper machine bottom face never becomes opaque machinery on the lower floor', () => {
+    const compiled = scene(), upperMachines = compiled.objects.filter(object => object.kind === 'equipment' && object.levelIds?.length === 1 && object.levelIds[0] === 'operating')
+    expect(upperMachines.some(object => object.id === 'tg-lp-1')).toBe(true)
+    for (const mode of ['2d', '3d'] as const) {
+      const lower = buildVisibleMeshes(compiled, { ...defaultPhysicalSceneView(compiled.levels), mode, levelId: 'lower' })
+      const lowerIds = new Set(lower.map(mesh => mesh.object.id))
+      for (const machine of upperMachines) expect(lowerIds.has(machine.id)).toBe(false)
+      expect(lower.some(mesh => mesh.object.id === 'condenser-1')).toBe(true)
+      const separated = buildVisibleMeshes(compiled, { ...defaultPhysicalSceneView(compiled.levels), mode, levelId: 'all', separation: 8 })
+      for (const machine of upperMachines) expect(separated.filter(mesh => mesh.object.id === machine.id).every(mesh => mesh.levelId === 'operating')).toBe(true)
+    }
+  })
+
   test('Plan labels resolve source identity, dimensions derive parameters and annotations do not alter physical applicability', () => {
     const source = structuredClone(artifacts.source), first = compilePlanAnnotations(source)
     const id = 'annotation/dimension/space/turbine-hall/length', dimension = first.find(annotation => annotation.id === id)!
