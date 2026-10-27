@@ -1,7 +1,11 @@
 <script lang="ts">
   import { packDataChangedSchema } from '../../core/packs/protocol.ts'
   import type { MapFocusTarget, MapView } from '../map-view.ts'
-  import type { EmbeddedViewListing } from '@leitbild/contracts'
+  import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
+  import type { EmbeddedViewListing, UiControl } from '@leitbild/contracts'
+  import { initialRunViewPreferences, readRunViewPreferences, runViewPreferencesKey, writeRunViewPreferences } from '../run-view-preferences.ts'
+  import { createRunViewHost } from '../run-view-host.ts'
+  import { alertRows, unacknowledged } from '../../features/displays/alerts/rows.ts'
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
   import type {
@@ -252,6 +256,11 @@
   let displayWindowLoadPromise: Promise<DisplayWindowComponent> | null = null
   const surfacePanelLoadPromises = new Map<string, Promise<Component<SurfacePanelProps>>>()
   let surfacePanelOpen = $state<Record<string, boolean>>({})
+  let guidanceOverlayVisible = $state(true)
+  let alarmStripVisible = $state(false)
+  let layoutControlsVisible = $state(false)
+  let viewPreferencesKey = $state<string | null>(null)
+  let runViewHost = $state.raw<ReturnType<typeof createRunViewHost> | null>(null)
   let appliedSurfacePanelKey = ''
   let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
   let droneControlModalLoadPromise: Promise<DroneControlModalComponent> | null = null
@@ -318,18 +327,17 @@
   const opensDisplay = (object: OperationalObject): boolean => activePack?.packForObject(object).ui?.displayOnPress === true
   const railVisible = $derived(railConfig !== null)
   const footerVisible = true
-  const guidanceOverlayVisible = true
   // The briefing card's bottom edge, as it last measured itself: the alarm strip starts below it while it shows.
   let guidanceBottom = $state(0)
   let categoryMapVisibility = $state<Record<string, boolean>>({})
   const surfacePanels = $derived(activePack?.surfacePanels ?? [])
-  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? panel.defaultOpen })))
+  const surfacePanelLaunchers = $derived(surfacePanels.map(panel => ({ id: panel.id, label: panel.label, open: surfacePanelOpen[panel.id] ?? false })))
   // Handlers the mounted panels lend the surface; only panels whose contribution declares a hook connect one.
   let panelInteractions = $state.raw<Readonly<Record<string, SurfacePanelInteraction>>>({})
   let panelKeysActive = $state(true)
   // How far each panel last reported reaching over the map; only open panels' reports pad the camera.
   let panelMapCovers = $state.raw<Readonly<Record<string, MapCover>>>({})
-  const isSurfacePanelOpen = (panel: PackSurfacePanelContribution): boolean => surfacePanelOpen[panel.id] ?? panel.defaultOpen
+  const isSurfacePanelOpen = (panel: PackSurfacePanelContribution): boolean => surfacePanelOpen[panel.id] ?? false
   const mapTargetPanelContribution = $derived(openPanelDeclaring(surfacePanels, isSurfacePanelOpen, 'mapTargets'))
   const mapTargetPanel = $derived<MapTargetPanel | null>(mapTargetPanelContribution && activePack
     ? {
@@ -448,7 +456,7 @@
   const toggleSurfacePanel = (panelId: string): void => {
     const panel = surfacePanels.find(candidate => candidate.id === panelId)
     if (!panel) return
-    setSurfacePanelOpen(panelId, !(surfacePanelOpen[panelId] ?? panel.defaultOpen))
+    setSurfacePanelOpen(panelId, !(surfacePanelOpen[panelId] ?? false))
   }
 
   const focusMapTarget = (target: MapFocusTarget): void => {
@@ -526,6 +534,30 @@
     options: { readonly tier?: PackObjectPresentationTier } = {},
   ): PackObjectPresentation => {
     return presentationComposer.present(object, options)
+  }
+
+  const viewControls = $derived<ReadonlyArray<UiControl>>([
+    { id: 'scenario-briefing', label: 'Scenario briefing', visible: guidanceOverlayVisible && Boolean(scenarioState?.guidance), ...(scenarioState?.guidance ? {} : { disabledReason: 'This Run has no scenario briefing' }) },
+    { id: 'alarm-strip', label: 'Alarm strip', visible: alarmStripVisible },
+    { id: 'layout-controls', label: 'Layout controls', visible: layoutControlsVisible, ...(activePhysicalLayoutBindings.length > 0 ? {} : { disabledReason: 'This Run has no physical layout' }) },
+    ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
+  ])
+  const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
+  $effect(() => {
+    void viewControls; void viewAlarmCount
+    runViewHost?.publish()
+  })
+  $effect(() => {
+    const key = viewPreferencesKey
+    if (key === null) return
+    const preferences = { briefing: guidanceOverlayVisible, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }
+    try { writeRunViewPreferences(sessionStorage, key, preferences) } catch { /* Browser storage may be disabled. */ }
+  })
+  const setViewControl = (id: string, visible: boolean): void => {
+    if (id === 'scenario-briefing') guidanceOverlayVisible = visible
+    else if (id === 'alarm-strip') alarmStripVisible = visible
+    else if (id === 'layout-controls') layoutControlsVisible = visible
+    else if (id.startsWith('panel:')) setSurfacePanelOpen(id.slice('panel:'.length), visible)
   }
 
   const detailPresentationFor = async (object: OperationalObject): Promise<PackObjectPresentation> => {
@@ -1857,6 +1889,29 @@
     // Before any awaited startup: the Host may relay displays as soon as this page listens.
     displayWindowRunId = route.simulationRunId
     const workspaceId = route.workspaceId
+    const key = runViewPreferencesKey(workspaceId, route.simulationRunId)
+    let preferences = initialRunViewPreferences()
+    try { preferences = readRunViewPreferences(sessionStorage, key) } catch { /* Storage can be denied. */ }
+    guidanceOverlayVisible = preferences.briefing
+    alarmStripVisible = preferences.alarms
+    layoutControlsVisible = preferences.layout
+    surfacePanelOpen = { ...preferences.panels }
+    viewPreferencesKey = key
+    const viewHost = createRunViewHost({
+      subject: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: route.simulationRunId }),
+      post: message => window.parent.postMessage(message, location.origin),
+      controls: () => viewControls,
+      notification: () => objects.length === 0 ? undefined : { count: viewAlarmCount, label: `${viewAlarmCount} unacknowledged ${viewAlarmCount === 1 ? 'alarm' : 'alarms'}` },
+      set: setViewControl,
+      error: message => { status = message },
+    })
+    runViewHost = viewHost
+    const receiveViewControls = (event: MessageEvent): void => {
+      if (event.origin !== location.origin || event.source !== window.parent) return
+      viewHost.receive(event.data)
+    }
+    window.addEventListener('message', receiveViewControls)
+    viewHost.ready()
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
       const message = readDisplayWindowHostMessage(event, { origin: location.origin, parent: window.parent, workspaceId })
       if (message === null) return
@@ -1895,6 +1950,8 @@
     void joinSimulationRun()
     const executionPoll = window.setInterval(() => { void refreshExecution() }, 1_000)
     return () => {
+      window.removeEventListener('message', receiveViewControls)
+      viewHost.close(); runViewHost = null; viewPreferencesKey = null
       window.removeEventListener('message', receiveDisplayWindowMessage)
       window.removeEventListener('message', receiveRunAssistantOffer)
       cleanupInternalDiagnosticsGlobal()
@@ -1935,7 +1992,7 @@
     if (key === appliedSurfacePanelKey) return
     untrack(() => {
       const next: Record<string, boolean> = {}
-      for (const panel of panels) next[panel.id] = surfacePanelOpen[panel.id] ?? panel.defaultOpen
+      for (const panel of panels) next[panel.id] = surfacePanelOpen[panel.id] ?? false
       surfacePanelOpen = next
       appliedSurfacePanelKey = key
     })
@@ -1944,7 +2001,7 @@
   $effect(() => {
     if (!richOperationalUiReady) return
     for (const panel of surfacePanels) {
-      if (surfacePanelOpen[panel.id] ?? panel.defaultOpen) void loadSurfacePanel(panel.id)
+      if (surfacePanelOpen[panel.id] ?? false) void loadSurfacePanel(panel.id)
     }
   })
 
@@ -2093,6 +2150,7 @@
           referenceStyles={activeReferenceStyles}
           liveMapLayers={activeLiveMapLayers}
           physicalLayoutBindings={activePhysicalLayoutBindings}
+          bind:physicalLayoutControlsOpen={layoutControlsVisible}
           layoutClearTop={alarmStripBottom}
           onPhysicalDisplay={listing => requestDisplayWindow({ kind: 'listing', listing }, true)}
           physicalLayoutSuspended={physicalOperationalCapture}
@@ -2148,8 +2206,8 @@
           </div>
         </section>
       {/if}
-      {#if activePack}
-        <AlertStrip {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+      {#if activePack && alarmStripVisible}
+        <AlertStrip onClose={() => alarmStripVisible = false} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
       {/if}
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
       {#if runRoles && heldRoleIds}
@@ -2164,7 +2222,7 @@
         {#key perspectiveEpoch}
         {#each surfacePanels as panel (panel.id)}
           {@const Panel = surfacePanelComponents[panel.id]}
-          {#if (surfacePanelOpen[panel.id] ?? panel.defaultOpen) && Panel}
+          {#if (surfacePanelOpen[panel.id] ?? false) && Panel}
             <Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt } }} />
           {/if}
         {/each}
@@ -2176,11 +2234,7 @@
     <ScenarioGuidance
       bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
-      close={() => {
-        if (!scenarioState) return
-        const { guidance: _guidance, ...withoutGuidance } = scenarioState
-        scenarioState = withoutGuidance
-      }}
+      close={() => guidanceOverlayVisible = false}
     />
     {/if}
   </div>

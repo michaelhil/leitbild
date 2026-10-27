@@ -15,7 +15,7 @@
   // display with its first-out selected (W2.8). It acknowledges,
   // shelves and suppresses nothing. Whether the viewer keeps it folded is that
   // viewer's own convenience, in browser storage.
-  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear, onBounds = () => {} }: {
+  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear, onBounds = () => {}, onClose }: {
     objects: ReadonlyArray<OperationalObject>
     categoryOf: (object: OperationalObject) => string
     /** What opens an object's process display, selecting this element of it; undefined where it has none. */
@@ -28,6 +28,7 @@
     clear: { readonly left: number; readonly right: number; readonly top: number }
     /** Actual viewport cover, so map inspection controls can stand below the alarm strip. */
     onBounds?: (box: { readonly bottom: number } | null) => void
+    onClose?: () => void
   } = $props()
   let stripElement = $state<HTMLElement | null>(null)
   const reportBounds = (): void => onBounds(stripElement === null ? null : { bottom: stripElement.getBoundingClientRect().bottom })
@@ -80,6 +81,7 @@
   <section bind:this={stripElement} class="alert-strip" class:below={belowRoles} style:left={`${span.left}px`} style:width={`${span.width}px`} style:--clear-top={`${clear.top}px`} aria-label="Alarms">
     <header title={rule}>
       <span>Alarms · {strip.groups.length} {strip.groups.length === 1 ? 'group' : 'groups'} · {unack} unacknowledged</span>
+      {#if onClose}<button type="button" aria-label="Hide alarm strip" onclick={onClose}>×</button>{/if}
       <button type="button" aria-expanded={!folded} onclick={fold}>{folded ? 'Show' : 'Fold'}</button>
     </header>
     {#if !folded}

@@ -45,11 +45,11 @@ describe('the main-app alarm strip', () => {
     expect([...mainGraph().files].map(file => relative(src, file)).filter(file => file.startsWith('ui/embed/vignette/'))).toEqual([])
   })
 
-  test('T24: the strip invokes nothing and offers no acknowledge, shelve or suppress, only its fold and each unit\'s "open ›" (W2.8); it states who may acknowledge as the code allows', () => {
+  test('T24: the strip invokes nothing and offers no acknowledge, shelve or suppress, only visibility controls and each unit\'s "open ›" (W2.8); it states who may acknowledge as the code allows', () => {
     const strip = ['AlertStrip.svelte', 'AlertList.svelte'].map(name => readFileSync(join(src, 'ui/displays', name), 'utf8'))
     for (const source of strip) {
       expect(source).not.toMatch(/invoke|Capability|fetch\(|simulation-run-client/)
-      expect(source.match(/<button\b[^>]*>/g) ?? []).toEqual(source === strip[0] ? ['<button type="button" aria-expanded={!folded} onclick={fold}>', '<button type="button" class="open" title={firstOut === undefined ? `Open the process display of ${group.label}` : `Open the process display of ${group.label}, its first-out selected`} onclick={() =>'] : [])
+      expect(source.match(/<button\b[^>]*>/g) ?? []).toEqual(source === strip[0] ? ['<button type="button" aria-label="Hide alarm strip" onclick={onClose}>', '<button type="button" aria-expanded={!folded} onclick={fold}>', '<button type="button" class="open" title={firstOut === undefined ? `Open the process display of ${group.label}` : `Open the process display of ${group.label}, its first-out selected`} onclick={() =>'] : [])
     }
     // "open ›" opens the unit's display with the group's first-out selected, through the page that opens displays.
     expect(strip[0]).toContain('onclick={() => opens(firstOut)}>open ›</button>')

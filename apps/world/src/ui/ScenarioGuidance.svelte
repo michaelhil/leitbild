@@ -22,7 +22,5 @@
     <strong class:update-title={guidance.tone === 'update'}>{guidance.title}</strong>
     <p>{guidance.message}</p>
   </div>
-  {#if guidance.dismissible}
-    <button type="button" aria-label="Dismiss guidance" onclick={close}>×</button>
-  {/if}
+  <button type="button" aria-label="Close scenario briefing" onclick={close}>×</button>
 </aside>

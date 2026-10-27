@@ -27,8 +27,10 @@
   import { physicalLayoutPalette } from './palette.ts'
   import { drawPhysicalPlanAnnotations, visiblePhysicalPlanAnnotations } from './plan-annotations.ts'
   import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
+  import { physicalLayerPreparationText } from './layer-preparation.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
-  let { map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+  let { controlsOpen = $bindable(false), map, active = true, objects, bindings, hiddenCategoryIds, presentationFor, runId, perspectiveEpoch, suspended, theme, clearTop = 0, reservedPadding = { top: 0, right: 0, bottom: 0, left: 0 }, onDetailedOwners = () => {}, onoverview, onopen, onerror, onconnect = () => {} }: {
+    controlsOpen?: boolean
     map: MapLibreMap
     active?: boolean
     objects: ReadonlyArray<OperationalObject>
@@ -64,7 +66,6 @@
   let overlayElement = $state<HTMLElement | null>(null)
   let controller = $state.raw<PhysicalSceneController | null>(null)
   let viewportFailure = $state<string | null>(null)
-  let controlsOpen = $state(true)
   let componentsOpen = $state(false)
   let componentScope = $state<{ readonly sceneId: string; readonly label: string; readonly subjectIds: ReadonlyArray<string> } | null>(null)
   let filter = $state('')
@@ -196,7 +197,7 @@
   }
   const inspectHit = (hit: PhysicalSceneHit): void => {
     if (hit.subjectIds.length === 1) inspect(hit.sceneId, hit.subjectIds[0]!, hit.label, hit.occurrenceId)
-    else { componentScope = { sceneId: hit.sceneId, label: hit.label, subjectIds: hit.subjectIds }; filter = ''; componentsOpen = true }
+    else { controlsOpen = true; componentScope = { sceneId: hit.sceneId, label: hit.label, subjectIds: hit.subjectIds }; filter = ''; componentsOpen = true }
   }
   const frameHost = createEmbeddedFrameHost({
     origin: location.origin, frame: () => inspectionFrame?.contentWindow ?? null,
@@ -388,13 +389,15 @@
     const anchor = projected?.visible ? projected : null
     return { x: Math.max(inspectionRoom.x, Math.min(inspectionRoom.x + inspectionRoom.width - inspectionWidth, (anchor?.x ?? size.width / 2) + 24)), y: Math.max(inspectionRoom.y, Math.min(inspectionRoom.y + inspectionRoom.height - allocatedInspectionHeight, (anchor?.y ?? 80) - 30)) }
   })
-  const statusText = $derived(focusedId === null ? `${scenes.filter(scene => scene.status === 'ready').length} layouts ready · ${scenes.filter(scene => scene.status === 'loading').length} loading · ${scenes.filter(scene => scene.status === 'unavailable').length} unavailable · owner-qualified alarms remain in Run`
+  const baseStatusText = $derived(focusedId === null ? `${scenes.filter(scene => scene.status === 'ready').length} layouts ready · ${scenes.filter(scene => scene.status === 'loading').length} loading · ${scenes.filter(scene => scene.status === 'unavailable').length} unavailable · owner-qualified alarms remain in Run`
     : focused?.status === 'loading' ? 'Loading this physical layout…'
     : focused?.status === 'distant' ? 'Explore on map to load this physical layout'
     : focused?.status === 'hidden' ? 'Physical detail hidden by view settings'
     : focused?.status === 'unavailable' ? focused.reason ?? 'Layout unavailable'
     : latest?.failure ?? (latest?.phase === 'inactive' ? 'Run not loaded; layout is not live' : latest?.phase === 'missing' ? 'Run missing' : latest?.latest === null || latest === null ? 'Waiting for live owner status'
       : frozen ? `Not live · ${latest.phase === 'suspended' ? 'updates suspended' : latest.phase} · last acquired ${Math.max(0, Math.floor((wallNow - (latest.stamp?.receivedWallMs ?? wallNow)) / 1000))} s ago` : `${latest.latest.sample.at.paused ? 'Paused · fresh' : 'Live'} · ${latest.latest.subjects.length} modelled subjects · ${statusSummary?.census.total ?? 0} owner alerts`))
+  const additionalLayerStatus = $derived((focusedId === null ? scenes.filter(scene => focusedGroupId === null || scene.descriptor.group?.id === focusedGroupId) : focused ? [focused] : []).map(physicalLayerPreparationText).filter((text): text is string => text !== null).join(' · '))
+  const statusText = $derived([baseStatusText, additionalLayerStatus].filter(Boolean).join(' · '))
   const chooseScope = (key: string | null, chosenLevel?: string): void => {
     if (suspended) return
     closeInspection(); hover = null; componentsOpen = false; componentScope = null; focusLocations = null; floorChoice = null; scopeFloorChoice = null; pendingFocus = null; pendingCameraFocus = null
@@ -455,7 +458,7 @@
     const scene = scenes.find(value => value.descriptor.id === sceneId), occurrence = controller?.scene(sceneId)?.objects.find(value => value.id === occurrenceId)
     if (!scene || !occurrence) return
     const level = chosenLevel ?? levelForPhysicalFocus(occurrence, scene.view)
-    if (level === null) { floorChoice = { sceneId, occurrenceId, label: occurrence.label, levelIds: occurrence.levelIds ?? [occurrence.levelId] }; return }
+    if (level === null) { controlsOpen = true; floorChoice = { sceneId, occurrenceId, label: occurrence.label, levelIds: occurrence.levelIds ?? [occurrence.levelId] }; return }
     collectionInspection = false; focusedId = sceneId; focusedScopeId = null; focusedGroupId = scene.descriptor.group?.id ?? null; closeInspection(); floorChoice = null; focusLocations = null; componentsOpen = false
     const mode = level === 'all' ? '3d' : scene.view.mode
     pendingCameraFocus = { sceneId, occurrenceId, levelId: level, mode }
@@ -469,7 +472,7 @@
     if (!scene) { pendingFocus = { sceneId, subjectId, label }; controller?.focus(sceneId, { preservePose: true }); return }
     const locations = scene.objects.filter(value => value.subjectIds.includes(subjectId))
     if (locations.length === 1) focusOccurrence(sceneId, locations[0]!.id)
-    else focusLocations = { sceneId, subjectId, label, occurrenceIds: locations.map(value => value.id) }
+    else { controlsOpen = true; focusLocations = { sceneId, subjectId, label, occurrenceIds: locations.map(value => value.id) } }
   }
   $effect(() => {
     const pending = pendingFocus
@@ -605,14 +608,10 @@
 <div class="explorer-overlay" bind:this={overlayElement} class:inactive={!active} aria-hidden={!active} inert={!active}>
   <canvas class="layout-plan-annotations" bind:this={draftingCanvas} aria-hidden="true"></canvas>
   {#if scenes.length > 0 && focused !== null}
-    <div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
-      {#if controlsOpen}
-        <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended}
+    {#if controlsOpen}<div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
+      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} view={focused.view} status={statusText} {suspended}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           onclose={() => { controlsOpen = false; componentsOpen = false }} />
-      {:else}
-        <div class="entry-actions"><button type="button" onclick={() => controlsOpen = true}>Layout controls</button></div>
-      {/if}
       {#if componentsOpen}
         <section class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
           <label>Find a component<input type="search" bind:value={filter} /></label>
@@ -633,7 +632,7 @@
       {/if}
       {#if floorChoice}<section class="layout-components" aria-label="Choose physical focus floor"><header><strong>{floorChoice.label}</strong><button type="button" aria-label="Close focus floor choice" onclick={() => floorChoice = null}>×</button></header><p>This equipment spans more than one floor. Choose a view.</p><button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, 'all') }}>Show in 3D context</button>{#each floorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, levelId) }}>{scenes.find(scene => scene.descriptor.id === floorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
       {#if scopeFloorChoice}<section class="layout-components" aria-label="Choose area floor"><header><strong>{scopeFloorChoice.label}</strong><button type="button" aria-label="Close area floor choice" onclick={() => scopeFloorChoice = null}>×</button></header><p>The current floor does not intersect this area. Choose a floor or show its whole 3D context.</p><button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, 'all') }}>Show whole area in 3D</button>{#each scopeFloorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, levelId) }}>{scenes.find(scene => scene.descriptor.id === scopeFloorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
-    </div>
+    </div>{/if}
     {#if controlsOpen && focused.view.mode === '3d'}<CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />{/if}
   {:else if viewportFailure !== null}
     <div class="layout-tools" style:top={`${toolsTop}px`}><p role="alert">{viewportFailure}</p></div>
@@ -649,7 +648,6 @@
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
   .layout-plan-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; font-size: 12px; }
   .layout-tools { position: absolute; left: 12px; z-index: 5; max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; color: var(--text); }.layout-tools > :global(*) { pointer-events: auto; }
-  .entry-actions { display: flex; gap: 6px; }.entry-actions button { flex: 1; }
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout-components { display: grid; gap: 6px; width: min(440px, 100%); margin-left: auto; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }
   .component-row { display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border); padding-top: 4px; }.component-row > span { flex: 1; min-width: 0; display: grid; gap: 3px; }.component-row strong, .component-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.component-row small { color: var(--muted); font-size: 10px; }.component-row button { flex: none; padding: 6px; }

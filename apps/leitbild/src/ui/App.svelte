@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
+    type UiControlsOfferMessage,
     type FeaturedDefinitionCatalog,
     type InspectionView,
     type ModuleCapabilityDescriptor,
@@ -15,6 +16,7 @@
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
+  import ViewControls from './ViewControls.svelte'
   import SimulationRunControls from './SimulationRunControls.svelte'
   import AssistantLauncher from './AssistantLauncher.svelte'
   import RunRoomControls from './RunRoomControls.svelte'
@@ -67,6 +69,8 @@
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
   let selectedWorldRunId = $state(initialSelection.get('world'))
+  let uiControlsOffer = $state.raw<UiControlsOfferMessage | null>(null)
+  let workspaceComposer = $state<{ setViewControl: (id: string, visible: boolean) => void } | null>(null)
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -626,6 +630,7 @@
       {#if fromGuide}<a class="guide-back" href={guideHref('ask')}>← Getting started</a>{/if}</div>
     <div class="workspace-actions">
       {#if selectedWorldResource}
+        <ViewControls offer={uiControlsOffer?.subject.id === selectedWorldRunId ? uiControlsOffer : null} set={(id, visible) => workspaceComposer?.setViewControl(id, visible)} />
         <SimulationRunControls
           workspaceId={workspace.id}
           resource={selectedWorldResource}
@@ -705,7 +710,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
+    <WorkspaceComposer bind:this={workspaceComposer} onUiControls={offer => { uiControlsOffer = offer }} workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
       onError={message => { error = message }} bind:worldPane />
     {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}

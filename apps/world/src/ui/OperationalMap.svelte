@@ -106,6 +106,7 @@
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceStyles?: ReadonlyArray<PackReferenceDatasetStyle>
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
+    physicalLayoutControlsOpen?: boolean
     readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
     readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
     readonly physicalLayoutSuspended: boolean
@@ -156,7 +157,7 @@
     readonly takesDiskClicks?: (object: OperationalObject) => boolean
   }
 
-  const {
+  let {
     objects,
     selectedControllerId,
     controllerHighlighted = false,
@@ -190,6 +191,7 @@
     referenceStyles = [],
     liveMapLayers = [],
     physicalLayoutBindings = [],
+    physicalLayoutControlsOpen = $bindable(false),
     onPhysicalDisplay = () => {},
     physicalLayoutSuspended,
     layoutClearTop = 0,
@@ -923,7 +925,7 @@
   {#key runtime.map}
   {#key simulationRunId}
   {#await import('./physical-layout/PhysicalExplorer.svelte') then { default: PhysicalExplorer }}
-    <PhysicalExplorer map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+    <PhysicalExplorer bind:controlsOpen={physicalLayoutControlsOpen} map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
       {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} reservedPadding={cameraPadding} onDetailedOwners={setDetailedLayoutOwners}
       suspended={physicalLayoutSuspended}
       onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />
