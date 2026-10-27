@@ -11,10 +11,22 @@ export const physicalFilletTrims = (input: ReadonlyArray<RoutePoint>, radius: nu
   for (let i = 1; i < points.length; i++) if (!enough(distance(points[i - 1]!, points[i]!), trims[i - 1]! + trims[i]!, Math.max(...points[i - 1]!.map(Math.abs), ...points[i]!.map(Math.abs)))) throw Error('Centreline straight length cannot accommodate the specified minimum bend radius')
   return { points, trims }
 }
+/** Adjacent fillets that consume one complete straight run share ONE analytic
+ * tangent point. Independent a+uR/b-uR evaluations can differ by an ULP and
+ * manufacture a reversed microsegment. Only a forward-error equality of the
+ * exact trim equation admits this canonical joint; no metric weld is applied. */
+export const physicalFilletJoints = (points: ReadonlyArray<RoutePoint>, trims: ReadonlyArray<number>): ReadonlyArray<RoutePoint | undefined> => points.slice(1).map((b, index) => {
+  const a = points[index]!, length = distance(a, b), sum = trims[index]! + trims[index + 1]!, operationScale = Math.max(...a.map(Math.abs), ...b.map(Math.abs))
+  if (!sum || !enough(length, sum, operationScale) || !enough(sum, length, operationScale)) return undefined
+  if (!trims[index]) return a
+  if (!trims[index + 1]) return b
+  const fraction = trims[index]! / sum
+  return a.map((value, axis) => value + (b[axis]! - value) * fraction) as unknown as RoutePoint
+})
 /** Analytic circular corner shared by meshing and self-clearance validation. */
-export const physicalFilletArc = (a: RoutePoint, b: RoutePoint, c: RoutePoint, radius: number, trim: number) => {
+export const physicalFilletArc = (a: RoutePoint, b: RoutePoint, c: RoutePoint, radius: number, trim: number, sharedStart?: RoutePoint, sharedEnd?: RoutePoint) => {
   const u = unit(subtract(b, a)), v = unit(subtract(c, b)), normal = unit(cross(u, v)), angle = Math.atan2(magnitude(cross(u, v)), dot(u, v))
-  const p = b.map((value, axis) => value - u[axis]! * trim) as unknown as RoutePoint, q = b.map((value, axis) => value + v[axis]! * trim) as unknown as RoutePoint
+  const p = sharedStart ?? b.map((value, axis) => value - u[axis]! * trim) as unknown as RoutePoint, q = sharedEnd ?? b.map((value, axis) => value + v[axis]! * trim) as unknown as RoutePoint
   const inward = cross(normal, u), center = p.map((value, axis) => value + inward[axis]! * radius) as unknown as RoutePoint, radial = subtract(p, center), tangent = cross(normal, radial)
   const point = (fraction: number): RoutePoint => fraction === 0 ? p : fraction === 1 ? q : center.map((value, axis) => value + radial[axis]! * Math.cos(angle * fraction) + tangent[axis]! * Math.sin(angle * fraction)) as unknown as RoutePoint
   return { p, q, angle, point }
@@ -25,11 +37,12 @@ export const physicalFilletArc = (a: RoutePoint, b: RoutePoint, c: RoutePoint, r
 export const roundedPhysicalRoute = (input: ReadonlyArray<RoutePoint>, radius: number, chordTolerance: number): ReadonlyArray<RoutePoint> => {
   if (!Number.isFinite(chordTolerance) || !(chordTolerance > 0)) throw Error('Rounded routes require positive finite geometric tolerance')
   const { points, trims } = physicalFilletTrims(input, radius)
+  const joints = physicalFilletJoints(points, trims)
   const result: RoutePoint[] = [points[0]!]
   for (let i = 1; i < points.length - 1; i++) {
     const a = points[i - 1]!, b = points[i]!, c = points[i + 1]!, trim = trims[i]!
     if (!trim) { result.push(b); continue }
-    const { p, q, angle, point } = physicalFilletArc(a, b, c, radius, trim)
+    const { p, q, angle, point } = physicalFilletArc(a, b, c, radius, trim, joints[i - 1], joints[i])
     const stepAngle = chordTolerance >= radius ? Math.PI : 2 * Math.acos(1 - chordTolerance / radius) || Math.sqrt(8 * chordTolerance / radius)
     const steps = Math.ceil(angle / stepAngle)
     if (!Number.isSafeInteger(steps) || steps < 1) throw Error('Requested circular-arc tolerance is not representable')

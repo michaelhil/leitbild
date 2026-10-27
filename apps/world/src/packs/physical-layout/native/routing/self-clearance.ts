@@ -1,5 +1,5 @@
 import type { RoutePoint, RouteBounds } from './source.ts'
-import { physicalFilletArc } from './round.ts'
+import { physicalFilletArc, physicalFilletJoints } from './round.ts'
 import { distance, same, subtract, unit, enough } from './vector.ts'
 
 interface Piece {
@@ -26,12 +26,13 @@ const separation = (a: Interval, b: Interval, total: number, closed: boolean) =>
  * needed. There is no fixed sampling step, recursion depth or iteration cap. */
 export const validatePhysicalRouteSelfClearance = (id: string, points: ReadonlyArray<RoutePoint>, trims: ReadonlyArray<number>, bendRadius: number, tubeRadius: number): void => {
   const directions = points.slice(1).map((point, index) => unit(subtract(point, points[index]!))), pieces: Piece[] = []
+  const joints = physicalFilletJoints(points, trims)
   let total = 0
   for (let i = 0; i < directions.length; i++) {
-    const a = points[i]!.map((value, axis) => value + directions[i]![axis]! * trims[i]!) as unknown as RoutePoint, b = points[i + 1]!.map((value, axis) => value - directions[i]![axis]! * trims[i + 1]!) as unknown as RoutePoint, length = distance(a, b)
+    const a = joints[i] ?? points[i]!.map((value, axis) => value + directions[i]![axis]! * trims[i]!) as unknown as RoutePoint, b = joints[i] ?? points[i + 1]!.map((value, axis) => value - directions[i]![axis]! * trims[i + 1]!) as unknown as RoutePoint, length = distance(a, b)
     if (length) { pieces.push({ start: total, length, point: fraction => fraction === 0 ? a : fraction === 1 ? b : a.map((value, axis) => value + (b[axis]! - value) * fraction) as unknown as RoutePoint, sagitta: () => 0 }); total += length }
     if (trims[i + 1]! > 0) {
-      const arc = physicalFilletArc(points[i]!, points[i + 1]!, points[i + 2]!, bendRadius, trims[i + 1]!), length = arc.angle * bendRadius
+      const arc = physicalFilletArc(points[i]!, points[i + 1]!, points[i + 2]!, bendRadius, trims[i + 1]!, joints[i], joints[i + 1]), length = arc.angle * bendRadius
       pieces.push({ start: total, length, point: arc.point, sagitta: span => 2 * bendRadius * Math.sin(arc.angle * span / 4) ** 2 }); total += length
     }
   }

@@ -123,3 +123,22 @@ test('a declared coincident start/end graph junction permits only its local clos
   expect(() => validatePhysicalConnectionRoute(base, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0], [0, 0, 0]])).not.toThrow()
   expect(() => validatePhysicalConnectionRoute(base, [[0, 0, 0], [4, 0, 0], [4, 4, 0], [-1, 4, 0], [-1, -1, 0], [2, -1, 0], [2, 2, 0], [0, 2, 0], [0, 0, 0]])).toThrow('own nonlocal tube reservation')
 })
+
+test('serialized PWR touching fillets share one exact tangent joint without a reversed microsegment', () => {
+  const failures = [
+    { id: 'pressurizer-surge-line', radius: .8519999999999999, points: [[-50.00000000000001, 10.94, 9.18], [-50.00000000000001, 24.306, 9.18], [-48.04600000000001, 24.306, 9.18], [-48.04600000000001, 24.306, 7.02], [-49.75000000000001, 24.306, 7.02], [-49.75000000000001, 25.45, 7.02]] },
+    { id: 'sg-b-steam-to-msiv-b', radius: 2.16, points: [[-38.00000000000001, 19.137999999999998, 12.84], [-38.00000000000001, 1.0200000000000005, 12.84], [-20.67, 1.0200000000000005, 12.84], [-20.67, 1.0200000000000005, 20.16], [-20.67, -3.3, 20.16], [-20.67, -3.3, 15.84], [-18, -3.3, 15.84]] },
+  ]
+  for (const failure of failures) {
+    const points = roundedPhysicalRoute(failure.points as [number, number, number][], failure.radius, .005)
+    for (let i = 1; i < points.length - 1; i++) {
+      const a = points[i]!.map((v, axis) => v - points[i - 1]![axis]!), b = points[i + 1]!.map((v, axis) => v - points[i]![axis]!)
+      expect(Math.hypot(...a)).toBeGreaterThan(0)
+      expect(a.reduce((sum, v, axis) => sum + v * b[axis]!, 0)).toBeGreaterThan(0)
+    }
+  }
+  // A real one-micrometre straight is retained; this is not a metric weld.
+  const separated = roundedPhysicalRoute([[0, 0, 0], [2, 0, 0], [2, 2.000001, 0], [4, 2.000001, 0]], 1, .005)
+  expect(separated.some(point => point[0] === 2 && point[1] === 1)).toBe(true)
+  expect(separated.some(point => point[0] === 2 && Math.abs(point[1] - 1.000001) < 1e-12)).toBe(true)
+})
