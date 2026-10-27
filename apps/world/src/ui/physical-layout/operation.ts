@@ -64,7 +64,7 @@ export const resolvePhysicalSubjectOperation = (subject: LayoutOperationalSubjec
     }
     const value = quality === 'good' && declaration ? observation?.value ?? null : null
     const word = typeof value === 'boolean' || typeof value === 'string' ? declaration?.states?.find(state => state.value === String(value))?.label ?? (typeof value === 'string' ? value : null) : null
-    return { declaration, reading: { ref: binding.ref, label: declaration?.label ?? binding.role, quality, reason: reason ?? (quality === 'good' ? observation?.why ?? null : stale ? 'Not live' : quality), value, unit: declaration?.unit ?? '', word } }
+    return { declaration, reading: { ref: binding.ref, label: declaration?.label ?? binding.role, quality, reason: reason ?? (stale ? 'Not live' : observation?.why ?? (quality === 'good' ? null : quality)), value, unit: declaration?.unit ?? '', word } }
   }
   // Conditional alternates apply to the preceding reading of the same role.
   // An unknown guard prevents a falsely definite fallback to that reading.

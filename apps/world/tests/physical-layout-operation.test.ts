@@ -33,6 +33,7 @@ test('missing, stale, uncertain and bad readings never fabricate no-flow or stop
   const frozen = resolvePhysicalSubjectOperation(s, [observation(flow, 5), observation(run, true)], true)
   expect(frozen.flow?.direction).toBe('unknown'); expect(frozen.flow?.quality).toBe('stale'); expect(frozen.equipment?.running?.active).toBeNull()
   expect(resolvePhysicalSubjectOperation(s, [], false).flow?.quality).toBe('not-observed')
+  expect(resolvePhysicalSubjectOperation(s, [{ ...observation(run, null, 'not-applicable'), why: 'position not measured' }], false).equipment?.running?.reason).toBe('position not measured')
 })
 
 test('equipment throughput and energized-only electrical links do not invent spatial flow direction', () => {

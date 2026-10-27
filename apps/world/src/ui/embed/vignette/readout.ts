@@ -92,11 +92,6 @@ export interface ReadingLook {
   readonly reason: string | null
 }
 
-/**
- * Whether a state reads "on" (ruling Q8): a boolean true, or a value whose
- * declared state says `active`; never inferred from the order of the states.
- * Where no declared state says it, an enum value reads neither (null).
- */
 const stateWord = (value: string | boolean, states: Observable['states']): string =>
   states?.find(state => state.value === String(value))?.label ?? (typeof value === 'boolean' ? (value ? 'yes' : 'no') : value)
 

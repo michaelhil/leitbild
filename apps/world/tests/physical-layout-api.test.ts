@@ -62,6 +62,10 @@ describe('Real PWR layout display boundary', () => {
       expect(parsed.subjects.every(subject => subject.values.every(value => value.ref.startsWith('plant:proof#')))).toBe(true)
       const acquired = new Set(parsed.sample.observations.map(observation => observation.ref))
       expect(parsed.subjects.every(subject => subject.values.length <= 8 && subject.values.every(value => acquired.has(value.ref)))).toBe(true)
+      const semantic = parsed.subjects.flatMap(subject => subject.topology ? [subject.topology] : [])
+      expect(semantic.length).toBeGreaterThan(0)
+      expect(semantic.every(topology => topology.values.every(value => acquired.has(value.ref)))).toBe(true)
+      expect(semantic.flatMap(topology => topology.bindings).some(binding => binding.role === 'running' || binding.role === 'conducting')).toBe(true)
       const condenser = parsed.subjects.find(subject => subject.elementId === 'condenser')!
       expect(physicalSubjectStatus({ subject: { objectId: parsed.scope.objectId, packId: parsed.scope.packId, elementId: condenser.elementId, label: condenser.label }, values: condenser.values, observations: parsed.sample.observations }, parsed.sample.alerts, false).quality).toBe('good')
       const second = layoutLiveResponseSchema.parse((await route(registry, run.id)).body)
