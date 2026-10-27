@@ -4,6 +4,8 @@ import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import type { Color, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 import type { PhysicalSceneView } from './types.ts'
+import { physicalRenderMeshRanges } from './render-buffers.ts'
+import { updatePhysicalOpaqueRunMask, physicalVisibleElements } from './visible-elements.ts'
 import { createPhysicalObjectTableRows } from './object-table.ts'
 
 /** Quiet illustrative surface colour, precomposited against its actual material
@@ -127,6 +129,8 @@ void main(){
 `
 export interface PhysicalBackendMetrics {
   readonly architecture?: import('./architecture-backend.ts').PhysicalArchitectureBackendMetrics
+  visibilityUploads?: number
+  indexBytes?: number
   readonly cpuResidency?: import('./prepared-residency.ts').PhysicalPreparedResidencyMetrics
   readonly renderPass?: PhysicalRenderPassMetrics | null
   geometryUploads: number; geometryBytes: number; residentCpuBytes: number; draws: number; buffers: number; programs: number
@@ -145,9 +149,11 @@ export interface PhysicalDraw {
   readonly architecture?: Pick<PhysicalSceneView, 'wallOpacity' | 'floorOpacity'>
 }
 interface Texture { readonly texture: WebGLTexture; width: number; height: number; data: Float32Array }
+interface VisiblePacket { readonly solid: WebGLBuffer; readonly lines: WebGLBuffer; readonly mask: Uint8Array; solidCount: number; lineCount: number; revision: number; lastUsed: number }
 interface Asset {
   readonly identity: string; readonly solid: WebGLBuffer; readonly lines: WebGLBuffer; readonly instances: WebGLBuffer; readonly vao: WebGLVertexArrayObject; readonly lineVao: WebGLVertexArrayObject
-  readonly count: number; readonly lineCount: number; readonly geometryBytes: number; readonly materials: Texture; readonly objects: Texture
+  readonly geometryBytes: number; readonly materials: Texture; readonly objects: Texture
+  readonly ranges: Uint32Array; readonly visible: Map<string, VisiblePacket>; visibilityRevision: number
   readonly objectRows: ReturnType<typeof createPhysicalObjectTableRows>
   instanceData: Float32Array; instanceWords: Uint32Array; lastUsed: number; roles: ReadonlyArray<string>; paletteSignature: string
 }
@@ -168,7 +174,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
   } catch (error) { if (program) gl.deleteProgram(program); throw error }
   finally { for (const shader of shaders) gl.deleteShader(shader) }
   const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uArchitecturePass', 'uOrdered', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
-  const metrics: PhysicalBackendMetrics = { geometryUploads: 0, geometryBytes: 0, residentCpuBytes: 0, draws: 0, buffers: 0, programs: 1, textures: 0, textureBytes: 0, instanceBytes: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, evictions: 0, peakRequiredBytes: 0, liveBuffersAfterDisposal: null, liveProgramsAfterDisposal: null, liveTexturesAfterDisposal: null }
+  const metrics: PhysicalBackendMetrics = { visibilityUploads: 0, indexBytes: 0, geometryUploads: 0, geometryBytes: 0, residentCpuBytes: 0, draws: 0, buffers: 0, programs: 1, textures: 0, textureBytes: 0, instanceBytes: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, evictions: 0, peakRequiredBytes: 0, liveBuffersAfterDisposal: null, liveProgramsAfterDisposal: null, liveTexturesAfterDisposal: null }
   const texture = (): Texture => { const value = gl.createTexture(); if (!value) throw new Error('Unable to allocate physical material/status table'); metrics.textures++; return { texture: value, width: 0, height: 0, data: new Float32Array() } }
   const dimensions = (pixels: number) => { const width = Math.min(maxTextureSize, Math.max(1, pixels)), height = Math.max(1, Math.ceil(pixels / width)); if (height > maxTextureSize) throw new Error('Physical instance table exceeds this GPU texture allocation') ; return { width, height } }
   const resizeTexture = (value: Texture, pixels: number): boolean => {
@@ -187,7 +193,14 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     colors.forEach((color, index) => { const role = asset.roles[index]!, pattern = role.startsWith('continuation/') ? -Number(role.split('/')[2]) : role.startsWith('surface/outage/') ? 1 : 0; asset.materials.data.set([color[0], color[1], color[2], pattern], index * 4) })
     gl.activeTexture(gl.TEXTURE0); uploadTexture(asset.materials, allocation); asset.paletteSignature = signature; metrics.paletteUploads++
   }
+  const indexBytes = (value: VisiblePacket): number => (value.solidCount + value.lineCount) * Uint32Array.BYTES_PER_ELEMENT
+  const releaseVisible = (value: VisiblePacket): void => {
+    gl.deleteBuffer(value.solid); gl.deleteBuffer(value.lines); metrics.buffers -= 2
+    const bytes = indexBytes(value); metrics.geometryBytes -= bytes; metrics.indexBytes! -= bytes; metrics.residentCpuBytes -= value.mask.byteLength
+  }
   const release = (asset: Asset): void => {
+    for (const value of asset.visible.values()) releaseVisible(value)
+    asset.visible.clear(); metrics.residentCpuBytes -= asset.ranges.byteLength
     gl.deleteBuffer(asset.solid); gl.deleteBuffer(asset.lines); gl.deleteBuffer(asset.instances); gl.deleteVertexArray(asset.vao); gl.deleteVertexArray(asset.lineVao); gl.deleteTexture(asset.materials.texture); gl.deleteTexture(asset.objects.texture)
     metrics.geometryBytes -= asset.geometryBytes; metrics.instanceBytes -= asset.instanceData.byteLength; metrics.textureBytes -= asset.materials.data.byteLength + asset.objects.data.byteLength; metrics.buffers -= 3; metrics.textures -= 2
   }
@@ -205,9 +218,33 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     for (const [location, components, offset] of [[0, 3, 0], [2, 1, 12], [3, 1, 16], [4, 1, 20]] as const) { gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, components, gl.FLOAT, false, 24, offset) }
     gl.disableVertexAttribArray(1); setupInstances()
     const geometryBytes = draw.asset.buffers.vertices.byteLength + draw.asset.buffers.lines.byteLength
-    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, count: draw.asset.buffers.vertices.length / 8, lineCount: draw.asset.buffers.lines.length / 6, geometryBytes, materials, objects, objectRows:createPhysicalObjectTableRows(),instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
-    metrics.geometryUploads++; metrics.geometryBytes += geometryBytes; metrics.buffers += 3; return value
+    const value: Asset = { identity: draw.asset.identity, solid, lines, instances, vao, lineVao, geometryBytes, materials, objects, ranges: physicalRenderMeshRanges(draw.asset.meshes), visible: new Map(), visibilityRevision: 0, objectRows: createPhysicalObjectTableRows(), instanceData: new Float32Array(), instanceWords: new Uint32Array(), lastUsed: frame, roles: draw.asset.buffers.roles, paletteSignature: '' }
+    metrics.residentCpuBytes += value.ranges.byteLength; metrics.geometryUploads++; metrics.geometryBytes += geometryBytes; metrics.buffers += 3; return value
     } catch (error) { for (const buffer of [solid, lines, instances]) gl.deleteBuffer(buffer); gl.deleteVertexArray(vao); gl.deleteVertexArray(lineVao); for (const table of [materials, objects]) if (table) { gl.deleteTexture(table.texture); metrics.textures-- }; throw error }
+  }
+  const visiblePacket = (asset: Asset, start: number, count: number): VisiblePacket => {
+    const key = `${start}/${count}`
+    let value = asset.visible.get(key), created = false
+    if (!value) {
+      const solid = gl.createBuffer(), lines = gl.createBuffer()
+      if (!solid || !lines) { if (solid) gl.deleteBuffer(solid); if (lines) gl.deleteBuffer(lines); throw Error('Unable to allocate exact physical visibility indices') }
+      value = { solid, lines, mask: new Uint8Array(asset.ranges.length / 4), solidCount: 0, lineCount: 0, revision: -1, lastUsed: frame }
+      asset.visible.set(key, value); metrics.buffers += 2; metrics.residentCpuBytes += value.mask.byteLength; created = true
+    }
+    value.lastUsed = frame
+    const changed = value.revision !== asset.visibilityRevision && updatePhysicalOpaqueRunMask(asset.objects.data, value.mask.length, start, count, value.mask)
+    value.revision = asset.visibilityRevision
+    if (created || changed) {
+      const prior = indexBytes(value), elements = physicalVisibleElements(asset.ranges, value.mask)
+      value.solidCount = elements.solid.length; value.lineCount = elements.lines.length
+      const delta = indexBytes(value) - prior; metrics.geometryBytes += delta; metrics.indexBytes! += delta
+      // Each EBO belongs to an owned VAO. Temporary CPU indices are released
+      // after upload; only this current run's mask/counts survive camera frames.
+      gl.bindVertexArray(asset.vao); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, value.solid); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, elements.solid, gl.DYNAMIC_DRAW)
+      gl.bindVertexArray(asset.lineVao); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, value.lines); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, elements.lines, gl.DYNAMIC_DRAW)
+      metrics.visibilityUploads!++
+    }
+    return value
   }
   const ownedBytes = () => metrics.geometryBytes + metrics.instanceBytes + metrics.textureBytes
   const evictUnused = (required: ReadonlySet<string>): void => {
@@ -241,11 +278,10 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
         if (asset.instanceData.length !== list.length * 17) { metrics.instanceBytes -= asset.instanceData.byteLength; asset.instanceData = new Float32Array(list.length * 17); asset.instanceWords = new Uint32Array(asset.instanceData.buffer); metrics.instanceBytes += asset.instanceData.byteLength }
         list.forEach((draw, instanceIndex) => {
           asset.instanceData.set(draw.matrix, instanceIndex * 17); asset.instanceWords[instanceIndex * 17 + 16] = instanceIndex * objectCount * 3
-
         })
         statusChanged=asset.objectRows(asset.objects.data,first.asset.meshes,list,palette.defaultMaterial,allocation).changed||statusChanged
         gl.bindBuffer(gl.ARRAY_BUFFER, asset.instances); gl.bufferData(gl.ARRAY_BUFFER, asset.instanceData, gl.DYNAMIC_DRAW); metrics.instanceUploads++
-        gl.activeTexture(gl.TEXTURE1); if (statusChanged) { uploadTexture(asset.objects, allocation); metrics.statusUploads++ } else gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
+        gl.activeTexture(gl.TEXTURE1); if (statusChanged) { uploadTexture(asset.objects, allocation); metrics.statusUploads++; asset.visibilityRevision++ } else gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
       }
       // Instancing may combine contiguous placements, but must never reorder
       // A1,B,A2 into A1,A2,B: exact coplanar identity is first-source-wins in
@@ -261,7 +297,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       // target by the derived architecture backend, before its single resolve.
       gl.uniform1i(uniforms.uArchitecturePass!, 0); gl.depthMask(true)
       for (const run of runs) {
-        const asset = cache.get(run.key)!
+        const asset = cache.get(run.key)!, selection = visiblePacket(asset, run.start, run.count)
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, asset.materials.texture); gl.uniform1i(uniforms.uMaterialWidth!, asset.materials.width); gl.uniform1i(uniforms.uObjectWidth!, asset.objects.width); gl.uniform1i(uniforms.uFlat!, Number(run.flat))
         const instancesAt = (vao: WebGLVertexArrayObject): void => {
@@ -270,15 +306,16 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
           gl.vertexAttribIPointer(9, 1, gl.UNSIGNED_INT, 17 * 4, run.start * 17 * 4 + 64)
         }
         gl.disable(gl.BLEND)
-        gl.depthFunc(gl.GREATER); gl.uniform1i(uniforms.uLines!, 0); gl.disable(gl.POLYGON_OFFSET_FILL); instancesAt(asset.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, asset.count, run.count); metrics.draws++
-        if (asset.lineCount) { gl.depthFunc(gl.GEQUAL); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND); gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1i(uniforms.uLines!, 1); instancesAt(asset.lineVao); gl.drawArraysInstanced(gl.LINES, 0, asset.lineCount, run.count); metrics.draws++ }
+        gl.depthFunc(gl.GREATER); gl.uniform1i(uniforms.uLines!, 0); gl.disable(gl.POLYGON_OFFSET_FILL); instancesAt(asset.vao); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, selection.solid); gl.drawElementsInstanced(gl.TRIANGLES, selection.solidCount, gl.UNSIGNED_INT, 0, run.count); metrics.draws++
+        if (selection.lineCount) { gl.depthFunc(gl.GEQUAL); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND); gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1i(uniforms.uLines!, 1); instancesAt(asset.lineVao); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, selection.lines); gl.drawElementsInstanced(gl.LINES, selection.lineCount, gl.UNSIGNED_INT, 0, run.count); metrics.draws++ }
       }
-      const actualRequired = [...required].reduce((bytes, key) => { const value = cache.get(key)!; return bytes + value.geometryBytes + value.instanceData.byteLength + value.materials.data.byteLength + value.objects.data.byteLength }, 0)
+      for (const asset of cache.values()) for (const [key, value] of asset.visible) if (value.lastUsed !== frame) { releaseVisible(value); asset.visible.delete(key) }
+      const actualRequired = [...required].reduce((bytes, key) => { const value = cache.get(key)!; return bytes + value.geometryBytes + [...value.visible.values()].reduce((sum, packet) => sum + indexBytes(packet), 0) + value.instanceData.byteLength + value.materials.data.byteLength + value.objects.data.byteLength }, 0)
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, actualRequired); evictUnused(required)
     },
     dispose(): void {
       if (disposed) return
-      const buffers = [...cache.values()].flatMap(value => [value.solid, value.lines, value.instances]), textures = [...cache.values()].flatMap(value => [value.materials.texture, value.objects.texture])
+      const buffers = [...cache.values()].flatMap(value => [value.solid, value.lines, value.instances, ...[...value.visible.values()].flatMap(packet => [packet.solid, packet.lines])]), textures = [...cache.values()].flatMap(value => [value.materials.texture, value.objects.texture])
       for (const value of cache.values()) release(value)
       cache.clear(); gl.deleteProgram(ownedProgram); metrics.programs = 0; disposed = true; metrics.liveBuffersAfterDisposal = buffers.filter(buffer => gl.isBuffer(buffer)).length; metrics.liveProgramsAfterDisposal = Number(gl.isProgram(ownedProgram)); metrics.liveTexturesAfterDisposal = textures.filter(value => gl.isTexture(value)).length
     },

@@ -18,3 +18,17 @@ export const preparePhysicalRenderBuffers = (meshes: ReadonlyArray<PhysicalMesh>
   })
   return { vertices, lines, roles, objectCount: meshes.length }
 }
+
+/** Original packed addresses, independent for solids and authored GL_LINES. */
+export const physicalRenderMeshRanges = (meshes: ReadonlyArray<PhysicalMesh>): Uint32Array => {
+  const ranges = new Uint32Array(meshes.length * 4)
+  let solid = 0, line = 0
+  meshes.forEach((mesh, index) => {
+    const solids = mesh.vertices.length / 7, lines = mesh.lines.length / 3
+    // Uint32's final value is the fixed primitive-restart index in WebGL2.
+    // Vertex counts at most that value keep every referenced address below it.
+    if (!Number.isInteger(solids) || solids % 3 || !Number.isInteger(lines) || lines % 2 || solid + solids > 2 ** 32 - 1 || line + lines > 2 ** 32 - 1) throw Error('Physical render ranges exceed the exact native index address space')
+    ranges.set([solid, solids, line, lines], index * 4); solid += solids; line += lines
+  })
+  return ranges
+}
