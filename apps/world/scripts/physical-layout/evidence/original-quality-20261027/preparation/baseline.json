@@ -1,0 +1,16 @@
+{
+  "profiles": [
+    {
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "levelId": "all",
+      "exactGeometrySha256": "59b26f713398a08fa0d15ff2e644afcfe7092b961c46b04b82f2fe6928b94d70",
+      "exactGeometryAndPickingSha256": "a7ec537f4ca525a8b2051c4a3f499f02bfbb6cc18584795acb4b632829df4555"
+    },
+    {
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "levelId": "all",
+      "exactGeometrySha256": "79f821c4584971acafd93ad899dbc8f4c90197c9dd5df660b82109e082ab85a6",
+      "exactGeometryAndPickingSha256": "ebf144968033512dd8e160a4bbf9cbefa789507cb51d37ef17d3cddd0c790451"
+    }
+  ]
+}
