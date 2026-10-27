@@ -73,17 +73,20 @@ const waitReady = async () => {
     controller.setView(scene.id, view); controller.setStatus(scene.id, new Map()); controller.home(scene.id, 'area/turbine-island'); await waitReady()
     const prepared = preparePhysicalGeometry(scene, { ...view, scopeId: 'area/turbine-island' }, 'actual-cap-detail', 'actual-cap-detail')
     const candidates = prepared.meshes.filter(mesh => mesh.object.clipToScope && mesh.materials?.some(role => role.startsWith('continuation/'))).flatMap(mesh => {
-      const groups = new Map<string, { points: number[][]; normal: readonly [number, number, number] }>()
+      const groups = new Map<string, { points: number[][]; normal: readonly [number, number, number]; witness: [number, number, number]; area: number }>()
       for (let at = 0; at < mesh.vertices.length; at += 21) {
         const role = mesh.materials![mesh.vertices[at + 6]!]!
         if (!role.startsWith('continuation/')) continue
         const normal = [mesh.vertices[at + 3]!, mesh.vertices[at + 4]!, mesh.vertices[at + 5]!] as const
         if ((kind === 'floor') !== (Math.abs(normal[2]) === 1)) continue
         const axis = normal.findIndex(v => v !== 0), coordinate = mesh.vertices[at + axis]!, key = `${normal.join(',')}/${coordinate}`
-        let group = groups.get(key); if (!group) { group = { points: [], normal }; groups.set(key, group) }
-        for (const offset of [0, 7, 14]) group.points.push([mesh.vertices[at + offset]!, mesh.vertices[at + offset + 1]!, mesh.vertices[at + offset + 2]!])
+        const triangle = [0, 7, 14].map(offset => [mesh.vertices[at + offset]!, mesh.vertices[at + offset + 1]!, mesh.vertices[at + offset + 2]!]), witness = [0, 1, 2].map(axis => triangle.reduce((sum, p) => sum + p[axis]! / 3, 0)) as [number, number, number]
+        const u = triangle[1]!.map((v, i) => v - triangle[0]![i]!), v = triangle[2]!.map((n, i) => n - triangle[0]![i]!), area = Math.hypot(u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!)
+        let group = groups.get(key); if (!group) { group = { points: [], normal, witness, area }; groups.set(key, group) }
+        if (area > group.area) { group.witness = witness; group.area = area }
+        group.points.push(...triangle)
       }
-      return [...groups.values()].map(group => ({ object: mesh.object, normal: group.normal, center: [0, 1, 2].map(axis => (Math.min(...group.points.map(p => p[axis]!)) + Math.max(...group.points.map(p => p[axis]!))) / 2) as [number, number, number] }))
+      return [...groups.values()].map(group => ({ object: mesh.object, normal: group.normal, center: group.witness }))
     }).sort((a, b) => b.object.spatialPath!.radius - a.object.spatialPath!.radius)
     const cap = candidates[0]; if (!cap) throw Error(`The admitted source has no actual ${kind} cap to inspect`)
     const world = transform(localMercatorMatrix(scene.anchor, scene.bearing), cap.center), mercator = new MercatorCoordinate(world[0], world[1], world[2]), radius = cap.object.spatialPath!.radius
