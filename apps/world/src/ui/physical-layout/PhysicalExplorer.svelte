@@ -52,6 +52,7 @@
   let focusedId = $state<string | null>(null)
   let focusedScopeId = $state<string | null>(null)
   let focusedGroupId = $state<string | null>(null)
+  let collectionInspection = $state(false)
   let navigation = $state<'pan' | 'orbit'>('pan')
   let draftingCanvas = $state<HTMLCanvasElement | null>(null)
   let draftingColors = $state.raw<{ line: string; allowance: string; access: string } | null>(null)
@@ -136,6 +137,12 @@
     ...[...groups.values()].map(group => ({ key: explorerGroupKey(group.id), sceneId: null, groupId: group.id, sceneIds: group.sceneIds, label: group.label, path: group.label, depth: 0, kind: 'site group' })),
     ...scenes.flatMap(scene => explorerScopeChoices(scene.descriptor, objects.find(object => object.id === scene.descriptor.id)?.label ?? scene.descriptor.targetObjectId)),
   ])
+  $effect(() => {
+    const current = controller
+    if (!current || !collectionInspection || focusedId !== null) return
+    const ids = focusedGroupId === null ? scenes.map(scene => scene.descriptor.id) : groups.get(focusedGroupId)?.sceneIds ?? []
+    untrack(() => current.selectCollection(ids))
+  })
   const scopeKey = $derived(focusedId === null ? focusedGroupId === null ? null : explorerGroupKey(focusedGroupId) : explorerLayoutKey(focusedId, focusedScopeId ?? undefined))
   const activeScope = $derived(focused?.descriptor.scopes?.find(scope => scope.id === focusedScopeId) ?? null)
   const scopeTitle = $derived(focusedId === null ? groups.get(focusedGroupId ?? '')?.label ?? 'All layouts' : activeScope?.label ?? focusedLabel)
@@ -393,33 +400,38 @@
       const levels = choice.scopeId === undefined ? scene.descriptor.levels.map(level => level.id) : scene.descriptor.scopes?.find(scope => scope.id === choice.scopeId)?.levelIds ?? []
       const levelId = chosenLevel ?? levelForScopeFocus(levels, scene.view)
       if (levelId === null) { scopeFloorChoice = { key: choice.key, sceneId, label: choice.label, levelIds: levels }; return }
-      focusedId = sceneId; focusedScopeId = choice.scopeId ?? null; focusedGroupId = scene.descriptor.group?.id ?? null
+      collectionInspection = false; focusedId = sceneId; focusedScopeId = choice.scopeId ?? null; focusedGroupId = scene.descriptor.group?.id ?? null
       controller?.selectScope(sceneId, choice.scopeId)
       if (scene.view.levelId !== levelId) controller?.setView(sceneId, { ...scene.view, mode: levelId === 'all' ? '3d' : scene.view.mode, levelId })
       void afterPanels(() => controller?.focus(sceneId, { scopeId: choice.scopeId, levelId, preservePose: true }))
     }
-    else { focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
+    else { collectionInspection = true; focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
   }
   const changeView = (next: PhysicalSceneView): void => {
     if (suspended) return
     const scene = focused
     if (!scene) return
+    const changedRepresentation = scene.view.mode !== next.mode
     pendingCameraFocus = null
     closeInspection(); hover = null
     if (next.mode === '2d') { navigation = 'pan'; controller?.setNavigationTool('pan') }
     if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
     if (next.mode === '2d' && scene.view.levelId === 'all') next = { ...next, levelId: rememberedPlanFloor.get(scene.descriptor.id) ?? scopeLevels[0]?.id ?? scene.descriptor.levels[0]!.id }
     controller?.setView(scene.descriptor.id, next)
+    if (changedRepresentation && (focusedId !== null || collectionInspection)) {
+      const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds
+      void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: false }) })
+    }
   }
-  const fit = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
-  const home = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.home(sceneId, scopeId ?? undefined) }) }
+  const fit = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids); else controller?.focus(sceneId, { scopeId: scopeId ?? undefined, preservePose: true }) }) }
+  const home = (): void => { if (suspended) return; componentsOpen = false; pendingFocus = null; pendingCameraFocus = null; const sceneId = focusedId, scopeId = focusedScopeId, ids = groups.get(focusedGroupId ?? '')?.sceneIds; if (sceneId === null) collectionInspection = true; void afterPanels(() => { if (sceneId === null) controller?.fitAll(ids, { preservePose: false }); else controller?.home(sceneId, scopeId ?? undefined) }) }
   const focusOccurrence = (sceneId: string, occurrenceId: string, chosenLevel?: string): void => {
     if (suspended) return
     const scene = scenes.find(value => value.descriptor.id === sceneId), occurrence = controller?.scene(sceneId)?.objects.find(value => value.id === occurrenceId)
     if (!scene || !occurrence) return
     const level = chosenLevel ?? levelForPhysicalFocus(occurrence, scene.view)
     if (level === null) { floorChoice = { sceneId, occurrenceId, label: occurrence.label, levelIds: occurrence.levelIds ?? [occurrence.levelId] }; return }
-    focusedId = sceneId; focusedScopeId = null; focusedGroupId = scene.descriptor.group?.id ?? null; closeInspection(); floorChoice = null; focusLocations = null; componentsOpen = false
+    collectionInspection = false; focusedId = sceneId; focusedScopeId = null; focusedGroupId = scene.descriptor.group?.id ?? null; closeInspection(); floorChoice = null; focusLocations = null; componentsOpen = false
     const mode = level === 'all' ? '3d' : scene.view.mode
     pendingCameraFocus = { sceneId, occurrenceId, levelId: level, mode }
     if (scene.status !== 'ready') controller?.focus(sceneId, { preservePose: true })
@@ -427,6 +439,7 @@
     controller?.setView(sceneId, { ...scene.view, mode, levelId: level })
   }
   const focusComponent = (sceneId: string, subjectId: string, label: string): void => {
+    collectionInspection = false
     const scene = controller?.scene(sceneId)
     if (!scene) { pendingFocus = { sceneId, subjectId, label }; controller?.focus(sceneId, { preservePose: true }); return }
     const locations = scene.objects.filter(value => value.subjectIds.includes(subjectId))

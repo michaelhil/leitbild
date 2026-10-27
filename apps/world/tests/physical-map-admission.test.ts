@@ -27,8 +27,8 @@ const create = (kind: 'map' | 'canvas', visible = true) => createPhysicalSceneCo
   onChange() {}, reportError(error) { throw error },
 })
 
-test('site Plan in the dedicated browser acquires detailed layouts without an arbitrary zoom/count threshold', async () => {
-  const scenes = [source('unit:a'), source('unit:b'), source('campus')], loaded: string[] = [], controller = create('canvas')
+test('explicit site Plan on the native map acquires the entire selected collection independently of automatic legibility', async () => {
+  const scenes = [source('unit:a'), source('unit:b'), source('campus')], loaded: string[] = [], controller = create('map')
   controller.setSources(scenes.map(scene => ({ descriptor: descriptor(scene), load: async () => { loaded.push(scene.id); return scene } })))
   controller.fitAll(scenes.map(scene => scene.id)); await settle()
   expect(loaded).toEqual(scenes.map(scene => scene.id))
@@ -45,11 +45,20 @@ test('regional map stays automatic while an explicit layout focus acquires detai
   controller.destroy()
 })
 
-test('explicit browser purpose still respects visibility, hidden detail and inactive hosts', async () => {
-  const scene = source('unit:a'), offscreen = create('canvas', false); let loads = 0
+test('explicit collection inspection still respects visibility, hidden detail and inactive maps', async () => {
+  const scene = source('unit:a'), offscreen = create('map', false); let loads = 0
   const sources = [{ descriptor: descriptor(scene), load: async () => { loads++; return scene } }]
-  offscreen.setSources(sources); await settle(); expect(loads).toBe(0); offscreen.destroy()
-  const inactive = create('canvas'); inactive.setActive(false); inactive.setSources(sources); await settle(); expect(loads).toBe(0)
+  offscreen.setSources(sources); offscreen.selectCollection(); await settle(); expect(loads).toBe(0); offscreen.destroy()
+  const inactive = create('map'); inactive.setActive(false); inactive.setSources(sources); inactive.selectCollection(); await settle(); expect(loads).toBe(0)
   inactive.setView(scene.id, { ...inactive.presentations()[0]!.view, detail: 'hidden' }); inactive.setActive(true); await settle()
   expect(loads).toBe(0); expect(inactive.presentations()[0]!.status).toBe('hidden'); inactive.destroy()
+})
+
+test('a selected collection uses exact declared members while future membership can update without a camera jump', async () => {
+  const scenes = [source('unit:a'), source('unit:b'), source('campus')], loaded: string[] = [], controller = create('map')
+  controller.setSources(scenes.map(scene => ({ descriptor: descriptor(scene), load: async () => { loaded.push(scene.id); return scene } })))
+  controller.selectCollection(['unit:b']); await settle(); expect(loaded).toEqual(['unit:b'])
+  controller.selectCollection(['unit:b', 'campus']); await settle(); expect(loaded).toEqual(['unit:b', 'campus'])
+  expect(controller.presentations().find(scene => scene.descriptor.id === 'unit:a')!.status).toBe('distant')
+  controller.destroy()
 })

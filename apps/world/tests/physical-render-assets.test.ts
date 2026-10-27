@@ -109,6 +109,32 @@ test('cancelled or suspended hosts cannot apply a late deferred camera fit', asy
   }
 })
 
+test('collection Home adopts whole 3D context and refits after all requested assets are ready; Fit preserves pose', async () => {
+  const h = harness('map'), release = h.hold(), a = scene('a'), b = scene('b')
+  h.scale(1); h.controller.setSources([h.source(a), h.source(b)])
+  h.controller.setView('a', { ...defaultPhysicalSceneView(a.levels), mode: '3d' })
+  h.controller.fitAll(undefined, { preservePose: false })
+  expect(h.controller.presentations().map(scene => scene.view.levelId)).toEqual(['all', 'all'])
+  expect(h.fits).toHaveLength(1); expect(h.fits[0]).toMatchObject({ preservePose: false, bearing: 0, pitch: 50, mode: '3d' })
+  release(); await settled(); expect(h.fits).toHaveLength(2)
+  h.controller.fitAll(); expect(h.fits.at(-1)?.preservePose).toBe(true)
+  h.controller.destroy()
+})
+
+test('a cancelled collection camera intent cannot reframe the map after late source preparation', async () => {
+  const h = harness('map'), release = h.hold(), a = scene('a')
+  h.scale(1); h.controller.setSources([h.source(a)]); h.controller.fitAll()
+  const before = h.fits.length; h.controller.cancelCamera(); release(); await settled()
+  expect(h.fits).toHaveLength(before); h.controller.destroy()
+})
+
+test('Plan painting reads the existing presentation styles without acquiring separate truth', async () => {
+  const h = harness(), value = scene('a'); h.controller.setSources([h.source(value)]); await settled()
+  const status = new Map([['a:machine', { color: [.1, .2, .3] as const, emphasis: .5 }]])
+  h.controller.setStatus('a', status); expect(h.controller.subjectStyles('a')).toBe(status)
+  expect(h.controller.subjectStyles('missing').size).toBe(0); h.controller.destroy()
+})
+
 test('rapid floor choices cancel obsolete demand and stale completions cannot replace the selected floor', async () => {
   const h = harness(), release = h.hold(), value = scene('a'), base = defaultPhysicalSceneView(value.levels)
   h.controller.setSources([h.source(value)]); h.controller.selectScope('a'); await settled()
