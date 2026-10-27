@@ -27,7 +27,7 @@ proto.drawArraysInstanced = function(...args: any[]) {
   const program = this.getParameter(this.CURRENT_PROGRAM), owned = program && this.getUniformLocation(program, 'uObjects')
   if (matrix && owned) {
     const active = this.getParameter(this.ACTIVE_TEXTURE); this.activeTexture(this.TEXTURE1); const table = textures.get(this.getParameter(this.TEXTURE_BINDING_2D)); this.activeTexture(active)
-    if (table && prepared && table.length >= prepared.meshes.length * 8) { drawMatrix = [...matrix.slice(0, 16)]; drawObjects = table; drawCount++ }
+    if (table && prepared && table.length >= prepared.meshes.length * 12) { drawMatrix = [...matrix.slice(0, 16)]; drawObjects = table; drawCount++ }
   }
   return draw.apply(this, args as never)
 }
@@ -45,7 +45,7 @@ const capture = () => {
     const a = transform(matrix, p), u = transform(matrix, [p[0] - n[1], p[1] + n[0], p[2]]), v = transform(matrix, [p[0], p[1], p[2] + 1])
     const area = (u[0] - a[0]) * (v[1] - a[1]) - (u[1] - a[1]) * (v[0] - a[0])
     const helper = [...new Set(selected.filter(mesh => mesh.object.id === id).map(mesh => mesh.inspectionPart))]
-    const gpu = [...new Set(prepared!.meshes.filter((mesh, index) => mesh.object.id === id && drawObjects![index * 8 + 7]! > .5).map(mesh => mesh.inspectionPart))]
+    const gpu = [...new Set(prepared!.meshes.filter((mesh, index) => mesh.object.id === id && drawObjects![index * 12 + 7]! > .5).map(mesh => mesh.inspectionPart))]
     return { id, outward: n, center, area, expected: area > 0 ? 'cut' : 'full', helper, gpu }
   }) }
 }

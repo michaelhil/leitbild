@@ -11,6 +11,7 @@ import type { PhysicalLayerEntry } from './layer.ts'
 import { physicalScopeMembers } from './scopes.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
+import { physicalArchitectureOpacity } from './architecture-opacity.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 const styleFor = (entry: PhysicalLayerEntry, subjectIds: ReadonlyArray<string>): PhysicalSubjectStyle | null => {
@@ -20,7 +21,7 @@ const styleFor = (entry: PhysicalLayerEntry, subjectIds: ReadonlyArray<string>):
   return first
 }
 /** Shared drawing/picking core. Hosts provide an actual GL context, matrix and surface size. */
-export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, size: () => { width: number; height: number }, reportError: (error: Error) => void) => {
+export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, size: () => { width: number; height: number }, reportError: (error: Error) => void, planFontFamily: () => string = () => 'sans-serif') => {
   const initial = captureSceneGlState(gl)
   let backend: ReturnType<typeof createPhysicalBackend>
   try { backend = createPhysicalBackend(gl, palette) } finally { restoreSceneGlState(gl, initial) }
@@ -31,6 +32,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
   const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
+  const architecturePicks = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
     if (disposed || failed) return null
     const rectangle = size(), hit = pickPhysicalMesh(picking, point, rectangle.width, rectangle.height)
@@ -67,13 +69,22 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         depthNear = plan ? 0 : physicalPerspectiveNear(mainMatrix)
         const projected = baseProjection
         for (const { entry, matrix, meshes } of projected) {
-          picking.push({ sceneId: entry.scene.id, meshes, matrix })
+          let pickable = meshes
+          if ((entry.view.wallOpacity ?? 1) < 1 || (entry.view.floorOpacity ?? 1) < 1) {
+            const key = JSON.stringify([(entry.view.wallOpacity ?? 1) === 1, (entry.view.floorOpacity ?? 1) === 1])
+            let selections = architecturePicks.get(meshes)
+            if (!selections) { selections = new Map(); architecturePicks.set(meshes, selections) }
+            const cached = selections.get(key)
+            if (cached) pickable = cached
+            else { pickable = meshes.filter(mesh => mesh.object.subjectIds.length > 0 || physicalArchitectureOpacity(mesh.object, entry.view) === 1); if (entry.asset) derivePhysicalPickAcceleration(pickable, entry.asset.acceleration); selections.set(key, pickable) }
+          }
+          picking.push({ sceneId: entry.scene.id, meshes: pickable, matrix })
           // Explicit architectural ink owns Plan colour. Retain the same solid
           // acceleration for operational picking without painting it twice.
           if (entry.view.mode === '2d' && entry.scene.planDrawing?.views.some(view => view.levelId === entry.view.levelId)) continue
           const drawMatrix = new Float32Array(matrix)
           if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
-          draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
+          draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', architecture: entry.view, styles: entry.asset.meshes.map(mesh => styleFor(entry, mesh.object.subjectIds)), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
         }
         // Vector Plan still updates real solid picking above, but owns all
         // visible colour in its native drawing surface. An empty GL pass must
@@ -81,7 +92,8 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         if (!draws.length) return
         before = captureSceneGlState(gl)
         renderPass ??= createPhysicalRenderPass(gl); renderPass.begin(before.viewport[2], before.viewport[3])
-        backend.draw(draws, depthNear); renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
+        const translucent = draws.some(draw => draw.meshes.some(mesh => { const opacity = physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}); return opacity > 0 && opacity < 1 }))
+        backend.draw(draws, depthNear, translucent ? phase => renderPass!.beginTransparency(phase) : undefined); renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
       } catch (error) { failed = true; picking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
       finally { if (before) restoreSceneGlState(gl, before) }
     },

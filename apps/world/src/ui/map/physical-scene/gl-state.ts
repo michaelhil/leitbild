@@ -5,8 +5,9 @@ export const captureSceneGlState = (gl: GL) => {
   const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number
   gl.activeTexture(gl.TEXTURE0); const texture0 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null; const sampler0 = gl.getParameter(gl.SAMPLER_BINDING) as WebGLSampler | null
   gl.activeTexture(gl.TEXTURE1); const texture1 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null; const sampler1 = gl.getParameter(gl.SAMPLER_BINDING) as WebGLSampler | null
+  gl.activeTexture(gl.TEXTURE2); const texture2 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null; const sampler2 = gl.getParameter(gl.SAMPLER_BINDING) as WebGLSampler | null
   gl.activeTexture(activeTexture)
-  return { activeTexture, texture0, texture1, sampler0, sampler1,
+  return { activeTexture, texture0, texture1, texture2, sampler0, sampler1, sampler2,
   drawFramebuffer: gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null, readFramebuffer: gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null, renderbuffer: gl.getParameter(gl.RENDERBUFFER_BINDING) as WebGLRenderbuffer | null,
   viewport: Array.from(gl.getParameter(gl.VIEWPORT) as Int32Array) as [number, number, number, number], scissor: gl.isEnabled(gl.SCISSOR_TEST), depthRange: Array.from(gl.getParameter(gl.DEPTH_RANGE) as Float32Array) as [number, number], clearColor: Array.from(gl.getParameter(gl.COLOR_CLEAR_VALUE) as Float32Array) as [number, number, number, number], clearDepth: gl.getParameter(gl.DEPTH_CLEAR_VALUE) as number,
   program: gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null,
@@ -42,7 +43,8 @@ export const restoreSceneGlState = (gl: GL, state: ReturnType<typeof captureScen
   gl.lineWidth(state.lineWidth)
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, state.texture0)
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, state.texture1)
-  gl.bindSampler(0, state.sampler0); gl.bindSampler(1, state.sampler1)
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, state.texture2)
+  gl.bindSampler(0, state.sampler0); gl.bindSampler(1, state.sampler1); gl.bindSampler(2, state.sampler2)
   gl.activeTexture(state.activeTexture)
   toggle(gl.CULL_FACE, state.cull)
   toggle(gl.STENCIL_TEST, state.stencil)

@@ -3,6 +3,9 @@ import type { PhysicalRenderPassMetrics } from './render-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import type { Color, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
+import type { PhysicalSceneView } from './types.ts'
+import { physicalArchitectureOpacity } from './architecture-opacity.ts'
+import type { PhysicalTransparencyPhase } from './transparency-pass.ts'
 
 /** Quiet illustrative surface colour, precomposited against its actual material
  * before the common lighting pass. No second coincident translucent surface. */
@@ -40,14 +43,15 @@ out float vCameraDepth;
 flat out int vMaterial;
 flat out int vObject;
 flat out float vStroke;
+flat out float vOpacity;
 vec4 objectData(int i){return texelFetch(uObjects,ivec2(i%uObjectWidth,i/uObjectWidth),0);}
 void main(){
   int i=int(instanceData)+int(objectIndex)*3;
   vec4 placement=objectData(i+1);
-  gl_Position=placement.w<.5?vec4(2.,2.,2.,1.):instanceMatrix*vec4(position+placement.xyz,1.);
+  gl_Position=placement.w<=0.?vec4(2.,2.,2.,1.):instanceMatrix*vec4(position+placement.xyz,1.);
   vCameraDepth=gl_Position.w;
   vLocalPosition=position;
-  vNormal=normal;vMaterial=int(materialIndex);vObject=i;vStroke=strokeStyle;
+  vNormal=normal;vMaterial=int(materialIndex);vObject=i;vStroke=strokeStyle;vOpacity=placement.w;
 }
 `
 const fragmentSource = `#version 300 es
@@ -59,6 +63,7 @@ in float vCameraDepth;
 flat in int vMaterial;
 flat in int vObject;
 flat in float vStroke;
+flat in float vOpacity;
 uniform sampler2D uMaterials;
 uniform sampler2D uObjects;
 uniform int uMaterialWidth;
@@ -66,10 +71,12 @@ uniform int uObjectWidth;
 uniform float uDepthNear;
 uniform bool uFlat;
 uniform bool uLines;
+uniform int uTransparency;
 uniform vec2 uLineOpacity;
 uniform vec3 uIllustrationLine;
 out vec4 outColor;
 void main(){
+  if(vOpacity<=0.||(uTransparency==0&&vOpacity<1.)||(uTransparency>0&&vOpacity>=1.))discard;
   // Original clip coordinates still own clipping and screen coverage. A
   // reversed floating camera depth avoids subtracting two almost equal clip
   // coordinates for widely viewed, genuinely thin physical objects.
@@ -112,7 +119,11 @@ void main(){
     float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
     solid=mix(solid,uIllustrationLine,ink*.65);
   }
-  outColor=vec4(uLines?edge:solid,uLines?max(max(edgeAlpha,state.a),selection.a>0.?1.:0.):1.);
+  float alpha=(uLines?max(max(edgeAlpha,state.a),selection.a>0.?1.:0.):1.)*vOpacity;
+  vec3 color=uLines?edge:solid;
+  if(uTransparency==1)outColor=vec4(color*alpha,alpha);
+  else if(uTransparency==2)outColor=vec4(0.,0.,0.,alpha);
+  else outColor=vec4(color,alpha);
 }
 `
 export interface PhysicalBackendMetrics {
@@ -129,6 +140,7 @@ export interface PhysicalDraw {
   readonly meshes: ReadonlyArray<PhysicalMesh>
   readonly styles: ReadonlyArray<PhysicalSubjectStyle | null>
   readonly highlight?: PhysicalSceneHighlight
+  readonly architecture?: Pick<PhysicalSceneView, 'wallOpacity' | 'floorOpacity'>
 }
 interface Texture { readonly texture: WebGLTexture; width: number; height: number; data: Float32Array }
 interface Asset {
@@ -152,7 +164,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Physical scene program linking failed')
   } catch (error) { if (program) gl.deleteProgram(program); throw error }
   finally { for (const shader of shaders) gl.deleteShader(shader) }
-  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
+  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uTransparency', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
   const metrics: PhysicalBackendMetrics = { geometryUploads: 0, geometryBytes: 0, residentCpuBytes: 0, draws: 0, buffers: 0, programs: 1, textures: 0, textureBytes: 0, instanceBytes: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, evictions: 0, peakRequiredBytes: 0, liveBuffersAfterDisposal: null, liveProgramsAfterDisposal: null, liveTexturesAfterDisposal: null }
   const texture = (): Texture => { const value = gl.createTexture(); if (!value) throw new Error('Unable to allocate physical material/status table'); metrics.textures++; return { texture: value, width: 0, height: 0, data: new Float32Array() } }
   const dimensions = (pixels: number) => { const width = Math.min(maxTextureSize, Math.max(1, pixels)), height = Math.max(1, Math.ceil(pixels / width)); if (height > maxTextureSize) throw new Error('Physical instance table exceeds this GPU texture allocation') ; return { width, height } }
@@ -206,7 +218,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     metrics,
     setPalette(value: PhysicalScenePalette): void { palette = value },
     retainGeometryIdentities(identities: ReadonlySet<string>): void { let changed = false; for (const [key, value] of cache) if (!identities.has(value.identity)) { release(value); cache.delete(key); changed = true }; if (changed) metrics.peakRequiredBytes = 0 },
-    draw(draws: ReadonlyArray<PhysicalDraw>, depthNear = 0): void {
+    draw(draws: ReadonlyArray<PhysicalDraw>, depthNear = 0, transparency?: (phase: PhysicalTransparencyPhase) => void): void {
       if (disposed) throw new Error('Physical scene renderer has been disposed')
       frame++
       const groups = new Map<string, PhysicalDraw[]>()
@@ -231,7 +243,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
           first.asset.meshes.forEach((mesh, objectIndex) => {
             const displayed = shown.get(objectIndex), style = draw.styles[objectIndex], at = (instanceIndex * objectCount + objectIndex) * 12, color = style?.color ?? palette.defaultMaterial
             statusChanged = setObject(asset.objects.data, at, [color[0], color[1], color[2], style?.color ? style.emphasis : 0]) || statusChanged
-            statusChanged = setObject(asset.objects.data, at + 4, [displayed?.offset[0] ?? mesh.offset[0], displayed?.offset[1] ?? mesh.offset[1], displayed?.offset[2] ?? mesh.offset[2], displayed ? 1 : 0]) || statusChanged
+            statusChanged = setObject(asset.objects.data, at + 4, [displayed?.offset[0] ?? mesh.offset[0], displayed?.offset[1] ?? mesh.offset[1], displayed?.offset[2] ?? mesh.offset[2], displayed ? physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}) : 0]) || statusChanged
             const selection = draw.highlight?.occurrenceId === mesh.object.id ? draw.highlight.color : null
             statusChanged = setObject(asset.objects.data, at + 8, selection ? [...selection, .24] : [0, 0, 0, 0]) || statusChanged
           })
@@ -248,6 +260,12 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
         if (previous?.key === key && previous.flat === draw.flat) previous.count++
         else runs.push({ key, start, count: 1, flat: draw.flat })
       }
+      // Opaque inspection remains the original single pass. Fractional walls
+      // and floors use two order-independent colour passes over these SAME
+      // buffers, with the opaque depth retained and no geometry/status upload.
+      for (const pass of transparency ? [0, 1, 2] : [0]) {
+      if (pass > 0) transparency!(pass === 1 ? 'accumulate' : 'reveal')
+      gl.uniform1i(uniforms.uTransparency!, pass); gl.depthMask(pass === 0)
       for (const run of runs) {
         const asset = cache.get(run.key)!
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)
@@ -257,8 +275,11 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
           for (let column = 0; column < 4; column++) gl.vertexAttribPointer(5 + column, 4, gl.FLOAT, false, 17 * 4, run.start * 17 * 4 + column * 16)
           gl.vertexAttribIPointer(9, 1, gl.UNSIGNED_INT, 17 * 4, run.start * 17 * 4 + 64)
         }
-        gl.disable(gl.BLEND); gl.depthFunc(gl.GREATER); gl.uniform1i(uniforms.uLines!, 0); gl.disable(gl.POLYGON_OFFSET_FILL); instancesAt(asset.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, asset.count, run.count); metrics.draws++
-        if (asset.lineCount) { gl.depthFunc(gl.GEQUAL); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND); gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1i(uniforms.uLines!, 1); instancesAt(asset.lineVao); gl.drawArraysInstanced(gl.LINES, 0, asset.lineCount, run.count); metrics.draws++ }
+        if (pass === 0) gl.disable(gl.BLEND)
+        else { gl.enable(gl.BLEND); gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFunc(pass === 1 ? gl.ONE : gl.ZERO, pass === 1 ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA) }
+        gl.depthFunc(gl.GREATER); gl.uniform1i(uniforms.uLines!, 0); gl.disable(gl.POLYGON_OFFSET_FILL); instancesAt(asset.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, asset.count, run.count); metrics.draws++
+        if (asset.lineCount) { gl.depthFunc(gl.GEQUAL); gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.BLEND); if (pass === 0) { gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_ADD); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA) }; gl.uniform1i(uniforms.uLines!, 1); instancesAt(asset.lineVao); gl.drawArraysInstanced(gl.LINES, 0, asset.lineCount, run.count); metrics.draws++ }
+      }
       }
       const actualRequired = [...required].reduce((bytes, key) => { const value = cache.get(key)!; return bytes + value.geometryBytes + value.instanceData.byteLength + value.materials.data.byteLength + value.objects.data.byteLength }, 0)
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, actualRequired); evictUnused(required)
