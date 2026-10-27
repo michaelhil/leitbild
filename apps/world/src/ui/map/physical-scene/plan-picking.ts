@@ -140,7 +140,10 @@ export const pickPhysicalPlan = (input: PhysicalPlanPickInput, point: Point): Ph
   try {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.lineJoin = 'round'; ctx.lineCap = 'round'
     for (const { entry, text } of candidates) {
-      if (entry.owner && !entry.owner.subjectIds.length && physicalArchitectureOpacity(entry.owner, input.view) < 1) continue
+      if (entry.owner) {
+        const opacity = physicalArchitectureOpacity(entry.owner, input.view)
+        if (opacity === 0 || !entry.owner.subjectIds.length && opacity < 1) continue
+      }
       if (entry.marker) {
         if (!visible(input, entry.marker.bounds) || !inRegions(index.regions, local)) continue
         ctx.lineWidth = .08; ctx.setLineDash([])
