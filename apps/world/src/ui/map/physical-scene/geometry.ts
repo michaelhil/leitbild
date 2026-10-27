@@ -6,6 +6,8 @@ import type { PhysicalSceneView } from './types.ts'
 /** xyz, normal xyz, material-role index. Colours are assigned by the active token palette. */
 type Vertex = [number, number, number, number, number, number, number]
 export interface PhysicalMesh {
+  /** Actual intersection with this inspection scope, independent of endpoint identity scopes. */
+  readonly inspectionScopeId?: string
   /** Source annotation decorating this occurrence's actual surface, never another physical object. */
   readonly annotation?: { readonly id: string; readonly layerId?: string; readonly scopeIds: ReadonlyArray<string> }
   /** Presentation roles for a decorated surface; source occurrence materials remain unchanged. */

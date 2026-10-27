@@ -9,21 +9,23 @@ import { preparePhysicalRenderBuffers, type PhysicalRenderBuffers } from './rend
 
 export interface PhysicalPreparedGeometry { readonly sourceAsset?: PhysicalPreparedGeometry; readonly key: string; readonly identity: string; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly acceleration: PhysicalPickAcceleration; readonly buffers: PhysicalRenderBuffers; readonly surfaceOwnership: PhysicalSurfaceOwnershipDiagnostics }
 export interface PhysicalPreparationPoolMetrics { readonly workerAlive: boolean; readonly workerCount: number; readonly workerBudget: number; readonly activeWorkers: number; readonly clients: number; readonly registeredSources: number; readonly registeredBytes: number; readonly leases: number; readonly inFlightJobs: number; readonly pinnedSources: number; readonly registrations: number; readonly viewRequests: number; readonly transferredBytes: number; readonly retainedViews: number; readonly retainedViewBytes: number; readonly cacheHits: number; readonly queuedViews: number; readonly skippedViews: number }
-export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity?: string, sourceKey?: string, signal?: AbortSignal) => Promise<PhysicalPreparedGeometry>) & {
+/** Derived inspection demand; source registration/family ownership stays shared. */
+export interface PhysicalPreparationView extends PhysicalSceneView { readonly scopeId?: string }
+export type PhysicalGeometryPreparer = ((scene: PackPhysicalScene, view: PhysicalPreparationView, key: string, identity?: string, sourceKey?: string, signal?: AbortSignal) => Promise<PhysicalPreparedGeometry>) & {
   /** Real worker ports retain exact source families; pure offline/test ports own no worker. */
   readonly retainIdentities?: (identities: ReadonlySet<string>) => void
   readonly destroy?: () => void
   readonly diagnostics?: () => PhysicalPreparationPoolMetrics
 }
 /** Shared with the module worker and explicit offline/test preparation ports. */
-export const preparePhysicalGeometry = (scene: PackPhysicalScene, view: PhysicalSceneView, key: string, identity = key): PhysicalPreparedGeometry => {
+export const preparePhysicalGeometry = (scene: PackPhysicalScene, view: PhysicalPreparationView, key: string, identity = key): PhysicalPreparedGeometry => {
   const owned = preparePhysicalSurfaceOwnership(physicalSurfaceAnnotations(scene, view, buildVisibleMeshes(scene, view))), meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: key, assetIndex: index }))
   return { key, identity, meshes, acceleration: preparePhysicalPickAcceleration(meshes), buffers: preparePhysicalRenderBuffers(meshes), surfaceOwnership: owned.diagnostics }
 }
 type WireMesh = Omit<PhysicalMesh, 'object'> & { readonly objectIndex: number }
 export type PhysicalPreparationRequest =
   | { readonly kind: 'register'; readonly id: number; readonly sourceKey: string; readonly scene: PackPhysicalScene }
-  | { readonly kind: 'prepare'; readonly id: number; readonly key: string; readonly identity: string; readonly sourceKey: string; readonly view: PhysicalSceneView }
+  | { readonly kind: 'prepare'; readonly id: number; readonly key: string; readonly identity: string; readonly sourceKey: string; readonly view: PhysicalPreparationView }
   | { readonly kind: 'release'; readonly sourceKey: string }
 export type PhysicalPreparationResponse =
   | { readonly kind: 'registered'; readonly id: number; readonly sourceKey: string }
@@ -40,7 +42,7 @@ interface Source { readonly key: string; readonly identity: string; readonly sce
 interface Client { readonly identities: Set<string>; readonly requests: Set<{ readonly identity: string; readonly cancel: () => void }>; explicit: boolean }
 type Job = { readonly source: Source; readonly worker: WorkerSlot; readonly reject: (error: Error) => void } & (
   | { readonly kind: 'registration'; readonly resolve: () => void }
-  | { readonly kind: 'view'; readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly view: PhysicalSceneView; readonly demands: Set<symbol>; readonly resolve: (value: PhysicalPreparedGeometry) => void }
+  | { readonly kind: 'view'; readonly key: string; readonly identity: string; readonly scene: PackPhysicalScene; readonly view: PhysicalPreparationView; readonly demands: Set<symbol>; readonly resolve: (value: PhysicalPreparedGeometry) => void }
 )
 interface PendingView { readonly sourceKey: string; readonly identity: string; readonly demands: Set<symbol>; readonly task: Promise<PhysicalPreparedGeometry> }
 const released = (): Error => Object.assign(new Error('Physical preparation source lease was released'), { name: 'AbortError' })
