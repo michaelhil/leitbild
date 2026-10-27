@@ -1,4 +1,5 @@
 import { recordingSeriesIdFor, type ObjectId } from '../../../core/model/index.ts'
+import {createHash} from 'node:crypto'
 import type { ObservationDeclaration } from '../../../core/observation/capabilities.ts'
 import type { Observable } from '../../../core/observation/model.ts'
 import type { CompiledComponent, ProcessSignalBinding, ProcessUnit, VariablePath } from '../graph/index.ts'
@@ -227,10 +228,23 @@ const observableOf = (objectId: ObjectId, plant: CompiledProcessPlant, recording
   }
 }
 
+const lineProjectionRevisions=new WeakMap<CompiledProcessPlant,string>()
+/** Physical model identity stays unchanged when a solved line becomes readable.
+ * Cache keys include the actual role/path/readability and unrecorded declaration
+ * contribution, so an old known model digest cannot hide that semantic change. */
+export const lineStateProjectionRevision=(plant:CompiledProcessPlant):string=>{
+  const known=lineProjectionRevisions.get(plant)
+  if(known)return known
+  const contribution=[...lineStateSignals(plant.graph).byLink].map(([linkId,states])=>({linkId,states:states.map(({role,signal})=>({role,path:signal.path,readable:signal.capabilities?.readable,observable:observableOf(plant.id as ObjectId,plant,null,signal)}))}))
+  const revision=createHash('sha256').update(JSON.stringify({modelDigest:plant.modelDigest,lineState:contribution})).digest('hex')
+  lineProjectionRevisions.set(plant,revision)
+  return revision
+}
+
 const revisions = new WeakMap<ReadonlySet<string>, WeakMap<CompiledProcessPlant, string>>()
 
 /**
- * Changes whenever what is declared does: the Plant's model digest, what the Run records of it (one Run's series set is
+ * Includes the physical model and exact primary-line read projection, what the Run records of it (one Run's series set is
  * fixed) and, where the operating mode is given, its elements' lead lists in that mode (a digest: the lists depend on
  * the mode only, so a trip changes nothing here and the compose caches hold).
  */
@@ -238,11 +252,11 @@ export const declarationRevision = (plant: CompiledProcessPlant, recording: Plan
   `${recordedRevision(plant, recording)}${mode === undefined ? '' : `:lead-${leadDigest(plant, mode)}`}`
 
 const recordedRevision = (plant: CompiledProcessPlant, recording: PlantRecording): string => {
-  if (recording === null) return `${plant.modelDigest}:unrecorded`
+  if (recording === null) return `${lineStateProjectionRevision(plant)}:unrecorded`
   const known = revisions.get(recording.seriesIds) ?? new WeakMap<CompiledProcessPlant, string>()
   revisions.set(recording.seriesIds, known)
   const recorded = () => plant.graph.signalBindings.filter(binding => recording.seriesIds.has(recordingSeriesIdFor(plant.id, binding.path))).length
-  const revision = known.get(plant) ?? `${plant.modelDigest}:${recording.intervalMs}ms:${recorded()}`
+  const revision = known.get(plant) ?? `${lineStateProjectionRevision(plant)}:${recording.intervalMs}ms:${recorded()}`
   known.set(plant, revision)
   return revision
 }

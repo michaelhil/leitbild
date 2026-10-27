@@ -5,7 +5,7 @@ import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/p
 import { processPlantElectricalPortDefinitions } from '../src/packs/process-plant/electrical-ports.ts'
 import { principalCircuits } from '../src/packs/process-plant/equipment/circuits.ts'
 import { plantControlsFor } from '../src/packs/process-plant/operations/controls.ts'
-import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
+import { lineStateProjectionRevision, plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { plantTopology, servedPlantTopology } from '../src/packs/process-plant/observation/topology.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 import { createSteadyPlantRun, plantOperator, type SteadyPlantRun } from './steady-plant-run.ts'
@@ -34,7 +34,7 @@ describe('plant topology provider (P5)', () => {
       expect(topologyGraphSchema.parse(topology)).toEqual(topology)
       expect(topology.groups.map(group => group.id)).toEqual(['A', 'B', 'C', 'D', 'E', 'F'].slice(0, loopCount))
     }
-    expect(served).toMatchObject({ objectId, revision: plant.modelDigest, family: 'flow' })
+    expect(served).toMatchObject({ objectId, revision: lineStateProjectionRevision(plant), family: 'flow' })
   })
 
   test('D1: nodes and lines are bound to what the Plant publishes, each binding a declared observable of the Plant', () => {

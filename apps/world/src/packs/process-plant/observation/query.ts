@@ -39,7 +39,8 @@ export const answerProcessPlantObservationQuery = (config: {
   if (config.request.capabilityId === processPlantObservationCapabilityIds.topology) {
     const input = observationShapes.topology.input.parse(config.request.input)
     const plant = plantOf(input.objectId).plant
-    return input.known === plant.modelDigest ? { objectId: input.objectId, revision: plant.modelDigest, unchanged: true as const } : servedPlantTopology(input.objectId, plant)
+    const topology=servedPlantTopology(input.objectId,plant)
+    return input.known === topology.revision ? { objectId: input.objectId, revision: topology.revision, unchanged: true as const } : topology
   }
   if (config.request.capabilityId !== processPlantObservationCapabilityIds.read) return undefined
   const simulationTime = config.simulationTime ?? rejectCapabilityTarget('Process Plant values are read at the Run time the Plants stand at, which this runtime has not been given')

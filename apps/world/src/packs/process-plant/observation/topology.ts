@@ -9,6 +9,7 @@ import { electricalExternalPortId } from '../electrical-ports.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { insertionPositions, itemStateRoles, stoppedPaths } from './derived.ts'
 import {lineStateSignals} from './line-state.ts'
+import {lineStateProjectionRevision} from './declarations.ts'
 
 // The Plant as World's `flow` topology (plan v3.1 §2.9, architecture A5):
 // equipment as nodes with the ports its pipes and cables join, each port's
@@ -238,7 +239,7 @@ export const servedPlantTopology = (objectId: ObjectId, plant: CompiledProcessPl
   const roles = itemStateRoles(plant)
   const parts = insertionPositions(plant)
   const stopped = stoppedPaths(plant)
-  const bound: TopologyGraph = { ...topology, nodes: topology.nodes.map(node => {
+  const bound: TopologyGraph = { ...topology, revision:lineStateProjectionRevision(plant), nodes: topology.nodes.map(node => {
     const index = plant.graph.componentIndexById.get(node.id as ComponentId)
     const state = roles.get(node.id)
     const stop = stopped.get(node.id)

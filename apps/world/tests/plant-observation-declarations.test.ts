@@ -3,7 +3,7 @@ import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
 import { observationDeclarationSchema, type ObservationDeclaration } from '../src/core/observation/capabilities.ts'
 import { compileProcessPlant, createProcessPlantRuntime, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import type { CompiledProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
-import { declarationRevision, plantDeclaration, type PlantRecording } from '../src/packs/process-plant/observation/declarations.ts'
+import { declarationRevision, lineStateProjectionRevision, plantDeclaration, type PlantRecording } from '../src/packs/process-plant/observation/declarations.ts'
 import { answerProcessPlantObservationQuery, processPlantObservationCapabilityIds } from '../src/packs/process-plant/observation/query.ts'
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
@@ -32,7 +32,7 @@ describe('plant observation declarations (P2)', () => {
     // core stopped (R2 W1.2), 8 rod banks' travel, 6 safety functions, the operating mode and 3 functions' criteria.
     expect(declaration.observables).toHaveLength(1220)
     expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(899)
-    expect(declaration.revision).toBe(`${plant.modelDigest}:1000ms:721`)
+    expect(declaration.revision).toBe(`${lineStateProjectionRevision(plant)}:1000ms:721`)
   })
 
   test('T12: labels are the unit\'s own, unique within it, and unique per Run once World qualifies them (R25)', () => {
