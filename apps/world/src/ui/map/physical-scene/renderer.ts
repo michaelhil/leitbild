@@ -12,6 +12,8 @@ import { physicalScopeMembers } from './scopes.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { derivePhysicalPickAcceleration, pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
 import { physicalArchitectureOpacity } from './architecture-opacity.ts'
+import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from './plan-picking.ts'
+import { physicalPlanFrame } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalProjectedPoint, PhysicalSceneFocus, PhysicalSceneHit, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
 
 const styleFor = (entry: PhysicalLayerEntry, subjectIds: ReadonlyArray<string>): PhysicalSubjectStyle | null => {
@@ -30,17 +32,36 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   let depthNear = 0
   let highlight: PhysicalSceneHighlight | null = null
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
+  let planPicking: ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly input: PhysicalPlanPickInput }> = []
   const occurrenceMeshes = new WeakMap<PhysicalPickEntry['meshes'], Map<string, typeof picking[number]['meshes']>>()
   const indexedSelections = new WeakSet<ReadonlyArray<import('./geometry.ts').PhysicalMesh>>()
   const architecturePicks = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
     if (disposed || failed) return null
+    for (let index = planPicking.length - 1; index >= 0; index--) {
+      const plan = planPicking[index]!, hit = pickPhysicalPlan(plan.input, point)
+      if (!hit) continue
+      const object = hit.ownerOccurrenceId ? plan.entry.scene.objects.find(object => object.id === hit.ownerOccurrenceId) : undefined
+      // Non-owned drafting ink can block an item below without inventing a
+      // physical object. The ordinary scene footprint retains owner overview.
+      if (!object) return null
+      return { sceneId: plan.entry.scene.id, targetObjectId: plan.entry.scene.targetObjectId, occurrenceId: object.id, label: object.label, subjectIds: object.subjectIds, screen: point }
+    }
     const rectangle = size(), hit = pickPhysicalMesh(picking, point, rectangle.width, rectangle.height)
     if (!hit) return null
     const entry = entries().find(candidate => candidate.scene.id === hit.sceneId)
     return entry ? { sceneId: hit.sceneId, targetObjectId: entry.scene.targetObjectId, occurrenceId: hit.mesh.object.id, label: hit.mesh.object.label, subjectIds: hit.mesh.object.subjectIds, screen: point } : null
   }
   const cheapProject = (sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null => {
+    const plan = planPicking.find(candidate => candidate.entry.scene.id === sceneId)
+    if (plan) {
+      if (levelId !== undefined && levelId !== plan.entry.view.levelId) return null
+      const bounds = physicalPlanOccurrenceBounds(plan.input, occurrenceId)
+      if (!bounds) return null
+      const x = (bounds.min[0] + bounds.max[0]) / 2, y = (bounds.min[1] + bounds.max[1]) / 2, f = plan.input.frame
+      const point = { x: f.a * x + f.c * y + f.e, y: f.b * x + f.d * y + f.f, depth: 0 }
+      return { ...point, visible: point.x >= 0 && point.y >= 0 && point.x <= plan.input.width && point.y <= plan.input.height }
+    }
     const entry = picking.find(candidate => candidate.sceneId === sceneId)
     if (!entry || disposed || failed) return null
     const rectangle = size()
@@ -58,8 +79,16 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       if (disposed || failed) return
       let before: ReturnType<typeof captureSceneGlState> | null = null
       try {
-        const draws: PhysicalDraw[] = []; picking = []; const presented = entries(); cpu.update(presented.flatMap(entry => entry.asset ? [entry.asset] : []))
-        const current = presented.map(entry => {
+        const draws: PhysicalDraw[] = []; picking = []; planPicking = []; const presented = entries(); cpu.update(presented.flatMap(entry => entry.asset ? [entry.asset] : []))
+        const rectangle = size(), ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1
+        const ink = presented.filter(entry => entry.view.mode === '2d' && entry.scene.planDrawing?.views.some(view => view.levelId === entry.view.levelId))
+        planPicking = ink.flatMap(entry => {
+          const matrix = multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing))
+          const points = [[0, 0, 0], [1, 0, 0], [0, 1, 0]].map(point => { const p = transform(matrix, point as unknown as Vector3); return { x: (p[0] + 1) * rectangle.width / 2, y: (1 - p[1]) * rectangle.height / 2 } })
+          const frame = physicalPlanFrame(points)
+          return frame ? [{ entry, input: { scene: entry.scene, view: entry.view, scopeId: entry.scopeId ?? null, frame, width: rectangle.width, height: rectangle.height, ratio, fontFamily: planFontFamily() } }] : []
+        })
+        const current = presented.filter(entry => !ink.includes(entry)).map(entry => {
           const boundary = visiblePhysicalInspectionBoundaries(entry.meshes, multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)))
           const meshes = visiblePhysicalSurfaceOwners(boundary, entry.asset?.acceleration)
           if (meshes !== entry.meshes && entry.asset && !indexedSelections.has(meshes)) { derivePhysicalPickAcceleration(meshes, entry.asset.acceleration); indexedSelections.add(meshes) }
@@ -94,13 +123,19 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
         renderPass ??= createPhysicalRenderPass(gl); renderPass.begin(before.viewport[2], before.viewport[3])
         const translucent = draws.some(draw => draw.meshes.some(mesh => { const opacity = physicalArchitectureOpacity(mesh.object, draw.architecture ?? {}); return opacity > 0 && opacity < 1 }))
         backend.draw(draws, depthNear, translucent ? phase => renderPass!.beginTransparency(phase) : undefined); renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
-      } catch (error) { failed = true; picking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
+      } catch (error) { failed = true; picking = []; planPicking = []; reportError(error instanceof Error ? error : new Error(String(error))) }
       finally { if (before) restoreSceneGlState(gl, before) }
     },
-    invalidatePicks(): void { picking = [] }, pick, cheapProject,
+    invalidatePicks(): void { picking = []; planPicking = [] }, pick, cheapProject,
     setHighlight(value: PhysicalSceneHighlight | null): void { highlight = value },
     projectOccurrencePoints(sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, levelId?: string): ReadonlyArray<PhysicalProjectedPoint> {
       if (disposed || failed) return []
+      const plan = planPicking.find(candidate => candidate.entry.scene.id === sceneId)
+      if (plan) {
+        if (levelId !== undefined && levelId !== plan.entry.view.levelId || !physicalPlanOccurrenceBounds(plan.input, occurrenceId)) return []
+        const f = plan.input.frame
+        return points.map(point => { const x = f.a * point[0] + f.c * point[1] + f.e, y = f.b * point[0] + f.d * point[1] + f.f; return { x, y, depth: 0, visible: x >= 0 && y >= 0 && x <= plan.input.width && y <= plan.input.height } })
+      }
       const entry = picking.find(candidate => candidate.sceneId === sceneId)
       const mesh = entry?.meshes.find(candidate => candidate.object.id === occurrenceId && (levelId === undefined || candidate.levelId === levelId))
       if (!entry || !mesh) return []
@@ -115,7 +150,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     setPalette: backend.setPalette,
     retainGeometryIdentities(identities: ReadonlySet<string>): void { cpu.retainIdentities(identities); const before = captureSceneGlState(gl); try { backend.retainGeometryIdentities(identities) } finally { restoreSceneGlState(gl, before) } },
     metrics: () => { const owned = renderPass?.metrics(), base = backend.metrics; return { ...base, residentCpuBytes: cpu.metrics().residentBytes, cpuResidency: cpu.metrics(), programs: base.programs + (owned?.programs ?? 0), textures: base.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + (owned?.textureBytes ?? 0), renderPass: owned ?? null, depthNear, liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (owned?.livePrograms ?? 0), liveTexturesAfterDisposal: base.liveTexturesAfterDisposal === null ? null : base.liveTexturesAfterDisposal + (owned?.liveTextures ?? 0) } },
-    dispose(): void { if (disposed) return; disposed = true; backend.dispose(); renderPass?.dispose(); cpu.clear(); picking = [] },
+    dispose(): void { if (disposed) return; disposed = true; backend.dispose(); renderPass?.dispose(); cpu.clear(); picking = []; planPicking = [] },
   }
 }
 
