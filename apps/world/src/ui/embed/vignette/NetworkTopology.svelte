@@ -168,7 +168,7 @@
       {/each}
     {/each}
     {#each items as item (item.id)}
-      <div class="placed area" role="button" tabindex="0" aria-label={`Faceplate: ${item.title}`} aria-haspopup="dialog" aria-expanded={inspected?.origin === item.id} title={item.title} use:kept={item.id}
+      <div class="placed area" role="button" tabindex="0" aria-label={`Faceplate: ${item.title}`} aria-haspopup="dialog" aria-expanded={inspected?.origin === item.id || chooser?.id === item.id && chooser.owner === ownerIdentity} title={item.title} use:kept={item.id}
         style:left={`${item.x}px`} style:top={`${item.y}px`} style:width={`${item.width}px`} style:height={`${item.height}px`} onclick={() => press(item.id)} onkeydown={key(item.id)}></div>
     {/each}
   </div>

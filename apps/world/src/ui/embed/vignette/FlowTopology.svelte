@@ -300,7 +300,7 @@
   /** What makes an item's body a button: only an item that opens something; a refused default stays plain. */
   const body = (id: string, title: string): Record<string, unknown> => !opens(id) ? {} : {
     role: 'button', tabindex: 0, 'aria-label': `Faceplate: ${title}`, 'aria-haspopup': 'dialog',
-    'aria-expanded': faceplated(id) || (faceplate.kind === 'open' && returnItem === id),
+    'aria-expanded': faceplated(id) || (faceplate.kind === 'open' && returnItem === id) || chooser?.id === id,
     onclick: () => bodyPress(id), onkeydown: bodyKey(id), ...hover(id),
   }
 
