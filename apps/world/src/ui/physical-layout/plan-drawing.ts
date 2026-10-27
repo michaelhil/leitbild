@@ -1,9 +1,10 @@
 import type { PackPhysicalScene, PhysicalPlanPrimitive, PhysicalSceneBounds } from '../../core/packs/scene.ts'
-import type { PhysicalScenePalette, PhysicalSceneView, PhysicalSubjectStyle } from '../map/physical-scene/types.ts'
+import type { PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneView, PhysicalSubjectStyle } from '../map/physical-scene/types.ts'
 import { physicalScopeMembers } from '../map/physical-scene/scopes.ts'
 import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
 import { physicalPlanContinuations } from './plan-continuations.ts'
 import { compilePhysicalPlanPaint, type PhysicalPlanPaint } from './plan-paint-stream.ts'
+import { physicalArchitectureOpacity } from '../map/physical-scene/architecture-opacity.ts'
 
 type Point = { readonly x: number; readonly y: number }
 const selections = new WeakMap<PackPhysicalScene, { readonly key: string; readonly primitives: ReadonlyArray<PhysicalPlanPrimitive> }>()
@@ -49,7 +50,7 @@ export const physicalPlanFrame = (points: ReadonlyArray<Point>) => {
   return Object.values(frame).every(Number.isFinite) && determinant !== 0 ? frame : null
 }
 const paths = new WeakMap<PhysicalPlanPrimitive, Path2D>()
-const pathFor = (primitive: Exclude<PhysicalPlanPrimitive, { kind: 'text' }>): Path2D => {
+export const physicalPlanPath = (primitive: Exclude<PhysicalPlanPrimitive, { kind: 'text' }>): Path2D => {
   const cached = paths.get(primitive); if (cached) return cached
   const path = new Path2D()
   if (primitive.kind === 'ellipse') path.ellipse(...primitive.center, ...primitive.radii, primitive.rotation * Math.PI / 180, 0, Math.PI * 2)
@@ -65,6 +66,13 @@ const pathFor = (primitive: Exclude<PhysicalPlanPrimitive, { kind: 'text' }>): P
   paths.set(primitive, path); return path
 }
 const rgb = (color: readonly number[]) => `rgb(${color.map(channel => channel * 255).join(' ')})`
+/** Painting and native ink picking share one exact retained command stream. */
+export const physicalPlanPaintCommands = (scene: PackPhysicalScene, view: PhysicalSceneView, scopeId: string | null): ReadonlyArray<PhysicalPlanPaint> => {
+  const primitives = visiblePhysicalPlanDrawing(scene, view, scopeId)
+  let stream = paintStreams.get(primitives)
+  if (!stream) { stream = compilePhysicalPlanPaint(primitives, objectRoster(scene), physicalPlanPath); paintStreams.set(primitives, stream) }
+  return stream
+}
 /** One affine map transform and a retained native paint stream per scene.
  * Each source path keeps its original submission and antialiasing. Canvas state
  * changes only when its value changes; no per-primitive save/restore cycle. */
@@ -75,6 +83,7 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
   readonly width: number; readonly height: number; readonly ratio: number
   readonly palette: PhysicalScenePalette; readonly fontFamily: string
   readonly status: ReadonlyMap<string, PhysicalSubjectStyle>
+  readonly highlight?: PhysicalSceneHighlight | null
 }): void => {
   const primitives = visiblePhysicalPlanDrawing(input.scene, input.view, input.scopeId)
   if (!primitives.length) return
@@ -91,8 +100,7 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
   if (!inks) { inks = new Map(Object.entries(input.palette.planMaterials ?? input.palette.materials).map(([role, color]) => [role, rgb(color)])); paletteInks.set(input.palette, inks) }
   const ink = (role: string) => { const value = inks.get(role); if (!value) throw new Error('Unknown architectural Plan material: ' + role); return value }
   const objects = objectRoster(input.scene)
-  let stream = paintStreams.get(primitives)
-  if (!stream) { stream = compilePhysicalPlanPaint(primitives, objects, pathFor); paintStreams.set(primitives, stream) }
+  const stream = physicalPlanPaintCommands(input.scene, input.view, input.scopeId)
   let scope = scopePaths.get(input.scene)
   if (!scope || scope.scopeId !== input.scopeId) {
     const regions = physicalScopeRegions(input.scene, input.scopeId ?? undefined), path = new Path2D()
@@ -124,6 +132,10 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
     worldTransform(); context.lineJoin = 'round'; context.lineCap = 'round'; context.textBaseline = 'middle'
     for (const command of stream) {
       if (!visible(command.kind === 'text' ? command.primitive.bounds : command.bounds)) continue
+      const occurrenceId = command.kind === 'text' ? command.primitive.occurrenceId : command.occurrenceId
+      const object = occurrenceId ? objects.get(occurrenceId) : undefined
+      const architectureOpacity = object ? physicalArchitectureOpacity(object, input.view) : 1
+      if (architectureOpacity === 0) continue
       setClip(command.kind === 'geometry' && command.clip && scope.regions.length > 0)
       if (command.kind === 'text') {
         const p = command.primitive, x = a * p.anchor[0] + c * p.anchor[1] + e, y = b * p.anchor[0] + d * p.anchor[1] + f, rotation = p.rotation * Math.PI / 180
@@ -135,14 +147,14 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
         const nextFont = String(p.height * scale) + 'px ' + input.fontFamily, nextAlign = p.align === 'middle' ? 'center' : p.align
         if (font !== nextFont) { context.font = nextFont; font = nextFont }
         if (align !== nextAlign) { context.textAlign = nextAlign; align = nextAlign }
-        opacity(1)
+        opacity(architectureOpacity)
         if (p.halo) { strokeInk(ink(p.halo)); lineWidth((p.haloWidth ?? 0) * scale * 2); context.strokeText(p.text, 0, 0) }
         fillInk(ink(p.material)); context.fillText(p.text, 0, 0)
         continue
       }
       worldTransform()
       const p = command.paint, path = command.path, fillRule = p.fillRule ?? 'nonzero'
-      opacity(p.opacity ?? 1)
+      opacity((p.opacity ?? 1) * architectureOpacity)
       if (dash !== command.dashKey) { context.setLineDash(p.dash ?? []); dash = command.dashKey }
       if (p.fill) { fillInk(ink(p.fill)); context.fill(path, fillRule) }
       if (p.hatch) {
@@ -156,6 +168,11 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
         strokeInk(ink(p.stroke)); lineWidth(p.width ?? 1 / scale); context.stroke(path)
         const accent = input.view.live && command.occurrenceId && p.depiction !== 'above' && p.depiction !== 'below' ? accentFor(command.occurrenceId) : null
         if (accent) { opacity(accent.alpha); strokeInk(accent.color); context.stroke(path) }
+      }
+      if (input.highlight?.occurrenceId === command.occurrenceId && p.depiction !== 'above' && p.depiction !== 'below') {
+        const color = rgb(input.highlight.color)
+        if (p.fill) { opacity(.24); fillInk(color); context.fill(path, fillRule) }
+        if (p.stroke) { opacity(1); strokeInk(color); lineWidth(Math.max(p.width ?? 1 / scale, 1.5 / scale)); context.stroke(path) }
       }
     }
     setClip(false); worldTransform()
