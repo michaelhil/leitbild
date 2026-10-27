@@ -56,3 +56,15 @@ test('a numerically thin triangle cannot become an unbounded occluder when its t
  const thin={...quad('thin',0,0,1,1),positions:[0,0,0,1,1,0,1+2**-51,1,0]},asset=prepared(source([thin,quad('behind',.1,.1,.9,.9)])),visible=visiblePhysicalSurfaceOwners(asset.meshes,asset.acceleration)
  expect(pick(visible,.5,.2)).toBe('behind');expect(area(visible,'behind')).toBeCloseTo(.64,12)
 })
+
+test('a numerically thin physical triangle cannot be hidden by a spatially distant uncertain plane cover', () => {
+ const step = 2 ** -40, floor = quad('floor',0,0,200,200), positions = [100,100,.5,100+step,100,.5,100,100+step,.5]
+ const sliver: PhysicalSceneObject = {id:'physical-sliver',label:'Physical sliver',kind:'equipment',levelId:'site',positions,subjectIds:['sliver'],material:'sliver-metal',edgePolicy:'none'}
+ const value = {...source([floor,sliver]),bounds:{min:[0,0,-1] as [number,number,number],max:[200,200,1] as [number,number,number]}}, before = JSON.stringify(value), asset = prepared(value), visible = visiblePhysicalSurfaceOwners(asset.meshes,asset.acceleration)
+ const retained = visible.filter(mesh=>mesh.object.id==='physical-sliver')
+ expect(retained).toHaveLength(1);expect(retained[0]!.vertices.length).toBe(21)
+ const actual: number[]=[];for(let at=0;at<retained[0]!.vertices.length;at+=7)actual.push(...retained[0]!.vertices.slice(at,at+3))
+ expect(actual).toEqual(positions)
+ expect(asset.surfaceOwnership.coincidentPairs.some(pair=>pair.first==='floor'&&pair.later==='physical-sliver')).toBe(false)
+ expect(JSON.stringify(value)).toBe(before)
+})

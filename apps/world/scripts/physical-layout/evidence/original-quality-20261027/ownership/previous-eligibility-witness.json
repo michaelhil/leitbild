@@ -1,0 +1,81 @@
+{
+  "cases": [
+    {
+      "family": "unit",
+      "case": "[\"3d\",\"lower\",true,0,null,[]]",
+      "physicalInputTrianglesUnchanged": true,
+      "changedOwners": [
+        {
+          "first": "route/rcp-return-B",
+          "later": "connection/rhr-isolation-valve-to-cold-leg-a",
+          "beforeArea": 4.67740547701044e-18,
+          "afterArea": null
+        },
+        {
+          "first": "building/containment/floor/lower",
+          "later": "connection/rcp-b-to-core",
+          "beforeArea": 6.7220534694101275e-18,
+          "afterArea": null
+        },
+        {
+          "first": "route/rcp-return-A",
+          "later": "connection/rhr-isolation-valve-to-cold-leg-a",
+          "beforeArea": 4.67740547701044e-18,
+          "afterArea": null
+        }
+      ]
+    },
+    {
+      "family": "unit",
+      "case": "[\"3d\",\"all\",true,1,null,[]]",
+      "physicalInputTrianglesUnchanged": true,
+      "changedOwners": [
+        {
+          "first": "route/rcp-return-B",
+          "later": "connection/rhr-isolation-valve-to-cold-leg-a",
+          "beforeArea": 4.67740547701044e-18,
+          "afterArea": null
+        },
+        {
+          "first": "building/containment/floor/lower",
+          "later": "connection/rcp-b-to-core",
+          "beforeArea": 6.7220534694101275e-18,
+          "afterArea": null
+        },
+        {
+          "first": "route/rcp-return-A",
+          "later": "connection/rhr-isolation-valve-to-cold-leg-a",
+          "beforeArea": 4.67740547701044e-18,
+          "afterArea": null
+        }
+      ]
+    },
+    {
+      "family": "unit",
+      "case": "[\"3d\",\"lower\",true,0,\"area/turbine-island\",[]]",
+      "physicalInputTrianglesUnchanged": true,
+      "changedOwners": [
+        {
+          "first": "slab/lower",
+          "later": "connection/turbine-stop-valve-to-turbine",
+          "beforeArea": 5.250757240029408e-18,
+          "afterArea": null
+        }
+      ]
+    },
+    {
+      "family": "unit",
+      "case": "[\"3d\",\"operating\",true,0,\"area/turbine-island\",[]]",
+      "physicalInputTrianglesUnchanged": true,
+      "changedOwners": [
+        {
+          "first": "structure/bearing/8.6/pedestal",
+          "later": "connection/turbine-stop-valve-to-turbine",
+          "beforeArea": 5.250757240029408e-18,
+          "afterArea": null
+        }
+      ]
+    }
+  ],
+  "rule": "Actual per-triangle 3D bounds must overlap under the same forward-error reservation as hierarchy traversal before uncertain plane tests can establish ownership. No source triangle or area threshold is removed."
+}
