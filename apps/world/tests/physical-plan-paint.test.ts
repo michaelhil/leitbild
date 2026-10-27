@@ -4,7 +4,7 @@ import { compilePhysicalPlanPaint } from '../src/ui/physical-layout/plan-paint-s
 import { physicalPlanContinuations } from '../src/ui/physical-layout/plan-continuations.ts'
 
 const shape = (id: string, x: number): PhysicalPlanPrimitive => ({ id, kind: 'path', depiction: 'projection', scopeIds: ['room'], bounds: { min: [x, 0], max: [x + 1, 1] }, commands: [['M', x, 0], ['L', x + 1, 0], ['L', x + 1, 1], ['Z']], fill: 'machine', stroke: 'line', width: .05 })
-/** Native Path2D stand-in confined to command-grouping tests. Pixel comparison
+/** Native Path2D stand-in confined to command-retention tests. Pixel comparison
  * uses actual browser canvases; this test does not claim raster equivalence. */
 const group = (primitives: PhysicalPlanPrimitive[], objects: ReadonlyMap<string, PhysicalSceneObject> = new Map()) => {
   const previous = globalThis.Path2D
@@ -13,14 +13,14 @@ const group = (primitives: PhysicalPlanPrimitive[], objects: ReadonlyMap<string,
   try { return compilePhysicalPlanPaint(primitives, objects, () => new Path2D()) }
   finally { globalThis.Path2D = previous }
 }
-test('paint batching preserves order and overlap/alpha semantics rather than sorting the drawing', () => {
-  expect(group([shape('a', 0), shape('b', 2)])).toHaveLength(1)
+test('paint streams preserve every source submission including disjoint paths with shared device-pixel coverage', () => {
+  expect(group([shape('a', 0), shape('b', 2)])).toHaveLength(2)
   expect(group([shape('a', 0), shape('b', .5)])).toHaveLength(2)
   expect(group([{ ...shape('a', 0), opacity: .5 } as PhysicalPlanPrimitive, { ...shape('b', 2), opacity: .5 } as PhysicalPlanPrimitive])).toHaveLength(2)
   const label: PhysicalPlanPrimitive = { id: 'text', kind: 'text', depiction: 'annotation', scopeIds: ['room'], bounds: { min: [0, 0], max: [1, 1] }, anchor: [.5, .5], text: 'HP', height: .5, rotation: 0, align: 'middle', material: 'line' }
   expect(group([shape('a', 0), label, shape('b', 2)]).map(command => command.kind)).toEqual(['geometry', 'text', 'geometry'])
 })
-test('batches keep separate operational subjects and cross-floor depiction policies', () => {
+test('paint streams retain operational subjects and cross-floor depiction policies', () => {
   const objects = new Map(['a', 'b'].map(id => [id, { id, label: id, kind: 'equipment', levelId: 'floor', positions: [], subjectIds: [id] } as PhysicalSceneObject]))
   expect(group([{ ...shape('a', 0), occurrenceId: 'a' }, { ...shape('b', 2), occurrenceId: 'b' }], objects)).toHaveLength(2)
   expect(group([{ ...shape('a', 0), depiction: 'above' }, shape('b', 2)])).toHaveLength(2)

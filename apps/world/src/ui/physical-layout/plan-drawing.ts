@@ -66,7 +66,7 @@ const pathFor = (primitive: Exclude<PhysicalPlanPrimitive, { kind: 'text' }>): P
 }
 const rgb = (color: readonly number[]) => `rgb(${color.map(channel => channel * 255).join(' ')})`
 /** One affine map transform and a retained native paint stream per scene.
- * Disjoint identical paths batch without sorting/overpainting. Canvas state
+ * Each source path keeps its original submission and antialiasing. Canvas state
  * changes only when its value changes; no per-primitive save/restore cycle. */
 const continuationPaths = new WeakMap<ReadonlyArray<PhysicalPlanPrimitive>, ReadonlyArray<{ path: Path2D; material: string; occurrenceId: string }>>()
 export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input: {
