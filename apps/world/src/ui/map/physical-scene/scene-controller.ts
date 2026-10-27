@@ -41,7 +41,7 @@ export const createPhysicalSceneControllerForViewport = (viewport: PhysicalViewp
   let cameraOwned = true, reconcilingCamera = false
   let highlight: PhysicalSceneHighlight | null = null
   const architecturePrepare=options.prepareArchitecture??createPhysicalArchitectureBspPreparer()
-  const architectureOrdering=createPhysicalArchitectureOrdering(architecturePrepare,()=>enqueue())
+  const architectureOrdering=createPhysicalArchitectureOrdering(architecturePrepare,()=>{enqueue();viewport.requestRender()})
   let architectureAsset:PhysicalArchitectureBsp|null=null,architectureInput:PhysicalArchitectureCohort|null=null,architectureFrame:PhysicalArchitectureBspFrame|null=null,architectureRetry=false
   let architectureSelection:ReadonlyArray<{scene:PackPhysicalScene;asset:PhysicalPreparedGeometry|undefined;meshes:ReadonlyArray<PhysicalMesh>;mode:PhysicalSceneView['mode'];level:string;separation:number}>=[]
   const opacityOf=(view:PhysicalSceneView):PhysicalArchitectureOpacity=>({wallOpacity:view.wallOpacity??1,floorOpacity:view.floorOpacity??1})

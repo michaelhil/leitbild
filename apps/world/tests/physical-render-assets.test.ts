@@ -63,7 +63,7 @@ test('opaque views make no ordering request; pending style retains current geome
  expect(h.controller.presentations()[0]).toMatchObject({status:'ready',view:{wallOpacity:1,floorOpacity:1},opacityPreparation:{status:'loading',requested:{wallOpacity:.4,floorOpacity:.6}}})
  h.controller.setView('a',{...h.controller.presentations()[0]!.view,...h.controller.presentations()[0]!.opacityPreparation!.requested,wallOpacity:.2});await settled()
  expect(ordering.jobs).toHaveLength(1)
- ordering.resolve(0);await settled();expect(h.controller.presentations()[0]).toMatchObject({view:{wallOpacity:.2,floorOpacity:.6}});expect(h.controller.presentations()[0]!.opacityPreparation).toBeUndefined()
+ const pendingRenders=h.renders();ordering.resolve(0);await settled();expect(h.renders()).toBeGreaterThan(pendingRenders);expect(h.controller.presentations()[0]).toMatchObject({view:{wallOpacity:.2,floorOpacity:.6}});expect(h.controller.presentations()[0]!.opacityPreparation).toBeUndefined()
  const accepted=h.architectureAssets.at(-1);h.controller.setView('a',{...h.controller.presentations()[0]!.view,wallOpacity:.7});await settled();h.emit('change');await settled()
  expect(ordering.jobs).toHaveLength(1);expect(h.prepares()).toBe(prepares);expect(h.entries()[0]!.meshes).toBe(meshes);expect(h.architectureAssets.at(-1)).toBe(accepted)
  h.visibility(false);h.emit('change');await settled();expect(ordering.jobs).toHaveLength(1);expect(h.architectureAssets.at(-1)).toBe(accepted);h.visibility(true);h.emit('change');await settled();expect(ordering.jobs).toHaveLength(1)
