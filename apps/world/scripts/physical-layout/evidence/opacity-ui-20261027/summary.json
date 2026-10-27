@@ -1,0 +1,122 @@
+{
+  "status": "bounded paths verified across separate runs; no uninterrupted-sequence claim",
+  "testedAppCommit": "cb7f4bb143699d25c9352f99c46954963cb7b76f",
+  "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+  "workspaceId": "a31f9fc6-1961-469c-927c-bb456326dfc1",
+  "sourcePins": [
+    "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+  ],
+  "verified": [
+    {
+      "path": "pending two-slider intent through geometry layer, floor and scope edits",
+      "receipt": "layer-floor-scope-paths.json",
+      "values": {
+        "wall": ".44",
+        "floor": ".32"
+      },
+      "steps": [
+        "pending-two-slider-intent-preserved",
+        "pending-layer-change-preserves-both-sliders",
+        "pending-floor-change-preserves-intent",
+        "pending-scope-change-preserves-both-sliders"
+      ]
+    },
+    {
+      "path": "paused completion produces a real native ordered draw",
+      "receipt": "layer-floor-scope-paths.json",
+      "step": "paused-worker-completion-drawn"
+    },
+    {
+      "path": "warm fractional slider changes preserve BSP jobs and geometry VBO",
+      "receipt": "layer-floor-scope-paths.json",
+      "jobCountBefore": 4,
+      "jobCountAfter": 4,
+      "buffersBefore": [
+        "690:1"
+      ],
+      "buffersAfter": [
+        "690:1"
+      ]
+    },
+    {
+      "path": "controlled worker failure is explicit and real scoped Retry recovers",
+      "receipt": "layer-floor-scope-paths.json",
+      "steps": [
+        "explicit-failure-retains-opaque-model",
+        "real-scoped-Retry-recovers"
+      ]
+    },
+    {
+      "path": "Plan cancels pending stale cohort; fresh 3D recovers",
+      "receipt": "layer-floor-scope-paths.json",
+      "steps": [
+        "Plan-cancels-stale-pending-cohort",
+        "fresh-3D-after-cancel"
+      ]
+    },
+    {
+      "path": "keyboard field focus cancels resting-pointer dwell; a fresh hover can open the same card",
+      "receipt": "pending-and-keyboard-paths.json",
+      "steps": [
+        "keyboard-focus-cancels-resting-pointer-dwell",
+        "fresh-hover-can-still-open-existing-faceplate"
+      ]
+    },
+    {
+      "path": "public Find/Inspect waits for mounted fresh card; native Escape closes and restores map focus",
+      "receipt": "mounted-escape.json",
+      "steps": [
+        "public-Find-Inspect-opens-ready-shared-Faceplate",
+        "native-Escape-closes-ready-iframe-and-restores-map-focus"
+      ]
+    }
+  ],
+  "retainedHarnessFailures": [
+    {
+      "receipt": "pending-and-keyboard-paths.json",
+      "terminal": "Error: Timed out: Escape closes faceplate",
+      "cause": "Escape was sent after iframe insertion while recorded card body text was empty; shared Faceplate had not mounted. Targeted mounted-ready run passes."
+    },
+    {
+      "receipt": "layer-floor-scope-paths.json",
+      "terminal": "Error: No actual turbine hover target could be established",
+      "cause": "Passive hover projection observer followed only its last worker response rather than actual cached draw key. Product correctly reused cached geometry. Test-only observer corrected afterward; no new browser claim for that correction."
+    }
+  ],
+  "observedKey": {
+    "key": "Escape",
+    "target": "header",
+    "prevented": true,
+    "childFocused": true,
+    "finalPrevented": true
+  },
+  "observedClose": {
+    "type": "world:layout-inspection-close",
+    "returnFocus": true,
+    "layoutObjectId": "layout:halden-1",
+    "elementId": "turbine",
+    "origin": "http://127.0.0.1:43148",
+    "fromCurrentFrame": false
+  },
+  "closeObserverCaveat": "fromCurrentFrame is false because the observer compared c.contentWindow after parent removed the iframe. The application accepted the real close and restored map focus. The portable observer now captures the WindowProxy before removal.",
+  "browserExceptions": 0,
+  "faultControl": "Test-only delay of actual BSP transport and one explicit worker error response; no operational commands, acknowledgement, playback or source changes.",
+  "limits": [
+    "No performance qualification.",
+    "No independent background-tab browser case; controller cancellation/background is covered separately by lifecycle tests.",
+    "Warm status badges were zero at that sampled pose, so badge-count flicker was inconclusive. An existing annotation stroke stayed present.",
+    "Screenshot predates typed default label cleanup4b595; geometry/source remains the same."
+  ],
+  "artifacts": {
+    "pending-and-keyboard-paths.json": {
+      "sha256": "3958119b553f620aa666c849e270da94adbb897bd853fd4ef0f5011a05f35b5f"
+    },
+    "layer-floor-scope-paths.json": {
+      "sha256": "5a3073329dc08b507cc6a6a11daa01fc83da8e912d3fc6501428cba00ab533fd"
+    },
+    "mounted-escape.json": {
+      "sha256": "21b00eb9e427ca45dde136a98c8b356e301d0bffa554627ac494149c8c2cca71"
+    }
+  }
+}

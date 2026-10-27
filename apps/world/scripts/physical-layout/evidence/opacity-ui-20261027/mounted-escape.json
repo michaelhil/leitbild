@@ -1,0 +1,97 @@
+{
+  "passed": true,
+  "testedAppCommit": "cb7f4bb143699d25c9352f99c46954963cb7b76f",
+  "url": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1?world=run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+  "steps": [
+    {
+      "name": "public-Find-Inspect-opens-ready-shared-Faceplate",
+      "extra": {
+        "title": "Inspect Turbine Generator",
+        "src": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/embed/physical-layout.inspection#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22a31f9fc6-1961-469c-927c-bb456326dfc1%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-94c67255-e555-443c-a9db-4f8e7996dbdf%22%7D%2C%22viewType%22%3A%22physical-layout.inspection%22%2C%22title%22%3A%22Turbine%20Generator%22%2C%22height%22%3A400%2C%22state%22%3A%22%7B%5C%22layoutObjectId%5C%22%3A%5C%22layout%3Ahalden-1%5C%22%2C%5C%22revision%5C%22%3A%5C%2295c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22packId%5C%22%3A%5C%22process-plant%5C%22%2C%5C%22modelDigest%5C%22%3A%5C%2247b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea%5C%22%2C%5C%22elementId%5C%22%3A%5C%22turbine%5C%22%2C%5C%22label%5C%22%3A%5C%22Turbine%20Generator%5C%22%2C%5C%22delivery%5C%22%3A%5C%22host%5C%22%2C%5C%22channel%5C%22%3A%5C%225b09cc9a-3705-4d8b-9a10-3027fa92efc3%5C%22%7D%22%7D",
+        "text": "Paused · readings fresh\nClose\nTurbine Generator\nON LINE\nIn window ›\nComponent-level connection\nTurbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam\nComponent-level connection\nTurbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam\nComponent-level connection\nTurbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power\nEquipment\nON LINE\nElec output\nHalden Unit 1 · Electrical output · Turbine\n+5 more in its detail ›",
+        "focus": "header",
+        "childFocused": true
+      },
+      "state": {
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 2,
+        "bspPending": 0,
+        "annotations": {
+          "count": 6,
+          "last": {
+            "at": 4687.700000047684,
+            "strokes": 5,
+            "badges": 2
+          }
+        },
+        "badges": [
+          "Inspect Main Feedwater Pump B: RUN",
+          "Inspect Unit Bus A to Main Feedwater Pump A: not-observed quality"
+        ],
+        "card": "Inspect Turbine Generator",
+        "active": "IFRAME"
+      }
+    },
+    {
+      "name": "native-Escape-closes-ready-iframe-and-restores-map-focus",
+      "extra": {
+        "key": {
+          "key": "Escape",
+          "target": "header",
+          "prevented": true,
+          "childFocused": true,
+          "finalPrevented": true
+        },
+        "close": {
+          "type": "world:layout-inspection-close",
+          "returnFocus": true,
+          "layoutObjectId": "layout:halden-1",
+          "elementId": "turbine",
+          "origin": "http://127.0.0.1:43148",
+          "fromCurrentFrame": false
+        },
+        "focus": "maplibregl-canvas"
+      },
+      "state": {
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 2,
+        "bspPending": 0,
+        "annotations": {
+          "count": 9,
+          "last": {
+            "at": 4706.299999952316,
+            "strokes": 5,
+            "badges": 2
+          }
+        },
+        "badges": [
+          "Inspect Main Feedwater Pump B: RUN",
+          "Inspect Unit Bus A to Main Feedwater Pump A: not-observed quality"
+        ],
+        "active": "CANVAS"
+      }
+    }
+  ],
+  "exceptions": [],
+  "instrumentation": {
+    "/Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world/tests/browser/physical-scene/native-map-loading-instrumentation.ts": "714334f5c3733f0ead3081ed9f3bdcd271930fcd9b96dfb9ae30f514032e7c1a",
+    "/Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world/tests/browser/physical-scene/native-map-route-instrumentation.ts": "c95b08d63222b6aaba435d9b805d3f6ad4c6a150313849e39407220f9fb62acf",
+    "/Users/hilde/Documents/ChatGPT/Leitbild-physical-opacity-proof-20261027/apps/world/tests/browser/physical-scene/opacity-ui-instrumentation.ts": "9b2a75f2de501f0e7bd34b1d4d47793df0eb055b3a33fc9e7c98d3a5b21b8410"
+  }
+}

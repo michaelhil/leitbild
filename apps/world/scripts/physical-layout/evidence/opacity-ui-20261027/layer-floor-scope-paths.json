@@ -1,0 +1,1032 @@
+{
+  "error": "Error: No actual turbine hover target could be established",
+  "steps": [
+    {
+      "name": "opaque-start",
+      "extra": null,
+      "state": {
+        "wall": "1",
+        "floor": "1",
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 2,
+        "bspPending": 0,
+        "annotations": {
+          "count": 0
+        },
+        "badges": [],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "pending-two-slider-intent-preserved",
+      "extra": null,
+      "state": {
+        "wall": "0.44",
+        "floor": "0.32",
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts · Preparing architecture transparency · 1 layout · requested wall 44%, floor 32%; showing wall 100%, floor 100%",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          }
+        ],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 2,
+        "bspPending": 0,
+        "annotations": {
+          "count": 1,
+          "last": {
+            "at": 3643.7999999523163,
+            "strokes": 3,
+            "badges": 3
+          }
+        },
+        "badges": [
+          "Inspect Main Feedwater Pump A: RUN",
+          "Inspect Unit Bus A to Main Feedwater Pump A: not-observed quality",
+          "Inspect Unit Bus B to Condensate Pump B: not-observed quality"
+        ],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "pending-layer-change-preserves-both-sliders",
+      "extra": null,
+      "state": {
+        "wall": "0.44",
+        "floor": "0.32",
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts · Preparing architecture transparency · 1 layout · requested wall 44%, floor 32%; showing wall 100%, floor 100%",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          }
+        ],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 3,
+        "bspPending": 0,
+        "annotations": {
+          "count": 8,
+          "last": {
+            "at": 4469.299999952316,
+            "strokes": 3,
+            "badges": 3
+          }
+        },
+        "badges": [
+          "Inspect Main Feedwater Pump A: RUN",
+          "Inspect Unit Bus A to Main Feedwater Pump A: not-observed quality",
+          "Inspect Unit Bus B to Condensate Pump B: not-observed quality"
+        ],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "pending-floor-change-preserves-intent",
+      "extra": null,
+      "state": {
+        "wall": "0.44",
+        "floor": "0.32",
+        "mode": "3D",
+        "level": "operating",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts · Preparing architecture transparency · 1 layout · requested wall 44%, floor 32%; showing wall 100%, floor 100%",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          }
+        ],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 4,
+        "bspPending": 0,
+        "annotations": {
+          "count": 9,
+          "last": {
+            "at": 4842.799999952316,
+            "strokes": 2,
+            "badges": 8
+          }
+        },
+        "badges": [
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Stop Valve: OPEN"
+        ],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "pending-scope-change-preserves-both-sliders",
+      "extra": null,
+      "state": {
+        "wall": "0.44",
+        "floor": "0.32",
+        "mode": "3D",
+        "level": "operating",
+        "evidence": "Loading this physical layout…",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          }
+        ],
+        "draws": {
+          "count": 0,
+          "buffers": []
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 5,
+        "bspPending": 0,
+        "annotations": {
+          "count": 9,
+          "last": {
+            "at": 4842.799999952316,
+            "strokes": 2,
+            "badges": 8
+          }
+        },
+        "badges": [],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "paused-worker-completion-drawn",
+      "extra": {
+        "posted": 0,
+        "cancelled": 3
+      },
+      "state": {
+        "wall": "0.44",
+        "floor": "0.32",
+        "mode": "3D",
+        "level": "operating",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          }
+        ],
+        "draws": {
+          "count": 2,
+          "last": {
+            "at": 5274.099999904633,
+            "buffer": 690,
+            "staticUploads": 1,
+            "triangles": 5262,
+            "lines": 278,
+            "calls": 3
+          },
+          "buffers": [
+            "690:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 5,
+        "bspPending": 0,
+        "annotations": {
+          "count": 12,
+          "last": {
+            "at": 5275.5,
+            "strokes": 1,
+            "badges": 2
+          }
+        },
+        "badges": [
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE"
+        ],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "warm-slider-job-vbo-reuse",
+      "extra": null,
+      "state": {
+        "wall": "0.65",
+        "floor": "0.32",
+        "mode": "3D",
+        "level": "operating",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          }
+        ],
+        "draws": {
+          "count": 7,
+          "last": {
+            "at": 5353.299999952316,
+            "buffer": 690,
+            "staticUploads": 1,
+            "triangles": 5262,
+            "lines": 278,
+            "calls": 3
+          },
+          "buffers": [
+            "690:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 5,
+        "bspPending": 0,
+        "annotations": {
+          "count": 14,
+          "last": {
+            "at": 5322.599999904633,
+            "strokes": 1,
+            "badges": 2
+          }
+        },
+        "badges": [],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "explicit-failure-retains-opaque-model",
+      "extra": null,
+      "state": {
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "RetryPaused · fresh · 260 modelled subjects · 0 owner alerts · Architecture transparency unavailable: Controlled isolated architecture worker failure · 1 layout · requested wall 65%, floor 32%; showing wall 100%, floor 100%",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 5,
+            "sources": 49,
+            "requested": 6021.5,
+            "held": false,
+            "posted": 6021.5,
+            "controlledFailure": true,
+            "response": "error",
+            "finished": 6024.099999904633,
+            "terminated": 6024.199999809265,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          }
+        ],
+        "draws": {
+          "count": 7,
+          "last": {
+            "at": 5353.299999952316,
+            "buffer": 690,
+            "staticUploads": 1,
+            "triangles": 5262,
+            "lines": 278,
+            "calls": 3
+          },
+          "buffers": [
+            "690:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 6,
+        "bspPending": 0,
+        "annotations": {
+          "count": 15,
+          "last": {
+            "at": 5357.699999809265,
+            "strokes": 1,
+            "badges": 2
+          }
+        },
+        "badges": [],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "real-scoped-Retry-recovers",
+      "extra": null,
+      "state": {
+        "mode": "3D",
+        "level": "lower",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 5,
+            "sources": 49,
+            "requested": 6021.5,
+            "held": false,
+            "posted": 6021.5,
+            "controlledFailure": true,
+            "response": "error",
+            "finished": 6024.099999904633,
+            "terminated": 6024.199999809265,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 6,
+            "sources": 49,
+            "requested": 6047,
+            "held": false,
+            "posted": 6047,
+            "response": "prepared",
+            "finished": 6079.199999809265,
+            "terminated": 6080,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          }
+        ],
+        "draws": {
+          "count": 10,
+          "last": {
+            "at": 6131.5,
+            "buffer": 714,
+            "staticUploads": 1,
+            "triangles": 1398,
+            "lines": 440,
+            "calls": 76
+          },
+          "buffers": [
+            "690:1",
+            "714:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 6,
+        "bspPending": 0,
+        "annotations": {
+          "count": 21,
+          "last": {
+            "at": 6082.199999809265,
+            "strokes": 12,
+            "badges": 2
+          }
+        },
+        "badges": [],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "Plan-cancels-stale-pending-cohort",
+      "extra": null,
+      "state": {
+        "mode": "Plan",
+        "level": "operating",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 5,
+            "sources": 49,
+            "requested": 6021.5,
+            "held": false,
+            "posted": 6021.5,
+            "controlledFailure": true,
+            "response": "error",
+            "finished": 6024.099999904633,
+            "terminated": 6024.199999809265,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 6,
+            "sources": 49,
+            "requested": 6047,
+            "held": false,
+            "posted": 6047,
+            "response": "prepared",
+            "finished": 6079.199999809265,
+            "terminated": 6080,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 7,
+            "sources": 59,
+            "requested": 6171.699999809265,
+            "held": true,
+            "terminated": 6185.699999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          }
+        ],
+        "draws": {
+          "count": 11,
+          "last": {
+            "at": 6165.399999856949,
+            "buffer": 714,
+            "staticUploads": 1,
+            "triangles": 1398,
+            "lines": 440,
+            "calls": 76
+          },
+          "buffers": [
+            "690:1",
+            "714:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 6,
+        "bspPending": 0,
+        "annotations": {
+          "count": 29,
+          "last": {
+            "at": 6232.299999952316,
+            "strokes": 510,
+            "badges": 13
+          }
+        },
+        "badges": [
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Stop Valve: OPEN"
+        ],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "fresh-3D-after-cancel",
+      "extra": null,
+      "state": {
+        "mode": "3D",
+        "level": "operating",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 5,
+            "sources": 49,
+            "requested": 6021.5,
+            "held": false,
+            "posted": 6021.5,
+            "controlledFailure": true,
+            "response": "error",
+            "finished": 6024.099999904633,
+            "terminated": 6024.199999809265,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 6,
+            "sources": 49,
+            "requested": 6047,
+            "held": false,
+            "posted": 6047,
+            "response": "prepared",
+            "finished": 6079.199999809265,
+            "terminated": 6080,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 7,
+            "sources": 59,
+            "requested": 6171.699999809265,
+            "held": true,
+            "terminated": 6185.699999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 8,
+            "sources": 59,
+            "requested": 6240.299999952316,
+            "held": false,
+            "posted": 6240.299999952316,
+            "response": "prepared",
+            "finished": 6295.699999809265,
+            "terminated": 6297.599999904633,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          }
+        ],
+        "draws": {
+          "count": 15,
+          "last": {
+            "at": 6352.899999856949,
+            "buffer": 750,
+            "staticUploads": 1,
+            "triangles": 5220,
+            "lines": 278,
+            "calls": 3
+          },
+          "buffers": [
+            "690:1",
+            "714:1",
+            "750:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 6,
+        "bspPending": 0,
+        "annotations": {
+          "count": 32,
+          "last": {
+            "at": 6307.199999809265,
+            "strokes": 2,
+            "badges": 7
+          }
+        },
+        "badges": [
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE"
+        ],
+        "active": "BODY"
+      }
+    },
+    {
+      "name": "fractional-hall-visual",
+      "extra": null,
+      "state": {
+        "mode": "3D",
+        "level": "operating",
+        "evidence": "Paused · fresh · 260 modelled subjects · 0 owner alerts",
+        "jobs": [
+          {
+            "id": 1,
+            "sources": 95,
+            "requested": 3606.7999999523163,
+            "held": true,
+            "terminated": 4453,
+            "cancelledBeforePost": true,
+            "keySha256": "4ccff8a9e0a10ca8776237e7b8d2141f41eb7e54aaaa339314a47775f0fa07d0",
+            "keyBytes": 26071
+          },
+          {
+            "id": 2,
+            "sources": 95,
+            "requested": 4453.699999809265,
+            "held": true,
+            "terminated": 4481.199999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "738d76940c351157a6ae78b14e4542e05fe6ab6870c91bc11384ae8a678dce0c",
+            "keyBytes": 28256
+          },
+          {
+            "id": 3,
+            "sources": 59,
+            "requested": 4821,
+            "held": true,
+            "terminated": 4862.799999952316,
+            "cancelledBeforePost": true,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          },
+          {
+            "id": 4,
+            "sources": 59,
+            "requested": 5178.599999904633,
+            "held": false,
+            "posted": 5178.699999809265,
+            "response": "prepared",
+            "finished": 5247.5,
+            "terminated": 5251.799999952316,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 5,
+            "sources": 49,
+            "requested": 6021.5,
+            "held": false,
+            "posted": 6021.5,
+            "controlledFailure": true,
+            "response": "error",
+            "finished": 6024.099999904633,
+            "terminated": 6024.199999809265,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 6,
+            "sources": 49,
+            "requested": 6047,
+            "held": false,
+            "posted": 6047,
+            "response": "prepared",
+            "finished": 6079.199999809265,
+            "terminated": 6080,
+            "keySha256": "6c0412660f21cdcf980b9ee956440c7ec7e568d8cbbc824346b46b3ce041eac9",
+            "keyBytes": 14681
+          },
+          {
+            "id": 7,
+            "sources": 59,
+            "requested": 6171.699999809265,
+            "held": true,
+            "terminated": 6185.699999809265,
+            "cancelledBeforePost": true,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 8,
+            "sources": 59,
+            "requested": 6240.299999952316,
+            "held": false,
+            "posted": 6240.299999952316,
+            "response": "prepared",
+            "finished": 6295.699999809265,
+            "terminated": 6297.599999904633,
+            "keySha256": "ca6e9e0ddb3156ac1e9b34e357bf980d5fc92cfa8a78c66b7395ef728cfd3e02",
+            "keyBytes": 17896
+          },
+          {
+            "id": 9,
+            "sources": 59,
+            "requested": 6364.5,
+            "held": false,
+            "posted": 6364.5,
+            "response": "prepared",
+            "finished": 6423.099999904633,
+            "terminated": 6424.099999904633,
+            "keySha256": "a908c2595adb78ee98eb66a3a8c3b67f079503502fa70e4cd361e3dc6a7927ca",
+            "keyBytes": 17778
+          }
+        ],
+        "draws": {
+          "count": 24,
+          "last": {
+            "at": 6585.899999856949,
+            "buffer": 771,
+            "staticUploads": 1,
+            "triangles": 5262,
+            "lines": 278,
+            "calls": 3
+          },
+          "buffers": [
+            "690:1",
+            "714:1",
+            "750:1",
+            "771:1"
+          ]
+        },
+        "sourceJobs": 1,
+        "geometryJobs": 6,
+        "bspPending": 0,
+        "annotations": {
+          "count": 36,
+          "last": {
+            "at": 6508,
+            "strokes": 2,
+            "badges": 8
+          }
+        },
+        "badges": [
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Generator: ON LINE",
+          "Inspect Turbine Stop Valve: OPEN"
+        ],
+        "active": "BODY"
+      }
+    }
+  ],
+  "exceptions": []
+}
