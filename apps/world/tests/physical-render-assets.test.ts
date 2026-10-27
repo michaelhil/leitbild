@@ -41,7 +41,7 @@ const harness = (kind: 'map' | 'canvas' = 'canvas', tagScopedTraces = false) => 
   const controller = createPhysicalSceneControllerForViewport(viewport, { palette: { materials: {}, defaultMaterial: [.5, .5, .5], line: [0, 0, 0] }, onChange() {}, reportError(error) { errors.push(error) },
     prepare: async (value, view, key, identity, _sourceKey, signal) => { signals.push(signal); requests.push({key,view,sourceKey:_sourceKey,signal}); if (failPreparation) { failPreparation = false; throw Error('Preparation rejected') }; const prior = cache.get(key); if (prior) return prior; prepares++; if (waitForPreparation) await waitForPreparation; const { scopeId, ...unscopedView } = view; const base = preparePhysicalGeometry(value, tagScopedTraces ? unscopedView : view, key, identity), asset = tagScopedTraces && scopeId ? { ...base, meshes:base.meshes.map(mesh => mesh.object.clipToScope ? { ...mesh, inspectionScopeId:scopeId } : mesh) } : base; cache.set(key, asset); return asset } })
   const source = (value: PackPhysicalScene) => { const { objects: _, ...metadata } = value; return { descriptor: { ...metadata, geometryKey: 'same-template', inspectionFeatureMetres: 1, locationValid: true, subjectIds: value.objects.flatMap(o => o.subjectIds), modelDigest: 'm' }, load: async () => value } }
-  return { controller, source, highlights, projectionCalls, renders: () => renders, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
+  return { controller, source, forgetDiscovered: () => cache.clear(), highlights, projectionCalls, renders: () => renders, fits, fitBounds, tools, poses, signals, requests, planarity, cameraEvents, hold, scale: (value: number) => { projectScale = value }, errors, failPreparation: () => { failPreparation = true }, failRenderer: () => rendererError?.(Error('Renderer rejected')), entries: () => getEntries(), prepares: () => prepares, paletteUpdates: () => paletteUpdates }
 }
 const settled = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
@@ -400,4 +400,20 @@ test('transient highlights and occurrence path projection never request new geom
   h.controller.setSources([{ ...source, descriptor: { ...source.descriptor, revision: 'next' }, load: async () => ({ ...value, revision: 'next' }) }]); expect(h.highlights.at(-1)).toBeNull(); await settled()
   h.controller.setHighlight(highlight); h.controller.setSources([]); expect(h.highlights.at(-1)).toBeNull()
   h.controller.destroy()
+})
+
+
+test('active inspection reuses Plan and spatial assets independently of shared-cache discovery and prunes old floors/scopes', async () => {
+  const h = harness(), value = scene('a'), source = h.source(value), view = { ...defaultPhysicalSceneView(value.levels), mode: '3d' as const }
+  h.controller.setSources([source]); h.controller.setView('a', view); h.controller.selectScope('a'); await settled()
+  h.controller.setView('a', { ...view, mode: '2d' }); await settled()
+  expect(h.controller.diagnostics().inspectionWorkingSet.uniqueViews).toBe(2)
+  const requests = h.requests.length; h.forgetDiscovered()
+  h.controller.setView('a', view); await settled(); expect(h.requests).toHaveLength(requests)
+  h.controller.setView('a', { ...view, mode: '2d' }); await settled(); expect(h.requests).toHaveLength(requests)
+  h.controller.setView('a', { ...view, mode: '2d', levelId: 'upper' }); await settled()
+  expect(h.controller.diagnostics().inspectionWorkingSet.uniqueViews).toBe(2)
+  h.controller.selectScope('a', 'a'); expect(h.controller.diagnostics().inspectionWorkingSet.uniqueViews).toBeLessThanOrEqual(1)
+  h.controller.setSources([]); expect(h.controller.diagnostics().inspectionWorkingSet.bytes).toBe(0)
+  h.controller.destroy(); expect(h.controller.diagnostics().inspectionWorkingSet.representations).toBe(0)
 })
