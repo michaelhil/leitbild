@@ -49,7 +49,7 @@
   const draw = WebGL2RenderingContext.prototype.drawArraysInstanced
   WebGL2RenderingContext.prototype.drawArraysInstanced = function (...args: Parameters<WebGL2RenderingContext['drawArraysInstanced']>) {
     const result = draw.apply(this, args), s = state(this), buffer = s.vao ? vaos.get(s.vao) : undefined, meta = buffer ? buffers.get(buffer) : undefined, instance = s.vao ? instanceVao.get(s.vao) : undefined, values = instance ? matrices.get(instance) : undefined
-    if (args[0] === this.TRIANGLES && meta?.key === q.key && values) { q.currentDrawKey=meta.key;q.lastDrawAt=performance.now();q.matrix = Array.from(values.slice(0, 16)); q.instances = args[3] }
+    if (args[0] === this.TRIANGLES && meta && meta.key === q.key && values) { q.currentDrawKey=meta.key;q.lastDrawAt=performance.now();q.matrix = Array.from(values.slice(0, 16)); q.instances = args[3] }
     return result
   }
   q.projected = () => {
