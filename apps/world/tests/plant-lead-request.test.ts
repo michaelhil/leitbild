@@ -12,10 +12,10 @@ import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-res
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { composeDefault } from '../src/features/displays/compose/compose.ts'
-import { leadRefs } from '../src/features/displays/compose/defaults.ts'
+import { leadRefs, planElementLeads, planLead, readLeads } from '../src/features/displays/compose/defaults.ts'
 import { zoneRows, type VignetteState, type VignetteView } from '../src/features/displays/compose/model.ts'
 import { compileVignette, sampleVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
-import { OBSERVATION_READ_REFS } from '../src/core/observation/capabilities.ts'
+import { OBSERVATION_READ_REFS, observationShapes } from '../src/core/observation/capabilities.ts'
 import { requestPort, type ObservationPort } from '../src/features/displays/observation/port.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
@@ -61,6 +61,51 @@ const valuesOf = (view: VignetteView): ReadonlyArray<string> => {
   return section?.kind === 'values' ? section.values.map(value => path(value.ref)) : []
 }
 const rowsOf = (view: VignetteView) => view.sections.map(section => `${section.kind} ${section.rows}`)
+
+test('whole-plant lead planning batches declarations without changing readings, ranking or parent leads', async () => {
+  const current = await runNow()
+  const declaration = (await current.port.declarations([plantId]))[0]!
+  if ('refused' in declaration) throw new Error(declaration.refused.message)
+  const elements = declaration.elements.map(element => element.id)
+  expect(elements.length).toBeGreaterThan(256)
+  expect(observationShapes.declarations.input.parse({ objectIds: [plantId], elementIds: elements }).elementIds).toEqual(elements)
+  const collect = async (bulk: boolean, ids = elements, objectId = plantId) => {
+    const port = runtime.observations(person), calls: Array<ReadonlyArray<string> | undefined> = []
+    const run: ViewRun = { ...current, port: requestPort({ ...port, declarations: async (objects, ids) => { calls.push(ids); return port.declarations(objects, ids) } }) }
+    const plans = bulk ? await planElementLeads(run, objectId, ids) : await Promise.all(ids.map(element => planLead(run, { objectId, element })))
+    const reading = await readLeads(run, plans)
+    return { calls, refs: plans.map(plan => plan.refs), tables: plans.map(plan => plan.table), reading }
+  }
+  const before = await collect(false), after = await collect(true)
+  expect(after.refs).toEqual(before.refs)
+  expect(after.tables).toEqual(before.tables)
+  expect(after.reading).toEqual(before.reading)
+  expect(after.calls.filter(ids => ids !== undefined)).toHaveLength(1)
+  expect(before.calls.length).toBeGreaterThan(elements.length)
+  expect(after.calls.length).toBe(2)
+  const child = declaration.elements.find(element => element.parent !== undefined)!
+  expect(child).toBeDefined()
+  const childBefore = await collect(false, [child.id]), childAfter = await collect(true, [child.id])
+  expect(childAfter.refs).toEqual(childBefore.refs)
+  expect(childAfter.reading).toEqual(childBefore.reading)
+  expect(childAfter.calls.some(ids => ids?.includes(child.parent!))).toBe(true)
+  const grid = current.objects.find(object => object.packId === 'electric-grid')!
+  const gridDeclaration = (await current.port.declarations([grid.id]))[0]!
+  if ('refused' in gridDeclaration) throw new Error(gridDeclaration.refused.message)
+  const gridElements = gridDeclaration.elements.map(element => element.id)
+  const gridBefore = await collect(false, gridElements, grid.id), gridAfter = await collect(true, gridElements, grid.id)
+  expect(gridAfter.refs).toEqual(gridBefore.refs)
+  expect(gridAfter.reading).toEqual(gridBefore.reading)
+  const refused: ViewRun = { ...current, port: { ...current.port, declarations: async (objects, ids) => ids === undefined ? current.port.declarations(objects) : objects.map(objectId => ({ objectId, refused: { code: 'restricted', message: 'Not admitted' } })) } }
+  await expect(planElementLeads(refused, plantId, elements)).rejects.toThrow('did not admit')
+  const changed: ViewRun = { ...current, port: { ...current.port, declarations: async (objects, ids) => (await current.port.declarations(objects, ids)).map(entry => ids !== undefined && !('refused' in entry) ? { ...entry, revision: 'changed' } : entry) } }
+  await expect(planElementLeads(changed, plantId, elements)).rejects.toThrow('changed during')
+  let deniedCalls = 0
+  const denied: ViewRun = { ...current, denied: new Set([plantId]), port: { ...current.port, declarations: async () => { deniedCalls++; throw new Error('A denied owner must not be queried') } } }
+  const deniedPlans = await planElementLeads(denied, plantId, elements)
+  expect(deniedPlans.every(plan => plan.refs.length === 0)).toBe(true)
+  expect(deniedCalls).toBe(0)
+})
 
 describe('a display opened at power and left open through a trip (W0.5)', () => {
   test('within one sample its lead rows take the post-trip set, and the core and the turbine lead with what verifies their trip, in the same rows', async () => {

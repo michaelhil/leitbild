@@ -67,7 +67,7 @@ export const declaredRefs = async (run: SearchRun, refs: ReadonlyArray<string>):
     }
     add(base)
     const missing = refs.filter(ref => refObjectId(ref) === objectId && !found.has(ref)).map(ref => ref.slice(ref.indexOf('#') + 1))
-    const asked = base.elements.filter(element => missing.some(signal => signal.includes(element.id))).map(element => element.id).slice(0, 256)
+    const asked = base.elements.filter(element => missing.some(signal => signal.includes(element.id))).map(element => element.id)
     if (asked.length > 0) {
       const extended = await declarationOf(run, objectId, asked)
       if (extended !== null) add(extended)

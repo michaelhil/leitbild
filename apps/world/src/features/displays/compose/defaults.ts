@@ -157,6 +157,33 @@ export const planLead = async (run: ComposeRun, lead: LeadRequest, rows = LEAD_R
   }
 }
 
+/** Plan one owner's complete element demand from one caller-authorized batch.
+ * The batch lives only for this request. Per-element ranking, parent leads,
+ * deferred refs and the eventual live read still use the ordinary composer.
+ * Re-querying the same owner once per element repeats capability admission and
+ * declaration construction, and makes large models churn subset caches. */
+export const planElementLeads = async (run: ComposeRun, objectId: ObjectId, elementIds: ReadonlyArray<string>, rows = LEAD_ROWS): Promise<ReadonlyArray<LeadPlan>> => {
+  if (elementIds.length === 0) return []
+  if (visibleObject(run, objectId) === undefined) return Promise.all(elementIds.map(element => planLead(run, { objectId, element }, rows)))
+  const base = await declarationOf(run, objectId)
+  if (base === null) throw new Error('The owner did not admit an element lead declaration')
+  const children = new Set(elementIds), requested = new Set(elementIds)
+  for (const element of base.elements) if (children.has(element.id) && element.parent !== undefined) requested.add(element.parent)
+  const declaration = await declarationOf(run, objectId, [...requested])
+  if (declaration === null) throw new Error('The owner did not admit the requested element declarations')
+  if (base.revision !== declaration.revision) throw new Error('Owner declarations changed during element lead planning')
+  const port = run.port
+  const planned: ComposeRun = { ...run, port: { ...port, declarations: async (objects, elements) => {
+    // This is already admitted metadata from the SAME caller/request, not a
+    // cross-request cache or permission to serve another owner's declaration.
+    if (objects.every(id => id === objectId) && elements !== undefined && elements.every(id => requested.has(id))) {
+      return objects.map(() => declaration)
+    }
+    return port.declarations(objects, elements)
+  } } }
+  return Promise.all(elementIds.map(element => planLead(planned, { objectId, element }, rows)))
+}
+
 /** The rows an element's declared table takes: its head and a row a line; none without one. */
 export const tableRows = (table: ElementTable | undefined): number => (table === undefined ? 0 : 1 + table.lines.length)
 

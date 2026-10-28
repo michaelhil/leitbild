@@ -62,8 +62,10 @@ export const observationDeclarationSchema = z.object({
   objectId: objectIdSchema,
   /** Changes whenever anything declared changes: plant model digest, grid build id, weather probe set. */
   revision: revisionSchema,
-  observables: z.array(observableSchema).max(4096),
-  elements: z.array(observationElementSchema).max(20_000).default([]),
+  // A declaration describes its admitted owner model, rather than one value
+  // packet. Validate every member and its ownership without truncating models.
+  observables: z.array(observableSchema),
+  elements: z.array(observationElementSchema).default([]),
   /** How its alerts are annunciated (annunciation.ts); absent where its Pack declares none. */
   annunciation: annunciationSchema.optional(),
 }).strict().superRefine((declaration, context) => {
@@ -90,7 +92,9 @@ export const observationShapes = {
   declarations: shape(
     z.object({
       objectIds: z.array(objectIdSchema).min(1).max(16),
-      elementIds: z.array(z.string().min(1).max(200)).max(256).optional(),
+      // A whole admitted model can contain any number of elements. The owner
+      // validates their identities; the HTTP boundary bounds request bytes.
+      elementIds: z.array(z.string().min(1).max(200)).optional(),
       /** objectId → the revision the caller holds; the Pack answers `unchanged` for it. */
       known: z.record(idSchema, revisionSchema).optional(),
     }).strict(),

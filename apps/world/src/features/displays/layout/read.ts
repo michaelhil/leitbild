@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { SimulationRunId } from '../../../core/model/index.ts'
 import type { PackPhysicalSceneDescriptor } from '../../../core/packs/scene.ts'
 import { declarationOf, declaredRefs, valueOf, visibleObject } from '../compose/declared.ts'
-import { planLead, readLeads } from '../compose/defaults.ts'
+import { planElementLeads, readLeads } from '../compose/defaults.ts'
 import type { VignetteElement, VignetteSample, VignetteValue } from '../compose/model.ts'
 import { sampleVignette, type ViewRun } from '../compose/view.ts'
 import type { LayoutSubjectTopology, LayoutSubjectTopologyStructure } from './operation.ts'
@@ -86,7 +86,7 @@ export const readLayout = async (run: ViewRun, descriptor: PackPhysicalSceneDesc
   if (!('refused' in graph) && graph.objectId !== owner.id) return refuse('layout_topology_owner_mismatch', 'The layout topology belongs to another operational owner')
   const topologies: ReadonlyMap<string, LayoutSubjectTopologyStructure> = 'refused' in graph ? new Map() : layoutSubjectTopologies(graph, descriptor.subjectIds)
   const semanticRefs = [...new Set([...topologies.values()].flatMap(layoutTopologyRefs))]
-  const plans = await Promise.all(elements.map(element => planLead(run, { objectId: owner.id, element: element.id }, 8)))
+  const plans = await planElementLeads(run, owner.id, elements.map(element => element.id), 8)
   const reading = await readLeads(run, plans, semanticRefs)
   // A lead plan may describe its entire ordered pool, while its acquisition is
   // bounded to the requested eight rows. Do not advertise unacquired values as
