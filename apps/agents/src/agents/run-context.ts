@@ -4,8 +4,9 @@
  * a Module marks `publishes: ['context']`. Exactly one in scope is read;
  * otherwise exactly one among the focused subjects; otherwise the turn gets a
  * one-line note, never a guess. A refusal or a 3 s timeout is a note too. The
- * read goes through the Host broker as the Agent, is never cached across
- * turns and is not stored: the turn's model reads it, no record keeps it.
+ * read goes through the Host broker as the Agent and is never cached across
+ * turns. Exact live requests retain the supplied context in the Inspector;
+ * comparison starting input deliberately omits that automatic live block.
  */
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { createContextPublisherLookup } from '../tools/built-in/workspace-capability-tools.ts'

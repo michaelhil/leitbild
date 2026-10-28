@@ -605,8 +605,9 @@ export const createAIAgent = (
         const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
         const deps = contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction)
         const initialContext = buildContext({ ...deps, ...(runContext === undefined ? {} : { runContext }) }, triggerRoomId)
-        // The Run context is not stored (owner, 20 Oct): a comparison record keeps the turn's input without it. That
-        // build counts no metrics twice.
+        // Comparison starting input omits the automatic Run context (owner,
+        // 20 Oct); exact live Inspector requests retain what the model reads.
+        // This separate build counts no metrics twice.
         const { metricsSink: _counted, ...quiet } = deps
         const captured = runContext === undefined ? undefined : buildContext(quiet, triggerRoomId)
         // Only prior replay uses the working target. During a tool turn, keep
