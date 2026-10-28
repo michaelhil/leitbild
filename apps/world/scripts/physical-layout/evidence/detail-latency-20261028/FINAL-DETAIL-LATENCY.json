@@ -1,0 +1,1214 @@
+{
+  "applicationSource": "53b443ed9709069139acfa2ddbd22bbb79a7f3cb",
+  "comparison": {
+    "scope": "One same-retained-R5 local Plan-ready to first3D comparison; same all-utility source/observer, fresh browser in each run.",
+    "beforeApp": "b748ae05e39eeb7bc3172bb20981f74753c15c09",
+    "afterApp": "53b443ed9709069139acfa2ddbd22bbb79a7f3cb",
+    "sourcePins": {
+      "unit": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "campus": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "sameObserverSha256": "89c43ccee57d36339013eba73fe1c272378b4256c69a11a77bb20256ffbc8a70",
+    "zeroPrior3dPreparationGuard": true,
+    "before": {
+      "name": "first-3d-after-cold-plan",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "readyCount": 5,
+        "sourceInstances": [
+          1,
+          4
+        ],
+        "layers": [
+          "utility-routes"
+        ]
+      },
+      "started": 5470.700000047684,
+      "actionToFirstDrawMs": 4527.900000095367,
+      "actionToAllRequiredSourcesFirstDrawMs": 7481,
+      "actionToGpuCompletedMs": 7771,
+      "preparedAfterAction": true,
+      "pending": 0,
+      "glError": 0,
+      "jobs": [
+        {
+          "kind": "register",
+          "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+          "responseMs": 1854.8999998569489,
+          "postMs": 28.399999856948853,
+          "transferBytes": 24626016
+        },
+        {
+          "kind": "register",
+          "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+          "responseMs": 1716,
+          "postMs": 11.899999856948853,
+          "transferBytes": 27598236
+        },
+        {
+          "kind": "prepare",
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true,
+            "surroundings": false,
+            "hiddenLayerIds": [
+              "plan-allowances",
+              "roof-structure"
+            ]
+          },
+          "responseMs": 2652.2999999523163,
+          "postMs": 0.09999990463256836,
+          "transferBytes": 0,
+          "cpuBytes": 56501704,
+          "renderBytes": 18587088,
+          "meshes": 1879
+        },
+        {
+          "kind": "prepare",
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true,
+            "surroundings": false,
+            "hiddenLayerIds": [
+              "roof-structure"
+            ]
+          },
+          "responseMs": 5390.799999952316,
+          "postMs": 0,
+          "transferBytes": 0,
+          "cpuBytes": 97411832,
+          "renderBytes": 29142096,
+          "meshes": 3853
+        }
+      ],
+      "sourceDraws": [
+        {
+          "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+          "firstAt": 9998.600000143051,
+          "instances": 1
+        },
+        {
+          "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+          "firstAt": 12951.700000047684,
+          "instances": 4
+        }
+      ]
+    },
+    "after": {
+      "name": "first-3d-after-cold-plan",
+      "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+      "expected": {
+        "mode": "3d",
+        "levelId": "all",
+        "readyCount": 5,
+        "sourceInstances": [
+          1,
+          4
+        ],
+        "layers": [
+          "utility-routes"
+        ]
+      },
+      "started": 3375.7000000476837,
+      "actionToFirstDrawMs": 2080.5999999046326,
+      "actionToAllRequiredSourcesFirstDrawMs": 2987.5999999046326,
+      "actionToGpuCompletedMs": 3015.5,
+      "preparedAfterAction": true,
+      "pending": 0,
+      "glError": 0,
+      "jobs": [
+        {
+          "kind": "register",
+          "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+          "responseMs": 955,
+          "postMs": 19.5,
+          "transferBytes": 24626016
+        },
+        {
+          "kind": "register",
+          "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+          "responseMs": 893.6000001430511,
+          "postMs": 7.200000047683716,
+          "transferBytes": 27598236
+        },
+        {
+          "kind": "prepare",
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true,
+            "surroundings": false,
+            "hiddenLayerIds": [
+              "plan-allowances",
+              "roof-structure"
+            ]
+          },
+          "responseMs": 1080.3000001907349,
+          "postMs": 0,
+          "transferBytes": 0,
+          "cpuBytes": 56501704,
+          "renderBytes": 18587088,
+          "meshes": 1879
+        },
+        {
+          "kind": "prepare",
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true,
+            "surroundings": false,
+            "hiddenLayerIds": [
+              "roof-structure"
+            ]
+          },
+          "responseMs": 1917.6000001430511,
+          "postMs": 0,
+          "transferBytes": 0,
+          "cpuBytes": 97411832,
+          "renderBytes": 29142096,
+          "meshes": 3853
+        }
+      ],
+      "sourceDraws": [
+        {
+          "sourceKey": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/detail",
+          "firstAt": 5456.299999952316,
+          "instances": 1
+        },
+        {
+          "sourceKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/detail",
+          "firstAt": 6363.299999952316,
+          "instances": 4
+        }
+      ]
+    },
+    "observedHostNavigation": {
+      "beforeAllSourcesDrawMs": 13317.699951171875,
+      "afterAllSourcesDrawMs": 6674.400146484375,
+      "beforeAllSourcesGpuFenceMs": 13607.699951171875,
+      "afterAllSourcesGpuFenceMs": 6702.300048828125,
+      "controlLimit": "Baseline backend had already restored this paused Run during diagnostic attempts; candidate backend was restarted. These observed navigation timelines are preserved, but are not a controlled navigation-speedup comparison."
+    },
+    "bundles": {
+      "preparationWorkerBeforeKB": 140.28,
+      "preparationWorkerAfterKB": 42.5,
+      "sourceCompilerWorkerKB": 260.72,
+      "sourceCompilerWorkerArtifactUnchanged": "source-compile.worker-DKsGrqB4.js"
+    },
+    "noRuntimeExceptions": true,
+    "physicalWorkersAfterClosure": [
+      [],
+      []
+    ],
+    "raw": [
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/baseline-plan-first-light/receipt.json",
+        "sha256": "d784668aa1d5c4383fe66923b8eacd0b828997bc7ae341c0bcc9ecc6553427ab",
+        "bytes": 79999
+      },
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/candidate-53b-r5-plan-first-light/receipt.json",
+        "sha256": "5d622cdb60b1fd4ee91e8c5b458b9320b2dd89e55b0e8f905f2a69a04f5f8c24",
+        "bytes": 75026
+      }
+    ]
+  },
+  "r6": {
+    "unitDesign": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+    "campusDesign": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41",
+    "freshWorkspaceAndPausedRun": true,
+    "firstRestoredCold": {
+      "backendRestartedBeforeNavigation": true,
+      "actions": [
+        {
+          "name": "cold-plan-first",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "readyCount": 5
+          },
+          "started": 2303.7999999523163,
+          "actionToFirstInkMs": 931.6000001430511,
+          "actionToPaintOpportunityMs": 1578,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "first-3d-after-cold-plan",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "readyCount": 5,
+            "sourceInstances": [
+              1,
+              4
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 3895.2999999523163,
+          "actionToFirstDrawMs": 2076.2999999523163,
+          "actionToAllRequiredSourcesFirstDrawMs": 3191.100000143051,
+          "actionToGpuCompletedMs": 3217.7999999523163,
+          "preparedAfterAction": true,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [
+            {
+              "kind": "register",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "responseMs": 963.2999999523163,
+              "postMs": 18.799999952316284,
+              "transferBytes": 25323840
+            },
+            {
+              "kind": "register",
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "responseMs": 895.0999999046326,
+              "postMs": 7.1000001430511475,
+              "transferBytes": 27598236
+            },
+            {
+              "kind": "prepare",
+              "key": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "all",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "plan-allowances",
+                  "roof-structure"
+                ]
+              },
+              "responseMs": 1077,
+              "postMs": 0,
+              "transferBytes": 0,
+              "cpuBytes": 56501704,
+              "renderBytes": 18587088,
+              "meshes": 1879
+            },
+            {
+              "kind": "prepare",
+              "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "all",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure"
+                ]
+              },
+              "responseMs": 2093.2000000476837,
+              "postMs": 0,
+              "transferBytes": 0,
+              "cpuBytes": 98338696,
+              "renderBytes": 29479104,
+              "meshes": 4133
+            }
+          ],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "firstAt": 5971.599999904633,
+              "instances": 1
+            },
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7086.400000095367,
+              "instances": 4
+            }
+          ]
+        },
+        {
+          "name": "all-utility-first-plan",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "readyCount": 5,
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7297.200000047684,
+          "actionToFirstInkMs": 64.5,
+          "actionToPaintOpportunityMs": 319.59999990463257,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "all-utility-return-3d",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "readyCount": 5,
+            "sourceInstances": [
+              1,
+              4
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7645.599999904633,
+          "actionToFirstDrawMs": 70.40000009536743,
+          "actionToAllRequiredSourcesFirstDrawMs": 70.5,
+          "actionToGpuCompletedMs": 91.70000004768372,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7716,
+              "instances": 4
+            },
+            {
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "firstAt": 7716.099999904633,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "all-utility-warm-plan",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "readyCount": 5,
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7758.799999952316,
+          "actionToFirstInkMs": 20.40000009536743,
+          "actionToPaintOpportunityMs": 230.20000004768372,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "all-utility-gc-return-3d",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "readyCount": 5,
+            "sourceInstances": [
+              1,
+              4
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 8120.599999904633,
+          "actionToFirstDrawMs": 68.5,
+          "actionToAllRequiredSourcesFirstDrawMs": 68.5,
+          "actionToGpuCompletedMs": 103.10000014305115,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 8189.099999904633,
+              "instances": 4
+            },
+            {
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "firstAt": 8189.099999904633,
+              "instances": 1
+            }
+          ]
+        }
+      ],
+      "hostNavigationMs": null,
+      "limit": "Valid cold/mode/GC milestones are retained from the first run. A later focused DOM ready-count test error stopped that run before its final navigation summary; no cold navigation number is invented."
+    },
+    "floorGate": {
+      "floorGateOnly": true,
+      "backendAlreadyRestored": true,
+      "actions": [
+        {
+          "name": "cold-plan-first",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "readyCount": 5
+          },
+          "started": 1468.2000000476837,
+          "actionToFirstInkMs": 929.7999999523163,
+          "actionToPaintOpportunityMs": 1555.8999998569489,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "first-3d-after-cold-plan",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "readyCount": 5,
+            "sourceInstances": [
+              1,
+              4
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 3060.5999999046326,
+          "actionToFirstDrawMs": 1841.7000000476837,
+          "actionToAllRequiredSourcesFirstDrawMs": 2906.4000000953674,
+          "actionToGpuCompletedMs": 2933.4000000953674,
+          "preparedAfterAction": true,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [
+            {
+              "kind": "register",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "responseMs": 764.7999999523163,
+              "postMs": 20.700000047683716,
+              "transferBytes": 25323840
+            },
+            {
+              "kind": "register",
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "responseMs": 723,
+              "postMs": 7.099999904632568,
+              "transferBytes": 27598236
+            },
+            {
+              "kind": "prepare",
+              "key": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "all",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "plan-allowances",
+                  "roof-structure"
+                ]
+              },
+              "responseMs": 1035.5,
+              "postMs": 0.09999990463256836,
+              "transferBytes": 0,
+              "cpuBytes": 56501704,
+              "renderBytes": 18587088,
+              "meshes": 1879
+            },
+            {
+              "kind": "prepare",
+              "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "all",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure"
+                ]
+              },
+              "responseMs": 2029.6999998092651,
+              "postMs": 0,
+              "transferBytes": 0,
+              "cpuBytes": 98338696,
+              "renderBytes": 29479104,
+              "meshes": 4133
+            }
+          ],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+              "firstAt": 4902.299999952316,
+              "instances": 1
+            },
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 5967,
+              "instances": 4
+            }
+          ]
+        },
+        {
+          "name": "first-turbine-hall-focus",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 6085.099999904633,
+          "actionToFirstDrawMs": 1105.5,
+          "actionToAllRequiredSourcesFirstDrawMs": 1105.5,
+          "actionToGpuCompletedMs": 1131.5,
+          "preparedAfterAction": true,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [
+            {
+              "kind": "prepare",
+              "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "all",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure"
+                ],
+                "scopeId": "area/turbine-island"
+              },
+              "responseMs": 1074.5,
+              "postMs": 0,
+              "transferBytes": 0,
+              "cpuBytes": 51146188,
+              "renderBytes": 16109088,
+              "meshes": 3261
+            }
+          ],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7190.599999904633,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "first-operating-3d",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "operating",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7219.200000047684,
+          "actionToFirstDrawMs": 309.09999990463257,
+          "actionToAllRequiredSourcesFirstDrawMs": 309.09999990463257,
+          "actionToGpuCompletedMs": 315.5,
+          "preparedAfterAction": true,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [
+            {
+              "kind": "prepare",
+              "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure"
+                ],
+                "scopeId": "area/turbine-island"
+              },
+              "responseMs": 296.5,
+              "postMs": 0.09999990463256836,
+              "transferBytes": 0,
+              "cpuBytes": 14583560,
+              "renderBytes": 4624752,
+              "meshes": 839
+            }
+          ],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7528.299999952316,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "first-stack-3d",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7537.299999952316,
+          "actionToFirstDrawMs": 16.09999990463257,
+          "actionToAllRequiredSourcesFirstDrawMs": 16.09999990463257,
+          "actionToGpuCompletedMs": 31.299999952316284,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7553.399999856949,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "gc-return-operating-3d",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "operating",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7685.700000047684,
+          "actionToFirstDrawMs": 16.399999856948853,
+          "actionToAllRequiredSourcesFirstDrawMs": 16.399999856948853,
+          "actionToGpuCompletedMs": 41.19999980926514,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7702.099999904633,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "gc-return-stack-3d",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 7810.399999856949,
+          "actionToFirstDrawMs": 20,
+          "actionToAllRequiredSourcesFirstDrawMs": 20,
+          "actionToGpuCompletedMs": 40.10000014305115,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 7830.399999856949,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "first-uncut-stack",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ],
+            "cutaway": false
+          },
+          "started": 7853.799999952316,
+          "actionToFirstDrawMs": 899,
+          "actionToAllRequiredSourcesFirstDrawMs": 899,
+          "actionToGpuCompletedMs": 918.0999999046326,
+          "preparedAfterAction": true,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [
+            {
+              "kind": "prepare",
+              "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",false,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "view": {
+                "mode": "3d",
+                "levelId": "all",
+                "cutaway": false,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure"
+                ],
+                "scopeId": "area/turbine-island"
+              },
+              "responseMs": 877.5,
+              "postMs": 0,
+              "transferBytes": 0,
+              "cpuBytes": 48572028,
+              "renderBytes": 15261504,
+              "meshes": 2276
+            }
+          ],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 8752.799999952316,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "gc-return-cutaway-stack",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "all",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ],
+            "cutaway": true
+          },
+          "started": 8888.899999856949,
+          "actionToFirstDrawMs": 18.800000190734863,
+          "actionToAllRequiredSourcesFirstDrawMs": 18.800000190734863,
+          "actionToGpuCompletedMs": 28.600000143051147,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 8907.700000047684,
+              "instances": 1
+            }
+          ]
+        },
+        {
+          "name": "first-plan",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d"
+          },
+          "started": 8920.299999952316,
+          "actionToFirstInkMs": 20.90000009536743,
+          "actionToPaintOpportunityMs": 71.20000004768372,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "first-plan-operating",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "levelId": "operating",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 9001.899999856949,
+          "actionToFirstInkMs": 18,
+          "actionToPaintOpportunityMs": 48.90000009536743,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "first-plan-lower",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "levelId": "lower",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 9052.299999952316,
+          "actionToFirstInkMs": 17.90000009536743,
+          "actionToPaintOpportunityMs": 50.59999990463257,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "gc-return-plan-operating",
+          "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+          "expected": {
+            "mode": "2d",
+            "levelId": "operating",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 9235.5,
+          "actionToFirstInkMs": 18,
+          "actionToPaintOpportunityMs": 48,
+          "pending": 0,
+          "jobs": [],
+          "sourceDraws": []
+        },
+        {
+          "name": "return-3d-operating",
+          "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+          "expected": {
+            "mode": "3d",
+            "levelId": "operating",
+            "scopeId": "area/turbine-island",
+            "sourceInstances": [
+              1
+            ],
+            "layers": [
+              "utility-routes"
+            ]
+          },
+          "started": 9285.200000047684,
+          "actionToFirstDrawMs": 17.09999990463257,
+          "actionToAllRequiredSourcesFirstDrawMs": 17.09999990463257,
+          "actionToGpuCompletedMs": 34.39999985694885,
+          "preparedAfterAction": false,
+          "pending": 0,
+          "glError": 0,
+          "jobs": [],
+          "sourceDraws": [
+            {
+              "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+              "firstAt": 9302.299999952316,
+              "instances": 1
+            }
+          ]
+        }
+      ],
+      "runtimeExceptions": [],
+      "workerTargetsAfterClosure": [],
+      "sourceCompilerDigests": [
+        "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      ]
+    },
+    "motion": [
+      {
+        "name": "map-site-3d-paused",
+        "dpr": 2,
+        "reportedLogicalCpus": 8,
+        "frames": 239,
+        "moves": 121,
+        "rafP95Ms": 16.799999999999272,
+        "longTaskCount": 0,
+        "pending": 0,
+        "bspPending": 0,
+        "physicalDraws": [
+          {
+            "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+            "instances": 4,
+            "lastAt": 10701.299999952316
+          },
+          {
+            "key": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+            "instances": 1,
+            "lastAt": 10701.299999952316
+          }
+        ],
+        "baseDraws": {
+          "calls": 960,
+          "triangleVertices": 763421520,
+          "lineVertices": 124375296
+        },
+        "minimalCanvasObservation": false,
+        "clearCount": 0,
+        "clearIntervalP95Ms": null,
+        "completedInkPaints": 0,
+        "physicalTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "drafting": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "workerTargetsAfterClosure": [],
+        "runtimeExceptions": []
+      },
+      {
+        "name": "map-site-3d-playing",
+        "dpr": 2,
+        "reportedLogicalCpus": 8,
+        "frames": 240,
+        "moves": 123,
+        "rafP95Ms": 16.799999999999272,
+        "longTaskCount": 0,
+        "pending": 0,
+        "bspPending": 0,
+        "physicalDraws": [
+          {
+            "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+            "instances": 4,
+            "lastAt": 14901.900000095367
+          },
+          {
+            "key": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+            "instances": 1,
+            "lastAt": 14902
+          }
+        ],
+        "baseDraws": {
+          "calls": 964,
+          "triangleVertices": 766652793,
+          "lineVertices": 124895786
+        },
+        "minimalCanvasObservation": false,
+        "clearCount": 0,
+        "clearIntervalP95Ms": null,
+        "completedInkPaints": 0,
+        "physicalTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "drafting": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "workerTargetsAfterClosure": [],
+        "runtimeExceptions": []
+      },
+      {
+        "name": "map-site-plan-paused",
+        "dpr": 2,
+        "reportedLogicalCpus": 8,
+        "frames": 238,
+        "moves": 137,
+        "rafP95Ms": 16.700000000000728,
+        "longTaskCount": 0,
+        "pending": 0,
+        "bspPending": 0,
+        "physicalDraws": [],
+        "baseDraws": {
+          "calls": 0,
+          "triangleVertices": 0,
+          "lineVertices": 0
+        },
+        "minimalCanvasObservation": true,
+        "clearCount": 137,
+        "clearIntervalP95Ms": 38.200000047683716,
+        "completedInkPaints": 137,
+        "physicalTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "drafting": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "workerTargetsAfterClosure": [],
+        "runtimeExceptions": []
+      },
+      {
+        "name": "map-site-plan-playing",
+        "dpr": 2,
+        "reportedLogicalCpus": 8,
+        "frames": 237,
+        "moves": 130,
+        "rafP95Ms": 16.799999999999272,
+        "longTaskCount": 0,
+        "pending": 0,
+        "bspPending": 0,
+        "physicalDraws": [],
+        "baseDraws": {
+          "calls": 0,
+          "triangleVertices": 0,
+          "lineVertices": 0
+        },
+        "minimalCanvasObservation": true,
+        "clearCount": 137,
+        "clearIntervalP95Ms": 35.60000014305115,
+        "completedInkPaints": 137,
+        "physicalTargets": [
+          {
+            "context": 1,
+            "surface": "maplibregl-canvas",
+            "width": 2160,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 60203520,
+            "colorBytes": 60203520,
+            "resolveBytes": 15050880
+          }
+        ],
+        "drafting": [
+          {
+            "width": 2160,
+            "height": 1742,
+            "rgbaBytesLowerBound": 15050880
+          }
+        ],
+        "workerTargetsAfterClosure": [],
+        "runtimeExceptions": []
+      }
+    ],
+    "raw": [
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/r6/transitions/partial.json",
+        "sha256": "614306be8e1c323d2b2a531a5c4d6d9941e157aee94dc749e9601ea6f4fc030a",
+        "bytes": 47168
+      },
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/r6/transitions/failure.json",
+        "sha256": "50beb5609919e56d43502e32034849f2c0420b4b5838b18e8b31e954fcc4b87a",
+        "bytes": 79073
+      },
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/r6/floor-gate/receipt.json",
+        "sha256": "791d58efef9d116e25526e503a51b03b85be7ee9461cae81292c55596b4663b0",
+        "bytes": 162492
+      },
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/r6/motion-dpr2-3d/receipt.json",
+        "sha256": "cbe15ba3b6593399dc3b38be8d6530da0db013c1e3e19324d112d4a9a8457fe2",
+        "bytes": 58226
+      },
+      {
+        "path": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/r6/motion-dpr2-plan/receipt.json",
+        "sha256": "59f7b781b4f1e63b486c05ce49a6bbbd434439b73a8f0250cef0e49b7c0268ea",
+        "bytes": 531121
+      }
+    ]
+  },
+  "limits": [
+    "Cold first3D is still about3seconds, not the prior75ms warmed-representation claim. GPU fences are not physical-monitor presentation timestamps.",
+    "First matching detail VBO excludes overview keys and requires both actual source-family instance cohorts. Separate untimed critical-interior/conditional ownership proof is retained in conditional-route.json and prior diagnostic attempts.",
+    "Four R6 DPR2 motion windows are targeted sanity qualification, not inheritance or repetition of the previous32-window R5 matrix.",
+    "Plan uses minimal native observation: no per-primitive counters during motion, actual clear/complete-paint cadence and before/after source/text witnesses. Input is await-CDP-ack plus16ms pacing; no60Hz-input or monitor-ink claim.",
+    "All ordinary source paths/3D objects remain enabled as authored defaults, including utility routes; no source detail/count cap or mesh decimation. Source R6 changes are separately pinned and not used to claim the R5 causal speedup.",
+    "One local machine/Chrome/device, loopback services and read-only vector/reference asset proxy. These timings do not establish WAN/constrained-device latency.",
+    "Running obsolete CPU jobs cannot preempt mid-call; queued stale demands are canceled. First new scope/floor variants still prepare; warmed/forced-GC returns are reported separately."
+  ]
+}

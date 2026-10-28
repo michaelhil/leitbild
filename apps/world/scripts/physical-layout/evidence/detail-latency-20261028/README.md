@@ -11,3 +11,15 @@ A separate diagnostic EBO inventory positively observed 102 campus and 295 unit 
 The [ownership experiments](ownership-alternatives.json) preserve the negative results. Per-mesh two-stage grouping, exact nonmedian SAH refinement and the existing ray hierarchy all preserve output fingerprints, but do not produce a robust improvement for both families. None was adopted. The long in-process refined sequence was unstable and was not used to rank implementations. Later trials use one engine call per fresh Bun process, with compilation and hashing outside the clock and explicit test-only GC before the call.
 
 [Retained attempts](retained-attempts.json) distinguishes observer/setup failures and a potentially contended diagnostic from the valid light baseline. Raw profiles, screenshots, fixture state and failed attempts remain in the listed local research paths; source blobs and private Run state are not copied into this evidence folder.
+
+## Qualified candidate
+
+The [final comparison and R6 receipt](FINAL-DETAIL-LATENCY.json) tests application `53b443ed9709069139acfa2ddbd22bbb79a7f3cb`. The adopted changes are a standard centroid hierarchy for ownership queries and reuse of the already admitted scene inside its private preparation worker. Source/shape validation remains at the Pack boundary. Geometry, ownership, render and pick output equality is tested separately; no detail is removed.
+
+On the **same retained R5 source and identical observer**, cold Plan-ready → both 3D source families falls from **7,481.0 to 2,987.6 ms**, and the completion fence from **7,771.0 to 3,015.5 ms**. The preparation worker bundle shrinks from 140.28 to 42.50 kB; the source-compiler worker artifact is unchanged. Observed Host-navigation times are retained for both runs, but their backend restoration state differs, so they are not a controlled navigation-speedup claim.
+
+Fresh R6 uses different, explicit source pins and is a separate qualification: after backend restart, Plan → all five 3D placements takes **3,191.1 ms** (fence 3,217.8 ms). Mode return and forced-GC return take 70.5/68.5 ms to both-family draws with zero preparations. First scoped hall/operating views take 1,105.5/309.1 ms; cached floor/cutaway/GC returns request zero preparations. Plan requests no solid preparation. One later focused collection-count test error is preserved; the corrected floor-only continuation binds the exact authored scope key.
+
+Four R6 full-site DPR2 motion windows (Plan/3D × paused/playing) have 16.7–16.8 ms p95 RAF intervals and zero observed long tasks. Plan uses the minimal observer: 137 actual completed ink paints in each window, with per-primitive hooks absent during motion. Input is paced by CDP acknowledgements plus 16 ms; these results do not claim 60 Hz input, 60 Hz ink or monitor presentation. All browser processes close and physical worker targets reach zero after each page closure.
+
+The remaining cold first-3D cost is about three seconds on this local machine. This is not the previous warmed 75 ms result, a WAN benchmark, or a repetition of the earlier R5 32-window matrix.
