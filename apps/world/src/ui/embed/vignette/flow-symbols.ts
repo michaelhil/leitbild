@@ -258,21 +258,28 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     ...section.layout.nodes.flatMap(node => (node.text === undefined ? [] : [{ x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }])),
     ...[...boxes].filter(([id]) => symbols.get(id) !== 'end').map(([, box]) => box),
   ]
+  // Principal lines medium, auxiliary and electric ones small (U-20); headers large.
+  const sizeOf = (edge: (typeof edges)[number]): 'small' | 'medium' => edge.view?.mediumKind.startsWith('electric') === true || edge.view?.auxiliary === true ? 'small' : 'medium'
   const pipes = new Map(edges.map(edge => {
     const [first, last] = [stopAt(edge.points[0]!), stopAt(edge.points.at(-1)!)]
     const ended = last === undefined ? edge.points : endStraight(edge.points, 'last', last)
     let both = first === undefined ? ended : endStraight(ended, 'first', first)
+    const [into, from] = [vesselAt(edge.points.at(-1)!), vesselAt(edge.points[0]!)]
+    const finish = (points: ReadonlyArray<Point>): ReadonlyArray<Point> => {
+      const reached = into === undefined ? points : toSilhouette(points, 'last', into.box, into.inset)
+      return from === undefined ? reached : toSilhouette(reached, 'first', from.box, from.inset)
+    }
+    let finished = finish(both)
     // A newly readable line may be just one cell long. Reserve its full-size
     // direction mark in the stop's existing empty cell, independently of its
     // current value, so fresh/still/unknown samples never move the pipe. An
     // existing clear chevron location preserves the original route exactly.
-    if ((first !== undefined || last !== undefined) && edge.view?.bindings.some(binding => binding.role === 'flow') && chevronSegment(edge.id, both, edge.gaps, 'open-flow', 'medium', false, avoid) === null) {
+    if ((first !== undefined || last !== undefined) && edge.view?.bindings.some(binding => binding.role === 'flow') && chevronSegment(edge.id, finished, edge.gaps, 'open-flow', sizeOf(edge), false, avoid) === null) {
       if (last !== undefined) both = endStraight(both, 'last', last, CHEVRON_PIECE)
       if (first !== undefined) both = endStraight(both, 'first', first, CHEVRON_PIECE)
+      finished = finish(both)
     }
-    const [into, from] = [vesselAt(edge.points.at(-1)!), vesselAt(edge.points[0]!)]
-    const reached = into === undefined ? both : toSilhouette(both, 'last', into.box, into.inset)
-    return [edge.id, from === undefined ? reached : toSilhouette(reached, 'first', from.box, from.inset)] as const
+    return [edge.id, finished] as const
   }))
   // A pipe reads its flow where it is bound (a stop's, the lines it stands for: forward where any flows); else it is
   // open unless a switch at either end reads shut, never emptied by what is not known.
@@ -285,8 +292,6 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const ends = [edge.points[0]!, edge.points.at(-1)!].map(point => [...boxes].find(([, box]) => inside(box)(point))?.[0])
     return ends.some(id => id !== undefined && ['valve', 'breaker'].includes(symbols.get(id) ?? '') && shut(states.get(id))) ? 'none' : 'open'
   }
-  // Principal lines medium, auxiliary and electric ones small (U-20); headers large.
-  const sizeOf = (edge: (typeof edges)[number]): 'small' | 'medium' => edge.view?.mediumKind.startsWith('electric') === true || edge.view?.auxiliary === true ? 'small' : 'medium'
   const segments: Segment[] = edges.flatMap(edge => {
     const look = lookOf(edge)
     const size = sizeOf(edge)

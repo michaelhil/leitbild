@@ -13,7 +13,7 @@ import { servedPlantTopology } from '../src/packs/process-plant/observation/topo
 import { createProcessPlantProtectionRunner, createProcessPlantRuntime } from '../src/packs/process-plant/runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { flowDrawing } from '../src/ui/embed/vignette/flow-symbols.ts'
-import { CHEVRON_PIECE, endStraight } from '../src/ui/embed/vignette/pipe-segments.ts'
+import { CHEVRON_PIECE, endStraight, pipeSegments } from '../src/ui/embed/vignette/pipe-segments.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -167,7 +167,41 @@ describe('a power stop says the state of the equipment it names (the old mimic-s
     // Insufficient actual cell space cannot manufacture more pipe or erase a
     // valid existing corner just to satisfy the direction-mark request.
     expect(endStraight(short, 'first', { ...room, y: -8, height: 8 }, CHEVRON_PIECE)).toEqual(short)
+    expect(endStraight(short, 'first', { ...room, x: .5 }, CHEVRON_PIECE)).toEqual(short)
     const bent = [[0, 0], [0, 24], [48, 24]] as const
     expect(endStraight(bent, 'first', room, CHEVRON_PIECE)).toEqual(bent)
+  })
+
+  test('an auxiliary pipe keeps its existing clear direction mark using its actual smaller crossing gap', () => {
+    const points = [[0, 0], [100, 0], [100, 24]] as const, gaps = [[52, 0]] as const
+    const section: Topology = {
+      kind: 'topology', rows: 6, objectId: 'unit:gap', packId: 'fixture', family: 'flow',
+      nodes: [{ id: 'from', class: 'boundary', label: 'From', bindings: [] }, { id: 'to', class: 'stop', label: 'To', bindings: [] }],
+      edges: [{ id: 'p', mediumKind: 'fluid', auxiliary: true, bindings: [{ role: 'flow', ref: 'unit:gap#flow', quantity: 'flow', unit: 'kg/s' }] }],
+      layout: { family: 'flow', unit: 'grid', width: 6, height: 4, crossings: 1, hash: 'auxiliary-gap', nodes: [
+        { id: 'from', x: -1, y: -1, width: 1, height: 2, ports: { end: { x: 0, y: 0, face: 'right' } } },
+        { id: 'to', x: 88 / 24, y: 1, width: 1, height: 2, ports: { end: { x: 100 / 24, y: 1, face: 'top' } } },
+      ], edges: [{ id: 'p', points: points.map(([x, y]) => [x / 24, y / 24]), gaps: gaps.map(([x, y]) => [x / 24, y / 24]) }] },
+    }
+    const sample: Observation[] = [{ ref: 'unit:gap#flow', at: '2026-10-22T12:00:00.000Z', clock: 'simulation', value: 1, quality: 'good', priority: 'none' }]
+    const pipe = flowDrawing(section, sample, [], false).segments.filter(segment => 'connectionId' in segment && segment.connectionId === 'p')
+    expect(pipe.filter(segment => segment.kind !== 'direction')).toEqual(pipeSegments('p', points, gaps, 'open-flow', 'small'))
+    expect(pipe.find(segment => segment.kind === 'direction')).toMatchObject({ kind: 'direction', size: 'small', x: 24, y: 0 })
+  })
+
+  test('an existing clear final silhouette connection does not extend the stop because its raw route was too short', () => {
+    const section: Topology = {
+      kind: 'topology', rows: 6, objectId: 'unit:silhouette', packId: 'fixture', family: 'flow',
+      nodes: [{ id: 'from', class: 'stop', label: 'From', bindings: [] }, { id: 'to', class: 'transfer', label: 'Exchanger', bindings: [] }],
+      edges: [{ id: 'p', mediumKind: 'fluid', bindings: [{ role: 'flow', ref: 'unit:silhouette#flow', quantity: 'flow', unit: 'kg/s' }] }],
+      layout: { family: 'flow', unit: 'grid', width: 5, height: 3, crossings: 0, hash: 'silhouette-straight', nodes: [
+        { id: 'from', x: -1, y: -.5, width: 1, height: 1, ports: { end: { x: 0, y: 0, face: 'right' } } },
+        { id: 'to', x: 47 / 24, y: -1, width: 2, height: 2, ports: { end: { x: 47 / 24, y: 0, face: 'left' } } },
+      ], edges: [{ id: 'p', points: [[0, 0], [47 / 24, 0]], gaps: [] }] },
+    }
+    const sample: Observation[] = [{ ref: 'unit:silhouette#flow', at: '2026-10-22T12:00:00.000Z', clock: 'simulation', value: 1, quality: 'good', priority: 'none' }]
+    const pipe = flowDrawing(section, sample, [], false).segments.filter(segment => 'connectionId' in segment && segment.connectionId === 'p')
+    expect(pipe.filter(segment => segment.kind !== 'direction')).toEqual(pipeSegments('p', [[0, 0], [52, 0]], [], 'open-flow', 'medium'))
+    expect(pipe.find(segment => segment.kind === 'direction')).toMatchObject({ kind: 'direction', x: 26, y: 0 })
   })
 })

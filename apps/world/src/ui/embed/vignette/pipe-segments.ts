@@ -98,7 +98,10 @@ export const endStraight = (points: ReadonlyArray<Point>, end: 'first' | 'last',
     const step = [Math.sign(to[0] - from[0]), Math.sign(to[1] - from[1])] as const
     const short = need - lengthOf(from, to)
     const far = step[0] > 0 ? room.x + room.width - to[0] : step[0] < 0 ? to[0] - room.x : step[1] > 0 ? room.y + room.height - to[1] : to[1] - room.y
-    if (short > 0 && far >= short) ordered[ordered.length - 1] = [to[0] + step[0] * short, to[1] + step[1] * short]
+    // Endpoint matching permits a pixel of drawing tolerance. Reserving new
+    // space requires actual cell membership, including the perpendicular axis.
+    const belongs = requiredStraight === undefined || to[0] >= room.x && to[0] <= room.x + room.width && to[1] >= room.y && to[1] <= room.y + room.height
+    if (belongs && short > 0 && far >= short) ordered[ordered.length - 1] = [to[0] + step[0] * short, to[1] + step[1] * short]
   }
   while (requiredStraight === undefined && ordered.length > 2 && lengthOf(ordered.at(-2)!, ordered.at(-1)!) < need) ordered.pop()
   return end === 'last' ? ordered : ordered.reverse()
