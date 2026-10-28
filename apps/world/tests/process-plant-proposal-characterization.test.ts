@@ -39,7 +39,7 @@ const steady = {
   ...fixture,
   id: 'test-plant-steady',
   title: 'Steady Plant at full power',
-  packs: fixture.packs.map(pack => ({ ...pack, items: pack.items.map(item => ({ ...item, operatingPoint: { ref: 'process-plant.pwr.full-power' } })) })),
+  packs: fixture.packs.map(pack => ({ ...pack, items: pack.items.map(item => ({ ...item, aiOperation: 'propose', operatingPoint: { ref: 'process-plant.pwr.full-power' } })) })),
 }
 
 const WALL_START = Date.parse('2026-10-20T12:00:00.000Z')
@@ -340,7 +340,7 @@ describe('proposal characterization on the old path', () => {
 
   test('an AI agent may not acknowledge an alarm on a propose-only Plant; a person may', () => {
     expect(facts.acknowledgements).toEqual({
-      agent: 'An AI agent proposes operations on this Plant for a person to approve (world.process-plant.control.propose); it operates it directly only while it drives an active procedure Run on it',
+      agent: 'This Plant explicitly requires AI operation proposals for a person to approve (world.process-plant.control.propose); direct operation is allowed only while the AI drives an active procedure Run on it',
       person: 'accepted',
     })
     expect(facts.alarmAfter).toEqual({ acknowledged: true, phase: 'activeAcknowledged' })
