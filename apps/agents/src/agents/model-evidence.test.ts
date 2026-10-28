@@ -14,6 +14,7 @@ import type { LLMProvider } from '../core/types/llm.ts'
 import type { LLMService } from '../llm/llm-service.ts'
 import type { LLMServiceBindOptions } from '../llm/llm-service.ts'
 import { createCloudProviderError } from '../llm/errors.ts'
+import type { AIAgent } from '../core/types/agent.ts'
 
 const temporary: string[] = []
 afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }) })
@@ -110,6 +111,33 @@ test('partial stream capture preserves the provider error classification used by
     expect(detail.status).toBe('failed')
     expect(detail.response?.content).toBe('Known text before provider failure')
     expect(room.getRecent(1)[0]).toMatchObject({ type: 'error', errorCode: 'no_api_key', errorProvider: 'test-provider' })
+  } finally { store.close() }
+})
+
+test('cancellation after input admission cannot dispatch a provider call', async () => {
+  const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
+  let dispatches = 0, admissions = 0
+  let agent!: AIAgent, finished!: () => void
+  const turnFinished = new Promise<void>(resolve => { finished = resolve })
+  const provider: LLMProvider = { models: async () => ['test'], chat: async () => { dispatches++; return { content: 'Late answer', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 } } } }
+  agent = await spawnAIAgent({ name: 'Agent', model: 'test', persona: '' }, { bound: () => provider } as unknown as LLMService,
+    rooms, createWorkspaceSettings(), createTeam(), (_target, params) => [room.post(params)], createToolRegistry(), {
+      executionStore: store, onTurnFinished: finished,
+      executionGrowth: async (_bytes, work) => {
+        admissions++
+        const result = await work()
+        if (admissions === 2) agent.cancelGeneration()
+        return result
+      },
+    })
+  room.addMember(agent.id); await agent.join(room)
+  agent.receive(room.post({ senderId: 'human', content: 'Inspect', type: 'chat' }))
+  await turnFinished
+  try {
+    const turn = store.listTurns(room.profile.id)[0]!
+    expect(dispatches).toBe(0)
+    expect(turn.status).toBe('interrupted')
+    expect(store.getModelCall(room.profile.id, turn.id, 'model_1')?.status).toBe('cancelled')
   } finally { store.close() }
 })
 

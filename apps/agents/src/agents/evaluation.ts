@@ -526,7 +526,12 @@ export const evaluate = async (
     pendingCorrection = false
     await options?.modelObserver?.start({ id, ordinal, phase: actualPhase, startedAt: Date.now(), status: 'running', requestedModel: request.model }, request)
     let result: Awaited<ReturnType<typeof callLLMOnce>>
-    try { result = await callLLMOnce(llmProvider, request, onEvent, signal) }
+    try {
+      // Input retention may await storage admission. A cancellation during
+      // that await must never dispatch a new paid/provider request.
+      signal?.throwIfAborted()
+      result = await callLLMOnce(llmProvider, request, onEvent, signal)
+    }
     catch (error) {
       const partial = error && typeof error === 'object' && 'partialModelResponse' in error ? error.partialModelResponse as ExecutionModelResponse : undefined
       await options?.modelObserver?.fail(id, error instanceof Error ? error.message : String(error), signal?.aborted === true, partial)
