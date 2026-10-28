@@ -405,6 +405,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       system.summaryScheduler.dispose()
       // Absent in a runtime without a Workspace Host.
       system.proposalResumes?.dispose()
+      system.procedureResumes?.dispose()
       closeAgents(system)
       await Promise.all(system.scriptRunner.listRuns().map(run => system.scriptRunner.stop(run.roomId)))
       await drainAgents(system)
@@ -551,6 +552,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         entry.system.summaryScheduler.dispose()
         // Absent in a runtime without a Workspace Host.
         entry.system.proposalResumes?.dispose()
+        entry.system.procedureResumes?.dispose()
         closeAgents(entry.system)
         await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
         await drainAgents(entry.system)

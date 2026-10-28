@@ -5,6 +5,7 @@
 // starting a process. The executable entrypoint lives in main.ts.
 // ============================================================================
 
+import { createProcedureResumes, createProcedureResumeReader, type ProcedureResumes } from './agents/procedure-resumes.ts'
 import type { Agent, AIAgent, AIAgentConfig, RouteMessage, Team } from './core/types/agent.ts'
 import type { DeliverFn, ResolveAgentName, ResolveTagFn } from './core/types/messaging.ts'
 import type {
@@ -198,6 +199,7 @@ export interface AgentsWorkspaceRuntime {
   // Watches the proposals of procedure turns and resumes their agent once one is approved
   // (agents/proposal-resumes.ts). Absent without a Workspace Host; disposed with the runtime.
   readonly proposalResumes?: ProposalResumes
+  readonly procedureResumes?: ProcedureResumes
   readonly setOnMessagePosted: (callback: OnMessagePosted) => void
   readonly setOnTurnChanged: (callback: OnTurnChanged) => void
   readonly setOnDeliveryModeChanged: (callback: OnDeliveryModeChanged) => void
@@ -843,6 +845,11 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       ? undefined
       : createProposalResumes({ rooms, team, executions: executionStore, readStatus: proposalCards.read })
 
+    const procedureResumes = options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+      ? createProcedureResumes({ rooms, team, executions: executionStore,
+          reader: createProcedureResumeReader({ workspaceId: options.workspaceId, hostBaseUrl: options.workspaceHostUrl }) })
+      : undefined
+
     // "Show display" is offered where a Room's Scope reaches an operation whose
     // Module declares that it publishes a display, asked of the same Host.
     const displayRequestDeps: DisplayRequestDeps = {
@@ -878,6 +885,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         onTurnMessageLinked: input => {
           // Absent without a Workspace Host (see proposalResumes above).
           proposalResumes?.answered(input)
+          procedureResumes?.answered(input)
           comparisons.link(input)
         },
         onTurnFinished: comparisons.discard,
@@ -1071,6 +1079,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         return await proposalCards.read(operations, { id: turn.agentId, name: team.getAgent(turn.agentId)?.name ?? turn.agentId })
       },
       ...(proposalResumes === undefined ? {} : { proposalResumes }),
+      ...(procedureResumes === undefined ? {} : { procedureResumes }),
       requestDisplay: (roomId, messageId, requesterId) => requestDisplay(displayRequestDeps, roomId, messageId, requesterId),
       displayRequestOffered: (roomId, agentId) => displayRequestOffered(displayRequestDeps, roomId, agentId),
       setOnMessagePosted: messagePosted.set,
