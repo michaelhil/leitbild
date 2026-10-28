@@ -1,0 +1,267 @@
+{
+  "at": "2026-10-28T01:16:42.722Z",
+  "bun": "1.4.0",
+  "input": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/state/world/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/simulation-runs/run-94c67255-e555-443c-a9db-4f8e7996dbdf/compiled-scenario.json",
+  "records": [
+    {
+      "phase": "per-instance-source-boundary",
+      "id": "layout:halden-1",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "parseMs": 34.376208000000005,
+      "validateMs": 15.785291999999998
+    },
+    {
+      "phase": "per-instance-source-boundary",
+      "id": "layout:halden-2",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "parseMs": 13.76037500000001,
+      "validateMs": 9.93745899999999
+    },
+    {
+      "phase": "per-instance-source-boundary",
+      "id": "layout:halden-3",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "parseMs": 10.086832999999984,
+      "validateMs": 10.06450000000001
+    },
+    {
+      "phase": "per-instance-source-boundary",
+      "id": "layout:halden-4",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "parseMs": 8.34575000000001,
+      "validateMs": 9.392916999999983
+    },
+    {
+      "phase": "per-instance-source-boundary",
+      "id": "layout:halden-campus",
+      "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "parseMs": 8.113082999999989,
+      "validateMs": 5.484207999999995
+    },
+    {
+      "phase": "family-compile-including-validation",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "ms": 715.816417,
+      "objects": 719
+    },
+    {
+      "phase": "view-preparation",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true,
+        "surroundings": false,
+        "hiddenLayerIds": [
+          "roof-structure"
+        ]
+      },
+      "phases": {
+        "layer-selection": 0.24516699999992397,
+        "meshing-and-floor-cut": 130.83675000000005,
+        "scope-clip": 0.17875000000003638,
+        "surface-annotations": 2.296333000000004,
+        "surface-ownership": 1801.873042,
+        "picking-index": 363.82024999999976,
+        "render-packing": 37.1245829999998
+      },
+      "totalMs": 2336.3748749999995,
+      "sourceMeshes": 890,
+      "scopedMeshes": 890,
+      "ownedMeshes": 3853,
+      "triangles": 279831,
+      "lineSegments": 47441,
+      "renderBytes": 29140944,
+      "pickMeshNodes": 4645,
+      "ownership": {
+        "broadPhaseCandidates": 3970916,
+        "coplanarCandidates": 182735,
+        "triangles": 243229,
+        "partitionedTriangles": 23339,
+        "retainedCandidates": 2952,
+        "coincidentPairs": 1570
+      }
+    },
+    {
+      "phase": "view-preparation",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "view": {
+        "mode": "3d",
+        "levelId": "operating",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true,
+        "surroundings": false,
+        "hiddenLayerIds": [
+          "roof-structure"
+        ]
+      },
+      "phases": {
+        "layer-selection": 0.08808300000009694,
+        "meshing-and-floor-cut": 73.56012499999997,
+        "scope-clip": 42.137207999999646,
+        "surface-annotations": 1.1994159999999283,
+        "surface-ownership": 368.22458300000017,
+        "picking-index": 70.81841699999995,
+        "render-packing": 12.612540999999965
+      },
+      "totalMs": 568.6403729999997,
+      "sourceMeshes": 316,
+      "scopedMeshes": 316,
+      "ownedMeshes": 861,
+      "triangles": 59449,
+      "lineSegments": 13251,
+      "renderBytes": 6343152,
+      "pickMeshNodes": 1121,
+      "ownership": {
+        "broadPhaseCandidates": 802120,
+        "coplanarCandidates": 47122,
+        "triangles": 51185,
+        "partitionedTriangles": 3737,
+        "retainedCandidates": 541,
+        "coincidentPairs": 381
+      }
+    },
+    {
+      "phase": "view-preparation",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true,
+        "surroundings": false,
+        "hiddenLayerIds": [
+          "roof-structure"
+        ],
+        "scopeId": "area/turbine-island"
+      },
+      "phases": {
+        "layer-selection": 0.05145799999991141,
+        "meshing-and-floor-cut": 146.09379199999967,
+        "scope-clip": 37.74245900000005,
+        "surface-annotations": 1.1987090000002354,
+        "surface-ownership": 901.7877080000003,
+        "picking-index": 146.75991599999998,
+        "render-packing": 24.361708000000363
+      },
+      "totalMs": 1257.9957500000005,
+      "sourceMeshes": 890,
+      "scopedMeshes": 771,
+      "ownedMeshes": 3087,
+      "triangles": 140093,
+      "lineSegments": 44289,
+      "renderBytes": 15574800,
+      "pickMeshNodes": 3271,
+      "ownership": {
+        "broadPhaseCandidates": 2301542,
+        "coplanarCandidates": 131101,
+        "triangles": 112919,
+        "partitionedTriangles": 11912,
+        "retainedCandidates": 2305,
+        "coincidentPairs": 1085
+      }
+    },
+    {
+      "phase": "family-compile-including-validation",
+      "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "ms": 468.7043329999997,
+      "objects": 540
+    },
+    {
+      "phase": "view-preparation",
+      "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "view": {
+        "mode": "3d",
+        "levelId": "all",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true,
+        "surroundings": false,
+        "hiddenLayerIds": [
+          "roof-structure",
+          "plan-allowances"
+        ]
+      },
+      "phases": {
+        "layer-selection": 0.03625000000010914,
+        "meshing-and-floor-cut": 63.63512499999979,
+        "scope-clip": 0.01337500000045111,
+        "surface-annotations": 0.014916999999513791,
+        "surface-ownership": 1039.7065410000005,
+        "picking-index": 159.0877499999997,
+        "render-packing": 21.403416999999536
+      },
+      "totalMs": 1283.8973749999996,
+      "sourceMeshes": 535,
+      "scopedMeshes": 535,
+      "ownedMeshes": 1837,
+      "triangles": 157317,
+      "lineSegments": 72221,
+      "renderBytes": 18569040,
+      "pickMeshNodes": 2123,
+      "ownership": {
+        "broadPhaseCandidates": 3629488,
+        "coplanarCandidates": 110891,
+        "triangles": 131845,
+        "partitionedTriangles": 8096,
+        "retainedCandidates": 1302,
+        "coincidentPairs": 973
+      }
+    },
+    {
+      "phase": "view-preparation",
+      "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "view": {
+        "mode": "3d",
+        "levelId": "campus-ground",
+        "cutaway": true,
+        "separation": 0,
+        "detail": "auto",
+        "live": true,
+        "surroundings": false,
+        "hiddenLayerIds": [
+          "roof-structure",
+          "plan-allowances"
+        ]
+      },
+      "phases": {
+        "layer-selection": 0.08612499999981083,
+        "meshing-and-floor-cut": 93.22908300000017,
+        "scope-clip": 0.10962500000005093,
+        "surface-annotations": 0.004416000000674103,
+        "surface-ownership": 994.4079169999995,
+        "picking-index": 145.4636249999994,
+        "render-packing": 16.88024999999925
+      },
+      "totalMs": 1250.181040999999,
+      "sourceMeshes": 475,
+      "scopedMeshes": 475,
+      "ownedMeshes": 1524,
+      "triangles": 147740,
+      "lineSegments": 70105,
+      "renderBytes": 17548080,
+      "pickMeshNodes": 1585,
+      "ownership": {
+        "broadPhaseCandidates": 4243992,
+        "coplanarCandidates": 102115,
+        "triangles": 125983,
+        "partitionedTriangles": 5755,
+        "retainedCandidates": 1049,
+        "coincidentPairs": 713
+      }
+    }
+  ],
+  "limits": [
+    "Exact retained R5 inputs and unchanged production functions, sequential phase census after module loading. Not a browser/network/worker/GPU latency measurement.",
+    "Compilation follows the per-instance validation census, so its caches/JIT may be warm. No speedup is claimed from these absolute timings.",
+    "View functions execute in the same production order. Outputs are not retained as an additional product cache."
+  ]
+}

@@ -18,6 +18,7 @@ import { preparePhysicalPickAcceleration } from '../src/ui/map/physical-scene/pi
 import { preparePhysicalRenderBuffers } from '../src/ui/map/physical-scene/render-buffers.ts'
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import { preparePhysicalSurfaceOwnership as priorOwnership } from './fixtures/physical-layout/surface-ownership-before-empty-fastpath.ts'
+import { preparePhysicalSurfaceOwnership as beforeTwoLevel } from './fixtures/physical-layout/surface-ownership-before-two-level.ts'
 
 type Ownership = ReturnType<typeof preparePhysicalSurfaceOwnership>
 const fingerprint = (owned: Ownership): string => {
@@ -27,11 +28,15 @@ const fingerprint = (owned: Ownership): string => {
   const buffers = preparePhysicalRenderBuffers(meshes); binary(buffers.vertices); binary(buffers.lines); hash.update(JSON.stringify([buffers.roles, buffers.objectCount]))
   const acceleration = preparePhysicalPickAcceleration(meshes)
   for (const index of [acceleration.meshes, ...acceleration.triangles.map(item => item.triangles)]) for (const values of [index.bounds, index.children, index.ranges, index.order]) binary(values)
-  hash.update(JSON.stringify(owned.diagnostics)); return hash.digest('hex')
+  const { broadPhaseCandidates: _work, ...diagnostics } = owned.diagnostics
+  hash.update(JSON.stringify(diagnostics)); return hash.digest('hex')
 }
-const compare = (meshes: ReadonlyArray<PhysicalMesh>): void => {
-  const prior = priorOwnership(meshes), current = preparePhysicalSurfaceOwnership(meshes)
-  expect(current.diagnostics).toEqual(prior.diagnostics); expect(current.meshes.length).toBe(prior.meshes.length)
+const compare = (meshes: ReadonlyArray<PhysicalMesh>, reference = priorOwnership): void => {
+  const prior = reference(meshes), current = preparePhysicalSurfaceOwnership(meshes)
+  // A conservative hierarchy may visit different false-positive leaves; its
+  // exact candidates, ownership and all output/picking bytes must stay equal.
+  const { broadPhaseCandidates: _beforeWork, ...before } = prior.diagnostics, { broadPhaseCandidates: _afterWork, ...after } = current.diagnostics
+  expect(after).toEqual(before); expect(current.meshes.length).toBe(prior.meshes.length)
   for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(prior.meshes[index]!.object)
   expect(fingerprint(current)).toBe(fingerprint(prior))
 }
@@ -55,7 +60,7 @@ test('actual admitted R5 all-layer unit and campus retain exact ordered geometry
     if (!descriptor?.geometryKey || seen.has(descriptor.geometryKey)) continue
     seen.add(descriptor.geometryKey)
     const scene = await loadPhysicalLayoutScene(object), view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all', hiddenLayerIds: [] }, demand = physicalMeshDemandScene(scene, view)
-    compare(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))))
+    compare(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))), beforeTwoLevel)
   }
   expect(seen.size).toBe(2)
 }, 30_000)
