@@ -134,6 +134,9 @@ export interface PackCommandContext {
    * that procedure's operator, until a person takes the Run over.
    */
   readonly procedureDriven?: ReadonlySet<string>
+  /** Active human procedure drivers hold these objects against AI operation;
+   * the reason is read from canonical placekeeping at command dispatch. */
+  readonly procedureHolds?: ReadonlyMap<string, string>
 }
 
 export interface PackRuntimeStateStore {

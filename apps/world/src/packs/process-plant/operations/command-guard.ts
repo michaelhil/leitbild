@@ -58,7 +58,10 @@ export const drivesProcedureOn = (context: PackCommandContext, plantId: string):
 
 /** Why an AI agent may not issue this command on this Plant itself; null where it may, or the origin is no AI agent's. */
 export const aiProposeOnlyRefusal = (kind: string, context: PackCommandContext, plantId: string, aiOperation: ProcessPlantUnitPackData['aiOperation']): string | null => {
-  if (context.origin !== 'ai' || aiOperation !== 'propose' || !aiDirectCommandKinds.has(kind)) return null
+  if (context.origin !== 'ai' || !aiDirectCommandKinds.has(kind)) return null
+  const humanHold = context.procedureHolds?.get(plantId)
+  if (humanHold !== undefined) return humanHold
+  if (aiOperation !== 'propose') return null
   if (!drivesProcedureOn(context, plantId)) {
     return 'This Plant explicitly requires AI operation proposals for a person to approve (world.process-plant.control.propose); direct operation is allowed only while the AI drives an active procedure Run on it'
   }

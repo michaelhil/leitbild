@@ -1136,6 +1136,12 @@ export const createSimulationRunRuntime = async (config: {
   const procedureDrivenBy = (command: CommandEnvelope): ReadonlySet<string> => new Set((state.snapshot().procedures?.runs ?? [])
     .filter(run => run.status === 'active' && run.driver?.actorId === command.actorId).map(run => run.scope.plantId))
 
+  // A person's Take over remains authoritative even on a Plant whose AI
+  // operation policy is direct. This is current state, never an earlier read.
+  const procedureHolds = (): ReadonlyMap<string, string> => new Map((state.snapshot().procedures?.runs ?? [])
+    .filter(run => run.status === 'active' && run.driver?.kind === 'person')
+    .map(run => [run.scope.plantId, `A person${run.driver?.label === undefined ? '' : ` (${run.driver.label})`} drives ${run.procedureId} on ${run.scope.label ?? run.scope.plantId}; AI operations wait until the person hands it back.`]))
+
   const issueCommandThroughRuntime = async (
     actor: Actor,
     command: CommandEnvelope,
@@ -1161,7 +1167,7 @@ export const createSimulationRunRuntime = async (config: {
     const viewer = viewerForActor(runRoles, actor)
     const result = await handleCoreCommand(command, commandSource, actor)
       ?? await config.runtimeConnection.sendCommand(command, {
-        ...(viewer === undefined ? {} : { viewer }), origin: commandOriginOf(actor), procedureDriven: procedureDrivenBy(command),
+        ...(viewer === undefined ? {} : { viewer }), origin: commandOriginOf(actor), procedureDriven: procedureDrivenBy(command), procedureHolds: procedureHolds(),
       })
     await drainRuntimeEmissions()
     await publishOneGenerated(() => ({

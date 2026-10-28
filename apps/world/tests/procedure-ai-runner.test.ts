@@ -67,7 +67,7 @@ Check: plant stable
 - Stable [outcome: normal] → END
 `
 
-const setup = async (sourceCount = 1) => {
+const setup = async (sourceCount = 1, scenarioId = 'test-plant') => {
   const dataDir = await mkdtemp(join(tmpdir(), 'world-procedure-ai-runner-'))
   directories.push(dataDir)
   const knowledge = createKnowledge({ revision, documents: [{ path: 'procedures/E-0.md', content: e0 }, { path: 'procedures/ES-0.1.md', content: es01 }] })
@@ -83,7 +83,7 @@ const setup = async (sourceCount = 1) => {
   const workspaceId = newWorkspaceId()
   const provision = new Request(`http://world.test/internal/workspaces/${workspaceId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId }) })
   await handleWorldModuleApi(provision, new URL(provision.url), registry)
-  const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId: 'test-plant' })
+  const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId })
   await run.setClock({ paused: true })
   const plant = run.snapshot().objects.find(object => object.packId === 'process-plant')!
   return { registry, workspaceId, run, plantId: plant.id }
@@ -248,20 +248,38 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(transfer.body.result.next).toMatchObject({ run: { runId: destination.runId, procedureId: 'ES-0.1', currentStepId: 'monitor', stepNumber: 1 }, step: { id: 'monitor' } })
   })
 
-  test('direct AI controls retain their actor while human takeover protects procedure placekeeping', async () => {
-    const { registry, workspaceId, run, plantId } = await setup()
+  test('human takeover after an AI read holds every Plant operation, while another unit remains direct', async () => {
+    const { registry, workspaceId, run, plantId } = await setup(1, 'halden-power-complex')
     const invoke = invoker(registry, workspaceId, run.id)
     const ai = access(workspaceId, { kind: 'ai', id: 'assistant', displayName: 'Assistant' })
     const human = access(workspaceId, { kind: 'human' })
     const write = { plantId, tagId: 'CHG-PUMP-B', value: true }
     expect((await invoke('world.process-plant.control.write', write, ai)).status).toBe(200)
     const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId, label: 'Unit A1' } }, ai)
+    const runId = started.body.result.pinned.runId
+    expect((await invoke('world.procedure.run.step.read', { runId }, ai)).body.result.run.driver.kind).toBe('ai')
+    // This commits after the AI read and before its next physical command.
+    await invoke('world.procedure.run.drive', { runId, action: 'claim' }, human)
+    for (const [operation, input] of [
+      ['world.process-plant.control.write', { ...write, value: false }],
+      ['world.process-plant.control.ramp', { plantId, tagId: 'RCP-A-SPD', targetValue: 0.9, durationSeconds: 30 }],
+      ['world.process-plant.action.invoke', { plantId, actionId: 'turbine-trip', parameters: {} }],
+      ['world.process-plant.actuation.reset', { plantId, ruleId: 'reactor-manual-trip' }],
+      ['world.process-plant.ic.lifecycle', { plantId, lifecycleId: 'any', action: 'acknowledge' }],
+    ] as const) {
+      const refused = await invoke(operation, input, ai)
+      expect(refused.status).toBe(409)
+      expect(refused.body.error.message).toContain('A person drives E-0')
+    }
+    const otherPlant = run.snapshot().objects.find(object => object.packId === 'process-plant' && object.id !== plantId)!
+    expect((await invoke('world.process-plant.control.write', { plantId: otherPlant.id, tagId: 'RX-TRIP-MAN', value: true }, ai)).status).toBe(200)
+    expect((await invoke('world.process-plant.control.write', { ...write, value: false }, human)).status).toBe(200)
+    const transition = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+      basis: 'Cannot overrule a person.', evidenceTagIds: ['TRIP-BKR-A'] }, ai)
+    expect(transition.status).toBe(409)
+    await invoke('world.procedure.run.drive', { runId, action: 'release' }, human)
+    await invoke('world.procedure.run.drive', { runId, action: 'claim' }, ai)
     expect((await invoke('world.process-plant.control.write', write, ai)).status).toBe(200)
-    await invoke('world.procedure.run.drive', { runId: started.body.result.pinned.runId, action: 'claim' }, human)
-    expect((await invoke('world.process-plant.control.write', { ...write, value: false }, ai)).status).toBe(200)
-    const refused = await invoke('world.procedure.run.transition', { runId: started.body.result.pinned.runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Cannot overrule a person.', evidenceTagIds: ['TRIP-BKR-A'] }, ai)
-    expect(refused.status).toBe(409)
-    expect(refused.body.error.message).toContain('A person drives')
   })
 
   test('a step read without runId names the runs when the caller drives none or several; a start without sourceId needs a sole source', async () => {
