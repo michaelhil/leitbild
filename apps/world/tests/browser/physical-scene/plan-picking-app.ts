@@ -2,16 +2,16 @@ import type { PackPhysicalScene, PhysicalPlanPrimitive, PhysicalSceneObject } fr
 import { drawPhysicalPlanDrawing, physicalPlanContinuationPaths } from '../../../src/ui/physical-layout/plan-drawing.ts'
 import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from '../../../src/ui/map/physical-scene/plan-picking.ts'
 import { defaultPhysicalSceneView } from '../../../src/ui/map/physical-scene/types.ts'
-import { pickPhysicalPlan as previousPick } from '../../fixtures/physical-layout/plan-picking-before-entry-bounds.ts'
+import { pickPhysicalPlan as previousPick, physicalPlanOccurrenceBounds as previousBounds } from '../../fixtures/physical-layout/plan-picking-before-entry-bounds.ts'
 
 type Point = { x: number; y: number }
 const results: unknown[] = [], failures: string[] = [], ratio = devicePixelRatio, canvas = document.createElement('canvas')
 type OracleMode = 'before' | 'current' | 'brute'
 let oracleMode: OracleMode | null = null, gridQueries = 0
-const oracleCalls = { before: { stroke: 0, fill: 0, glyph: 0 }, current: { stroke: 0, fill: 0, glyph: 0 }, brute: { stroke: 0, fill: 0, glyph: 0 } }
+const oracleCalls = { before: { stroke: 0, fill: 0, glyph: 0, metrics: 0 }, current: { stroke: 0, fill: 0, glyph: 0, metrics: 0 }, brute: { stroke: 0, fill: 0, glyph: 0, metrics: 0 } }
 const restorers: Array<() => void> = []
 for (const prototype of [CanvasRenderingContext2D.prototype, OffscreenCanvasRenderingContext2D.prototype]) {
- for (const [method, counter] of [['isPointInStroke', 'stroke'], ['isPointInPath', 'fill'], ['getImageData', 'glyph']] as const) {
+ for (const [method, counter] of [['isPointInStroke', 'stroke'], ['isPointInPath', 'fill'], ['getImageData', 'glyph'], ['measureText', 'metrics']] as const) {
   const target = prototype as unknown as Record<string, (...args: unknown[]) => unknown>, original = target[method]!
   target[method] = function(this: unknown, ...args: unknown[]) { if (oracleMode !== null) oracleCalls[oracleMode][counter]++; return original.apply(this, args) }
   restorers.push(() => { target[method] = original })
@@ -73,6 +73,23 @@ try {
   scene=source(Array.from({length:32},(_,id)=>{const y=1+(id*17%32)/4;return{id:'loose-stroke-'+id,occurrenceId:'route',scopeIds:['room'],depiction:'projection' as const,kind:'path' as const,bounds:{min:[1,y] as [number,number],max:[9,y] as [number,number]},stroke:'pipe',width:.04,commands:[['M',1,y],['L',9,y]] as Extract<PhysicalPlanPrimitive,{kind:'path'}>['commands']}}))
   value=input(scene,degrees,scale);paint(value);compareGrid(value)
  }
+ const absentSource=source([{id:'only-text',occurrenceId:'machine',scopeIds:['room'],depiction:'annotation',kind:'text',anchor:[5,5],text:'Only text',height:1,rotation:0,align:'middle',material:'ink',bounds:box}],[object('machine'),object('absent')])
+ const beforeMetrics=oracleCalls.before.metrics,currentMetrics=oracleCalls.current.metrics
+ for(const [degrees,scale]of[[0,15],[73,31],[185,60]]as const){
+  const value=input(absentSource,degrees,scale)
+  oracleMode='before';const previous=previousBounds(value,'absent')
+  oracleMode='current';const current=physicalPlanOccurrenceBounds(value,'absent');oracleMode=null
+  if(previous!==null||current!==null)failures.push('Unpainted occurrence acquired a Plan footprint')
+ }
+ const absenceMetrics={before:oracleCalls.before.metrics-beforeMetrics,current:oracleCalls.current.metrics-currentMetrics}
+ if(absenceMetrics.before!==3||absenceMetrics.current!==0)failures.push('Missing owner visited native text metrics: '+JSON.stringify(absenceMetrics))
+ for(const [degrees,scale]of[[0,15],[73,31],[185,60]]as const){
+  const value=input(absentSource,degrees,scale),before=previousBounds(value,'machine'),current=physicalPlanOccurrenceBounds(value,'machine')
+  if(JSON.stringify(before)!==JSON.stringify(current)||current===null)failures.push('Text-only footprint stopped using current camera/font metrics')
+ }
+ const replacement=source([{id:'replacement',occurrenceId:'absent',scopeIds:['room'],depiction:'annotation',kind:'text',anchor:[5,5],text:'Now present',height:1,rotation:0,align:'middle',material:'ink',bounds:box}],[object('absent')]),replacementInput=input(replacement,0,30)
+ if(physicalPlanOccurrenceBounds(replacementInput,'absent')===null)failures.push('An old source absence leaked into replacement source')
+ results.push({name:'immutable Plan owner absence and current text-only footprints',absenceMetrics})
  if (!(oracleCalls.current.stroke < oracleCalls.before.stroke)) failures.push('Individual bounds did not reduce native stroke queries')
  ;(window as any).__planInkProof={done:true,passed:failures.length===0,results,failures,ratio,gridQueries,oracleCalls,userAgent:navigator.userAgent}
 }catch(error){(window as any).__planInkProof={done:true,passed:false,error:String(error),results,failures,ratio,gridQueries,oracleCalls}}

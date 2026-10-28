@@ -27,7 +27,7 @@ type NativeContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2
 interface Entry { readonly order: number; readonly primitiveId: string; readonly owner?: PhysicalSceneObject; readonly command?: PhysicalPlanPaint; readonly marker?: Marker; readonly bounds: PhysicalSceneBounds }
 interface TextLayout { readonly font: string; readonly box: { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }; readonly angle: number }
 interface TextIndex { readonly key: string; readonly entries: ReadonlyArray<Entry>; readonly layouts: ReadonlyArray<TextLayout>; readonly index: PhysicalSpatialIndex }
-interface Index { readonly entries: ReadonlyArray<Entry>; readonly index: PhysicalSpatialIndex; readonly texts: ReadonlyArray<{ readonly order: number; readonly primitive: Text; readonly owner?: PhysicalSceneObject }>; readonly regions: ReadonlyArray<PhysicalSceneBounds>; readonly owners: ReadonlyMap<string, ReadonlyArray<Entry>>; readonly occurrenceBounds: Map<string, PhysicalSceneBounds | null>; textIndex?: TextIndex }
+interface Index { readonly entries: ReadonlyArray<Entry>; readonly index: PhysicalSpatialIndex; readonly texts: ReadonlyArray<{ readonly order: number; readonly primitive: Text; readonly owner?: PhysicalSceneObject }>; readonly textOwners: ReadonlySet<string>; readonly regions: ReadonlyArray<PhysicalSceneBounds>; readonly owners: ReadonlyMap<string, ReadonlyArray<Entry>>; readonly occurrenceBounds: Map<string, PhysicalSceneBounds | null>; textIndex?: TextIndex }
 const indexes = new WeakMap<ReadonlyArray<PhysicalPlanPaint>, Index>()
 const hatches = new WeakMap<Geometry, { readonly path: Path2D; readonly x: number; readonly y: number; readonly cosine: number; readonly sine: number }>()
 let context: NativeContext | null = null, fontRevision = 0
@@ -81,7 +81,9 @@ const indexFor = (input: PhysicalPlanPickInput): Index => {
   physicalPlanContinuationPaths(input.scene, input.view, input.scopeId).forEach((marker, at) => { const owner = objects.get(marker.occurrenceId); entries.push({ order: commands.length + at, primitiveId: `continuation/${marker.occurrenceId}`, ...(owner ? { owner } : {}), marker, bounds: bounds([[marker.bounds.min[0], marker.bounds.min[1]], [marker.bounds.max[0], marker.bounds.max[1]]], .08 / 2) }) })
   const owners = new Map<string, Entry[]>()
   for (const entry of entries) if (entry.owner) { const values = owners.get(entry.owner.id) ?? []; values.push(entry); owners.set(entry.owner.id, values) }
-  const value: Index = { owners, occurrenceBounds: new Map(), entries, index: createPhysicalSpatialIndex(entries.map(entry => entry.bounds)), texts, regions: physicalScopeRegions(input.scene, input.scopeId ?? undefined) }
+  const textOwners = new Set<string>()
+  for (const text of texts) if (text.owner) textOwners.add(text.owner.id)
+  const value: Index = { owners, textOwners, occurrenceBounds: new Map(), entries, index: createPhysicalSpatialIndex(entries.map(entry => entry.bounds)), texts, regions: physicalScopeRegions(input.scene, input.scopeId ?? undefined) }
   indexes.set(commands, value); return value
 }
 const textIndexFor = (input: PhysicalPlanPickInput, index: Index): TextIndex => {
@@ -178,7 +180,11 @@ export const pickPhysicalPlan = (input: PhysicalPlanPickInput, point: Point): Ph
 export const physicalPlanOccurrenceBounds = (input: PhysicalPlanPickInput, occurrenceId: string): PhysicalSceneBounds | null => {
   const index = indexFor(input)
   if (index.occurrenceBounds.has(occurrenceId)) return index.occurrenceBounds.get(occurrenceId)!
-  const geometry = index.owners.get(occurrenceId), matches = geometry?.length ? geometry : textIndexFor(input, index).entries.filter(entry => entry.owner?.id === occurrenceId)
+  const geometry = index.owners.get(occurrenceId)
+  // Absence is an immutable command-roster fact. Do not construct/revisit all
+  // scale-sensitive glyph metrics for an occurrence with no authored Plan ink.
+  if (!geometry?.length && !index.textOwners.has(occurrenceId)) { index.occurrenceBounds.set(occurrenceId, null); return null }
+  const matches = geometry?.length ? geometry : textIndexFor(input, index).entries.filter(entry => entry.owner?.id === occurrenceId)
   if (!matches.length) return null
   const points: Array<readonly [number, number]> = []
   for (const entry of matches) {
