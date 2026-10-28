@@ -188,6 +188,8 @@ export interface ModalElements {
 // Content taller than the viewport scrolls inside scrollBody; title and footer
 // stay visible. Caller appends into scrollBody (and footer if needed).
 export const createModal = (config: ModalConfig): ModalElements => {
+  const previousFocus = document.activeElement
+  let closed = false
   const overlay = document.createElement('div')
   // z-[1100]: must beat Leaflet's controls (z-index 1000) and panes (400+)
   // so a Settings modal opened over a chat-inline map renders above it.
@@ -196,6 +198,7 @@ export const createModal = (config: ModalConfig): ModalElements => {
   overlay.className = 'fixed inset-0 flex items-center justify-center p-4'
   overlay.style.background = 'var(--shadow-overlay)'
   overlay.style.zIndex = '1100'
+  overlay.dataset.modalOverlay = ''
 
   const card = document.createElement('div')
   // `modal-card` hooks the global form-control theming in input.css so any
@@ -220,7 +223,14 @@ export const createModal = (config: ModalConfig): ModalElements => {
   title.id = titleId
   card.setAttribute('aria-labelledby', titleId)
   header.appendChild(title)
-  const close = (): void => { overlay.remove() }
+  const close = (): void => {
+    if (closed) return
+    closed = true
+    overflowRO.disconnect(); contentMO.disconnect(); observer.disconnect()
+    document.removeEventListener('keydown', onEsc)
+    overlay.remove()
+    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus()
+  }
   // No × button. Click outside or Escape closes. Callers that query the
   // header for a button insert their own button first, so the lookup either
   // returns that button or null.
@@ -231,6 +241,7 @@ export const createModal = (config: ModalConfig): ModalElements => {
   // class on scroll / resize. Invisible when not needed (no always-on
   // scrollbar); the gradient styling lives in input.css.
   const updateOverflowState = (): void => {
+    if (closed) return
     const atBottom = scrollBody.scrollTop + scrollBody.clientHeight >= scrollBody.scrollHeight - 1
     const hasOverflow = scrollBody.scrollHeight > scrollBody.clientHeight + 1
     scrollBody.classList.toggle('has-overflow-bottom', hasOverflow && !atBottom)
@@ -265,7 +276,10 @@ export const createModal = (config: ModalConfig): ModalElements => {
   overlay.onclick = (e) => { if (e.target === overlay) close() }
 
   const onEsc = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc) }
+    if (e.key === 'Escape' && !e.defaultPrevented && [...document.querySelectorAll('[data-modal-overlay]')].at(-1) === overlay) {
+      e.preventDefault()
+      close()
+    }
   }
   document.addEventListener('keydown', onEsc)
 
