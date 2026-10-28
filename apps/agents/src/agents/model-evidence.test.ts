@@ -177,6 +177,58 @@ test('a validation-error message keeps its Inspector link, failed outputs and ac
   } finally { store.close() }
 })
 
+test('a cancelled provider unwinding beside a new turn cannot steal its fallback evidence', async () => {
+  const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
+  const oldEntered = Promise.withResolvers<void>(), releaseOld = Promise.withResolvers<void>(), allFinished = Promise.withResolvers<void>()
+  let bindings = 0, finished = 0
+  const service: LLMService = { bound: options => {
+    const binding = bindings++
+    return { models: async () => ['test'], chat: async () => {
+      if (binding === 0) throw new Error('Metadata provider must not dispatch generation')
+      if (binding === 1) { oldEntered.resolve(); await releaseOld.promise }
+      options.onChainSwitch?.('test', binding === 1 ? 'old-route' : 'new-route', 'preferred_unavailable')
+      return { content: binding === 1 ? 'Late old answer' : 'New answer', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }
+    } }
+  } }
+  const agent = await spawnAIAgent({ name: 'Agent', model: 'test', persona: '' }, service,
+    rooms, createWorkspaceSettings(), createTeam(), (_target, params) => [room.post(params)], createToolRegistry(), {
+      executionStore: store, onTurnFinished: () => { if (++finished === 2) allFinished.resolve() },
+    })
+  room.addMember(agent.id); await agent.join(room)
+  agent.receive(room.post({ senderId: 'human', content: 'Old question', type: 'chat' }))
+  await oldEntered.promise; agent.cancelGeneration()
+  agent.receive(room.post({ senderId: 'human', content: 'New question', type: 'chat' }))
+  await agent.whenIdle()
+  releaseOld.resolve(); await allFinished.promise
+  try {
+    const turns = store.listTurns(room.profile.id), oldTurn = turns.find(turn => turn.status === 'interrupted')!, newTurn = turns.find(turn => turn.status === 'completed')!
+    expect(turns).toHaveLength(2)
+    const routes = (turnId: string) => store.modelEvidence(room.profile.id, turnId).stages.flatMap(stage => stage.event.kind === 'model_fallback' ? [stage.event.effective] : [])
+    expect(routes(oldTurn.id)).toEqual(['old-route'])
+    expect(routes(newTurn.id)).toEqual(['new-route'])
+    expect(store.getModelCall(room.profile.id, newTurn.id, 'model_1')?.response?.content).toBe('New answer')
+    expect(room.getRecent(1)[0]?.content).toBe('New answer')
+  } finally { store.close() }
+})
+
+test('failure publishing the first evidence document closes the turn without sending a provider request', async () => {
+  const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
+  let dispatches = 0
+  const observedStore = { ...store, beginModelCapture: () => { throw new Error('Evidence storage is unavailable') } }
+  const provider: LLMProvider = { models: async () => ['test'], chat: async () => { dispatches++; return { content: 'Unexpected', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } } } }
+  const agent = await spawnAIAgent({ name: 'Agent', model: 'test', persona: '' }, { bound: () => provider } as unknown as LLMService,
+    rooms, createWorkspaceSettings(), createTeam(), (_target, params) => [room.post(params)], createToolRegistry(), { executionStore: observedStore })
+  room.addMember(agent.id); await agent.join(room)
+  agent.receive(room.post({ senderId: 'human', content: 'Inspect', type: 'chat' }))
+  await agent.whenIdle()
+  try {
+    const turn = store.listTurns(room.profile.id)[0]!
+    expect(dispatches).toBe(0)
+    expect(turn).toMatchObject({ status: 'failed', reason: 'Evidence storage is unavailable' })
+    expect(store.modelEvidence(room.profile.id, turn.id).modelCapture).toBe('unavailable')
+  } finally { store.close() }
+})
+
 test('cancelled model streams keep known partial text without inventing a completed answer or tools', async () => {
   const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
   let entered!: () => void

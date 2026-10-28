@@ -110,7 +110,7 @@ export interface AIAgentOptions {
   readonly onEvalEvent?: (scope: EvalEventScope, event: EvalEvent) => void
   // Existing provider-chain notices observed while this turn is executing.
   // Separate from UI notice deduplication; no transport-attempt inference.
-  readonly observeProviderEvents?: (observer: (event: Extract<EvalEventCore, { kind: 'model_fallback' }>) => void) => () => void
+  readonly providerForTurn?: (observer: (event: Extract<EvalEventCore, { kind: 'model_fallback' }>) => void) => LLMProvider
   // Per-call effective-model resolution. When provided, the agent calls this
   // before each LLM request to derive the actual model from the user's
   // preference. Returns the resolved model + whether a fallback was used.
@@ -442,8 +442,13 @@ export const createAIAgent = (
     const begin = async (): Promise<void> => {
       signal.throwIfAborted()
       store.beginTurn({ id: traceId, roomId: triggerRoomId, agentId, startedAt: Date.now() })
-      store.beginModelCapture(traceId, triggerRoomId)
-      for (const stage of preparationStages) store.recordStage(traceId, stage.event, stage.at)
+      try {
+        store.beginModelCapture(traceId, triggerRoomId)
+        for (const stage of preparationStages) store.recordStage(traceId, stage.event, stage.at)
+      } catch (error) {
+        store.finishTurn(traceId, 'failed', error instanceof Error ? error.message : String(error))
+        throw error
+      }
     }
     if (options?.executionGrowth) await options.executionGrowth(4096, begin)
     else await begin() // In-memory tests have no Workspace storage policy.
@@ -483,10 +488,12 @@ export const createAIAgent = (
         await retain(Buffer.byteLength(error) + (partial === undefined ? 0 : Buffer.byteLength(JSON.stringify(partial))) + 4096, () => store.recordModelFailure(traceId, id, error, cancelled, partial))
       },
     }
-    const stopObserving = options?.observeProviderEvents?.(retainEvent)
+    // A cancelled call can unwind after a new turn has started. Its provider
+    // callback must remain bound to its own turn, never a mutable Agent slot.
     try {
+      const turnProvider = options?.providerForTurn?.(retainEvent) ?? llmProvider // Isolated providers have no service chain to observe.
       const result = await evaluate(
-        contextResult, evalConfig, llmProvider, evalToolExec,
+        contextResult, evalConfig, turnProvider, evalToolExec,
         maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver },
       )
       await pendingStages
@@ -497,7 +504,6 @@ export const createAIAgent = (
       store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
       throw error
     } finally {
-      stopObserving?.() // Standalone providers expose no chain-switch callback.
       signal.removeEventListener('abort', interrupted)
     }
   }

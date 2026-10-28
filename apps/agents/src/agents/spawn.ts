@@ -25,7 +25,6 @@ import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-cap
 import type { RunContextFetcher } from './run-context.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
-import type { EvalEventCore } from '../core/types/agent-eval.ts'
 
 export type ExecutionGrowth = <T>(bytes: number, work: () => Promise<T>) => Promise<T>
 export type RunToolOperation = <T>(work: () => Promise<T>) => Promise<T>
@@ -369,8 +368,8 @@ export const spawnAIAgent = async (
   toolRegistry?: ToolRegistry,
   spawnOptions?: SpawnOptions,
 ): Promise<AIAgent> => {
-  // Bind once per agent: source='agent', agentId baked in, chain-switch
-  // events surface via onEvalEvent as the existing model_fallback kind.
+  // Bind the metadata/tool provider to this Agent; generation binds each
+  // turn separately so late cancelled calls retain their own evidence sink.
   // agentId is fixed up-front so the bound provider can carry it before
   // createAIAgent is called (resolveAgentTools needs the provider too).
   const agentId = spawnOptions?.overrideId ?? crypto.randomUUID()
@@ -381,17 +380,12 @@ export const spawnAIAgent = async (
   // additionally per-target so a long outage produces ONE notice, not one
   // per call.
   let lastFallbackTarget: string | null = null
-  let providerObserver: ((event: Extract<EvalEventCore, { kind: 'model_fallback' }>) => void) | undefined
   const onChainSwitch = (preferred: string, effective: string, reason: string): void => {
-        const event = { kind: 'model_fallback' as const, preferred, effective, reason }
-        providerObserver?.(event) // Capture every observed switch, including repeated UI notice targets.
-        if (lastFallbackTarget === effective) return
-        lastFallbackTarget = effective
-        spawnOptions?.onEvalEvent?.(
-          { agentId, agentName: config.name },
-          event,
-        )
-      }
+    const event = { kind: 'model_fallback' as const, preferred, effective, reason }
+    if (lastFallbackTarget === effective) return
+    lastFallbackTarget = effective
+    spawnOptions?.onEvalEvent?.({ agentId, agentName: config.name }, event)
+  }
   const llmProvider: LLMProvider = llmService.bound({
     source: 'agent',
     agentId,
@@ -532,11 +526,10 @@ export const spawnAIAgent = async (
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
-    observeProviderEvents: observer => {
-      if (providerObserver) throw new Error('Provider-chain evidence already belongs to an active turn')
-      providerObserver = observer
-      return () => { if (providerObserver === observer) providerObserver = undefined }
-    },
+    providerForTurn: observer => llmService.bound({ source: 'agent', agentId, onChainSwitch: (preferred, effective, reason) => {
+      observer({ kind: 'model_fallback', preferred, effective, reason })
+      onChainSwitch(preferred, effective, reason)
+    } }),
     onProgress,
     ...(spawnOptions?.onTurnStart ? { onTurnStart: spawnOptions.onTurnStart } : {}),
     ...(spawnOptions?.onTurnFinished ? { onTurnFinished: spawnOptions.onTurnFinished } : {}),
