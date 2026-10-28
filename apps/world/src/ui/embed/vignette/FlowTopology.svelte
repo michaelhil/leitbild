@@ -70,6 +70,7 @@
     fit?: number
   } = $props()
 
+  let topologyRoot = $state<HTMLElement | null>(null)
   const drawing = $derived(flowDrawing(section, observations, alerts, frozen))
   let presentation = $state.raw<DisplayPresentation>(UNFRAMED_PRESENTATION)
   let opening = $state<DisplayOpening | null>(null)
@@ -172,7 +173,7 @@
   /** Where a faceplate stands as drawn, for the one it opens in its place. */
   const cardPlace = (key: string, overlay: PinnedOverlay | null): { readonly x: number; readonly y: number } => {
     if (overlay !== null) return { x: overlay.x, y: overlay.y }
-    const box = document.querySelector<HTMLElement>(`[data-faceplate="${CSS.escape(elementOf(key))}"]`)?.getBoundingClientRect()
+    const box = topologyRoot?.querySelector<HTMLElement>(`[data-faceplate="${CSS.escape(elementOf(key))}"]`)?.getBoundingClientRect()
     return box === undefined ? { x: room.x, y: room.y } : { x: box.left, y: box.top }
   }
 
@@ -478,7 +479,7 @@
   {/key}
 {/snippet}
 
-<div class="frame">
+<div class="frame" bind:this={topologyRoot}>
 <div class="flow" class:tall style:max-height={tall ? `${held}px` : undefined} use:scrollEnds={ends => { more = ends }}>
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
   <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--unscale={1 / scale} role="group" aria-label="Flow topology">

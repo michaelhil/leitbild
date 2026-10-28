@@ -16,8 +16,9 @@
     parts: ReadonlyArray<ReadonlyArray<number | null>>
   } = $props()
 
+  const instance = $props.id()
   const shape = $derived(vesselGeometry({ height, origin, drawing, level, groups: parts }))
-  const clip = $derived(`vessel-${id}`)
+  const clip = $derived(`vessel-${instance}-${id}`)
 </script>
 
 <svg class="vessel" {width} {height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
