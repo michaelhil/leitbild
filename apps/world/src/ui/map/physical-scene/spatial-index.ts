@@ -125,3 +125,44 @@ export const visitPhysicalSpatialBounds = (index: PhysicalSpatialIndex, bounds: 
     else pending.push(right, left)
   }
 }
+
+/** Self-collision traversal of an atomic overlap hierarchy. Every unordered
+ * primitive pair is considered once; leaves use the original earlier/later
+ * query orientation so floating-point boundary behavior stays identical. */
+export const visitPhysicalAtomicOverlapPairs = (index: PhysicalSpatialIndex, visit: (earlier: number, later: number) => void): void => {
+  if (!index.order.length) return
+  if (index.bounds.length / 6 !== index.order.length * 2 - 1) throw Error('Self-pair traversal requires an atomic overlap hierarchy')
+  const weights = new Float64Array(index.bounds.length / 6)
+  for (let node = 0; node < weights.length; node++) {
+    const at = node * 6, x = index.bounds[at + 3]! - index.bounds[at]!, y = index.bounds[at + 4]! - index.bounds[at + 1]!, z = index.bounds[at + 5]! - index.bounds[at + 2]!
+    weights[node] = 2 * (x * y + y * z + z * x)
+  }
+  const overlap = (a: number, b: number, bothOrientations: boolean): boolean => {
+    for (let axis = 0; axis < 3; axis++) {
+      const aLow = index.bounds[a + axis]!, aHigh = index.bounds[a + axis + 3]!, bLow = index.bounds[b + axis]!, bHigh = index.bounds[b + axis + 3]!
+      const error = Math.max(1, Math.abs(aLow), Math.abs(aHigh), Math.abs(bLow), Math.abs(bHigh)) * Number.EPSILON * 8
+      if (bothOrientations) {
+        // A parent pair may contain either source ordering. Reject only if
+        // both numerical orientations exclude the separating interval.
+        if (aHigh < bLow - error && bLow > aHigh + error || aLow > bHigh + error && bHigh < aLow - error) return false
+      } else if (aHigh < bLow - error || aLow > bHigh + error) return false
+    }
+    return true
+  }
+  const pending = [0, 0]
+  while (pending.length) {
+    const b = pending.pop()!, a = pending.pop()!, leftA = index.children[a * 2]!, rightA = index.children[a * 2 + 1]!, leftB = index.children[b * 2]!, rightB = index.children[b * 2 + 1]!
+    if (a === b) {
+      if (leftA >= 0) pending.push(rightA, rightA, leftA, rightA, leftA, leftA)
+      continue
+    }
+    if (!overlap(a * 6, b * 6, true)) continue
+    if (leftA < 0 && leftB < 0) {
+      if (index.ranges[a * 2 + 1] !== 1 || index.ranges[b * 2 + 1] !== 1) throw Error('Self-pair traversal requires an atomic overlap hierarchy')
+      const idA = index.order[index.ranges[a * 2]!]!, idB = index.order[index.ranges[b * 2]!]!, earlier = Math.min(idA, idB), later = Math.max(idA, idB)
+      const earlierNode = idA < idB ? a : b, laterNode = idA < idB ? b : a
+      if (overlap(earlierNode * 6, laterNode * 6, false)) visit(earlier, later)
+    } else if (leftB < 0 || leftA >= 0 && weights[a]! >= weights[b]!) pending.push(rightA, b, leftA, b)
+    else pending.push(a, rightB, a, leftB)
+  }
+}

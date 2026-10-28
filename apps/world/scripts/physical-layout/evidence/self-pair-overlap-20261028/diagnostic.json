@@ -1,0 +1,329 @@
+{
+  "candidateBase": "3aecdbefcb0d62aba35545c48460c5a57eceea94",
+  "runtime": "Fresh Chrome 156 dedicated Worker per sample",
+  "qualification": "Actual R6 geometry/render/ownership and fixed-ray picking exact; actual product loading still requires combined qualification",
+  "receipts": [
+    {
+      "name": "unit-dual-1",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-transfer-dual-20261028/unit-dual-1/receipt.json",
+      "sha256": "8622a30ec5e77f0aaaf6e6f266141bca03405079850fec6541a8fa782868e61f",
+      "family": "unit",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "input": {
+        "kind": "ready",
+        "inputMeshes": 996,
+        "inputTriangles": 244225
+      },
+      "workerSha256": "150522701f68f43247ca7e3bfd615726c23abd2607545a4566b84579a19e45a1",
+      "result": {
+        "ownershipMs": 804.7999999523163,
+        "pickingMs": 324,
+        "packingMs": 44.40000009536743,
+        "phasesMs": 1173.2000000476837,
+        "fingerprint": "bbc6de80f83901b1b9a3ec21af5a987043b508d7a14adda576e201c22961e228",
+        "hashedBytes": 101139858,
+        "packedBytes": 29589600,
+        "outputMeshes": 4193,
+        "diagnostics": {
+          "broadPhaseCandidates": 3047341,
+          "coplanarCandidates": 184212,
+          "triangles": 244201,
+          "partitionedTriangles": 22261,
+          "retainedCandidates": 3197,
+          "coincidentPairs": 1740
+        }
+      }
+    },
+    {
+      "name": "unit-dual-diagnostic",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-transfer-dual-20261028/unit-dual-diagnostic/receipt.json",
+      "sha256": "e36fca1e860eed1c6435f9b9fda3e9e058eabc0e6126db8c79a22a70e0b82dde",
+      "family": "unit",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "input": {
+        "kind": "ready",
+        "inputMeshes": 996,
+        "inputTriangles": 244225
+      },
+      "workerSha256": "150522701f68f43247ca7e3bfd615726c23abd2607545a4566b84579a19e45a1",
+      "result": {
+        "ownershipMs": 810.3000001907349,
+        "pickingMs": 323.19999980926514,
+        "packingMs": 45.40000009536743,
+        "phasesMs": 1178.9000000953674,
+        "fingerprint": "f895b84505dca159496f7900e40103ebbe18bf69ab2594e5fa4971b0abc46b0f",
+        "hashedBytes": 101139858,
+        "packedBytes": 29589600,
+        "outputMeshes": 4193,
+        "sections": [
+          {
+            "label": "meshes",
+            "bytes": 52245746,
+            "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+          },
+          {
+            "label": "render",
+            "bytes": 29589767,
+            "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+          },
+          {
+            "label": "picking",
+            "bytes": 19107124,
+            "sha256": "eab5dbd13622f2053e5c9fb69ad123988f6d07e1453a0b140516682d917d7935"
+          },
+          {
+            "label": "diagnostics",
+            "bytes": 197221,
+            "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+          }
+        ],
+        "diagnostics": {
+          "broadPhaseCandidates": 3047341,
+          "coplanarCandidates": 184212,
+          "triangles": 244201,
+          "partitionedTriangles": 22261,
+          "retainedCandidates": 3197,
+          "coincidentPairs": 1740
+        }
+      }
+    },
+    {
+      "name": "unit-baseline-diagnostic",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-transfer-dual-20261028/unit-baseline-diagnostic/receipt.json",
+      "sha256": "4e57681d4a82d4736c98f26b8d6a97f83868d4de438e7533c2d9d7a18deaed8b",
+      "family": "unit",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "input": {
+        "kind": "ready",
+        "inputMeshes": 996,
+        "inputTriangles": 244225
+      },
+      "workerSha256": "d058b22e85c83654454c45bbf5f58e441007f892765d9e656aeeb2bb771e1c13",
+      "result": {
+        "ownershipMs": 1051.1000001430511,
+        "pickingMs": 343.89999985694885,
+        "packingMs": 53.5,
+        "phasesMs": 1448.5,
+        "fingerprint": "16e78ea48f8d1477327f92015e4fb9689b2d9a714ba519c7a191134c8601853d",
+        "hashedBytes": 101139602,
+        "packedBytes": 29589600,
+        "outputMeshes": 4193,
+        "sections": [
+          {
+            "label": "meshes",
+            "bytes": 52245746,
+            "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+          },
+          {
+            "label": "render",
+            "bytes": 29589767,
+            "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+          },
+          {
+            "label": "picking",
+            "bytes": 19106868,
+            "sha256": "c5ffe6a7be7b3cd3e6dcdd2923330a99a811149b6ca452381e95c7025e3fda62"
+          },
+          {
+            "label": "diagnostics",
+            "bytes": 197221,
+            "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+          }
+        ],
+        "diagnostics": {
+          "broadPhaseCandidates": 3047341,
+          "coplanarCandidates": 184212,
+          "triangles": 244201,
+          "partitionedTriangles": 22261,
+          "retainedCandidates": 3197,
+          "coincidentPairs": 1740
+        }
+      }
+    },
+    {
+      "name": "campus-dual-diagnostic",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-transfer-dual-20261028/campus-dual-diagnostic/receipt.json",
+      "sha256": "018340a3b1d45b6dfdfc36c4a3ebcb9b7d3f8443966da5942bfc75d0c3bc6b10",
+      "family": "campus",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "input": {
+        "kind": "ready",
+        "inputMeshes": 535,
+        "inputTriangles": 131845
+      },
+      "workerSha256": "150522701f68f43247ca7e3bfd615726c23abd2607545a4566b84579a19e45a1",
+      "result": {
+        "ownershipMs": 482.7000000476837,
+        "pickingMs": 150.39999985694885,
+        "packingMs": 16.40000009536743,
+        "phasesMs": 649.5,
+        "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+        "hashedBytes": 58238934,
+        "packedBytes": 18569040,
+        "outputMeshes": 1837,
+        "sections": [
+          {
+            "label": "meshes",
+            "bytes": 31622210,
+            "sha256": "b97a1cd6e1c85bc313f5a2e488b7ee38723b486e3609e25bb3b5590755199d53"
+          },
+          {
+            "label": "render",
+            "bytes": 18569170,
+            "sha256": "f2058a567974001a8950ab36a98ff1bc67032c520155fa8dcd47deebe907a134"
+          },
+          {
+            "label": "picking",
+            "bytes": 7949384,
+            "sha256": "33e2eacf4e6dcc284a77a93620d6481c9573a6d86563c6b6a301821238f11299"
+          },
+          {
+            "label": "diagnostics",
+            "bytes": 98170,
+            "sha256": "8be73f018de972a68c56f953a8f4d98a4b86f4a88cb5a81aba6473218868fc59"
+          }
+        ],
+        "diagnostics": {
+          "broadPhaseCandidates": 2224458,
+          "coplanarCandidates": 110891,
+          "triangles": 131845,
+          "partitionedTriangles": 8096,
+          "retainedCandidates": 1302,
+          "coincidentPairs": 973
+        }
+      }
+    },
+    {
+      "name": "unit-dual-fixed-ray-1",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-transfer-dual-20261028/unit-dual-fixed-ray-1/receipt.json",
+      "sha256": "815eb9e10eb9ef0394c1def42ea3907fb1fe6a524415d325e7bbe8a05d2637d0",
+      "family": "unit",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "input": {
+        "kind": "ready",
+        "inputMeshes": 996,
+        "inputTriangles": 244225
+      },
+      "workerSha256": "7b514436eda48672892ff860ac5654c5fc4e0bfc66dfb2df9516caff7d28840b",
+      "commonRayFix": "f8d0b4c89",
+      "result": {
+        "ownershipMs": 856.0999999046326,
+        "pickingMs": 275.7000000476837,
+        "packingMs": 50.40000009536743,
+        "phasesMs": 1182.2000000476837,
+        "fingerprint": "69ca71bf2b8cd710116cd1fa482addb33c51fec5db7ad733847583a5faed59ff",
+        "hashedBytes": 101253394,
+        "packedBytes": 29589600,
+        "outputMeshes": 4193,
+        "sections": [
+          {
+            "label": "meshes",
+            "bytes": 52245746,
+            "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+          },
+          {
+            "label": "render",
+            "bytes": 29589767,
+            "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+          },
+          {
+            "label": "picking",
+            "bytes": 19220660,
+            "sha256": "198f9f63f8e3af6c4604ada5d09ca887f3102563f237bbf41f7d991baaa34855"
+          },
+          {
+            "label": "diagnostics",
+            "bytes": 197221,
+            "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+          }
+        ],
+        "diagnostics": {
+          "broadPhaseCandidates": 3047341,
+          "coplanarCandidates": 184212,
+          "triangles": 244201,
+          "partitionedTriangles": 22261,
+          "retainedCandidates": 3197,
+          "coincidentPairs": 1740
+        }
+      }
+    },
+    {
+      "name": "campus-dual-fixed-ray-1",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-transfer-dual-20261028/campus-dual-fixed-ray-1/receipt.json",
+      "sha256": "b1c0ff381b0031bf2720661ff2222f6b1e1f9568183a5ca4e45894aa7c9951cd",
+      "family": "campus",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "input": {
+        "kind": "ready",
+        "inputMeshes": 535,
+        "inputTriangles": 131845
+      },
+      "workerSha256": "7b514436eda48672892ff860ac5654c5fc4e0bfc66dfb2df9516caff7d28840b",
+      "commonRayFix": "f8d0b4c89",
+      "result": {
+        "ownershipMs": 439.5,
+        "pickingMs": 122.09999990463257,
+        "packingMs": 14.400000095367432,
+        "phasesMs": 576,
+        "fingerprint": "5ea4eda183616c40acbdaa75448ea6587f8659e8dd1c8773e58f5fed044ce995",
+        "hashedBytes": 58383830,
+        "packedBytes": 18569040,
+        "outputMeshes": 1837,
+        "sections": [
+          {
+            "label": "meshes",
+            "bytes": 31622210,
+            "sha256": "b97a1cd6e1c85bc313f5a2e488b7ee38723b486e3609e25bb3b5590755199d53"
+          },
+          {
+            "label": "render",
+            "bytes": 18569170,
+            "sha256": "f2058a567974001a8950ab36a98ff1bc67032c520155fa8dcd47deebe907a134"
+          },
+          {
+            "label": "picking",
+            "bytes": 8094280,
+            "sha256": "52e5f2c0e7696f2d2a46f6b42b5289f10d64d0cc6df3441f51c6d7456ef73fc5"
+          },
+          {
+            "label": "diagnostics",
+            "bytes": 98170,
+            "sha256": "8be73f018de972a68c56f953a8f4d98a4b86f4a88cb5a81aba6473218868fc59"
+          }
+        ],
+        "diagnostics": {
+          "broadPhaseCandidates": 2224458,
+          "coplanarCandidates": 110891,
+          "triangles": 131845,
+          "partitionedTriangles": 8096,
+          "retainedCandidates": 1302,
+          "coincidentPairs": 973
+        }
+      }
+    }
+  ]
+}

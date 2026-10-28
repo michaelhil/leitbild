@@ -1,7 +1,7 @@
 import type { PhysicalMesh } from './geometry.ts'
 import { meshBounds } from './geometry.ts'
 import { type Vector3 } from './math.ts'
-import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds, physicalSpatialBoundsOverlap } from './spatial-index.ts'
+import { createPhysicalSpatialIndex, visitPhysicalAtomicOverlapPairs, physicalSpatialBoundsOverlap } from './spatial-index.ts'
 
 /** A deterministic display tie, not a change to physical/material ownership. */
 export interface PhysicalSurfaceOwnershipDiagnostics {
@@ -104,26 +104,20 @@ export const preparePhysicalSurfaceOwnership = (meshes: ReadonlyArray<PhysicalMe
   })
   for (const faces of cohorts.values()) {
     const index = createPhysicalSpatialIndex(faces.map(face => face.bounds), 'overlap')
+    const eligible = new Map<number, number[]>()
+    visitPhysicalAtomicOverlapPairs(index, (candidate, faceIndex) => {
+      broadPhaseCandidates++
+      const face = faces[faceIndex]!, cover = faces[candidate]!, x = cover.axes[0], y = cover.axes[1]
+      if (Math.min(face.bounds.max[x]!, cover.bounds.max[x]!) <= Math.max(face.bounds.min[x]!, cover.bounds.min[x]!) || Math.min(face.bounds.max[y]!, cover.bounds.max[y]!) <= Math.max(face.bounds.min[y]!, cover.bounds.min[y]!)) return
+      // BVH overlap is only a conservative source of pairs. Preserve the
+      // spatial guard before a numerically uncertain plane predicate.
+      if (!physicalSpatialBoundsOverlap(face.bounds, cover.bounds)) return
+      if (!onPlane(face.vertices, cover.vertices[0]!) || !onPlane(face.vertices, cover.vertices[1]!) || !onPlane(face.vertices, cover.vertices[2]!)) return
+      const candidates = eligible.get(faceIndex) ?? []
+      candidates.push(candidate); eligible.set(faceIndex, candidates); coplanarCandidates++
+    })
     faces.forEach((face, faceIndex) => {
-      const candidates: number[] = []
-      let earlierCandidates = 0
-      visitPhysicalSpatialBounds(index, face.bounds, candidate => {
-        if (candidate >= faceIndex) return
-        earlierCandidates++
-        const cover = faces[candidate]!
-        // These predicates depend only on immutable faces. Apply them before
-        // storing/sorting candidates; only the surviving faces need source order.
-        const x=cover.axes[0], y=cover.axes[1]
-        if (Math.min(face.bounds.max[x]!,cover.bounds.max[x]!) <= Math.max(face.bounds.min[x]!,cover.bounds.min[x]!) || Math.min(face.bounds.max[y]!,cover.bounds.max[y]!) <= Math.max(face.bounds.min[y]!,cover.bounds.min[y]!)) return
-        // A numerically thin plane test can be uncertain far from this face.
-        // Require spatially possible coincidence before considering it: a
-        // loose BVH leaf is a candidate source, never an ownership predicate.
-        if (!physicalSpatialBoundsOverlap(face.bounds, cover.bounds)) return
-        if (!onPlane(face.vertices,cover.vertices[0]!) || !onPlane(face.vertices,cover.vertices[1]!) || !onPlane(face.vertices,cover.vertices[2]!)) return
-        candidates.push(candidate)
-      })
-      broadPhaseCandidates += earlierCandidates
-      coplanarCandidates += candidates.length
+      const candidates = eligible.get(faceIndex) ?? []
       if (!candidates.length) {
         const target = pieces[face.mesh]!
         let base = target.get('[]')
