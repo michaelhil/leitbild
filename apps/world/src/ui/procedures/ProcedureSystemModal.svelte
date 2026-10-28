@@ -163,6 +163,7 @@
     close,
   }: Props = $props()
 
+  const compactProcedureWidth = 600
   const minWindowWidth = 48
   const minWindowHeight = 32
   const viewportMargin = 12
@@ -286,6 +287,7 @@
   }
 
   const cycleProcedureTocMode = (): void => {
+    if (windowBounds.width <= compactProcedureWidth) { procedureTocMode = procedureTocMode === 'collapsed' ? 'detail' : 'collapsed'; return }
     if (procedureTocMode === 'detail') {
       procedureTocMode = 'compact'
       return
@@ -379,6 +381,7 @@
   }
 
   const procedureTocModeLabel = (): string => {
+    if (windowBounds.width <= compactProcedureWidth) return procedureTocMode === 'collapsed' ? 'Open procedures' : 'Hide procedures'
     if (procedureTocMode === 'detail') return 'Show compact procedure list'
     if (procedureTocMode === 'compact') return 'Collapse procedure list'
     return 'Open procedure list'
@@ -545,6 +548,7 @@
       if (disposed || requestId !== latestProcedureLoadRequest) return
       const unitChanged = documentScope !== null && documentScope.plantId !== targetScope.plantId
       document = nextDocument
+      if (windowBounds.width <= compactProcedureWidth) procedureTocMode = 'collapsed'
       documentScope = targetScope
       loading = false
       if (catalog && !releasePrefetch) releasePrefetch = session.retainPrefetch(catalog)
@@ -825,6 +829,14 @@
   }
 
   // The procedure list is one Tab stop: arrows, Home and End move between its entries.
+  const chooseProcedure = async (procedureId: ProcedureId): Promise<void> => {
+    await loadProcedure(procedureId)
+    if (disposed || windowBounds.width > compactProcedureWidth || document?.procedureId !== procedureId || selectedProcedureId !== procedureId) return
+    const shown = document
+    const step = currentProcedureStep?.step ?? procedureFirstStep(shown)
+    if (step) scrollToProcedureStep(step.id, 'auto', true, () => document === shown && selectedProcedureId === procedureId)
+  }
+
   const moveInProcedureList = (event: KeyboardEvent): void => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     const current = event.currentTarget as HTMLButtonElement
@@ -1243,6 +1255,7 @@
     if (!boundsInitialized) {
       windowBounds = clampWindowBounds(defaultWindowBounds())
       boundsInitialized = true
+      if (windowBounds.width <= compactProcedureWidth) procedureTocMode = 'collapsed'
     }
     const unsubscribe = session.subscribe(state => { runs = state.runs; runDocuments = state.documents })
     void loadCatalogAndRuns()
@@ -1606,6 +1619,7 @@
 <div class="procedure-window-layer">
   <div
     class="procedure-modal procedure-window"
+    class:compact-procedure={windowBounds.width <= compactProcedureWidth}
     bind:this={procedureWindowElement}
     role="dialog"
     aria-modal="true"
@@ -1743,7 +1757,7 @@
                     aria-current={selectedProcedureId === item.procedureId ? 'true' : undefined}
                     onkeydown={moveInProcedureList}
                     aria-busy={loadingProcedureId === item.procedureId}
-                    onclick={() => void loadProcedure(item.procedureId)}
+                    onclick={() => void chooseProcedure(item.procedureId)}
                   >
                     <span class="procedure-book-icon {runState}">
                       <BookOpen size={15} aria-hidden="true" />
@@ -1769,6 +1783,7 @@
           {:else}
             <ChevronLeft size={17} aria-hidden="true" />
           {/if}
+          <span class="procedure-toc-label">{procedureTocMode === 'collapsed' ? 'Procedures' : 'Hide procedures'}</span>
         </button>
 
         <main
@@ -2062,17 +2077,23 @@
   .procedure-input-band details { margin-top: 3px; }
   .procedure-input-band summary { cursor: pointer; }
   .procedure-input-band button { flex: 0 0 auto; min-height: 44px; border: 1px solid #d6c5a0; border-radius: 5px; padding: 6px 10px; color: inherit; background: #fff; cursor: pointer; }
-  @media (max-width: 600px) {
-    .procedure-input-band { padding: 8px; gap: 8px; }
-    :global(.procedure-header-bar) { touch-action: pan-x; }
-    :global(.procedure-grip) { touch-action: none; }
-    :global(.procedure-cross-unit-strip) { flex-wrap: nowrap; flex: 1; width: auto; overflow-x: auto; overscroll-behavior-inline: contain; }
-    :global(.procedure-cross-unit) { flex: 0 0 auto; flex-wrap: nowrap; }
-    :global(.procedure-header-actions) { flex-shrink: 0; }
-    :global(.procedure-csf-strip) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; overscroll-behavior-inline: contain; }
-    :global(.procedure-csf-shell) { flex: 0 0 auto; }
-    /* The scrolling strip must not clip the existing CSF help. Keep that
-       same focus/hover popover within the narrow World pane. */
-    :global(.procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
-  }
+  .procedure-toc-label { display: none; }
+  :global(.procedure-modal.compact-procedure .procedure-input-band) { padding: 8px; gap: 8px; }
+  :global(.procedure-modal.compact-procedure .procedure-header-bar) { touch-action: pan-x; }
+  :global(.procedure-modal.compact-procedure .procedure-grip) { touch-action: none; }
+  :global(.procedure-modal.compact-procedure .procedure-cross-unit-strip) { flex-wrap: nowrap; flex: 1; width: auto; overflow-x: auto; overscroll-behavior-inline: contain; }
+  :global(.procedure-modal.compact-procedure .procedure-cross-unit) { flex: 0 0 auto; flex-wrap: nowrap; }
+  :global(.procedure-modal.compact-procedure .procedure-header-actions) { flex-shrink: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-csf-strip) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; overscroll-behavior-inline: contain; }
+  :global(.procedure-modal.compact-procedure .procedure-csf-shell) { flex: 0 0 auto; }
+  /* Preserve the existing CSF help outside its scrolling strip. */
+  :global(.procedure-modal.compact-procedure .procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
+  /* On a narrow window the existing catalogue is a recoverable picker, not
+     a permanent block above the procedure. No separate navigation state. */
+  :global(.procedure-modal.compact-procedure .procedure-layout) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed)) { grid-template-rows: minmax(0, 1fr) auto; }
+  :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed) .procedure-document) { display: none; }
+  :global(.procedure-modal.compact-procedure .procedure-list) { max-height: none; }
+  :global(.procedure-modal.compact-procedure .procedure-toc-handle) { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: 4px; padding: 0 8px; }
+  :global(.procedure-modal.compact-procedure .procedure-toc-label) { display: inline; }
 </style>
