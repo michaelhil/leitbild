@@ -12,6 +12,8 @@ The [ownership experiments](ownership-alternatives.json) preserve the negative r
 
 [Retained attempts](retained-attempts.json) distinguishes observer/setup failures and a potentially contended diagnostic from the valid light baseline. Raw profiles, screenshots, fixture state and failed attempts remain in the listed local research paths; source blobs and private Run state are not copied into this evidence folder.
 
+After qualification, the owned QA services were stopped and all 240 ignored research files (154,597,830 bytes) were copied and SHA-verified under `/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/performance-raw`. `PRESERVATION-MANIFEST.json` there records every relative path/hash and closure proof; its SHA-256 is `4d2b302989b27acc7fe8af6c7671af400654fb6bb35a9bebe9b4a30407fb25c8`. Original managed-worktree `.health/layout-detail-latency/` paths in receipts are historical: resolve their relative suffix under this preserved root after worktree archival. Public compact evidence and reproducible scripts remain in Git.
+
 ## Qualified candidate
 
 The [final comparison and R6 receipt](FINAL-DETAIL-LATENCY.json) tests application `53b443ed9709069139acfa2ddbd22bbb79a7f3cb`. The adopted changes are a standard centroid hierarchy for ownership queries and reuse of the already admitted scene inside its private preparation worker. Source/shape validation remains at the Pack boundary. Geometry, ownership, render and pick output equality is tested separately; no detail is removed.
