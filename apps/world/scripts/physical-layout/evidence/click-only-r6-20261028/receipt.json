@@ -1,0 +1,486 @@
+{
+  "testedAppCommit": "53b443ed9709069139acfa2ddbd22bbb79a7f3cb",
+  "runnerSha256": "0007160a144ee723590061d6856b5626e8df5bdcbf5534163c14fee88d4c70f7",
+  "instrumentationSha256": "2fffbb267d4d667bef8c7ba4d34ba10d55074d664cea83efbeb1a53376b5fb3b",
+  "rawReceipt": {
+    "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/receipt.json",
+    "sha256": "81e3c689940c033a78ae8100207ab2d29772bc6ccf9fe59648fbee9574ebc714"
+  },
+  "fixture": {
+    "workspaceId": "683caa9c-59de-4d1b-84bc-cf5a59d058ac",
+    "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+    "url": "http://127.0.0.1:43158/workspaces/683caa9c-59de-4d1b-84bc-cf5a59d058ac?world=run-a892561e-cbd7-462c-978f-0edae150c1ab"
+  },
+  "expected": {
+    "design": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261028-r6",
+      "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+    },
+    "campusDesign": {
+      "id": "pwr-campus",
+      "revision": "pwr-campus-20261028-r6",
+      "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+    },
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+    "sourceFrame": {
+      "origin": [
+        44.4,
+        26,
+        0
+      ],
+      "northAxis": "negative-y"
+    },
+    "equipment": {
+      "elementId": "turbine",
+      "physicalId": "tg-hp",
+      "label": "High-pressure turbine",
+      "levelId": "operating"
+    },
+    "elementId": "main-steam-header-to-turbine-stop-valve",
+    "physicalId": "connection/main-steam-header-to-turbine-stop-valve",
+    "from": {
+      "id": "port/mainSteamHeader.outletA",
+      "elementId": "route/main-steam-header/nozzle/outletA",
+      "subjectId": "mainSteamHeader",
+      "port": "outletA",
+      "local": [
+        0.9500000000000002,
+        0,
+        0
+      ],
+      "outward": [
+        1,
+        0,
+        0
+      ]
+    },
+    "to": {
+      "id": "port/turbineStopValve.inlet",
+      "elementId": "stop-valve",
+      "subjectId": "turbineStopValve",
+      "port": "inlet",
+      "local": [
+        0,
+        1.05,
+        1.3
+      ],
+      "outward": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "paths": [
+    {
+      "kind": "equipment",
+      "mode": "3d",
+      "utilitiesDefaultOn": {
+        "checked": true,
+        "key": null,
+        "prepared": []
+      },
+      "hover": {
+        "durationMs": 2301.100000143051,
+        "liveOff": true,
+        "createdFrames": 0,
+        "iframeCount": 0,
+        "layoutRequests": 0,
+        "context": [
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power"
+          },
+          {
+            "label": "Equipment",
+            "value": "Running state unknown"
+          }
+        ]
+      },
+      "click": {
+        "faceplate": "turbine",
+        "context": [],
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74
+            },
+            "subject": "turbine",
+            "topology": "node",
+            "at": {
+              "at": "2026-07-12T04:00:08.862Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74,
+              "receivedWallMs": 1793154413619
+            }
+          },
+          {
+            "scope": {
+              "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74
+            },
+            "subject": "turbine",
+            "topology": "node",
+            "at": {
+              "at": "2026-07-12T04:00:08.862Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74,
+              "receivedWallMs": 1793154413619
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "connection",
+      "mode": "3d",
+      "utilitiesDefaultOn": {
+        "checked": true,
+        "key": null,
+        "prepared": []
+      },
+      "hover": {
+        "durationMs": 2300.9000000953674,
+        "liveOff": true,
+        "createdFrames": 0,
+        "iframeCount": 0,
+        "layoutRequests": 0,
+        "context": [
+          {
+            "label": "From",
+            "value": "Main Steam Header · outletA"
+          },
+          {
+            "label": "To",
+            "value": "Turbine Stop Valve · inlet"
+          },
+          {
+            "label": "Medium",
+            "value": "Main steam"
+          },
+          {
+            "label": "Flow",
+            "value": "Unknown · Not live"
+          }
+        ]
+      },
+      "click": {
+        "faceplate": "main-steam-header-to-turbine-stop-valve",
+        "context": [
+          {
+            "label": "From",
+            "value": "Main Steam Header · outletA"
+          },
+          {
+            "label": "To",
+            "value": "Turbine Stop Valve · inlet"
+          },
+          {
+            "label": "Medium",
+            "value": "Main steam"
+          },
+          {
+            "label": "Flow",
+            "value": "From → To · 1902 kg/s"
+          }
+        ],
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74
+            },
+            "subject": "main-steam-header-to-turbine-stop-valve",
+            "topology": "connection",
+            "at": {
+              "at": "2026-07-12T04:00:08.862Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74,
+              "receivedWallMs": 1793154422163
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "equipment",
+      "mode": "2d",
+      "utilitiesDefaultOn": {
+        "checked": true,
+        "key": null,
+        "prepared": []
+      },
+      "hover": {
+        "durationMs": 2301,
+        "liveOff": true,
+        "createdFrames": 0,
+        "iframeCount": 0,
+        "layoutRequests": 0,
+        "context": [
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Stop Valve · outlet → Turbine Generator · steamInlet · Main steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · exhaustSteamOutlet → Main Condenser · steamInlet · Exhaust steam"
+          },
+          {
+            "label": "Component-level connection",
+            "value": "Turbine Generator · generatorOutput → Unit Auxiliary Transformer · primary · Electrical power"
+          },
+          {
+            "label": "Equipment",
+            "value": "Running state unknown"
+          }
+        ]
+      },
+      "click": {
+        "faceplate": "turbine",
+        "context": [],
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74
+            },
+            "subject": "turbine",
+            "topology": "node",
+            "at": {
+              "at": "2026-07-12T04:00:08.862Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74,
+              "receivedWallMs": 1793154425534
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "connection",
+      "mode": "2d",
+      "utilitiesDefaultOn": {
+        "checked": true,
+        "key": null,
+        "prepared": []
+      },
+      "hover": {
+        "durationMs": 2300.899999856949,
+        "liveOff": true,
+        "createdFrames": 0,
+        "iframeCount": 0,
+        "layoutRequests": 0,
+        "context": [
+          {
+            "label": "From",
+            "value": "Main Steam Header · outletA"
+          },
+          {
+            "label": "To",
+            "value": "Turbine Stop Valve · inlet"
+          },
+          {
+            "label": "Medium",
+            "value": "Main steam"
+          },
+          {
+            "label": "Flow",
+            "value": "Unknown · Not live"
+          }
+        ]
+      },
+      "click": {
+        "faceplate": "main-steam-header-to-turbine-stop-valve",
+        "context": [
+          {
+            "label": "From",
+            "value": "Main Steam Header · outletA"
+          },
+          {
+            "label": "To",
+            "value": "Turbine Stop Valve · inlet"
+          },
+          {
+            "label": "Medium",
+            "value": "Main steam"
+          },
+          {
+            "label": "Flow",
+            "value": "From → To · 1902 kg/s"
+          }
+        ],
+        "samples": [
+          {
+            "scope": {
+              "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+              "layoutObjectId": "layout:halden-1",
+              "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+              "objectId": "plant:halden-1",
+              "packId": "process-plant",
+              "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74
+            },
+            "subject": "main-steam-header-to-turbine-stop-valve",
+            "topology": "connection",
+            "at": {
+              "at": "2026-07-12T04:00:08.862Z",
+              "clock": "simulation",
+              "paused": true
+            },
+            "stamp": {
+              "scope": {
+                "runId": "run-a892561e-cbd7-462c-978f-0edae150c1ab",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "52c5ecb2-e86f-48f9-9ef4-c70d1a61e46d",
+              "sequence": 74,
+              "receivedWallMs": 1793154429012
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "relatedDevice": "pressurizer.reliefValve",
+  "images": [
+    {
+      "name": "device-own-reading-card.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/device-own-reading-card.png",
+      "sha256": "6d0ff5b1f0dfdda0bd8d93e527cce912216733601cdd03d6fd25c037e43e7c1a"
+    },
+    {
+      "name": "3d-connection-main-steam-header-to-turbine-stop-valve-hover-only.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/3d-connection-main-steam-header-to-turbine-stop-valve-hover-only.png",
+      "sha256": "974102e65a11744ea39f2e546d1092041ac83622134f877da795c8c2a473cacd"
+    },
+    {
+      "name": "2d-equipment-click-card.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/2d-equipment-click-card.png",
+      "sha256": "2615fb9a35d295711078977bb8bcdfbd4590da01c85f742bdb83f95bbb426a15"
+    },
+    {
+      "name": "2d-tg-hp-hover-only.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/2d-tg-hp-hover-only.png",
+      "sha256": "61bd1d3097afa053c39bee481514e03a0dc19c87f35644eea090ef33e43a1e55"
+    },
+    {
+      "name": "3d-route-click-card.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/3d-route-click-card.png",
+      "sha256": "03976037740d6653f0ee63b8365bbb345e0ba8f8961b87566c9518f92d2f192a"
+    },
+    {
+      "name": "3d-equipment-click-card.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/3d-equipment-click-card.png",
+      "sha256": "2145a2563393a3f8ba8cf76660331a4d84843c0d55e1449d367e851b1a31a2cb"
+    },
+    {
+      "name": "3d-tg-hp-hover-only.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/3d-tg-hp-hover-only.png",
+      "sha256": "f5494fb5c361d0d96b50bfe163958118ed0cda09fabffbdf64643af9fa04d1a4"
+    },
+    {
+      "name": "2d-route-click-card.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/2d-route-click-card.png",
+      "sha256": "ed40e72760c5b59e4371c513c168a4fbb5d4e86d323df593cb4886f9fcfd4fdf"
+    },
+    {
+      "name": "2d-connection-main-steam-header-to-turbine-stop-valve-hover-only.png",
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/r6-click-only-fixed4/2d-connection-main-steam-header-to-turbine-stop-valve-hover-only.png",
+      "sha256": "9e1eeb796a643597c69f362a88fce0e523e63a38281e68b35ee25c818cf3d4cd"
+    }
+  ],
+  "errors": [],
+  "limits": [
+    "Functional actual Host/World pointer and hosted-card proof; not a frame-time or cold-loading benchmark.",
+    "Candidates derive from actual prepared route triangles and submitted MVP or actual native Plan ink transform; a real pointer pick must independently accept the exact route.",
+    "Default-on is tested before any Utility routes checkbox click. Live-off hover observes request starts, including aborted requests; explicit click must acquire fresh owner readings.",
+    "Equipment card has no layout context; graph route cards retain exact endpoints and acquired flow. Process symbol/text/Enter/Space and explicit-only detail navigation are independently covered by scripts/displays/component-faceplate-probe.ts. Historical dwell receipts retain their original runner commit."
+  ]
+}
