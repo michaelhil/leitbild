@@ -1,0 +1,55 @@
+{
+  "baseCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+  "rayFixCommit": "f8d0b4c89",
+  "checks": [
+    {
+      "command": "bun test tests/physical-centroid-overlap.test.ts tests/physical-surface-ownership.test.ts tests/physical-spatial-index.test.ts tests/physical-architecture-bsp-preparation.test.ts",
+      "commit": "faf656468",
+      "passed": 22,
+      "failed": 0,
+      "assertions": 16003,
+      "scope": "exact frozen R6 all-floor/cut/scope geometry/render/picking plus conservative query/actual BSP worker"
+    },
+    {
+      "command": "bun test tests/physical-spatial-index.test.ts tests/physical-ray-scalar.test.ts tests/physical-pick-roster.test.ts tests/physical-centroid-overlap.test.ts",
+      "commit": "f8d0b4c89",
+      "passed": 20,
+      "failed": 0,
+      "assertions": 75522,
+      "scope": "well-formed cached centroid ordering, exact ray winners and all R6 view equivalence"
+    },
+    {
+      "command": "bun run check",
+      "commit": "faf656468",
+      "typescriptErrors": 0,
+      "svelteErrors": 0,
+      "svelteWarnings": 0,
+      "note": "The combined final application must repeat strict checks after the separate ray and backend changes."
+    }
+  ],
+  "nativePlan": {
+    "command": "bun scripts/physical-layout/plan-picking-probe.ts /absolute/output-directory",
+    "commit": "f8d0b4c89",
+    "receipt": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-plan-picking-fixed-ray-20261028/receipt.json",
+    "sha256": "0e2cc18c674426b0934a46808b61b0d68a4e3e043402d8359594e2fa632e6d5b",
+    "passed": true,
+    "cases": [
+      {
+        "ratio": 1,
+        "cases": 57,
+        "passed": true,
+        "failures": []
+      },
+      {
+        "ratio": 2,
+        "cases": 57,
+        "passed": true,
+        "failures": []
+      }
+    ]
+  },
+  "limitations": [
+    "Standalone CPU/correctness evidence only; selected final source and product loading are qualified by the delivery owner.",
+    "Internal BVH byte topology before the comparator correction was not deterministic. Geometry/render section equality and exact ray winners are distinct from those old internal topology bytes."
+  ]
+}
