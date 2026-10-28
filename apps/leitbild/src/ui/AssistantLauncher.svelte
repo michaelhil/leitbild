@@ -78,9 +78,9 @@
   type="button"
   disabled={disabled || busy}
   aria-busy={busy}
-  aria-label={active ? 'Hide Agents' : label === undefined ? 'Open Leitbild Assistant' : `${label} the Leitbild Assistant`}
+  aria-label={active ? 'Hide Leitbild Assistant' : label === undefined ? 'Open Leitbild Assistant' : `${label} the Leitbild Assistant`}
   aria-pressed={toggle ? active : undefined}
-  title={disabled ? 'Leitbild Assistant is unavailable' : active ? 'Hide Agents' : toggle ? 'Open Run Assistant' : 'Ask Leitbild Assistant'}
+  title={disabled ? 'Leitbild Assistant is unavailable' : active ? 'Hide Run Assistant' : toggle ? 'Open Run Assistant' : 'Ask Leitbild Assistant'}
   onclick={() => void open()}
 >
   {#if busy}

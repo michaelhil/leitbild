@@ -661,10 +661,10 @@
       {/if}
       {#if selectedWorldResource}
         {#if !runDeclaresRoles(selectedWorldResource)}
-          <AssistantLauncher disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
+          <AssistantLauncher label={agentsVisible ? 'Assistant' : 'Ask'} disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
         {/if}
       {:else}
-        <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
+        <AssistantLauncher label="Ask" disabled={assistantCapability === undefined} submit={openAssistant} />
       {/if}
       <WikiLink />
     </div>
@@ -796,8 +796,8 @@
 
   /* A crowded Run bar gives way in order, so nothing overlaps: first the Workspace name
      ellipsises down to four letters, never further, as it is the way back to the Workspace
-     page; then the Run's title; then, at 760 px and below, the Run's controls scroll
-     sideways in their own strip (SimulationRunControls.svelte). The identity never gets
+     page; then the Run's title; then, at 760 px and below, the Run's core controls wrap
+     in their own strip (SimulationRunControls.svelte). The identity never gets
      narrower than its mark, those letters and the people control (the name's grid column
      has no minimum, so the name adds only its four letters to that), its shrink weight
      makes it give way before the Run's controls, and no other control in the bar shrinks. */

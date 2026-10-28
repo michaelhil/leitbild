@@ -88,7 +88,7 @@
   let deleteTargets = $state<ReadonlyArray<CatalogDeleteItem>>([])
   let familyTrigger = $state<HTMLButtonElement | null>(null)
   let confirmingDelete = $state(false)
-  let deleteButton = $state<HTMLButtonElement | null>(null)
+  let moreMenu = $state<{ focus(): void } | null>(null)
   /** A 404 asked the Workspace's list once whether this Run still exists; a second one is reported. */
   let goneChecked = false
   // The Run's clock is read every second: a failed read is reported while it fails and taken back once a read succeeds.
@@ -312,10 +312,10 @@
     }
     await refreshResources().catch(cause => reportError(cause instanceof Error ? cause.message : String(cause)))
   }
-  // The copies menu that held the deleted Run's Delete has closed: focus goes to its button, or to this Run's own Delete.
+  // A closed confirmation returns to its originating family menu or Run actions.
   const focusAfterDelete = (): void => {
     if (familyTrigger?.isConnected && familyTrigger.getClientRects().length > 0) familyTrigger.focus()
-    else deleteButton?.focus()
+    else moreMenu?.focus()
   }
   const displayTime = $derived(simulationTimeLabel(execution, wallNow))
 
@@ -365,19 +365,13 @@
       </div>
     {/if}
   </div>{:else}<span class="run-title" title={resource.title}>{resource.title}</span>{/if}
-  <!-- First in the strip, apart from the Assistant: visible without scrolling at any width. -->
-  <button bind:this={deleteButton} class="run-delete" type="button" disabled={deletableRun(resource) === null} onclick={() => askDelete(resource)} title="Delete this Run" aria-label="Delete this Run"><Icon name="trash" size={16} /></button>
-  <span class="divider" aria-hidden="true"></span>
-  <button type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.copy')} onclick={openCopyDialog} title="Copy this Run" aria-label="Copy this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
   <button class="playback" class:active={execution?.playback === 'playing'} type="button" disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set')} onclick={togglePlayback} title={execution?.playback === 'playing' ? 'Playing — click to pause' : 'Paused — click to play'} aria-label={execution?.playback === 'playing' ? 'Pause simulation' : 'Play simulation'}>{#if execution?.playback === 'playing'}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>{:else}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>{/if}</button>
-  <button class:active={execution?.pace === 'maximum'} type="button" aria-pressed={execution?.pace === 'maximum'} disabled={!execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || (!execution.maximumPace.available && execution.pace !== 'maximum')} onclick={togglePace} title={execution?.maximumPace.available ? execution?.pace === 'maximum' ? 'Maximum pace armed — click for realtime' : 'Realtime pace — click for maximum' : execution?.maximumPace.reason ?? 'Maximum pace unavailable'} aria-label={execution?.pace === 'maximum' ? 'Maximum pace armed; switch to realtime' : 'Realtime pace; switch to maximum'}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 9 7-9 7zM12 5l9 7-9 7z"/></svg></button>
   <span class:fast={execution?.pace === 'maximum'} class="clock" title={execution?.playback === 'playing' && execution?.pace === 'maximum' ? `Playing at ${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}× measured` : execution?.pace === 'maximum' ? 'Paused with maximum pace armed' : execution?.playback === 'paused' ? 'Simulation paused' : 'Simulation playing in realtime'}>{displayTime}{#if execution?.pace === 'maximum'}<small>{execution.playback === 'playing' ? `${execution.acceleration?.measuredSpeed.toFixed(1) ?? '0.0'}×` : 'MAX armed'}</small>{/if}</span>
-  <button class:active={execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false} onclick={() => timerDialog?.showModal()} title="Run at maximum pace for a fixed duration" aria-label="Run at maximum pace for a fixed duration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6M12 14l3-3M12 6a8 8 0 1 0 8 8 8 8 0 0 0-8-8z"/></svg></button>
-  <button type="button" disabled={restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set')} onclick={openRestrictions} title="AI restrictions for this Run" aria-label="AI restrictions for this Run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></button>
-  <div class="run-more"><MoreMenu label="More Run actions" tone="dark" triggerClass="run-more-trigger" items={[
+  <button class="advance" class:active={execution?.acceleration?.kind === 'timed' && ['running', 'paused'].includes(execution.acceleration.status)} type="button" disabled={actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false} onclick={() => timerDialog?.showModal()} title="Fast-forward for a fixed number of simulated minutes" aria-label="Advance simulation by a fixed duration">Advance…</button>
+  {#snippet moreTrigger()}<span>More</span><Icon name="dots" size={16} />{/snippet}
+  <div class="run-more"><MoreMenu bind:this={moreMenu} label="More Run actions" trigger={moreTrigger} tone="dark" triggerClass="run-more-trigger" items={[
     { label: 'Copy this Run', disabled: actionBusy || !capabilityAvailable('world.simulation-run.copy'), onselect: openCopyDialog },
     { label: execution?.pace === 'maximum' ? 'Switch to realtime pace' : 'Run at maximum pace', disabled: !execution || actionBusy || !capabilityAvailable('world.simulation-run.execution.set') || !execution.maximumPace.available && execution.pace !== 'maximum', onselect: togglePace },
-    { label: 'Run for a fixed duration', disabled: actionBusy || !capabilityAvailable('world.simulation-run.execution.advance') || execution?.maximumPace.available === false, onselect: () => timerDialog?.showModal() },
     { label: 'AI restrictions for this Run', disabled: restrictionBusy || !capabilityAvailable('world.simulation-run.agent-restrictions.read') || !capabilityAvailable('world.simulation-run.agent-restrictions.set'), onselect: openRestrictions },
     { label: 'Delete this Run', danger: true, disabled: deletableRun(resource) === null, onselect: () => askDelete(resource) },
   ]} /></div>
@@ -435,9 +429,11 @@
 
 <style>
   .run-controls { min-width: 0; margin-left: auto; display: flex; align-items: center; gap: .35rem; color: #dfe8dc; }
-  .run-more { display: none; }
+  .run-more { display: flex; }
+  .run-more :global(.run-more-trigger) { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 .45rem; color: inherit; background: #243128; border: 1px solid #536157; border-radius: 6px; font: inherit; cursor: pointer; }
   button { min-width: 30px; min-height: 28px; padding: 0 .45rem; border: 1px solid #536157; border-radius: 6px; color: inherit; background: #243128; font: inherit; cursor: pointer; }
   button:hover { border-color: #87958a; background: #314037; } button:disabled { opacity: .45; cursor: wait; } button.active { border-color: #65a9ea; color: #b9dcff; background: #1c4261; }
+  button:focus-visible, .run-more :global(.run-more-trigger:focus-visible) { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; }
   button svg { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .clock { min-width: 112px; padding: 0 .25rem; color: #cbd6cc; font: 600 .74rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; white-space: nowrap; } .clock small { margin-left: .28rem; color: #8ec6ff; font-size: .64rem; } .clock.fast { color: #d8ecff; }
   .family-control { position: relative; min-width: 0; display: flex; } .family-trigger { max-width: min(250px, 24vw); display: flex; align-items: center; gap: .35rem; font-size: .7rem; } .family-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -446,13 +442,9 @@
   .family-menu > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; border-radius: 6px; } .family-menu > div.current { background: #2a3d30; }
   .family-member { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; background: transparent; text-align: left; }
   .family-delete { min-width: 30px; padding: 0 .4rem; border: 0; color: #f0b4ad; background: transparent; } .family-delete:hover:not(:disabled) { color: #ffd9d4; background: #5a2622; }
-  .run-delete { position: relative; color: #f0b4ad; } .run-delete:hover:not(:disabled) { border-color: #b8645c; color: #ffe1dc; background: #5a2622; }
-  .family-delete :global(svg), .run-delete :global(svg) { display: block; }
-  .divider { flex: none; width: 1px; height: 20px; margin: 0 .2rem; background: #3d4c41; }
+  .family-delete :global(svg) { display: block; }
   /* A 44 px target on touch: the button fills the strip's height and its hit area reaches the bar's edges. */
   @media (pointer: coarse) {
-    .run-delete { min-width: 44px; min-height: 34px; }
-    .run-delete::before { content: ''; position: absolute; inset: -5px 0; }
     .family-delete { min-width: 44px; min-height: 44px; }
   }
   .family-rename { min-width: 28px; padding: 0 .35rem; border: 0; color: #b9c6bc; background: transparent; } .family-rename svg { width: 14px; height: 14px; }
@@ -472,16 +464,12 @@
   .hint { font-size: .72rem; line-height: 1.4; } @media (max-width: 760px) { .family-control, .run-title { display: none; } .clock { min-width: 96px; } }
   /* In a crowded Run bar only the title gives way; the buttons and the clock keep their size. */
   .run-controls > :not(.run-title, .family-control) { flex-shrink: 0; }
-  /* At 760 px and below, without a title to give way, the controls the Run bar cannot hold
-     scroll sideways in their own strip instead of overlapping the buttons beside them. Its
-     edges fade, so a control cut off there reads as "more this way"; the padding the fades
-     lie on keeps the first and last controls clear of them, and focus rings unclipped. */
+  /* The same core controls remain available at narrow widths. Their own row
+     wraps with the Host bar rather than hiding stepping in another menu. */
   @media (max-width: 760px) {
-    .run-controls { overflow: visible; margin-left: 0; flex: 1; gap: 4px; }
-    .run-controls > button:not(.playback), .divider { display: none; }
+    .run-controls { overflow: visible; margin-left: 0; flex: 1; flex-wrap: wrap; gap: 4px; }
     .playback { min-width: 44px; min-height: 44px; }
     .clock { min-width: 82px; padding: 0; }
-    .run-more { display: flex; }
     .run-more :global(.run-more-trigger) { min-width: 44px; min-height: 44px; padding: 8px; color: inherit; background: transparent; border: 1px solid #536157; border-radius: 6px; }
     .run-controls > * { flex: none; }
   }
