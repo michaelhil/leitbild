@@ -1,0 +1,126 @@
+{
+  "revision": "pwr-full-unit-20261028-r6",
+  "sourceBranch": "codex/layout-route-integrity-20261028",
+  "baselineCommit": "b748",
+  "requestScreenshot": "codex-clipboard-6d72f39a-0e62-48ff-94b6-4322a00bb0bd.png",
+  "cause": {
+    "sourceOccurrence": "route/main-steam-header",
+    "previousPath": [
+      [
+        -8,
+        -18,
+        18.5
+      ],
+      [
+        -8,
+        29,
+        18.5
+      ],
+      [
+        -8,
+        29,
+        23
+      ],
+      [
+        5.7,
+        29,
+        23
+      ],
+      [
+        5.7,
+        0.4,
+        23
+      ]
+    ],
+    "explanation": "R5 retained graph-node manifold illustration paths independently of graph-connection sweeps. Missing explicit steam material rendered this steam header teal. Its upper return ran16.05m past its actual outlet tap. The previous contact audit verified connection-to-body contact but not manifold end intent or distinct nozzle installation."
+  },
+  "change": {
+    "manifolds": 7,
+    "installedNozzles": 32,
+    "terminalFlanges": 32,
+    "blindEndPlates": 14,
+    "msrFeeds": 2,
+    "lpReceivers": 6,
+    "reroutedConnections": 33,
+    "byteRetainedConnections": 119,
+    "oldBrownPathsRetained": 8,
+    "oldR5Retained": true,
+    "simulationModelChanged": false,
+    "independentInternalTelemetryAdded": false,
+    "compilerChanged": false
+  },
+  "proof": {
+    "focusedTests": 4,
+    "assertions": 1495,
+    "actualFamilyTriangleMounts": 8,
+    "actualPortContacts": 239,
+    "routeEndpoints": 304,
+    "routeEndpointError": 0,
+    "suspiciousContacts": 0,
+    "conduits": 175,
+    "conduitEnds": 350,
+    "endClassifications": {
+      "actualGraphPort": 304,
+      "physicalSubassemblyInterface": 32,
+      "intentionalClosedHeaderEnd": 14
+    },
+    "remainingEquipmentPortGroups": {
+      "schematicAggregateBodyAnchor": 3,
+      "unresolvedContradictoryPortIntent": 15
+    }
+  },
+  "geometryCensus": {
+    "beforeObjects": 719,
+    "afterObjects": 805,
+    "beforeSourceTriangles": 241744,
+    "afterSourceTriangles": 242320,
+    "beforePackedBytes": 29252592,
+    "afterPackedBytes": 29589600,
+    "deltaPackedBytes": 337008,
+    "note": "Actual all-layer/all-level 3D preparation; census only, not a performance benchmark."
+  },
+  "architectureJudgment": {
+    "retain": "Native authored architecture, exact graph links and immutable source/compiler retention.",
+    "simplify": "Use explicit authored straight manifold/nozzle/cap data plus exact external connection sweeps. Avoid a second renderer-specific bridge or nearest-equipment endpoint policy.",
+    "future": "Validate, solve and tessellate immutable source at Design admission and retain exact derived geometry keyed by source+compiler digest, subject to a proper retained-asset delivery/audience contract. Runtime A* is already absent; this pass adds no delivery service.",
+    "intrinsicCompilerBoundary": "The existing retained full compiler requires authoring-only instance context to produce its complete normalized objects witness, including accepted graph routes. This context is never committed as a Run identity or used as a geometry/clipping limit. A future pure intrinsic-object port should remove the placement/id/owner arguments without duplicating the frozen pipeline or dropping routes."
+  },
+  "limits": [
+    "No browser/production/service/probe was run by this source-authoring agent. Visual acceptance of the newly authored R6 source remains a separate actual product gate.",
+    "All full-source conduit ends have an explicit contact or closed-end intent, but this does not certify distinct OEM equipment nozzles or a qualified/as-built plant installation.15contradictory-port-intent and3schematic aggregate body-anchor groups remain explicitly listed in the ledger.",
+    "Source endpoint closure differs from selected-floor/scope continuation caps, which remain a derived marked view representation.",
+    "Routing checks the existing authored equipment/column obstacle set. Pipe-to-pipe clearances, civil penetrations and maintainability are not qualified.",
+    "The added physical detail costs337008packed bytes(about1.15percent); source cleanup is not presented as a performance fix."
+  ],
+  "validation": {
+    "relatedTests": 24,
+    "assertions": 31795,
+    "unitUtilityPreparations": {
+      "rootViews": [
+        "all",
+        "lower",
+        "service",
+        "operating",
+        "refuelling"
+      ],
+      "turbineAreaViews": [
+        "all",
+        "lower",
+        "operating"
+      ]
+    },
+    "authorCheck": "passed",
+    "admissionCheck": "passed",
+    "worldTypeAndSvelteCheck": {
+      "errors": 0,
+      "warnings": 0
+    },
+    "targetedScenarioApi": {
+      "tests": 1,
+      "assertions": 16,
+      "passed": true
+    },
+    "totalTests": 25,
+    "totalAssertions": 31811
+  }
+}

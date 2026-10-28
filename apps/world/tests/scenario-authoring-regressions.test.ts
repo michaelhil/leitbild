@@ -13,7 +13,7 @@ import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testP
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 import { fixtureDataOf, fixturePackId } from './fixtures/fixture-pack.ts'
 import { draftingLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
-import { pwrConnectedCampusPhysicalDesignRef, pwrConnectedUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { pwrManifoldCampusPhysicalDesignRef, pwrManifoldUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
 const unitSettings = { speedMps: 15 }
 const taskDataOf = (object: Parameters<typeof fixtureDataOf>[0]) => {
@@ -74,12 +74,12 @@ test('five runtime Packs share one paused startup clock and retain static layout
     const layoutObjects = run.snapshot().objects.filter(object => object.packId === 'physical-layout')
     expect(layoutObjects.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
     const campus = draftingLayoutDataSchema.parse(layoutObjects.find(object => object.id === 'layout:halden-campus')!.packData)
-    expect(campus.design).toEqual(pwrConnectedCampusPhysicalDesignRef)
+    expect(campus.design).toEqual(pwrManifoldCampusPhysicalDesignRef)
     expect(campus.source.planAnnotations!.length).toBeGreaterThan(0)
     expect(campus.owner.objectId).toBe('grid:halden-four-unit')
     expect(campus.coverage.representedSubjectIds).toHaveLength(11)
     expect(campus.relatedMembers).toHaveLength(4)
-    expect(campus.relatedMembers.every(member => member.physicalLayout?.physical.id === pwrConnectedUnitPhysicalDesignRef.id)).toBe(true)
+    expect(campus.relatedMembers.every(member => member.physicalLayout?.physical.id === pwrManifoldUnitPhysicalDesignRef.id)).toBe(true)
     expect(campus.requirements.connections).toHaveLength(4)
     const retainedLayouts = layoutObjects.map(object => [object.id, canonicalPhysicalJson(object.packData)] as const).sort(([a], [b]) => a.localeCompare(b))
     const retainedConnections = registry.loadedCompiledScenario(run.id).connections

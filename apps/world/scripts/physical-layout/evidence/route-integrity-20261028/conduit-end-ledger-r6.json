@@ -1,0 +1,5671 @@
+{
+  "sourceCoordinateFrame": "authoring X/Y/Z, metres; northAxis is applied only by retained delivery",
+  "sourceId": "pwr-full-unit",
+  "sourceDigest": "124256fb0dc626f014a1919760d5f669015edac7aefafc635140618bc2ebebb9",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "scope": "Complete unit pipe/conductor source-end ledger. Campus geometry is byte-retained; no new campus engineering qualification.",
+  "routes": 152,
+  "terminals": 239,
+  "rawPipeBodies": 23,
+  "conduits": 175,
+  "ends": [
+    {
+      "conduitId": "connection/pressurizer-surge-line",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.hotLegA",
+      "subjectId": "core",
+      "port": "hotLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-surge-line",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizer.surgeLine",
+      "subjectId": "pressurizer",
+      "port": "surgeLine",
+      "point": [
+        -49.75000000000001,
+        25.45,
+        7.02
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-relief-to-tank",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizer.reliefOutlet",
+      "subjectId": "pressurizer",
+      "port": "reliefOutlet",
+      "point": [
+        -49.75000000000001,
+        25.45,
+        7.02
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-relief-to-tank",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizerReliefHeader.inletA",
+      "subjectId": "pressurizerReliefHeader",
+      "port": "inletA",
+      "point": [
+        -50,
+        23,
+        12.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-safety-valves-to-tank",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizer.safetyOutlet",
+      "subjectId": "pressurizer",
+      "port": "safetyOutlet",
+      "point": [
+        -49.75000000000001,
+        25.45,
+        7.02
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-safety-valves-to-tank",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizerReliefHeader.inletA",
+      "subjectId": "pressurizerReliefHeader",
+      "port": "inletA",
+      "point": [
+        -50,
+        23,
+        12.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-relief-header-to-tank",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizerReliefHeader.outletA",
+      "subjectId": "pressurizerReliefHeader",
+      "port": "outletA",
+      "point": [
+        -53,
+        23,
+        12.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-relief-header-to-tank",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizerReliefTank.inlet",
+      "subjectId": "pressurizerReliefTank",
+      "port": "inlet",
+      "point": [
+        -52.99999999999999,
+        -4.710000000000002,
+        1.8375
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.hotLegA",
+      "subjectId": "core",
+      "port": "hotLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.primaryInlet",
+      "subjectId": "sgA",
+      "port": "primaryInlet",
+      "point": [
+        -62,
+        19.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.primaryOutlet",
+      "subjectId": "sgA",
+      "port": "primaryOutlet",
+      "point": [
+        -62,
+        22,
+        1.6799999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpA.inlet",
+      "subjectId": "rcpA",
+      "port": "inlet",
+      "point": [
+        -61.00000000000001,
+        13,
+        7.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-a-to-core",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpA.outlet",
+      "subjectId": "rcpA",
+      "port": "outlet",
+      "point": [
+        -59.879999999999995,
+        13,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-a-to-core",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegA",
+      "subjectId": "core",
+      "port": "coldLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.hotLegB",
+      "subjectId": "core",
+      "port": "hotLegB",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.primaryInlet",
+      "subjectId": "sgB",
+      "port": "primaryInlet",
+      "point": [
+        -38.00000000000001,
+        19.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.primaryOutlet",
+      "subjectId": "sgB",
+      "port": "primaryOutlet",
+      "point": [
+        -38.00000000000001,
+        22,
+        1.6799999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpB.inlet",
+      "subjectId": "rcpB",
+      "port": "inlet",
+      "point": [
+        -41.00000000000001,
+        13,
+        7.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-b-to-core",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpB.outlet",
+      "subjectId": "rcpB",
+      "port": "outlet",
+      "point": [
+        -41.00000000000001,
+        13,
+        7.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-b-to-core",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegB",
+      "subjectId": "core",
+      "port": "coldLegB",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.hotLegC",
+      "subjectId": "core",
+      "port": "hotLegC",
+      "point": [
+        -50.00000000000001,
+        5.060000000000002,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.primaryInlet",
+      "subjectId": "sgC",
+      "port": "primaryInlet",
+      "point": [
+        -38.00000000000001,
+        -3.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.primaryOutlet",
+      "subjectId": "sgC",
+      "port": "primaryOutlet",
+      "point": [
+        -38.00000000000001,
+        -6,
+        1.6799999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpC.inlet",
+      "subjectId": "rcpC",
+      "port": "inlet",
+      "point": [
+        -41.00000000000001,
+        1,
+        7.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-c-to-core",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpC.outlet",
+      "subjectId": "rcpC",
+      "port": "outlet",
+      "point": [
+        -42.12,
+        1,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-c-to-core",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegC",
+      "subjectId": "core",
+      "port": "coldLegC",
+      "point": [
+        -47.06000000000001,
+        8,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.hotLegD",
+      "subjectId": "core",
+      "port": "hotLegD",
+      "point": [
+        -50.00000000000001,
+        5.060000000000002,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-hot-leg-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.primaryInlet",
+      "subjectId": "sgD",
+      "port": "primaryInlet",
+      "point": [
+        -62,
+        -3.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.primaryOutlet",
+      "subjectId": "sgD",
+      "port": "primaryOutlet",
+      "point": [
+        -62,
+        -6,
+        1.6799999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-cold-leg-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpD.inlet",
+      "subjectId": "rcpD",
+      "port": "inlet",
+      "point": [
+        -61.00000000000001,
+        1,
+        7.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-d-to-core",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpD.outlet",
+      "subjectId": "rcpD",
+      "port": "outlet",
+      "point": [
+        -59.879999999999995,
+        1,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcp-d-to-core",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegD",
+      "subjectId": "core",
+      "port": "coldLegD",
+      "point": [
+        -50.00000000000001,
+        8,
+        1.3599999999999994
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-tank-to-main-feedwater-pump-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterTank.outlet",
+      "subjectId": "feedwaterTank",
+      "port": "outlet",
+      "point": [
+        47.48,
+        44,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-tank-to-main-feedwater-pump-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainFeedwaterPumpA.inlet",
+      "subjectId": "mainFeedwaterPumpA",
+      "port": "inlet",
+      "point": [
+        18.2,
+        40.5,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-tank-to-main-feedwater-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterTank.outlet",
+      "subjectId": "feedwaterTank",
+      "port": "outlet",
+      "point": [
+        47.48,
+        44,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-tank-to-main-feedwater-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainFeedwaterPumpB.inlet",
+      "subjectId": "mainFeedwaterPumpB",
+      "port": "inlet",
+      "point": [
+        18.2,
+        48.2,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-feedwater-pump-a-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainFeedwaterPumpA.outlet",
+      "subjectId": "mainFeedwaterPumpA",
+      "port": "outlet",
+      "point": [
+        21.075,
+        43.1,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-feedwater-pump-a-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterHeader.inletA",
+      "subjectId": "feedwaterHeader",
+      "port": "inletA",
+      "point": [
+        -1.3,
+        34,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-feedwater-pump-b-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainFeedwaterPumpB.outlet",
+      "subjectId": "mainFeedwaterPumpB",
+      "port": "outlet",
+      "point": [
+        21.075,
+        50.800000000000004,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-feedwater-pump-b-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterHeader.inletB",
+      "subjectId": "feedwaterHeader",
+      "port": "inletB",
+      "point": [
+        -1.3,
+        38,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterHeader.outletA",
+      "subjectId": "feedwaterHeader",
+      "port": "outletA",
+      "point": [
+        -2.7,
+        -17.3,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveA.inlet",
+      "subjectId": "feedwaterControlValveA",
+      "port": "inlet",
+      "point": [
+        -17.1,
+        -18.2,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-a-to-sg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveA.outlet",
+      "subjectId": "feedwaterControlValveA",
+      "port": "outlet",
+      "point": [
+        -17.1,
+        -16.4,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-a-to-sg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.feedwaterInlet",
+      "subjectId": "sgA",
+      "port": "feedwaterInlet",
+      "point": [
+        -59.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-a-steam-to-msiv-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.steamOutlet",
+      "subjectId": "sgA",
+      "port": "steamOutlet",
+      "point": [
+        -59.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-a-steam-to-msiv-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveA.inlet",
+      "subjectId": "mainSteamIsolationValveA",
+      "port": "inlet",
+      "point": [
+        -18,
+        -17.3,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-a-to-main-steam-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveA.outlet",
+      "subjectId": "mainSteamIsolationValveA",
+      "port": "outlet",
+      "point": [
+        -16.2,
+        -17.3,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-a-to-main-steam-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamHeader.inletA",
+      "subjectId": "mainSteamHeader",
+      "port": "inletA",
+      "point": [
+        -8.95,
+        -17.3,
+        18.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterHeader.outletB",
+      "subjectId": "feedwaterHeader",
+      "port": "outletB",
+      "point": [
+        -2.7,
+        -3.3,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveB.inlet",
+      "subjectId": "feedwaterControlValveB",
+      "port": "inlet",
+      "point": [
+        -17.1,
+        -4.2,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-b-to-sg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveB.outlet",
+      "subjectId": "feedwaterControlValveB",
+      "port": "outlet",
+      "point": [
+        -17.1,
+        -2.4000000000000004,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-b-to-sg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.feedwaterInlet",
+      "subjectId": "sgB",
+      "port": "feedwaterInlet",
+      "point": [
+        -38.00000000000001,
+        19.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-msiv-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.steamOutlet",
+      "subjectId": "sgB",
+      "port": "steamOutlet",
+      "point": [
+        -38.00000000000001,
+        19.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-msiv-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveB.inlet",
+      "subjectId": "mainSteamIsolationValveB",
+      "port": "inlet",
+      "point": [
+        -18,
+        -3.3,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-b-to-main-steam-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveB.outlet",
+      "subjectId": "mainSteamIsolationValveB",
+      "port": "outlet",
+      "point": [
+        -16.2,
+        -3.3,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-b-to-main-steam-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamHeader.inletB",
+      "subjectId": "mainSteamHeader",
+      "port": "inletB",
+      "point": [
+        -8.95,
+        -3.3,
+        18.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterHeader.outletC",
+      "subjectId": "feedwaterHeader",
+      "port": "outletC",
+      "point": [
+        -2.7,
+        10.7,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveC.inlet",
+      "subjectId": "feedwaterControlValveC",
+      "port": "inlet",
+      "point": [
+        -17.1,
+        11.6,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-c-to-sg-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveC.outlet",
+      "subjectId": "feedwaterControlValveC",
+      "port": "outlet",
+      "point": [
+        -17.1,
+        9.799999999999999,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-c-to-sg-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.feedwaterInlet",
+      "subjectId": "sgC",
+      "port": "feedwaterInlet",
+      "point": [
+        -38.00000000000001,
+        -6,
+        1.6799999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-msiv-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.steamOutlet",
+      "subjectId": "sgC",
+      "port": "steamOutlet",
+      "point": [
+        -35.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-msiv-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveC.inlet",
+      "subjectId": "mainSteamIsolationValveC",
+      "port": "inlet",
+      "point": [
+        -18,
+        10.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-c-to-main-steam-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveC.outlet",
+      "subjectId": "mainSteamIsolationValveC",
+      "port": "outlet",
+      "point": [
+        -16.2,
+        10.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-c-to-main-steam-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamHeader.inletC",
+      "subjectId": "mainSteamHeader",
+      "port": "inletC",
+      "point": [
+        -8.95,
+        10.7,
+        18.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterHeader.outletD",
+      "subjectId": "feedwaterHeader",
+      "port": "outletD",
+      "point": [
+        -2.7,
+        24.7,
+        1.65
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-header-to-control-valve-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveD.inlet",
+      "subjectId": "feedwaterControlValveD",
+      "port": "inlet",
+      "point": [
+        -17.1,
+        25.599999999999998,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-d-to-sg-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterControlValveD.outlet",
+      "subjectId": "feedwaterControlValveD",
+      "port": "outlet",
+      "point": [
+        -17.1,
+        23.799999999999997,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/feedwater-control-valve-d-to-sg-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.feedwaterInlet",
+      "subjectId": "sgD",
+      "port": "feedwaterInlet",
+      "point": [
+        -59.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-d-steam-to-msiv-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.steamOutlet",
+      "subjectId": "sgD",
+      "port": "steamOutlet",
+      "point": [
+        -59.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-d-steam-to-msiv-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveD.inlet",
+      "subjectId": "mainSteamIsolationValveD",
+      "port": "inlet",
+      "point": [
+        -18,
+        24.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-d-to-main-steam-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamIsolationValveD.outlet",
+      "subjectId": "mainSteamIsolationValveD",
+      "port": "outlet",
+      "point": [
+        -16.2,
+        24.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/msiv-d-to-main-steam-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamHeader.inletD",
+      "subjectId": "mainSteamHeader",
+      "port": "inletD",
+      "point": [
+        -8.95,
+        24.7,
+        18.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-steam-header-to-turbine-stop-valve",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamHeader.outletA",
+      "subjectId": "mainSteamHeader",
+      "port": "outletA",
+      "point": [
+        -7.05,
+        16.45,
+        18.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-steam-header-to-turbine-stop-valve",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbineStopValve.inlet",
+      "subjectId": "turbineStopValve",
+      "port": "inlet",
+      "point": [
+        4.8,
+        16.45,
+        16.3
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-steam-header-to-turbine-bypass-valve",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamHeader.outletC",
+      "subjectId": "mainSteamHeader",
+      "port": "outletC",
+      "point": [
+        -7.05,
+        9.9,
+        18.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/main-steam-header-to-turbine-bypass-valve",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbineBypassValve.inlet",
+      "subjectId": "turbineBypassValve",
+      "port": "inlet",
+      "point": [
+        3,
+        9.9,
+        0.8999999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-bypass-valve-to-condenser",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbineBypassValve.outlet",
+      "subjectId": "turbineBypassValve",
+      "port": "outlet",
+      "point": [
+        5.4,
+        9.9,
+        0.8999999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-bypass-valve-to-condenser",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.steamInlet",
+      "subjectId": "condenser",
+      "port": "steamInlet",
+      "point": [
+        35.94,
+        10.649999999999999,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-stop-valve-to-turbine",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbineStopValve.outlet",
+      "subjectId": "turbineStopValve",
+      "port": "outlet",
+      "point": [
+        6.6,
+        16.45,
+        16.3
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-stop-valve-to-turbine",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbine.steamInlet",
+      "subjectId": "turbine",
+      "port": "steamInlet",
+      "point": [
+        10.100000000000001,
+        18.4,
+        17.095
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-exhaust-to-condenser",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbine.exhaustSteamOutlet",
+      "subjectId": "turbine",
+      "port": "exhaustSteamOutlet",
+      "point": [
+        35.5,
+        23.9,
+        17.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-exhaust-to-condenser",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.steamInlet",
+      "subjectId": "condenser",
+      "port": "steamInlet",
+      "point": [
+        35.94,
+        10.649999999999999,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-condensate-pump-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.condensateOutlet",
+      "subjectId": "condenser",
+      "port": "condensateOutlet",
+      "point": [
+        50.75,
+        18.375,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-condensate-pump-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condensatePumpA.inlet",
+      "subjectId": "condensatePumpA",
+      "port": "inlet",
+      "point": [
+        55.5,
+        20.5,
+        1.3999999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condensate-pump-a-to-feedwater-tank",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condensatePumpA.outlet",
+      "subjectId": "condensatePumpA",
+      "port": "outlet",
+      "point": [
+        56.325,
+        19.2,
+        1.3999999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condensate-pump-a-to-feedwater-tank",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterTank.inlet",
+      "subjectId": "feedwaterTank",
+      "port": "inlet",
+      "point": [
+        51,
+        42.24,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-condensate-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.condensateOutlet",
+      "subjectId": "condenser",
+      "port": "condensateOutlet",
+      "point": [
+        50.75,
+        18.375,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-condensate-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condensatePumpB.inlet",
+      "subjectId": "condensatePumpB",
+      "port": "inlet",
+      "point": [
+        63.5,
+        25.5,
+        1.3999999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condensate-pump-b-to-feedwater-tank",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condensatePumpB.outlet",
+      "subjectId": "condensatePumpB",
+      "port": "outlet",
+      "point": [
+        64.325,
+        24.2,
+        1.3999999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condensate-pump-b-to-feedwater-tank",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/feedwaterTank.inlet",
+      "subjectId": "feedwaterTank",
+      "port": "inlet",
+      "point": [
+        51,
+        42.24,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-hotwell-reject-valve",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.condensateOutlet",
+      "subjectId": "condenser",
+      "port": "condensateOutlet",
+      "point": [
+        50.75,
+        18.375,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-hotwell-reject-valve",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/hotwellRejectValve.inlet",
+      "subjectId": "hotwellRejectValve",
+      "port": "inlet",
+      "point": [
+        72,
+        20.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/hotwell-reject",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/hotwellRejectValve.outlet",
+      "subjectId": "hotwellRejectValve",
+      "port": "outlet",
+      "point": [
+        73.8,
+        20.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/hotwell-reject",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTank.inlet",
+      "subjectId": "auxFeedwaterTank",
+      "port": "inlet",
+      "point": [
+        74,
+        70.72,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-tank-to-motor-pump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTank.outlet",
+      "subjectId": "auxFeedwaterTank",
+      "port": "outlet",
+      "point": [
+        68.72,
+        76,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-tank-to-motor-pump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpMotor.inlet",
+      "subjectId": "auxFeedwaterPumpMotor",
+      "port": "inlet",
+      "point": [
+        -83.68,
+        51.081,
+        9.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-tank-to-turbine-pump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTank.outlet",
+      "subjectId": "auxFeedwaterTank",
+      "port": "outlet",
+      "point": [
+        68.72,
+        76,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-tank-to-turbine-pump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpTurbine.inlet",
+      "subjectId": "auxFeedwaterPumpTurbine",
+      "port": "inlet",
+      "point": [
+        -83.24,
+        71.105,
+        9.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/motor-afw-pump-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpMotor.outlet",
+      "subjectId": "auxFeedwaterPumpMotor",
+      "port": "outlet",
+      "point": [
+        -83.02,
+        52.35,
+        10.879999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/motor-afw-pump-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.inletA",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "inletA",
+      "point": [
+        -82,
+        57.35,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-afw-pump-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpTurbine.outlet",
+      "subjectId": "auxFeedwaterPumpTurbine",
+      "port": "outlet",
+      "point": [
+        -82.36,
+        72.75,
+        11.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-afw-pump-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.inletB",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "inletB",
+      "point": [
+        -80,
+        58.65,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.outletA",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "outletA",
+      "point": [
+        -52,
+        57.35,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveA.inlet",
+      "subjectId": "auxFeedwaterValveA",
+      "port": "inlet",
+      "point": [
+        -13.1,
+        -18.2,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-a-to-sg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveA.outlet",
+      "subjectId": "auxFeedwaterValveA",
+      "port": "outlet",
+      "point": [
+        -13.1,
+        -16.4,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-a-to-sg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.feedwaterInlet",
+      "subjectId": "sgA",
+      "port": "feedwaterInlet",
+      "point": [
+        -59.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.outletB",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "outletB",
+      "point": [
+        -49,
+        57.35,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveB.inlet",
+      "subjectId": "auxFeedwaterValveB",
+      "port": "inlet",
+      "point": [
+        -13.1,
+        -4.2,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-b-to-sg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveB.outlet",
+      "subjectId": "auxFeedwaterValveB",
+      "port": "outlet",
+      "point": [
+        -13.1,
+        -2.4000000000000004,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-b-to-sg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.feedwaterInlet",
+      "subjectId": "sgB",
+      "port": "feedwaterInlet",
+      "point": [
+        -38.00000000000001,
+        19.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.outletC",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "outletC",
+      "point": [
+        -46,
+        57.35,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveC.inlet",
+      "subjectId": "auxFeedwaterValveC",
+      "port": "inlet",
+      "point": [
+        -13.1,
+        11.6,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-c-to-sg-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveC.outlet",
+      "subjectId": "auxFeedwaterValveC",
+      "port": "outlet",
+      "point": [
+        -13.1,
+        9.799999999999999,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-c-to-sg-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.feedwaterInlet",
+      "subjectId": "sgC",
+      "port": "feedwaterInlet",
+      "point": [
+        -38.00000000000001,
+        -6,
+        1.6799999999999997
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.outletD",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "outletD",
+      "point": [
+        -43,
+        57.35,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-header-to-valve-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveD.inlet",
+      "subjectId": "auxFeedwaterValveD",
+      "port": "inlet",
+      "point": [
+        -13.1,
+        25.599999999999998,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-d-to-sg-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterValveD.outlet",
+      "subjectId": "auxFeedwaterValveD",
+      "port": "outlet",
+      "point": [
+        -13.1,
+        23.799999999999997,
+        0.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-valve-d-to-sg-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.feedwaterInlet",
+      "subjectId": "sgD",
+      "port": "feedwaterInlet",
+      "point": [
+        -59.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/vct-to-charging-pump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/volumeControlTank.outlet",
+      "subjectId": "volumeControlTank",
+      "port": "outlet",
+      "point": [
+        -63.76999999999999,
+        90.25,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/vct-to-charging-pump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPump.inlet",
+      "subjectId": "chargingPump",
+      "port": "inlet",
+      "point": [
+        -83.9,
+        88.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/boric-acid-tank-to-injection-valve",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/boricAcidTank.outlet",
+      "subjectId": "boricAcidTank",
+      "port": "outlet",
+      "point": [
+        -19.759999999999998,
+        90,
+        2.625
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/boric-acid-tank-to-injection-valve",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/boricAcidInjectionValve.inlet",
+      "subjectId": "boricAcidInjectionValve",
+      "port": "inlet",
+      "point": [
+        -28,
+        94.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/boric-acid-injection-to-charging-pump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/boricAcidInjectionValve.outlet",
+      "subjectId": "boricAcidInjectionValve",
+      "port": "outlet",
+      "point": [
+        -26.2,
+        94.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/boric-acid-injection-to-charging-pump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPump.inlet",
+      "subjectId": "chargingPump",
+      "port": "inlet",
+      "point": [
+        -83.9,
+        88.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/charging-pump-to-cold-leg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPump.outlet",
+      "subjectId": "chargingPump",
+      "port": "outlet",
+      "point": [
+        -83.35,
+        89.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/charging-pump-to-cold-leg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegA",
+      "subjectId": "core",
+      "port": "coldLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-letdown",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/vessel.letdownOutlet",
+      "subjectId": "vessel",
+      "port": "letdownOutlet",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rcs-letdown",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/letdownValve.inlet",
+      "subjectId": "letdownValve",
+      "port": "inlet",
+      "point": [
+        -77,
+        94.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/letdown-to-vct",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/letdownValve.outlet",
+      "subjectId": "letdownValve",
+      "port": "outlet",
+      "point": [
+        -75.2,
+        94.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/letdown-to-vct",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/volumeControlTank.inlet",
+      "subjectId": "volumeControlTank",
+      "port": "inlet",
+      "point": [
+        -67.72999999999999,
+        90.25,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-tank-to-motor-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTank.outlet",
+      "subjectId": "auxFeedwaterTank",
+      "port": "outlet",
+      "point": [
+        68.72,
+        76,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/aux-feedwater-tank-to-motor-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpMotorB.inlet",
+      "subjectId": "auxFeedwaterPumpMotorB",
+      "port": "inlet",
+      "point": [
+        -36.68,
+        51.081,
+        9.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/motor-afw-pump-b-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpMotorB.outlet",
+      "subjectId": "auxFeedwaterPumpMotorB",
+      "port": "outlet",
+      "point": [
+        -36.02,
+        52.35,
+        10.879999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/motor-afw-pump-b-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterHeader.inletC",
+      "subjectId": "auxFeedwaterHeader",
+      "port": "inletC",
+      "point": [
+        -38,
+        57.35,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/vct-to-charging-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/volumeControlTank.outlet",
+      "subjectId": "volumeControlTank",
+      "port": "outlet",
+      "point": [
+        -63.76999999999999,
+        90.25,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/vct-to-charging-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPumpB.inlet",
+      "subjectId": "chargingPumpB",
+      "port": "inlet",
+      "point": [
+        -36.9,
+        88.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/charging-pump-b-to-cold-leg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPumpB.outlet",
+      "subjectId": "chargingPumpB",
+      "port": "outlet",
+      "point": [
+        -36.35,
+        89.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/charging-pump-b-to-cold-leg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegB",
+      "subjectId": "core",
+      "port": "coldLegB",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-safety-injection-pump-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rwst.outlet",
+      "subjectId": "rwst",
+      "port": "outlet",
+      "point": [
+        -105,
+        -5.84,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-safety-injection-pump-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionPumpA.inlet",
+      "subjectId": "safetyInjectionPumpA",
+      "port": "inlet",
+      "point": [
+        -65.9,
+        49.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-safety-injection-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rwst.outlet",
+      "subjectId": "rwst",
+      "port": "outlet",
+      "point": [
+        -105,
+        -5.84,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-safety-injection-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionPumpB.inlet",
+      "subjectId": "safetyInjectionPumpB",
+      "port": "inlet",
+      "point": [
+        -18.9,
+        49.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-pump-a-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionPumpA.outlet",
+      "subjectId": "safetyInjectionPumpA",
+      "port": "outlet",
+      "point": [
+        -65.35,
+        50.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-pump-a-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionHeader.inletA",
+      "subjectId": "safetyInjectionHeader",
+      "port": "inletA",
+      "point": [
+        -64,
+        59.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-pump-b-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionPumpB.outlet",
+      "subjectId": "safetyInjectionPumpB",
+      "port": "outlet",
+      "point": [
+        -18.35,
+        50.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-pump-b-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionHeader.inletB",
+      "subjectId": "safetyInjectionHeader",
+      "port": "inletB",
+      "point": [
+        -18,
+        59.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionHeader.outletA",
+      "subjectId": "safetyInjectionHeader",
+      "port": "outletA",
+      "point": [
+        -55,
+        59.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegA",
+      "subjectId": "core",
+      "port": "coldLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionHeader.outletB",
+      "subjectId": "safetyInjectionHeader",
+      "port": "outletB",
+      "point": [
+        -46,
+        59.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegB",
+      "subjectId": "core",
+      "port": "coldLegB",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionHeader.outletC",
+      "subjectId": "safetyInjectionHeader",
+      "port": "outletC",
+      "point": [
+        -37,
+        59.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegC",
+      "subjectId": "core",
+      "port": "coldLegC",
+      "point": [
+        -47.06000000000001,
+        8,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionHeader.outletD",
+      "subjectId": "safetyInjectionHeader",
+      "port": "outletD",
+      "point": [
+        -28,
+        59.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-injection-header-to-cold-leg-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegD",
+      "subjectId": "core",
+      "port": "coldLegD",
+      "point": [
+        -50.00000000000001,
+        8,
+        1.3599999999999994
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-containment-spray-pump-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rwst.outlet",
+      "subjectId": "rwst",
+      "port": "outlet",
+      "point": [
+        -105,
+        -5.84,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-containment-spray-pump-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayPumpA.inlet",
+      "subjectId": "containmentSprayPumpA",
+      "port": "inlet",
+      "point": [
+        -85.9,
+        70.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-containment-spray-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rwst.outlet",
+      "subjectId": "rwst",
+      "port": "outlet",
+      "point": [
+        -105,
+        -5.84,
+        6.825
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rwst-to-containment-spray-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayPumpB.inlet",
+      "subjectId": "containmentSprayPumpB",
+      "port": "inlet",
+      "point": [
+        -38.9,
+        70.075,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/containment-spray-pump-a-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayPumpA.outlet",
+      "subjectId": "containmentSprayPumpA",
+      "port": "outlet",
+      "point": [
+        -85.35,
+        71.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/containment-spray-pump-a-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayHeader.inletA",
+      "subjectId": "containmentSprayHeader",
+      "port": "inletA",
+      "point": [
+        -84,
+        78.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/containment-spray-pump-b-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayPumpB.outlet",
+      "subjectId": "containmentSprayPumpB",
+      "port": "outlet",
+      "point": [
+        -38.35,
+        71.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/containment-spray-pump-b-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayHeader.inletB",
+      "subjectId": "containmentSprayHeader",
+      "port": "inletB",
+      "point": [
+        -37.5,
+        78.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-pump-a-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrPumpA.outlet",
+      "subjectId": "rhrPumpA",
+      "port": "outlet",
+      "point": [
+        -85.35,
+        50.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-pump-a-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrHeader.inletA",
+      "subjectId": "rhrHeader",
+      "port": "inletA",
+      "point": [
+        -84,
+        56.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-pump-b-to-header",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrPumpB.outlet",
+      "subjectId": "rhrPumpB",
+      "port": "outlet",
+      "point": [
+        -38.35,
+        50.25,
+        2.88
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-pump-b-to-header",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrHeader.inletB",
+      "subjectId": "rhrHeader",
+      "port": "inletB",
+      "point": [
+        -37.5,
+        56.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-header-to-isolation-valve",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrHeader.outletA",
+      "subjectId": "rhrHeader",
+      "port": "outletA",
+      "point": [
+        -52,
+        56.35,
+        3.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-header-to-isolation-valve",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrIsolationValve.inlet",
+      "subjectId": "rhrIsolationValve",
+      "port": "inlet",
+      "point": [
+        -53,
+        34.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-isolation-valve-to-cold-leg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrIsolationValve.outlet",
+      "subjectId": "rhrIsolationValve",
+      "port": "outlet",
+      "point": [
+        -51.2,
+        34.7,
+        0.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/rhr-isolation-valve-to-cold-leg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegA",
+      "subjectId": "core",
+      "port": "coldLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-a-to-cold-leg-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyAccumulatorA.outlet",
+      "subjectId": "safetyAccumulatorA",
+      "port": "outlet",
+      "point": [
+        -68.23999999999998,
+        14,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-a-to-cold-leg-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegA",
+      "subjectId": "core",
+      "port": "coldLegA",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-b-to-cold-leg-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyAccumulatorB.outlet",
+      "subjectId": "safetyAccumulatorB",
+      "port": "outlet",
+      "point": [
+        -31.759999999999998,
+        11,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-b-to-cold-leg-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegB",
+      "subjectId": "core",
+      "port": "coldLegB",
+      "point": [
+        -50.00000000000001,
+        10.94,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-c-to-cold-leg-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyAccumulatorC.outlet",
+      "subjectId": "safetyAccumulatorC",
+      "port": "outlet",
+      "point": [
+        -43,
+        -12.240000000000002,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-c-to-cold-leg-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegC",
+      "subjectId": "core",
+      "port": "coldLegC",
+      "point": [
+        -47.06000000000001,
+        8,
+        9.18
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-d-to-cold-leg-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyAccumulatorD.outlet",
+      "subjectId": "safetyAccumulatorD",
+      "port": "outlet",
+      "point": [
+        -58,
+        -12.240000000000002,
+        3.15
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-accumulator-d-to-cold-leg-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/core.coldLegD",
+      "subjectId": "core",
+      "port": "coldLegD",
+      "point": [
+        -50.00000000000001,
+        8,
+        1.3599999999999994
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-a-steam-to-relief-valve-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.steamReliefOutlet",
+      "subjectId": "sgA",
+      "port": "steamReliefOutlet",
+      "point": [
+        -59.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-a-steam-to-relief-valve-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/steamGeneratorReliefValveA.inlet",
+      "subjectId": "steamGeneratorReliefValveA",
+      "port": "inlet",
+      "point": [
+        -11,
+        -13.3,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-relief-valve-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.steamReliefOutlet",
+      "subjectId": "sgB",
+      "port": "steamReliefOutlet",
+      "point": [
+        -35.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-relief-valve-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/steamGeneratorReliefValveB.inlet",
+      "subjectId": "steamGeneratorReliefValveB",
+      "port": "inlet",
+      "point": [
+        -11,
+        0.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-relief-valve-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.steamReliefOutlet",
+      "subjectId": "sgC",
+      "port": "steamReliefOutlet",
+      "point": [
+        -35.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-relief-valve-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/steamGeneratorReliefValveC.inlet",
+      "subjectId": "steamGeneratorReliefValveC",
+      "port": "inlet",
+      "point": [
+        -11,
+        14.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-d-steam-to-relief-valve-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.steamReliefOutlet",
+      "subjectId": "sgD",
+      "port": "steamReliefOutlet",
+      "point": [
+        -59.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-d-steam-to-relief-valve-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/steamGeneratorReliefValveD.inlet",
+      "subjectId": "steamGeneratorReliefValveD",
+      "port": "inlet",
+      "point": [
+        -11,
+        28.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/ultimate-heat-sink-to-circulating-water-pump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/ultimateHeatSink.outlet",
+      "subjectId": "ultimateHeatSink",
+      "port": "outlet",
+      "point": [
+        115.5,
+        -6,
+        -0.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/ultimate-heat-sink-to-circulating-water-pump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/circulatingWaterPump.inlet",
+      "subjectId": "circulatingWaterPump",
+      "port": "inlet",
+      "point": [
+        110.64,
+        6.15,
+        2.25
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/circulating-water-pump-to-condenser",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/circulatingWaterPump.outlet",
+      "subjectId": "circulatingWaterPump",
+      "port": "outlet",
+      "point": [
+        111.96,
+        8.5,
+        4.8
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/circulating-water-pump-to-condenser",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.coolingWater",
+      "subjectId": "condenser",
+      "port": "coolingWater",
+      "point": [
+        50.75,
+        18.375,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-cooling-water-discharge",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condenser.coolingWaterOutlet",
+      "subjectId": "condenser",
+      "port": "coolingWaterOutlet",
+      "point": [
+        50.75,
+        18.375,
+        7.5
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/condenser-to-cooling-water-discharge",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/coolingWaterDischarge.inlet",
+      "subjectId": "coolingWaterDischarge",
+      "port": "inlet",
+      "point": [
+        138,
+        -15,
+        -0.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-generator-to-unit-aux-transformer",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/turbine.generatorOutput",
+      "subjectId": "turbine",
+      "port": "generatorOutput",
+      "point": [
+        67.4,
+        19.25,
+        17.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-generator-to-unit-aux-transformer",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitAuxTransformer.primary",
+      "subjectId": "unitAuxTransformer",
+      "port": "primary",
+      "point": [
+        98.6,
+        50,
+        3.71
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-offsite-breaker-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitAuxTransformer.secondary",
+      "subjectId": "unitAuxTransformer",
+      "port": "secondary",
+      "point": [
+        98.6,
+        50,
+        3.71
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-offsite-breaker-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/offsiteBreakerA.inlet",
+      "subjectId": "offsiteBreakerA",
+      "port": "inlet",
+      "point": [
+        18.5,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-offsite-breaker-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitAuxTransformer.secondary",
+      "subjectId": "unitAuxTransformer",
+      "port": "secondary",
+      "point": [
+        98.6,
+        50,
+        3.71
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-offsite-breaker-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/offsiteBreakerB.inlet",
+      "subjectId": "offsiteBreakerB",
+      "port": "inlet",
+      "point": [
+        47.5,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/offsite-breaker-a-to-safety-bus-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/offsiteBreakerA.outlet",
+      "subjectId": "offsiteBreakerA",
+      "port": "outlet",
+      "point": [
+        16,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/offsite-breaker-a-to-safety-bus-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.inlet",
+      "subjectId": "safetyBusA",
+      "port": "inlet",
+      "point": [
+        13,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/offsite-breaker-b-to-safety-bus-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/offsiteBreakerB.outlet",
+      "subjectId": "offsiteBreakerB",
+      "port": "outlet",
+      "point": [
+        45,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/offsite-breaker-b-to-safety-bus-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.inlet",
+      "subjectId": "safetyBusB",
+      "port": "inlet",
+      "point": [
+        42,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-unit-bus-breaker-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitAuxTransformer.secondary",
+      "subjectId": "unitAuxTransformer",
+      "port": "secondary",
+      "point": [
+        98.6,
+        50,
+        3.71
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-unit-bus-breaker-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusBreakerA.inlet",
+      "subjectId": "unitBusBreakerA",
+      "port": "inlet",
+      "point": [
+        18.5,
+        76.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-unit-bus-breaker-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitAuxTransformer.secondary",
+      "subjectId": "unitAuxTransformer",
+      "port": "secondary",
+      "point": [
+        98.6,
+        50,
+        3.71
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-aux-transformer-to-unit-bus-breaker-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusBreakerB.inlet",
+      "subjectId": "unitBusBreakerB",
+      "port": "inlet",
+      "point": [
+        47.5,
+        76.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-breaker-a-to-unit-bus-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusBreakerA.outlet",
+      "subjectId": "unitBusBreakerA",
+      "port": "outlet",
+      "point": [
+        16,
+        76.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-breaker-a-to-unit-bus-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.inlet",
+      "subjectId": "unitBusA",
+      "port": "inlet",
+      "point": [
+        13,
+        76.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-breaker-b-to-unit-bus-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusBreakerB.outlet",
+      "subjectId": "unitBusBreakerB",
+      "port": "outlet",
+      "point": [
+        45,
+        76.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-breaker-b-to-unit-bus-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusB.inlet",
+      "subjectId": "unitBusB",
+      "port": "inlet",
+      "point": [
+        42,
+        76.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-generator-a-to-breaker-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dieselGeneratorA.outlet",
+      "subjectId": "dieselGeneratorA",
+      "port": "outlet",
+      "point": [
+        -74.75,
+        120.5,
+        2.7249999999999996
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-generator-a-to-breaker-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dieselBreakerA.inlet",
+      "subjectId": "dieselBreakerA",
+      "port": "inlet",
+      "point": [
+        22,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-generator-b-to-breaker-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dieselGeneratorB.outlet",
+      "subjectId": "dieselGeneratorB",
+      "port": "outlet",
+      "point": [
+        -27.750000000000007,
+        120.5,
+        2.7249999999999996
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-generator-b-to-breaker-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dieselBreakerB.inlet",
+      "subjectId": "dieselBreakerB",
+      "port": "inlet",
+      "point": [
+        51,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-breaker-a-to-safety-bus-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dieselBreakerA.outlet",
+      "subjectId": "dieselBreakerA",
+      "port": "outlet",
+      "point": [
+        22,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-breaker-a-to-safety-bus-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.inlet",
+      "subjectId": "safetyBusA",
+      "port": "inlet",
+      "point": [
+        13,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-breaker-b-to-safety-bus-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dieselBreakerB.outlet",
+      "subjectId": "dieselBreakerB",
+      "port": "outlet",
+      "point": [
+        51,
+        65.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/diesel-breaker-b-to-safety-bus-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.inlet",
+      "subjectId": "safetyBusB",
+      "port": "inlet",
+      "point": [
+        42,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/battery-a-to-inverter-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/vitalBatteryA.outlet",
+      "subjectId": "vitalBatteryA",
+      "port": "outlet",
+      "point": [
+        16.740000000000002,
+        67.2,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/battery-a-to-inverter-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dcInverterA.dcInlet",
+      "subjectId": "dcInverterA",
+      "port": "dcInlet",
+      "point": [
+        20,
+        67.59100000000001,
+        9.25
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/battery-b-to-inverter-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/vitalBatteryB.outlet",
+      "subjectId": "vitalBatteryB",
+      "port": "outlet",
+      "point": [
+        45.74,
+        67.2,
+        9.2
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/battery-b-to-inverter-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dcInverterB.dcInlet",
+      "subjectId": "dcInverterB",
+      "port": "dcInlet",
+      "point": [
+        49,
+        67.59100000000001,
+        9.25
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/inverter-a-to-controls-load-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dcInverterA.acOutlet",
+      "subjectId": "dcInverterA",
+      "port": "acOutlet",
+      "point": [
+        21.5,
+        68.2,
+        9.25
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/inverter-a-to-controls-load-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/plantControlsLoadA.power",
+      "subjectId": "plantControlsLoadA",
+      "port": "power",
+      "point": [
+        15,
+        94.64025000000001,
+        16.3
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/inverter-b-to-controls-load-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/dcInverterB.acOutlet",
+      "subjectId": "dcInverterB",
+      "port": "acOutlet",
+      "point": [
+        50.5,
+        68.2,
+        9.25
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/inverter-b-to-controls-load-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/plantControlsLoadB.power",
+      "subjectId": "plantControlsLoadB",
+      "port": "power",
+      "point": [
+        44,
+        94.64025000000001,
+        16.3
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-rcpA",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.outlet",
+      "subjectId": "unitBusA",
+      "port": "outlet",
+      "point": [
+        8.5,
+        76,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-rcpA",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpA.power",
+      "subjectId": "rcpA",
+      "port": "power",
+      "point": [
+        -59.879999999999995,
+        13,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-rcpC",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.outlet",
+      "subjectId": "unitBusA",
+      "port": "outlet",
+      "point": [
+        8.5,
+        76,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-rcpC",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpC.power",
+      "subjectId": "rcpC",
+      "port": "power",
+      "point": [
+        -41.00000000000001,
+        2.119999999999999,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-mainFeedwaterPumpA",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.outlet",
+      "subjectId": "unitBusA",
+      "port": "outlet",
+      "point": [
+        8.5,
+        76,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-mainFeedwaterPumpA",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainFeedwaterPumpA.power",
+      "subjectId": "mainFeedwaterPumpA",
+      "port": "power",
+      "point": [
+        17.15,
+        41.8,
+        1.646
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-auxFeedwaterPumpMotor",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-auxFeedwaterPumpMotor",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpMotor.power",
+      "subjectId": "auxFeedwaterPumpMotor",
+      "port": "power",
+      "point": [
+        -79.29999999999998,
+        52.20825000000001,
+        9.6725
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-auxFeedwaterPumpMotorB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-auxFeedwaterPumpMotorB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpMotorB.power",
+      "subjectId": "auxFeedwaterPumpMotorB",
+      "port": "power",
+      "point": [
+        -32.29999999999999,
+        52.20825000000001,
+        9.6725
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-condensatePumpA",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.outlet",
+      "subjectId": "unitBusA",
+      "port": "outlet",
+      "point": [
+        8.5,
+        76,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-condensatePumpA",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condensatePumpA.power",
+      "subjectId": "condensatePumpA",
+      "port": "power",
+      "point": [
+        55.5,
+        20.244999999999997,
+        1.4449999999999998
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-circulatingWaterPump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.outlet",
+      "subjectId": "unitBusA",
+      "port": "outlet",
+      "point": [
+        8.5,
+        76,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-circulatingWaterPump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/circulatingWaterPump.power",
+      "subjectId": "circulatingWaterPump",
+      "port": "power",
+      "point": [
+        109.44,
+        8.237499999999999,
+        2.775
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-rcpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusB.outlet",
+      "subjectId": "unitBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        76.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-rcpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpB.power",
+      "subjectId": "rcpB",
+      "port": "power",
+      "point": [
+        -39.879999999999995,
+        13,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-rcpD",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusB.outlet",
+      "subjectId": "unitBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        76.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-rcpD",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rcpD.power",
+      "subjectId": "rcpD",
+      "port": "power",
+      "point": [
+        -59.879999999999995,
+        1,
+        4.12
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-mainFeedwaterPumpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusB.outlet",
+      "subjectId": "unitBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        76.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-mainFeedwaterPumpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainFeedwaterPumpB.power",
+      "subjectId": "mainFeedwaterPumpB",
+      "port": "power",
+      "point": [
+        28.7,
+        49.5,
+        1.646
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-condensatePumpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusB.outlet",
+      "subjectId": "unitBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        76.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-b-to-condensatePumpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/condensatePumpB.power",
+      "subjectId": "condensatePumpB",
+      "port": "power",
+      "point": [
+        63.5,
+        25.244999999999997,
+        1.4449999999999998
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-chargingPump",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-chargingPump",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPump.power",
+      "subjectId": "chargingPump",
+      "port": "power",
+      "point": [
+        -80.25,
+        89.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-chargingPumpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-chargingPumpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/chargingPumpB.power",
+      "subjectId": "chargingPumpB",
+      "port": "power",
+      "point": [
+        -33.25000000000001,
+        89.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-safetyInjectionPumpA",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-safetyInjectionPumpA",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionPumpA.power",
+      "subjectId": "safetyInjectionPumpA",
+      "port": "power",
+      "point": [
+        -62.25000000000001,
+        50.118750000000006,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-safetyInjectionPumpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-safetyInjectionPumpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyInjectionPumpB.power",
+      "subjectId": "safetyInjectionPumpB",
+      "port": "power",
+      "point": [
+        -15.25,
+        50.118750000000006,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-containmentSprayPumpA",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-containmentSprayPumpA",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayPumpA.power",
+      "subjectId": "containmentSprayPumpA",
+      "port": "power",
+      "point": [
+        -82.25,
+        71.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-containmentSprayPumpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-containmentSprayPumpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentSprayPumpB.power",
+      "subjectId": "containmentSprayPumpB",
+      "port": "power",
+      "point": [
+        -35.25000000000001,
+        71.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-rhrPumpA",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-rhrPumpA",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrPumpA.power",
+      "subjectId": "rhrPumpA",
+      "port": "power",
+      "point": [
+        -82.25,
+        50.118750000000006,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-rhrPumpB",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-rhrPumpB",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/rhrPumpB.power",
+      "subjectId": "rhrPumpB",
+      "port": "power",
+      "point": [
+        -35.25000000000001,
+        50.118750000000006,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-pressurizer-heater",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/unitBusA.outlet",
+      "subjectId": "unitBusA",
+      "port": "outlet",
+      "point": [
+        8.5,
+        76,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/unit-bus-a-to-pressurizer-heater",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizer.heaterPower",
+      "subjectId": "pressurizer",
+      "port": "heaterPower",
+      "point": [
+        -47.949999999999996,
+        27.25,
+        7.02
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-pressurizer-porv-block-valve",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-pressurizer-porv-block-valve",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizer.blockValvePower",
+      "subjectId": "pressurizer",
+      "port": "blockValvePower",
+      "point": [
+        -47.949999999999996,
+        27.25,
+        7.02
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizerBackupHeaterBreakerA.inlet",
+      "subjectId": "pressurizerBackupHeaterBreakerA",
+      "port": "inlet",
+      "point": [
+        22,
+        76.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-backup-heater-breaker-a-to-pressurizer",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizerBackupHeaterBreakerA.outlet",
+      "subjectId": "pressurizerBackupHeaterBreakerA",
+      "port": "outlet",
+      "point": [
+        22,
+        76.73875000000001,
+        1.4
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/pressurizer-backup-heater-breaker-a-to-pressurizer",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/pressurizer.backupHeaterPower",
+      "subjectId": "pressurizer",
+      "port": "backupHeaterPower",
+      "point": [
+        -47.949999999999996,
+        27.25,
+        7.02
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-load-centres-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-load-centres-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/loadCentresA.power",
+      "subjectId": "loadCentresA",
+      "port": "power",
+      "point": [
+        11.5,
+        94,
+        1.3
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-ccw-pump-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-ccw-pump-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/componentCoolingWaterPumpA.power",
+      "subjectId": "componentCoolingWaterPumpA",
+      "port": "power",
+      "point": [
+        -62.25000000000001,
+        71.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-sw-pump-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-sw-pump-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/serviceWaterPumpA.power",
+      "subjectId": "serviceWaterPumpA",
+      "port": "power",
+      "point": [
+        103.6,
+        19.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-fan-coolers-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusA.outlet",
+      "subjectId": "safetyBusA",
+      "port": "outlet",
+      "point": [
+        4,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-a-to-fan-coolers-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentFanCoolersA.power",
+      "subjectId": "containmentFanCoolersA",
+      "port": "power",
+      "point": [
+        -67.32,
+        1.5,
+        1.44
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-load-centres-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-load-centres-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/loadCentresB.power",
+      "subjectId": "loadCentresB",
+      "port": "power",
+      "point": [
+        40.5,
+        94,
+        1.3
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-ccw-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-ccw-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/componentCoolingWaterPumpB.power",
+      "subjectId": "componentCoolingWaterPumpB",
+      "port": "power",
+      "point": [
+        -15.25,
+        71.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-sw-pump-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-sw-pump-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/serviceWaterPumpB.power",
+      "subjectId": "serviceWaterPumpB",
+      "port": "power",
+      "point": [
+        121.6,
+        19.11875,
+        1.6724999999999999
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-fan-coolers-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/safetyBusB.outlet",
+      "subjectId": "safetyBusB",
+      "port": "outlet",
+      "point": [
+        33,
+        65.68950000000001,
+        1.35
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/safety-bus-b-to-fan-coolers-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/containmentFanCoolersB.power",
+      "subjectId": "containmentFanCoolersB",
+      "port": "power",
+      "point": [
+        -25.32,
+        1.5,
+        1.44
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-turbine-afw-steam-valve-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.driveSteamOutlet",
+      "subjectId": "sgB",
+      "port": "driveSteamOutlet",
+      "point": [
+        -38.00000000000001,
+        24.862000000000002,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-turbine-afw-steam-valve-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTurbineSteamValveB.inlet",
+      "subjectId": "auxFeedwaterTurbineSteamValveB",
+      "port": "inlet",
+      "point": [
+        -72,
+        72.7,
+        8.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-afw-steam-valve-b-to-pump-turbine",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTurbineSteamValveB.outlet",
+      "subjectId": "auxFeedwaterTurbineSteamValveB",
+      "port": "outlet",
+      "point": [
+        -70.2,
+        72.7,
+        8.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-afw-steam-valve-b-to-pump-turbine",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpTurbine.driveSteamInlet",
+      "subjectId": "auxFeedwaterPumpTurbine",
+      "port": "driveSteamInlet",
+      "point": [
+        -77.4,
+        72.56625,
+        10.23
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-turbine-afw-steam-valve-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.driveSteamOutlet",
+      "subjectId": "sgC",
+      "port": "driveSteamOutlet",
+      "point": [
+        -38.00000000000001,
+        -3.137999999999998,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-turbine-afw-steam-valve-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTurbineSteamValveC.inlet",
+      "subjectId": "auxFeedwaterTurbineSteamValveC",
+      "port": "inlet",
+      "point": [
+        -65,
+        72.7,
+        8.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-afw-steam-valve-c-to-pump-turbine",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterTurbineSteamValveC.outlet",
+      "subjectId": "auxFeedwaterTurbineSteamValveC",
+      "port": "outlet",
+      "point": [
+        -63.2,
+        72.7,
+        8.75
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/turbine-afw-steam-valve-c-to-pump-turbine",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/auxFeedwaterPumpTurbine.driveSteamInlet",
+      "subjectId": "auxFeedwaterPumpTurbine",
+      "port": "driveSteamInlet",
+      "point": [
+        -77.4,
+        72.56625,
+        10.23
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-a-steam-to-safety-valves-a",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgA.steamReliefOutlet",
+      "subjectId": "sgA",
+      "port": "steamReliefOutlet",
+      "point": [
+        -59.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-a-steam-to-safety-valves-a",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamSafetyValveA.inlet",
+      "subjectId": "mainSteamSafetyValveA",
+      "port": "inlet",
+      "point": [
+        -5,
+        -13.3,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-safety-valves-b",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgB.steamReliefOutlet",
+      "subjectId": "sgB",
+      "port": "steamReliefOutlet",
+      "point": [
+        -35.138,
+        22,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-b-steam-to-safety-valves-b",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamSafetyValveB.inlet",
+      "subjectId": "mainSteamSafetyValveB",
+      "port": "inlet",
+      "point": [
+        -5,
+        0.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-safety-valves-c",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgC.steamReliefOutlet",
+      "subjectId": "sgC",
+      "port": "steamReliefOutlet",
+      "point": [
+        -35.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-c-steam-to-safety-valves-c",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamSafetyValveC.inlet",
+      "subjectId": "mainSteamSafetyValveC",
+      "port": "inlet",
+      "point": [
+        -5,
+        14.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-d-steam-to-safety-valves-d",
+      "end": "from",
+      "kind": "actual-graph-port",
+      "terminalId": "port/sgD.steamReliefOutlet",
+      "subjectId": "sgD",
+      "port": "steamReliefOutlet",
+      "point": [
+        -59.138,
+        -6,
+        12.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "connection/sg-d-steam-to-safety-valves-d",
+      "end": "to",
+      "kind": "actual-graph-port",
+      "terminalId": "port/mainSteamSafetyValveD.inlet",
+      "subjectId": "mainSteamSafetyValveD",
+      "port": "inlet",
+      "point": [
+        -5,
+        28.7,
+        15.84
+      ],
+      "contactError": 0
+    },
+    {
+      "conduitId": "route/main-steam-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -8,
+        -18,
+        18.5
+      ],
+      "capId": "route/main-steam-header/blind-first"
+    },
+    {
+      "conduitId": "route/main-steam-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -8,
+        27,
+        18.5
+      ],
+      "capId": "route/main-steam-header/blind-last"
+    },
+    {
+      "conduitId": "route/feedwater-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -2,
+        -18,
+        1.65
+      ],
+      "capId": "route/feedwater-header/blind-first"
+    },
+    {
+      "conduitId": "route/feedwater-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -2,
+        40,
+        1.65
+      ],
+      "capId": "route/feedwater-header/blind-last"
+    },
+    {
+      "conduitId": "route/aux-feedwater-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -84,
+        58,
+        9.2
+      ],
+      "capId": "route/aux-feedwater-header/blind-first"
+    },
+    {
+      "conduitId": "route/aux-feedwater-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -36,
+        58,
+        9.2
+      ],
+      "capId": "route/aux-feedwater-header/blind-last"
+    },
+    {
+      "conduitId": "route/safety-injection-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -66,
+        60,
+        3.8
+      ],
+      "capId": "route/safety-injection-header/blind-first"
+    },
+    {
+      "conduitId": "route/safety-injection-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -16,
+        60,
+        3.8
+      ],
+      "capId": "route/safety-injection-header/blind-last"
+    },
+    {
+      "conduitId": "route/containment-spray-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -86,
+        79,
+        3.8
+      ],
+      "capId": "route/containment-spray-header/blind-first"
+    },
+    {
+      "conduitId": "route/containment-spray-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -35.5,
+        79,
+        3.8
+      ],
+      "capId": "route/containment-spray-header/blind-last"
+    },
+    {
+      "conduitId": "route/rhr-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -86,
+        57,
+        3.8
+      ],
+      "capId": "route/rhr-header/blind-first"
+    },
+    {
+      "conduitId": "route/rhr-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -35.5,
+        57,
+        3.8
+      ],
+      "capId": "route/rhr-header/blind-last"
+    },
+    {
+      "conduitId": "route/pressurizer-relief-header",
+      "end": "first",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -55,
+        23,
+        13
+      ],
+      "capId": "route/pressurizer-relief-header/blind-first"
+    },
+    {
+      "conduitId": "route/pressurizer-relief-header",
+      "end": "last",
+      "kind": "intentional-closed-header-end",
+      "point": [
+        -48,
+        23,
+        13
+      ],
+      "capId": "route/pressurizer-relief-header/blind-last"
+    },
+    {
+      "conduitId": "route/turbine-reheat-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        15.7,
+        10.4,
+        23
+      ],
+      "joined": [
+        "route/turbine-msr-feed-1"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-reheat-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        10.4,
+        23
+      ],
+      "joined": [
+        "route/turbine-admission-46.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-24.5-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        10.4,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-24.5-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        12.8,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-receiver-24.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-35.5-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        10.4,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-35.5-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        12.8,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-receiver-35.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-46.5-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        10.4,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-46.5-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        12.8,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-receiver-46.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-reheat-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        15.7,
+        26.6,
+        23
+      ],
+      "joined": [
+        "route/turbine-msr-feed-2"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-reheat-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        26.6,
+        23
+      ],
+      "joined": [
+        "route/turbine-admission-46.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-24.5-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        26.6,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-24.5-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        24,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-receiver-24.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-35.5-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        26.6,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-35.5-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        24,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-receiver-35.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-46.5-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        26.6,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-admission-46.5-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        24,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-receiver-46.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-msr-feed-1",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        12,
+        8.9,
+        17.6
+      ],
+      "equipmentId": "msr-1",
+      "basis": "existing-family-nozzle",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-msr-feed-1",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        15.7,
+        10.4,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-msr-feed-2",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        15.7,
+        27.3,
+        17.6
+      ],
+      "equipmentId": "msr-2",
+      "basis": "existing-family-nozzle",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-msr-feed-2",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        15.7,
+        26.6,
+        23
+      ],
+      "joined": [
+        "route/turbine-reheat-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-24.5-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        14.779613280324877,
+        18.65663996924429
+      ],
+      "equipmentId": "tg-lp-1",
+      "basis": "actual-LP-casing-ring",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-24.5-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        12.8,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-admission-24.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-24.5-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        22.020386719675123,
+        18.65663996924429
+      ],
+      "equipmentId": "tg-lp-1",
+      "basis": "actual-LP-casing-ring",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-24.5-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        24.5,
+        24,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-admission-24.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-35.5-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        14.779613280324877,
+        18.65663996924429
+      ],
+      "equipmentId": "tg-lp-2",
+      "basis": "actual-LP-casing-ring",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-35.5-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        12.8,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-admission-35.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-35.5-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        22.020386719675123,
+        18.65663996924429
+      ],
+      "equipmentId": "tg-lp-2",
+      "basis": "actual-LP-casing-ring",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-35.5-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        35.5,
+        24,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-admission-35.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-46.5-10.4",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        14.779613280324877,
+        18.65663996924429
+      ],
+      "equipmentId": "tg-lp-3",
+      "basis": "actual-LP-casing-ring",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-46.5-10.4",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        12.8,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-admission-46.5-10.4"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-46.5-26.6",
+      "end": "first",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        22.020386719675123,
+        18.65663996924429
+      ],
+      "equipmentId": "tg-lp-3",
+      "basis": "actual-LP-casing-ring",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    },
+    {
+      "conduitId": "route/turbine-receiver-46.5-26.6",
+      "end": "last",
+      "kind": "physical-subassembly-interface",
+      "point": [
+        46.5,
+        24,
+        19.6
+      ],
+      "joined": [
+        "route/turbine-admission-46.5-26.6"
+      ],
+      "telemetry": "same lumped turbine; no independent flow or process-model port"
+    }
+  ],
+  "manifoldInstallations": [
+    {
+      "subject": "mainSteamHeader",
+      "elementId": "route/main-steam-header",
+      "axis": "y",
+      "from": [
+        -8,
+        -18,
+        18.5
+      ],
+      "to": [
+        -8,
+        27,
+        18.5
+      ],
+      "material": "steam",
+      "nozzleReach": 0.95,
+      "flangeThickness": 0.12,
+      "flangeRadius": 0.25,
+      "capThickness": 0.16,
+      "capRadius": 0.56,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": -17.3,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "inletB",
+          "at": -3.3,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "inletC",
+          "at": 10.7,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "inletD",
+          "at": 24.7,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "outletA",
+          "at": 16.45,
+          "outward": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "outletC",
+          "at": 9.9,
+          "outward": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "subject": "feedwaterHeader",
+      "elementId": "route/feedwater-header",
+      "axis": "y",
+      "from": [
+        -2,
+        -18,
+        1.65
+      ],
+      "to": [
+        -2,
+        40,
+        1.65
+      ],
+      "material": "pipe",
+      "nozzleReach": 0.7,
+      "flangeThickness": 0.1,
+      "flangeRadius": 0.23,
+      "capThickness": 0.12,
+      "capRadius": 0.3,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": 34,
+          "outward": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "inletB",
+          "at": 38,
+          "outward": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "outletA",
+          "at": -17.3,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "outletB",
+          "at": -3.3,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "outletC",
+          "at": 10.7,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        },
+        {
+          "port": "outletD",
+          "at": 24.7,
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "subject": "auxFeedwaterHeader",
+      "elementId": "route/aux-feedwater-header",
+      "axis": "x",
+      "from": [
+        -84,
+        58,
+        9.2
+      ],
+      "to": [
+        -36,
+        58,
+        9.2
+      ],
+      "material": "pipe",
+      "nozzleReach": 0.65,
+      "flangeThickness": 0.1,
+      "flangeRadius": 0.23,
+      "capThickness": 0.12,
+      "capRadius": 0.25,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": -82,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "inletB",
+          "at": -80,
+          "outward": [
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "port": "inletC",
+          "at": -38,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletA",
+          "at": -52,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletB",
+          "at": -49,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletC",
+          "at": -46,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletD",
+          "at": -43,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "subject": "safetyInjectionHeader",
+      "elementId": "route/safety-injection-header",
+      "axis": "x",
+      "from": [
+        -66,
+        60,
+        3.8
+      ],
+      "to": [
+        -16,
+        60,
+        3.8
+      ],
+      "material": "pipe",
+      "nozzleReach": 0.65,
+      "flangeThickness": 0.1,
+      "flangeRadius": 0.23,
+      "capThickness": 0.12,
+      "capRadius": 0.25,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": -64,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "inletB",
+          "at": -18,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletA",
+          "at": -55,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletB",
+          "at": -46,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletC",
+          "at": -37,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletD",
+          "at": -28,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "subject": "containmentSprayHeader",
+      "elementId": "route/containment-spray-header",
+      "axis": "x",
+      "from": [
+        -86,
+        79,
+        3.8
+      ],
+      "to": [
+        -35.5,
+        79,
+        3.8
+      ],
+      "material": "pipe",
+      "nozzleReach": 0.65,
+      "flangeThickness": 0.1,
+      "flangeRadius": 0.23,
+      "capThickness": 0.12,
+      "capRadius": 0.25,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": -84,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "inletB",
+          "at": -37.5,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "subject": "rhrHeader",
+      "elementId": "route/rhr-header",
+      "axis": "x",
+      "from": [
+        -86,
+        57,
+        3.8
+      ],
+      "to": [
+        -35.5,
+        57,
+        3.8
+      ],
+      "material": "pipe",
+      "nozzleReach": 0.65,
+      "flangeThickness": 0.1,
+      "flangeRadius": 0.23,
+      "capThickness": 0.12,
+      "capRadius": 0.28,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": -84,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "inletB",
+          "at": -37.5,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "port": "outletA",
+          "at": -52,
+          "outward": [
+            0,
+            -1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "subject": "pressurizerReliefHeader",
+      "elementId": "route/pressurizer-relief-header",
+      "axis": "x",
+      "from": [
+        -55,
+        23,
+        13
+      ],
+      "to": [
+        -48,
+        23,
+        13
+      ],
+      "material": "steam",
+      "nozzleReach": 0.65,
+      "flangeThickness": 0.1,
+      "flangeRadius": 0.23,
+      "capThickness": 0.12,
+      "capRadius": 0.25,
+      "taps": [
+        {
+          "port": "inletA",
+          "at": -50,
+          "outward": [
+            0,
+            0,
+            -1
+          ]
+        },
+        {
+          "port": "outletA",
+          "at": -53,
+          "outward": [
+            0,
+            0,
+            -1
+          ]
+        }
+      ]
+    }
+  ],
+  "physicalTurbineFittings": [
+    {
+      "id": "route/turbine-msr-feed-1",
+      "kind": "msr-feed",
+      "equipmentId": "msr-1",
+      "headerId": "route/turbine-reheat-10.4",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-msr-feed-2",
+      "kind": "msr-feed",
+      "equipmentId": "msr-2",
+      "headerId": "route/turbine-reheat-26.6",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-receiver-24.5-10.4",
+      "kind": "lp-receiver",
+      "equipmentId": "tg-lp-1",
+      "headerId": "route/turbine-admission-24.5-10.4",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-receiver-24.5-26.6",
+      "kind": "lp-receiver",
+      "equipmentId": "tg-lp-1",
+      "headerId": "route/turbine-admission-24.5-26.6",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-receiver-35.5-10.4",
+      "kind": "lp-receiver",
+      "equipmentId": "tg-lp-2",
+      "headerId": "route/turbine-admission-35.5-10.4",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-receiver-35.5-26.6",
+      "kind": "lp-receiver",
+      "equipmentId": "tg-lp-2",
+      "headerId": "route/turbine-admission-35.5-26.6",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-receiver-46.5-10.4",
+      "kind": "lp-receiver",
+      "equipmentId": "tg-lp-3",
+      "headerId": "route/turbine-admission-46.5-10.4",
+      "mountAxis": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "route/turbine-receiver-46.5-26.6",
+      "kind": "lp-receiver",
+      "equipmentId": "tg-lp-3",
+      "headerId": "route/turbine-admission-46.5-26.6",
+      "mountAxis": [
+        0,
+        1,
+        0
+      ]
+    }
+  ],
+  "remainingCoincidentEquipmentPorts": [
+    {
+      "elementId": "equipment/vessel",
+      "ports": [
+        "coldLegA",
+        "coldLegB",
+        "hotLegA",
+        "hotLegB",
+        "letdownOutlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/pressurizer",
+      "ports": [
+        "reliefOutlet",
+        "safetyOutlet",
+        "surgeLine"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/rcpA",
+      "ports": [
+        "outlet",
+        "power"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/sgB",
+      "ports": [
+        "feedwaterInlet",
+        "primaryInlet",
+        "steamOutlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/rcpB",
+      "ports": [
+        "inlet",
+        "outlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/vessel",
+      "ports": [
+        "hotLegC",
+        "hotLegD"
+      ],
+      "confidence": "schematic-aggregate-body-anchor",
+      "qualification": "Shared lumped equipment/body contact; separate physical branch/load nozzle installation is not authored."
+    },
+    {
+      "elementId": "equipment/sgC",
+      "ports": [
+        "driveSteamOutlet",
+        "primaryInlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/sgC",
+      "ports": [
+        "feedwaterInlet",
+        "primaryOutlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/rcpD",
+      "ports": [
+        "outlet",
+        "power"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/sgA",
+      "ports": [
+        "feedwaterInlet",
+        "steamOutlet",
+        "steamReliefOutlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/sgC",
+      "ports": [
+        "steamOutlet",
+        "steamReliefOutlet"
+      ],
+      "confidence": "schematic-aggregate-body-anchor",
+      "qualification": "Shared lumped equipment/body contact; separate physical branch/load nozzle installation is not authored."
+    },
+    {
+      "elementId": "equipment/sgD",
+      "ports": [
+        "feedwaterInlet",
+        "steamOutlet",
+        "steamReliefOutlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "condenser-3",
+      "ports": [
+        "condensateOutlet",
+        "coolingWater",
+        "coolingWaterOutlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/unitAuxTransformer",
+      "ports": [
+        "primary",
+        "secondary"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/dieselBreakerA",
+      "ports": [
+        "inlet",
+        "outlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/dieselBreakerB",
+      "ports": [
+        "inlet",
+        "outlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    },
+    {
+      "elementId": "equipment/pressurizer",
+      "ports": [
+        "backupHeaterPower",
+        "blockValvePower",
+        "heaterPower"
+      ],
+      "confidence": "schematic-aggregate-body-anchor",
+      "qualification": "Shared lumped equipment/body contact; separate physical branch/load nozzle installation is not authored."
+    },
+    {
+      "elementId": "equipment/pressurizerBackupHeaterBreakerA",
+      "ports": [
+        "inlet",
+        "outlet"
+      ],
+      "confidence": "unresolved-contradictory-port-intent",
+      "qualification": "Distinct opposite-flow, medium, voltage or equipment-terminal meanings share an illustrative body anchor; actual separated hardware port placement remains unresolved. Exact graph endpoint identity is retained, not a claim that these are the same physical port."
+    }
+  ],
+  "limitations": [
+    "Exact graph/contact qualification does not establish distinct equipment nozzle schedules or as-built plant routing. The listed non-manifold equipment port coincidences remain explicit authoring debt.",
+    "Routing obstacle constraints cover the authored equipment/column set; route-to-route separation, civil penetrations and maintenance qualification are not claimed.",
+    "Triangle/line/packed-byte deltas are geometry census only, not a performance benchmark."
+  ],
+  "before": {
+    "design": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261027-r5",
+      "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "objects": 719,
+    "sourceTriangles": 241744,
+    "authoredLineSegments": 43981,
+    "preparedMeshes": 3913,
+    "packedTriangleVertices": 842496,
+    "packedLineVertices": 95530,
+    "packedVertexBytes": 26959872,
+    "packedLineBytes": 2292720,
+    "selectedViewContinuations": {
+      "graphRoutes": 152,
+      "policy": "Inspection cuts derive marked continuation caps; they are not source hardware blind ends."
+    }
+  },
+  "after": {
+    "design": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261028-r6",
+      "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "objects": 805,
+    "sourceTriangles": 242320,
+    "authoredLineSegments": 46114,
+    "preparedMeshes": 4193,
+    "packedTriangleVertices": 849828,
+    "packedLineVertices": 99796,
+    "packedVertexBytes": 27194496,
+    "packedLineBytes": 2395104,
+    "selectedViewContinuations": {
+      "graphRoutes": 152,
+      "policy": "Inspection cuts derive marked continuation caps; they are not source hardware blind ends."
+    }
+  }
+}
