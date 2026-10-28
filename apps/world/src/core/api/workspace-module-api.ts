@@ -43,6 +43,10 @@ import {
   procedureRunStartPayloadSchema,
   procedureRunTransitionCommandKind,
   procedureRunTransitionPayloadSchema,
+  procedureRunDriveCommandKind,
+  procedureRunDrivePayloadSchema,
+  procedureRunRequestInputCommandKind,
+  procedureRunRequestInputPayloadSchema,
   procedureSourceIdSchema,
   procedureStepIdSchema,
   recordingSampleSchema,
@@ -1841,6 +1845,17 @@ const invokeCapability = async (
     if (outcome.kind === 'command' && capabilityId === procedureRunTransitionCommandKind && invocation.access.actor.kind === 'ai') {
       const { runId } = procedureRunTransitionPayloadSchema.parse(invocation.input)
       return json({ result: { ...outcome.result, ...(await nextProcedureStep(runtime, invocation, runId, 'The transition was accepted')) } })
+    }
+    if (outcome.kind === 'command' && invocation.access.actor.kind === 'ai') {
+      if (capabilityId === procedureRunDriveCommandKind) {
+        const input = procedureRunDrivePayloadSchema.parse(invocation.input)
+        if (input.action === 'claim') return json({ result: { ...outcome.result,
+          ...(await nextProcedureStep(runtime, invocation, input.runId, 'The claim was accepted')) } })
+      }
+      if (capabilityId === procedureRunRequestInputCommandKind) {
+        const { runId } = procedureRunRequestInputPayloadSchema.parse(invocation.input)
+        return json({ result: { ...outcome.result, ...(await nextProcedureStep(runtime, invocation, runId, 'The input request was accepted')) } })
+      }
     }
     if (outcome.kind === 'command' && capabilityId === procedureRunStartCommandKind) {
       return json({ result: { ...outcome.result, ...(await startedProcedureRun(runtime, invocation)) } })

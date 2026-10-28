@@ -204,7 +204,32 @@ describe('the AI procedure runner through the World Module API', () => {
     const reset = await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId } }, ai)
     expect(reset.status).toBe(200)
     expect(run.snapshot().procedures!.runs).toEqual([])
-    expect(run.events().findLast(event => event.type === 'procedure.run.reset')).toMatchObject({ resetBy: 'actor:ai:assistant' })
+    expect(run.events().filter(event => event.type === 'procedure.run.reset').at(-1)).toMatchObject({ resetBy: 'actor:ai:assistant' })
+  })
+
+  test('claim and input-request receipts prove the exact owned run even with several active procedures', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant', displayName: 'Assistant' })
+    const human = access(workspaceId, { kind: 'human' })
+    const first = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, human)
+    const second = await invoke('world.procedure.run.start', { procedureId: 'ES-0.1', scope: { plantId } }, human)
+    const firstId = first.body.result.pinned.runId, secondId = second.body.result.pinned.runId
+    for (const runId of [firstId, secondId]) {
+      const claim = await invoke('world.procedure.run.drive', { runId, action: 'claim' }, ai)
+      expect(claim.status).toBe(200)
+      expect(claim.body.result.next.run).toMatchObject({ runId, driver: { kind: 'ai', actorId: 'actor:ai:assistant' } })
+      expect(claim.body.result.next.sequence).toBe(run.snapshot().seq)
+    }
+    expect((await invoke('world.procedure.run.step.read', {}, ai)).status).toBe(409)
+    const input = await invoke('world.procedure.run.request-input', { runId: firstId, stepId: 'verify-reactor-trip', issue: 'Confirm local rod indication.' }, ai)
+    expect(input.status).toBe(200)
+    expect(input.body.result.next.run).toMatchObject({ runId: firstId, driver: { actorId: 'actor:ai:assistant' }, inputRequest: { requestId: input.body.result.commandId, stepId: 'verify-reactor-trip' } })
+    expect(run.snapshot().procedures!.runs.find(candidate => candidate.runId === secondId)!.inputRequest).toBeUndefined()
+    const release = await invoke('world.procedure.run.drive', { runId: firstId, action: 'release' }, ai)
+    expect(release.status).toBe(200)
+    expect(release.body.result.next).toBeUndefined()
+    expect(run.snapshot().procedures!.runs.find(candidate => candidate.runId === firstId)!.inputRequest).toBeUndefined()
   })
 
   test('an AI agent\'s transfer answers with the destination\'s current step, which it now drives', async () => {

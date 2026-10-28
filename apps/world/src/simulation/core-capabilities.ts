@@ -61,7 +61,7 @@ const procedureStartResultSchema = z.discriminatedUnion('ok', [
   commandResultSchema.options[1],
 ])
 
-const procedureTransitionResultSchema = z.discriminatedUnion('ok', [
+const procedureStepResultSchema = z.discriminatedUnion('ok', [
   commandResultSchema.options[0].extend({ next: procedureStepViewSchema.optional(), nextUnavailable: z.string().optional() }),
   commandResultSchema.options[1],
 ])
@@ -96,7 +96,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Follow procedure branch',
     description: 'Input {runId, stepId, branchIndex, basis?, evidenceTagIds?}. Atomically follows a declared local-step, procedure, retry, END, or ABORT branch from the pinned document. Records the chosen branch, who chose it, an optional basis (at most 300 characters) and up to six of the step\'s own tags as evidenceTagIds, which World reads now on the run\'s plant and records with the decision. A procedure transfer preserves source placekeeping and hands the run\'s driver on; an explicitly parallel branch keeps it active. Only authored outcome labels change step assessment. Read the step (world.procedure.run.step.read) to select stepId and branchIndex. An AI agent selects on a run it drives, any branch of its current step (a normal, RNO or unknown outcome; to a step, another procedure or END), always with a basis, and with evidenceTagIds wherever any of the step\'s tags reads now: each cited tag must read. A person selecting a branch off the current step of a run an AI agent drives takes it over. Accepted for an AI agent, the result carries next: the step the run is now at, as step.read returns it; after a transfer, the destination\'s current step, which it now drives (the run alone after END).',
     input: procedureRunTransitionPayloadSchema,
-    output: procedureTransitionResultSchema,
+    output: procedureStepResultSchema,
     targets: () => [],
   }),
   command({
@@ -109,15 +109,17 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: procedureRunDriveCommandKind,
     title: 'Drive procedure run',
-    description: 'Input {runId, action: "claim" | "release"}. Claims or releases driving an active procedure run, so the procedure window shows who works it. An AI agent claims a run nobody drives (or one it drives already) and must drive a run to change it; a person\'s claim takes over at once, and a person also takes over by ticking a step, jumping, closing it or selecting a branch off its current step. While a person drives, AI agents only read it. Release makes the run shared again: the driver or a person releases; only then may an AI agent claim it.',
+    description: 'Input {runId, action: "claim" | "release"}. Claims or releases driving an active procedure run, so the procedure window shows who works it. An AI agent claims a run nobody drives (or one it drives already) and must drive a run to change it; a person\'s claim takes over at once, and a person also takes over by ticking a step, jumping, closing it or selecting a branch off its current step. While a person drives, AI agents only read it. Release makes the run shared again: the driver or a person releases; only then may an AI agent claim it. An accepted AI claim carries next, the current step of the exact claimed run; release does not.',
     input: procedureRunDrivePayloadSchema,
+    output: procedureStepResultSchema,
     targets: () => [],
   }),
   command({
     id: procedureRunRequestInputCommandKind,
     title: 'Request procedure input',
-    description: 'Input {runId, stepId, issue}. The current AI driver names the precise human judgement, field report or missing input it needs at its current step (issue at most 500 characters). Records a durable request without changing the step or clock. The procedure window shows it until the step is answered, changed, closed or handed over; dismissal only hides its notification. Identical pending requests do not repeat. Never request input merely because an observation is unknown when an authored branch or a readable signal settles it.',
+    description: 'Input {runId, stepId, issue}. The current AI driver names the precise human judgement, field report or missing input it needs at its current step (issue at most 500 characters). Records a durable request without changing the step or clock. The procedure window shows it until the step is answered, changed, closed or handed over; dismissal only hides its notification. Identical pending requests do not repeat. Accepted for the AI driver, the result carries next with the exact pending request and step. Never request input merely because an observation is unknown when an authored branch or a readable signal settles it.',
     input: procedureRunRequestInputPayloadSchema,
+    output: procedureStepResultSchema,
     targets: () => [],
   }),
   command({
