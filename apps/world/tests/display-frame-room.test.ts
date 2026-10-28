@@ -73,9 +73,27 @@ describe('the part of a display a person sees', () => {
     expect(vignette).toContain('const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })')
     expect(vignette).toContain('style:height={fills && room !== null ? `${room}px` : undefined}')
     expect(vignette).toContain('.vignette.fill > :global(.sections) { grid-row: 4; min-height: 0; }')
-    expect(vignette).not.toContain('100vh')
+    const fillRules = [...vignette.matchAll(/\.vignette\.fill[^{}]*\{([^}]*)\}/g)].map(match => match[1]!)
+    expect(fillRules.length).toBeGreaterThan(0)
+    // The alert article must follow the host-supplied visible room, not the
+    // iframe's own viewport or percentage height. A separate chat preview
+    // wrapper may use the viewport to provide its single native scroller.
+    expect(fillRules.join('\n')).not.toMatch(/(?:min-|max-)?height\s*:\s*[^;}]*(?:\d+(?:d|s|l)?vh\b|100%)/)
     const sections = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Sections.svelte'), 'utf8')
     expect(sections).toContain('style:height={rows === null || fills ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}')
+  })
+
+  test('an optional inline preview owns one keyboard-reachable scroller outside the intrinsic article', () => {
+    const vignette = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Vignette.svelte'), 'utf8')
+    expect(vignette).toContain("const preview = $derived(board === undefined && opening.where !== 'window')")
+    expect(vignette).toContain("<div class:preview tabindex={preview ? 0 : undefined} role={preview ? 'region' : undefined} aria-label={preview ? 'Scrollable live display preview' : undefined}>")
+    const previewRule = vignette.match(/\.preview\s*\{([^}]*)\}/)?.[1]
+    expect(previewRule).toContain('max-height: 100vh')
+    expect(previewRule).toContain('overflow-y: auto')
+    const articleRule = vignette.match(/\.vignette\s*\{([^}]*)\}/)?.[1]
+    expect(articleRule).toBeDefined()
+    expect(articleRule).not.toContain('overflow-y: auto')
+    expect(articleRule).not.toMatch(/(?:min-|max-)?height\s*:/)
   })
 
   test('a frame hears what a person sees with its presentation, and only a change of it is news', () => {
