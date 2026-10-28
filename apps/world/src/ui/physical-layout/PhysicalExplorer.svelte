@@ -37,6 +37,7 @@
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
   import { physicalRouteInspectionPaths, createPhysicalRouteScreenMarks } from './route-marks.ts'
+  import { createPhysicalFlowPresentation, type PhysicalFlowMark } from './flow-presentation.ts'
   import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
   import { drawPhysicalFlowMark, type PhysicalFlowGlyph } from '../displays/physical-flow-marks.ts'
   import { physicalLayoutSources, type PhysicalLayoutBinding, type PhysicalLayoutMapInteraction } from './sources.ts'
@@ -417,8 +418,8 @@
   })
   let showStateWords = $state(false)
   type Badge = { readonly kind: 'status'; readonly sceneId: string; readonly elementId: string; readonly label: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly width: number; readonly color: string; readonly word: string; readonly chip: string; readonly alarms: number; readonly rank: number }
-  type FlowMark = { readonly kind: 'flow'; readonly key: string; readonly sceneId: string; readonly occurrenceId: string; readonly point: { readonly x: number; readonly y: number }; readonly angle: number; readonly glyph: PhysicalFlowGlyph; readonly rank: number }
-  const noFlowMarks: ReadonlyArray<FlowMark> = []
+  type FlowMark = PhysicalFlowMark
+  const retainProposedFlowMarks = createPhysicalFlowPresentation(), retainVisibleFlowMarks = createPhysicalFlowPresentation()
   let testedBadges = $state.raw<ReadonlyArray<Badge>>([])
   let testedFlowMarks = $state.raw<ReadonlyArray<FlowMark>>([])
   let pendingBadges = $state(0)
@@ -462,7 +463,7 @@
     return [scene.descriptor.id, reading.subjects.filter(subject => operations.get(subject.elementId)?.connection).map(subject => subject.elementId)]
   })))
   const flowSubjectIndex = $derived(new Map((JSON.parse(flowSubjectMembership) as Array<[string, string[]]>).map(([sceneId, subjects]) => [sceneId, new Set(subjects)])))
-  type ProjectedFlowMark = Omit<FlowMark, 'glyph'> & { readonly elementId: string }
+  type ProjectedFlowMark = Omit<FlowMark, 'glyph'>
   const flowScopeRegions = new WeakMap<PackPhysicalScene, { readonly scopeId: string | undefined; readonly regions: ReturnType<typeof physicalScopeRegions> }>()
   const projectedFlowMarks = $derived.by((): ReadonlyArray<ProjectedFlowMark> => {
     void screenRevision; void theme
@@ -502,7 +503,7 @@
       const glyph: PhysicalFlowGlyph = flow ? flow.direction === 'forward' || flow.direction === 'reverse' || flow.direction === 'stopped' ? flow.direction : 'unknown' : conducting?.active === true ? 'conducting' : conducting?.active === false ? 'deenergized' : 'unknown'
       marks.push({ ...mark, glyph })
     }
-    return marks
+    return retainProposedFlowMarks(marks)
   })
   $effect(() => {
     annotationScheduler?.setActive(active && !suspended && documentVisible)
@@ -511,7 +512,7 @@
     const marks = sparseLayoutBadges(proposedFlowMarks, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
     annotationScheduler?.update(generation, [...candidates.map(value => ({ key: `status:${value.sceneId}:${value.occurrenceId}:${value.elementId}`, priority: value.rank, value })), ...marks.map(value => ({ key: `flow:${value.key}`, priority: value.rank, value }))])
   })
-  const flowMarks = $derived.by(() => { const visible = new Set(testedFlowMarks.map(mark => mark.key)); const next = proposedFlowMarks.filter(mark => visible.has(mark.key)); return next.length ? next : noFlowMarks })
+  const flowMarks = $derived.by(() => { const visible = new Set(testedFlowMarks.map(mark => mark.key)); return retainVisibleFlowMarks(proposedFlowMarks.filter(mark => visible.has(mark.key))) })
   const badges = $derived.by(() => {
     const visible = new Set(testedBadges.map(value => `${value.sceneId}:${value.occurrenceId}:${value.elementId}`))
     return sparseLayoutBadges(proposedBadges.filter(value => visible.has(`${value.sceneId}:${value.occurrenceId}:${value.elementId}`)), size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
