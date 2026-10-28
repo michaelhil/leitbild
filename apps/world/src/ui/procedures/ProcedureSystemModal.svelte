@@ -473,7 +473,8 @@
       setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
       setLoadStage('runs', 'done', `${runs.length} tracked runs`)
       selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
-      if (selectedProcedureId) await loadProcedure(selectedProcedureId, !loading)
+      // Exact input activation owns its pinned load and focuses only after revalidation.
+      if (selectedProcedureId && inputFocus === undefined) await loadProcedure(selectedProcedureId, !loading)
       if (disposed || request !== catalogRequest) return
     } catch (err) {
       if (disposed || request !== catalogRequest) return
@@ -501,6 +502,7 @@
       readonly sourceRevision?: string
       readonly sourcePath?: string
       readonly rememberCurrentPosition?: boolean
+      readonly restorePosition?: boolean
     } = {},
   ): Promise<void> => {
     const requestId = ++latestProcedureLoadRequest
@@ -544,7 +546,7 @@
       if (catalog && !releasePrefetch) releasePrefetch = session.retainPrefetch(catalog)
       loadingProcedureId = null
       setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
-      await restoreProcedurePosition(nextDocument, targetScope, requestId, unitChanged)
+      if (sourceConfig.restorePosition !== false) await restoreProcedurePosition(nextDocument, targetScope, requestId, unitChanged)
       if (disposed || requestId !== latestProcedureLoadRequest) return
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
@@ -1304,7 +1306,10 @@
     const current = () => resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId)
     const run = current()
     if (!run) { error = 'This procedure input request is no longer current. No step was opened.'; return }
-    await loadProcedure(run.procedureId, true, { ...run, rememberCurrentPosition: true })
+    // Opening the request is a deliberate human interaction. Hold automatic
+    // follow while this exact retained step is checked, then focus it once.
+    lastInteractionAt = Date.now()
+    await loadProcedure(run.procedureId, true, { ...run, rememberCurrentPosition: true, restorePosition: false })
     if (disposed || inputFocus !== focus) return
     const requested = current()
     const pinned = document?.source.sourceId === focus.sourceId && document.source.revision === focus.sourceRevision
