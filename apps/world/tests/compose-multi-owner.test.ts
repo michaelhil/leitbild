@@ -39,3 +39,16 @@ test('an exact whole-owner around anchor selects its declared overview without t
   expect(await composeVignette({ ...run, denied: new Set(['unit:two']) }, spec({ around: ['unit:two'] }))).toMatchObject({ ok: false, issues: [{ code: 'agent_access_restricted' }] })
   expect(await composeVignette(run, spec({ around: ['unit:two'], from: ['unit:two#tank'] }))).toMatchObject({ ok: false, issues: [{ code: 'unknown_name', message: expect.stringContaining('whole-owner overview') }] })
 })
+
+test('long owner names preserve the distinguishing unit identity in each topology heading', async () => {
+  const prefix = 'Northern coastal integrated generation and research campus with a deliberately long station name'
+  const names = new Map([['unit:one', `${prefix} · Unit 12`], ['unit:two', `${prefix} · Unit 13`]])
+  const namedRun: ViewRun = { ...run, objects: run.objects.map(object => names.has(object.id) ? { ...object, label: names.get(object.id)! } : object) }
+  const request = displaySpecSchema.parse({ title: 'Long owner names', question: 'Show both named units without losing identity.', subjects: ['unit:one', 'unit:two'], views: [
+    { kind: 'topology', around: ['unit:one#engine'], reach: 1 }, { kind: 'topology', around: ['unit:two#engine'], reach: 1 },
+  ] })
+  const outcome = await composeVignette(namedRun, request)
+  if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+  const view = await compileVignette(namedRun, outcome.state)
+  expect(view.sections.filter(section => section.kind === 'topology').map(section => section.heading)).toEqual([...names.values()])
+})

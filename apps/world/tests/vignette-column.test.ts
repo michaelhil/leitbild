@@ -404,6 +404,18 @@ describe('no word is cut (plan v5 §2 rule 2)', () => {
     }
   })
 
+  test('owner headings wrap their full identity and let the existing extent observer measure the taller section', () => {
+    const sections = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Sections.svelte'), 'utf8')
+    const owner = sections.match(/\.owner-heading\s*\{([^}]*)\}/)?.[1]
+    expect(owner).toBeDefined()
+    expect(owner).toContain('min-height: var(--row)')
+    expect(owner).not.toMatch(/(?:^|;)\s*height\s*:/)
+    expect(owner).not.toContain('white-space: nowrap')
+    expect(owner).not.toContain('overflow: hidden')
+    expect(sections).toContain("section.kind === 'topology' && section.heading !== undefined ? undefined")
+    expect(sections).toContain('aria-label={section.heading}')
+  })
+
   test('the column\'s parts never cut text with a CSS ellipsis: each gives way by whole words', () => {
     const dir = join(import.meta.dir, '../src/ui/embed/vignette')
     for (const file of ['ValueRows.svelte', 'StateWord.svelte', 'CriterionRow.svelte', 'Readout.svelte', 'Sections.svelte', 'GroupedValues.svelte', 'Vignette.svelte', 'Sparkline.svelte']) {
