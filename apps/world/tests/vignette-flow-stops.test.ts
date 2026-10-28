@@ -185,7 +185,7 @@ describe('a power stop says the state of the equipment it names (the old mimic-s
     }
     const sample: Observation[] = [{ ref: 'unit:gap#flow', at: '2026-10-22T12:00:00.000Z', clock: 'simulation', value: 1, quality: 'good', priority: 'none' }]
     const pipe = flowDrawing(section, sample, [], false).segments.filter(segment => 'connectionId' in segment && segment.connectionId === 'p')
-    expect(pipe.filter(segment => segment.kind !== 'direction')).toEqual(pipeSegments('p', points, gaps, 'open-flow', 'small'))
+    expect(pipe.filter(segment => segment.kind !== 'direction')).toEqual(pipeSegments('p', points, gaps, 'open-flow', 'small').filter(segment => segment.kind !== 'direction'))
     expect(pipe.find(segment => segment.kind === 'direction')).toMatchObject({ kind: 'direction', size: 'small', x: 24, y: 0 })
   })
 
@@ -201,7 +201,7 @@ describe('a power stop says the state of the equipment it names (the old mimic-s
     }
     const sample: Observation[] = [{ ref: 'unit:silhouette#flow', at: '2026-10-22T12:00:00.000Z', clock: 'simulation', value: 1, quality: 'good', priority: 'none' }]
     const pipe = flowDrawing(section, sample, [], false).segments.filter(segment => 'connectionId' in segment && segment.connectionId === 'p')
-    expect(pipe.filter(segment => segment.kind !== 'direction')).toEqual(pipeSegments('p', [[0, 0], [52, 0]], [], 'open-flow', 'medium'))
+    expect(pipe.filter(segment => segment.kind !== 'direction')).toEqual(pipeSegments('p', [[0, 0], [52, 0]], [], 'open-flow', 'medium').filter(segment => segment.kind !== 'direction'))
     expect(pipe.find(segment => segment.kind === 'direction')).toMatchObject({ kind: 'direction', x: 26, y: 0 })
   })
 })
