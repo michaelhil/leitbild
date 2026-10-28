@@ -3,6 +3,8 @@ import type { PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
 import { meshBounds } from '../src/ui/map/physical-scene/geometry.ts'
 import { inverse, normalize, rayBox, rayTriangle, subtract, transform, type Vector3 } from '../src/ui/map/physical-scene/math.ts'
 import { pickPhysicalMesh, preparePhysicalPickAcceleration, type PhysicalPickEntry } from '../src/ui/map/physical-scene/picking.ts'
+import { createPhysicalSpatialIndex } from '../src/ui/map/physical-scene/spatial-index.ts'
+import type { PhysicalSceneBounds } from '../src/core/packs/scene.ts'
 
 const matrix = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1])
 const mesh = (id: string, triangles: ReadonlyArray<number>, offset: Vector3 = [0, 0, 0]): PhysicalMesh => {
@@ -71,4 +73,33 @@ test('overlap-heavy SAH separates parallel routes along transverse axes instead 
   expect(exact.every(id => refined.includes(id))).toBe(true)
   expect(overlap.order.length).toBe(values.length)
   expect(new Set(overlap.order).size).toBe(values.length)
+})
+
+test('ray SAH partitions use a reflexive, antisymmetric centroid order with deterministic source ties', () => {
+  // The previous left-associated comparator fails even reflexivity here.
+  expect(0.1 + 0.2 - 0.1 - 0.2).not.toBe(0)
+  const cases: PhysicalSceneBounds[][] = [
+    Array.from({ length: 73 }, (_, id) => { const x = (id * 29 % 73) / 10 + .1, width = id % 3 ? .1 : .2; return { min: [x, -.001, -.001], max: [x + width, .001, .001] } }),
+    Array.from({ length: 41 }, (_, id) => { const x = id % 2 ? .1 : .1 + Number.EPSILON, side = (id % 7 + 1) / 100; return { min: [x, id / 10, -side], max: [.2, id / 10 + side, side] } }),
+    [{ min: [-Number.MAX_VALUE / 4, 0, 0], max: [-Number.MAX_VALUE / 8, 1, 1] }, { min: [Number.MAX_VALUE / 8, 0, 0], max: [Number.MAX_VALUE / 4, 1, 1] }, { min: [-0, -Number.MIN_VALUE, 0], max: [0, Number.MIN_VALUE, 0] }],
+  ]
+  for (const values of cases) {
+    const center = (id: number, axis: number) => values[id]!.min[axis]! * .5 + values[id]!.max[axis]! * .5
+    const compare = (a: number, b: number, axis: number) => center(a, axis) - center(b, axis) || a - b
+    for (let a = 0; a < values.length; a++) for (let b = 0; b < values.length; b++) for (let axis = 0; axis < 3; axis++) {
+      expect(compare(a, a, axis)).toBe(0)
+      expect(Math.sign(compare(a, b, axis)) + Math.sign(compare(b, a, axis))).toBe(0)
+    }
+    const index = createPhysicalSpatialIndex(values)
+    expect([...index.order].sort((a, b) => a - b)).toEqual(values.map((_, id) => id))
+    const inspect = (node: number): number[] => {
+      const left = index.children[node * 2]!, right = index.children[node * 2 + 1]!
+      if (left < 0) return [...index.order.subarray(index.ranges[node * 2]!, index.ranges[node * 2]! + index.ranges[node * 2 + 1]!)]
+      const a = inspect(left), b = inspect(right), spans = [0, 1, 2].map(axis => index.bounds[node * 6 + axis + 3]! - index.bounds[node * 6 + axis]!), axis = spans.indexOf(Math.max(...spans))
+      for (const earlier of a) for (const later of b) expect(compare(earlier, later, axis)).toBeLessThanOrEqual(0)
+      return [...a, ...b]
+    }
+    inspect(0)
+    for (let repeat = 0; repeat < 3; repeat++) expect(createPhysicalSpatialIndex(values)).toEqual(index)
+  }
 })

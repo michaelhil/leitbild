@@ -12,12 +12,17 @@ const union = (values: ReadonlyArray<PhysicalSceneBounds>, ids: ArrayLike<number
 export const createPhysicalSpatialIndex = (values: ReadonlyArray<PhysicalSceneBounds>, query: 'ray' | 'overlap' = 'ray'): PhysicalSpatialIndex => {
   if (query === 'overlap') return createPhysicalOverlapSpatialIndex(values)
   const nodes: Array<{ bounds: PhysicalSceneBounds; left: number; right: number; first: number; count: number }> = [], order: number[] = []
+  // Sort immutable centroid keys, not a left-associated chain of additions and
+  // subtractions. That chain can compare a box against itself as nonzero after
+  // rounding, violating the comparator ordering required by Array.sort.
+  const centroids = new Float64Array(values.length * 3)
+  values.forEach((box, id) => { for (let axis = 0; axis < 3; axis++) centroids[id * 3 + axis] = box.min[axis]! * .5 + box.max[axis]! * .5 })
   const build = (ids: number[], bounds = union(values,ids)): number => {
     const index = nodes.length, node = { bounds, left: -1, right: -1, first: 0, count: 0 }; nodes.push(node)
     const parentArea = area(bounds)
     if (ids.length > 1 && parentArea > 0) {
       const spans = bounds.max.map((value, axis) => value - bounds.min[axis]!), axis = spans.indexOf(Math.max(...spans))
-      ids.sort((a, b) => values[a]!.min[axis]! + values[a]!.max[axis]! - values[b]!.min[axis]! - values[b]!.max[axis]! || a - b)
+      ids.sort((a, b) => centroids[a * 3 + axis]! - centroids[b * 3 + axis]! || a - b)
       const middle = Math.floor(ids.length / 2), left = ids.slice(0, middle), right = ids.slice(middle), leftBounds=union(values,left), rightBounds=union(values,right)
       // Standard SAH normalized to a primitive test: one traversal plus expected
       // child tests. The unit cost is not a maximum leaf or candidate count.
