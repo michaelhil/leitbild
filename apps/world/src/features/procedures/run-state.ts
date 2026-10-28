@@ -9,7 +9,7 @@ import {
   procedureRunTransitionPayloadSchema, procedureRunRequestInputPayloadSchema,
 } from '../../core/model/index.ts'
 import {
-  aiResetRefusal, assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiStepUpdate, assertAiWorksCurrentStep,
+  assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
 import { procedureEvidenceReadingText, readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
@@ -183,8 +183,10 @@ export const prepareProcedureCommand = async (config: {
   if (kind.data === 'world.procedure.run.reset') {
     const payload = procedureRunResetPayloadSchema.parse(command.payload)
     return context => {
-      if (context.actorKind === 'ai') throw aiResetRefusal()
       assertLiveScope(context, payload.scope)
+      const run = currentRunFor(context.procedures, payload.sourceId, payload.procedureId, payload.scope)
+      if (context.actorKind === 'ai' && run?.status === 'active') assertAiDrives(run, command.actorId)
+      if (context.actorKind === 'ai' && run?.status === 'transferred') assertAiMayDrive(run, command.actorId)
       return [{ ...base(context), type: 'procedure.run.reset', ...payload, resetAt: context.at, resetBy: command.actorId }]
     }
   }
@@ -318,10 +320,7 @@ export const prepareProcedureCommand = async (config: {
   return context => {
     const run = activeRunFor(context.procedures, payload.runId)
     assertDocumentScope(context, document, run.scope)
-    if (context.actorKind === 'ai') {
-      assertAiDrives(run, command.actorId)
-      assertAiStepUpdate(payload)
-    }
+    if (context.actorKind === 'ai') assertAiDrives(run, command.actorId)
     // Ticks and jumps are placekeeping; comments and favorites never change who drives.
     const placekeeping = payload.assessment !== undefined || (payload.currentStepId !== undefined && payload.currentStepId !== run.currentStepId)
     return [...(placekeeping ? personTakesOver(context, run) : []), {

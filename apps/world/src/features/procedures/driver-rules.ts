@@ -6,7 +6,8 @@ import type { ProcedureTagRead } from './pack-observations.ts'
 // selects any declared branch there (a normal, response-not-obtained or
 // unknown outcome; to a step, another procedure or END) on a stated basis,
 // citing the step's tags World reads now wherever any of them reads. A person
-// takes over by acting, and resets. World enforces these at commit.
+// takes over by acting. Explicit placekeeping is distinct from an evidence-backed
+// branch decision; World enforces ownership and document validity at commit.
 
 /** Who issues a procedure command: an AI agent, a person, or the Run itself (its Scenario timeline). */
 export type ProcedureActorKind = 'ai' | 'person' | 'system'
@@ -35,26 +36,6 @@ export const assertAiDrives = (run: ProcedureRunState, actorId: ActorId): void =
     throw new Error(`Nobody drives ${runName(run)}: claim it with world.procedure.run.drive {"runId":"${run.runId}","action":"claim"} before changing it.`)
   }
   assertAiMayDrive(run, actorId)
-}
-
-export const aiResetRefusal = (): Error =>
-  new Error('A person resets procedure runs; an AI agent never resets one. Ask the operator to reset it in the procedure window if it must start again.')
-
-export const aiStepCommentLimit = 500
-
-/** An AI agent answers a step by selecting a branch; on a step it records only a comment. */
-export const assertAiStepUpdate = (update: {
-  readonly assessment?: unknown
-  readonly comment?: string | undefined
-  readonly favorite?: unknown
-  readonly currentStepId?: unknown
-}): void => {
-  if (update.assessment !== undefined || update.favorite !== undefined || update.currentStepId !== undefined) {
-    throw new Error('An AI agent records only a comment on a step: it answers a step by selecting a branch (world.procedure.run.transition), and a person changes ticks, favorites and the current step.')
-  }
-  if (update.comment !== undefined && update.comment.length > aiStepCommentLimit) {
-    throw new Error(`An AI agent's step comment is at most ${aiStepCommentLimit} characters.`)
-  }
 }
 
 /**

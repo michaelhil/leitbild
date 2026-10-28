@@ -177,7 +177,7 @@ describe('the AI procedure runner through the World Module API', () => {
     const refused = await invoke('world.procedure.step.update', { runId, stepId: 'verify-turbine-trip', comment: 'Stop valves?' }, ai)
     expect(refused.status).toBe(409)
     expect(refused.body.error.message).toContain('A person drives E-0 on Unit A1')
-    expect((await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId } }, ai)).body.error.message).toContain('A person resets procedure runs')
+    expect((await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId } }, ai)).body.error.message).toContain('A person drives')
 
     // The step read keeps the AI inspection boundary, and reports unknown steps and runs as such.
     expect((await invoke('world.procedure.run.step.read', { runId, stepId: 'no-such-step' }, ai)).body.error.code).toBe('procedure_step_not_found')
@@ -188,6 +188,23 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(denied.status).toBe(403)
     expect(denied.body.error.code).toBe('agent_access_restricted')
     expect((await invoke('world.procedure.run.step.read', { runId }, human)).status).toBe(200)
+  })
+
+  test('explicit AI placekeeping and reset use the same validated capability and retain the actor', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant', displayName: 'Assistant' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    const runId = started.body.result.pinned.runId
+    const updated = await invoke('world.procedure.step.update', { runId, stepId: 'verify-reactor-trip', assessment: 'unknown', favorite: true,
+      currentStepId: 'verify-turbine-trip', comment: 'Explicitly requested operator placekeeping, not measured confirmation.' }, ai)
+    expect(updated.status).toBe(200)
+    expect(run.snapshot().procedures!.runs[0]!.stepStates[0]).toMatchObject({ assessment: 'unknown', favorite: true, updatedBy: 'actor:ai:assistant' })
+    expect(run.snapshot().procedures!.runs[0]!.stepStates[0]!.decision).toBeUndefined()
+    const reset = await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId } }, ai)
+    expect(reset.status).toBe(200)
+    expect(run.snapshot().procedures!.runs).toEqual([])
+    expect(run.events().findLast(event => event.type === 'procedure.run.reset')).toMatchObject({ resetBy: 'actor:ai:assistant' })
   })
 
   test('an AI agent\'s transfer answers with the destination\'s current step, which it now drives', async () => {

@@ -87,7 +87,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: procedureStepUpdateCommandKind,
     title: 'Update procedure step',
-    description: 'Records an assessment, note, favorite, or current-step change in an active procedure run. A person ticking a step or moving the current step of a run an AI agent drives takes it over. An AI agent records only a comment (at most 500 characters) on a run it drives; it answers a step with world.procedure.run.transition.',
+    description: 'Records an assessment, note, favorite, or current-step change in an active procedure run. A person ticking a step or moving the current step of a run an AI agent drives takes it over. An AI agent changes only a run it drives. A requested manual assessment or current-step change is placekeeping, not measured confirmation; autonomous procedure work answers through evidence-backed world.procedure.run.transition.',
     input: procedureStepUpdatePayloadSchema,
     targets: () => [],
   }),
@@ -123,7 +123,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: procedureRunResetCommandKind,
     title: 'Reset procedure run',
-    description: 'Clears current procedure state for an explicit operational scope. Only a person resets a procedure; an AI agent is refused.',
+    description: 'Clears current procedure state for an explicit operational scope. An AI agent resets only on an explicit operator request; it must drive an active run and cannot override another driver. A reset is placekeeping, not proof of physical conditions. Completed or abandoned state may be reset without an active driver.',
     input: procedureRunResetPayloadSchema,
     targets: input => [objectIdSchema.parse(input.scope.plantId)],
   }),

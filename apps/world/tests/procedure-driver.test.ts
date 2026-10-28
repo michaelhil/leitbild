@@ -225,12 +225,9 @@ describe('procedure run driver and AI decision rules', () => {
     expect(h.run().driver?.kind).toBe('ai')
   })
 
-  test('an AI agent cannot reset, and selects any branch of its current step: RNO, unknown, a transfer or END', async () => {
+  test('an AI agent selects any branch of its current step: RNO, unknown, a transfer or END', async () => {
     const h = harness()
     await h.start()
-    await expect(h.execute(assistant, 'world.procedure.run.reset', { sourceId: source.sourceId, procedureId: 'E-0', scope }))
-      .rejects.toThrow('A person resets procedure runs')
-
     // Step 2 cites no tag: the AI decides it on its basis alone, which World records.
     await h.transition(assistant, { branchIndex: 0, ...h.evidence })
     const stopValves = 'All turbine stop valves closed: turbineStopValve.closed = true at 08:00:31. Not observable: none.'
@@ -338,17 +335,33 @@ describe('procedure run driver and AI decision rules', () => {
     expect(closed.map(event => event.type)).toEqual(['procedure.run.driver.changed', 'procedure.run.closed'])
   })
 
-  test('an AI agent records only a short comment on a run it drives', async () => {
+  test('requested AI placekeeping uses the validated current driver and actual actor, without fabricated observations', async () => {
     const h = harness()
     await h.start()
-    for (const update of [{ assessment: 'complete' }, { favorite: true }, { currentStepId: 'check-power' }]) {
-      await expect(h.execute(assistant, 'world.procedure.step.update', { runId: h.run().runId, stepId: 'verify-reactor-trip', ...update }))
-        .rejects.toThrow('An AI agent records only a comment on a step')
-    }
-    await expect(h.execute(assistant, 'world.procedure.step.update', { runId: h.run().runId, stepId: 'verify-reactor-trip', comment: 'x'.repeat(501) }))
-      .rejects.toThrow('at most 500 characters')
-    await h.execute(assistant, 'world.procedure.step.update', { runId: h.run().runId, stepId: 'verify-reactor-trip', comment: 'Waiting for flux to fall.' })
-    expect(h.run().stepStates[0]).toMatchObject({ comment: 'Waiting for flux to fall.', assessment: 'blank' })
+    const runId = h.run().runId
+    await h.execute(assistant, 'world.procedure.step.update', { runId, stepId: 'verify-reactor-trip', assessment: 'complete', favorite: true,
+      currentStepId: 'check-power', comment: 'Operator-requested manual placekeeping; not measured verification.' })
+    expect(h.run()).toMatchObject({ currentStepId: 'check-power', driver: { actorId: assistant.id } })
+    expect(h.run().stepStates[0]).toMatchObject({ assessment: 'complete', favorite: true, updatedBy: assistant.id })
+    expect(h.run().stepStates[0]?.decision).toBeUndefined()
+    expect(h.run().observations).toBeUndefined()
+    await expect(h.execute(assistant, 'world.procedure.step.update', { runId, stepId: 'check-power', currentStepId: 'missing-step' })).rejects.toThrow('not part of E-0')
+    const reset = await h.execute(assistant, 'world.procedure.run.reset', { sourceId: source.sourceId, procedureId: 'E-0', scope })
+    expect(reset[0]).toMatchObject({ type: 'procedure.run.reset', resetBy: assistant.id })
+    expect(h.run()).toBeUndefined()
+    await h.start()
+    await h.execute(operator, 'world.procedure.run.drive', { runId: h.run().runId, action: 'claim' })
+    await expect(h.execute(assistant, 'world.procedure.step.update', { runId: h.run().runId, stepId: 'verify-reactor-trip', favorite: true })).rejects.toThrow('A person drives')
+    await expect(h.execute(assistant, 'world.procedure.run.reset', { sourceId: source.sourceId, procedureId: 'E-0', scope })).rejects.toThrow('A person drives')
+  })
+
+  test('closed procedure state can be explicitly reset without resurrecting its driver', async () => {
+    const h = harness()
+    await h.start(operator)
+    await h.execute(operator, 'world.procedure.run.close', { runId: h.run().runId, status: 'completed' })
+    const reset = await h.execute(assistant, 'world.procedure.run.reset', { sourceId: source.sourceId, procedureId: 'E-0', scope })
+    expect(reset[0]).toMatchObject({ type: 'procedure.run.reset', resetBy: assistant.id })
+    expect(h.run()).toBeUndefined()
   })
 
   test('a transfer a person selects hands the run\'s driver on to the destination', async () => {
