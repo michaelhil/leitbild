@@ -23,6 +23,7 @@ export type MessageErrorCode =
   | 'empty_response'
   | 'tools_unavailable'
   | 'request_dropped'
+  | 'response_validation_failed'
   | 'unknown'
 
 // === Causality: what subsystem caused this message ===

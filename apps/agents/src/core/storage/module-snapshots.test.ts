@@ -54,6 +54,26 @@ const runtime = () => {
 }
 
 describe('Workspace Module snapshots', () => {
+  test('answer-validation errors retain their typed failure and Inspector link across restart', async () => {
+    temporaryRoot = await mkdtemp(join(tmpdir(), 'module-validation-error-'))
+    const priorHome = process.env.LEITBILD_HOME
+    process.env.LEITBILD_HOME = temporaryRoot
+    try {
+      const paths = workspaceModulePaths(newWorkspaceId()), source = runtime()
+      const room = source.rooms.createRoom({ name: 'Validation', createdBy: 'human' })
+      const message = room.post({ senderId: 'agent', type: 'error', errorCode: 'response_validation_failed', content: 'The answer still conflicts with recorded evidence.', generationTraceId: 'turn-evidence' })
+      room.setGenerationQuery(message.id, 'turn-evidence', { model: 'fixture', messages: [{ role: 'user', content: 'Correct the contradicted answer.' }] })
+      await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(source), paths)
+      const restored = runtime()
+      await restoreWorkspaceModuleSnapshots({ ...restored, spawnAIAgent: async () => {} }, await loadWorkspaceModuleSnapshots(paths))
+      const loaded = restored.rooms.getRoom('Validation')!
+      expect(loaded.getRecent(1)[0]).toMatchObject({ id: message.id, type: 'error', errorCode: 'response_validation_failed', generationTraceId: 'turn-evidence' })
+      expect(loaded.getGenerationQuery(message.id)?.traceId).toBe('turn-evidence')
+    } finally {
+      if (priorHome === undefined) delete process.env.LEITBILD_HOME
+      else process.env.LEITBILD_HOME = priorHome
+    }
+  })
   test('optional provider continuation round-trips exactly in the existing query document, not visible messages', async () => {
     temporaryRoot = await mkdtemp(join(tmpdir(), 'module-continuation-fixture-'))
     const priorHome = process.env.LEITBILD_HOME

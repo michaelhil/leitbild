@@ -15,7 +15,7 @@ export interface ClassifiedLLMError {
 }
 
 export const classifyLLMError = (err: unknown): ClassifiedLLMError => {
-  if (isLLMRequestError(err)) return { code: 'unknown', message: err.message }
+  if (isLLMRequestError(err)) return { code: err.code === 'response_validation_failed' ? 'response_validation_failed' : 'unknown', message: err.message }
   if (isCloudProviderError(err)) {
     if (err.code === 'auth') return { code: 'no_api_key', message: err.message, providerHint: err.provider }
     if (err.code === 'bad_request') return { code: 'model_unavailable', message: err.message, providerHint: err.provider }

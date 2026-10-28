@@ -133,6 +133,14 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     label.textContent = `⚠ ${senderName} ${msg.content}`
     label.className = 'flex-1'
     div.appendChild(label)
+    if (onViewContext && msg.generationTraceId) {
+      const inspect = document.createElement('button')
+      inspect.className = 'text-xs underline shrink-0 hover:text-danger-strong'
+      inspect.textContent = 'Inspect'
+      inspect.title = 'Inspect inputs, model calls and actual operation results'
+      inspect.onclick = event => { event.stopPropagation(); onViewContext(msg) }
+      div.appendChild(inspect)
+    }
     // Offer "Change model" affordance for failures the user can fix in config.
     const code = msg.errorCode
     const offersChangeModel = code === 'no_api_key' || code === 'model_unavailable' || code === 'provider_down'

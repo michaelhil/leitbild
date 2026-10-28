@@ -21,6 +21,7 @@ import { citationIssues } from './citations.ts'
 import { collectTurnOperations, operationClaimIssues, type TurnOperation } from './operation-claims.ts'
 import { workspaceCallResultForModel } from '../tools/built-in/workspace-capability-tools.ts'
 import type { ExecutionModelCallSummary, ExecutionModelResponse } from '../core/executions/model-evidence.ts'
+import { createLLMRequestError } from '../llm/errors.ts'
 
 // Max times the eval loop will ask the LLM to fix an invalid map/geojson
 // fence before giving up and posting the broken response (the UI banner
@@ -36,6 +37,8 @@ export const MAX_FENCE_RETRIES = 2
 // cite contradict (citations.ts). One: the issues name each fix, and a
 // second round would cost another full answer's latency for a model that
 // did not take the first; the corrected answer is still fence-checked.
+// The final answer is always evidence-checked; exhausting this repair budget
+// never turns an unchanged contradiction into a valid answer.
 export const MAX_CONSISTENCY_CORRECTIONS = 1
 
 // === Decision — what the agent wants to do after evaluation ===
@@ -384,6 +387,14 @@ const correctResponse = async (
   callModel: (request: ChatRequest) => ReturnType<typeof callLLMOnce>,
   initialContinuation?: ProviderContinuation,
 ): Promise<string> => {
+  const materialIssues = (answer: string): ReadonlyArray<string> => [
+    ...operationClaimIssues(answer, operations),
+    ...citationIssues(answer, cards.items()).contradictions.map(contradiction => contradiction.issue),
+  ]
+  const rejectUnrepaired = (issues: ReadonlyArray<string>): never => {
+    throw createLLMRequestError('response_validation_failed',
+      `The generated answer still conflicts with recorded evidence after correction. Actual operation results remain in the Inspector; check them before repeating an action.\n${issues.map(issue => `- ${issue}`).join('\n')}`)
+  }
   let content = initialContent
   let continuation = initialContinuation
   let fenceRetries = 0
@@ -400,10 +411,10 @@ const correctResponse = async (
         `Re-emit the FULL corrected response (keep the surrounding prose, fix or remove the listed blocks).`
     } else {
       // Valid fences: do the card lines it cites contradict the answer, and does it claim what its turn did not do?
-      const done = consistencyCorrections === MAX_CONSISTENCY_CORRECTIONS
-      const issues = done ? [] : citationIssues(content, cards.items()).contradictions.map(contradiction => contradiction.issue)
-      const claims = done ? [] : operationClaimIssues(content, operations)
+      const issues = citationIssues(content, cards.items()).contradictions.map(contradiction => contradiction.issue)
+      const claims = operationClaimIssues(content, operations)
       if (issues.length === 0 && claims.length === 0) return content
+      if (consistencyCorrections === MAX_CONSISTENCY_CORRECTIONS) rejectUnrepaired([...claims, ...issues])
       consistencyCorrections++
       onEvent?.(correctionEvent([
         ...claims.map(issue => ({ cause: 'claimed-execution' as const, issue })),
@@ -434,13 +445,18 @@ const correctResponse = async (
     continuation = stream.continuation
     content = stream.content.trim()
     if (content.length === 0) {
-      // Empty correction attempt — give up and return the prior content.
+      // An empty repair may preserve an otherwise valid answer whose fence
+      // the UI can flag. It cannot rescue a known material contradiction.
+      const issues = materialIssues(initialContent)
+      if (issues.length > 0) rejectUnrepaired(issues)
       return initialContent
     }
   }
   // Exhausted retries — return the last attempt as-is. The UI's per-fence
   // validation banner will render the errors to the user, who can prompt
   // for another correction manually.
+  const issues = materialIssues(content)
+  if (issues.length > 0) rejectUnrepaired(issues)
   return content
 }
 

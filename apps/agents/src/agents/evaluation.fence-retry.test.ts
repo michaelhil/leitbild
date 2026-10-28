@@ -368,13 +368,33 @@ describe('evaluation card citations', () => {
     expect(result.decision.response).toEqual({ action: 'respond', content: right })
   })
 
-  test('a key on no card costs no correction turn; a second contradiction is posted as it is', async () => {
+  test('a key on no card costs no correction turn; a second contradiction fails validation explicitly', async () => {
     const unknown = 'Line A is at 91.3 % ⟦k9⟧.'
     expect((await run([unknown])).calls).toHaveLength(3)
     const wrong = 'Line B is at 95.0 % ⟦k2⟧.'
     const { calls, result } = await run([wrong, wrong])
     expect(calls).toHaveLength(4)
-    expect(result.decision.response).toEqual({ action: 'respond', content: wrong })
+    expect(result.decision.response).toMatchObject({ action: 'error', code: 'response_validation_failed' })
+    if (result.decision.response.action === 'error') expect(result.decision.response.message).toContain('95.0 is cited with ⟦k2⟧, but k2 reads "92.2 %"')
+  })
+
+  test('a different contradiction introduced by the last repair is checked against its own evidence', async () => {
+    const { calls, result } = await run(['Line A is at 95.0 % ⟦k1⟧.', 'The reserve margin is 2,391 MW ⟦k3⟧.'])
+    expect(calls).toHaveLength(4)
+    expect(result.decision.response).toMatchObject({ action: 'error', code: 'response_validation_failed' })
+    if (result.decision.response.action === 'error') expect(result.decision.response.message).toContain('2,391 is cited with ⟦k3⟧, but k3 reads "2291 MW"')
+  })
+
+  test('an empty repair cannot restore the known contradictory initial answer', async () => {
+    const { result } = await run(['Line B is at 95.0 % ⟦k2⟧.', ''])
+    expect(result.decision.response).toMatchObject({ action: 'error', code: 'response_validation_failed' })
+  })
+
+  test('exhausting fence repairs does not bypass material evidence validation', async () => {
+    const wrong = 'Line B is at 95.0 % ⟦k2⟧.\n```map\n{"features":[{"type":"marker","lat":999,"lng":5}]}\n```'
+    const { calls, result } = await run([wrong, wrong, wrong])
+    expect(calls).toHaveLength(5)
+    expect(result.decision.response).toMatchObject({ action: 'error', code: 'response_validation_failed' })
   })
 
   test('the model reads a vignette by reference and its card as lines; the check reads the evidence it left out', async () => {
@@ -421,9 +441,9 @@ describe('evaluation card citations', () => {
 describe('evaluation operation claims', () => {
   // Demo beat 4: the turn proposes shutting MOV-8000A; only a person executes it.
   const proposeInput = { plantId: 'plant:halden-1', tagId: 'MOV-8000A', value: 0, reason: 'PORV-456A does not follow its SHUT demand', evidence: ['PT-455'] }
-  const run = async (answers: ReadonlyArray<string>) => {
+  const run = async (answers: ReadonlyArray<string>, operationId = 'world.process-plant.control.propose') => {
     const scripted = [
-      { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [{ key: 'propose', operationId: 'world.process-plant.control.propose', input: proposeInput }] } } }] },
+      { content: '', toolCalls: [{ id: 'w1', function: { name: 'workspace_call', arguments: { calls: [{ key: 'propose', operationId, input: proposeInput }] } } }] },
       ...answers.map(content => ({ content })),
     ]
     let index = 0
@@ -434,7 +454,7 @@ describe('evaluation operation claims', () => {
     }
     const executor = async () => [{
       success: true,
-      data: { results: [{ key: 'propose', operationId: 'world.process-plant.control.propose', success: true, data: { ok: true, commandId: 'command:p1', acceptedAt: '2026-10-12T10:02:40.000Z' } }] },
+      data: { results: [{ key: 'propose', operationId, success: true, data: { ok: true, commandId: 'command:p1', acceptedAt: '2026-10-12T10:02:40.000Z' } }] },
     }]
     const result = await evaluate(mkContext(), mkConfig(), provider, executor, 5, 'room-1', {
       toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'call', parameters: {} } }],
@@ -458,6 +478,25 @@ describe('evaluation operation claims', () => {
     const { calls, result } = await run([proposed])
     expect(calls).toHaveLength(2)
     expect(result.decision.response).toEqual({ action: 'respond', content: proposed })
+  })
+
+  test('a repeated false execution claim fails the answer while preserving the accepted proposal', async () => {
+    const claimed = 'I shut the PORV block valve MOV-8000A; pressure will recover.'
+    const { calls, result } = await run([claimed, claimed])
+    expect(calls).toHaveLength(3)
+    expect(result.decision.response).toMatchObject({ action: 'error', code: 'response_validation_failed' })
+    expect(result.decision.toolTrace?.[0]?.success).toBe(true)
+    if (result.decision.response.action === 'error') {
+      expect(result.decision.response.message).toContain('Actual operation results remain in the Inspector')
+      expect(result.decision.response.message).toContain('only proposed the operation of MOV-8000A')
+    }
+  })
+
+  test('an accurate execution claim backed by an accepted direct command remains valid', async () => {
+    const claimed = 'I shut the PORV block valve MOV-8000A; pressure will recover.'
+    const { calls, result } = await run([claimed], 'world.process-plant.control.write')
+    expect(calls).toHaveLength(2)
+    expect(result.decision.response).toEqual({ action: 'respond', content: claimed })
   })
 })
 

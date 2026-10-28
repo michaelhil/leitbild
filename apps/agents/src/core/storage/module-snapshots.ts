@@ -167,7 +167,7 @@ const messageSchema = z.object({
   errorCode: z.enum([
     'no_api_key', 'model_unavailable', 'rate_limited', 'network',
     'provider_down', 'tool_loop_exceeded', 'empty_response',
-    'tools_unavailable', 'request_dropped', 'unknown',
+    'tools_unavailable', 'request_dropped', 'response_validation_failed', 'unknown',
   ]).optional(),
   errorProvider: z.string().optional(),
   agentName: z.string().optional(),

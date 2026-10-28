@@ -141,6 +141,42 @@ test('cancellation after input admission cannot dispatch a provider call', async
   } finally { store.close() }
 })
 
+test('a validation-error message keeps its Inspector link, failed outputs and accepted operation result', async () => {
+  const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
+  const tools = createToolRegistry(), operationId = 'world.process-plant.control.propose'
+  tools.register({ name: 'workspace_call', description: 'Call a Workspace operation', parameters: {}, execute: async () => ({ success: true, data: { results: [{
+    key: 'propose', operationId, success: true, data: { ok: true, commandId: 'accepted-proposal' },
+  }] } }) })
+  let pass = 0
+  const claim = 'I closed MOV-8000A.'
+  const provider: LLMProvider = { models: async () => ['test'], chat: async () => ({
+    content: ++pass === 1 ? '' : claim,
+    ...(pass === 1 ? { toolCalls: [{ function: { name: 'workspace_call', arguments: { calls: [{ key: 'propose', operationId, input: { tagId: 'MOV-8000A', value: 0 } }] } } }] } : {}),
+    generationMs: 1, tokensUsed: { prompt: 1, completion: 1 },
+  }) }
+  const agent = await spawnAIAgent({ name: 'Agent', model: 'test', persona: '', tools: ['workspace_call'] }, { bound: () => provider } as unknown as LLMService,
+    rooms, createWorkspaceSettings(), createTeam(), (_target, params) => [room.post(params)], tools, { executionStore: store })
+  room.addMember(agent.id); await agent.join(room)
+  agent.receive(room.post({ senderId: 'human', content: 'Propose closing MOV-8000A.', type: 'chat' }))
+  await agent.whenIdle()
+  try {
+    const message = room.getRecent(1)[0]!, turn = store.listTurns(room.profile.id)[0]!
+    expect(message).toMatchObject({ type: 'error', errorCode: 'response_validation_failed', generationTraceId: turn.id })
+    expect(turn).toMatchObject({ status: 'failed', messageId: message.id })
+    const context = { system: { rooms, executionStore: store } } as unknown as RouteContext
+    const queryPath = `/rooms/${room.profile.id}/messages/${message.id}/generation-query`
+    const queryRoute = roomRoutes.find(route => route.method === 'GET' && route.pattern.test(queryPath))!
+    const queryResponse = await queryRoute.handler(new Request(`http://local${queryPath}`), queryPath.match(queryRoute.pattern)!, context)
+    expect(queryResponse.status).toBe(200)
+    expect(await queryResponse.json()).toMatchObject({ traceId: turn.id, messageId: message.id, query: { model: 'test' } })
+    const evidence = store.modelEvidence(room.profile.id, turn.id)
+    expect(evidence.models).toHaveLength(3)
+    expect(evidence.stages.some(stage => stage.event.kind === 'warning' && stage.event.message.includes('still conflicts with recorded evidence'))).toBe(true)
+    expect(store.getModelCall(room.profile.id, turn.id, 'model_3')?.response?.content).toBe(claim)
+    expect(store.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toMatchObject({ success: true, data: { results: [{ success: true, data: { commandId: 'accepted-proposal' } }] } })
+  } finally { store.close() }
+})
+
 test('cancelled model streams keep known partial text without inventing a completed answer or tools', async () => {
   const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
   let entered!: () => void
