@@ -209,7 +209,7 @@
   // detail give way first ('short'), and only where it still has no room does it wrap ('wrap'). Measured as drawn,
   // again whenever its width or its words change.
   let headerFit = $state<'full' | 'short' | 'wrap'>('full')
-  const detailWord = $derived(offer === 'actions' ? (headerFit === 'full' ? 'Open detail ›' : 'Detail ›') : headerFit === 'full' ? 'Open in the display window ›' : 'In window ›')
+  const detailWord = $derived(headerFit === 'full' ? 'Open detail ›' : 'Detail ›')
   const fitted = (node: HTMLElement, words: string) => {
     let frame = 0
     let last = ''
@@ -254,7 +254,7 @@
         {/if}
         {#if offer !== 'nothing'}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <obc-button class="detail" variant="flat" onclick={() => ondetail(elementId)}>{detailWord}</obc-button>
+          <obc-button class="detail" variant="flat" title={`Open detail for ${name} in the display window`} onclick={() => ondetail(elementId)}>{detailWord}</obc-button>
         {/if}
         {#if canPin}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->

@@ -34,7 +34,7 @@
     readonly close: () => void
     /** Opens the shown display in the Workspace's display window, where one is offered. */
     readonly openInDisplayWindow?: ((envelope: EmbeddedViewEnvelope) => void) | undefined
-    /** Opens a view the display asks for (its pop-over's "Open in the display window") in that window, as given. */
+    /** Opens a view the display asks for (its pop-over's "Open detail") in the display window, as given. */
     readonly openView?: ((view: EmbeddedViewListing) => void) | undefined
   }
 
@@ -191,7 +191,7 @@
       {:else if plan.kind === 'display'}
         <div class="procedure-tag-display-frame" bind:this={frameBox}>
           {#if drawn?.phase.kind === 'shown'}
-            <!-- No display window presents it, so it shows no Pack controls; this dialog relays what it opens (its pop-over's "Open in the display window") to the Workspace's display window. -->
+            <!-- No display window presents it, so it shows no Pack controls; this dialog relays what it opens (its pop-over's "Open detail") to the Workspace's display window. -->
             <iframe
               bind:this={frame}
               src={drawn.phase.source}
