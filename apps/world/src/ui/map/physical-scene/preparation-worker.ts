@@ -1,5 +1,5 @@
 import { preparePhysicalGeometry, type PhysicalPreparationRequest, type PhysicalPreparationResponse } from './preparation.ts'
-import { packPhysicalSceneSchema, type PackPhysicalScene } from '../../../core/packs/scene.ts'
+import type { PackPhysicalScene } from '../../../core/packs/scene.ts'
 const scope = self as unknown as { onmessage: (event: MessageEvent<PhysicalPreparationRequest>) => void; postMessage: (message: PhysicalPreparationResponse, transfers?: Transferable[]) => void }
 const sources = new Map<string, PackPhysicalScene>()
 scope.onmessage = (event: MessageEvent<PhysicalPreparationRequest>) => {
@@ -8,7 +8,11 @@ scope.onmessage = (event: MessageEvent<PhysicalPreparationRequest>) => {
   try {
     if (request.kind === 'register') {
       if (sources.has(request.sourceKey)) throw new Error('Physical source identity was already registered')
-      sources.set(request.sourceKey, packPhysicalSceneSchema.parse(request.scene)); scope.postMessage({ kind: 'registered', id: request.id, sourceKey: request.sourceKey }); return
+      // This private module worker receives only the pool's owned transferable
+      // copy of a Pack-admitted scene (or its locally derived overview). Source
+      // admission stays at the Pack boundary; reconstructing its full schema
+      // here repeats that work and loads validation modules into a render worker.
+      sources.set(request.sourceKey, request.scene); scope.postMessage({ kind: 'registered', id: request.id, sourceKey: request.sourceKey }); return
     }
     const scene = sources.get(request.sourceKey)
     if (!scene) throw new Error('Physical preparation source is not registered')

@@ -859,6 +859,8 @@ export interface WorldPackView {
   readonly roles?: PackRoleContribution
   readonly physicalScenes?: {
     readonly describe: (object: OperationalObject, objects: ReadonlyArray<OperationalObject>) => PackPhysicalSceneDescriptor | null
+    /** Admit external/retained input and return a validated scene. Generic
+     * rendering and its private workers consume this projection as owned data. */
     readonly load: (object: OperationalObject) => Promise<PackPhysicalScene>
   }
 }
