@@ -5,11 +5,19 @@
  * element, or on none, reads as a row whose label names it. Only where the values are on several elements.
  */
 import type { GroupedSection, ValueBlock, VignetteElement, VignetteValue } from './model.ts'
+import { refObjectId } from '../../../core/model/alerts.ts'
 
 const MAX_COLUMNS = 4
 
 /** A value's column in a table of parallel elements: what it is and its unit. */
 const columnOf = (value: VignetteValue): string => `${value.quantity}|${value.unit}`
+
+/** Element ids and train names belong to an owner; identical units reuse them. */
+export const valueElementKey = (value: VignetteValue): string | null => value.element === undefined ? null : JSON.stringify([refObjectId(value.ref), value.element.id])
+export const valueElementName = (value: VignetteValue, objectOf: (value: VignetteValue) => string | undefined, qualified: boolean): VignetteElement => {
+  const element = value.element!, owner = objectOf(value)
+  return !qualified || owner === undefined ? element : { ...element, label: `${owner} · ${element.label}`, shortLabel: `${owner} · ${element.shortLabel ?? element.label}` }
+}
 
 /**
  * Elements alike enough to read as one table: two or more of one class, each in a group of its own (parallel trains,
@@ -17,7 +25,7 @@ const columnOf = (value: VignetteValue): string => `${value.quantity}|${value.un
  */
 const parallel = (groups: ReadonlyArray<Named>): boolean => {
   if (groups.length < 2 || new Set(groups.map(group => group.element.class)).size !== 1) return false
-  if (groups.some(group => group.element.group === undefined) || new Set(groups.map(group => group.element.group)).size !== groups.length) return false
+  if (groups.some(group => group.element.group === undefined) || new Set(groups.map(group => JSON.stringify([refObjectId(group.values[0]!.ref), group.element.group]))).size !== groups.length) return false
   const columns = (values: ReadonlyArray<VignetteValue>): string => values.map(columnOf).join('\u0000')
   const first = columns(groups[0]!.values)
   return groups.every(group => group.values.every(value => value.valueType !== 'criterion') && new Set(group.values.map(columnOf)).size === group.values.length
@@ -54,11 +62,12 @@ export const blockRows = (blocks: ReadonlyArray<ValueBlock>): number =>
 
 /** The values grouped by element in the order their elements first appear, or null where that groups nothing; `objectOf` names a value's object. */
 export const elementBlocks = (values: ReadonlyArray<VignetteValue>, objectOf: (value: VignetteValue) => string | undefined = () => undefined): ReadonlyArray<ValueBlock> | null => {
+  const qualified = new Set(values.map(value => refObjectId(value.ref))).size > 1
   const order: Array<string | null> = []
   const byElement = new Map<string | null, { readonly element: VignetteElement | null; readonly values: VignetteValue[] }>()
   for (const value of values) {
-    const id = value.element?.id ?? null
-    if (!byElement.has(id)) { order.push(id); byElement.set(id, { element: value.element ?? null, values: [] }) }
+    const id = valueElementKey(value)
+    if (!byElement.has(id)) { order.push(id); byElement.set(id, { element: value.element === undefined ? null : valueElementName(value, objectOf, qualified), values: [] }) }
     byElement.get(id)!.values.push(value)
   }
   if (order.filter(id => id !== null).length < 2) return null

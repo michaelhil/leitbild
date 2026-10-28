@@ -77,8 +77,21 @@ const nodesFor = async (run: ComposeRun, graph: NonNullable<Awaited<ReturnType<t
 }
 
 const topologyView = async (run: ComposeRun, view: Extract<View, { kind: 'topology' }>, path: string, subjects: ReadonlyArray<Subject>): Promise<DraftView | ComposeIssue> => {
-  for (const subject of subjects) {
+  const owners = new Set<string>()
+  for (const [key, names] of [['from', view.from], ['to', view.to], ['around', view.around]] as const) for (const [index, name] of (names ?? []).entries()) {
+    if (!name.includes('#')) continue
+    const anchor = await resolveSubject(run, name, `${path}.${key}.${index}`)
+    if (isIssue(anchor)) return anchor
+    for (const owner of subjectObjects(anchor)) owners.add(owner)
+  }
+  if (owners.size > 1) return unfit(path, 'one topology draws one owner; use a separate topology view per owner and qualified anchors')
+  const candidates = subjects.filter(subject => subject.kind !== 'connection' && subject.kind !== 'collection' && (owners.size === 0 || owners.has(subject.objectId)))
+  if (owners.size > 0 && candidates.length === 0) return notObserved(path, 'the qualified topology owner is not a subject; add that object as a subject')
+  const resolved: DraftView[] = [], issues: ComposeIssue[] = [], visited = new Set<string>()
+  for (const subject of candidates) {
     if (subject.kind === 'connection' || subject.kind === 'collection') continue
+    if (visited.has(subject.objectId)) continue
+    visited.add(subject.objectId)
     const graph = await topologyOf(run, subject.objectId)
     if (graph === null) continue
     const nodes = async (names: ReadonlyArray<string> | undefined, key: 'from' | 'to' | 'around'): Promise<ReadonlyArray<string> | undefined | ComposeIssue> => {
@@ -101,15 +114,17 @@ const topologyView = async (run: ComposeRun, view: Extract<View, { kind: 'topolo
     }
     const parts = [await nodes(view.from, 'from'), await nodes(view.to, 'to'), await nodes(view.around, 'around'), pick(view.media, 'media'), pick(view.groups, 'groups')]
     const issue = parts.find(isIssue)
-    if (issue !== undefined) return issue
+    if (issue !== undefined) { issues.push(issue); continue }
     const [from, to, around, media, groups] = (parts as ReadonlyArray<ReadonlyArray<string> | undefined>).map(ids => ids === undefined ? undefined : [...ids])
     const named = from !== undefined || to !== undefined || around !== undefined
     const fallback = named ? undefined : (await defaultViews(run, subject)).find((entry): entry is Extract<DraftView, { kind: 'topology' }> => entry.kind === 'topology')
     if (!named && fallback === undefined) continue
     const request = { ...fallback?.request, ...(named ? { from, to, around } : {}), ...(media === undefined ? {} : { media }), ...(groups === undefined ? {} : { groups }), ...(view.reach === undefined ? {} : { reach: view.reach }) }
-    return { kind: 'topology', objectId: graph.objectId, request }
+    resolved.push({ kind: 'topology', objectId: graph.objectId, request })
   }
-  return notObserved(path, 'none of the subjects declares a topology')
+  if (resolved.length === 1) return resolved[0]!
+  if (resolved.length > 1) return { path, code: 'unknown_name', message: 'several subjects match this topology; qualify an anchor as objectId#element, or request separate views for each owner' }
+  return issues[0] ?? notObserved(path, 'none of the subjects declares a topology')
 }
 
 const resolveView = async (run: ComposeRun, view: View, path: string, subjects: ReadonlyArray<Subject>, kept: Kept): Promise<DraftView | ComposeIssue> => {
@@ -171,8 +186,9 @@ const answered = async (run: ComposeRun, drafts: ReadonlyArray<DraftView>): Prom
   return { kind: 'values', refs } as DraftView
 }))
 
-/** Defaults of several subjects as one vignette: views of a kind merge; at most four, values first. */
-const mergeDefaults = (lists: ReadonlyArray<ReadonlyArray<DraftView>>, quiet: (view: DraftView) => boolean): ReadonlyArray<DraftView> => {
+/** Defaults compare owners within one frame. Values keep each owner's lead
+ * order, interleaved before fitting; one owner's drawing cannot stand for all. */
+const mergeDefaults = (lists: ReadonlyArray<ReadonlyArray<DraftView>>, quiet: (view: DraftView) => boolean): { readonly views: ReadonlyArray<DraftView>; readonly adjusted: ReadonlyArray<DisplayCardAdjustment> } => {
   const merged: DraftView[] = []
   for (const view of lists.flat()) {
     const known = merged.find(entry => entry.kind === view.kind)
@@ -183,12 +199,22 @@ const mergeDefaults = (lists: ReadonlyArray<ReadonlyArray<DraftView>>, quiet: (v
     } else if (known?.kind === 'map' && view.kind === 'map' && known.objectIds !== undefined && view.objectIds !== undefined) known.objectIds.splice(0, Infinity, ...new Set([...known.objectIds, ...view.objectIds]))
     else if (known === undefined || view.kind === 'slots') merged.push(structuredClone(view) as DraftView)
   }
+  const values = merged.find(view => view.kind === 'values')
+  if (values?.kind === 'values') {
+    const owners = new Map<string, string[]>()
+    for (const ref of values.refs ?? []) { const own = owners.get(refObjectId(ref)) ?? []; own.push(ref); owners.set(refObjectId(ref), own) }
+    const refs: string[] = [], lists = [...owners.values()]
+    for (let at = 0; lists.some(list => at < list.length); at++) for (const list of lists) if (list[at] !== undefined) refs.push(list[at]!)
+    merged[merged.indexOf(values)] = { ...values, refs }
+  }
+  const graphOwners = new Set(lists.flat().flatMap(view => view.kind === 'topology' ? [view.objectId] : []))
+  const adjusted: DisplayCardAdjustment[] = graphOwners.size > 1 ? [{ kind: 'scope', text: `Topologies of ${graphOwners.size} owners not shown; request separate views with objectId#element anchors` }] : []
   const order = ['values', 'trend', 'slots', 'alerts', 'entity', 'collection', 'topology', 'map']
-  const sorted = merged.sort((left, right) => order.indexOf(left.kind) - order.indexOf(right.kind))
+  const sorted = merged.filter(view => graphOwners.size <= 1 || view.kind !== 'topology').sort((left, right) => order.indexOf(left.kind) - order.indexOf(right.kind))
   // Every default holds its alerts view (plan §2 rule 3); where they hold more views than four, one with nothing to
   // list gives way first, so an answer on two entities keeps their map.
   const giving = new Set(sorted.filter(quiet).slice(0, Math.max(0, sorted.length - 4)))
-  return sorted.filter(view => !giving.has(view)).slice(0, 4)
+  return { views: sorted.filter(view => !giving.has(view)).slice(0, 4), adjusted }
 }
 
 const covers = (views: ReadonlyArray<ResolvedView>, subject: Subject): boolean => views.some(view => {
@@ -214,8 +240,8 @@ const WATCHED_ALERT_LINES = 4
 /** Where a vignette is shown: a chat answer stacks its views in 40 rows; a window may stand a tall drawing beside them (Q20). */
 type Frame = 'chat' | 'window'
 /** `onDashboard`: a dashboard section's (A4), whose run frame carries the Run's alerts: completion adds no alerts view, and one asked for stays. */
-const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string, onDashboard?: true): Promise<ComposeOutcome> => {
-  const adjusted: DisplayCardAdjustment[] = []
+const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string, onDashboard?: true, adjustments: ReadonlyArray<DisplayCardAdjustment> = []): Promise<ComposeOutcome> => {
+  const adjusted: DisplayCardAdjustment[] = [...adjustments]
   /** What the fit leaves out, counted on the card (Q15: never silent). */
   let dropped = 0
   const views = drafts.map(view => structuredClone(view) as DraftView)
@@ -535,7 +561,8 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec, onDash
   if (spec.views.length === 0) {
     const defaults = await Promise.all(subjects.map(async subject => answered(run, await defaultViews(run, subject))))
     const quiet = (view: DraftView): boolean => view.kind === 'alerts' && view.objectIds !== 'run' && alertsOf(run, { ...view, rows: 1 }).length === 0
-    return finish(run, spec.title, 'assistant', subjects, mergeDefaults(defaults, quiet), kept, 'chat', await chipsOf(run, subjects), whyOf(spec), onDashboard)
+    const merged = mergeDefaults(defaults, quiet)
+    return finish(run, spec.title, 'assistant', subjects, merged.views, kept, 'chat', await chipsOf(run, subjects), whyOf(spec), onDashboard, merged.adjusted)
   }
   const views: DraftView[] = []
   for (const [index, view] of spec.views.entries()) {

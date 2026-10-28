@@ -20,7 +20,7 @@ import {
 import { presentedOf } from './present.ts'
 import { stripsOf } from './strips.ts'
 import type { ComposeRun } from './resolve.ts'
-import { elementBlocks } from './element-groups.ts'
+import { elementBlocks, valueElementKey, valueElementName } from './element-groups.ts'
 import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
 
 /** Lets the server's other work run before going on (a record read is synchronous). */
@@ -121,16 +121,17 @@ const tableSection = (element: string, table: ElementTable, declared: ReadonlyMa
 })
 
 /** Parallel values (one element class, each element in its own group, one value per quantity): a table, one line per element; else null. */
-export const groupValues = (values: ReadonlyArray<VignetteValue>): Extract<VignetteSection, { kind: 'grouped' }> | null => {
-  const elements = [...new Map(values.flatMap(value => value.element === undefined ? [] : [[value.element.id, value.element] as const])).values()]
+export const groupValues = (values: ReadonlyArray<VignetteValue>, objectOf: (value: VignetteValue) => string | undefined = () => undefined): Extract<VignetteSection, { kind: 'grouped' }> | null => {
+  const elements = [...new Map(values.flatMap(value => value.element === undefined ? [] : [[valueElementKey(value)!, value] as const])).entries()]
   const columns = [...new Set(values.map(value => `${value.quantity}|${value.unit}`))]
-  const cell = (element: string, column: string) => values.filter(value => value.element?.id === element && `${value.quantity}|${value.unit}` === column)
-  if (elements.length < 2 || values.some(value => value.element?.group === undefined) || new Set(elements.map(element => element.class)).size !== 1
-    || new Set(elements.map(element => element.group)).size !== elements.length || columns.length > 4 || elements.some(element => columns.some(column => cell(element.id, column).length > 1))) return null
+  const cell = (element: string, column: string) => values.filter(value => valueElementKey(value) === element && `${value.quantity}|${value.unit}` === column)
+  if (elements.length < 2 || values.some(value => value.element?.group === undefined) || new Set(elements.map(([, value]) => value.element!.class)).size !== 1
+    || new Set(elements.map(([, value]) => JSON.stringify([refObjectId(value.ref), value.element!.group]))).size !== elements.length || columns.length > 4 || elements.some(([key]) => columns.some(column => cell(key, column).length > 1))) return null
+  const qualified = new Set(values.map(value => refObjectId(value.ref))).size > 1
   return {
     kind: 'grouped', rows: 1 + elements.length,
     quantities: columns.map(column => ({ label: column.split('|')[0]!.replaceAll('-', ' '), unit: column.split('|')[1]! })),
-    lines: elements.map(element => ({ element, values: columns.map(column => cell(element.id, column)[0] ?? null) })),
+    lines: elements.map(([key, value]) => ({ element: valueElementName(value, objectOf, qualified), values: columns.map(column => cell(key, column)[0] ?? null) })),
   }
 }
 
@@ -239,7 +240,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
       // Named values: parallel ones as one table; values of several elements grouped by element (W7.4); else rows.
       const named = values(view.refs ?? [])
       const blocks = elementBlocks(named, value => visibleObject(run, refObjectId(value.ref))?.label)
-      sections.push(groupValues(named) ?? { kind: 'values', rows: view.rows, values: named, ...(blocks === null ? {} : { blocks }) })
+      sections.push(groupValues(named, value => visibleObject(run, refObjectId(value.ref))?.label) ?? { kind: 'values', rows: view.rows, values: named, ...(blocks === null ? {} : { blocks }) })
     }
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })
     else if (view.kind === 'alerts') {

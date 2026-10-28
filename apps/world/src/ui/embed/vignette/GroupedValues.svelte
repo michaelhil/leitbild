@@ -35,7 +35,7 @@
       </span>
     {/each}
   </div>
-  {#each section.lines as line (line.element.id)}
+  {#each section.lines as line (JSON.stringify([componentValueOwner(line.values), line.element.id]))}
     {@const name = line.element.shortLabel ?? line.element.label}
     <div class="line" role="row">
       <!-- Its name as long as the column lets it be (the sizer asks for the whole), giving way by whole words. -->
