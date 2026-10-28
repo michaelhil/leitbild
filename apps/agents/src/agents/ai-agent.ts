@@ -32,7 +32,8 @@ import { extractAgentProfile as extractProfile } from './shared.ts'
 import { buildContext, buildSystemSections, estimateTokens, flushIncoming, type BuildContextDeps, type ContextResult } from './context-builder.ts'
 import type { RunContextFetcher } from './run-context.ts'
 import { discoveryMemo } from './discovery-memo.ts'
-import { evaluate, type EvalResult, type OnDecision } from './evaluation.ts'
+import { evaluate, type EvalOptions, type EvalResult, type OnDecision } from './evaluation.ts'
+import { executionStageEvent, type ExecutionStage } from '../core/executions/model-evidence.ts'
 import { createConcurrencyManager } from './concurrency.ts'
 import type { ModelInfo } from '../core/types/model-info.ts'
 import { messageFocus } from '../core/message-focus.ts'
@@ -107,6 +108,9 @@ export interface AIAgentOptions {
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
     | undefined
   readonly onEvalEvent?: (scope: EvalEventScope, event: EvalEvent) => void
+  // Existing provider-chain notices observed while this turn is executing.
+  // Separate from UI notice deduplication; no transport-attempt inference.
+  readonly observeProviderEvents?: (observer: (event: Extract<EvalEventCore, { kind: 'model_fallback' }>) => void) => () => void
   // Per-call effective-model resolution. When provided, the agent calls this
   // before each LLM request to derive the actual model from the user's
   // preference. Returns the resolved model + whether a fallback was used.
@@ -351,6 +355,7 @@ export const createAIAgent = (
     inReplyTo?: ReadonlyArray<string>,
     requireView?: boolean,
     capturedContext?: ContextResult,
+    preparationStages: ReadonlyArray<ExecutionStage> = [],
   ): Promise<EvalResult> => {
     const evalConfig = {
       ...baseConfig,
@@ -437,6 +442,8 @@ export const createAIAgent = (
     const begin = async (): Promise<void> => {
       signal.throwIfAborted()
       store.beginTurn({ id: traceId, roomId: triggerRoomId, agentId, startedAt: Date.now() })
+      store.beginModelCapture(traceId, triggerRoomId)
+      for (const stage of preparationStages) store.recordStage(traceId, stage.event, stage.at)
     }
     if (options?.executionGrowth) await options.executionGrowth(4096, begin)
     else await begin() // In-memory tests have no Workspace storage policy.
@@ -446,11 +453,43 @@ export const createAIAgent = (
     }
     signal.addEventListener('abort', interrupted, { once: true })
     if (signal.aborted) interrupted()
+    // Stage records are small and serialized through the same Workspace
+    // admission port as tool evidence. Model boundaries and turn completion
+    // await them; a failed capture is visible rather than silently omitted.
+    let pendingStages = Promise.resolve()
+    const retain = async (bytes: number, work: () => void): Promise<void> => {
+      if (options?.executionGrowth) await options.executionGrowth(bytes, async () => work())
+      else work() // Isolated tests have no persistent Workspace budget.
+    }
+    const retainEvent = (event: EvalEventCore): void => {
+      const stage = executionStageEvent(event)
+      if (!stage) return
+      const at = Date.now()
+      pendingStages = pendingStages.then(() => retain(Buffer.byteLength(JSON.stringify(stage)) + 1024, () => store.recordStage(traceId, stage, at)))
+      void pendingStages.catch(error => console.error(`[${config.name}] Could not retain execution stage:`, error))
+    }
+    const captureEvent = (event: EvalEventCore): void => { emit(event); retainEvent(event) }
+    const modelObserver: NonNullable<EvalOptions['modelObserver']> = {
+      start: async (summary, request) => {
+        await pendingStages
+        await retain(Buffer.byteLength(JSON.stringify(request)) + 4096, () => store.recordModelStart(traceId, summary, request))
+      },
+      complete: async (id, response, requestedTools) => {
+        await pendingStages
+        await retain(Buffer.byteLength(JSON.stringify(response)) + 4096, () => store.recordModelComplete(traceId, id, response, requestedTools))
+      },
+      fail: async (id, error, cancelled, partial) => {
+        await pendingStages
+        await retain(Buffer.byteLength(error) + (partial === undefined ? 0 : Buffer.byteLength(JSON.stringify(partial))) + 4096, () => store.recordModelFailure(traceId, id, error, cancelled, partial))
+      },
+    }
+    const stopObserving = options?.observeProviderEvents?.(retainEvent)
     try {
       const result = await evaluate(
         contextResult, evalConfig, llmProvider, evalToolExec,
-        maxToolIterationsCfg, triggerRoomId, evalOpts,
+        maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver },
       )
+      await pendingStages
       store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
         result.decision.response.action === 'error' ? result.decision.response.message : undefined)
       return result
@@ -458,6 +497,7 @@ export const createAIAgent = (
       store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
       throw error
     } finally {
+      stopObserving?.() // Standalone providers expose no chain-switch callback.
       signal.removeEventListener('abort', interrupted)
     }
   }
@@ -510,7 +550,14 @@ export const createAIAgent = (
     const epoch = cm.epochAtStart()
     const abortController = new AbortController()
     activeAbortController = abortController
-    const { emit, finish } = createTurnEvents(triggerRoomId, traceId, abortController.signal)
+    const { emit: liveEmit, finish } = createTurnEvents(triggerRoomId, traceId, abortController.signal)
+    const preparationStages: ExecutionStage[] = []
+    let preparing = true
+    const emit = (event: EvalEventCore): void => {
+      liveEmit(event)
+      const stage = preparing ? executionStageEvent(event) : undefined
+      if (stage) preparationStages.push({ id: `stage_${preparationStages.length + 1}`, at: Date.now(), event: stage })
+    }
     // epoch guards: each cancelGeneration() increments generationEpoch so stale
     // in-flight results from a prior generation cycle are silently discarded.
     const run = async (): Promise<void> => {
@@ -592,9 +639,11 @@ export const createAIAgent = (
             }
           }
         }
+        preparing = false
         const { decision, flushInfo } = await runEvaluate(
           contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, emit, effectiveToolDefs, inReplyTo, requested?.requireView,
           captured === undefined ? undefined : { ...captured, tokenBudget: contextResult.tokenBudget },
+          preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled — discard stale result
 

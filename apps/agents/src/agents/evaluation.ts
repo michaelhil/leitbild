@@ -20,6 +20,7 @@ import { createTurnCards, type TurnCards } from './answer-cards.ts'
 import { citationIssues } from './citations.ts'
 import { collectTurnOperations, operationClaimIssues, type TurnOperation } from './operation-claims.ts'
 import { workspaceCallResultForModel } from '../tools/built-in/workspace-capability-tools.ts'
+import type { ExecutionModelCallSummary, ExecutionModelResponse } from '../core/executions/model-evidence.ts'
 
 // Max times the eval loop will ask the LLM to fix an invalid map/geojson
 // fence before giving up and posting the broken response (the UI banner
@@ -222,7 +223,7 @@ const callLLMOnce = async (
     let continuation: ProviderContinuation | undefined
     let finishReason: string | undefined
     let metrics: LLMCallMetrics = {}
-    for await (const chunk of provider.stream(request, signal)) {
+    try { for await (const chunk of provider.stream(request, signal)) {
       if (chunk.thinking) onEvent?.({ kind: 'thinking', delta: chunk.thinking })
       if (chunk.slowWarning) {
         const elapsedS = Math.round(chunk.slowWarning.elapsedMs / 1000)
@@ -250,8 +251,12 @@ const callLLMOnce = async (
           model: chunk.model ?? request.model,
         }
       }
+    } } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+        partialModelResponse: { content, ...(continuation ? { continuation } : {}), ...(finishReason ? { finishReason } : {}), durationMs: Math.round(performance.now() - startMs), metrics } satisfies ExecutionModelResponse,
+      })
     }
-    return { content: content.trim(), toolCalls, ...(continuation ? { continuation } : {}), ...(finishReason ? { finishReason } : {}), durationMs: Math.round(performance.now() - startMs), metrics }
+    return { content, toolCalls, ...(continuation ? { continuation } : {}), ...(finishReason ? { finishReason } : {}), durationMs: Math.round(performance.now() - startMs), metrics }
   }
 
   const response = await provider.chat(request)
@@ -370,14 +375,13 @@ const correctResponse = async (
   operations: ReadonlyArray<TurnOperation>,
   context: Array<ChatRequest['messages'][number]>,
   config: AIAgentConfig,
-  llmProvider: LLMProvider,
   signal: AbortSignal | undefined,
   onEvent: ((event: EvalEventCore) => void) | undefined,
   systemBlocks: ContextResult['systemBlocks'],
   toolDefinitions: ReadonlyArray<ToolDefinition> | undefined,
   addGenerationMs: (ms: number) => void,
   addMetrics: (m: LLMCallMetrics) => void,
-  captureRequest: (request: ChatRequest) => void,
+  callModel: (request: ChatRequest) => ReturnType<typeof callLLMOnce>,
   initialContinuation?: ProviderContinuation,
 ): Promise<string> => {
   let content = initialContent
@@ -423,8 +427,7 @@ const correctResponse = async (
       ...(config.reasoningEffort !== undefined ? { reasoningEffort: config.reasoningEffort } : {}),
       ...(systemBlocks ? { systemBlocks } : {}),
     }
-    captureRequest(request)
-    const stream = await callLLMOnce(llmProvider, request, onEvent, signal)
+    const stream = await callModel(request)
     addGenerationMs(stream.durationMs)
     addMetrics(stream.metrics)
     assertCompleteOutput(stream.finishReason)
@@ -455,6 +458,11 @@ export interface EvalOptions {
   // comparison replay) has no conversation to post to and omits it.
   readonly onProgress?: (line: string) => void
   readonly signal?: AbortSignal
+  readonly modelObserver?: {
+    readonly start: (summary: Omit<ExecutionModelCallSummary, 'requestBytes' | 'messageCount' | 'toolCount'>, request: ChatRequest) => Promise<void>
+    readonly complete: (id: string, response: ExecutionModelResponse, requestedTools: ExecutionModelCallSummary['requestedTools']) => Promise<void>
+    readonly fail: (id: string, error: string, cancelled: boolean, partial?: ExecutionModelResponse) => Promise<void>
+  }
   // Optional operator-configured tool-iteration check-in. Returns true to
   // continue this turn without another quota, or false to stop (user clicked
   // Stop, abandonment timeout fired, or cancellation was signalled). Agents
@@ -478,7 +486,12 @@ export const evaluate = async (
   const context: Array<ChatRequest['messages'][number]> = [...contextResult.messages]
   let totalGenerationMs = 0
   let metrics: LLMCallMetrics = { modelCalls: 0 }
-  const { toolDefinitions, inReplyTo, requireView, onEvent, onProgress, signal, requestToolCheckin } = options ?? {}
+  const { toolDefinitions, inReplyTo, requireView, onEvent: externalOnEvent, onProgress, signal, requestToolCheckin } = options ?? {}
+  let pendingCorrection = false
+  const onEvent = (event: EvalEventCore): void => {
+    if (event.kind === 'correction') pendingCorrection = true
+    externalOnEvent?.(event)
+  }
   // Optional mutable operator threshold. Undefined means there is no hidden
   // engine quota; the Agent decides when it has enough evidence.
   let effectiveMaxIterations = maxToolIterations
@@ -504,6 +517,25 @@ export const evaluate = async (
     // ChatRequest is JSON-shaped. Clone at the call boundary so subsequent
     // tool-loop context mutation cannot rewrite the audit record.
     lastGenerationQuery = JSON.parse(JSON.stringify(request)) as GenerationQuery
+  }
+  let modelOrdinal = 0
+  const callModel = async (request: ChatRequest, phase: ExecutionModelCallSummary['phase'], toolRound?: number) => {
+    captureRequest(request)
+    const ordinal = ++modelOrdinal, id = `model_${ordinal}`
+    const actualPhase = pendingCorrection ? 'correction' : phase
+    pendingCorrection = false
+    await options?.modelObserver?.start({ id, ordinal, phase: actualPhase, startedAt: Date.now(), status: 'running', requestedModel: request.model }, request)
+    let result: Awaited<ReturnType<typeof callLLMOnce>>
+    try { result = await callLLMOnce(llmProvider, request, onEvent, signal) }
+    catch (error) {
+      const partial = error && typeof error === 'object' && 'partialModelResponse' in error ? error.partialModelResponse as ExecutionModelResponse : undefined
+      await options?.modelObserver?.fail(id, error instanceof Error ? error.message : String(error), signal?.aborted === true, partial)
+      throw error
+    }
+    await options?.modelObserver?.complete(id, result, result.toolCalls?.map((call, index) => ({
+      tool: call.function.name, ...(call.id ? { providerCallId: call.id } : {}), ...(toolRound === undefined ? {} : { executionCallId: `call_${toolRound}_${index}` }),
+    })))
+    return result
   }
 
   // Cap preview at 200 chars — this is a debugging/analysis aid for the
@@ -586,8 +618,7 @@ export const evaluate = async (
         ...(contextResult.systemBlocks ? { systemBlocks: contextResult.systemBlocks } : {}),
       }
 
-      captureRequest(request)
-      const streamResult = await callLLMOnce(llmProvider, request, onEvent, signal)
+      const streamResult = await callModel(request, toolRound === 0 ? 'initial' : 'tool-response', toolRound)
       // A provider or tool may finish despite cancellation. Do not start
       // another model request or execute its newly returned tool calls.
       signal?.throwIfAborted()
@@ -722,7 +753,6 @@ export const evaluate = async (
         turnOperations,
         context,
         config,
-        llmProvider,
         signal,
         onEvent,
         contextResult.systemBlocks,
@@ -731,7 +761,7 @@ export const evaluate = async (
         (m) => {
           metrics = mergeMetrics(metrics, m)
         },
-        captureRequest,
+        request => callModel(request, 'correction'),
         streamResult.continuation,
       )
       return makeResult({ response: { action: 'respond', content: finalContent }, generationMs: totalGenerationMs, triggerRoomId })

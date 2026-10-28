@@ -2,8 +2,12 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { Database } from 'bun:sqlite'
 import type { ToolResult } from '../types/tool.ts'
+import { createModelEvidenceStore } from './model-evidence.ts'
+import type { ChatRequest } from '../types/llm.ts'
+import type { ExecutionModelCallSummary, ExecutionModelResponse, ExecutionStage } from './model-evidence.ts'
 
-/** Actual tool execution facts, not model requests or a second conversation. */
+/** Actual turn/tool facts. Exact model-pass inputs live in the linked,
+ * deduplicated inspection sidecar, never in a second conversation. */
 export interface ExecutionTurn {
   readonly id: string
   readonly roomId: string
@@ -69,6 +73,7 @@ const missing = (): never => {
 export const createExecutionStore = (path: string) => {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
   const db = new Database(path, { create: true, strict: true })
+  const modelEvidence = createModelEvidenceStore(path === ':memory:' ? undefined : `${path}.models`)
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA synchronous = EXTRA')
     // Rollback journaling avoids checkpoint machinery and the WAL-reset issue
@@ -113,6 +118,11 @@ export const createExecutionStore = (path: string) => {
     const row = db.query<TurnRow, [string, string]>('SELECT * FROM turns WHERE room_id=? AND id=?').get(roomId, turnId)
     return row ? turnFromRow(row) : undefined
   }
+  const requireTurn = (turnId: string, running = false): void => {
+    const turn = db.query<{ status: ExecutionTurn['status'] }, [string]>('SELECT status FROM turns WHERE id=?').get(turnId)
+    if (!turn) missing()
+    if (running && turn!.status !== 'running') throw new Error('Cannot begin another model request for a finished execution turn')
+  }
   const recordOutcome = db.transaction((turnId: string, callId: string, result: ToolResult, completedAt: number) => {
     const existing = db.query<{ result_json: string | null }, [string, string]>('SELECT result_json FROM calls WHERE turn_id=? AND id=?').get(turnId, callId)
     if (!existing) missing()
@@ -145,6 +155,23 @@ export const createExecutionStore = (path: string) => {
     linkMessage: (turnId: string, messageId: string): boolean =>
       db.query('UPDATE turns SET message_id=? WHERE id=? AND (message_id IS NULL OR message_id=?)').run(messageId, turnId, messageId).changes > 0,
     getTurn,
+    beginModelCapture: (turnId: string, roomId: string): void => { requireTurn(turnId, true); if (!getTurn(roomId, turnId)) missing(); modelEvidence.begin(turnId, roomId) },
+    recordModelStart: (turnId: string, summary: Omit<ExecutionModelCallSummary, 'requestBytes' | 'messageCount' | 'toolCount'>, request: ChatRequest): void => {
+      requireTurn(turnId, true); modelEvidence.start(turnId, summary, request)
+    },
+    recordModelComplete: (turnId: string, modelId: string, response: ExecutionModelResponse, requestedTools?: ExecutionModelCallSummary['requestedTools']): void => {
+      requireTurn(turnId); modelEvidence.complete(turnId, modelId, response, requestedTools)
+    },
+    recordModelFailure: (turnId: string, modelId: string, error: string, cancelled: boolean, partial?: ExecutionModelResponse): void => { requireTurn(turnId); modelEvidence.fail(turnId, modelId, error, cancelled, partial) },
+    recordStage: (turnId: string, event: ExecutionStage['event'], at = Date.now()): void => { requireTurn(turnId); modelEvidence.stage(turnId, event, at) },
+    modelEvidence: (roomId: string, turnId: string) => {
+      if (!getTurn(roomId, turnId)) missing()
+      return modelEvidence.summary(roomId, turnId)
+    },
+    getModelCall: (roomId: string, turnId: string, modelId: string, sensitive = false) => {
+      if (!getTurn(roomId, turnId)) return undefined
+      return modelEvidence.get(roomId, turnId, modelId, sensitive)
+    },
     listTurns: (roomId: string, options: { readonly limit?: number; readonly before?: Pick<ExecutionTurn, 'startedAt' | 'id'> } = {}): ExecutionTurn[] => {
       const limit = options.limit ?? 30 // A browse page, never a retention or tool-use cap.
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error('Execution page limit must be a positive integer')
@@ -164,8 +191,16 @@ export const createExecutionStore = (path: string) => {
       if (!row) return undefined
       return { ...callSummary(row), arguments: JSON.parse(row.arguments_json), ...(row.result_json === null ? {} : { result: JSON.parse(row.result_json) as ToolResult }) }
     },
-    deleteMessage: (roomId: string, messageId: string): void => { db.query('DELETE FROM turns WHERE room_id=? AND message_id=?').run(roomId, messageId) },
-    deleteRoom: (roomId: string): void => { db.query('DELETE FROM turns WHERE room_id=?').run(roomId) },
+    deleteMessage: (roomId: string, messageId: string): void => {
+      const turns = db.query<{ id: string }, [string, string]>('SELECT id FROM turns WHERE room_id=? AND message_id=?').all(roomId, messageId)
+      for (const turn of turns) modelEvidence.remove(turn.id)
+      db.query('DELETE FROM turns WHERE room_id=? AND message_id=?').run(roomId, messageId)
+    },
+    deleteRoom: (roomId: string): void => {
+      const turns = db.query<{ id: string }, [string]>('SELECT id FROM turns WHERE room_id=?').all(roomId)
+      for (const turn of turns) modelEvidence.remove(turn.id)
+      db.query('DELETE FROM turns WHERE room_id=?').run(roomId)
+    },
     close: (): void => db.close(),
   }
 }

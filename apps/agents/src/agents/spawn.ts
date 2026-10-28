@@ -25,6 +25,7 @@ import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-cap
 import type { RunContextFetcher } from './run-context.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
+import type { EvalEventCore } from '../core/types/agent-eval.ts'
 
 export type ExecutionGrowth = <T>(bytes: number, work: () => Promise<T>) => Promise<T>
 export type RunToolOperation = <T>(work: () => Promise<T>) => Promise<T>
@@ -380,20 +381,21 @@ export const spawnAIAgent = async (
   // additionally per-target so a long outage produces ONE notice, not one
   // per call.
   let lastFallbackTarget: string | null = null
-  const onChainSwitch = spawnOptions?.onEvalEvent
-    ? (preferred: string, effective: string, reason: string) => {
+  let providerObserver: ((event: Extract<EvalEventCore, { kind: 'model_fallback' }>) => void) | undefined
+  const onChainSwitch = (preferred: string, effective: string, reason: string): void => {
+        const event = { kind: 'model_fallback' as const, preferred, effective, reason }
+        providerObserver?.(event) // Capture every observed switch, including repeated UI notice targets.
         if (lastFallbackTarget === effective) return
         lastFallbackTarget = effective
-        spawnOptions.onEvalEvent!(
+        spawnOptions?.onEvalEvent?.(
           { agentId, agentName: config.name },
-          { kind: 'model_fallback', preferred, effective, reason },
+          event,
         )
       }
-    : undefined
   const llmProvider: LLMProvider = llmService.bound({
     source: 'agent',
     agentId,
-    ...(onChainSwitch ? { onChainSwitch } : {}),
+    onChainSwitch,
   })
   // Validate name before any expensive work — prevents orphaned agent creation on collision
   if (team.getAgent(config.name)) {
@@ -530,6 +532,11 @@ export const spawnAIAgent = async (
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
+    observeProviderEvents: observer => {
+      if (providerObserver) throw new Error('Provider-chain evidence already belongs to an active turn')
+      providerObserver = observer
+      return () => { if (providerObserver === observer) providerObserver = undefined }
+    },
     onProgress,
     ...(spawnOptions?.onTurnStart ? { onTurnStart: spawnOptions.onTurnStart } : {}),
     ...(spawnOptions?.onTurnFinished ? { onTurnFinished: spawnOptions.onTurnFinished } : {}),

@@ -35,7 +35,19 @@ export const roomRoutes: RouteEntry[] = [
       if (!room) return errorResponse('Room not found', 404)
       const turn = system.executionStore.getTurn(room.profile.id, decodeURIComponent(match[2]!))
       if (!turn) return errorResponse('Execution turn not found', 404)
-      return json({ turn, calls: system.executionStore.listCalls(room.profile.id, turn.id) })
+      return json({ turn, calls: system.executionStore.listCalls(room.profile.id, turn.id), ...system.executionStore.modelEvidence(room.profile.id, turn.id) })
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/rooms\/([^/]+)\/executions\/([^/]+)\/models\/([^/]+)$/,
+    handler: (req, match, { system }) => {
+      const room = system.rooms.getRoom(decodeURIComponent(match[1]!))
+      if (!room) return errorResponse('Room not found', 404)
+      const sensitive = new URL(req.url).searchParams.get('sensitive')
+      if (sensitive !== null && sensitive !== '1') return errorResponse('Sensitive protocol disclosure requires sensitive=1')
+      const model = system.executionStore.getModelCall(room.profile.id, decodeURIComponent(match[2]!), decodeURIComponent(match[3]!), sensitive === '1')
+      return model ? json(model) : errorResponse('Execution model call not found', 404)
     },
   },
   {
