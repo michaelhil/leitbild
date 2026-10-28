@@ -26,7 +26,7 @@ import { groupName, itemText } from '../../../features/displays/topology/layout.
 import { farState } from '../../../features/displays/topology/stops.ts'
 import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
-import { chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
+import { CHEVRON_PIECE, chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
 import { activeState, observedInput, readingLook, toneOf, type AlertTone } from './readout.ts'
 import type { VesselDrawing } from './vessel-symbol.ts'
@@ -253,20 +253,27 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
     const [id, box] = [...boxes].find(([key, entry]) => (symbols.get(key) === 'tank' || symbols.get(key) === 'exchanger') && inside(entry)(point)) ?? []
     return id === undefined ? undefined : { box: box!, inset: SILHOUETTE[symbols.get(id) as 'tank' | 'exchanger'] }
   }
-  const pipes = new Map(edges.map(edge => {
-    const [first, last] = [stopAt(edge.points[0]!), stopAt(edge.points.at(-1)!)]
-    const ended = last === undefined ? edge.points : endStraight(edge.points, 'last', last)
-    const both = first === undefined ? ended : endStraight(ended, 'first', first)
-    const [into, from] = [vesselAt(edge.points.at(-1)!), vesselAt(edge.points[0]!)]
-    const reached = into === undefined ? both : toSilhouette(both, 'last', into.box, into.inset)
-    return [edge.id, from === undefined ? reached : toSilhouette(reached, 'first', from.box, from.inset)] as const
-  }))
   // Where a chevron may not stand: on the drawing's text, its symbols and its bars.
   const avoid: ReadonlyArray<Box> = [
     ...section.layout.nodes.flatMap(node => (node.text === undefined ? [] : [{ x: px(node.text.x), y: px(node.text.y), width: px(node.text.width), height: px(node.text.height) }])),
     ...[...boxes].filter(([id]) => symbols.get(id) !== 'end').map(([, box]) => box),
   ]
-
+  const pipes = new Map(edges.map(edge => {
+    const [first, last] = [stopAt(edge.points[0]!), stopAt(edge.points.at(-1)!)]
+    const ended = last === undefined ? edge.points : endStraight(edge.points, 'last', last)
+    let both = first === undefined ? ended : endStraight(ended, 'first', first)
+    // A newly readable line may be just one cell long. Reserve its full-size
+    // direction mark in the stop's existing empty cell, independently of its
+    // current value, so fresh/still/unknown samples never move the pipe. An
+    // existing clear chevron location preserves the original route exactly.
+    if ((first !== undefined || last !== undefined) && edge.view?.bindings.some(binding => binding.role === 'flow') && chevronSegment(edge.id, both, edge.gaps, 'open-flow', 'medium', false, avoid) === null) {
+      if (last !== undefined) both = endStraight(both, 'last', last, CHEVRON_PIECE)
+      if (first !== undefined) both = endStraight(both, 'first', first, CHEVRON_PIECE)
+    }
+    const [into, from] = [vesselAt(edge.points.at(-1)!), vesselAt(edge.points[0]!)]
+    const reached = into === undefined ? both : toSilhouette(both, 'last', into.box, into.inset)
+    return [edge.id, from === undefined ? reached : toSilhouette(reached, 'first', from.box, from.inset)] as const
+  }))
   // A pipe reads its flow where it is bound (a stop's, the lines it stands for: forward where any flows); else it is
   // open unless a switch at either end reads shut, never emptied by what is not known.
   const lookOf = (edge: (typeof edges)[number]): PipeLook | 'open' => {

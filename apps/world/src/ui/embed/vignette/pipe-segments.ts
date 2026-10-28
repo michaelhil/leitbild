@@ -86,19 +86,21 @@ const splitAtGaps = (straight: Extract<Segment, { kind: 'straight' }>, gaps: Rea
  * A pipe that stops at its `end` ('first' or 'last' point) as drawn: a last leg too short to end on a straight of
  * STUB_STRAIGHT after its bend runs on into the stop's own cell (`room`, the box the layout gave the stop), so its cap
  * stands by the stop's label; where the cell does not hold that much, the leg and its bend go, and the pipe ends where
- * it turned, straight on.
+ * it turned, straight on. An explicitly required straight also reserves room for a declared flow chevron inside a
+ * stop's existing cell, including a two-point route. That reservation never extends beyond the cell, shrinks the
+ * glyph or removes an already valid bend when the extra room is unavailable.
  */
-export const endStraight = (points: ReadonlyArray<Point>, end: 'first' | 'last', room?: Box): ReadonlyArray<Point> => {
+export const endStraight = (points: ReadonlyArray<Point>, end: 'first' | 'last', room?: Box, requiredStraight?: number): ReadonlyArray<Point> => {
   const ordered = end === 'last' ? [...points] : [...points].reverse()
-  const need = STUB_STRAIGHT + CORNER_RADIUS
-  if (ordered.length > 2 && room !== undefined) {
+  const need = (requiredStraight ?? STUB_STRAIGHT) + (ordered.length > 2 ? CORNER_RADIUS : 0)
+  if ((ordered.length > 2 || requiredStraight !== undefined) && room !== undefined) {
     const [from, to] = [ordered.at(-2)!, ordered.at(-1)!]
     const step = [Math.sign(to[0] - from[0]), Math.sign(to[1] - from[1])] as const
     const short = need - lengthOf(from, to)
     const far = step[0] > 0 ? room.x + room.width - to[0] : step[0] < 0 ? to[0] - room.x : step[1] > 0 ? room.y + room.height - to[1] : to[1] - room.y
     if (short > 0 && far >= short) ordered[ordered.length - 1] = [to[0] + step[0] * short, to[1] + step[1] * short]
   }
-  while (ordered.length > 2 && lengthOf(ordered.at(-2)!, ordered.at(-1)!) < need) ordered.pop()
+  while (requiredStraight === undefined && ordered.length > 2 && lengthOf(ordered.at(-2)!, ordered.at(-1)!) < need) ordered.pop()
   return end === 'last' ? ordered : ordered.reverse()
 }
 

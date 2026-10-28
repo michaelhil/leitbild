@@ -13,6 +13,7 @@ import { servedPlantTopology } from '../src/packs/process-plant/observation/topo
 import { createProcessPlantProtectionRunner, createProcessPlantRuntime } from '../src/packs/process-plant/runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { flowDrawing } from '../src/ui/embed/vignette/flow-symbols.ts'
+import { CHEVRON_PIECE, endStraight } from '../src/ui/embed/vignette/pipe-segments.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -141,14 +142,32 @@ describe('a power stop says the state of the equipment it names (the old mimic-s
     const observations = plantRun.sampled(scoped)
     const flowing = section.edges.filter(edge => /^s\d+\.edge$/.test(edge.id) && edge.bindings.some(binding => observations.some(observation => observation.ref === binding.ref && typeof observation.value === 'number' && observation.value > 0)))
     expect(flowing.map(edge => section.nodes.find(node => `${node.id}.edge` === edge.id)!.label)).toContain('to PZR, SG B, SG C, SG D')
+    expect(flowing.map(edge => section.nodes.find(node => `${node.id}.edge` === edge.id)!.label)).toContain('from MFW header')
     const pipe = (edge: string, sample: ReadonlyArray<Observation>) => flowDrawing(section, sample, [], false).segments.filter(segment => 'connectionId' in segment && segment.connectionId === edge)
+    const geometry = (segments: ReturnType<typeof pipe>) => segments.filter(segment => segment.kind !== 'direction').map(({ value: _value, ...shape }) => shape)
     for (const edge of flowing) {
       expect(pipe(edge.id, observations).some(segment => segment.value === 'open-flow')).toBe(true)
       expect(pipe(edge.id, observations).some(segment => segment.kind === 'direction')).toBe(true)
+      const reverse = observations.map(observation => edge.bindings.some(binding => binding.ref === observation.ref) && typeof observation.value === 'number' ? { ...observation, value: -Math.abs(observation.value) } : observation)
+      expect(pipe(edge.id, reverse).find(segment => segment.kind === 'direction')).not.toEqual(pipe(edge.id, observations).find(segment => segment.kind === 'direction'))
       const still = observations.map(observation => (edge.bindings.some(binding => binding.ref === observation.ref) ? { ...observation, value: 0 } : observation))
       expect(pipe(edge.id, still).every(segment => segment.value !== 'open-flow')).toBe(true)
+      expect(geometry(pipe(edge.id, still))).toEqual(geometry(pipe(edge.id, observations)))
       const unknown = observations.filter(observation => !edge.bindings.some(binding => binding.ref === observation.ref))
       expect(pipe(edge.id, unknown).every(segment => segment.value === 'closed-dash' || segment.kind === 'endpoint')).toBe(true)
+      expect(geometry(pipe(edge.id, unknown))).toEqual(geometry(pipe(edge.id, observations)))
     }
+  })
+
+  test('a short declared-flow stop reserves a full direction mark inside its existing cell without cutting a valid bend', () => {
+    const short = [[0, 0], [0, 24]] as const
+    const room = { x: -12, y: -24, width: 24, height: 24 }
+    expect(endStraight(short, 'first', room, CHEVRON_PIECE)).toEqual([[0, -24], [0, 24]])
+    expect(short).toEqual([[0, 0], [0, 24]])
+    // Insufficient actual cell space cannot manufacture more pipe or erase a
+    // valid existing corner just to satisfy the direction-mark request.
+    expect(endStraight(short, 'first', { ...room, y: -8, height: 8 }, CHEVRON_PIECE)).toEqual(short)
+    const bent = [[0, 0], [0, 24], [48, 24]] as const
+    expect(endStraight(bent, 'first', room, CHEVRON_PIECE)).toEqual(bent)
   })
 })
