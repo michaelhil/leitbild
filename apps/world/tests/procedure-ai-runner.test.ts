@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { accessContextSchema, moduleCapabilityCollectionSchema, newRequestId, newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
 import { createKnowledge } from '@leitbild/knowledge'
 import { handleWorldModuleApi } from '../src/core/api/workspace-module-api.ts'
+import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
 import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
@@ -103,6 +104,65 @@ const invoker = (registry: WorldWorkspaceRuntimeRegistry, workspaceId: Workspace
   }
 
 describe('the AI procedure runner through the World Module API', () => {
+  test('a bounded advance is live to step/context/display reads and waiting uses its exact target, including its completion pause', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const simulationRuns = registry.getLoaded(workspaceId)!.simulationRuns
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
+    const human = access(workspaceId, { kind: 'human' })
+    const display = async (kind: 'default' | 'sample', input: unknown) => {
+      const request = new Request(`http://world.test/api/workspaces/${workspaceId}/world/simulation-runs/${run.id}/displays/${kind}`, { method: 'POST', body: JSON.stringify(input) })
+      const response = (await handleSimulationRunApi(request, new URL(request.url), { registry: simulationRuns, accessContext: human, roleHolders: () => ({}) }))!
+      return { status: response.status, body: await response.json() as any }
+    }
+    expect((await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)).status).toBe(200)
+    const composed = await display('default', { subject: plantId })
+    expect(composed.status).toBe(200)
+    const state = composed.body.result.view.state
+    expect((await display('sample', { state })).body.sample.at.paused).toBe(true)
+    expect((await invoke('world.simulation-run.context', {}, ai)).body.result.context.text).toContain(' · PAUSED')
+
+    const advance = await invoke('world.simulation-run.execution.advance', { minutes: 1.5, onComplete: 'pause' }, ai)
+    expect(advance.status).toBe(202)
+    const untilSimulationTime = advance.body.result.acceleration.targetSimulationTime as string
+    expect(advance.body.result.acceleration.status).toBe('running')
+    // Maximum pace intentionally leaves the realtime clock paused. Read ports
+    // report actual execution, not that selected realtime playback state.
+    expect(run.snapshot().clock!.paused).toBe(true)
+    expect(simulationRuns.isAdvancing(run.id)).toBe(true)
+    const [step, context, sampled] = await Promise.all([
+      invoke('world.procedure.run.step.read', {}, ai),
+      invoke('world.simulation-run.context', {}, ai),
+      display('sample', { state }),
+    ])
+    expect(step.body.result).not.toHaveProperty('paused')
+    expect(context.body.result.context.text).toContain(' · LIVE')
+    expect(sampled.body.sample.at.paused).toBe(false)
+    expect(Date.parse(step.body.result.simulationTime)).toBeLessThan(Date.parse(untilSimulationTime))
+    let waited = await invoke('world.simulation-run.wait', { untilSimulationTime }, ai)
+    while (waited.body.result?.reason === 'timeout') waited = await invoke('world.simulation-run.wait', { untilSimulationTime }, ai)
+    expect(waited.status).toBe(200)
+    expect(waited.body.result).toMatchObject({ reason: 'simulation-time', simulationTime: untilSimulationTime })
+    // The target's tick can wake the wait before the maximum-pace job records
+    // its terminal status. Completion, not an added relative wait, settles it.
+    while ((await simulationRuns.executionStatus(run.id)).acceleration?.status === 'running') await new Promise<void>(resolve => setImmediate(resolve))
+    expect((await invoke('world.simulation-run.wait', { untilSimulationTime }, ai)).body.result)
+      .toMatchObject({ reason: 'simulation-time', simulationTime: untilSimulationTime, paused: true })
+    expect(simulationRuns.isAdvancing(run.id)).toBe(false)
+    expect((await invoke('world.procedure.run.step.read', {}, ai)).body.result.paused).toBe(true)
+    expect((await display('sample', { state })).body.sample.at.paused).toBe(true)
+
+    // A person's pause before the next target really interrupts the wait.
+    const next = await invoke('world.simulation-run.execution.advance', { minutes: 1.5, onComplete: 'pause' }, ai)
+    const nextTarget = next.body.result.acceleration.targetSimulationTime as string
+    const waiting = invoke('world.simulation-run.wait', { untilSimulationTime: nextTarget }, ai)
+    expect((await invoke('world.simulation-run.execution.set', { playback: 'paused' }, human)).status).toBe(200)
+    const interrupted = await waiting
+    expect(interrupted.body.result).toMatchObject({ reason: 'clock-paused', paused: true })
+    expect(Date.parse(interrupted.body.result.simulationTime)).toBeLessThan(Date.parse(nextTarget))
+    expect(simulationRuns.isAdvancing(run.id)).toBe(false)
+  }, 60_000)
+
   test('an AI agent starts and drives E-0, reads its step with live readings, and its accepted transition answers with the next step', async () => {
     const { registry, workspaceId, run, plantId } = await setup()
     const invoke = invoker(registry, workspaceId, run.id)

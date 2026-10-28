@@ -55,7 +55,7 @@ export const displayRunOf = async (registry: SimulationRunRegistry, runtime: Sim
   if (registry.get(runtime.id) !== runtime) throw Object.assign(new Error(`Simulation Run ${runtime.id} was reloaded; ask again`), { code: 'simulation_run_closed' })
   const snapshot = runtime.snapshot()
   return {
-    objects: snapshot.objects, denied, packs: runtime.packs(), port: requestPort(runtime.observations(actor)), clock: snapshot.clock,
+    objects: snapshot.objects, denied, packs: runtime.packs(), port: requestPort(runtime.observations(actor)), clock: snapshot.clock === undefined ? undefined : { ...snapshot.clock, paused: !registry.isAdvancing(runtime.id) },
     connections: registry.loadedCompiledScenario(runtime.id).connections,
     // The Historian's record, from one hold before `from`, so the value held into the window's start is drawn; with that
     // hold. Its rows only: a raw page's summaries would reach every retained sample of the series again (§5.8).

@@ -115,6 +115,8 @@ export interface SimulationRunRegistry {
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
   readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly copy: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
+  /** Whether this loaded Run advances, including a running maximum-pace job over its paused realtime clock. */
+  readonly isAdvancing: (id: SimulationRunId) => boolean
   readonly executionStatus: (id: SimulationRunId) => Promise<RunExecutionState>
   readonly executionOverview: (id: SimulationRunId) => Promise<RunExecutionState>
   readonly setExecution: (id: SimulationRunId, input: ExecutionSetInput) => Promise<RunExecutionState>
@@ -1298,6 +1300,11 @@ export const createSimulationRunRegistry = (config: {
     workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
     create,
     copy: copyRun,
+    isAdvancing: id => {
+      const runtime = simulationRuns.get(id)
+      if (!runtime) throw new Error(`Simulation Run is not loaded: ${id}`)
+      return advances(id, runtime)
+    },
     executionStatus,
     executionOverview,
     setExecution,

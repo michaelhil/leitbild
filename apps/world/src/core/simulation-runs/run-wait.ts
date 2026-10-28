@@ -18,6 +18,8 @@ export const runWaitInputSchema = z.object({
     .describe('Wall time to wait at most, in milliseconds.'),
   simulationSeconds: z.number().min(1).max(600).optional()
     .describe('Return once this much plant time has passed from now.'),
+  untilSimulationTime: isoTimestampSchema.optional()
+    .describe('Wait until this exact simulation timestamp, e.g. execution.advance acceleration.targetSimulationTime. Exclusive with simulationSeconds.'),
   events: z.array(z.object({
     type: z.string().min(1).max(80).describe('A durable event type, e.g. interaction.signal.received or procedure.run.driver.changed.'),
     procedureRunId: procedureRunIdSchema.optional().describe('Only events of this procedure Run.'),
@@ -27,8 +29,11 @@ export const runWaitInputSchema = z.object({
   procedureRunId: procedureRunIdSchema.optional()
     .describe('A procedure Run whose current step the result carries as next, as world.procedure.run.step.read returns it.'),
 }).strict().superRefine((input, context) => {
-  if (input.simulationSeconds === undefined && input.events === undefined) {
-    context.addIssue({ code: 'custom', path: ['simulationSeconds'], message: 'Name simulationSeconds, events, or both to wait for.' })
+  if (input.simulationSeconds !== undefined && input.untilSimulationTime !== undefined) {
+    context.addIssue({ code: 'custom', path: ['untilSimulationTime'], message: 'Name simulationSeconds or untilSimulationTime, not both.' })
+  }
+  if (input.simulationSeconds === undefined && input.untilSimulationTime === undefined && input.events === undefined) {
+    context.addIssue({ code: 'custom', path: ['simulationSeconds'], message: 'Name simulationSeconds, untilSimulationTime, events, or time and events to wait for.' })
   }
 })
 export type RunWaitInput = z.infer<typeof runWaitInputSchema>
@@ -135,7 +140,8 @@ export const waitForRunChange = async (config: {
   const startedAt = ports.now()
   const fromSequence = input.afterSequence ?? ports.sequence()
   const startClock = ports.clock()
-  const targetMs = input.simulationSeconds === undefined ? undefined : Date.parse(startClock.currentTime) + input.simulationSeconds * 1_000
+  const targetMs = input.untilSimulationTime !== undefined ? Date.parse(input.untilSimulationTime)
+    : input.simulationSeconds === undefined ? undefined : Date.parse(startClock.currentTime) + input.simulationSeconds * 1_000
   let cursor = fromSequence
   const matched: SimulationRunEvent[] = []
   return await new Promise<RunWaitResult>((resolve, reject) => {
@@ -178,8 +184,10 @@ export const waitForRunChange = async (config: {
       if (matched.length > 0) return finish('event', { events: matched })
       if (targetMs !== undefined) {
         const clock = ports.clock()
-        if (clock.paused) return finish('clock-paused')
+        // Reaching a bounded advance's target with onComplete:pause is
+        // success. Paused means interruption only before the target.
         if (Date.parse(clock.currentTime) >= targetMs) return finish('simulation-time')
+        if (clock.paused) return finish('clock-paused')
       }
       if (ports.now() - startedAt >= input.maxWaitMs) return finish('timeout')
     }
