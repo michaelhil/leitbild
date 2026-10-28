@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandId, ObjectId, ProcedureRunState, SimulationRunId } from '../src/core/model/index.ts'
 import { procedureTestDocument, procedureTestRun, procedureTestRunId, deferred } from './procedure-fixtures.ts'
 import { procedureRunDocumentKey } from '../src/ui/procedures/procedure-run-selectors.ts'
-import { currentProcedureInput, procedureInputFocusFor, procedureInputViews, readProcedureInputTarget, resolveProcedureInputFocus } from '../src/ui/procedures/procedure-input.ts'
+import { currentProcedureInput, procedureInputDocumentMatches, procedureInputFocusFor, procedureInputViews, readProcedureInputTarget, resolveProcedureInputFocus } from '../src/ui/procedures/procedure-input.ts'
 
 const ai = 'actor:ai:assistant' as ActorId
 const run = (): ProcedureRunState => {
@@ -60,6 +60,10 @@ describe('procedure input attention', () => {
     const current = run(), focus = procedureInputFocusFor(procedureTestRunId, current)!
     const session = { snapshot: () => ({ runs: [current], documents: new Map() }), refreshRuns: async () => {}, readDocument: async () => document }
     expect(await readProcedureInputTarget(session, focus, unit.scope, procedureTestRunId)).toBe(current)
+    expect(procedureInputDocumentMatches(document, focus)).toBe(true)
+    expect(procedureInputDocumentMatches(procedureTestDocument('E-0', 'b'.repeat(40)), focus)).toBe(false)
+    expect(procedureInputDocumentMatches({ ...document, sourcePath: 'other.md' }, focus)).toBe(false)
+    expect(procedureInputDocumentMatches({ ...document, source: { ...document.source, sourceId: 'other-source' } }, focus)).toBe(false)
     await expect(readProcedureInputTarget({ ...session, readDocument: async () => procedureTestDocument('E-0', 'b'.repeat(40)) }, focus, unit.scope, procedureTestRunId)).rejects.toThrow('Retained procedure document')
   })
 })

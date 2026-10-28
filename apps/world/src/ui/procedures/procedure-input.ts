@@ -63,6 +63,11 @@ export const resolveProcedureInputFocus = (
   && run.inputRequest?.requestId === focus.requestId && run.inputRequest.stepId === focus.stepId
   && sameProcedureScope(run.scope, scope)) ?? null
 
+/** A same-named step in another retained revision is a different target. */
+export const procedureInputDocumentMatches = (document: ProcedureDocument | null | undefined, focus: ProcedureInputFocus): boolean =>
+  document !== null && document !== undefined && document.source.sourceId === focus.sourceId && document.source.revision === focus.sourceRevision
+    && document.sourcePath === focus.sourcePath && document.procedureId === focus.procedureId
+
 /** Refresh current truth before reading the retained document. Recheck after
  * the async read, so an answered request never navigates to a later step. */
 export const readProcedureInputTarget = async (
@@ -76,8 +81,7 @@ export const readProcedureInputTarget = async (
   if (!run) return null
   const document = await session.readDocument(run)
   if (!current()) return null
-  if (document.source.sourceId !== focus.sourceId || document.source.revision !== focus.sourceRevision
-    || document.sourcePath !== focus.sourcePath || document.procedureId !== focus.procedureId) throw new Error('Retained procedure document does not match the input request')
+  if (!procedureInputDocumentMatches(document, focus)) throw new Error('Retained procedure document does not match the input request')
   if (!document.steps.some(step => step.id === focus.stepId)) throw new Error('Requested input step is absent from the retained procedure revision')
   return current()
 }

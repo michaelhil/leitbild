@@ -2,7 +2,7 @@
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Info, MessageSquare, MoreHorizontal, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import { tick, untrack } from 'svelte'
   import type { ProcedureSession } from './procedure-session.ts'
-  import { currentProcedureInput, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
+  import { currentProcedureInput, procedureInputDocumentMatches, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
   import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from './procedure-view.ts'
   import { readProcedureTagValue } from './procedure-client.ts'
   import { procedureViewKey, procedureCategories, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
@@ -63,6 +63,7 @@
     procedureStepRangeText,
     procedureStepRows,
     procedureRunFor,
+    procedureRunDocumentKey,
     procedureRunSummariesForScope,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
     procedureStepById,
@@ -257,6 +258,9 @@
     : null)
   const driverView = $derived(procedureDriverView(selectedProcedureRun))
   const requestedInputRun = $derived(selectedProcedureRun && currentProcedureInput(selectedProcedureRun) ? selectedProcedureRun : null)
+  const displayedInputFocus = $derived(requestedInputRun ? procedureInputFocusFor(simulationRunId, requestedInputRun) : null)
+  const displayedInputMatches = $derived(displayedInputFocus !== null && procedureInputDocumentMatches(document, displayedInputFocus))
+  const inputStepLabel = $derived(requestedInputRun?.inputRequest ? runDocuments.get(procedureRunDocumentKey(requestedInputRun))?.steps.find(step => step.id === requestedInputRun.inputRequest!.stepId)?.label : undefined)
   let handledInputFocus: ProcedureInputFocus | undefined
 
   const busy = $derived(pendingControl !== null)
@@ -1298,8 +1302,8 @@
   const showCurrentInputStep = (): void => {
     const run = requestedInputRun
     const focus = run ? procedureInputFocusFor(simulationRunId, run) : null
-    if (!focus) return
-    scrollToProcedureStep(focus.stepId, 'auto', true, () => resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId) !== null)
+    if (!focus || !procedureInputDocumentMatches(document, focus)) return
+    scrollToProcedureStep(focus.stepId, 'auto', true, () => procedureInputDocumentMatches(document, focus) && resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId) !== null)
   }
 
   const focusRequestedInput = async (focus: ProcedureInputFocus): Promise<void> => {
@@ -1312,8 +1316,7 @@
     await loadProcedure(run.procedureId, true, { ...run, rememberCurrentPosition: true, restorePosition: false })
     if (disposed || inputFocus !== focus) return
     const requested = current()
-    const pinned = document?.source.sourceId === focus.sourceId && document.source.revision === focus.sourceRevision
-      && document.sourcePath === focus.sourcePath && document.procedureId === focus.procedureId
+    const pinned = procedureInputDocumentMatches(document, focus)
     if (!requested || !pinned || selectedProcedureRun?.runId !== focus.runId) {
       error = 'This procedure input request changed while its document loaded. No step was focused.'
       return
@@ -1847,8 +1850,8 @@
 
           {#if requestedInputRun?.inputRequest}
             <div class="procedure-input-band" role="status">
-              <div><strong>Agent needs your input on step {procedureStepById(document, requestedInputRun.inputRequest.stepId)?.label ?? requestedInputRun.inputRequest.stepId}</strong><p>{requestedInputRun.inputRequest.issue}</p></div>
-              <button type="button" onclick={showCurrentInputStep}>Show step</button>
+              <div><strong>Agent needs your input on step {inputStepLabel ?? requestedInputRun.inputRequest.stepId}</strong><p>{requestedInputRun.inputRequest.issue}</p></div>
+              <button type="button" disabled={!displayedInputMatches} title={displayedInputMatches ? 'Focus the requested step in its retained revision' : 'Waiting for the requested procedure revision'} onclick={showCurrentInputStep}>Show step</button>
             </div>
           {/if}
 
