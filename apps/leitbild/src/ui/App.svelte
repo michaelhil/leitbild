@@ -796,15 +796,22 @@
 
   /* A crowded Run bar gives way in order, so nothing overlaps: first the Workspace name
      ellipsises down to four letters, never further, as it is the way back to the Workspace
-     page; then the Run's title; then, at 760 px and below, the Run's core controls wrap
+     page; then the Run and Room titles; fixed controls wrap when they exhaust the
+     available width. At 760 px and below, the Run's core controls wrap
      in their own strip (SimulationRunControls.svelte). The identity never gets
      narrower than its mark, those letters and the people control (the name's grid column
      has no minimum, so the name adds only its four letters to that), its shrink weight
-     makes it give way before the Run's controls, and no other control in the bar shrinks. */
+     makes it give way before the Run's controls; the Room selector can also shrink
+     while its scope and action buttons retain their size. */
   .workspace-identity { min-width: auto; flex-shrink: 100; }
   .workspace-name { display: grid; grid-template-columns: minmax(0, auto); min-width: 4ch; }
   .workspace-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .workspace-actions > :global(:not(.run-controls)) { flex-shrink: 0; }
+  .workspace-bar { height: auto; min-height: 42px; }
+  .workspace-actions { flex-wrap: wrap; }
+  .workspace-actions > :global(:not(.run-controls):not(.run-room-controls)) { flex-shrink: 0; }
+  .workspace-actions > :global(.run-room-controls) { flex: 0 1 auto; }
+  .workspace-actions :global(.run-room-controls select) { min-width: 4ch; flex: 1 1 auto; }
+  .workspace-actions :global(.run-room-controls > :not(select)) { flex-shrink: 0; }
   .guide-back { flex: none; color: #aebbb0; font-size: .78rem; text-decoration: none; white-space: nowrap; }
   .guide-back:hover { color: white; }
   .guide-back:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; border-radius: 4px; }
