@@ -1582,6 +1582,21 @@
   </span>
 {/snippet}
 
+{#snippet procedureRunActions()}
+  {#if completedRun}
+    <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
+  {:else if activeRun}
+    <button type="button" class="complete" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'completed' }}>
+      {#if pendingControl === 'complete'}{@render recordingNote()}{:else}Complete…{/if}
+    </button>
+    <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
+  {:else}
+    <button type="button" class="run" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'run' }}>
+      {#if pendingControl === 'run'}{@render recordingNote()}{:else}<Play size={13} aria-hidden="true" /> {selectedProcedureRun?.status === 'transferred' ? 'Resume' : 'Run'}{/if}
+    </button>
+  {/if}
+{/snippet}
+
 {#snippet recordingNote()}
   <span class="procedure-recording" role="status"><span class="procedure-spinner" aria-hidden="true"></span>Recording…</span>
 {/snippet}
@@ -1795,17 +1810,24 @@
           <div class="procedure-document-toolbar">
             <div class="procedure-document-title">
               <span class="procedure-unit-chip" title="Procedures in this window are for {displayUnitName}">{displayUnitName}</span>
-              <h2>{document.procedureId} — {document.title}</h2>
+              <h2 title={`${document.procedureId} — ${document.title}`} aria-label={`${document.procedureId} — ${document.title}`}>{windowBounds.width <= compactProcedureWidth ? document.procedureId : `${document.procedureId} — ${document.title}`}</h2>
               <span class="procedure-info-shell">
-                <button type="button" class="procedure-info-button" aria-label="About {document.procedureId}" aria-expanded={summaryOpen} onclick={() => { summaryOpen = !summaryOpen }}>
-                  <Info size={17} aria-hidden="true" />
+                <button type="button" class="procedure-info-button" aria-label={windowBounds.width <= compactProcedureWidth ? `Details and actions for ${document.procedureId}` : `About ${document.procedureId}`} aria-expanded={summaryOpen} onclick={() => { summaryOpen = !summaryOpen }}>
+                  {#if windowBounds.width <= compactProcedureWidth}<MoreHorizontal size={17} aria-hidden="true" />{:else}<Info size={17} aria-hidden="true" />{/if}
                 </button>
                 {#if summaryOpen}
-                <div class="procedure-info-popover procedure-summary-popover" role="dialog" aria-label="About {document.procedureId}" tabindex="-1" onkeydown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); summaryOpen = false } }}>
+                <div class="procedure-info-popover procedure-summary-popover" role="dialog" aria-label={windowBounds.width <= compactProcedureWidth ? `Details and actions for ${document.procedureId}` : `About ${document.procedureId}`} tabindex="-1" onkeydown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); summaryOpen = false } }}>
                   <div class="procedure-popover-head">
-                    <b>About {document.procedureId}</b>
+                    <b>{windowBounds.width <= compactProcedureWidth ? `${displayUnitName} · ${document.procedureId}` : `About ${document.procedureId}`}</b>
                     <button type="button" aria-label="Close" onclick={() => { summaryOpen = false }}><X size={14} aria-hidden="true" /></button>
                   </div>
+                  {#if windowBounds.width <= compactProcedureWidth}
+                    <div class="procedure-mode-actions">
+                      {@render procedureRunActions()}
+                      <button type="button" onclick={() => document && void loadBasis({ sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath, lineCount: 100 })}>Read retained procedure source</button>
+                    </div>
+                    <p><b>{document.procedureId} — {document.title}</b></p>
+                  {/if}
                   {#if document.description}<p class="procedure-summary-text">{@render procedureText(procedureDescriptionText(document.description), [])}</p>{/if}
                   {#if document.appliesTo}<p><b>Applies to</b> {document.appliesTo}</p>{/if}
                   {#if document.referencePlant}<p><b>Reference plant</b> {document.referencePlant}</p>{/if}
@@ -1817,9 +1839,11 @@
                 </div>
                 {/if}
               </span>
+              {#if windowBounds.width > compactProcedureWidth}
               <button type="button" class="procedure-source-icon" onclick={() => document && void loadBasis({ sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath, lineCount: 100 })} title="Read retained procedure source" aria-label="Read retained procedure source">
                 <ExternalLink size={15} aria-hidden="true" />
               </button>
+              {/if}
             </div>
             <div class="procedure-mode-actions">
               <span class="procedure-status-pill {selectedProcedureRun?.status ?? 'idle'}">
@@ -1835,18 +1859,7 @@
                   >step {currentProcedureStep.step.label}/{document.steps.length}</button>
                 {/if}
               </span>
-              {#if completedRun}
-                <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
-              {:else if activeRun}
-                <button type="button" class="complete" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'completed' }}>
-                  {#if pendingControl === 'complete'}{@render recordingNote()}{:else}Complete…{/if}
-                </button>
-                <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
-              {:else}
-                <button type="button" class="run" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'run' }}>
-                  {#if pendingControl === 'run'}{@render recordingNote()}{:else}<Play size={13} aria-hidden="true" /> {selectedProcedureRun?.status === 'transferred' ? 'Resume' : 'Run'}{/if}
-                </button>
-              {/if}
+              {#if windowBounds.width > compactProcedureWidth}{@render procedureRunActions()}{/if}
             </div>
           </div>
           {@render errorStrips()}
@@ -2078,6 +2091,15 @@
   .procedure-input-band summary { cursor: pointer; }
   .procedure-input-band button { flex: 0 0 auto; min-height: 44px; border: 1px solid #d6c5a0; border-radius: 5px; padding: 6px 10px; color: inherit; background: #fff; cursor: pointer; }
   .procedure-toc-label { display: none; }
+  :global(.procedure-modal.compact-procedure .procedure-document-toolbar) { flex-direction: row; flex-wrap: nowrap; gap: 6px; padding: 4px 8px; flex-shrink: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-document-title) { flex: 1; gap: 4px; }
+  :global(.procedure-modal.compact-procedure .procedure-document-title h2) { margin: 0; font-size: 14px; line-height: 1.2; }
+  :global(.procedure-modal.compact-procedure .procedure-mode-actions) { flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; }
+  :global(.procedure-modal.compact-procedure .procedure-info-button) { min-width: 44px; min-height: 44px; cursor: pointer; }
+  :global(.procedure-modal.compact-procedure .procedure-info-shell) { position: static; }
+  :global(.procedure-modal.compact-procedure .procedure-summary-popover) { top: 8px; left: 8px; right: 8px; width: auto; max-height: calc(100% - 16px); transform: none; margin-top: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-summary-popover .procedure-mode-actions) { flex-wrap: wrap; justify-content: flex-start; }
+  :global(.procedure-modal.compact-procedure .procedure-summary-popover button) { min-height: 44px; }
   :global(.procedure-modal.compact-procedure .procedure-input-band) { padding: 8px; gap: 8px; }
   :global(.procedure-modal.compact-procedure .procedure-header-bar) { touch-action: pan-x; }
   :global(.procedure-modal.compact-procedure .procedure-grip) { touch-action: none; }
