@@ -20,8 +20,8 @@ const viewSchema = z.object({ sequence: z.number().int().nonnegative(), run: z.o
 export type ProcedureResumeView = z.infer<typeof viewSchema>
 const waitSchema = z.object({ sequence: z.number(), events: z.array(z.object({
   type: z.string(), seq: z.number(), runId: z.string().optional(), changedBy: z.string().optional(),
-  selectedBy: z.string().optional(), driver: z.object({ kind: z.string(), actorId: z.string() }).optional(),
-})).optional() })
+  selectedBy: z.string().optional(), closedBy: z.string().optional(), status: z.string().optional(), driver: z.object({ kind: z.string(), actorId: z.string() }).optional(),
+})).optional(), next: viewSchema.optional() })
 export type ProcedureResumeChange = z.infer<typeof waitSchema>
 interface Candidate {
   resource: WorkspaceResourceReference
@@ -37,6 +37,7 @@ const record = (value: unknown): value is Record<string, unknown> => typeof valu
 /** Successful receipts, not model prose, establish what this turn delegated and where. */
 export const procedureDelegationsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyArray<Candidate> => {
   const candidates = new Map<string, Candidate>()
+  const readSequences = new Map<string, number>()
   for (const call of calls) {
     if (call.tool !== 'workspace_call' || call.result?.success !== true || !record(call.arguments) || !Array.isArray(call.arguments.calls)
       || !record(call.result.data) || !Array.isArray(call.result.data.results)) continue
@@ -51,6 +52,8 @@ export const procedureDelegationsOf = (calls: ReadonlyArray<ExecutionCall>): Rea
       if (!runId) continue
       const key = JSON.stringify([target.data, runId])
       const previous = candidates.get(key)
+      const beforeSequence = previous?.sequence ?? readSequences.get(key)
+      if (view.success) readSequences.set(key, view.data.sequence)
       // An accepted start/transition supplies a World-owned driver proof. A
       // successful implicit step read also proves the caller drives that Run.
       const command = entry.data.ok === true && typeof entry.data.commandId === 'string'
@@ -63,7 +66,9 @@ export const procedureDelegationsOf = (calls: ReadonlyArray<ExecutionCall>): Rea
       const pending = view.success ? view.data.run.inputRequest : previous
       candidates.set(key, { ...activePrevious, resource: target.data, runId,
         ...(ownerProof === undefined ? {} : { ownerId: ownerProof }),
-        ...(view.success ? { sequence: view.data.sequence } : {}),
+        ...(view.success ? { sequence: entry.operationId === 'world.procedure.run.request-input'
+          && view.data.run.inputRequest?.requestId !== entry.data.commandId && beforeSequence !== undefined
+            ? beforeSequence : view.data.sequence } : {}),
         ...(pending?.requestId === undefined ? {} : { requestId: pending.requestId, stepId: pending.stepId }),
         ...(entry.operationId === 'world.procedure.run.request-input' && command
           ? { requestId: entry.data.commandId as string, stepId: input.stepId as string } : {}),
@@ -90,7 +95,7 @@ export const createProcedureResumeReader = (deps: { workspaceId: WorkspaceId; ho
   return {
     read: async (resource, runId, agent, signal) => viewSchema.parse(await invoke(readOperation, resource, runId === undefined ? {} : { runId }, agent, signal)),
     wait: async (resource, runId, sequence, agent, signal) => waitSchema.parse(await invoke(waitOperation, resource, {
-      afterSequence: sequence, events: [
+      afterSequence: sequence, procedureRunId: runId, events: [
         { type: 'procedure.branch.selected', procedureRunId: runId },
         { type: 'procedure.run.driver.changed', procedureRunId: runId },
         { type: 'procedure.run.closed', procedureRunId: runId },
@@ -111,7 +116,7 @@ const idleForResume = async (ai: AIAgent, signal: AbortSignal): Promise<void> =>
 })
 
 interface Watch extends Candidate {
-  readonly key: string
+  key: string
   readonly roomId: string
   readonly scopeRevision: number
   readonly agentId: string
@@ -151,9 +156,26 @@ export const createProcedureResumes = (deps: {
       for (;;) {
         ai = eligible(watch)
         if (!ai) return
-        const view = await deps.reader.read(watch.resource, watch.runId, ai, watch.abort.signal)
+        const view: ProcedureResumeView = changed?.next ?? await deps.reader.read(watch.resource, watch.runId, ai, watch.abort.signal)
+        if (view.run.runId !== watch.runId) {
+          // World follows a transferred Run's declared branch to the exact
+          // destination this caller now drives. Never derive it from a name.
+          const humanAnswer = requestId !== undefined && changed?.events?.some(event => event.runId === watch.runId && (
+            (event.type === 'procedure.branch.selected' && event.selectedBy !== watch.ownerId)
+            || (event.type === 'procedure.run.closed' && event.status === 'transferred' && event.closedBy !== watch.ownerId))) === true
+          if (!humanAnswer || view.run.status !== 'active' || view.run.driver?.actorId !== watch.ownerId) return
+          const key = JSON.stringify([watch.roomId, watch.agentId, watch.resource, view.run.runId])
+          if (watches.has(key)) return // A newer accepted turn already owns continuation there.
+          watches.delete(watch.key)
+          watch.key = key
+          watch.runId = view.run.runId
+          watches.set(key, watch)
+          cursor = view.sequence
+          requestId = view.run.inputRequest?.requestId
+          ready = 'answered'
+        }
         if (!eligible(watch) || view.run.runId !== watch.runId || view.run.status !== 'active') return
-        const driver = view.run.driver
+        const driver: ProcedureResumeView['run']['driver'] = view.run.driver
         if (driver?.kind === 'ai' && driver.actorId !== watch.ownerId) return
         const answered = requestId !== undefined && view.run.inputRequest?.requestId !== requestId
           && changed?.events?.some(event => event.type === 'procedure.branch.selected' && event.runId === watch.runId && event.selectedBy !== watch.ownerId) === true
@@ -195,7 +217,11 @@ export const createProcedureResumes = (deps: {
     answered: (input: { executionTurnId: string; roomId: string; messageId: string }): void => {
       if (disposed) return
       const turn = deps.executions.getTurn(input.roomId, input.executionTurnId), room = deps.rooms.getRoom(input.roomId)
-      if (turn?.status !== 'completed' || !room) return
+      if (!turn || !room) return
+      const validatedFailure = turn.status === 'failed' && room.getRetainedMessages().some(message => message.id === input.messageId
+        && message.senderId === turn.agentId && message.generationTraceId === turn.id && message.type === 'error'
+        && String(message.errorCode) === 'response_validation_failed')
+      if (turn.status !== 'completed' && !validatedFailure) return
       const calls = deps.executions.listCalls(input.roomId, input.executionTurnId).flatMap(call => {
         const full = deps.executions.getCall(input.roomId, input.executionTurnId, call.id)
         return full === undefined ? [] : [full]

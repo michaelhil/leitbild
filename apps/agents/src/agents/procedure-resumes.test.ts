@@ -3,6 +3,7 @@ import { workspaceResourceReferenceSchema, type WorkspaceId } from '@leitbild/co
 import { createExecutionStore } from '../core/executions/store.ts'
 import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
+import type { MessageErrorCode } from '../core/types/messaging.ts'
 import type { AIAgent, RequestedTurn } from '../core/types/agent.ts'
 import { createTeam } from './team.ts'
 import { createProcedureResumes, createProcedureResumeReader, procedureDelegationsOf, type ProcedureResumeChange, type ProcedureResumeView } from './procedure-resumes.ts'
@@ -35,7 +36,7 @@ const setup = (withInput = true) => {
       signal.addEventListener('abort', () => { const index = pending.indexOf(entry); if (index >= 0) pending.splice(index, 1); reject(signal.reason) }, { once: true })
     }),
   } })
-  const turn = (id: string, withRequest = withInput, release = false) => {
+  const turn = (id: string, withRequest = withInput, release = false, status: 'completed' | 'failed' | 'interrupted' = 'completed') => {
     store.beginTurn({ id, roomId: room.profile.id, agentId: agent.id, startedAt: Date.now() })
     const calls = [
       { key: 'start', operationId: 'world.procedure.run.start', input: { procedureId: 'E-0', scope: { plantId: 'plant:one' } } },
@@ -47,14 +48,14 @@ const setup = (withInput = true) => {
       target: { kind: 'resource', ref: resource }, success: true,
       data: { ok: true, commandId: `command:${call.key === 'question' ? 'question' : call.key}`, ...(call.key === 'start' ? { next: baseView() } : {}) },
     })) } })
-    store.finishTurn(id, 'completed')
+    store.finishTurn(id, status)
     resumes.answered({ executionTurnId: id, roomId: room.profile.id, messageId: `answer-${id}` })
   }
-  const change = async (view: ProcedureResumeView, event: NonNullable<ProcedureResumeChange['events']>[number]) => {
+  const change = async (view: ProcedureResumeView, event: NonNullable<ProcedureResumeChange['events']>[number], nextView?: ProcedureResumeView) => {
     world = view
     const next = pending.shift()
     expect(next).toBeDefined()
-    next!.resolve({ sequence: event.seq, events: [event] })
+    next!.resolve({ sequence: event.seq, events: [event], ...(nextView === undefined ? {} : { next: nextView }) })
     await flush()
   }
   return { resumes, room, agent, requested, reads, pending, store, turn, change, setBusy, setWorld: (view: ProcedureResumeView) => { world = view } }
@@ -75,6 +76,62 @@ describe('delegated procedure continuation', () => {
     expect(s.requested[0]!.instruction).toContain('run-1')
     expect(s.resumes.watching()).toEqual([])
     s.resumes.dispose(); s.store.close()
+  })
+
+  test('a person answering before the final reply is still observed from the preceding causal cursor', async () => {
+    const s = setup()
+    const answered = baseView(); answered.sequence = 15; answered.run.currentStepId = 'second'
+    s.setWorld(answered)
+    // The command's later next-view already contains the answer; the prior
+    // exact World step-read sequence must not be overwritten with that view.
+    s.store.beginTurn({ id: 'fast', roomId: s.room.profile.id, agentId: s.agent.id, startedAt: 1 })
+    const input = { runId: answered.run.runId, stepId: 'first', issue: 'Operator input.' }
+    for (const [id, operationId, args, data] of [
+      ['read', 'world.procedure.run.step.read', {}, baseView()],
+      ['question', 'world.procedure.run.request-input', input, { ok: true, commandId: 'command:question', next: answered }],
+    ] as const) {
+      s.store.recordAttempt('fast', { id, tool: 'workspace_call', arguments: { calls: [{ key: id, operationId, input: args }] }, startedAt: 1 })
+      s.store.recordOutcome('fast', id, { success: true, data: { results: [{ key: id, operationId, success: true, target: { kind: 'resource', ref: resource }, data }] } })
+    }
+    s.store.finishTurn('fast', 'completed')
+    s.resumes.answered({ executionTurnId: 'fast', roomId: s.room.profile.id, messageId: 'answer-fast' }); await flush()
+    expect(s.pending[0]!.sequence).toBe(10)
+    await s.change(answered, { type: 'procedure.branch.selected', seq: 14, runId: answered.run.runId, selectedBy: 'actor:operator' }, answered)
+    expect(s.requested).toHaveLength(1)
+    s.resumes.dispose(); s.store.close()
+  })
+
+  test('a human answer transferring a held procedure follows only the World-owned destination', async () => {
+    for (const closedOnly of [false, true]) {
+      const s = setup(); s.turn('one'); await flush()
+      const destination = baseView(); destination.run.runId = 'procedure-run:es01'; destination.run.procedureId = 'ES-0.1'
+      await s.change(destination, closedOnly
+        ? { type: 'procedure.run.closed', seq: 14, runId: 'procedure-run:e0', status: 'transferred', closedBy: 'actor:operator' }
+        : { type: 'procedure.branch.selected', seq: 12, runId: 'procedure-run:e0', selectedBy: 'actor:operator' }, destination)
+      expect(s.requested).toHaveLength(1)
+      expect(s.requested[0]!.instruction).toContain('exact runId procedure-run:es01')
+      expect(s.requested[0]!.instruction).toContain('Continue delegated procedure ES-0.1')
+      expect(s.resumes.watching()).toEqual([])
+      s.resumes.dispose(); s.store.close()
+    }
+  })
+
+  test('only an exact posted answer-validation error preserves a committed input delegation', async () => {
+    for (const kind of ['response_validation_failed', 'network', 'interrupted', 'wrong-turn'] as const) {
+      const s = setup(); s.turn(kind, true, false, kind === 'interrupted' ? 'interrupted' : 'failed'); await flush()
+      expect(s.resumes.watching()).toEqual([])
+      const message = s.room.post({ senderId: s.agent.id, content: 'Answer rejected against evidence.', type: 'error',
+        errorCode: (kind === 'network' ? 'network' : 'response_validation_failed') as MessageErrorCode,
+        generationTraceId: kind === 'wrong-turn' ? 'different-turn' : kind })
+      s.resumes.answered({ executionTurnId: kind, roomId: s.room.profile.id, messageId: message.id }); await flush()
+      expect(s.resumes.watching()).toEqual(kind === 'response_validation_failed' ? ['procedure-run:e0'] : [])
+      if (kind === 'response_validation_failed') {
+        const answered = baseView(); answered.run.currentStepId = 'second'
+        await s.change(answered, { type: 'procedure.branch.selected', seq: 12, runId: answered.run.runId, selectedBy: 'actor:operator' })
+        expect(s.requested).toHaveLength(1)
+      } else expect(s.requested).toHaveLength(0)
+      s.resumes.dispose(); s.store.close()
+    }
   })
 
   test('Take over and manual work never wake the AI; explicit Hand back does', async () => {

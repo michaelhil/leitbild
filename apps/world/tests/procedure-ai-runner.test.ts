@@ -232,6 +232,26 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(run.snapshot().procedures!.runs.find(candidate => candidate.runId === firstId)!.inputRequest).toBeUndefined()
   })
 
+  test('waiting on a human answer returns the exact transferred destination still driven by the AI', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant', displayName: 'Assistant' })
+    const human = access(workspaceId, { kind: 'human' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    const runId = started.body.result.pinned.runId
+    await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+      basis: 'Test setup uses recorded readings, not a qualification claim.', evidenceTagIds: ['TRIP-BKR-A'] }, ai)
+    const input = await invoke('world.procedure.run.request-input', { runId, stepId: 'verify-turbine-trip', issue: 'Operator confirms the next procedure path.' }, ai)
+    const waiting = invoke('world.simulation-run.wait', { afterSequence: input.body.result.next.sequence, procedureRunId: runId,
+      events: [{ type: 'procedure.branch.selected', procedureRunId: runId }, { type: 'procedure.run.closed', procedureRunId: runId }] }, ai)
+    expect((await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0 }, human)).status).toBe(200)
+    const continued = await waiting
+    expect(continued.status).toBe(200)
+    expect(continued.body.result.next.run).toMatchObject({ procedureId: 'ES-0.1', status: 'active', driver: { kind: 'ai', actorId: 'actor:ai:assistant' } })
+    expect(continued.body.result.next.run.runId).not.toBe(runId)
+    expect(run.snapshot().procedures!.runs.find(candidate => candidate.runId === runId)).toMatchObject({ status: 'transferred' })
+  })
+
   test('an AI agent\'s transfer answers with the destination\'s current step, which it now drives', async () => {
     const { registry, workspaceId, run, plantId } = await setup()
     const invoke = invoker(registry, workspaceId, run.id)

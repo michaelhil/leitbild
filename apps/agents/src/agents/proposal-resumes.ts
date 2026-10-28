@@ -262,8 +262,15 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
       if (disposed || watchedTurns.has(input.executionTurnId)) return
       try {
         const turn = deps.executions.getTurn(input.roomId, input.executionTurnId)
-        // A turn that failed or was cancelled did not end on a hold.
-        if (turn?.status !== 'completed') return
+        if (!turn) return
+        // A final answer rejected for contradicting evidence does not undo
+        // its committed proposals. Only that exact posted error may continue
+        // watching; interruptions and provider failures remain excluded.
+        const room = deps.rooms.getRoom(input.roomId)
+        const validatedFailure = turn.status === 'failed' && room?.getRetainedMessages().some(message => message.id === input.messageId
+          && message.senderId === turn.agentId && message.generationTraceId === turn.id && message.type === 'error'
+          && String(message.errorCode) === 'response_validation_failed') === true
+        if (turn.status !== 'completed' && !validatedFailure) return
         const calls = callsOf(deps.executions, turn.roomId, turn.id)
         const recorded = proposedOperationsOf(calls)
           .filter((operation): operation is Watched['operation'] => operation.outcome.kind === 'recorded')

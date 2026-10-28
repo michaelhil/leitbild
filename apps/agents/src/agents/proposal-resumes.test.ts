@@ -4,6 +4,7 @@ import { createExecutionStore, type ExecutionTurn } from '../core/executions/sto
 import { createRoomDirectory } from '../core/rooms/directory.ts'
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { PROCEDURE_RUNNER_SKILL, PROPOSAL_RESUME_CAUSE } from '../core/proposal-resume.ts'
+import type { MessageErrorCode } from '../core/types/messaging.ts'
 import type { AIAgent, RequestedTurn, RequestedTurnResult } from '../core/types/agent.ts'
 import { PROPOSE_OPERATION_ID } from './operation-claims.ts'
 import { createProposalCardReader, PROPOSALS_OPERATION_ID } from './proposal-cards.ts'
@@ -108,6 +109,23 @@ const setup = (options: { readonly skills?: ReadonlyArray<string>; readonly watc
 }
 
 describe('resuming a procedure once its proposal is approved', () => {
+  test('a posted evidence-validation failure does not discard committed proposals; provider failures do', async () => {
+    for (const code of ['response_validation_failed', 'network'] as const) {
+      const s = setup()
+      s.turn(code, [propose('call_0_0', 'command:trip')], 'failed')
+      s.world.set('command:trip', { status: 'pending' })
+      const posted = s.room.post({ senderId: s.agent.id, content: 'Final answer failed.', type: 'error',
+        errorCode: code as MessageErrorCode, generationTraceId: code })
+      s.answered(code, posted.id)
+      expect(s.resumes.watching()).toEqual(code === 'response_validation_failed' ? [code] : [])
+      if (code === 'response_validation_failed') {
+        await s.tick(); s.decide('command:trip', 'approved'); await s.tick()
+        expect(s.turns).toHaveLength(1)
+      } else expect(s.turns).toHaveLength(0)
+      s.resumes.dispose()
+    }
+  })
+
   test('a trip proposed for E-0 resumes the same agent in the same room once, replying to the proposing answer', async () => {
     const s = setup()
     s.turn('turn-1', [propose('call_0_0', 'command:trip')])
