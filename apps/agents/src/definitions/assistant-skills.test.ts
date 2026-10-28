@@ -94,6 +94,8 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('It is done once a reading shows its effect')
     expect(runner.body).toContain('use feedback, not demand')
     expect(runner.body).toContain('an unbound tag is not absent equipment')
+    expect(runner.body).toContain('Normal ranges, no alarm or an armed rule do not prove another threshold')
+    expect(runner.body).toContain('read its exact criterion or applicable model guidance')
     expect(runner.body).toContain('onComplete: "pause"')
     expect(runner.body).toContain('shared Run advances')
     expect(runner.body).toContain('Never start unlimited execution')
