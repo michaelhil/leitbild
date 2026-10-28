@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
+import { availableParallelism } from 'node:os'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { loadKnowledge, knowledgeSnapshotPath, type Knowledge } from '@leitbild/knowledge'
@@ -8,21 +9,18 @@ import {
   listProductSourcePaths,
   productDocumentAuthority,
   productDocumentKind,
+  readProductSource,
   readProductRevision,
   type ProductDocumentAuthority,
   type ProductDocumentKind,
 } from '@leitbild/knowledge/source'
 
-const MAX_CORPUS_BYTES = 32_000_000
 const MAX_READ_LINES = 200
 
 interface ProductDocument {
-  readonly revision?: string
   readonly path: string
   readonly kind: ProductDocumentKind
   readonly authority: ProductDocumentAuthority
-  readonly content: string
-  readonly lines: ReadonlyArray<string>
 }
 
 interface ProductCorpus {
@@ -48,15 +46,11 @@ const readInputSchema = z.object({
 
 const loadCorpus = async (root: string): Promise<ProductCorpus> => {
   const documents: ProductDocument[] = []
-  let totalBytes = 0
   for (const path of await listProductSourcePaths(root)) {
     const absolutePath = resolve(root, path)
     const file = await stat(absolutePath)
     if (file.size > MAX_PRODUCT_SOURCE_BYTES) continue
-    totalBytes += file.size
-    if (totalBytes > MAX_CORPUS_BYTES) throw new Error(`Product knowledge corpus exceeds ${MAX_CORPUS_BYTES} bytes`)
-    const content = await readFile(absolutePath, 'utf8')
-    documents.push({ path, kind: productDocumentKind(path), authority: productDocumentAuthority(path), content, lines: content.split(/\r?\n/) })
+    documents.push({ path, kind: productDocumentKind(path), authority: productDocumentAuthority(path) })
   }
   return { revision: await readProductRevision(root), documents }
 }
@@ -70,7 +64,9 @@ const normalizeTerms = (query: string): ReadonlyArray<string> => {
 export const createProductKnowledgeTools = (options: { readonly repoRoot?: string; readonly knowledge?: () => Promise<Knowledge> } = {}): ReadonlyArray<Tool> => {
   const root = resolve(options.repoRoot ?? resolve(import.meta.dir, '../../../../..'))
   let corpusPromise: Promise<ProductCorpus> | undefined
-  // Share successful immutable-release data and concurrent initialization, but
+  // Retain only the immutable release's allowed-path catalog. Search reads a
+  // hardware-bounded group; a larger release cannot disable the entire corpus or
+  // retain a full text/line copy in every Workspace. Share initialization, but
   // do not turn a transient filesystem failure into a deployment-long outage.
   const corpus = (): Promise<ProductCorpus> => corpusPromise ??= loadCorpus(root).catch(error => {
     corpusPromise = undefined
@@ -94,11 +90,48 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
       },
       required: ['query'],
     },
-    execute: async params => {
+    execute: async (params, context) => {
       const input = searchInputSchema.safeParse(params)
       if (!input.success) return { success: false, error: input.error.message }
+      const terms = normalizeTerms(input.data.query)
       const [sourceResult, wikiResult] = await Promise.allSettled([
-        corpus(), input.data.kind === 'source' ? Promise.resolve(undefined) : Promise.resolve().then(async () => {
+        (async () => {
+          const loaded = await corpus()
+          const matches: Array<ProductDocument & { revision: string; score: number; line: number; snippet: string }> = []
+          const documents = loaded.documents.filter(document => input.data.kind === 'all' || document.kind === input.data.kind)
+          let nextDocument = 0, failed = false
+          // Independent filesystem reads share the host's available workers;
+          // this bounds working text without imposing a document/count quota.
+          await Promise.all(Array.from({ length: Math.min(documents.length, availableParallelism()) }, async () => {
+            try {
+              for (;;) {
+                context.signal?.throwIfAborted()
+                if (failed) return
+                const document = documents[nextDocument++]
+                if (!document) return
+                const { content } = await readProductSource(document.path, root)
+                const lowerPath = document.path.toLocaleLowerCase(), lowerContent = content.toLocaleLowerCase()
+                if (!terms.some(term => lowerPath.includes(term) || lowerContent.includes(term))) continue
+                const lines = content.split(/\r?\n/)
+                let bestLine = 0, bestLineScore = -1
+                for (let index = 0; index < lines.length; index += 1) {
+                  const lowerLine = lines[index]!.toLocaleLowerCase()
+                  const score = terms.reduce((sum, term) => sum + (lowerLine.includes(term) ? 3 : 0), 0)
+                  if (score > bestLineScore) { bestLine = index; bestLineScore = score }
+                }
+                const pathScore = terms.reduce((sum, term) => sum + (lowerPath.includes(term) ? 6 : 0), 0)
+                const coverage = terms.reduce((sum, term) => sum + (lowerContent.includes(term) ? 1 : 0), 0)
+                const authorityScore = document.authority === 'implementation' ? 5 : document.authority === 'decision' ? 4 : document.authority === 'domain-language' ? 3 : 0
+                matches.push({ score: pathScore + bestLineScore + coverage + authorityScore,
+                  path: document.path, revision: loaded.revision, kind: document.kind, authority: document.authority,
+                  line: bestLine + 1, snippet: lines.slice(Math.max(0, bestLine - 1), Math.min(lines.length, bestLine + 2)).join('\n').slice(0, 1_200),
+                })
+              }
+            } catch (error) { failed = true; throw error }
+          }))
+          matches.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+          return { revision: loaded.revision, matches: matches.map(({ score: _score, ...match }) => match) }
+        })(), input.data.kind === 'source' ? Promise.resolve(undefined) : Promise.resolve().then(async () => {
           const wiki = await knowledge()
           return { revision: wiki.revision, found: wiki.search(input.data.query, { offset: input.data.offset, limit: input.data.limit, includeQuality: input.data.includeQuality }) }
         }),
@@ -122,37 +155,7 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
       if (!loaded && (wikiResult.status === 'rejected' || wikiResult.value === undefined)) {
         return { success: false, error: warnings.join('; ') }
       }
-      const terms = normalizeTerms(input.data.query)
-      const rankedMatches = (loaded?.documents ?? [])
-        .filter(document => input.data.kind === 'all' || document.kind === input.data.kind)
-        .flatMap(document => {
-          const lowerPath = document.path.toLocaleLowerCase()
-          const lowerContent = document.content.toLocaleLowerCase()
-          if (!terms.some(term => lowerPath.includes(term) || lowerContent.includes(term))) return []
-          let bestLine = 0
-          let bestLineScore = -1
-          for (let index = 0; index < document.lines.length; index += 1) {
-            const lowerLine = document.lines[index]!.toLocaleLowerCase()
-            const score = terms.reduce((sum, term) => sum + (lowerLine.includes(term) ? 3 : 0), 0)
-            if (score > bestLineScore) { bestLine = index; bestLineScore = score }
-          }
-          const pathScore = terms.reduce((sum, term) => sum + (lowerPath.includes(term) ? 6 : 0), 0)
-          const coverage = terms.reduce((sum, term) => sum + (lowerContent.includes(term) ? 1 : 0), 0)
-          const from = Math.max(0, bestLine - 1)
-          const to = Math.min(document.lines.length, bestLine + 2)
-          const authorityScore = document.authority === 'implementation' ? 5 : document.authority === 'decision' ? 4 : document.authority === 'domain-language' ? 3 : 0
-          return [{
-            score: pathScore + bestLineScore + coverage + authorityScore,
-            path: document.path,
-            revision: document.revision ?? loaded!.revision,
-            kind: document.kind,
-            authority: document.authority,
-            line: bestLine + 1,
-            snippet: document.lines.slice(from, to).join('\n').slice(0, 1_200),
-          }]
-        })
-        .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
-        .map(({ score: _score, ...match }) => match)
+      const rankedMatches = loaded?.matches ?? []
       const matches = rankedMatches.slice(input.data.offset, input.data.offset + input.data.limit)
       return { success: true, data: { ...(loaded ? { revision: loaded.revision } : {}), query: input.data.query, matches: [...knowledgeMatches, ...matches],
         coverage: { partial: warnings.length > 0, knowledge: knowledgeCoverage, source: loaded ? { total: rankedMatches.length, returned: matches.length,
@@ -211,10 +214,13 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
       if (input.data.revision && input.data.revision !== loaded.revision) return { success: false, error: 'Source revision changed; rediscover the deployed source.' }
       const document = loaded.documents.find(candidate => candidate.path === input.data.path)
       if (!document) return { success: false, error: 'Path is not in the Leitbild product knowledge corpus; search for an allowed path first.' }
+      let lines: ReadonlyArray<string>
+      try { lines = (await readProductSource(document.path, root)).content.split(/\r?\n/) }
+      catch (error) { return { success: false, error: `Deployed source unavailable: ${error instanceof Error ? error.message : String(error)}` } }
       const startLine = input.data.startLine ?? 1
       const startIndex = startLine - 1
-      if (startIndex >= document.lines.length) return { success: false, error: `startLine exceeds the file's ${document.lines.length} lines` }
-      const selected = document.lines.slice(startIndex, startIndex + input.data.lineCount)
+      if (startIndex >= lines.length) return { success: false, error: `startLine exceeds the file's ${lines.length} lines` }
+      const selected = lines.slice(startIndex, startIndex + input.data.lineCount)
       return { success: true, data: {
         revision: loaded.revision,
         path: document.path,
@@ -222,7 +228,7 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
         authority: document.authority,
         startLine,
         endLine: startLine + selected.length - 1,
-        totalLines: document.lines.length,
+        totalLines: lines.length,
         content: selected.map((line, index) => `${startLine + index}: ${line}`).join('\n'),
       } }
     },

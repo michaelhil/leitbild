@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createProductKnowledgeTools } from './product-knowledge-tools.ts'
@@ -58,7 +58,7 @@ describe('product knowledge tools', () => {
     expect(failed.error).toContain('Knowledge publication unavailable')
   })
 
-  test('concurrent initialization shares a successful immutable source snapshot', async () => {
+  test('concurrent initialization shares its catalog and reads exact source without retaining the corpus text', async () => {
     const root = await fixture()
     const [search, read] = createProductKnowledgeTools({ repoRoot: root })
     const context = { callerId: 'a', callerName: 'A' }
@@ -67,8 +67,36 @@ describe('product knowledge tools', () => {
     expect(first.every(result => JSON.stringify(result) === JSON.stringify(first[0]))).toBe(true)
     await writeFile(join(root, 'apps/world/src/execution.ts'), 'changed after immutable snapshot')
     const cached = await read!.execute({ path: 'apps/world/src/execution.ts', revision: 'development' }, context)
-    expect(JSON.stringify(cached)).toContain('accelerationMode')
+    expect(JSON.stringify(cached)).toContain('changed after immutable snapshot')
     expect((await read!.execute({ path: 'apps/world/src/execution.ts', revision: 'wrong' }, context)).success).toBe(false)
+  })
+
+  test('a product corpus larger than 32 MB remains searchable with pagination and exact reads', async () => {
+    const root = await fixture(), padding = ' '.repeat(800_000)
+    for (let index = 0; index < 41; index++) await writeFile(join(root, `apps/world/src/corpus-${index}.ts`), `// CorpusCoverage ${index}\n${padding}\n`)
+    const [search, read] = createProductKnowledgeTools({ repoRoot: root })
+    const context = { callerId: 'a', callerName: 'A' }
+    const first = await search!.execute({ query: 'CorpusCoverage', kind: 'source', limit: 20 }, context)
+    expect(first).toMatchObject({ success: true, data: { coverage: { partial: false, source: { total: 41, returned: 20, nextOffset: 20 } } } })
+    const last = await search!.execute({ query: 'CorpusCoverage', kind: 'source', offset: 40 }, context)
+    expect(last).toMatchObject({ success: true, data: { coverage: { partial: false, source: { total: 41, returned: 1 } } } })
+    const path = (last.data as { matches: Array<{ path: string }> }).matches[0]!.path
+    const excerpt = await read!.execute({ path, startLine: 1, lineCount: 1 }, context)
+    expect(excerpt).toMatchObject({ success: true, data: { path, totalLines: 3 } })
+    expect(JSON.stringify(excerpt)).toContain('CorpusCoverage')
+    expect(JSON.stringify(first).length).toBeLessThan(30_000)
+  })
+
+  test('a source replaced by an outside symlink after catalog admission remains unreadable', async () => {
+    const root = await fixture(), path = 'apps/world/src/execution.ts'
+    const [search, read] = createProductKnowledgeTools({ repoRoot: root })
+    const context = { callerId: 'a', callerName: 'A' }
+    expect((await search!.execute({ query: 'acceleration', kind: 'source' }, context)).success).toBe(true)
+    await rm(join(root, path))
+    await symlink(join(root, '.env'), join(root, path))
+    const result = await read!.execute({ path }, context)
+    expect(result.success).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('SECRET=')
   })
 
   test('a wiki search failure reports partial coverage without hiding healthy source matches', async () => {
