@@ -2,6 +2,7 @@ import type { ProcessSignalBinding, ProcessVariableValue, VariablePath } from '.
 import type { CommandOrigin, PackCommandContext } from '../../../simulation/protocol.ts'
 import {
   processPlantActionInvokeCommandKind,
+  processPlantActuationResetCommandKind,
   processPlantControlRampCommandKind,
   processPlantControlWriteCommandKind,
   processPlantIcLifecycleCommandKind,
@@ -20,14 +21,9 @@ import { demandSpanOf, demandStepOf, type DemandSpan } from './demand-span.ts'
 
 // What a command's origin may write, beyond what the I&C validates for
 // everyone (control-write-validation.ts):
-// - On a Plant that does not opt into direct AI operation, an AI agent
-//   proposes and a person approves: its direct writes, ramps, instructor
-//   actions and alarm lifecycle changes are refused (plan-final QA-1). It
-//   may read, validate and propose. While it drives an active procedure Run
-//   on the Plant, it operates the Plant's controls as that procedure's
-//   operator (writes, ramps, alarm lifecycle, actuation resets) until a
-//   person takes the Run over; instructor actions, which set up the event a
-//   procedure answers, stay a person's and the Scenario's.
+// - AI agents use the same validated commands as people by default. An
+//   authored propose policy requires a person's review, except while the AI
+//   drives the Plant's procedure. It never changes the actual command actor.
 // - A fault the scenario injects and a condition outside the Plant are the
 //   instructor's: people inject them through instructor actions, the
 //   Scenario timeline writes them directly, and neither a person's nor an AI
@@ -48,11 +44,12 @@ import { demandSpanOf, demandStepOf, type DemandSpan } from './demand-span.ts'
 //   after the actuation's edge, so a throttle holds until an actuation
 //   enters again.
 
-/** The commands an AI agent issues on a propose-only Plant only through a person's approval, or as the operator of a procedure it drives there. */
+/** Commands restricted by an explicitly authored propose policy. */
 export const aiDirectCommandKinds: ReadonlySet<string> = new Set([
   processPlantControlWriteCommandKind,
   processPlantControlRampCommandKind,
   processPlantActionInvokeCommandKind,
+  processPlantActuationResetCommandKind,
   processPlantIcLifecycleCommandKind,
 ])
 
@@ -61,9 +58,9 @@ export const drivesProcedureOn = (context: PackCommandContext, plantId: string):
 
 /** Why an AI agent may not issue this command on this Plant itself; null where it may, or the origin is no AI agent's. */
 export const aiProposeOnlyRefusal = (kind: string, context: PackCommandContext, plantId: string, aiOperation: ProcessPlantUnitPackData['aiOperation']): string | null => {
-  if (context.origin !== 'ai' || aiOperation === 'direct' || !aiDirectCommandKinds.has(kind)) return null
+  if (context.origin !== 'ai' || aiOperation !== 'propose' || !aiDirectCommandKinds.has(kind)) return null
   if (!drivesProcedureOn(context, plantId)) {
-    return 'An AI agent proposes operations on this Plant for a person to approve (world.process-plant.control.propose); it operates it directly only while it drives an active procedure Run on it'
+    return 'This Plant explicitly requires AI operation proposals for a person to approve (world.process-plant.control.propose); direct operation is allowed only while the AI drives an active procedure Run on it'
   }
   return kind === processPlantActionInvokeCommandKind
     ? 'An instructor action is a person\'s or the Scenario\'s: driving a procedure Run lets an AI agent operate the Plant\'s controls, not set up the event the procedure answers'

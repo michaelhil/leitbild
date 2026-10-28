@@ -32,7 +32,7 @@ import {
 import { processPlantDefinitionSchema,type ProcessPlantDefinition } from '../config.ts'
 import type { ProcessPlantControlProposeResult } from '../capabilities.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { aiProposeOnlyRefusal, drivesProcedureOn, instructorOnlyRefusal, throttledUnder, validateOperatorWrite } from '../operations/command-guard.ts'
+import { aiProposeOnlyRefusal, throttledUnder, validateOperatorWrite } from '../operations/command-guard.ts'
 import { listedResetsFor, proposalPortsFor, resetContextFor } from '../operations/instance-ports.ts'
 import { resetRefusal } from '../operations/actuation-reset.ts'
 import { decideProposal, proposeOperation } from '../operations/proposals.ts'
@@ -357,12 +357,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       proposalId?: string,
     ): string | null => {
       if (plant.protection === undefined) return `process plant I&C is not configured for plant: ${plant.plant.id}`
-      // An AI agent resets one itself only as the operator of a procedure it drives on this Plant.
-      if (context.origin !== 'person' && context.origin !== 'system' && !(context.origin === 'ai' && drivesProcedureOn(context, plant.plant.id))) {
-        return context.origin === 'ai'
-          ? 'An AI agent proposes an actuation reset for a person to approve (world.process-plant.control.propose with reset); it resets one itself only while it drives an active procedure Run on this Plant'
-          : 'A reset needs who takes it'
-      }
+      if (context.origin !== 'person' && context.origin !== 'system' && context.origin !== 'ai') return 'A reset needs who takes it'
+      const policyRefusal = aiProposeOnlyRefusal(command.kind, context, plant.plant.id, aiOperationOf(plant.plant.id))
+      if (policyRefusal !== null) return policyRefusal
       const refusal = resetRefusal(plant.plant, plant.protection.snapshot(), ruleId, resetContextFor(plant))
       if (refusal !== null) return refusal
       const reset = listedResetsFor(plant).find(candidate => candidate.ruleId === ruleId)!
@@ -376,7 +373,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         ...(reason === undefined ? {} : { reason }),
       })
       emitPackRuntimeEvents(handlers, events)
-      if (plant.operations !== undefined && context.origin === 'person') {
+      if (plant.operations !== undefined && (context.origin === 'person' || context.origin === 'ai')) {
         const at = { elapsedMs: plant.runtime.elapsedMs(), wallMs: Date.now() }
         const transitions = plant.operations.recordReset({
           commandId: command.id, kind: 'reset', ruleId, label: reset.label, holds: [...reset.holds],
@@ -523,9 +520,6 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
                 },
               })
               if (!result.accepted) throw new Error(result.reason)
-              // An instructor action is a person's or the Scenario's; an AI agent's reaches no fault or boundary input.
-              const refusal = context.origin === 'ai' ? instructorOnlyRefusal(plant.plant.graph.signalBindingByPath.get(result.targetPath)!, context.origin) : null
-              if (refusal !== null) throw new Error(refusal)
               return { type: 'setVariable' as const, path: result.targetPath, value: actionCommand.value }
             })
             const boundary = coupledBoundaryEffect(boundaryVariablesByPlant.get(payload.data.plantId), validated)

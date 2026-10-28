@@ -89,13 +89,8 @@ export const processPlantUnitPackDataSchema = z.object({
   automation: processPlantAutomationSelectionSchema,
   clusterId: idSchema.optional(),
   coolingWater: z.string().min(1).optional(),
-  /**
-   * How AI agents operate the Plant. Absent, an agent proposes and a person
-   * approves: its direct control writes, ramps, instructor actions and alarm
-   * lifecycle changes are refused (plan-final QA-1). 'direct' lets an agent
-   * operate it itself, as a training sandbox.
-   */
-  aiOperation: z.literal('direct').optional(),
+  /** Direct validated AI operation by default; an authored propose policy requires review outside a driven procedure. */
+  aiOperation: z.enum(['direct', 'propose']).optional(),
   electricalPorts: z.array(electricalPortDefinitionSchema),
   projection: processPlantUnitProjectionSchema.optional(),
 }).strict()
