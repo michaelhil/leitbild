@@ -35,7 +35,7 @@ for (const [design, data] of unique) {
   const demand = physicalMeshDemandScene(scene, view)
   prepared.push({ design, meshes: physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))) })
 }
-const records = []
+const records: Array<Record<string, unknown>> = []
 for (const { design, meshes } of prepared) {
   let expected: string | undefined
   const run = (engine: 'before' | 'current' | 'index-only', phase: 'calibration' | 'paired', ordinal: number) => {
