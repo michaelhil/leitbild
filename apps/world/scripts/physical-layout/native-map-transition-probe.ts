@@ -27,11 +27,13 @@ const testedAppCommit = Bun.spawnSync(['git', 'rev-parse', testedRef], { cwd: re
 if (!/^[0-9a-f]{40}$/.test(testedAppCommit)) throw Error('The tested app commit must resolve locally')
 if(info.builtApp!==testedAppCommit||info.appSourceCommit!==testedAppCommit)throw Error('QA metadata does not match the separately built app commit')
 if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(info.url).hostname)) throw Error('Loading proof requires an isolated loopback Run')
+const localCertificateSpki=info.localCertificateSpki
+if(localCertificateSpki!==undefined&&(new URL(info.url).protocol!=='https:'||typeof localCertificateSpki!=='string'||!/^[A-Za-z0-9+/]{43}=$/.test(localCertificateSpki)))throw Error('Local TLS proof requires an HTTPS loopback URL and a SHA-256 certificate SPKI')
 const instrumentPath = resolve(import.meta.dir, `../../tests/browser/physical-scene/${detailInventory ? 'detail-latency-instrumentation' : 'native-map-loading-instrumentation'}.ts`)
 const built = await Bun.build({ entrypoints: [instrumentPath], target: 'browser', format: 'iife', minify: false })
 if (!built.success) throw new AggregateError(built.logs, 'Cannot build loading observer')
 const instrumentation = `window.__nativeLoadingConfiguration={planInkOnly:${planFirst||process.env.LEITBILD_NATIVE_PLAN_INK_ONLY==='1'}};\n` + await built.outputs[0]!.text(), profile = await mkdtemp(join(tmpdir(), 'leitbild-loading-chrome-'))
-const chrome = Bun.spawn(['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '--headless=new', '--js-flags=--expose-gc', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1440,1000', `--force-device-scale-factor=${ratio}`, 'about:blank'], { stdout: 'ignore', stderr: Bun.file(join(folder, 'chrome.stderr.log')) })
+const chrome = Bun.spawn(['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '--headless=new', '--js-flags=--expose-gc', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1440,1000', `--force-device-scale-factor=${ratio}`, ...(localCertificateSpki===undefined?[]:[`--ignore-certificate-errors-spki-list=${localCertificateSpki}`]), 'about:blank'], { stdout: 'ignore', stderr: Bun.file(join(folder, 'chrome.stderr.log')) })
 let socket: WebSocket | null = null, sequence = 0
 const pending = new Map<number, { resolve: (value: any) => void; reject: (error: unknown) => void }>(), exceptions: unknown[] = [], network = new Map<string, any>(), sockets = new Map<string, string>(), socketFrames: Array<{ id: string; url: string | undefined; at: number; bytes: number }> = []
 const call = (method: string, params: any = {}, sessionId?: string): Promise<any> => new Promise((resolve, reject) => { const id = ++sequence; pending.set(id, { resolve, reject }); socket!.send(JSON.stringify({ id, method, params, ...(sessionId ? {sessionId} : {}) })) })
