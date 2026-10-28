@@ -8,6 +8,8 @@ import {
   procedureRunClosePayloadSchema,
   procedureRunDriveCommandKind,
   procedureRunDrivePayloadSchema,
+  procedureRunRequestInputCommandKind,
+  procedureRunRequestInputPayloadSchema,
   procedureRunResetCommandKind,
   procedureRunResetPayloadSchema,
   procedureRunStartCommandKind,
@@ -109,6 +111,13 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
     title: 'Drive procedure run',
     description: 'Input {runId, action: "claim" | "release"}. Claims or releases driving an active procedure run, so the procedure window shows who works it. An AI agent claims a run nobody drives (or one it drives already) and must drive a run to change it; a person\'s claim takes over at once, and a person also takes over by ticking a step, jumping, closing it or selecting a branch off its current step. While a person drives, AI agents only read it. Release makes the run shared again: the driver or a person releases; only then may an AI agent claim it.',
     input: procedureRunDrivePayloadSchema,
+    targets: () => [],
+  }),
+  command({
+    id: procedureRunRequestInputCommandKind,
+    title: 'Request procedure input',
+    description: 'Input {runId, stepId, issue}. The current AI driver names the precise human judgement, field report or missing input it needs at its current step (issue at most 500 characters). Records a durable request without changing the step or clock. The procedure window shows it until the step is answered, changed, closed or handed over; dismissal only hides its notification. Identical pending requests do not repeat. Never request input merely because an observation is unknown when an authored branch or a readable signal settles it.',
+    input: procedureRunRequestInputPayloadSchema,
     targets: () => [],
   }),
   command({

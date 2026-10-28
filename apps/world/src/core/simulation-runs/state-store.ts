@@ -156,7 +156,7 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
       procedures = {
         runs: current.runs.map(run => run.runId === event.runId
           ? {
-              ...run,
+              ...withoutProcedureInputRequest(run),
               status: event.status,
               closedAt: event.closedAt,
               closedBy: event.closedBy,
@@ -184,9 +184,15 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
       const current = procedures ?? { runs: [] }
       procedures = { runs: current.runs.map(run => {
         if (run.runId !== event.runId) return run
-        const { driver: _previous, ...rest } = run
+        const { driver: _previous, ...rest } = event.driver?.kind === 'ai' && event.driver.actorId === run.inputRequest?.requestedBy
+          ? run : withoutProcedureInputRequest(run)
         return event.driver === undefined ? rest : { ...rest, driver: event.driver }
       }) }
+      return
+    }
+    if (event.type === 'procedure.run.input.requested') {
+      const current = procedures ?? { runs: [] }
+      procedures = { runs: current.runs.map(run => run.runId !== event.runId ? run : { ...run, inputRequest: event.request }) }
       return
     }
     if (event.type === 'procedure.observation.updated') {
@@ -243,6 +249,11 @@ const procedureRunMatchesScope = (
     && run.procedureId === config.procedureId
     && sameProcedureScope(run.scope, config.scope)
 
+const withoutProcedureInputRequest = (run: ProcedureRunState): ProcedureRunState => {
+  const { inputRequest: _request, ...rest } = run
+  return rest
+}
+
 const recordProcedureDecision = (
   run: ProcedureRunState,
   event: Extract<SimulationRunEvent, { readonly type: 'procedure.branch.selected' }>,
@@ -264,7 +275,7 @@ const recordProcedureDecision = (
     ? { stepId: event.stepId, assessment: 'blank', favorite: false, decision, updatedAt: event.at, updatedBy: event.selectedBy }
     : { ...existing, decision }
   return {
-    ...run,
+    ...(run.inputRequest?.stepId === event.stepId ? withoutProcedureInputRequest(run) : run),
     stepStates: existing === undefined
       ? [...run.stepStates, nextStep]
       : run.stepStates.map(step => step.stepId === event.stepId ? nextStep : step),
@@ -298,7 +309,7 @@ const updateProcedureRunStep = (
     updatedBy: config.updatedBy,
   }
   return {
-    ...run,
+    ...(config.currentStepId !== undefined && config.currentStepId !== run.inputRequest?.stepId ? withoutProcedureInputRequest(run) : run),
     ...(config.currentStepId === undefined ? {} : { currentStepId: config.currentStepId }),
     stepStates: existing === undefined
       ? [...run.stepStates, nextStep]

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, EventId, IsoTimestamp, ProcedureDocument, SimulationRunEvent, SimulationRunId } from '../src/core/model/index.ts'
-import { nowIso } from '../src/core/model/index.ts'
+import { nowIso, simulationRunEventSchema, procedureRunStateSchema } from '../src/core/model/index.ts'
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
 import { assertAiDecisionEvidence, assertAiWorksCurrentStep, type ProcedureActorKind } from '../src/features/procedures/driver-rules.ts'
 import type { ProcedureObservationPort, ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
@@ -91,7 +91,7 @@ const tripped: Readonly<Record<string, Reading>> = {
 const harness = () => {
   let seq = 0
   let commandSeq = 0
-  const simulationRunId = 'procedure-driver-test' as SimulationRunId
+  const simulationRunId = 'run-procedure-driver-test' as SimulationRunId
   const store = createSimulationRunStateStore()
   store.hydrate({ objects: [], seq: 0 })
   const factory = { eventId: () => `event:${++seq}` as EventId, nextSeq: () => seq }
@@ -127,6 +127,79 @@ const harness = () => {
 }
 
 describe('procedure run driver and AI decision rules', () => {
+  test('a partly worked person-started run stays driverless and is claimed at its existing step', async () => {
+    const h = harness()
+    await h.start(operator)
+    const pinned = h.run()
+    expect(pinned.driver).toBeUndefined()
+    await h.transition(operator, { branchIndex: 0 })
+    expect(h.run().driver).toBeUndefined()
+    await h.execute(assistant, 'world.procedure.run.drive', { runId: pinned.runId, action: 'claim' })
+    expect(h.run()).toMatchObject({ runId: pinned.runId, sourceRevision: pinned.sourceRevision,
+      currentStepId: 'verify-turbine-trip', driver: { kind: 'ai', actorId: assistant.id } })
+    expect(h.run().stepStates.find(step => step.stepId === 'verify-reactor-trip')?.decision?.selectedBy).toBe(operator.id)
+  })
+
+  test('input requests persist, dedupe and survive comments, then clear when the current step is answered', async () => {
+    const h = harness()
+    await h.start()
+    const input = { runId: h.run().runId, stepId: h.run().currentStepId, issue: 'Confirm rod bottom lights from the field panel.' }
+    const events = await h.execute(assistant, 'world.procedure.run.request-input', input)
+    expect(events).toHaveLength(1)
+    expect(simulationRunEventSchema.parse(events[0]).type).toBe('procedure.run.input.requested')
+    const request = h.run().inputRequest!
+    expect(procedureRunStateSchema.parse(h.run()).inputRequest).toEqual(request)
+    expect(request).toMatchObject({ stepId: input.stepId, issue: input.issue, requestedBy: assistant.id })
+    expect(await h.execute(assistant, 'world.procedure.run.request-input', input)).toEqual([])
+    await h.execute(operator, 'world.procedure.step.update', { runId: input.runId, stepId: input.stepId, comment: 'Checking the panel.' })
+    expect(h.run().inputRequest).toEqual(request)
+    await h.transition(operator, { branchIndex: 0 })
+    expect(h.run().inputRequest).toBeUndefined()
+    expect(h.run().driver?.actorId).toBe(assistant.id)
+    expect(h.run().currentStepId).toBe('verify-turbine-trip')
+  })
+
+  test('only the current AI driver can request input; takeover, release, close and reset remove stale requests', async () => {
+    const h = harness()
+    await h.start()
+    const input = () => ({ runId: h.run().runId, stepId: h.run().currentStepId, issue: 'Need an Operations decision.' })
+    await expect(h.execute(otherAgent, 'world.procedure.run.request-input', input())).rejects.toThrow('another AI agent')
+    await expect(h.execute(operator, 'world.procedure.run.request-input', input())).rejects.toThrow('Only the AI driver')
+    await expect(h.execute(assistant, 'world.procedure.run.request-input', { ...input(), stepId: 'check-power' })).rejects.toThrow('current step')
+    await h.execute(assistant, 'world.procedure.run.request-input', input())
+    await h.execute(operator, 'world.procedure.run.drive', { runId: h.run().runId, action: 'claim' })
+    expect(h.run().inputRequest).toBeUndefined()
+    await expect(h.execute(assistant, 'world.procedure.run.request-input', input())).rejects.toThrow('person')
+    await h.execute(operator, 'world.procedure.run.drive', { runId: h.run().runId, action: 'release' })
+    await h.execute(assistant, 'world.procedure.run.drive', { runId: h.run().runId, action: 'claim' })
+    await h.execute(assistant, 'world.procedure.run.request-input', input())
+    await h.execute(assistant, 'world.procedure.run.drive', { runId: h.run().runId, action: 'release' })
+    expect(h.run().inputRequest).toBeUndefined()
+    await h.execute(assistant, 'world.procedure.run.drive', { runId: h.run().runId, action: 'claim' })
+    await h.execute(assistant, 'world.procedure.run.request-input', input())
+    await h.execute(assistant, 'world.procedure.run.close', { runId: h.run().runId, status: 'abandoned' })
+    expect(h.run().inputRequest).toBeUndefined()
+    await h.execute(operator, 'world.procedure.run.reset', { sourceId: source.sourceId, procedureId: 'E-0', scope })
+    expect(h.run()).toBeUndefined()
+  })
+
+  test('a request prepared before human takeover is refused at commit', async () => {
+    const h = harness()
+    await h.start()
+    const run = h.run(), at = nowIso()
+    const prepared = await prepareProcedureCommand({
+      command: { id: 'command:request-race' as CommandEnvelope['id'], simulationRunId: 'run-procedure-driver-test' as SimulationRunId, actorId: assistant.id,
+        kind: 'world.procedure.run.request-input', targetObjectIds: [], issuedAt: at,
+        payload: { runId: run.runId, stepId: run.currentStepId, issue: 'Need field confirmation.' } },
+      procedures: { runs: [run] }, readDocument: async input => documents[input.procedureId]!,
+    })
+    await h.execute(operator, 'world.procedure.run.drive', { runId: run.runId, action: 'claim' })
+    expect(() => prepared!({ simulationRunId: 'run-procedure-driver-test' as SimulationRunId, at,
+      procedures: { runs: [h.run()] }, factory: { eventId: () => 'event:race' as EventId, nextSeq: () => 10 },
+      objectIds: new Set([plantId]), actorKind: 'ai' })).toThrow('person')
+    expect(h.run().inputRequest).toBeUndefined()
+  })
+
   test('an AI agent that starts a procedure drives it, and its normal branch on readable evidence records the readings on the step decision', async () => {
     const h = harness()
     const started = await h.start()
@@ -315,7 +388,7 @@ describe('procedure run driver and AI decision rules', () => {
     let seq = 100
     const factory = { eventId: () => `event:race-${++seq}` as EventId, nextSeq: () => seq }
     const prepared = await prepareProcedureCommand({
-      command: { id: 'command:ai-race' as CommandEnvelope['id'], simulationRunId: 'procedure-driver-test' as SimulationRunId, actorId: assistant.id,
+      command: { id: 'command:ai-race' as CommandEnvelope['id'], simulationRunId: 'run-procedure-driver-test' as SimulationRunId, actorId: assistant.id,
         kind: 'world.procedure.run.transition', targetObjectIds: [], issuedAt: at, payload: { runId: run.runId, stepId: 'verify-reactor-trip', branchIndex: 0, ...h.evidence } },
       procedures: { runs: [run] }, readDocument: async input => documents[input.procedureId]!, observations: () => fakePort(tripped, []),
     })
@@ -323,7 +396,7 @@ describe('procedure run driver and AI decision rules', () => {
     await h.execute(operator, 'world.procedure.step.update', { runId: run.runId, stepId: 'verify-reactor-trip', assessment: 'unknown' })
     expect(h.run().driver?.kind).toBe('person')
     const store = { runs: [h.run()] }
-    expect(() => prepared!({ simulationRunId: 'procedure-driver-test' as SimulationRunId, at, procedures: store, factory,
+    expect(() => prepared!({ simulationRunId: 'run-procedure-driver-test' as SimulationRunId, at, procedures: store, factory,
       objectIds: new Set([plantId]), actorKind: 'ai', actorLabel: 'Assistant' })).toThrow('A person drives E-0 on Unit 2')
     expect(h.run().stepStates.find(step => step.stepId === 'verify-reactor-trip')).toMatchObject({ assessment: 'unknown' })
     expect(h.run().stepStates.find(step => step.stepId === 'verify-reactor-trip')?.decision).toBeUndefined()

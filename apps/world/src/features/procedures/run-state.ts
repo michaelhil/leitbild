@@ -6,7 +6,7 @@ import type {
 import {
   sameProcedureScope, createProcedureRunId, procedureCommandKindSchema, procedureRunClosePayloadSchema,
   procedureRunDrivePayloadSchema, procedureRunResetPayloadSchema, procedureRunStartPayloadSchema, procedureStepUpdatePayloadSchema,
-  procedureRunTransitionPayloadSchema,
+  procedureRunTransitionPayloadSchema, procedureRunRequestInputPayloadSchema,
 } from '../../core/model/index.ts'
 import {
   aiResetRefusal, assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiStepUpdate, assertAiWorksCurrentStep,
@@ -126,6 +126,26 @@ export const prepareProcedureCommand = async (config: {
       if (run.driver === undefined) return []
       if (context.actorKind === 'ai') assertAiMayDrive(run, command.actorId)
       return [driverChanged(context, run.runId, undefined, 'released')]
+    }
+  }
+
+  if (kind.data === 'world.procedure.run.request-input') {
+    const payload = procedureRunRequestInputPayloadSchema.parse(command.payload)
+    const preparedRun = activeRunFor(config.procedures, payload.runId)
+    const document = await config.readDocument(preparedRun)
+    assertInstalledProcedure(document)
+    const step = document.steps.find(candidate => candidate.id === payload.stepId)
+    if (!step) throw new Error(`procedure step ${payload.stepId} is not part of ${document.procedureId}`)
+    return context => {
+      const run = activeRunFor(context.procedures, payload.runId)
+      assertDocumentScope(context, document, run.scope)
+      if (context.actorKind !== 'ai') throw new Error('Only the AI driver requests human input for a procedure step.')
+      assertAiDrives(run, command.actorId)
+      assertAiWorksCurrentStep(run, step)
+      const previous = run.inputRequest
+      if (previous?.stepId === payload.stepId && previous.requestedBy === command.actorId && previous.issue === payload.issue) return []
+      return [{ ...base(context), type: 'procedure.run.input.requested', runId: run.runId,
+        request: { requestId: command.id, stepId: payload.stepId, issue: payload.issue, requestedAt: context.at, requestedBy: command.actorId } }]
     }
   }
 

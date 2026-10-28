@@ -91,6 +91,14 @@ const ports = (config: {
 })
 
 describe('procedure step view', () => {
+  test('the step view carries a precise pending human-input request', async () => {
+    const inputRequest = { requestId: 'command:input' as const, stepId: 'verify-reactor-trip', issue: 'Confirm local indication.',
+      requestedAt: plantTime, requestedBy: 'actor:ai:assistant' as ActorId }
+    const view = await composeProcedureStepView({ run: run({ inputRequest }), document: document(), ports: ports() })
+    expect(view.run.inputRequest).toEqual(inputRequest)
+    expect(view.run.plantId).toBe('plant:unit-2')
+  })
+
   test('reads the current step compactly: branches with the AI verdict, step tags with readings and plant time, CSF colours, sequence', async () => {
     const view = await composeProcedureStepView({ run: run(), document: document(), ports: ports({
       reads: {

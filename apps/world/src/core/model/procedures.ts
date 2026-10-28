@@ -204,6 +204,16 @@ export type ProcedureStepRunState = z.infer<typeof procedureStepRunStateSchema>
 export const procedureRunStatusSchema = z.enum(['active', 'transferred', 'completed', 'abandoned'])
 export type ProcedureRunStatus = z.infer<typeof procedureRunStatusSchema>
 
+/** The current driver explicitly needs a person to settle this step; the journal retains resolved requests. */
+export const procedureInputRequestSchema = z.object({
+  requestId: commandIdSchema,
+  stepId: procedureStepIdSchema,
+  issue: z.string().trim().min(1).max(500),
+  requestedAt: isoTimestampSchema,
+  requestedBy: actorIdSchema,
+})
+export type ProcedureInputRequest = z.infer<typeof procedureInputRequestSchema>
+
 export const procedureRunStateSchema = z.object({
   runId: procedureRunIdSchema,
   sourceId: procedureSourceIdSchema,
@@ -219,6 +229,7 @@ export const procedureRunStateSchema = z.object({
   closedBy: actorIdSchema.optional(),
   currentStepId: procedureStepIdSchema.optional(),
   driver: procedureRunDriverSchema.optional(),
+  inputRequest: procedureInputRequestSchema.optional(),
   stepStates: z.array(procedureStepRunStateSchema).default([]),
   observations: z.array(z.object({
     stepId: procedureStepIdSchema,
@@ -282,6 +293,18 @@ export const procedureRunDrivePayloadSchema = z.object({
   action: z.enum(['claim', 'release']),
 })
 export type ProcedureRunDrivePayload = z.infer<typeof procedureRunDrivePayloadSchema>
+
+export const procedureRunRequestInputPayloadSchema = z.object({
+  runId: procedureRunIdSchema,
+  stepId: procedureStepIdSchema,
+  issue: procedureInputRequestSchema.shape.issue,
+})
+
+export const procedureInputRequestedEventSchema = z.object({
+  type: z.literal('procedure.run.input.requested'),
+  runId: procedureRunIdSchema,
+  request: procedureInputRequestSchema,
+})
 
 export const procedureRunResetPayloadSchema = z.object({
   sourceId: procedureSourceIdSchema,
@@ -375,6 +398,7 @@ export const procedureRunCloseCommandKind = 'world.procedure.run.close'
 export const procedureRunResetCommandKind = 'world.procedure.run.reset'
 export const procedureRunTransitionCommandKind = 'world.procedure.run.transition'
 export const procedureRunDriveCommandKind = 'world.procedure.run.drive'
+export const procedureRunRequestInputCommandKind = 'world.procedure.run.request-input'
 
 export const procedureCommandKindSchema = z.enum([
   procedureRunStartCommandKind,
@@ -383,6 +407,7 @@ export const procedureCommandKindSchema = z.enum([
   procedureRunResetCommandKind,
   procedureRunTransitionCommandKind,
   procedureRunDriveCommandKind,
+  procedureRunRequestInputCommandKind,
 ])
 export type ProcedureCommandKind = z.infer<typeof procedureCommandKindSchema>
 

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import {
-  isoTimestampSchema, procedureAssessmentSchema, procedureBranchSchema, procedureRunDriverSchema,
+  isoTimestampSchema, procedureInputRequestSchema, procedureAssessmentSchema, procedureBranchSchema, procedureRunDriverSchema,
   procedureRunIdSchema, procedureRunStatusSchema, procedureStepDecisionSchema, procedureTextBlockSchema,
   type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
 } from '../../core/model/index.ts'
@@ -21,6 +21,7 @@ const runSummarySchema = z.object({
   plantId: z.string(),
   unit: z.string().optional(),
   driver: procedureRunDriverSchema.optional(),
+  inputRequest: procedureInputRequestSchema.optional(),
   currentStepId: z.string().optional(),
   /** The position of the step read, of the document's steps. */
   stepNumber: z.number().int().positive().optional(),
@@ -119,6 +120,7 @@ const runSummary = (run: ProcedureRunState, document: ProcedureDocument, step?: 
     plantId: run.scope.plantId,
     ...(run.scope.label === undefined ? {} : { unit: run.scope.label }),
     ...(run.driver === undefined ? {} : { driver: run.driver }),
+    ...(run.inputRequest === undefined ? {} : { inputRequest: run.inputRequest }),
     ...(run.currentStepId === undefined ? {} : { currentStepId: run.currentStepId }),
     ...(stepIndex < 0 ? {} : { stepNumber: stepIndex + 1 }),
     totalSteps: document.steps.length,

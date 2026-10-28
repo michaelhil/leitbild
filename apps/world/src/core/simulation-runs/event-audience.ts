@@ -52,6 +52,7 @@ export const eventReach = (
     case 'procedure.observation.updated':
     case 'procedure.run.reset':
     case 'procedure.run.driver.changed':
+    case 'procedure.run.input.requested':
       return truthReach
     default: {
       const unclassified: never = event

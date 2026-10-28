@@ -139,6 +139,19 @@ describe('the AI procedure runner through the World Module API', () => {
     for (const tag of structuredClone(view.tags)) expect(tag.reading).toMatchObject({ formatted: expect.any(String), quality: expect.any(String) })
     expect(view.csfs.map((csf: { id: string }) => csf.id)).toEqual(['subcriticality', 'core-cooling', 'heat-sink', 'rcs-integrity', 'containment', 'rcs-inventory'])
 
+    // A driver's precise human-input request is canonical state and remains inside Plant access rules.
+    const requested = await invoke('world.procedure.run.request-input', { runId, stepId: 'verify-reactor-trip', issue: 'Confirm local rod indication.' }, ai)
+    expect(requested.status).toBe(200)
+    expect(requested.body.result.ok).toBe(true)
+    expect((await invoke('world.procedure.run.step.read', { runId }, ai)).body.result.run.inputRequest).toMatchObject({
+      stepId: 'verify-reactor-trip', issue: 'Confirm local rod indication.', requestedBy: 'actor:ai:assistant',
+    })
+    const restrictingOperator = { id: actorIdSchema.parse('operator:runner'), label: 'Runner operator', role: 'operator' as const }
+    await run.setAgentRestrictions(restrictingOperator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(plantId), deny: ['change'] }] }, 0)
+    expect((await invoke('world.procedure.run.request-input', { runId, stepId: 'verify-reactor-trip', issue: 'A different issue.' }, ai)).status).toBe(403)
+    expect(run.snapshot().procedures!.runs[0]!.inputRequest?.issue).toBe('Confirm local rod indication.')
+    await run.setAgentRestrictions(restrictingOperator, { operationIds: [], objects: [] }, 1)
+
     const basis = 'Test-only selection of the authored normal branch on the readings World takes; no plant judgement.'
     const transition = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis, evidenceTagIds: ['TRIP-BKR-A', 'NIS-PR-AVG'] }, ai)
     expect(transition.status).toBe(200)
@@ -170,7 +183,7 @@ describe('the AI procedure runner through the World Module API', () => {
     expect((await invoke('world.procedure.run.step.read', { runId, stepId: 'no-such-step' }, ai)).body.error.code).toBe('procedure_step_not_found')
     expect((await invoke('world.procedure.run.step.read', { runId: 'procedure-run:missing' }, ai)).body.error.code).toBe('procedure_run_not_found')
     const operator = { id: actorIdSchema.parse('operator:runner'), label: 'Runner operator', role: 'operator' as const }
-    await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(plantId), deny: ['inspect'] }] }, 0)
+    await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(plantId), deny: ['inspect'] }] }, 2)
     const denied = await invoke('world.procedure.run.step.read', { runId }, ai)
     expect(denied.status).toBe(403)
     expect(denied.body.error.code).toBe('agent_access_restricted')
