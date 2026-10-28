@@ -1,0 +1,92 @@
+{
+  "runtime": "1.4.0",
+  "kind": "Bun structured-clone diagnostic, not browser loading latency",
+  "results": [
+    {
+      "name": "pwr-full-unit-manifold",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "occurrences": 805,
+      "planLevels": [
+        {
+          "levelId": "lower",
+          "primitives": 2264
+        },
+        {
+          "levelId": "service",
+          "primitives": 930
+        },
+        {
+          "levelId": "operating",
+          "primitives": 1111
+        },
+        {
+          "levelId": "refuelling",
+          "primitives": 154
+        }
+      ],
+      "omittedPlanJsonBytes": 2055666,
+      "unchangedTransferredGeometryBytes": 25323840,
+      "structuredCloneBunMs": {
+        "full": [
+          22.122250000000008,
+          18.73625000000004,
+          17.647166999999968,
+          21.401957999999922,
+          18.790457999999944,
+          19.99174999999991
+        ],
+        "geometry": [
+          6.76566600000001,
+          6.646749999999997,
+          6.2918750000000045,
+          6.634042000000022,
+          6.522750000000087,
+          6.5744170000000395
+        ]
+      }
+    },
+    {
+      "name": "pwr-campus-manifold",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "occurrences": 540,
+      "planLevels": [
+        {
+          "levelId": "campus-ground",
+          "primitives": 788
+        },
+        {
+          "levelId": "admin-upper",
+          "primitives": 523
+        }
+      ],
+      "omittedPlanJsonBytes": 630345,
+      "unchangedTransferredGeometryBytes": 27598236,
+      "structuredCloneBunMs": {
+        "full": [
+          7.3287499999999,
+          7.2024589999998625,
+          7.667417000000114,
+          6.9040410000000065,
+          7.115458999999873,
+          7.093374999999924
+        ],
+        "geometry": [
+          3.614667000000054,
+          3.824915999999803,
+          3.161792000000105,
+          3.117999999999938,
+          3.1714999999999236,
+          3.1301249999999072
+        ]
+      }
+    }
+  ]
+}

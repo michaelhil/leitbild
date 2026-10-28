@@ -203,7 +203,11 @@ export const createPhysicalPreparationPool = (workerFactory: () => WorkerPort = 
       try {
         const worker = requireWorker(source)
         jobs.set(id, { kind: 'registration', source, worker, resolve, reject })
-        const packed = copyPhysicalSceneForTransfer(source.scene), bytes = packed.transfers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
+        // Native Plan ink stays with the host renderer. Solid preparation uses
+        // object planLines and surface planAnnotations, never the full drawing.
+        // Do not clone that separate object graph into every geometry worker.
+        const { planDrawing: _planDrawing, ...geometry } = source.scene
+        const packed = copyPhysicalSceneForTransfer(geometry), bytes = packed.transfers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
         worker.port.postMessage({ kind: 'register', id, sourceKey: source.key, scene: packed.scene }, packed.transfers)
         source.bytes = bytes; registrations++; transferredBytes += bytes
       } catch (error) { jobs.delete(id); reject(error instanceof Error ? error : new Error(String(error))) }

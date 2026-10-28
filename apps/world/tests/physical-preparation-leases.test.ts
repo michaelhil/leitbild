@@ -49,6 +49,22 @@ test('one immutable registration serves new view jobs and two host leases withou
   b.destroy!(); expect(worker.terminations()).toBe(1); expect(pool.diagnostics().workerAlive).toBe(false)
 })
 
+test('geometry registration omits host Plan ink while retaining mesh lines and surface annotations', async () => {
+  const worker = workerDouble(), pool = serialPool(() => worker.port), owner = pool.createPreparer(), source = scene()
+  source.planDrawing = { views: [{ levelId: 'floor', bounds: { min: [0, 0], max: [1, 1] }, primitives: [{ id: 'ink', kind: 'path', depiction: 'projection', scopeIds: [], bounds: { min: [0, 0], max: [1, 1] }, commands: [['M', 0, 0], ['L', 1, 1]], stroke: 'line' }] }] }
+  source.objects[0]!.planLines = [{ positions: new Float64Array([0, 0, 0, 1, 1, 0]), material: 'line' }]
+  source.planAnnotations = [{ id: 'access', kind: 'hatch', role: 'access', outline: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 0]], label: 'Access', basis: 'illustrative', scopeIds: [], levelIds: ['floor'] }]
+  const before = structuredClone(source)
+  try {
+    await owner(source, defaultPhysicalSceneView(source.levels), 'plan', 'geometry', 'detail')
+    const registered = worker.sources.get('detail')!
+    expect(Object.hasOwn(registered, 'planDrawing')).toBe(false)
+    expect(registered.planAnnotations).toEqual(source.planAnnotations)
+    expect(registered.objects[0]!.planLines).toEqual(source.objects[0]!.planLines)
+    expect(source).toEqual(before)
+  } finally { owner.destroy!() }
+})
+
 test('one host leaving cancels only its result while running work remains pinned for another source owner', async () => {
   const worker = workerDouble(); worker.holdViews()
   const pool = serialPool(() => worker.port), owner = pool.createPreparer(), remaining = pool.createPreparer(), source = scene()
