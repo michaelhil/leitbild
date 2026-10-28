@@ -62,7 +62,7 @@ export const assertAiDecisionEvidence = (config: {
     throw new Error(`Step ${step.label}'s ${config.readableStepTagIds.map(tagId => `«${tagId}»`).join(', ')} ${config.readableStepTagIds.length === 1 ? 'reads' : 'read'} on this plant now: cite those you relied on as evidenceTagIds (1 to 6); World reads them and records the readings with the decision.`)
   }
   for (const read of config.reads) {
-    if (read.binding === 'missing') throw new Error(`«${read.tagId}» is not in the plant model: cite only tags World reads now, and say in the basis what is not observable.`)
+    if (read.binding === 'missing') throw new Error(`«${read.tagId}» has no binding on this Plant: cite only tags World reads now, and say in the basis what is not observable.`)
     if (read.value === undefined) throw new Error(`«${read.tagId}» could not be read (${read.unavailable ?? 'no value'}): cite only tags World reads now, and say in the basis what is not observable.`)
   }
 }

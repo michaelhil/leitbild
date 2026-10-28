@@ -22,6 +22,7 @@ export interface ProcedureTagValue {
   readonly unit?: string
   readonly quality?: string
   readonly path?: string
+  readonly writable?: boolean
   readonly conversionStatus?: 'native' | 'converted' | 'unavailable'
   readonly warning?: string
 }
@@ -161,6 +162,7 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
     ...(warning === undefined ? {} : { warning }),
     ...(typeof quality?.status === 'string' ? { quality: quality.status } : {}),
     ...(typeof signal.path === 'string' ? { path: signal.path } : {}),
+    ...(typeof signal.writable === 'boolean' ? { writable: signal.writable } : {}),
   }
 }
 
@@ -278,7 +280,7 @@ export const readProcedureTags = async (config: {
     if (failure !== undefined || port === undefined) return { tagId, binding: 'unchecked', warnings: [], unavailable: failure ?? 'no observation port' }
     const validation = validations.get(tagId)
     if (validation === undefined) return { tagId, binding: 'unchecked', warnings: [], unavailable: 'the Pack did not validate this tag' }
-    if (validation.status === 'missing') return { tagId, binding: 'missing', warnings: validation.warnings, unavailable: 'not in the plant model' }
+    if (validation.status === 'missing') return { tagId, binding: 'missing', warnings: validation.warnings, unavailable: 'procedure tag is not bound to this Plant' }
     try {
       const value = await port.readTag(tag)
       return { tagId, binding: validation.status, warnings: validation.warnings, value }

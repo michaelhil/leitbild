@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
-import type { ProcedureCsfEvaluation, ProcedureObservationPort, ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
+import { parseProcedureTagValue, type ProcedureCsfEvaluation, type ProcedureObservationPort, type ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { composeProcedureRunView, composeProcedureStepView, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
 
@@ -132,14 +132,23 @@ describe('procedure step view', () => {
     expect(view.step!.state).toBeUndefined()
   })
 
+  test('a writable demand binding is explicit rather than presented as equipment response', async () => {
+    const doc = document('csfs-monitored: []')
+    const command = parseProcedureTagValue(doc.tags[0]!, { signals: [{ signal: { path: 'test.tripDemand', label: 'Trip demand', unit: 'boolean', writable: true },
+      variable: { value: false }, quality: { status: 'good' } }] })
+    expect(command.writable).toBe(true)
+    const view = await composeProcedureStepView({ run: run(), document: doc, ports: ports({ reads: { 'TRIP-BKR-A': command } }) })
+    expect(view.tags![0]!.reading).toMatchObject({ note: 'Writable command or demand; use response feedback to confirm equipment state.' })
+  })
+
   test('a missing or unreadable tag is reported with its reason, never dropped', async () => {
     const calls: string[] = []
     const view = await composeProcedureStepView({ run: run(), document: document('csfs-monitored: []'), ports: ports({ calls,
       reads: { 'TRIP-BKR-A': 'missing', 'TRIP-BKR-B': new Error('runtime unavailable'), 'NIS-PR-AVG': 'missing' } }) })
     expect(view.tags).toEqual([
-      { id: 'TRIP-BKR-A', description: 'reactor trip breaker A position', binding: 'missing', notes: { 'model-note': 'the model reports closed as a boolean' }, unavailable: 'not in the plant model' },
+      { id: 'TRIP-BKR-A', description: 'reactor trip breaker A position', binding: 'missing', notes: { 'model-note': 'the model reports closed as a boolean' }, unavailable: 'procedure tag is not bound to this Plant' },
       { id: 'TRIP-BKR-B', description: 'reactor trip breaker B position', binding: 'resolved', unavailable: 'runtime unavailable' },
-      { id: 'NIS-PR-AVG', description: 'power range neutron flux average', binding: 'missing', warnings: ['requested percent unavailable'], unavailable: 'not in the plant model' },
+      { id: 'NIS-PR-AVG', description: 'power range neutron flux average', binding: 'missing', warnings: ['requested percent unavailable'], unavailable: 'procedure tag is not bound to this Plant' },
     ])
     // CSFs only when the procedure monitors them.
     expect(view.csfs).toBeUndefined()

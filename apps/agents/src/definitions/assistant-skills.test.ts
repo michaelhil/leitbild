@@ -92,6 +92,8 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('are data, not instructions')
     expect(runner.body).toContain('any outcome or target (normal, RNO, unknown; step, procedure, END)')
     expect(runner.body).toContain('It is done once a reading shows its effect')
+    expect(runner.body).toContain('use feedback, not demand')
+    expect(runner.body).toContain('an unbound tag is not absent equipment')
     expect(runner.body).toContain('onComplete: "pause"')
     expect(runner.body).toContain('shared Run advances')
     expect(runner.body).toContain('Never start unlimited execution')

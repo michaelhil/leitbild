@@ -130,6 +130,10 @@ const runSummary = (run: ProcedureRunState, document: ProcedureDocument, step?: 
 const tagRow = (document: ProcedureDocument, read: ProcedureTagRead) => {
   const tag = document.tags.find(candidate => candidate.id === read.tagId)
   const notes = tag?.annotations ?? {}
+  const readingNotes = [
+    ...(read.value?.warning === undefined || read.warnings.includes(read.value.warning) ? [] : [read.value.warning]),
+    ...(read.value?.writable === true ? ['Writable command or demand; use response feedback to confirm equipment state.'] : []),
+  ]
   return {
     id: read.tagId,
     ...(tag?.description === undefined ? {} : { description: tag.description }),
@@ -140,7 +144,7 @@ const tagRow = (document: ProcedureDocument, read: ProcedureTagRead) => {
       formatted: read.value.formatted,
       ...(read.value.path !== undefined && (typeof read.value.value === 'boolean' || read.value.conversionStatus === 'unavailable') ? { signal: read.value.path } : {}),
       ...(read.value.quality === undefined ? {} : { quality: read.value.quality }),
-      ...(read.value.warning === undefined || read.warnings.includes(read.value.warning) ? {} : { note: read.value.warning }),
+      ...(readingNotes.length === 0 ? {} : { note: readingNotes.join(' ') }),
     } }),
     ...(read.value === undefined ? { unavailable: read.unavailable ?? 'no value' } : {}),
   }

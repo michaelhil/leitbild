@@ -270,7 +270,7 @@ describe('procedure run driver and AI decision rules', () => {
       .rejects.toThrow("Step 1's «TRIP-BKR-A», «TRIP-BKR-B», «NIS-PR-AVG» read on this plant now: cite those you relied on as evidenceTagIds")
     await expect(fresh.transition(assistant, { branchIndex: 0, basis: 'Breakers open.', evidenceTagIds: ['PT-455'] })).rejects.toThrow('«PT-455» is not cited in step 1')
     fresh.setValues({ ...tripped, 'TRIP-BKR-B': 'missing' })
-    await expect(fresh.transition(assistant, { branchIndex: 0, ...fresh.evidence })).rejects.toThrow('«TRIP-BKR-B» is not in the plant model: cite only tags World reads now')
+    await expect(fresh.transition(assistant, { branchIndex: 0, ...fresh.evidence })).rejects.toThrow('«TRIP-BKR-B» has no binding on this Plant: cite only tags World reads now')
     fresh.setValues({ ...tripped, 'NIS-PR-AVG': new Error('runtime unavailable') })
     await expect(fresh.transition(assistant, { branchIndex: 0, ...fresh.evidence })).rejects.toThrow('«NIS-PR-AVG» could not be read (runtime unavailable): cite only tags World reads now')
     expect(fresh.run().currentStepId).toBe('verify-reactor-trip')
