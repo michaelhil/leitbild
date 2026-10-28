@@ -10,7 +10,7 @@
     readonly onError?: (message: string) => void
     readonly onOpen?: () => Promise<void>
     readonly details?: Snippet<[busy: boolean]>
-    /** Visible text beside the sparkle ("Ask" on the Workspace page); icon only without it. */
+    /** Visible text beside the sparkle ("Ask", or "Assistant" while open); icon only without it. */
     readonly label?: string
   }
 
@@ -115,4 +115,5 @@
   .assistant-launch.labelled:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; }
   .assistant-launch.labelled svg { width: 16px; height: 16px; }
   @media (pointer: coarse) { .assistant-launch.labelled { min-height: 44px; } }
+  @media (max-width: 760px) { .assistant-launch.labelled { min-height: 44px; } }
 </style>
