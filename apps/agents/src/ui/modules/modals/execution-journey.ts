@@ -54,6 +54,7 @@ export interface GenerationQueryInspection {
 }
 
 export interface ExecutionInspection {
+  readonly evidencePath?: string
   readonly turn: ExecutionTurn
   readonly calls: ReadonlyArray<ExecutionCallSummary>
   readonly modelCapture: 'recorded' | 'unavailable'

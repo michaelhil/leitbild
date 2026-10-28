@@ -189,7 +189,7 @@ export const showGenerationInspector = (options: {
   const renderModel = async (host: HTMLElement, event: JourneyEvent, token: number, sensitive = false): Promise<void> => {
     if (!execution || event.source.kind !== 'model') return
     const call = event.source.call
-    const path = `${executionPath(execution.turn.roomId, execution.turn.id)}/models/${encodeURIComponent(call.id)}`
+    const path = `${execution.evidencePath ?? executionPath(execution.turn.roomId, execution.turn.id)}/models/${encodeURIComponent(call.id)}`
     const record = sensitive ? await safeFetchJson<ExecutionModelCall>(`${path}?sensitive=1`) : modelRecords.get(call.id) ?? await safeFetchJson<ExecutionModelCall>(path)
     if (token !== selection || !modal.overlay.isConnected) return
     host.replaceChildren()
@@ -221,7 +221,7 @@ export const showGenerationInspector = (options: {
   const renderTool = async (host: HTMLElement, event: JourneyEvent, token: number): Promise<void> => {
     if (!execution || event.source.kind !== 'tool') return
     const call = event.source.call
-    const record = toolRecords.get(call.id) ?? await safeFetchJson<ExecutionCall>(`${executionPath(execution.turn.roomId, execution.turn.id)}/calls/${encodeURIComponent(call.id)}`)
+    const record = toolRecords.get(call.id) ?? await safeFetchJson<ExecutionCall>(`${execution.evidencePath ?? executionPath(execution.turn.roomId, execution.turn.id)}/calls/${encodeURIComponent(call.id)}`)
     if (token !== selection || !modal.overlay.isConnected) return
     host.replaceChildren()
     if (!record) { error(host, 'The exact tool record is unavailable.', () => { void renderTool(host, event, token) }); return }
