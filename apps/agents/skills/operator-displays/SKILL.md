@@ -12,7 +12,7 @@ Names: exact refs, `objectId#tag-or-label`, an object id for its leads, or `{of:
 
 Reuse known names; otherwise batch focused `world.simulation-run.observables.search`. Comparisons need measurements from every requested owner, not only alerts.
 
-Put comparable values/trends first, with useful drawings after. Each topology draws one owner: qualify anchors as `objectId#element`; request separate views for different owners. Read card/fit notices; correct specific refusals or narrow views without mislabelling coverage. Never claim omitted data or drawings were shown.
+Put comparable values/trends first, with useful drawings after. Each topology draws one owner: `around:[objectId]` shows its overview; qualify anchors as `objectId#element` for equipment. Read card/fit notices; correct specific refusals or narrow views without mislabelling coverage. Never claim omitted data or drawings were shown.
 
 Dashboards: one shared live board per scope (`"run"`, `{"subject": <object>}`, `{"of": {"category"}}`), World's default until pins replace it. `world.simulation-run.dashboard.read` {scope} gives its sections, pin ids, revision and card. Change one only when asked: read, then one `world.simulation-run.dashboard.update` {scope, expectedRevision, pin: [{spec}] (as compose takes), unpin: [pin id]}; pin only what is missing; never re-send; claim a change only from its result.
 

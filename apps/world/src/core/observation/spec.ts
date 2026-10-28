@@ -23,7 +23,8 @@ export const viewSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('values'), signals: z.array(nameSchema).min(1).max(16).optional(), of: selectorSchema.optional() }).strict(),
   z.object({ kind: z.literal('alerts'), scope: z.enum(['related', 'run']).default('related') }).strict(),
   z.object({
-    kind: z.literal('topology'), from: namesSchema, to: namesSchema, around: namesSchema, media: namesSchema, groups: namesSchema,
+    kind: z.literal('topology'), from: namesSchema, to: namesSchema,
+    around: namesSchema.describe('One exact object id selects its whole declared overview; objectId#element selects equipment. One topology view draws one owner.'), media: namesSchema, groups: namesSchema,
     reach: z.number().int().min(1).max(4).optional(),
   }).strict(),
   z.object({ kind: z.literal('map'), around: namesSchema, within: distanceBandSchema.optional(), of: selectorSchema.optional() }).strict(),

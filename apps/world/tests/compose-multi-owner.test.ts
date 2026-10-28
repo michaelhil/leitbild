@@ -31,3 +31,11 @@ test('one topology never invents a graph across owners, and hidden owners remain
   expect(await composeVignette(run, spec({ from: ['unit:one#tank'], to: ['unit:two#engine'] }))).toMatchObject({ ok: false, issues: [{ code: 'not_fitted', message: expect.stringContaining('separate topology view') }] })
   expect(await composeVignette({ ...run, denied: new Set(['unit:two']) }, spec({ around: ['unit:two#engine'] }))).toMatchObject({ ok: false, issues: [{ code: 'agent_access_restricted' }] })
 })
+
+test('an exact whole-owner around anchor selects its declared overview without treating the object as a node', async () => {
+  const outcome = await composeVignette(run, spec({ around: ['unit:two'] }))
+  if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+  expect(outcome.state.views.find(view => view.kind === 'topology')).toMatchObject({ objectId: 'unit:two', request: { overview: true } })
+  expect(await composeVignette({ ...run, denied: new Set(['unit:two']) }, spec({ around: ['unit:two'] }))).toMatchObject({ ok: false, issues: [{ code: 'agent_access_restricted' }] })
+  expect(await composeVignette(run, spec({ around: ['unit:two'], from: ['unit:two#tank'] }))).toMatchObject({ ok: false, issues: [{ code: 'unknown_name', message: expect.stringContaining('whole-owner overview') }] })
+})

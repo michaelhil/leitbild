@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorldApplicationAssembly } from '../src/app-assembly.ts'
-import { displayRunOf } from '../src/core/api/display-capabilities.ts'
+import { displayRunOf, vignetteHeight } from '../src/core/api/display-capabilities.ts'
 import type { ActorId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 import { displaySpecSchema } from '../src/core/observation/spec.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
@@ -132,6 +132,43 @@ test('explicit process drawings from two units and their grid are all honored or
     expect(outcome.issues.every(issue => /fit|rows|drawn/.test(issue.message))).toBe(true)
     console.log('multi-owner explicit topology fit refusal:', outcome.issues)
   }
+})
+
+test('two whole-unit drawings and requested grid readings form a readable document beyond its viewport hint', async () => {
+  const owners = ['plant:halden-1', 'plant:halden-2'], grid = 'grid:halden-four-unit'
+  const refs = [...owners.map(id => `${id}#turbine.electricMw`), `${grid}#grid.frequency`]
+  const outcome = await composeVignette(run, displaySpecSchema.parse({ title: 'Two whole units and grid', question: 'Show both whole process diagrams and grid frequency.', subjects: [...owners, grid], views: [
+    { kind: 'values', signals: refs },
+    ...owners.map(owner => ({ kind: 'topology', around: [owner] })),
+  ] }))
+  if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+  expect(outcome.rows).toBeGreaterThan(40)
+  expect(vignetteHeight(outcome.rows)).toBe(960)
+  expect(outcome.card.adjusted).toContainEqual({ kind: 'layout', text: 'Display continues vertically; scroll to see every requested view' })
+  expect(outcome.state.views.filter(view => view.kind === 'topology').map(view => [String(view.objectId), view.request])).toEqual(owners.map(owner => [owner, { overview: true }]))
+  const view = await compileVignette(run, outcome.state)
+  const drawings = view.sections.filter(section => section.kind === 'topology')
+  expect(drawings.map(section => section.heading)).toEqual(['Halden Unit 1', 'Halden Unit 2'])
+  for (const drawing of drawings) {
+    const graph = await run.port.topology(drawing.objectId as ObjectId)
+    if ('refused' in graph) throw Error('Missing whole-unit graph')
+    expect(drawing.nodes.filter(node => node.class !== 'stop').map(node => node.id).sort()).toEqual([...graph.overview!.nodes].sort())
+  }
+  expect(view.sections.flatMap(section => section.kind === 'values' ? section.values.map(value => value.ref) : [])).toEqual(refs)
+  const sample = await sampleVignette(run, outcome.state)
+  expect(sample.observations.find(observation => observation.ref === `${grid}#grid.frequency`)?.quality).toBe('good')
+})
+
+test('one explicit whole-unit drawing keeps its decisive readings instead of refusing aggregate height', async () => {
+  const owner = 'plant:halden-1', refs = await leadRefs(run, owner as ObjectId)
+  const outcome = await composeVignette(run, displaySpecSchema.parse({ title: 'Unit condition', question: 'Show the process diagram and its current leading readings.', subjects: [owner], views: [
+    { kind: 'values', signals: refs }, { kind: 'topology', around: [owner] },
+  ] }))
+  if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+  expect(outcome.rows).toBeGreaterThan(40)
+  expect(outcome.state.views.find(view => view.kind === 'topology')).toMatchObject({ objectId: owner, request: { overview: true } })
+  expect(outcome.state.views.flatMap(view => view.kind === 'values' ? view.refs ?? [] : [])).toEqual([...refs])
+  expect(vignetteHeight(outcome.rows)).toBe(960)
 })
 
 describe('a run-wide alerts view', () => {

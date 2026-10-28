@@ -98,6 +98,9 @@
   const chips = $derived(chipOrder(view?.chips ?? []))
   /** Alerts only in a display window: as tall as the part of its frame a person sees; in chat or a dialog, its composed rows. */
   const fills = $derived(board === undefined && opening.where === 'window' && view !== undefined && fillsWindow(view))
+  // Optional inline previews keep one native document scroller. A World
+  // display window instead owns scrolling from the full article extent.
+  const preview = $derived(board === undefined && opening.where !== 'window')
 
   /**
    * A chip inspects what decides its state through the drawing's existing faceplate;
@@ -114,6 +117,8 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (A scrollable document region needs native keyboard focus.) -->
+<div class:preview tabindex={preview ? 0 : undefined} role={preview ? 'region' : undefined} aria-label={preview ? 'Scrollable live display preview' : undefined}>
 <article class="vignette" class:fill={fills} style:height={fills && room !== null ? `${room}px` : undefined} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
   <header>
     <h1 title={view?.title ?? envelope.title} use:wholeWords={view?.title ?? envelope.title}></h1>
@@ -159,8 +164,10 @@
   <!-- Said once when the display freezes and once when it is live again: what is drawn has stopped following the Run. -->
   <p class="announce" role="status">{frozen ? `Display frozen${footer.why === undefined ? '' : `: ${footer.why}`}. Values, trends and alerts are the last received${latest === undefined ? '' : `, at ${clockText(latest.at.at)}`}.` : ''}</p>
 </article>
+</div>
 
 <style>
+  .preview { max-height: 100vh; overflow-y: auto; overscroll-behavior-y: contain; }
   .vignette { --muted: var(--element-neutral-color); --text: var(--element-active-color); padding: 0 8px; font-size: 13px; }
   /* Alerts only: as tall as the frame a person sees, its sections' row taking what the title, a status, the trip line and
      the footer leave, no less than their composed rows; a grid, so that row's height is definite for the list, which

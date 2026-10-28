@@ -132,10 +132,14 @@
         </div>
       {:else if section.kind === 'map'}
         <MapFocus frame={latest?.maps[index]} />
-      {:else if section.family === 'flow'}
-        <FlowTopology {section} {observations} alerts={latest?.alerts ?? []} series={snapshot.series} {now} {palette} {frozen} {runId} {from} {fit} />
       {:else}
-        {#key JSON.stringify([runId, section.objectId, section.packId])}<NetworkTopology {section} {observations} alerts={latest?.alerts ?? []} {runId} {from} {palette} {frozen} {fit} />{/key}
+        {@const drawingSection = section.heading === undefined ? section : { ...section, rows: section.rows - 1 }}
+        {#if section.heading !== undefined}<h2 class="owner-heading" title={section.heading}>{section.heading}</h2>{/if}
+        {#if section.family === 'flow'}
+          <FlowTopology section={drawingSection} {observations} alerts={latest?.alerts ?? []} series={snapshot.series} {now} {palette} {frozen} {runId} {from} {fit} />
+        {:else}
+          {#key JSON.stringify([runId, section.objectId, section.packId])}<NetworkTopology section={drawingSection} {observations} alerts={latest?.alerts ?? []} {runId} {from} {palette} {frozen} {fit} />{/key}
+        {/if}
       {/if}
     </div>
 {/snippet}
@@ -188,6 +192,7 @@
 </div>
 
 <style>
+  .owner-heading { margin: 0; height: var(--row); line-height: var(--row); color: var(--element-active-color); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .section { overflow: hidden; }
   /* Alerts only: the sections take the frame's height left under the title (Vignette), the alerts their share of it. */
   .sections.fill { display: flex; flex-direction: column; }

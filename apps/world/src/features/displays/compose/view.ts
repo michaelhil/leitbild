@@ -261,7 +261,9 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
       const drawing = scoped?.ok === true ? await drawingOf(run, scoped.scoped) : null
       if (scoped?.ok === true && drawing !== null) {
         const units = await declaredRefs(run, bindingRefs(scoped.scoped))
-        sections.push(topologySection(view.objectId, visibleObject(run, view.objectId)!.packId, scoped.scoped, drawing, view.rows, ref => units.get(ref)?.observable))
+        const owner = visibleObject(run, view.objectId)!
+        const section = topologySection(view.objectId, owner.packId, scoped.scoped, drawing, view.rows, ref => units.get(ref)?.observable)
+        sections.push({ ...section, ...(state.views.filter(view => view.kind === 'topology').length > 1 ? { heading: owner.label } : {}) })
       }
     } else sections.push({ kind: 'map', rows: view.rows })
   }

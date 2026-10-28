@@ -180,6 +180,8 @@ export type VignetteSection =
   | {
     /** `packId` is the object's Pack: the pop-over loads that Pack's element actions. */
     readonly kind: 'topology'; readonly rows: number; readonly objectId: string; readonly packId: string; readonly family: 'flow' | 'network'; readonly layout: TopologyLayout
+    /** Owner label above a drawing when a document contains several topologies; derived, never stored in the state. */
+    readonly heading?: string
     readonly nodes: ReadonlyArray<TopologyNodeView>
     /** `auxiliary`: a line outside the principal equipment its graph declares (its overview), drawn small. */
     readonly edges: ReadonlyArray<{ readonly id: string; readonly mediumKind: TopologyGraph['media'][number]['kind']; readonly bindings: ReadonlyArray<TopologyBinding>; readonly auxiliary?: true }>

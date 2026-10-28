@@ -78,6 +78,16 @@ const nodesFor = async (run: ComposeRun, graph: NonNullable<Awaited<ReturnType<t
 
 const topologyView = async (run: ComposeRun, view: Extract<View, { kind: 'topology' }>, path: string, subjects: ReadonlyArray<Subject>): Promise<DraftView | ComposeIssue> => {
   const owners = new Set<string>()
+  const aroundOwner = view.around?.length === 1 ? view.around[0] : undefined
+  const exactOwner = aroundOwner === undefined ? undefined : run.objects.find(object => object.id === aroundOwner)
+  const whole = exactOwner !== undefined ? [exactOwner] : aroundOwner === undefined ? [] : run.objects.filter(object => !run.denied.has(object.id) && same(object.label, aroundOwner))
+  const overviewOwner = whole.length === 1 ? whole[0]!.id : undefined
+  if (overviewOwner !== undefined) {
+    const subject = await resolveSubject(run, overviewOwner, `${path}.around.0`)
+    if (isIssue(subject)) return subject
+    owners.add(overviewOwner)
+    if (view.from !== undefined || view.to !== undefined) return { path, code: 'unknown_name', message: 'a whole-owner overview cannot also name route ends; name equipment anchors for a route' }
+  }
   for (const [key, names] of [['from', view.from], ['to', view.to], ['around', view.around]] as const) for (const [index, name] of (names ?? []).entries()) {
     if (!name.includes('#')) continue
     const anchor = await resolveSubject(run, name, `${path}.${key}.${index}`)
@@ -95,6 +105,7 @@ const topologyView = async (run: ComposeRun, view: Extract<View, { kind: 'topolo
     const graph = await topologyOf(run, subject.objectId)
     if (graph === null) continue
     const nodes = async (names: ReadonlyArray<string> | undefined, key: 'from' | 'to' | 'around'): Promise<ReadonlyArray<string> | undefined | ComposeIssue> => {
+      if (key === 'around' && overviewOwner === graph.objectId) return undefined
       if (names === undefined) return undefined
       const ids: string[] = []
       for (const [index, name] of names.entries()) {
@@ -117,7 +128,8 @@ const topologyView = async (run: ComposeRun, view: Extract<View, { kind: 'topolo
     if (issue !== undefined) { issues.push(issue); continue }
     const [from, to, around, media, groups] = (parts as ReadonlyArray<ReadonlyArray<string> | undefined>).map(ids => ids === undefined ? undefined : [...ids])
     const named = from !== undefined || to !== undefined || around !== undefined
-    const fallback = named ? undefined : (await defaultViews(run, subject)).find((entry): entry is Extract<DraftView, { kind: 'topology' }> => entry.kind === 'topology')
+    const fallback = named ? undefined : overviewOwner === graph.objectId ? { request: { overview: true as const } }
+      : (await defaultViews(run, subject)).find((entry): entry is Extract<DraftView, { kind: 'topology' }> => entry.kind === 'topology')
     if (!named && fallback === undefined) continue
     const request = { ...fallback?.request, ...(named ? { from, to, around } : {}), ...(media === undefined ? {} : { media }), ...(groups === undefined ? {} : { groups }), ...(view.reach === undefined ? {} : { reach: view.reach }) }
     resolved.push({ kind: 'topology', objectId: graph.objectId, request })
@@ -237,14 +249,17 @@ const counted = (count: number, noun: string): string => `${count} ${count === 1
 /** The alert lines a World default's own alerts view keeps though none are raised yet, so an upset's first alerts show as they come. */
 const WATCHED_ALERT_LINES = 4
 
-/** Where a vignette is shown: a chat answer stacks its views in 40 rows; a window may stand a tall drawing beside them (Q20). */
-type Frame = 'chat' | 'window'
+/** Defaults fit a compact frame; requested views form a scrollable document.
+ * The publication height remains a viewport hint, not a content admission cap. */
+type Frame = 'chat' | 'window' | 'requested'
 /** `onDashboard`: a dashboard section's (A4), whose run frame carries the Run's alerts: completion adds no alerts view, and one asked for stays. */
 const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefined, subjects: ReadonlyArray<Subject>, drafts: ReadonlyArray<DraftView>, kept: Kept, frame: Frame, chipped: ReadonlyArray<string> = [], why?: string, onDashboard?: true, adjustments: ReadonlyArray<DisplayCardAdjustment> = []): Promise<ComposeOutcome> => {
   const adjusted: DisplayCardAdjustment[] = [...adjustments]
+  const requestedDocument = frame === 'requested'
   /** What the fit leaves out, counted on the card (Q15: never silent). */
   let dropped = 0
   const views = drafts.map(view => structuredClone(view) as DraftView)
+  const topologyHeadingRows = views.filter(view => view.kind === 'topology').length > 1 ? 1 : 0
   // Completion: the subjects' alerts at caution or above, but on a dashboard, whose run frame shows them.
   const subjectIds = [...new Set(subjects.flatMap(subjectObjects))].filter(id => visibleObject(run, id) !== undefined)
   const pressing = onDashboard === true ? [] : subjectIds.flatMap(id => visibleObject(run, id)!.alerts.filter(alert => atLeastCaution(alert.priority)))
@@ -381,7 +396,11 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
         }
       }
       // A layout may end on a half grid unit: its rows are the whole units it reaches into (scaled below if the frame is short).
-      const rows = drawing === null ? 0 : Math.ceil(drawing.layout.height) + 1
+      const naturalRows = drawing === null ? 0 : Math.ceil(drawing.layout.height) + 1 + topologyHeadingRows
+      // Each drawing keeps its established section viewport and text floor;
+      // several requested sections may extend the containing document.
+      const rows = requestedDocument ? Math.min(naturalRows, VIGNETTE_MAX_ROWS) : naturalRows
+      if (rows < naturalRows) countAdjustment(adjusted, { kind: 'layout', text: 'A drawing scrolls within its section at readable text size' })
       if (scoped?.ok !== true || drawing === null) {
         const why = scoped === null ? 'no topology' : !scoped.ok ? scoped.reason : 'no drawing verifies'
         if (kept.explicit.has(index)) issues.push(unfit(path, `the topology cannot be drawn in one vignette (${why})`))
@@ -418,7 +437,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   const total = (): number => frameRows + (beside ? sideBySide() : stacked())
   // A window's alerts keep a head, eight alerts and "+N more" (W2.5): its drawing is scaled first.
   const alertsFloor = frame === 'window' ? 2 + ALERT_LINES_AT_LEAST : 3
-  for (const view of fitted) if (total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
+  for (const view of fitted) if (!requestedDocument && total() > VIGNETTE_MAX_ROWS && (view.kind === 'alerts' || view.kind === 'entity' || view.kind === 'collection')) (view as { rows: number }).rows = Math.min(view.rows, view.kind === 'alerts' ? alertsFloor : 5)
   // A trend gives way a strip at a time from its last while the frame is `over` its rows, keeping one and every strip
   // with a named pen: a strip keeps its five rows (W5.4), and what it leaves out is counted. Before a pen drops, a
   // watched alerts list gives the empty lines it keeps beyond the alerts it has now, where they are enough to keep it:
@@ -447,7 +466,7 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
   // down to its text floor (drawingScale): rows that do not hold it there show it at the floor, scrolling within them.
   // The card says which.
   for (const view of fitted) {
-    if (total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
+    if (requestedDocument || total() <= VIGNETTE_MAX_ROWS || view.kind !== 'topology') continue
     const natural = view.rows
     const rows = Math.max(8, Math.ceil((natural - 1) / 3) + 1, natural - (total() - VIGNETTE_MAX_ROWS))
     if (beside && view === left && fitted.reduce((sum, other) => sum + (other === left ? 0 : other.rows), 0) + frameRows > VIGNETTE_MAX_ROWS) continue
@@ -462,12 +481,15 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
       : `drawing scaled to ${Math.round(100 * scale)} % to fit` })
   }
   // Stacked, a trend gives way only after the drawing is scaled.
-  trendsGiveWay(() => total() - VIGNETTE_MAX_ROWS)
+  if (!requestedDocument) trendsGiveWay(() => total() - VIGNETTE_MAX_ROWS)
   // Beside a drawing, the column's alerts take the rows it leaves under the other views: the list fills its frame (W2.5).
   const list = beside ? fitted.find(view => view.kind === 'alerts') : undefined
   const column = fitted.reduce((sum, view) => sum + (view === left ? 0 : view.rows), 0)
   if (list !== undefined && left!.rows > column) (list as { rows: number }).rows += left!.rows - column
-  if (total() > VIGNETTE_MAX_ROWS) return refuse([unfit('views', `the views need ${total()} rows; one vignette holds ${VIGNETTE_MAX_ROWS}`)])
+  if (total() > VIGNETTE_MAX_ROWS) {
+    if (!requestedDocument) return refuse([unfit('views', `the views need ${total()} rows; one vignette holds ${VIGNETTE_MAX_ROWS}`)])
+    countAdjustment(adjusted, { kind: 'layout', text: 'Display continues vertically; scroll to see every requested view' })
+  }
   const uncovered = subjects.findIndex(subject => !covers(fitted, subject))
   if (fitted.length === 0 || uncovered >= 0) return refuse([unfit(uncovered >= 0 ? `subjects.${uncovered}` : 'views', 'nothing this vignette can show is about this subject')])
 
@@ -570,7 +592,7 @@ export const composeVignette = async (run: ComposeRun, spec: DisplaySpec, onDash
     if (isIssue(resolved)) issues.push(resolved)
     else { if (view.kind === 'topology' && (view.from ?? view.to ?? view.around ?? view.media) !== undefined) kept.explicit.add(views.length); views.push(resolved) }
   }
-  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'chat', [], whyOf(spec), onDashboard)
+  return issues.length > 0 ? refuse(issues) : finish(run, spec.title, 'assistant', subjects, views, kept, 'requested', [], whyOf(spec), onDashboard)
 }
 
 /** Why an answer's vignette was composed: its question, and its need where given (W8.2). */
