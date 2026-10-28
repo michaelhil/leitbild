@@ -9,6 +9,7 @@ const ratio=Number(process.env.LEITBILD_PHYSICAL_PROBE_DPR??'1');if(!Number.isFi
 const profileWorkers = process.env.LEITBILD_NATIVE_WORKER_PROFILE === '1'
 const planFirst = process.env.LEITBILD_NATIVE_PLAN_FIRST === '1'
 const coldOnly = process.env.LEITBILD_NATIVE_COLD_ONLY === '1'
+const floorGateOnly = process.env.LEITBILD_NATIVE_FLOOR_GATE_ONLY === '1'
 const detailInventory = process.env.LEITBILD_NATIVE_DETAIL_INVENTORY === '1'
 if (detailInventory && !planFirst) throw Error('Detail inventory requires Plan-first setup')
 if (coldOnly && !planFirst) throw Error('Cold-only detail proof requires Plan-first setup')
@@ -22,6 +23,7 @@ const testedRef = process.env.LEITBILD_LOADING_TESTED_COMMIT
 if (!testedRef) throw Error('Set LEITBILD_LOADING_TESTED_COMMIT to the separately built app commit')
 const testedAppCommit = Bun.spawnSync(['git', 'rev-parse', testedRef], { cwd: repository }).stdout.toString().trim()
 if (!/^[0-9a-f]{40}$/.test(testedAppCommit)) throw Error('The tested app commit must resolve locally')
+if(info.builtApp!==testedAppCommit||info.appSourceCommit!==testedAppCommit)throw Error('QA metadata does not match the separately built app commit')
 if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(info.url).hostname)) throw Error('Loading proof requires an isolated loopback Run')
 const instrumentPath = resolve(import.meta.dir, `../../tests/browser/physical-scene/${detailInventory ? 'detail-latency-instrumentation' : 'native-map-loading-instrumentation'}.ts`)
 const built = await Bun.build({ entrypoints: [instrumentPath], target: 'browser', format: 'iife', minify: false })
@@ -35,7 +37,7 @@ const evaluate = async (expression: string) => { let timer: ReturnType<typeof se
 const W = `document.querySelector('iframe[src*="/world/runs/"]').contentWindow`
 const world = (body: string) => evaluate(`(()=>{const w=${W},d=w.document,q=w.__nativeMapLoadingProof;${body}})()`)
 const until = async (body: string, label: string) => { const started = performance.now(); while (performance.now() - started < 45000) { if (await world(body)) return; await Bun.sleep(50) }; throw Error(`Timed out: ${label}`) }
-const selected = `{mode:d.querySelector('.modes button[aria-pressed=true]')?.textContent.trim()==='3D'?'3d':'2d',levelId:d.querySelector('select[aria-label="Layout level"]')?.value}`
+let selected = `{mode:d.querySelector('.modes button[aria-pressed=true]')?.textContent.trim()==='3D'?'3d':'2d',levelId:d.querySelector('select[aria-label="Layout level"]')?.value}`
 const actions: any[] = [], gc: any[] = []
 const action = async (name: string, setup: string, dispatch: string, expected = selected, surface = 'maplibregl-canvas') => {
   const value = await world(`${setup};q.begin(${JSON.stringify(name)},${expected},${JSON.stringify(surface)});${dispatch};return q.current.promise`)
@@ -51,7 +53,9 @@ const scope = async () => {
   await until(`return Boolean(d.querySelector('.scopes input[type=search]'))`,'rendered area search'); await world(`const input=d.querySelector('.scopes input[type=search]');input.value='Turbine hall';input.dispatchEvent(new w.Event('input',{bubbles:true}))`)
   const path = 'Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex'
   await until(`return [...d.querySelectorAll('.scopes button[title]')].some(b=>b.title===${JSON.stringify(path)})`, path)
-  await action('first-turbine-hall-focus', `const b=[...d.querySelectorAll('.scopes button[title]')].find(b=>b.title===${JSON.stringify(path)})`, 'b.click()')
+  const scopeId = await world(`return q.sources.flatMap(source=>source.scopes??[]).find(scope=>scope.label==='Turbine hall and feedwater pump annex')?.id`); if(typeof scopeId!=='string')throw Error('Source scope identity missing before focus')
+  selected = `{...${selected},scopeId:${JSON.stringify(scopeId)},sourceInstances:[1],layers:['utility-routes']}`
+  await action('first-turbine-hall-focus', `const b=[...d.querySelectorAll('.scopes button[title]')].find(b=>b.title===${JSON.stringify(path)})`, 'b.click()',selected)
 }
 const cutaway = async (enabled: boolean, name: string) => {
   await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='View');b.click()`)
@@ -98,11 +102,13 @@ try {
   const utilitiesEnabled=await world(`const input=[...d.querySelectorAll('.settings label')].find(label=>(label.querySelector('span')?.firstChild?.textContent??label.textContent).trim().startsWith('Utility routes')).querySelector('input');return input.checked&&!input.indeterminate`)
   if(!utilitiesEnabled)await action('enable-collection-utility-3d',`const input=[...d.querySelectorAll('.settings label')].find(label=>(label.querySelector('span')?.firstChild?.textContent??label.textContent).trim().startsWith('Utility routes')).querySelector('input')`,'input.click()',`{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4],layers:['utility-routes']}`)
   await world(`d.querySelector('[aria-label="Close view settings"]').click()`)
+  if (!floorGateOnly) {
   await button('Plan','all-utility-first-plan',`{mode:'2d',readyCount:5,layers:['utility-routes']}`)
   await button('3D','all-utility-return-3d',`{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4],layers:['utility-routes']}`)
   await button('Plan','all-utility-warm-plan',`{mode:'2d',readyCount:5,layers:['utility-routes']}`)
   await collect('before-all-utility-3d-return')
   await button('3D','all-utility-gc-return-3d',`{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4],layers:['utility-routes']}`)
+  }
   if(process.env.LEITBILD_NATIVE_TRANSITION_ONLY!=='1'){
   await scope()
   await floor('Turbine and main control', 'first-operating-3d')
@@ -114,14 +120,15 @@ try {
   await floor('Turbine and main control', 'first-plan-operating')
   await floor('Lower', 'first-plan-lower')
   await collect('before-plan-return'); await floor('Turbine and main control', 'gc-return-plan-operating')
-  await button('3D', 'return-3d-operating', `{mode:'3d',levelId:'operating'}`)
+  await button('3D', 'return-3d-operating', `{...${selected},mode:'3d',levelId:'operating'}`)
   }
   }
   const shot = await call('Page.captureScreenshot', { format: 'png' }); await writeFile(join(folder, 'final-native-map.png'), Buffer.from(shot.data, 'base64'))
   const observer = await world('return {sources:q.sources,jobs:q.jobs,bspJobs:q.bspJobs,bspPending:q.bspPending,draws:q.draws,uploads:q.uploads,errors:q.errors,pending:q.pending,overheadMs:q.overheadMs,userAgent:w.navigator.userAgent,timeOrigin:w.performance.timeOrigin,detailDraws:q.detailDraws,detailInventories:q.detailInventories,detailSignatures:q.detailSignatures,detailObserverMs:q.detailObserverMs,detailErrors:q.detailErrors,sourceManifests:q.sourceManifests}'), source = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository }).stdout.toString().trim()
+  for (const expected of [info.expectedUnitDesign,info.expectedCampusDesign]) if(typeof expected!=='string'||!observer.sources.some((source:any)=>source.design===expected))throw Error('Actual loaded source family differs from QA Design pins')
   for (const item of network.values()) { item.startedWorldMs=item.wallTime*1000-observer.timeOrigin; item.phase=[...actions].reverse().find((action:any)=>item.startedWorldMs>=action.started)?.name??'navigation'; item.responseMs=item.response===undefined?null:(item.response-item.start)*1000 }
   await call('Page.navigate',{url:'about:blank'}); let physicalWorkerTargets:any[]=[]; const closeStarted=performance.now(); do { physicalWorkerTargets=(await call('Target.getTargets')).targetInfos.filter((value:any)=>value.type==='worker'&&/preparation-worker|source-compile|architecture-bsp-worker/.test(value.url));if(!physicalWorkerTargets.length)break;await Bun.sleep(50) }while(performance.now()-closeStarted<10000); if(physicalWorkerTargets.length)throw Error('Closed native map retained physical worker targets')
-  const result = { ratio,planFirst,coldOnly,detailInventory,navigationStartedUnixMs, worldNavigationToFirst3dDrawMs:cold.firstDraw.at, hostNavigationToFirst3dDrawMs:observer.timeOrigin+cold.firstDraw.at-navigationStartedUnixMs, hostNavigationToAllSources3dDrawMs:observer.timeOrigin+cold.allRequiredSourcesFirstDrawAt-navigationStartedUnixMs, hostNavigationToAllSourcesGpuCompletionMs:observer.timeOrigin+cold.gpuCompletedAt-navigationStartedUnixMs, physicalWorkerTargetsAfterExit:physicalWorkerTargets, runnerCommit: source, testedAppCommit, testedApp: info, startup, mounted, actions, gc, observer, apiRequests:[...network.values()], socketFrames, exceptions, instrumentationSha256: createHash('sha256').update(instrumentation).digest('hex'), limits: ['Real built loopback Host/World, paused isolated Run, production workers/viewports; no production instrumentation or model changes.', 'Dispatch and milestones use World performance.now. A matching prepared-array/VBO draw is observed. Full-site cold completion requires both actual source-family cohorts (four unit instances and one campus) BEFORE a new microtask GPU fence; pending0/DOMready alone cannot satisfy it. Fence completion is not a physical-monitor timestamp.' , 'Vector Plan is a separate Canvas2D milestone: actual matching-level ink after source drawing or prepared-view evidence, then two RAF scheduling frames with no pending jobs. No WebGL fence or GPU-completion claim is attached to Canvas2D paint.', 'Prepared response includes queue/worker/transfer; no controller-ready timestamp is claimed without a product hook. First matching draw proves admission occurred by that point.', 'WeakMap tags and primitive-only logs do not retain prepared arrays across forced GC. Instrumentation adds overhead; draw-wrapper diagnostic cost is reported separately and does not include every wrapper.', 'BSP jobs are tracked separately and never misclassified as solid preparation; an opaque first-draw milestone need not wait for an independent background transparency cohort. All worker targets must terminate on page closure. No fixed settlement sleeps. Initial controls mount is separate from layout completion. One GPU/profile/device and local services; full-product and isolated-engine timings are not interchangeable.'] }
+  const result = { ratio,planFirst,coldOnly,floorGateOnly,detailInventory,navigationStartedUnixMs, worldNavigationToFirst3dDrawMs:cold.firstDraw.at, hostNavigationToFirst3dDrawMs:observer.timeOrigin+cold.firstDraw.at-navigationStartedUnixMs, hostNavigationToAllSources3dDrawMs:observer.timeOrigin+cold.allRequiredSourcesFirstDrawAt-navigationStartedUnixMs, hostNavigationToAllSourcesGpuCompletionMs:observer.timeOrigin+cold.gpuCompletedAt-navigationStartedUnixMs, physicalWorkerTargetsAfterExit:physicalWorkerTargets, runnerCommit: source, testedAppCommit, testedApp: info, startup, mounted, actions, gc, observer, apiRequests:[...network.values()], socketFrames, exceptions, instrumentationSha256: createHash('sha256').update(instrumentation).digest('hex'), limits: ['Real built loopback Host/World, paused isolated Run, production workers/viewports; no production instrumentation or model changes.', 'Dispatch and milestones use World performance.now. A matching prepared-array/VBO draw is observed. Full-site cold completion requires both actual source-family cohorts (four unit instances and one campus) BEFORE a new microtask GPU fence; pending0/DOMready alone cannot satisfy it. Fence completion is not a physical-monitor timestamp.' , 'Vector Plan is a separate Canvas2D milestone: actual matching-level ink after source drawing or prepared-view evidence, then two RAF scheduling frames with no pending jobs. No WebGL fence or GPU-completion claim is attached to Canvas2D paint.', 'Prepared response includes queue/worker/transfer; no controller-ready timestamp is claimed without a product hook. First matching draw proves admission occurred by that point.', 'WeakMap tags and primitive-only logs do not retain prepared arrays across forced GC. Instrumentation adds overhead; draw-wrapper diagnostic cost is reported separately and does not include every wrapper.', 'BSP jobs are tracked separately and never misclassified as solid preparation; an opaque first-draw milestone need not wait for an independent background transparency cohort. All worker targets must terminate on page closure. No fixed settlement sleeps. Initial controls mount is separate from layout completion. One GPU/profile/device and local services; full-product and isolated-engine timings are not interchangeable.'] }
   if (observer.errors.length || observer.pending || exceptions.length || observer.sources.some((item: any) => !item.ok || !item.responseAt || !item.terminatedAt)) throw Error('Loading observer found unfinished/failed product work')
   await writeFile(join(folder, 'receipt.json'), JSON.stringify(result, null, 2)); console.log('DONE', folder)
 } catch (error) {

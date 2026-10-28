@@ -10,7 +10,7 @@
   ;(window as any).__nativeMapLoadingProof = q
   const state = (gl: WebGL2RenderingContext) => { let value = bound.get(gl); if (!value) { value = { array: null, vao: null }; bound.set(gl, value) }; return value }
   const viewFrom = (key: string) => { const at = key.lastIndexOf('/['); if (at < 0) return null; try { return JSON.parse(key.slice(at + 1)) } catch { throw Error('Physical view key cannot be decoded by loading proof') } }
-  const matches = (key: string, expected: any) => { const view = viewFrom(key); return Boolean(view && (!expected.mode || view[0] === expected.mode) && (!expected.levelId || view[1] === expected.levelId) && (expected.cutaway === undefined || view[2] === expected.cutaway) && (expected.separated === undefined || Boolean(view[3]) === expected.separated) && (!expected.layers || expected.layers.every((id:string)=>view.some((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&Array.isArray(part.layers)&&part.layers.includes(id))))) }
+  const matches = (key: string, expected: any) => { const view = viewFrom(key); return Boolean(view && (!expected.mode || view[0] === expected.mode) && (!expected.levelId || view[1] === expected.levelId) && (expected.scopeId === undefined || view[4] === expected.scopeId) && (expected.cutaway === undefined || view[2] === expected.cutaway) && (expected.separated === undefined || Boolean(view[3]) === expected.separated) && (!expected.layers || expected.layers.every((id:string)=>view.some((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&Array.isArray(part.layers)&&part.layers.includes(id))))) }
   const NativeWorker = Worker
   const observe = (worker: Worker, response: any) => {
     const current = workers.get(worker); if (!current) return
@@ -22,7 +22,7 @@
       return
     }
     if (current.source && response?.ok !== undefined) {
-      const job = current.source; job.responseAt = at; job.responseMs = at - job.started; job.ok = response.ok; job.occurrences = response.scene?.objects?.length ?? null; job.planLevels = response.scene?.planDrawing?.views.map((view:any)=>({levelId:view.levelId,primitives:view.primitives.length})) ?? []; q.pending--
+      const job = current.source; job.responseAt = at; job.responseMs = at - job.started; job.ok = response.ok; job.occurrences = response.scene?.objects?.length ?? null; job.scopes = response.scene?.scopes?.map((scope:any)=>({id:scope.id,label:scope.label})) ?? []; job.planLevels = response.scene?.planDrawing?.views.map((view:any)=>({levelId:view.levelId,primitives:view.primitives.length})) ?? []; q.pending--
       if (!response.ok) q.errors.push(response.message ?? 'Source compilation failed')
     }
     const job = current.jobs.get(response?.id); if (!job) return
