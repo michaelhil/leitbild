@@ -2,11 +2,13 @@
  * A sample as it travels from the display route to the vignette (§5.8): each part said once. An alert row leaves out
  * what the vignette derives the same from the row itself or from what the sample says once for its object (its key,
  * its object's label, Pack and category, its group, priority and raise time, its category's label and place, the
- * command acknowledging it); a lead row is named by its ref where the caller holds its declaration (`held`), whole
- * otherwise. The encoder leaves a field out only where decoding gives it back equal, field by field, so the vignette
+ * command acknowledging it); an observation shares the sample's exact timestamp/clock where equal; a lead row is
+ * named by its ref where the caller holds its declaration (`held`), whole otherwise. The encoder leaves a field out
+ * only where decoding gives it back equal, field by field, so the vignette
  * reads the very sample World composed (decodeSample(encodeSample(sample)) equals it).
  */
 import type { AlertRow } from '../alerts/rows.ts'
+import type { Observation } from '../../../core/observation/model.ts'
 import type { VignetteSample, VignetteValue } from './model.ts'
 
 type Acknowledge = NonNullable<AlertRow['acknowledge']>
@@ -38,7 +40,11 @@ export type WireAlertRow = Pick<AlertRow, 'objectId' | 'alert' | 'state' | 'expe
   readonly acknowledge?: true | Acknowledge
 }
 
-export interface WireSample extends Omit<VignetteSample, 'alerts' | 'leads'> {
+/** A reading keeps a different timestamp or clock; an equal sample stamp is said once. */
+export type WireObservation = Omit<Observation, 'at' | 'clock'> & Partial<Pick<Observation, 'at' | 'clock'>>
+
+export interface WireSample extends Omit<VignetteSample, 'alerts' | 'leads' | 'observations'> {
+  readonly observations: ReadonlyArray<WireObservation>
   readonly alerts: ReadonlyArray<WireAlertRow>
   readonly objects?: Readonly<Record<string, WireObject>>
   /** By the index of each values view holding a lead request: its values now, by ref. */
@@ -121,10 +127,15 @@ export const encodeSample = (sample: VignetteSample, held: ReadonlySet<string> =
       ...(acknowledge === undefined ? {} : { acknowledge: object.acknowledge !== undefined && same(acknowledgeOf(object.acknowledge, row.alert.id), acknowledge) ? true as const : acknowledge }),
     }
   })
-  const { alerts: _rows, leads, ...rest } = sample
+  const { alerts: _rows, leads, observations, ...rest } = sample
   const declared = leads === undefined ? [] : [...new Map(Object.values(leads).flat().filter(value => !held.has(value.ref)).map(value => [value.ref, value] as const)).values()]
   return {
     ...rest, alerts,
+    observations: observations.map(({ at, clock, ...reading }) => ({
+      ...reading,
+      ...(at === sample.at.at ? {} : { at }),
+      ...(clock === sample.at.clock ? {} : { clock }),
+    })),
     ...(said.size === 0 ? {} : { objects: Object.fromEntries(said) }),
     ...(leads === undefined ? {} : { leads: Object.fromEntries(Object.entries(leads).map(([index, values]) => [index, values.map(value => value.ref)])) }),
     ...(declared.length === 0 ? {} : { declared }),
@@ -133,7 +144,7 @@ export const encodeSample = (sample: VignetteSample, held: ReadonlySet<string> =
 
 /** The sample World composed, from the wire; `held`: the lead values the caller holds, by ref (what it named as held). */
 export const decodeSample = (wire: WireSample, held: ReadonlyMap<string, VignetteValue> = new Map()): VignetteSample => {
-  const { alerts: rows, objects = {}, leads, declared = [], ...rest } = wire
+  const { alerts: rows, objects = {}, leads, declared = [], observations, ...rest } = wire
   const known = new Map([...held, ...declared.map(value => [value.ref, value] as const)])
   const alerts = rows.map((row): AlertRow => {
     const object = objects[row.objectId]
@@ -166,6 +177,11 @@ export const decodeSample = (wire: WireSample, held: ReadonlyMap<string, Vignett
   }
   return {
     ...rest, alerts,
+    observations: observations.map(({ at, clock, ...reading }) => ({
+      ...reading,
+      at: at === undefined ? wire.at.at : at,
+      clock: clock === undefined ? wire.at.clock : clock,
+    })),
     ...(leads === undefined ? {} : { leads: Object.fromEntries(Object.entries(leads).map(([index, refs]) => [index, refs.map(value)])) }),
   }
 }

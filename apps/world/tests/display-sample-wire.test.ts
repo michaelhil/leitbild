@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createWorldApplicationAssembly } from '../src/app-assembly.ts'
 import { displayRunOf, handleDisplayRoute } from '../src/core/api/display-capabilities.ts'
 import type { ActorId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
+import { observationSchema } from '../src/core/observation/model.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
@@ -41,6 +42,30 @@ const sampleOf = (alerts: ReadonlyArray<AlertRow>, extra: Partial<VignetteSample
 })
 
 describe('a sample on the wire', () => {
+  test('observations share only an exactly equal sample stamp and retain every reading and clock distinction', () => {
+    const observations = [
+      { ref: 'u#pressure', at, clock: 'simulation', value: 0, quality: 'good', priority: 'none' },
+      { ref: 'u#pressure', at: '2026-07-12T04:02:01.000Z', clock: 'simulation', value: null, quality: 'stale', priority: 'warning', why: 'last received value', since: { at, clock: 'wall' } },
+      { ref: 'u#breaker', at, clock: 'wall', value: false, quality: 'uncertain', priority: 'none', note: 'CHECK' },
+      { ref: 'u#criterion', at: '2026-07-12T04:01:00.000Z', clock: 'wall', value: 1, quality: 'good', priority: 'none', checks: [{ check: 0, met: 'yes', measured: 0 }], timeToAct: { threshold: 'low', seconds: 0 }, idle: ['other'], past: 'low', expected: { after: 'RX TRIP' } },
+      { ref: 'u#state', at, clock: 'simulation', value: 'UNKNOWN', quality: 'bad', priority: 'alarm', why: 'source refused the read' },
+      { ref: 'u#same-instant', at: '2026-07-12T04:02:02.000+00:00', clock: 'simulation', value: 20, quality: 'good', priority: 'none' },
+    ].map(reading => observationSchema.parse(reading))
+    const sample = sampleOf([], { observations })
+    const wire = encodeSample(sample)
+    expect(wire.observations[0]).not.toHaveProperty('at')
+    expect(wire.observations[0]).not.toHaveProperty('clock')
+    expect(wire.observations[1]).toMatchObject({ at: observations[1]!.at, quality: 'stale', value: null })
+    expect(wire.observations[1]).not.toHaveProperty('clock')
+    expect(wire.observations[2]).not.toHaveProperty('at')
+    expect(wire.observations[2]).toMatchObject({ clock: 'wall', value: false })
+    expect(wire.observations[3]).toMatchObject({ at: observations[3]!.at, clock: 'wall' })
+    expect(wire.observations[5]!.at).toBe('2026-07-12T04:02:02.000+00:00')
+    const decoded = decodeSample(JSON.parse(JSON.stringify(wire)) as WireSample)
+    expect(decoded).toEqual(sample)
+    expect(decoded.observations.map(reading => observationSchema.parse(reading))).toEqual(observations)
+  })
+
   test('rows leave out what decodes the same, and decode to the rows World composed', () => {
     const sample = sampleOf([
       row('plant:a', 'alarm:one', { category: { id: 'electrical', label: 'Electrical', order: 5 }, tag: 'LO-LO · ALM' }),
