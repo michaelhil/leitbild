@@ -1,0 +1,62 @@
+{
+  "passed": true,
+  "date": "2026-10-28",
+  "changes": ["76618d06a", "ae61c35a2"],
+  "claimScope": "Native Chromium Canvas2D Plan ink equivalence and avoided oracle work; no full-product latency or RAF claim.",
+  "browser": "HeadlessChrome/156.0.0.0 on macOS",
+  "sourceSha256": {
+    "src/ui/map/physical-scene/plan-picking.ts": "315a22d8a61817c3171dc02f5b4612dbb06c34dd1949ae46661dd9c68d45a3e7",
+    "tests/browser/physical-scene/plan-picking-app.ts": "76e6560012958a80e0b571adb1c57137233d4ce01224a49bb188b0077c3bba52",
+    "tests/fixtures/physical-layout/plan-picking-before-entry-bounds.ts": "360647654e97524238360f12bb6ca602eccdadcc7a690bd65e8b80b2863e57bb",
+    "scripts/physical-layout/plan-picking-probe.ts": "ea5dc6bdf3d4b5858eb01696852b2e3373113d09d04d952f6a91a4c9552ee7c8"
+  },
+  "gates": {
+    "entryBounds": {
+      "passed": true,
+      "devicePixelRatios": [1, 2],
+      "namedInkCasesTotal": 114,
+      "denseGridQueriesTotal": 52500,
+      "failures": [],
+      "callsPerDpr": {
+        "before": {"stroke": 11314, "fill": 16470, "glyph": 60},
+        "current": {"stroke": 3523, "fill": 16470, "glyph": 60},
+        "brute": {"stroke": 51466, "fill": 23646, "glyph": 1875}
+      },
+      "bundleSha256": "aaedf8aba65a6f6b6595ca6250892507ba10ad3f18011883b2448fab57143ea6"
+    },
+    "entryBoundsAndOwnerAbsence": {
+      "passed": true,
+      "devicePixelRatios": [1, 2],
+      "namedInkCasesTotal": 114,
+      "ownerAbsenceAndTextFootprintCasesTotal": 2,
+      "denseGridQueriesTotal": 52500,
+      "failures": [],
+      "callsPerDpr": {
+        "before": {"stroke": 11314, "fill": 16470, "glyph": 60, "metrics": 6},
+        "current": {"stroke": 3523, "fill": 16470, "glyph": 60, "metrics": 3},
+        "brute": {"stroke": 51466, "fill": 23646, "glyph": 1875, "metrics": 0}
+      },
+      "missingOwnerMetricsPerDpr": {"before": 3, "current": 0},
+      "textOnlyFootprintsMatchPreviousAcrossCameraFrames": true,
+      "replacementSourceCanIntroducePreviouslyAbsentOwner": true,
+      "bundleSha256": "fc06b1b8a60515cde9b986f15792c7713fd09a66e2d6844c61ec2fc1bb743b1f"
+    }
+  },
+  "rawRoot": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028",
+  "rawSha256": {
+    "plan-entry-bounds-20261028/receipt.json": "e352b154a97790a56c24e824e19028133f8e2791d67fa977f34d954218a73dc6",
+    "plan-entry-bounds-20261028/dpr-1.json": "2815b63bde740c2ee578c424f40fc3d3c8e8a3bdcea1463c15a2a22da52b54bd",
+    "plan-entry-bounds-20261028/dpr-2.json": "4263bebccfb1938d3d7fa53f01fa6b01299dfe40f506d72a544e2751cc99aa79",
+    "plan-entry-bounds-20261028/dpr-1.png": "72fbd147787091803ee84babb43508409fe26624698f4df4c44e6c8220b5572c",
+    "plan-entry-bounds-20261028/dpr-2.png": "0660899af5c589d1c6254a389807e0eb6ab3dadfe45882c6377410e491913f5e",
+    "plan-entry-bounds-20261028/chrome-1.log": "b9b172707850a6da40a4da159427f7f08b1a5746844427a2c83618ab4ccd6a44",
+    "plan-entry-bounds-20261028/chrome-2.log": "336b954c4422e1ff9423fe848c4dcc8d66dbe6d874fe1c3b99e141645d339cf3",
+    "plan-entry-bounds-absence-20261028/receipt.json": "2a656ad001cff2af52433f8b9f03578abba7029be53a0d2115a2f8b521ce2d37",
+    "plan-entry-bounds-absence-20261028/dpr-1.json": "3484a515d66c40609a20cf307526b6cfa7b3f9b69dd927b5ce11ab9de467724b",
+    "plan-entry-bounds-absence-20261028/dpr-2.json": "06dc71e45fb9dc78de83d60aa128dca5906c82c2cde3995512bc0a98f5f92d89",
+    "plan-entry-bounds-absence-20261028/dpr-1.png": "72fbd147787091803ee84babb43508409fe26624698f4df4c44e6c8220b5572c",
+    "plan-entry-bounds-absence-20261028/dpr-2.png": "0660899af5c589d1c6254a389807e0eb6ab3dadfe45882c6377410e491913f5e",
+    "plan-entry-bounds-absence-20261028/chrome-1.log": "beab4a3d7e17daa44fe93ba99bb8ea89b014cfc05f05234c11803eecd76fd595",
+    "plan-entry-bounds-absence-20261028/chrome-2.log": "834169f18a13384e9d079c150d318b93189c4aaf75856eef9a7378cacd6b913b"
+  }
+}
