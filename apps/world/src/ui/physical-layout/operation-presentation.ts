@@ -16,7 +16,8 @@ export const physicalOperationWord = (operation: PhysicalSubjectOperation | unde
 export const physicalOperationBadgeWord = (operation: PhysicalSubjectOperation | undefined, ordinary: boolean): string | null =>
   ordinary || operation?.equipment?.class === 'mover' || operation?.equipment?.class === 'switch' ? physicalOperationWord(operation) : null
 
-/** The same context accompanies the pointer label and the existing faceplate. */
+/** Pointer context; connection cards may also show their endpoints and live flow.
+ * Equipment cards use the shared process faceplate without these layout lists. */
 export const physicalOperationContext = (operation: PhysicalSubjectOperation | undefined): ReadonlyArray<{ readonly label: string; readonly value: string }> => {
   if (!operation) return []
   const context: Array<{ label: string; value: string }> = []

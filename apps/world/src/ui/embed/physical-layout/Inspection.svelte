@@ -33,7 +33,12 @@
   const runId = $derived(simulationRunIdSchema.parse(envelope.subject.id))
   const frozen = $derived(layoutLiveFrozen(snapshot, wallNow))
   const subject = $derived(snapshot.latest?.subjects.find(subject => subject.elementId === activeElement))
-  const context = $derived(subject && snapshot.latest ? physicalOperationContext(resolvePhysicalSubjectOperation(subject, snapshot.latest.sample.observations, frozen)) : [])
+  const context = $derived.by(() => {
+    // Equipment uses the process display's shared card without added layout
+    // lists. A connection card retains its actual endpoints and measured flow.
+    if (subject?.topology?.kind !== 'connection' || !snapshot.latest) return []
+    return physicalOperationContext(resolvePhysicalSubjectOperation(subject, snapshot.latest.sample.observations, frozen))
+  })
   const readings = $derived<FaceplateReadings | null>(subject === undefined || snapshot.latest === null ? null : {
     values: subject.values, observations: snapshot.latest.sample.observations, devices: subject.devices,
     // The first map slice reads no extra history. The shared card explicitly
@@ -131,7 +136,7 @@
     <!-- A related device is a new exact owner subject, not the housing's
          forwarded readings. One visible on-demand card reads it directly. -->
     <ElementFaceplate {runId} objectId={parsed.state.objectId} packId={parsed.state.packId} elementId={activeElement}
-      name={activeName} title={activeName} context={[{ label: 'In', value: parsed.state.label }]}
+      name={activeName} title={activeName}
       alerts={snapshot.latest?.sample.alerts ?? []} {frozen} opening={where}
       zoom={1} room={layoutInspectionContentRoom(viewport.width, hostAvailableHeight ?? viewport.height)} anchor={null} item={() => []}
       showHistory={false} maxWidth={Math.max(240, viewport.width - 16)}

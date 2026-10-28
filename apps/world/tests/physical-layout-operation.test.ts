@@ -36,6 +36,10 @@ test('actual signed flow follows admitted endpoint order and exact zero, without
     const result = resolvePhysicalSubjectOperation(s, [observation(flow, raw)], false)
     expect(result.flow?.direction).toBe(direction); expect(result.flow?.state).toBe(state); expect(result.flow?.value).toBe(raw)
     expect(result.connection?.from).toEqual({ elementId: 'pump', label: 'Pump', port: 'outlet' })
+    const context = physicalOperationContext(result)
+    expect(context.map(row => row.label)).toEqual(['From', 'To', 'Medium', 'Flow'])
+    expect(context[0]).toEqual({ label: 'From', value: 'Pump · outlet' })
+    expect(context[1]).toEqual({ label: 'To', value: 'Valve · inlet' })
   }
 })
 
@@ -106,7 +110,7 @@ test('client boundary refuses cross-owner, unacquired and undeclared semantic bi
 })
 
 
-test('node connections are exact incident owner links, with element aliases and no extra observation acquisition', () => {
+test('hover connection context retains exact incident owner links, with element aliases and no extra observation acquisition', () => {
   const flow = value('header.flow')
   const graph = topologyGraphSchema.parse({ objectId: 'plant:one', revision: 'same-owner', family: 'flow', media: [{ id: 'water', label: 'Water', kind: 'fluid' }], groups: [], boundaries: [],
     nodes: ['header-node', 'valve-node', 'unrelated-node', 'isolated-node'].map((id, index) => ({ id, element: ['header', 'valve', 'unrelated', 'isolated'][index], label: id, rank: id, kind: 'header', class: 'junction', ports: [{ id: 'port', rank: 'port', media: ['water'], direction: 'both' }], bindings: index ? [] : [binding('flow', flow)] })),

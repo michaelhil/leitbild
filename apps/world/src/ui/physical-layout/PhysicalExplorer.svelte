@@ -34,7 +34,6 @@
   import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
   import { requestedPhysicalLayoutView } from './view-intent.ts'
-  import { createPhysicalHoverIntent } from './hover-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
   import { physicalRouteInspectionPaths, createPhysicalRouteScreenMarks } from './route-marks.ts'
@@ -96,9 +95,6 @@
   let hover = $state<PhysicalSceneHit | null>(null)
   let hoverLabelElement = $state<HTMLElement | null>(null)
   let hoverLabelSize = $state.raw({ width: 0, height: 0 })
-  let hoverDismissTimer: ReturnType<typeof setTimeout> | null = null
-  const retainHover = (): void => { if (hoverDismissTimer !== null) clearTimeout(hoverDismissTimer); hoverDismissTimer = null }
-  const dismissHoverSoon = (): void => { retainHover(); hoverIntent.clear(); hoverDismissTimer = setTimeout(() => { hoverDismissTimer = null; hover = null }, 200) }
   let inspected = $state<{ readonly sceneId: string; readonly occurrenceId: string | null; readonly elementId: string; readonly label: string; readonly channel: string } | null>(null)
   let inspectionReady = $state(false)
   let inspectionFrame = $state<HTMLIFrameElement | null>(null)
@@ -237,11 +233,6 @@
     if (hit.subjectIds.length === 1) inspect(hit.sceneId, hit.subjectIds[0]!, hit.label, hit.occurrenceId)
     else { controlsOpen = true; componentScope = { sceneId: hit.sceneId, label: hit.label, subjectIds: hit.subjectIds }; filter = ''; componentsOpen = true }
   }
-  const hoverIntent = createPhysicalHoverIntent(hit => {
-    if (!active || suspended || !documentVisible || inspected !== null) return
-    const current = controller?.pick(hit.screen)
-    if (current?.sceneId === hit.sceneId && current.occurrenceId === hit.occurrenceId && current.subjectIds.length > 0) inspectHit(current)
-  })
   const highlighted = $derived(hover ?? (inspected?.occurrenceId ? { sceneId: inspected.sceneId, occurrenceId: inspected.occurrenceId } : null))
   const hoverContext = $derived.by(() => {
     if (hover === null || hover.subjectIds.length !== 1) return []
@@ -262,7 +253,6 @@
   $effect(() => {
     const color = draftingPalette?.materials.selection
     controller?.setHighlight(active && !suspended && documentVisible && highlighted !== null && color ? { sceneId: highlighted.sceneId, occurrenceId: highlighted.occurrenceId, color } : null)
-    hoverIntent.update(active && !suspended && documentVisible && inspected === null ? hover : null)
   })
   const frameHost = createEmbeddedFrameHost({
     origin: location.origin, frame: () => inspectionFrame?.contentWindow ?? null,
@@ -697,10 +687,9 @@
       size = next.surface.getSize(); screenRevision += 1
     }
     const pointAt = (event: PointerEvent | MouseEvent) => { const box = next.surface.element.getBoundingClientRect(); return { x: event.clientX - box.left, y: event.clientY - box.top } }
-    const leave = (): void => { retainHover(); hoverIntent.clear(); if (hoverTimer !== null) clearTimeout(hoverTimer); hoverTimer = null; hover = null }
+    const leave = (): void => { if (hoverTimer !== null) clearTimeout(hoverTimer); hoverTimer = null; hover = null }
     const moving = (): void => { leave(); overlayDirty = true }
     const move = (event: PointerEvent): void => {
-      retainHover()
       const target = event.target instanceof Element ? event.target : null
       if (!active || suspended || event.buttons !== 0 || target && (overlayElement?.contains(target) || target.closest('.maplibregl-ctrl'))) { leave(); return }
       if (hoverTimer !== null) clearTimeout(hoverTimer)
@@ -729,8 +718,7 @@
     }
     const key = (event: KeyboardEvent): void => {
       if (!active || suspended) return
-      // Keyboard editing/navigation takes intent away from a resting pointer.
-      // A pending dwell must not later steal focus into an equipment card.
+      // Keyboard editing/navigation dismisses the pointer preview.
       leave()
       const path = event.composedPath()
       const route = physicalExplorerKeyboardRoute({ path, surface: next.surface.element, overlay: overlayElement, defaultPrevented: event.defaultPrevented, composing: event.isComposing,
@@ -753,12 +741,12 @@
     const clock = setInterval(() => { wallNow = Date.now() }, 250)
     const disposers = [next.surface.on('render', changed), next.surface.on('resize', () => { overlayDirty = true; changed() }), next.surface.on('movestart', moving)]
     const surface = next.surface.element
-    surface.addEventListener('pointermove', move); surface.addEventListener('pointerdown', cancel); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', dismissHoverSoon)
+    surface.addEventListener('pointermove', move); surface.addEventListener('pointerdown', cancel); surface.addEventListener('pointercancel', cancel); surface.addEventListener('pointerleave', cancel)
     document.addEventListener('visibilitychange', visibility); document.addEventListener('focusin', cancel); window.addEventListener('blur', cancel); window.addEventListener('message', receive); window.addEventListener('keydown', key)
     onconnect({ dismiss: () => { closeInspection(); leave() }, activate })
     return () => {
       onconnect(null); onDetailedOwners([]); leave(); clearInterval(clock); disposers.forEach(dispose => dispose())
-      surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerdown', cancel); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', dismissHoverSoon)
+      surface.removeEventListener('pointermove', move); surface.removeEventListener('pointerdown', cancel); surface.removeEventListener('pointercancel', cancel); surface.removeEventListener('pointerleave', cancel)
       document.removeEventListener('visibilitychange', visibility); document.removeEventListener('focusin', cancel); window.removeEventListener('blur', cancel); window.removeEventListener('message', receive); window.removeEventListener('keydown', key)
       for (const entry of sessions.values()) entry.session.close()
       sessions.clear(); annotationScheduler?.destroy(); annotationScheduler = null; overviewLayer?.destroy(); overviewLayer = null; next.destroy(); controller = null
@@ -805,7 +793,7 @@
   {#each badges as badge (`${badge.sceneId}:${badge.occurrenceId}:${badge.elementId}`)}
     <button class="layout-status" type="button" style:left={`${badge.point.x}px`} style:top={`${badge.point.y}px`} style:color={badge.color} title={`${badge.label}: ${badge.word}${badge.alarms > 0 ? ` · ${badge.alarms} alerts` : ''}`} aria-label={`Inspect ${badge.label}: ${badge.word}`} onclick={() => inspect(badge.sceneId, badge.elementId, badge.label, badge.occurrenceId)}><span>{badge.alarms > 0 ? badge.alarms : badge.chip}</span></button>
   {/each}
-  {#if hover !== null && !suspended && inspected === null}<div bind:this={hoverLabelElement} class="layout-hover-label" style:left={`${hoverPoint.x}px`} style:top={`${hoverPoint.y}px`}><strong>{hover.label}</strong>{#each hoverContext as context}<small><b>{context.label}</b> {context.value}</small>{/each}<small>Click to inspect · pause here to open</small></div>{/if}
+  {#if hover !== null && !suspended && inspected === null}<div bind:this={hoverLabelElement} class="layout-hover-label" style:left={`${hoverPoint.x}px`} style:top={`${hoverPoint.y}px`}><strong>{hover.label}</strong>{#each hoverContext as context}<small><b>{context.label}</b> {context.value}</small>{/each}<small>Click to inspect</small></div>{/if}
   {#if inspectionSource !== null && inspected !== null && !suspended}<div class="layout-inspection" style:left={`${cardPoint.x}px`} style:top={`${cardPoint.y}px`} style:width={`${inspectionWidth}px`} style:height={`${allocatedInspectionHeight}px`}>{#key inspectionSource}<iframe bind:this={inspectionFrame} title={`Inspect ${inspected.label}`} src={inspectionSource} allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'" referrerpolicy="same-origin"></iframe>{/key}</div>{/if}
 </div>
 
