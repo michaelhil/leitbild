@@ -345,7 +345,7 @@
   const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
-    if (target instanceof Element && target.closest('button, a, textarea, input, .procedure-csf-shell, .procedure-run-badges')) return
+    if (target instanceof Element && target.closest('button, a, textarea, input, .procedure-cross-unit-strip, .procedure-csf-shell, .procedure-run-badges')) return
     event.preventDefault()
     const element = event.currentTarget as Element
     element.setPointerCapture(event.pointerId)
@@ -1850,7 +1850,7 @@
 
           {#if requestedInputRun?.inputRequest}
             <div class="procedure-input-band" role="status">
-              <div><strong>Agent needs your input on step {inputStepLabel ?? requestedInputRun.inputRequest.stepId}</strong><p>{requestedInputRun.inputRequest.issue}</p></div>
+              <div><strong>Agent needs your input on step {inputStepLabel ?? requestedInputRun.inputRequest.stepId}</strong><details><summary>Read request</summary><p>{requestedInputRun.inputRequest.issue}</p></details></div>
               <button type="button" disabled={!displayedInputMatches} title={displayedInputMatches ? 'Focus the requested step in its retained revision' : 'Waiting for the requested procedure revision'} onclick={showCurrentInputStep}>Show step</button>
             </div>
           {/if}
@@ -2058,7 +2058,21 @@
 
 <style>
   .procedure-input-band { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; padding: 10px 16px; border-bottom: 1px solid #cbd5e1; background: #fffbeb; color: #713f12; font-size: 13px; }
-  .procedure-input-band p { margin: 4px 0 0; overflow-wrap: anywhere; }
+  .procedure-input-band p { margin: 6px 0 0; overflow-wrap: anywhere; }
+  .procedure-input-band details { margin-top: 3px; }
+  .procedure-input-band summary { cursor: pointer; }
   .procedure-input-band button { flex: 0 0 auto; min-height: 44px; border: 1px solid #d6c5a0; border-radius: 5px; padding: 6px 10px; color: inherit; background: #fff; cursor: pointer; }
-  @media (max-width: 600px) { .procedure-input-band { padding: 8px; gap: 8px; } }
+  @media (max-width: 600px) {
+    .procedure-input-band { padding: 8px; gap: 8px; }
+    :global(.procedure-header-bar) { touch-action: pan-x; }
+    :global(.procedure-grip) { touch-action: none; }
+    :global(.procedure-cross-unit-strip) { flex-wrap: nowrap; flex: 1; width: auto; overflow-x: auto; overscroll-behavior-inline: contain; }
+    :global(.procedure-cross-unit) { flex: 0 0 auto; flex-wrap: nowrap; }
+    :global(.procedure-header-actions) { flex-shrink: 0; }
+    :global(.procedure-csf-strip) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; overscroll-behavior-inline: contain; }
+    :global(.procedure-csf-shell) { flex: 0 0 auto; }
+    /* The scrolling strip must not clip the existing CSF help. Keep that
+       same focus/hover popover within the narrow World pane. */
+    :global(.procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
+  }
 </style>
