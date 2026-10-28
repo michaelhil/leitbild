@@ -99,7 +99,7 @@ try {
     const detailErrors=await world('q.detailEnabled=false;return q.detailErrors')
     if(detailErrors.length||cold.detailFence.glError)throw Error('Invalid critical detail witness: '+JSON.stringify(detailErrors))
   }
-  if(profileWorkers){let index=0;for(const [sessionId,url]of workerProfiles){const result=await call('Profiler.stop',{},sessionId);await writeFile(join(folder,`worker-${++index}.cpuprofile`),JSON.stringify(result.profile));await writeFile(join(folder,`worker-${index}.url.txt`),url)}if(!workerProfiles.size)throw Error('No actual preparation worker profile was captured');throw Error('Requested diagnostic-only worker profiles completed; no performance qualification verdict')}
+  if(profileWorkers){let index=0;for(const [sessionId,url]of workerProfiles){const result=await call('Profiler.stop',{},sessionId);await writeFile(join(folder,`worker-${++index}.cpuprofile`),JSON.stringify(result.profile));await writeFile(join(folder,`worker-${index}.url.txt`),url)}if(!workerProfiles.size)throw Error('No actual preparation worker profile was captured');await writeFile(join(folder,'worker-diagnostic.json'),JSON.stringify({actions,network:[...network.values()],worldTimeOrigin:await world('return w.performance.timeOrigin')},null,2));throw Error('Requested diagnostic-only worker profiles completed; no performance qualification verdict')}
   if (!coldOnly) {
   await world(`const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()==='View');b.click()`)
   const utilitiesEnabled=await world(`const input=[...d.querySelectorAll('.settings label')].find(label=>(label.querySelector('span')?.firstChild?.textContent??label.textContent).trim().startsWith('Utility routes')).querySelector('input');return input.checked&&!input.indeterminate`)
