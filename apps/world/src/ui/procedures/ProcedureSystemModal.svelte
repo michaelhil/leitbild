@@ -2,6 +2,7 @@
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Info, MessageSquare, MoreHorizontal, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import { tick, untrack } from 'svelte'
   import type { ProcedureSession } from './procedure-session.ts'
+  import { currentProcedureInput, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
   import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from './procedure-view.ts'
   import { readProcedureTagValue } from './procedure-client.ts'
   import { procedureViewKey, procedureCategories, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
@@ -89,6 +90,7 @@
     readonly initialProcedureId?: ProcedureId | undefined
     readonly windowOffsetIndex?: number
     /** Raised by the route when this unit's procedures are opened again: focus this window (and its requested procedure). */
+    readonly inputFocus?: ProcedureInputFocus | undefined
     readonly focusRequest?: number
     /** The Run an AI agent last started on this unit, a new object per start: shown without raising or focusing this window. */
     readonly aiStart?: { readonly runId: ProcedureRunId } | undefined
@@ -153,6 +155,7 @@
     initialProcedureId = undefined,
     windowOffsetIndex = 0,
     focusRequest = 0,
+    inputFocus = undefined,
     aiStart = undefined,
     selectUnit,
     openDisplay = undefined,
@@ -253,6 +256,9 @@
     ? procedureCurrentStep(selectedProcedureRun, document)
     : null)
   const driverView = $derived(procedureDriverView(selectedProcedureRun))
+  const requestedInputRun = $derived(selectedProcedureRun && currentProcedureInput(selectedProcedureRun) ? selectedProcedureRun : null)
+  let handledInputFocus: ProcedureInputFocus | undefined
+
   const busy = $derived(pendingControl !== null)
   const procedureRows = $derived(document ? procedureStepRows(document, selectedProcedureRun) : [])
   const catalogCategories = $derived(procedureCategories(catalog?.procedures ?? []))
@@ -631,17 +637,20 @@
   const scrollToProcedureStep = (
     stepId: string,
     behavior: ScrollBehavior = 'smooth',
+    focusHeading = false,
+    stillCurrent: () => boolean = () => true,
   ): void => {
     const request = latestProcedureLoadRequest
     if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
     scrollFrame = window.requestAnimationFrame(() => {
-      if (disposed || request !== latestProcedureLoadRequest) return
+      if (disposed || request !== latestProcedureLoadRequest || !stillCurrent()) return
       const stepElement = [...(procedureDocumentBodyElement?.querySelectorAll<HTMLElement>('[data-procedure-step-id]') ?? [])]
         .find(element => element.dataset.procedureStepId === stepId)
       stepElement?.scrollIntoView({
         block: 'start',
         behavior,
       })
+      if (focusHeading) stepElement?.querySelector<HTMLElement>('h3')?.focus({ preventScroll: true })
     })
   }
 
@@ -1277,11 +1286,44 @@
 
   // Opening this unit's procedures again focuses this window instead of a second one.
   $effect(() => {
-    if (focusRequest === 0) return
+    if (focusRequest === 0 || inputFocus !== undefined) return
     untrack(() => {
       procedureWindowElement?.focus()
       if (initialProcedureId !== undefined && initialProcedureId !== document?.procedureId) void loadProcedure(initialProcedureId)
     })
+  })
+
+  const showCurrentInputStep = (): void => {
+    const run = requestedInputRun
+    const focus = run ? procedureInputFocusFor(simulationRunId, run) : null
+    if (!focus) return
+    scrollToProcedureStep(focus.stepId, 'auto', true, () => resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId) !== null)
+  }
+
+  const focusRequestedInput = async (focus: ProcedureInputFocus): Promise<void> => {
+    const current = () => resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId)
+    const run = current()
+    if (!run) { error = 'This procedure input request is no longer current. No step was opened.'; return }
+    await loadProcedure(run.procedureId, true, { ...run, rememberCurrentPosition: true })
+    if (disposed || inputFocus !== focus) return
+    const requested = current()
+    const pinned = document?.source.sourceId === focus.sourceId && document.source.revision === focus.sourceRevision
+      && document.sourcePath === focus.sourcePath && document.procedureId === focus.procedureId
+    if (!requested || !pinned || selectedProcedureRun?.runId !== focus.runId) {
+      error = 'This procedure input request changed while its document loaded. No step was focused.'
+      return
+    }
+    await tick()
+    if (inputFocus !== focus || !current()) return
+    if (!document?.steps.some(step => step.id === focus.stepId)) { error = 'The requested step is absent from the retained procedure revision.'; return }
+    scrollToProcedureStep(focus.stepId, 'auto', true, () => inputFocus === focus && current() !== null)
+  }
+
+  $effect(() => {
+    const focus = inputFocus
+    const ready = catalog !== null
+    if (!ready || focus === undefined || focus === handledInputFocus) return
+    untrack(() => { handledInputFocus = focus; void focusRequestedInput(focus) })
   })
 
   // Another operator may start this procedure at a different pinned revision.
@@ -1790,11 +1832,18 @@
               {#if driverView.kind === 'ai'}
                 <span class="procedure-ai-tag">AI</span>
                 <span class="procedure-driver-text"><b>{driverView.label} driving {document.procedureId}</b> on {displayUnitName} · since {driverView.since} · {driverView.aiSteps} {driverView.aiSteps === 1 ? 'step' : 'steps'}</span>
-                <button type="button" title="Drive {document.procedureId} yourself; the AI only reads it until you hand it back. Ticking a step or selecting a branch also takes over." class:busy={busy} disabled={busy} onclick={() => void driveSelectedRun('claim')}>{#if pendingControl === 'drive'}{@render recordingNote()}{:else}Take over{/if}</button>
+                <button type="button" title="Drive {document.procedureId} yourself; the AI stops acting until you hand it back. A branch at the current step lets the AI continue. Marking a step, changing placekeeping or selecting an off-current branch takes over." class:busy={busy} disabled={busy} onclick={() => void driveSelectedRun('claim')}>{#if pendingControl === 'drive'}{@render recordingNote()}{:else}Take over{/if}</button>
               {:else}
                 <span class="procedure-driver-text"><b>You are driving {document.procedureId}</b>{driverView.handBackTo ? '' : ' · AI agents only read it'}</span>
                 <button type="button" title={driverView.handBackTo ? `Let ${driverView.handBackTo} continue ${document.procedureId}` : `Share ${document.procedureId} again`} class:busy={busy} disabled={busy} onclick={() => void driveSelectedRun('release')}>{#if pendingControl === 'drive'}{@render recordingNote()}{:else}{driverView.handBackTo ? `Hand back to ${driverView.handBackTo}` : 'Release'}{/if}</button>
               {/if}
+            </div>
+          {/if}
+
+          {#if requestedInputRun?.inputRequest}
+            <div class="procedure-input-band" role="status">
+              <div><strong>Agent needs your input on step {procedureStepById(document, requestedInputRun.inputRequest.stepId)?.label ?? requestedInputRun.inputRequest.stepId}</strong><p>{requestedInputRun.inputRequest.issue}</p></div>
+              <button type="button" onclick={showCurrentInputStep}>Show step</button>
             </div>
           {/if}
 
@@ -1998,3 +2047,10 @@
     ></div>
   </div>
 </div>
+
+<style>
+  .procedure-input-band { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; padding: 10px 16px; border-bottom: 1px solid #cbd5e1; background: #fffbeb; color: #713f12; font-size: 13px; }
+  .procedure-input-band p { margin: 4px 0 0; overflow-wrap: anywhere; }
+  .procedure-input-band button { flex: 0 0 auto; min-height: 44px; border: 1px solid #d6c5a0; border-radius: 5px; padding: 6px 10px; color: inherit; background: #fff; cursor: pointer; }
+  @media (max-width: 600px) { .procedure-input-band { padding: 8px; gap: 8px; } }
+</style>

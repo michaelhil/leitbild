@@ -86,6 +86,8 @@
   import { displayWindowReadyMessage, readDisplayWindowHostMessage } from '../process-display/display-window-messages.ts'
   import { readRunAssistantOffer, requestRunAssistant } from '../run-assistant-messages.ts'
   import { createProcedureSession, type ProcedureSession } from '../procedures/procedure-session.ts'
+  import ProcedureInputRequests from '../procedures/ProcedureInputRequests.svelte'
+  import { procedureInputViews, readProcedureInputTarget, resolveProcedureInputFocus, type ProcedureInputFocus, type ProcedureInputView } from '../procedures/procedure-input.ts'
   import {
     procedureAiStartedRunIds,
     procedureAiStartsRead,
@@ -1126,7 +1128,7 @@
       : emptyProcedureRunSummaries
   }
 
-  const openProcedureWindowAt = (object: OperationalObject, procedureId?: ProcedureId): void => {
+  const openProcedureWindowAt = (object: OperationalObject, procedureId?: ProcedureId, inputFocus?: ProcedureInputFocus): void => {
     if (procedureScopeForObject(object) === null) return
     // One procedure window per unit: opening it again raises and focuses the open one.
     const open = procedureSystemWindows.find(entry => entry.objectId === object.id)
@@ -1134,6 +1136,7 @@
       procedureSystemWindows = [...procedureSystemWindows.filter(entry => entry.id !== open.id), {
         ...open,
         ...(procedureId === undefined ? {} : { initialProcedureId: procedureId }),
+        inputFocus,
         focusRequest: (open.focusRequest ?? 0) + 1,
       }]
       return
@@ -1143,10 +1146,39 @@
       {
         id: nextFloatingWindowId('procedure-system', object.id),
         objectId: object.id,
+        inputFocus,
         ...(procedureId === undefined ? {} : { initialProcedureId: procedureId }),
       },
     ]
     void loadProcedureSystemModal()
+  }
+
+  const procedureInputRequests = $derived(simulationRunId === null ? [] : procedureInputViews(
+    simulationRunId, procedureRuns, procedureRunDocuments,
+    procedureUnitContexts.map(unit => ({ objectId: unit.targetObjectId, label: unit.label, scope: { plantId: unit.plantId, targetObjectId: unit.targetObjectId } })),
+  ))
+
+  const openProcedureInputRequest = async (request: ProcedureInputView): Promise<boolean> => {
+    const id = simulationRunId, session = procedureSession, object = objectById.get(request.objectId)
+    const scope = object ? procedureScopeForObject(object) : null
+    if (!id || !session || !object || !scope) { status = 'The unit for this procedure request is no longer available.'; return false }
+    const current = () => {
+      const unit = objectById.get(request.objectId), latestScope = unit ? procedureScopeForObject(unit) : null
+      return simulationRunId === id && procedureSession === session && latestScope ? resolveProcedureInputFocus(session.snapshot().runs, request.focus, latestScope, id) : null
+    }
+    const unavailable = (): false => { status = 'This procedure input request is no longer current. No step was opened.'; return false }
+    if (!current()) return unavailable()
+    try {
+      const run = await readProcedureInputTarget(session, request.focus, scope, id)
+      if (!run || !current()) return unavailable()
+      await loadProcedureSystemModal()
+      if (!current()) return unavailable()
+      openProcedureWindowAt(object, run.procedureId, request.focus)
+      return true
+    } catch (error) {
+      status = `Could not open the requested procedure step: ${error instanceof Error ? error.message : String(error)}`
+      return false
+    }
   }
 
   const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void =>
@@ -2285,6 +2317,12 @@
   />
 {/if}
 
+<ProcedureInputRequests
+  requests={procedureInputRequests}
+  open={openProcedureInputRequest}
+  openChat={runAssistantOffered && simulationRunId !== null ? openRunAssistant : undefined}
+/>
+
 {#if ProcedureSystemModal && simulationRunId && procedureSession}
   {#each procedureSystemWindowModels as windowEntry (windowEntry.id)}
     <ProcedureSystemModal
@@ -2299,6 +2337,7 @@
       windowOffsetIndex={windowEntry.index}
       focusRequest={windowEntry.focusRequest ?? 0}
       aiStart={windowEntry.aiStart}
+      inputFocus={windowEntry.inputFocus}
       selectUnit={(objectId: ObjectId) => retargetProcedureSystem(windowEntry.id, objectId)}
       openDisplay={(listing) => requestDisplayWindow({ kind: 'listing', listing }, true)}
       close={() => closeProcedureSystem(windowEntry.id)}
