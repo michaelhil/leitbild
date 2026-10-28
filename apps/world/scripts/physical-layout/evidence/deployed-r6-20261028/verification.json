@@ -1,0 +1,202 @@
+{
+  "verifiedAt": "2026-10-28T03:08:11.875Z",
+  "deployment": {
+    "schemaVersion": 1,
+    "app": "leitbild-platform",
+    "releaseId": "20261028T025350Z-fa97b45f2d-b84eac2742",
+    "createdAt": "2026-10-28T02:53:50.124Z",
+    "baseCommit": "fa97b45f2d14c8530e554eace6604984bc6d4ec3",
+    "codeRepository": "https://github.com/michaelhil/leitbild",
+    "knowledgeRevision": "85a061b080ce979836e064bda2253715edf6cd94",
+    "branch": "main",
+    "dirty": false,
+    "worktreeStatus": [],
+    "sourceDigest": "b84eac274288ff8ba9ce795da718c9f2deaccb8d3a6b7e54514bb0d17babb79b",
+    "dependencyPackagesDigest": "4c4a8c463bdc4dd505eaebd8c042486240360ab373c7bd1a369eff497cd2d0d9",
+    "fileCount": 3302,
+    "persistentRootsExcluded": [
+      "/var/lib/leitbild"
+    ]
+  },
+  "health": [
+    "leitbild-host=active",
+    "leitbild-world=active",
+    "leitbild-agents=active",
+    "caddy=active",
+    "host_local=ok world_local=ok agents_local=ok osrm=running",
+    "leitbild_public=ok"
+  ],
+  "knowledge": {
+    "revision": "85a061b080ce979836e064bda2253715edf6cd94",
+    "path": "world/physical-layouts/render-pipeline-review.md",
+    "verified": true
+  },
+  "sandbox": {
+    "url": "https://leitbild.app/workspaces/efa6b2a4-d3ae-419c-b6e7-6305307012a6?world=run-6fbcdb83-2598-4b3c-a8ee-7758627f9d67",
+    "resource": {
+      "workspaceId": "efa6b2a4-d3ae-419c-b6e7-6305307012a6",
+      "moduleId": "world",
+      "type": "world.simulation-run",
+      "id": "run-6fbcdb83-2598-4b3c-a8ee-7758627f9d67"
+    },
+    "execution": {
+      "playback": "paused",
+      "pace": "realtime",
+      "currentSimulationTime": "2026-07-12T04:00:00.192Z",
+      "updatedAt": "2026-10-28T02:55:28.710Z",
+      "maximumPace": {
+        "available": true
+      },
+      "acceleration": null
+    },
+    "layouts": [
+      {
+        "id": "layout:halden-1",
+        "label": "Halden Unit 1 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261028-r6",
+          "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+        },
+        "sourceDigest": "124256fb0dc626f014a1919760d5f669015edac7aefafc635140618bc2ebebb9",
+        "bindingDigest": "f712211e188ddf9c52ab14314f2645875b3b7eab60b3ef4f95726a0ebc3b7f79",
+        "owner": {
+          "objectId": "plant:halden-1",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-2",
+        "label": "Halden Unit 2 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261028-r6",
+          "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+        },
+        "sourceDigest": "124256fb0dc626f014a1919760d5f669015edac7aefafc635140618bc2ebebb9",
+        "bindingDigest": "f712211e188ddf9c52ab14314f2645875b3b7eab60b3ef4f95726a0ebc3b7f79",
+        "owner": {
+          "objectId": "plant:halden-2",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-3",
+        "label": "Halden Unit 3 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261028-r6",
+          "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+        },
+        "sourceDigest": "124256fb0dc626f014a1919760d5f669015edac7aefafc635140618bc2ebebb9",
+        "bindingDigest": "f712211e188ddf9c52ab14314f2645875b3b7eab60b3ef4f95726a0ebc3b7f79",
+        "owner": {
+          "objectId": "plant:halden-3",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-4",
+        "label": "Halden Unit 4 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261028-r6",
+          "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+        },
+        "sourceDigest": "124256fb0dc626f014a1919760d5f669015edac7aefafc635140618bc2ebebb9",
+        "bindingDigest": "f712211e188ddf9c52ab14314f2645875b3b7eab60b3ef4f95726a0ebc3b7f79",
+        "owner": {
+          "objectId": "plant:halden-4",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-campus",
+        "label": "Halden shared campus and switchyard",
+        "design": {
+          "id": "pwr-campus",
+          "revision": "pwr-campus-20261028-r6",
+          "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+        },
+        "sourceDigest": "5eceed8ebf7cde5f0ab3764c75ea925ac9d1fa112b49bb017b2d408e7684bfd3",
+        "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
+        "owner": {
+          "objectId": "grid:halden-four-unit",
+          "packId": "electric-grid",
+          "modelRef": "electric-grid.halden.four-unit",
+          "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+        },
+        "coverage": {
+          "represented": 11,
+          "unplaced": 6394,
+          "total": 6405
+        }
+      }
+    ]
+  },
+  "releaseChecks": {
+    "world": {
+      "pass": 4833,
+      "skip": 107,
+      "fail": 0
+    },
+    "agents": {
+      "pass": 1788,
+      "skip": 9,
+      "fail": 0
+    },
+    "host": {
+      "pass": 458,
+      "fail": 0
+    },
+    "additionalSmoke": {
+      "pass": 8,
+      "fail": 0
+    },
+    "typescriptAndSvelte": "passed",
+    "fullReleaseLogSha256": "e4e96edea940fac33caaf18fc41b11b14134b103defc8cba19f261d4c7169164"
+  },
+  "actualProductionUi": {
+    "startup": "Normal Scenario has no briefing; alarm strip, Grid panel and layout controls initially hidden; header View reveals controls.",
+    "site": "All five exact retained layouts reached ready in native Plan and 3D; Utility routes checked by default for all five.",
+    "visual": "Operating Plan preserves source grids, dimensions, hatches, casings and section inset. Turbine-hall/annex Stack retains frame, crane/windows, HP/LP/GEN, MSRs, stairs, condensers and pump annex.",
+    "equipment": "An actual HP casing body click opens the fresh Turbine Generator faceplate for plant:halden-1 / turbine with R6 revision, 1162 MW and1500rpm; no added Component-level context rows.",
+    "detail": "The card detail action opens the exact turbine-centred display.vignette. Clicking its Turbine Generator symbol opens its faceplate without navigating away from that display.",
+    "navigation": "Actual Orbit drag changes bearing/tilt; selected 3D Stack remains ready and is left available in the deliverable browser tab.",
+    "transient": "One weather map-feature request exceeded its1500ms deadline during initial full-site loading. The status subsequently returned Connected; all five layouts remained available. This is recorded, not counted as a layout failure or a measured loading result."
+  },
+  "limits": [
+    "Actual production UI smoke is functional and visual evidence, not new frame-time/WAN measurements.",
+    "Local qualified source53b is byte-equivalent to deployed application sourcefa97; cold/floor/motion figures belong to that separate exact local qualification.",
+    "New Run adopts R6; old Runs retain their admitted geometry.",
+    "Post-activation documentation is separate from immutable release and its published knowledge revision."
+  ]
+}
