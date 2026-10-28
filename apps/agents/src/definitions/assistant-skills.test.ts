@@ -114,7 +114,10 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('## Call these directly')
     expect(runner.body).toContain('`world.procedure.run.start` {procedureId: "E-0", scope: {plantId, label: <unit>}} → `next`')
     expect(runner.body).toContain('`world.procedure.run.transition` {runId, stepId, branchIndex, basis, evidenceTagIds} + `say` → `next`')
-    expect(runner.body).toContain('`world.simulation-run.wait` {simulationSeconds, procedureRunId} → `next`')
+    expect(runner.body).toContain('`world.simulation-run.wait` {untilSimulationTime, procedureRunId} → `next`')
+    expect(runner.body).toContain("its receipt's acceleration.targetSimulationTime")
+    expect(runner.body).toContain('Timeout: repeat the same target')
+    expect(runner.body).toContain('clock-paused before target: inspect execution/driver and stop')
     expect(runner.body).toContain('`world.procedure.run.step.read` {}: on "continue" or after a refusal')
     expect(runner.body).toContain('`world.process-plant.controls.list` {plantId, items: ["core"]}, never unfiltered')
     // A step view's readings are taken just before its simulationTime: the basis quotes that time once.
