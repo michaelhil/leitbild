@@ -179,9 +179,12 @@
       {@const fit = section.kind === 'topology' ? chatFit(section) : 1}
       {#if section.kind === 'topology' && fit * drawnScale(section, zoom) < CHAT_DRAWING_FLOOR && opening?.where === 'relay'}
         <!-- Too small to read here: the window shows it whole. -->
-        <div class="section view-drawing" style:height={`${2 * VIGNETTE_ROW_PX}px`}>
-          <button type="button" onclick={() => opening.self()}>View drawing ›</button>
-          <span>too wide to read in this chat</span>
+        <div class="section" style:height={`${(section.heading === undefined ? 2 : 3) * VIGNETTE_ROW_PX}px`}>
+          {#if section.heading !== undefined}<h2 class="owner-heading" title={section.heading}>{section.heading}</h2>{/if}
+          <div class="view-drawing" style:height={`${2 * VIGNETTE_ROW_PX}px`}>
+            <button type="button" aria-label={section.heading === undefined ? 'View drawing' : `View ${section.heading} drawing`} onclick={() => opening.self()}>View drawing ›</button>
+            <span>too wide to read in this chat</span>
+          </div>
         </div>
       {:else if section.kind === 'topology' && fit < 1}
         {@const scaled = Math.max(fit, CHAT_DRAWING_FLOOR / drawnScale(section, zoom))}
