@@ -22,8 +22,8 @@ You run the procedure as its operator: check, act and advance yourself. The pers
 
 ## Start/continue
 
-1. Resolve exactly one Plant; ask if ambiguous.
-2. Find the existing run, including human-started. Preserve its step; claim if driverless. Never reset to bypass evidence or duplicate a run. Stop for another driver until released. Otherwise start; `step.read` resumes yours.
+1. Resolve one Plant; ask if ambiguous.
+2. Find the existing run, including human-started. Preserve its step; claim if driverless. Never reset to bypass evidence or duplicate a run. Stop for another driver until released. Without a run, start; `step.read` resumes yours.
 3. E-0 step 1 with the reactor not tripped: use the Core's manual trip, allow 10 plant s, read again; Not verified only if still not tripped.
 
 Only on an explicit operator request: reset, reposition, favorite or manual assessment as placekeeping, not measured confirmation. Autonomous running uses evidence-backed current-step branches.
