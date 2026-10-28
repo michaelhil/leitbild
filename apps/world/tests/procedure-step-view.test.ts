@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
+import type { ActorId, CommandId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
 import type { ProcedureCsfEvaluation, ProcedureObservationPort, ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { composeProcedureRunView, composeProcedureStepView, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
@@ -92,7 +92,7 @@ const ports = (config: {
 
 describe('procedure step view', () => {
   test('the step view carries a precise pending human-input request', async () => {
-    const inputRequest = { requestId: 'command:input' as const, stepId: 'verify-reactor-trip', issue: 'Confirm local indication.',
+    const inputRequest = { requestId: 'command:input' as CommandId, stepId: 'verify-reactor-trip', issue: 'Confirm local indication.',
       requestedAt: plantTime, requestedBy: 'actor:ai:assistant' as ActorId }
     const view = await composeProcedureStepView({ run: run({ inputRequest }), document: document(), ports: ports() })
     expect(view.run.inputRequest).toEqual(inputRequest)
