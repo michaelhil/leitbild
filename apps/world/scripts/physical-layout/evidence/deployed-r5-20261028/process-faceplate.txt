@@ -1,0 +1,451 @@
+Browser tab: 8, Title: "Halden: normal operation · Leitbild.ai", URL: "https://leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b?world=run-df150834-7879-49c2-9af6-024ab2f17a92".
+0 AXWebArea Halden: normal operation · Leitbild.ai, URL: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b?world=run-df150834-7879-49c2-9af6-024ab2f17a92
+	1 container app
+		2 container
+			3 link Description: Leitbild.ai home, Value: leitbild.app/workspaces
+			4 link Description: Halden PWR layout sandbox, Value: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b
+			7 pop up button (collapsed) Description: People in this simulation: just you, Secondary Actions: Expand
+			8 button (collapsed) Description: View, Secondary Actions: Expand
+			9 text 2 unacknowledged alarms
+			10 container Simulation controls
+				11 text Halden: normal operation
+				12 button Delete this Run
+				13 button Copy this Run
+				14 button Description: Play simulation, Help: Paused — click to play
+				15 checkbox Description: Realtime pace; switch to maximum, Help: Realtime pace — click for maximum, Value: 0
+				16 text 04:00:00 UTC
+				17 button Run at maximum pace for a fixed duration
+				18 button AI restrictions for this Run
+			19 checkbox Description: Open Leitbild Assistant, Help: Open Run Assistant, Value: 0
+			6 link Description: Open Leitbild knowledge wiki, Value: leitbild.app/wiki
+		20 container World simulations
+			21 container World simulations
+				22 AXWebArea Leitbild.ai, URL: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b/world/runs/run-df150834-7879-49c2-9af6-024ab2f17a92
+					23 container app
+						24 container
+							25 container
+								26 heading PROCESS PLANTS (4), Value: 2
+									27 text PROCESS PLANTS  (4)
+								28 checkbox Description: Hide process plants on map, Value: 1
+								29 button Choose process plants detail fields
+							30 button Collapse process plants
+							31 button Normal Halden Unit 1 Open process display for Halden Unit 1 Open procedures for Halden Unit 1 Delete Halden Unit 1
+								32 container Normal
+								33 text Halden Unit 1
+								34 button Description: Open process display for Halden Unit 1, Help: Open process display
+								35 button Description: Open procedures for Halden Unit 1, Help: Open procedures
+								36 button Delete Halden Unit 1
+							37 button Normal Halden Unit 2 Open process display for Halden Unit 2 Open procedures for Halden Unit 2 Delete Halden Unit 2
+								38 container Normal
+								39 text Halden Unit 2
+								40 button Description: Open process display for Halden Unit 2, Help: Open process display
+								41 button Description: Open procedures for Halden Unit 2, Help: Open procedures
+								42 button Delete Halden Unit 2
+							43 button Normal Halden Unit 3 Open process display for Halden Unit 3 Open procedures for Halden Unit 3 Delete Halden Unit 3
+								44 container Normal
+								45 text Halden Unit 3
+								46 button Description: Open process display for Halden Unit 3, Help: Open process display
+								47 button Description: Open procedures for Halden Unit 3, Help: Open procedures
+								48 button Delete Halden Unit 3
+							49 button Normal Halden Unit 4 Open process display for Halden Unit 4 Open procedures for Halden Unit 4 Delete Halden Unit 4
+								50 container Normal
+								51 text Halden Unit 4
+								52 button Description: Open process display for Halden Unit 4, Help: Open process display
+								53 button Description: Open procedures for Halden Unit 4, Help: Open procedures
+								54 button Delete Halden Unit 4
+							55 container
+								56 heading ELECTRIC GRIDS (1), Value: 2
+									57 text ELECTRIC GRIDS  (1)
+								58 checkbox Description: Hide electric grids on map, Value: 1
+								59 button Choose electric grids detail fields
+							60 button Collapse electric grids
+							61 button 2 active alarms Norway grid · Halden connection Delete Norway grid · Halden connection
+								62 container 2 active alarms
+								63 text Norway grid · Halden connection
+								64 button Delete Norway grid · Halden connection
+							65 container
+								66 image
+								67 heading WEATHER (2), Value: 2
+									68 text WEATHER  (2)
+								69 checkbox Description: Hide weather on map, Value: 1
+								70 button Choose weather detail fields
+								71 button Add weather
+							72 button Collapse weather
+							73 button normal Halden complex ground probe Delete Halden complex ground probe
+								74 container normal
+								75 text Halden complex ground probe
+								76 button Delete Halden complex ground probe
+							77 button notice Rain shower Delete Rain shower
+								78 container notice
+								79 text Rain shower
+								80 button Delete Rain shower
+							81 container Map layers
+								82 text MAP LAYERS
+								83 content list
+									84 container
+										85 checkbox (settable, integer) Description: Power lines, Value: 1
+										86 text Power lines
+									87 container
+										88 checkbox (settable, integer) Description: Power cables, Value: 1
+										89 text Power cables
+									90 container
+										91 checkbox (settable, integer) Description: Substations and transformers, Value: 1
+										92 text Substations and transformers
+									93 container
+										94 checkbox (settable, integer) Description: Power plants and generators, Value: 1
+										95 text Power plants and generators
+									96 container
+										97 checkbox (settable, integer) Description: Live grid state, Value: 1
+										98 text Live grid state
+								99 container Grid voltage
+									100 text GRID VOLTAGE
+									101 content list
+										102 text 420 kV and HVDC
+										103 text 300 kV
+										104 text 220 kV
+										105 text 132 kV
+										106 text 110 kV
+										107 text 66 kV and below
+										108 text Voltage not tagged
+								109 container Live grid state
+									110 text LIVE GRID STATE
+									111 content list
+										112 text Loaded below 70 %
+										113 text 70 % to the loading alarm
+										114 text Loading alarm
+										115 text Overloaded (overload alarm)
+										116 text Tripped by protection
+										117 text Open
+										118 text HVDC link in service (grey: blocked, red: tripped)
+										119 text De-energised
+										120 text Generator (fill: dispatch)
+										121 text Load (fills as demand is shed)
+							122 heading TOOLS, Value: 2
+								123 text TOOLS
+							124 button Grid operations
+							125 button Description: Show Leitbild status, Help: Connected
+								126 container Connected
+							127 text Leitbild.ai v0.6.0
+							128 button Open settings
+						129 button Description: Resize control rail, Help: Drag to resize control rail
+						130 container
+							131 container Map
+							132 container
+								133 container
+									134 image deckgl-overlay
+								135 button Zoom in
+								136 button Zoom out
+								137 button Drag to rotate map, click to reset north
+								138 container
+									139 button (expanded) Description: Toggle attribution, Secondary Actions: Collapse
+									140 text © OpenStreetMap contributors · ODbL 1.0 | © OpenStreetMap contributors © OpenMapTiles |
+									141 link Description: MapLibre, Value: maplibre.org/
+									142 text  | Made with Natural Earth · generalized overview, not street detail | Grid model: © OpenStreetMap contributors (ODbL) · NVE (NLOD 2.0) · Elhub, Kartverket, SSB, Svenska kraftnät, ENTSO-E via Energy-Charts (CC BY 4.0)
+							656 container Turbine hall and feedwater pump annex: physical layout controls
+								657 button (collapsed) Description: Choose physical scope: Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex, Help: Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex, Secondary Actions: Expand
+									658 text Turbine hall and feedwater pump annex
+									659 text Halden Unit 1 full plant / PWR unit / Turbine hall and feedwater pump annex ▾
+								660 container Layout representation
+									661 checkbox Plan, Value: 0
+									662 checkbox 3D, Value: 1
+								663 container
+									664 text Floor
+									665 pop up button (collapsed, settable) Description: Layout level, Value: Turbine and main control floor · +15 m, Secondary Actions: Expand
+										666 menu
+											667 Plant ground and lower machinery floor · 0 m
+											668 (selected) Turbine and main control floor · +15 m
+											669 Stack · all floors
+								670 button Find
+								671 button Fit
+								672 button (collapsed) View, Secondary Actions: Expand
+								673 button Close layout controls
+								674 text Paused · fresh · 260 modelled subjects · 0 owner alerts
+								675 container 3D navigation
+									676 checkbox Pan, Value: 0
+									677 checkbox Orbit, Value: 1
+									678 button Tilt down
+										679 text Tilt
+										680 text −
+									681 button Tilt up
+										682 text Tilt
+										683 text +
+									684 button Home
+									685 button (collapsed) Description: Tilt and turn, Help: More camera controls, Secondary Actions: Expand
+							655 button Description: Inspect Turbine Stop Valve: OPEN, Help: Turbine Stop Valve: OPEN
+							143 container Simulated time · 2026-07-12 04:00:00 UTC · paused
+								144 text 04:00:00 UTC PAUSED
+						686 container Halden Unit 1
+							687 container
+								688 container Displays
+									689 button Previous display
+									690 pop up button (collapsed) Description: Display 2 of 8. Choose a display, Help: Choose a display, Secondary Actions: Expand
+									691 button Next display
+								692 container Halden Unit 1: Normal
+								693 text Halden Unit 1
+								694 text · Overview
+								695 container Zoom
+									696 button Zoom out
+									697 slider (settable, integer) Description: Zoom, Value: 100
+									698 button Zoom in
+									699 button Description: Zoom 100 %. Show at 100 %, Help: Show at 100 %
+									700 checkbox Fit, Help: Fit the display to the window; its text stays readable and the display scrolls where it does not fit, Value: 0
+								701 button Pin this display to the whole Run's dashboard
+								702 container Procedures
+									703 button Computer-based procedures for Halden Unit 1
+								704 container Plant
+									705 button Description: Operations log of Halden Unit 1, Help: Operations log of Halden Unit 1: what people and AI agents did and proposed
+									706 button Description: Open the Run's Assistant, Help: Assistant: open the Run's Assistant room
+									707 pop up button (collapsed) Description: More about Halden Unit 1, Help: More: component graph, specification, model credibility, Plant catalog, Secondary Actions: Expand
+								708 container Instructor
+									709 pop up button (collapsed) Description: Instructor, Help: Instructor tools: scenario events and faults, Secondary Actions: Expand
+								710 button Description: Maximise the display window, Help: Maximise
+								711 button Description: Close the display window, Help: Close
+							721 container Halden Unit 1 · Overview
+								722 AXWebArea Leitbild view, URL: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%2236917815-9034-4dfc-98c2-f884237a9b7b%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-df150834-7879-49c2-9af6-024ab2f17a92%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A00%3A00.236Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D
+									723 container Halden Unit 1
+										724 container
+											725 heading Halden Unit 1, Value: 1
+												726 text Halden Unit 1
+											727 content list States
+												728 container Operating mode: Power operation
+													729 text Power operation
+												730 button Description: Subcriticality (CSF): —; open what decides it, Help: Subcriticality (CSF): — NOT JUDGED: Judged once a reactor trip is demanded: at power the reactor is critical by design. Opens what decides it.
+												731 button Description: Core cooling (CSF): GREEN; open what decides it, Help: Core cooling (CSF): GREEN Core-exit temperature below 649 °C (1,200 °F): yes (CET-AVG 325 °C) · RCS subcooled at the core exit (margin above 0 °C): yes (SUB-MARGIN 19.8 °C) · GREEN: The core exit is subcooled: core cooling is satisfied. Opens what decides it.
+												732 button Description: Heat sink (CSF): GREEN; open what decides it, Help: Heat sink (CSF): GREEN … · Narrow-range level in every steam generator above 10 %: yes (SG-A-LVL-NR 55.0 %, SG-B-LVL-NR 55.0 %, SG-C-LVL-NR 55.0 %, SG-D-LVL-NR 55.0 %) · GREEN: Every steam generator has level on span and pressure in hand: the heat sink is satisfied. Opens what decides it.
+												733 button Description: RCS integrity (CSF): GREEN; open what decides it, Help: RCS integrity (CSF): GREEN Every RCS cold leg above 141 °C (285 °F): yes (TE-411-COLD 288 °C, TE-421-COLD 288 °C, TE-431-COLD 288 °C, TE-441-COLD 288 °C) · GREEN: Every cold leg is above 141 °C. The tree's cooldown criterion (less than 56 °C, 100 °F, in 60 min) is judged on the cold-leg trends: this model publishes no… Opens what decides it.
+												734 button Description: Containment (CSF): GREEN; open what decides it, Help: Containment (CSF): GREEN Containment pressure below 0.42 MPa: yes (CTMT-PR 0.103 MPa) · Containment pressure below 0.186 MPa: yes (CTMT-PR 0.103 MPa) · Containment radiation below 0.5 mSv/h: yes (CTMT-RAD 0.020 mSv/h) · GREEN: Containment pressure and radiation are within their limits. Opens what decides it.
+												735 button Description: RCS inventory (CSF): GREEN; open what decides it, Help: RCS inventory (CSF): GREEN Pressurizer level below 92 %: yes (PZR-LVL 55.0 %) · Pressurizer level above 17 %: yes (PZR-LVL 55.0 %) · Reactor vessel liquid-full (collapsed liquid level reads 100 %): yes (RVLS-DYN 100 %) · GREEN: Pressurizer level is on span and the RCS is liquid-full: inventory is satisfied. Opens what decides it.
+										736 heading LEAD VALUES 10 min, Value: 2
+											737 text LEAD VALUES
+											738 text 10 min
+										739 container Halden Unit 1 · Power-range neutron flux (reactor power) · Core
+											740 text Halden Unit 1 · Power-range neutron flux (reactor power) · Core
+											741 container
+												742 text 100.0
+												743 text %
+											744 image Reactor power, last 10 min: steady at 100.0 %
+										745 container Halden Unit 1 · Pressurizer pressure
+											746 text Halden Unit 1 · Pressurizer pressure
+											747 container
+												748 text 15.50
+												749 text MPa
+											750 image PZR pressure, last 10 min: steady at 15.50 MPa
+										751 container Halden Unit 1 · RCS subcooling margin · RV
+											752 text Halden Unit 1 · RCS subcooling margin · RV
+											753 container
+												754 text 19.8
+												755 text °C
+											756 image Subcooling, last 10 min: steady at 19.8 °C
+										757 container Halden Unit 1 · RCS collapsed liquid level (RVLIS-equivalent) · RV
+											758 text Halden Unit 1 · RCS collapsed liquid level (RVLIS-equivalent) · RV
+											759 container
+												760 text 100.0
+												761 text %
+											762 image RVLIS level, last 10 min: steady at 100.0 %
+										763 container Halden Unit 1 · Core-exit temperature (CET) · Core
+											764 text Halden Unit 1 · Core-exit temperature (CET) · Core
+											765 container
+												766 text 325.0
+												767 text °C
+											768 image CET, last 10 min: steady at 325.0 °C
+										769 container Halden Unit 1 · Electrical output · Turbine
+											770 text Halden Unit 1 · Electrical output · Turbine
+											771 container
+												772 text 1162
+												773 text MW
+											774 image Elec output, last 10 min: steady at 1162 MW
+										775 container Halden Unit 1 · Core thermal power · Core
+											776 text Halden Unit 1 · Core thermal power · Core
+											777 container
+												778 text 3400
+												779 text MW
+											780 image Core MWt, last 10 min: steady at 3400 MW
+										781 container Halden Unit 1 · Containment pressure
+											782 text Halden Unit 1 · Containment pressure
+											783 container
+												784 text 0.10
+												785 text MPa
+											786 image CTMT pressure, last 10 min: steady at 0.10 MPa
+										787 heading MARGINS · none near a limit, Value: 2
+											788 text MARGINS  · none near a limit
+										789 container Alerts
+											790 heading ALERTS · NONE, Value: 2
+												791 text ALERTS · NONE
+											792 container Alert counts
+										793 container
+											794 container Flow topology
+												795 image
+												796 pop up button (collapsed) Description: Faceplate: Main Condenser · LVL 55.0 % · 13.4 kPa, Help: Main Condenser · LVL 55.0 % · 13.4 kPa, Secondary Actions: Expand
+													797 image Main Condenser, last 10 min: steady at 55.0 %
+												798 pop up button (collapsed) Description: Faceplate: from CW pump · CW pump, Help: from CW pump · CW pump, Secondary Actions: Expand
+												799 pop up button (collapsed) Description: Faceplate: Turbine Generator · ON LINE · 1162 MW, Help: Turbine Generator · ON LINE · 1162 MW, Secondary Actions: Expand
+												800 pop up button (collapsed) Description: Faceplate: to CW discharge · CW discharge, Help: to CW discharge · CW discharge, Secondary Actions: Expand
+												801 pop up button (collapsed) Description: Faceplate: to Hotwell reject · Hotwell reject, Help: to Hotwell reject · Hotwell reject, Secondary Actions: Expand
+												802 pop up button (collapsed) Description: Faceplate: Turbine Stop Valve · OPEN, Help: Turbine Stop Valve · OPEN, Secondary Actions: Expand
+												803 pop up button (collapsed) Description: Faceplate: Turbine Bypass Valve · SHUT, Help: Turbine Bypass Valve · SHUT, Secondary Actions: Expand
+												804 pop up button (collapsed) Description: Faceplate: Main Steam Header · 1902 kg/s, Help: Main Steam Header · 1902 kg/s, Secondary Actions: Expand
+												805 pop up button (collapsed) Description: Faceplate: to PORV block, Safety valves · PORV block, Safety valves, Help: to PORV block, Safety valves · PORV block, Safety valves, Secondary Actions: Expand
+												806 pop up button (collapsed) Description: Faceplate: Condensate Pump A · RUN 2/2, Help: Condensate Pump A · RUN 2/2, Secondary Actions: Expand
+												807 pop up button (collapsed) Description: Faceplate: Main Steam Isolation Valve A · OPEN, Help: Main Steam Isolation Valve A · OPEN, Secondary Actions: Expand
+												808 pop up button (expanded) Description: Faceplate: Reactor Coolant Pump A · RUN, Help: Reactor Coolant Pump A · RUN, Secondary Actions: Collapse
+												809 pop up button (collapsed) Description: Faceplate: Main Steam Isolation Valve B · OPEN, Help: Main Steam Isolation Valve B · OPEN, Secondary Actions: Expand
+												810 pop up button (collapsed) Description: Faceplate: Reactor Coolant Pump B · RUN, Help: Reactor Coolant Pump B · RUN, Secondary Actions: Expand
+												811 pop up button (collapsed) Description: Faceplate: Main Steam Isolation Valve C · OPEN, Help: Main Steam Isolation Valve C · OPEN, Secondary Actions: Expand
+												812 pop up button (collapsed) Description: Faceplate: Reactor Coolant Pump C · RUN, Help: Reactor Coolant Pump C · RUN, Secondary Actions: Expand
+												813 pop up button (collapsed) Description: Faceplate: Main Steam Isolation Valve D · OPEN, Help: Main Steam Isolation Valve D · OPEN, Secondary Actions: Expand
+												814 pop up button (collapsed) Description: Faceplate: Reactor Coolant Pump D · RUN, Help: Reactor Coolant Pump D · RUN, Secondary Actions: Expand
+												815 pop up button (collapsed) Description: Faceplate: Pressurizer · 15.50 MPa · LVL 55.0 %, Help: Pressurizer · 15.50 MPa · LVL 55.0 %, Secondary Actions: Expand
+												816 pop up button (collapsed) Description: Faceplate: Feedwater Tank · LVL 82.0 %, Help: Feedwater Tank · LVL 82.0 %, Secondary Actions: Expand
+												817 pop up button (collapsed) Description: Faceplate: Steam Generator A · LVL 55.0 % · 6.90 MPa, Help: Steam Generator A · LVL 55.0 % · 6.90 MPa, Secondary Actions: Expand
+													818 image Steam Generator A, last 10 min: steady at 55.0 %
+												819 pop up button (collapsed) Description: Faceplate: Steam Generator B · LVL 55.0 % · 6.90 MPa, Help: Steam Generator B · LVL 55.0 % · 6.90 MPa, Secondary Actions: Expand
+													820 image Steam Generator B, last 10 min: steady at 55.0 %
+												821 pop up button (collapsed) Description: Faceplate: Steam Generator C · LVL 55.0 % · 6.90 MPa, Help: Steam Generator C · LVL 55.0 % · 6.90 MPa, Secondary Actions: Expand
+													822 image Steam Generator C, last 10 min: steady at 55.0 %
+												823 pop up button (collapsed) Description: Faceplate: Steam Generator D · LVL 55.0 % · 6.90 MPa, Help: Steam Generator D · LVL 55.0 % · 6.90 MPa, Secondary Actions: Expand
+													824 image Steam Generator D, last 10 min: steady at 55.0 %
+												825 pop up button (collapsed) Description: Faceplate: Main Feedwater Pump A · RUN 2/2, Help: Main Feedwater Pump A · RUN 2/2, Secondary Actions: Expand
+												826 pop up button (collapsed) Description: Faceplate: Feedwater Control Valve A · part open, Help: Feedwater Control Valve A · part open, Secondary Actions: Expand
+												827 pop up button (collapsed) Description: Faceplate: from AFW valve A · AFW valve A, Help: from AFW valve A · AFW valve A, Secondary Actions: Expand
+												828 pop up button (collapsed) Description: Faceplate: Feedwater Control Valve B · part open, Help: Feedwater Control Valve B · part open, Secondary Actions: Expand
+												829 pop up button (collapsed) Description: Faceplate: from AFW valve B · AFW valve B, Help: from AFW valve B · AFW valve B, Secondary Actions: Expand
+												830 pop up button (collapsed) Description: Faceplate: Feedwater Control Valve C · part open, Help: Feedwater Control Valve C · part open, Secondary Actions: Expand
+												831 pop up button (collapsed) Description: Faceplate: from AFW valve C · AFW valve C, Help: from AFW valve C · AFW valve C, Secondary Actions: Expand
+												832 pop up button (collapsed) Description: Faceplate: Feedwater Control Valve D · part open, Help: Feedwater Control Valve D · part open, Secondary Actions: Expand
+												833 pop up button (collapsed) Description: Faceplate: from AFW valve D · AFW valve D, Help: from AFW valve D · AFW valve D, Secondary Actions: Expand
+												834 pop up button (collapsed) Description: Faceplate: Main Feedwater Header · 1902 kg/s, Help: Main Feedwater Header · 1902 kg/s, Secondary Actions: Expand
+												835 pop up button (collapsed) Description: Faceplate: Reactor Core · PWR 100.0 % · 325.0 °C, Help: Reactor Core · PWR 100.0 % · 325.0 °C, Secondary Actions: Expand
+												836 pop up button (collapsed) Description: Faceplate: from ACC check valve ×4 +4 more · ACC check valve ×4 +4 more, Help: from ACC check valve ×4 +4 more · ACC check valve ×4 +4 more, Secondary Actions: Expand
+												837 container Main Feedwater Header · 1902 kg/s
+													838 text MFW header 1902 kg/s
+												839 container Main Steam Header · 1902 kg/s
+													840 text Steam header 1902 kg/s
+												841 container Main Feedwater Pump A · RUN 2/2
+													842 text MFW A/B RUN 2/2
+												843 container Condensate Pump A · RUN 2/2
+													844 text Cond pump A/B RUN 2/2
+												845 container Main Condenser · LVL 55.0 % · 13.4 kPa
+													846 text Condenser LVL 55.0 % 13.4 kPa
+												847 container Pressurizer · 15.50 MPa · LVL 55.0 %
+													848 text PZR 15.50 MPa LVL 55.0 %
+													849 image Pressurizer, last 10 min: steady at 55.0 %
+												850 container Feedwater Tank · LVL 82.0 %
+													851 text FW tank LVL 82.0 %
+													852 image Feedwater Tank, last 10 min: steady at 82.0 %
+												853 container Turbine Stop Valve · OPEN
+													854 text Turbine stop valves OPEN
+												855 container Turbine Bypass Valve · SHUT
+													856 text Turbine bypass SHUT
+												857 container Turbine Generator · ON LINE · 1162 MW
+													858 text Turbine ON LINE 1162 MW
+												859 container Reactor Core · PWR 100.0 % · 325.0 °C
+													860 text Core PWR 100.0 % 325.0 °C
+													861 image Reactor Core, last 10 min: steady at 325.0 °C
+												862 container to Hotwell reject · Hotwell reject
+													863 text to Hotwell reject
+												864 container to CW discharge · CW discharge
+													865 text to CW discharge
+												866 container from CW pump · CW pump
+													867 text from CW pump
+												868 container to PORV block, Safety valves · PORV block, Safety valves
+													869 text to PORV block, Safety valves
+												870 container from ACC check valve ×4 +4 more · ACC check valve ×4 +4 more
+													871 text from ACC check valve ×4 +4 more
+												872 container Reactor Coolant Pump A · RUN
+													873 text RCP A RUN
+												874 container Feedwater Control Valve A · part open
+													875 text FCV A part open
+												876 container Steam Generator A · LVL 55.0 % · 6.90 MPa
+													877 text SG A LVL 55.0 % 6.90 MPa
+												878 container Main Steam Isolation Valve A · OPEN
+													879 text MSIV A OPEN
+												880 container from AFW valve A · AFW valve A
+													881 text from AFW valve A
+												882 container Reactor Coolant Pump B · RUN
+													883 text RCP B RUN
+												884 container Feedwater Control Valve B · part open
+													885 text FCV B part open
+												886 container Steam Generator B · LVL 55.0 % · 6.90 MPa
+													887 text SG B LVL 55.0 % 6.90 MPa
+												888 container Main Steam Isolation Valve B · OPEN
+													889 text MSIV B OPEN
+												890 container from AFW valve B · AFW valve B
+													891 text from AFW valve B
+												892 container Reactor Coolant Pump C · RUN
+													893 text RCP C RUN
+												894 container Feedwater Control Valve C · part open
+													895 text FCV C part open
+												896 container Steam Generator C · LVL 55.0 % · 6.90 MPa
+													897 text SG C LVL 55.0 % 6.90 MPa
+												898 container Main Steam Isolation Valve C · OPEN
+													899 text MSIV C OPEN
+												900 container from AFW valve C · AFW valve C
+													901 text from AFW valve C
+												902 container Reactor Coolant Pump D · RUN
+													903 text RCP D RUN
+												904 container Feedwater Control Valve D · part open
+													905 text FCV D part open
+												906 container Steam Generator D · LVL 55.0 % · 6.90 MPa
+													907 text SG D LVL 55.0 % 6.90 MPa
+												908 container Main Steam Isolation Valve D · OPEN
+													909 text MSIV D OPEN
+												910 container from AFW valve D · AFW valve D
+													911 text from AFW valve D
+											918 container RCP A: faceplate
+												919 container
+													920 text RCP A RUN
+													921 button Open detail ›
+													922 container Pin on the display
+														923 button Pin RCP A on the display
+													924 container Control RCP A
+														925 text RCP-A-RUN RCP A Now: true
+														926 Command RCP-A-RUN RCP A
+															927 radio button STOP, Value: 0
+																928 text STOP
+														929 button (collapsed) Not offered here (2), Secondary Actions: Expand
+															930 text Not offered here (2)
+													931 container Halden Unit 1 · Running · RCP A
+														932 container Running
+															933 text Running
+														934 text yes
+													935 container Halden Unit 1 · Primary loop flow · RCP A
+														936 text Halden Unit 1 · Primary loop flow · RCP A
+														937 container
+															938 text 4249
+															939 text kg/s
+														940 image Primary loop flow, last 10 min: steady at 4249 kg/s
+													941 container Halden Unit 1 · Flow · RCP A
+														942 text Halden Unit 1 · Flow · RCP A
+														943 container
+															944 text 4577
+															945 text kg/s
+													946 container Halden Unit 1 · Developed head · RCP A
+														947 text Halden Unit 1 · Developed head · RCP A
+														948 container
+															949 text 650.2
+															950 text kPa
+													951 container Halden Unit 1 · Primary loop target flow · RCP A
+														952 text Halden Unit 1 · Primary loop target flow · RCP A
+														953 container
+															954 text 4250
+															955 text kg/s
+													956 container Halden Unit 1 · State · RCP A
+														957 container State
+															958 text State
+														959 text RUN
+											912 container Key
+												913 text flow no flow
+										914 container
+											915 text PAUSED sim 04:00:00
+											916 container Generated from the model · not an operating display
+												917 text Generated from the model · not an operating display
+							713 splitter Resize the display window horizontally
+							714 splitter Resize the display window vertically
+							715 splitter Resize the display window from the top
+							716 splitter Resize the display window from the left
+							717 splitter Resize the display window
+							718 splitter Resize the display window from the top right
+							719 splitter Resize the display window from the top left
+							720 splitter Resize the display window from the bottom left
+
+The focused UI element is 960 container
