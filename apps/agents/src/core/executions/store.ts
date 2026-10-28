@@ -74,6 +74,8 @@ export const createExecutionStore = (path: string) => {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
   const db = new Database(path, { create: true, strict: true })
   const modelEvidence = createModelEvidenceStore(path === ':memory:' ? undefined : `${path}.models`)
+  const beforeClose = new Set<() => void>()
+  let closed = false
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA synchronous = EXTRA')
     // Rollback journaling avoids checkpoint machinery and the WAL-reset issue
@@ -201,7 +203,20 @@ export const createExecutionStore = (path: string) => {
       for (const turn of turns) modelEvidence.remove(turn.id)
       db.query('DELETE FROM turns WHERE room_id=?').run(roomId)
     },
-    close: (): void => db.close(),
+    // Retire outstanding observers while their final status can still be
+    // committed. A cancelled provider need not cooperate with shutdown.
+    beforeClose: (listener: () => void): (() => void) => {
+      if (closed) throw new Error('Execution store is closed')
+      beforeClose.add(listener)
+      return () => { beforeClose.delete(listener) }
+    },
+    close: (): void => {
+      if (closed) return
+      for (const listener of beforeClose) listener()
+      beforeClose.clear()
+      closed = true
+      db.close()
+    },
   }
 }
 

@@ -452,7 +452,13 @@ export const createAIAgent = (
     }
     if (options?.executionGrowth) await options.executionGrowth(4096, begin)
     else await begin() // In-memory tests have no Workspace storage policy.
+    let retaining = true
+    const stopObservingStore = store.beforeClose(() => {
+      store.finishTurn(traceId, 'interrupted', 'Execution store closed; unfinished model and tool outcomes remain unknown')
+      retaining = false
+    })
     const interrupted = (): void => {
+      if (!retaining) return // Store closure retired this capture before closing its DB.
       try { store.finishTurn(traceId, 'interrupted', 'Generation cancelled; calls without a durable result have unknown outcomes') }
       catch (error) { console.error(`[${config.name}] Could not retain cancellation status:`, error) }
     }
@@ -463,20 +469,23 @@ export const createAIAgent = (
     // await them; a failed capture is visible rather than silently omitted.
     let pendingStages = Promise.resolve()
     const retain = async (bytes: number, work: () => void): Promise<void> => {
-      if (options?.executionGrowth) await options.executionGrowth(bytes, async () => work())
+      if (!retaining) return // Late outcomes belong to a retired store lifetime.
+      if (options?.executionGrowth) await options.executionGrowth(bytes, async () => { if (retaining) work() })
       else work() // Isolated tests have no persistent Workspace budget.
     }
     const retainEvent = (event: EvalEventCore): void => {
+      if (!retaining) return // Keep closed-store outcomes unknown; do not queue new writes.
       const stage = executionStageEvent(event)
       if (!stage) return
       const at = Date.now()
       pendingStages = pendingStages.then(() => retain(Buffer.byteLength(JSON.stringify(stage)) + 1024, () => store.recordStage(traceId, stage, at)))
-      void pendingStages.catch(error => console.error(`[${config.name}] Could not retain execution stage:`, error))
+      void pendingStages.catch(error => { if (retaining) console.error(`[${config.name}] Could not retain execution stage:`, error) })
     }
     const captureEvent = (event: EvalEventCore): void => { emit(event); retainEvent(event) }
     const modelObserver: NonNullable<EvalOptions['modelObserver']> = {
       start: async (summary, request) => {
         await pendingStages
+        if (!retaining) throw new Error('Execution evidence closed before model dispatch')
         await retain(Buffer.byteLength(JSON.stringify(request)) + 4096, () => store.recordModelStart(traceId, summary, request))
       },
       complete: async (id, response, requestedTools) => {
@@ -497,14 +506,15 @@ export const createAIAgent = (
         maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver },
       )
       await pendingStages
-      store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
+      if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
         result.decision.response.action === 'error' ? result.decision.response.message : undefined)
       return result
     } catch (error) {
-      store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
+      if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
       throw error
     } finally {
       signal.removeEventListener('abort', interrupted)
+      stopObservingStore()
     }
   }
 
