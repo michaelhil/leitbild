@@ -318,7 +318,7 @@
             "guidance": {
               "id": "offsite-power-briefing",
               "title": "In two minutes, a fault cuts Halden off the grid",
-              "message": "Open View in the header and turn on Grid operations to follow the grid frequency. To jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. You can close this briefing with \u00d7 and reopen it from View.",
+              "message": "Open View in the header and turn on Grid operations to follow the grid frequency. To jump ahead, press Advance\u2026 next to the clock and choose +2 min. You can close this briefing with \u00d7 and reopen it from View.",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
