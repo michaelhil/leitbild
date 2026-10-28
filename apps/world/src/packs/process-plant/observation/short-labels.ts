@@ -1,5 +1,6 @@
 import type { ProcessSignalBinding } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
+import { lineStateSignals } from './line-state.ts'
 
 // What a row, a chip or a card line names a reading by where room is short
 // (plan v5 W4.2): at most 24 characters, as crews say it, never cut. Its
@@ -29,6 +30,9 @@ export const shortLabelOf = (plant: CompiledProcessPlant, binding: ProcessSignal
     const link = graph.links[binding.owner.linkIndex]!
     const named = link.metadata?.presentation?.shortNames?.[String(binding.path).slice(String(link.id).length + 1)]
     if (named !== undefined) return named
+    // The full observable label and its element already name both ends. The
+    // compact row names this exact electrical state, never inferred power/flow.
+    if (lineStateSignals(graph).byLink.get(String(link.id))?.some(entry => entry.role === 'conducting' && entry.signal.path === binding.path)) return 'Energized'
     const loop = link.metadata?.loopId
     if (name !== undefined) return fits(loop === undefined ? name : `${name} ${loop}`)
     // A line's flow by what feeds it ("AFW valve A flow"); another reading by its ends and what it measures ("PZR →

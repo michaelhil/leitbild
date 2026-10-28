@@ -18,6 +18,7 @@ import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { plantDeclaration } from '../src/packs/process-plant/observation/declarations.ts'
 import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
+import { lineStateSignals } from '../src/packs/process-plant/observation/line-state.ts'
 
 // The window's column (plan v5 W4.2, W8.5; owner finding 1; #47, #48): each
 // lead row its short label, value and unit, its 10-min sparkline (the
@@ -323,6 +324,14 @@ describe('value words (W4.4)', () => {
     expect([...missing]).toEqual([])
     const declared = plantDeclaration('plant:short' as ObjectId, plant, recording)
     const short = (path: string) => declared.observables.find(entry => entry.ref === `plant:short#${path}`)!.shortLabel
+    const conducting = [...lineStateSignals(plant.graph).byLink.values()].flat().filter(entry => entry.role === 'conducting')
+    expect(conducting.length).toBeGreaterThan(0)
+    for (const { signal } of conducting) {
+      const observable = declared.observables.find(entry => entry.ref === `plant:short#${signal.path}`)!
+      expect(observable.shortLabel).toBe('Energized')
+      expect(observable.label.startsWith('Energized · ')).toBe(true)
+      expect(observable.quantity).toBe('state'); expect(observable.valueType).toBe('boolean')
+    }
     // The faceplate's three that cut before ("Pressurizer PORV…", "Pressurizer level…", "Pressurizer backup…").
     expect([short('pressurizer-relief-to-tank.temperatureC'), short('pressurizer.levelDeviationPercent'), short('pressurizer.backupHeaterDemandMw')])
       .toEqual(['PORV tailpipe temp', 'PZR level deviation', 'Backup heater demand'])
