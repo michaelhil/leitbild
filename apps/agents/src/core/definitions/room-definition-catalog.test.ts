@@ -27,7 +27,7 @@ describe('bundled Room Definitions', () => {
     expect(assistant.tools).toEqual(['product_search', 'product_read', 'place_resolve', 'wiki_lookup'])
     // A cost guard: past 40 tool rounds in one turn the Assistant asks the person whether to continue.
     // A whole E-0 run takes about 25, so it finishes without a check-in.
-    expect(assistant.maxToolIterations).toBe(40)
+    expect(assistant.maxToolIterations).toBeUndefined()
     expect(assistant).not.toHaveProperty('toolGrants')
     expect(definition.room).not.toHaveProperty('scope')
   })

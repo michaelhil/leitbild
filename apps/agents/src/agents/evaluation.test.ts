@@ -615,12 +615,12 @@ describe('evaluate (tool loop)', () => {
     }
   })
 
-  test("the Assistant's iteration threshold pauses its turn for the person, who may let it finish", async () => {
-    // A cost guard, not a quota: past it the Agent asks the person (Continue / Stop) and keeps its turn.
-    const threshold = getBundledRoomDefinition('leitbild-assistant')!.room.agents[0]!.maxToolIterations!
-    expect(threshold).toBe(40)
+  test('a new Assistant may finish a long procedure without an arbitrary default check-in', async () => {
+    const threshold = getBundledRoomDefinition('leitbild-assistant')!.room.agents[0]!.maxToolIterations
+    expect(threshold).toBeUndefined()
+    const rounds = 43 // Test beyond the previous 40-round default, not a new product limit.
     const { provider, calls } = makeScriptedProvider([
-      ...Array.from({ length: threshold + 2 }, () => ({ toolCalls: [{ function: { name: 'a', arguments: {} } }] })),
+      ...Array.from({ length: rounds }, () => ({ toolCalls: [{ function: { name: 'a', arguments: {} } }] })),
       { content: 'held at step 4 for your judgement' },
     ])
     const exec: ToolExecutor = async toolCalls => toolCalls.map(() => ({ success: true, data: 'k' }))
@@ -629,9 +629,8 @@ describe('evaluate (tool loop)', () => {
       toolDefinitions: [],
       requestToolCheckin: async ({ iterations }) => { checkins.push(iterations); return true },
     })
-    // Asked once, after the round that went past the threshold; the person continued and the turn answered.
-    expect(checkins).toEqual([threshold + 1])
-    expect(calls).toHaveLength(threshold + 3)
+    expect(checkins).toEqual([])
+    expect(calls).toHaveLength(rounds + 1)
     expect(result.decision.response).toEqual({ action: 'respond', content: 'held at step 4 for your judgement' })
   })
 
