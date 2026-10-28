@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 const ratio=Number(process.env.LEITBILD_PHYSICAL_PROBE_DPR??'1');if(!Number.isFinite(ratio)||ratio<=0)throw Error('DPR must be positive and finite')
 const profileWorkers = process.env.LEITBILD_NATIVE_WORKER_PROFILE === '1'
+const profileMain = process.env.LEITBILD_NATIVE_MAIN_PROFILE === '1'
 const planFirst = process.env.LEITBILD_NATIVE_PLAN_FIRST === '1'
 const coldOnly = process.env.LEITBILD_NATIVE_COLD_ONLY === '1'
 const floorGateOnly = process.env.LEITBILD_NATIVE_FLOOR_GATE_ONLY === '1'
@@ -79,8 +80,9 @@ try {
   await world(`q.begin(${JSON.stringify(planFirst ? 'cold-plan-first' : 'cold-native-full-site-3d')},${planFirst ? "{mode:'2d',readyCount:5}" : "{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4]}"},'maplibregl-canvas');const b=[...d.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(planFirst ? 'Plan' : '3D')});b.click();d.querySelector('.explorer-controls .scope').click()`)
   await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'native full-site action')
   await world(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`)
-  if(planFirst){const first=await world('return q.current.promise');actions.push(first);const prior=await world(`return q.jobs.filter(job=>job.kind==='prepare'&&job.view?.mode==='3d')`);if(prior.length)throw Error('Plan-first fixture already prepared spatial geometry');await button('3D','first-3d-after-cold-plan',`{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4],layers:['utility-routes']}`)}
+  if(planFirst){const first=await world('return q.current.promise');actions.push(first);const prior=await world(`return q.jobs.filter(job=>job.kind==='prepare'&&job.view?.mode==='3d')`);if(prior.length)throw Error('Plan-first fixture already prepared spatial geometry');if(profileMain){await call('Profiler.enable');await call('Profiler.start')};await button('3D','first-3d-after-cold-plan',`{mode:'3d',levelId:'all',readyCount:5,sourceInstances:[1,4],layers:['utility-routes']}`)}
   const cold=await world('return q.current.promise');if(process.env.LEITBILD_NATIVE_EXPECT_UTILITIES==='1'){const draws=await world('return q.draws.filter(draw=>draw.at>=q.current.started)');for(const cohort of cold.sourceDraws)if(!draws.some((draw:any)=>draw.sourceKey===cohort.sourceKey&&draw.key.includes('utility-routes')))throw Error('Cold source cohort lacks utility coverage')};if(cold.pending||cold.glError||cold.sourceDraws.length!==2||cold.actionToGpuCompletedMs<cold.actionToAllRequiredSourcesFirstDrawMs)throw Error('Invalid all-family cold completion');if(!planFirst)actions.push(cold)
+  if(profileMain){if(!planFirst)throw Error('Main-thread profile requires Plan-first setup');const result=await call('Profiler.stop');await writeFile(join(folder,'main.cpuprofile'),JSON.stringify(result.profile));throw Error('Requested diagnostic-only main-thread profile completed; no performance qualification verdict')}
   if (detailInventory) {
     cold.detailCoverage = await world(`return ${JSON.stringify(cold.sourceDraws)}.map(cohort=>{
       const draws=q.detailDraws.filter(draw=>draw.at>=q.current.started&&draw.sourceKey===cohort.sourceKey), key=draws.at(-1)?.key;
