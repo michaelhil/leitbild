@@ -2,9 +2,21 @@ import type { PackPhysicalScene, PhysicalPlanPrimitive, PhysicalSceneObject } fr
 import { drawPhysicalPlanDrawing, physicalPlanContinuationPaths } from '../../../src/ui/physical-layout/plan-drawing.ts'
 import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from '../../../src/ui/map/physical-scene/plan-picking.ts'
 import { defaultPhysicalSceneView } from '../../../src/ui/map/physical-scene/types.ts'
+import { pickPhysicalPlan as previousPick } from '../../fixtures/physical-layout/plan-picking-before-entry-bounds.ts'
 
 type Point = { x: number; y: number }
 const results: unknown[] = [], failures: string[] = [], ratio = devicePixelRatio, canvas = document.createElement('canvas')
+type OracleMode = 'before' | 'current' | 'brute'
+let oracleMode: OracleMode | null = null, gridQueries = 0
+const oracleCalls = { before: { stroke: 0, fill: 0, glyph: 0 }, current: { stroke: 0, fill: 0, glyph: 0 }, brute: { stroke: 0, fill: 0, glyph: 0 } }
+const restorers: Array<() => void> = []
+for (const prototype of [CanvasRenderingContext2D.prototype, OffscreenCanvasRenderingContext2D.prototype]) {
+ for (const [method, counter] of [['isPointInStroke', 'stroke'], ['isPointInPath', 'fill'], ['getImageData', 'glyph']] as const) {
+  const target = prototype as unknown as Record<string, (...args: unknown[]) => unknown>, original = target[method]!
+  target[method] = function(this: unknown, ...args: unknown[]) { if (oracleMode !== null) oracleCalls[oracleMode][counter]++; return original.apply(this, args) }
+  restorers.push(() => { target[method] = original })
+ }
+}
 canvas.width = 800 * ratio; canvas.height = 600 * ratio; canvas.style.width = '800px'; canvas.style.height = '600px'; document.body.append(canvas)
 const context = canvas.getContext('2d', { willReadFrequently: true })!
 const object = (id: string, kind: PhysicalSceneObject['kind'] = 'equipment'): PhysicalSceneObject => ({ id, label: id, kind, subjectIds: kind === 'wall' || kind === 'slab' ? [] : [id], positions: [0,0,0,10,0,0,0,10,0], levelId: 'ground', scopeIds: ['room'] })
@@ -14,7 +26,21 @@ const source = (primitives: PhysicalPlanPrimitive[], objects = [object('machine'
 const sample = (input: PhysicalPlanPickInput, point: readonly [number,number]) => ({ x: input.frame.a*point[0]+input.frame.c*point[1]+input.frame.e, y:input.frame.b*point[0]+input.frame.d*point[1]+input.frame.f })
 const input = (scene: PackPhysicalScene, degrees: number, scale: number, patch: Partial<PhysicalPlanPickInput['view']> = {}, scopeId: string | null = null): PhysicalPlanPickInput => { const angle=degrees*Math.PI/180,a=scale*Math.cos(angle),b=scale*Math.sin(angle),c=scale*Math.sin(angle),d=-scale*Math.cos(angle);return{scene,view:{...defaultPhysicalSceneView(scene.levels),...patch,mode:'2d'},scopeId,frame:{a,b,c,d,e:400-(a+c)*5,f:300-(b+d)*5},width:800,height:600,ratio,fontFamily:'Arial'} }
 const paint = (value: PhysicalPlanPickInput) => { context.setTransform(1,0,0,1,0,0);context.clearRect(0,0,canvas.width,canvas.height);drawPhysicalPlanDrawing(context,{...value,project:points=>points.map(point=>sample(value,[point[0],point[1]])),palette:{materials:{},planMaterials:{equipment:[0,1,0],architecture:[0,0,1],ink:[1,0,0],pipe:[1,0,0]},defaultMaterial:[0,1,0],line:[0,0,0]},status:new Map()}) }
+const comparedInputs = new WeakSet<PhysicalPlanPickInput>()
+const compareGrid = (value: PhysicalPlanPickInput): void => {
+ if (comparedInputs.has(value)) return
+ comparedInputs.add(value)
+ for (let y = -1; y <= 11; y += .5) for (let x = -1; x <= 11; x += .5) {
+  const point = sample(value, [x, y])
+  oracleMode = 'before'; const previous = previousPick(value, point)
+  oracleMode = 'brute'; const brute = previousPick(value, point, true)
+  oracleMode = 'current'; const current = pickPhysicalPlan(value, point)
+  oracleMode = null; gridQueries++
+  if (JSON.stringify(previous) !== JSON.stringify(brute) || JSON.stringify(current) !== JSON.stringify(brute)) throw Error('Native grid mismatch: ' + JSON.stringify({ point, local: [x, y], previous, brute, current }))
+ }
+}
 const check = (name: string, value: PhysicalPlanPickInput, local: readonly [number,number], expected: string | null, blocker?: string) => {
+ compareGrid(value)
  const point=sample(value,local),hit=pickPhysicalPlan(value,point),pixel=[...context.getImageData(Math.floor(point.x*ratio),Math.floor(point.y*ratio),1,1).data]
  if((hit?.occurrenceId??null)!==expected||(blocker!==undefined&&hit?.ownerOccurrenceId!==blocker))failures.push(name+': '+JSON.stringify({hit,expected,blocker,pixel}))
  results.push({name,hit,expected,blocker,pixel,point})
@@ -40,7 +66,14 @@ try {
   const image=context.getImageData(0,0,canvas.width,canvas.height);let positive:Point|null=null,hole:Point|null=null
   for(let y=0;y<canvas.height&&!hole;y++){let first=-1,last=-1;for(let x=0;x<canvas.width;x++){if(image.data[(y*canvas.width+x)*4+3]!>240){if(first<0)first=x;last=x;positive??={x:(x+.5)/ratio,y:(y+.5)/ratio}}}if(first>=0)for(let x=first+1;x<last;x++)if(image.data[(y*canvas.width+x)*4+3]===0){hole={x:(x+.5)/ratio,y:(y+.5)/ratio};break}}
   if(!positive||!hole)throw Error('Native glyph oracle could not find ink and transparent hole')
+  compareGrid(value)
   const hit=pickPhysicalPlan(value,positive),miss=pickPhysicalPlan(value,hole);results.push({name:'native glyph coverage'+degrees,hit,miss,positive,hole});if(hit?.occurrenceId!=='machine'||miss!==null)failures.push('Glyph hit/transparent hole mismatch'+degrees)
+  // Source order interleaves distant strokes with the same long-axis centroid;
+  // a legitimate SAH leaf therefore contains members away from a query.
+  scene=source(Array.from({length:32},(_,id)=>{const y=1+(id*17%32)/4;return{id:'loose-stroke-'+id,occurrenceId:'route',scopeIds:['room'],depiction:'projection' as const,kind:'path' as const,bounds:{min:[1,y] as [number,number],max:[9,y] as [number,number]},stroke:'pipe',width:.04,commands:[['M',1,y],['L',9,y]] as Extract<PhysicalPlanPrimitive,{kind:'path'}>['commands']}}))
+  value=input(scene,degrees,scale);paint(value);compareGrid(value)
  }
- ;(window as any).__planInkProof={done:true,passed:failures.length===0,results,failures,ratio,userAgent:navigator.userAgent}
-}catch(error){(window as any).__planInkProof={done:true,passed:false,error:String(error),results,failures,ratio}}
+ if (!(oracleCalls.current.stroke < oracleCalls.before.stroke)) failures.push('Individual bounds did not reduce native stroke queries')
+ ;(window as any).__planInkProof={done:true,passed:failures.length===0,results,failures,ratio,gridQueries,oracleCalls,userAgent:navigator.userAgent}
+}catch(error){(window as any).__planInkProof={done:true,passed:false,error:String(error),results,failures,ratio,gridQueries,oracleCalls}}
+finally { oracleMode = null; restorers.forEach(restore => restore()) }

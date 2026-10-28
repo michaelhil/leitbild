@@ -3,7 +3,7 @@ import { physicalPlanPaintCommands, physicalPlanContinuationPaths, physicalPlanT
 import type { PhysicalPlanPaint } from '../../physical-layout/plan-paint-stream.ts'
 import { physicalScopeRegions } from './scope-regions.ts'
 import { physicalArchitectureOpacity } from './architecture-opacity.ts'
-import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds, type PhysicalSpatialIndex } from './spatial-index.ts'
+import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds, physicalSpatialBoundsOverlap, type PhysicalSpatialIndex } from './spatial-index.ts'
 import type { PhysicalSceneView } from './types.ts'
 
 export interface PhysicalPlanPickFrame { readonly a: number; readonly b: number; readonly c: number; readonly d: number; readonly e: number; readonly f: number }
@@ -133,8 +133,11 @@ export const pickPhysicalPlan = (input: PhysicalPlanPickInput, point: Point): Ph
   const scale = Math.sqrt(Math.abs(input.frame.a * input.frame.d - input.frame.b * input.frame.c)); if (!(scale > 0)) return null
   const index = indexFor(input), texts = textIndexFor(input, index), candidates: Array<{ entry: Entry; text?: TextLayout }> = [], padding = (.5 + 1 / input.ratio) / scale
   const query = { min: [local.x - padding, local.y - padding, 0] as [number, number, number], max: [local.x + padding, local.y + padding, 0] as [number, number, number] }
-  visitPhysicalSpatialBounds(index.index, query, at => { candidates.push({ entry: index.entries[at]! }) })
-  visitPhysicalSpatialBounds(texts.index, query, at => { candidates.push({ entry: texts.entries[at]!, text: texts.layouts[at]! }) })
+  // Ray SAH leaves may contain several primitives. Their union is conservative
+  // for the leaf, not evidence that every member can cover this query. Reject
+  // individual bounds before invoking the unchanged native ink/glyph oracle.
+  visitPhysicalSpatialBounds(index.index, query, at => { const entry = index.entries[at]!; if (physicalSpatialBoundsOverlap(entry.bounds, query)) candidates.push({ entry }) })
+  visitPhysicalSpatialBounds(texts.index, query, at => { const entry = texts.entries[at]!; if (physicalSpatialBoundsOverlap(entry.bounds, query)) candidates.push({ entry, text: texts.layouts[at]! }) })
   candidates.sort((a, b) => b.entry.order - a.entry.order)
   const ctx = nativeContext(); ctx.save()
   try {
