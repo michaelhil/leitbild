@@ -1,7 +1,7 @@
 import type { PhysicalSceneBounds } from '../../../core/packs/scene.ts'
 import { rayBoxCoordinates, type Vector3 } from './math.ts'
 
-/** Packed transferable hierarchy; SAH determines leaves, never a feature/object admission cap. */
+/** Packed transferable hierarchy: ray SAH and atomic overlap leaves, without a feature/object admission cap. */
 export interface PhysicalSpatialIndex { readonly bounds: Float64Array; readonly children: Int32Array; readonly ranges: Uint32Array; readonly order: Uint32Array }
 const area = (b: PhysicalSceneBounds): number => { const x = b.max[0] - b.min[0], y = b.max[1] - b.min[1], z = b.max[2] - b.min[2]; return 2 * (x * y + y * z + z * x) }
 const union = (values: ReadonlyArray<PhysicalSceneBounds>, ids: ArrayLike<number>, first = 0, end = ids.length): PhysicalSceneBounds => {
@@ -31,38 +31,44 @@ export const createPhysicalSpatialIndex = (values: ReadonlyArray<PhysicalSceneBo
   if (values.length) build(values.map((_, index) => index))
   return { bounds: Float64Array.from(nodes.flatMap(node => [...node.bounds.min, ...node.bounds.max])), children: Int32Array.from(nodes.flatMap(node => [node.left, node.right])), ranges: Uint32Array.from(nodes.flatMap(node => [node.first, node.count])), order: Uint32Array.from(order) }
 }
-const createPhysicalOverlapSpatialIndex = (values: ReadonlyArray<PhysicalSceneBounds>): PhysicalSpatialIndex => {
-  const nodes: Array<{ bounds: PhysicalSceneBounds; left: number; right: number; first: number; count: number }> = [], order: number[] = []
-  // Presort once and partition disjoint ranges in typed storage. Long parallel
-  // routes share their largest geometric span, so SAH must consider transverse
-  // axes too. No recursive sorting, Set membership or child id-array copies.
-  const sorted = [0, 1, 2].map(axis => Uint32Array.from(values.map((_, id) => id).sort((a, b) => values[a]!.min[axis]! + values[a]!.max[axis]! - values[b]!.min[axis]! - values[b]!.max[axis]! || a - b)))
-  const rank = sorted.map(ids => { const result = new Uint32Array(values.length); ids.forEach((id, at) => { result[id] = at }); return result }), scratch = new Uint32Array(values.length)
-  const build = (first: number, end: number, bounds = union(values, sorted[0]!, first, end)): number => {
-    const count = end - first, index = nodes.length, node = { bounds, left: -1, right: -1, first: 0, count: 0 }; nodes.push(node)
-    const parentArea = area(bounds)
-    if (count > 1 && parentArea > 0) {
-      const middle = first + Math.floor(count / 2), leftCount = middle - first
-      let best: { axis: number; cost: number; left: PhysicalSceneBounds; right: PhysicalSceneBounds } | undefined
-      for (let axis = 0; axis < 3; axis++) {
-        const left = union(values, sorted[axis]!, first, middle), right = union(values, sorted[axis]!, middle, end)
-        const cost = 1 + (area(left) * leftCount + area(right) * (count - leftCount)) / parentArea
-        if (!best || cost < best.cost) best = { axis, cost, left, right }
-      }
-      if (best!.cost < count) {
-        const ranks = rank[best!.axis]!, pivot = ranks[sorted[best!.axis]![middle]!]!
-        for (let axis = 0; axis < 3; axis++) {
-          const ids = sorted[axis]!; let left = first, right = middle
-          for (let at = first; at < end; at++) { const id = ids[at]!; scratch[ranks[id]! < pivot ? left++ : right++] = id }
-          ids.set(scratch.subarray(first, end), first)
-        }
-        node.left = build(first, middle, best!.left); node.right = build(middle, end, best!.right); return index
-      }
-    }
-    node.first = order.length; node.count = count; order.push(...Array.from(sorted[0]!.subarray(first, end)).sort((a, b) => a - b)); return index
+/** Centroid-midpoint overlap hierarchy uses exact primitive unions and atomic
+ * leaves. It avoids presorting/ranking all three axes or searching split costs;
+ * exact query predicates and caller source ordering remain unchanged. */
+const createPhysicalOverlapSpatialIndex = (values:readonly PhysicalSceneBounds[]):PhysicalSpatialIndex=>{
+ const count=values.length,nodeCount=count?count*2-1:0
+ if(!Number.isSafeInteger(nodeCount)||nodeCount>2**31)throw Error('Centroid hierarchy exceeds its signed child-index address space')
+ const bounds=new Float64Array(nodeCount*6),children=new Int32Array(nodeCount*2),ranges=new Uint32Array(nodeCount*2),order=Uint32Array.from(values,(_,id)=>id)
+ children.fill(-1)
+ const center=(id:number,axis:number)=>values[id]!.min[axis]!*.5+values[id]!.max[axis]!*.5
+ const pending=count?[{node:0,first:0,end:count}]:[];let nextNode=1
+ while(pending.length){
+  const{node,first,end}=pending.pop()!,at=node*6,centroidMin=[Infinity,Infinity,Infinity],centroidMax=[-Infinity,-Infinity,-Infinity]
+  bounds.fill(Infinity,at,at+3);bounds.fill(-Infinity,at+3,at+6)
+  for(let i=first;i<end;i++)for(let axis=0;axis<3;axis++){
+   const id=order[i]!,box=values[id]!,c=center(id,axis)
+   bounds[at+axis]=Math.min(bounds[at+axis]!,box.min[axis]!);bounds[at+axis+3]=Math.max(bounds[at+axis+3]!,box.max[axis]!)
+   centroidMin[axis]=Math.min(centroidMin[axis]!,c);centroidMax[axis]=Math.max(centroidMax[axis]!,c)
   }
-  if (values.length) build(0, values.length)
-  return { bounds: Float64Array.from(nodes.flatMap(node => [...node.bounds.min, ...node.bounds.max])), children: Int32Array.from(nodes.flatMap(node => [node.left, node.right])), ranges: Uint32Array.from(nodes.flatMap(node => [node.first, node.count])), order: Uint32Array.from(order) }
+  if(end-first===1){ranges[node*2]=first;ranges[node*2+1]=1;continue}
+  let axis=0
+  for(let a=1;a<3;a++)if(centroidMax[a]!-centroidMin[a]!>centroidMax[axis]!-centroidMin[axis]!)axis=a
+  const midpoint=centroidMin[axis]!*.5+centroidMax[axis]!*.5
+  let left=first,right=end-1
+  while(left<=right){
+   if(center(order[left]!,axis)<midpoint)left++
+   else{const value=order[left]!;order[left]=order[right]!;order[right--]=value}
+  }
+  let split=left
+  if(split===first||split===end){
+   // Identical/adjacent representable centroids may not separate at their
+   // midpoint. Numeric primitive-id order gives a deterministic median split.
+   order.subarray(first,end).sort();split=first+Math.floor((end-first)/2)
+  }
+  const a=nextNode++,b=nextNode++;children[node*2]=a;children[node*2+1]=b
+  pending.push({node:b,first:split,end},{node:a,first,end:split})
+ }
+ if(nextNode!==(count?nodeCount:1))throw Error('Centroid hierarchy did not construct all atomic leaves')
+ return{bounds,children,ranges,order}
 }
 export const physicalSpatialBytes = (index: PhysicalSpatialIndex): number => index.bounds.byteLength + index.children.byteLength + index.ranges.byteLength + index.order.byteLength
 const distanceToNode = (index: PhysicalSpatialIndex, node: number, origin: Vector3, direction: Vector3): number | null => {

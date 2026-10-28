@@ -1,0 +1,71 @@
+{
+  "engine": "centroid",
+  "design": {
+    "id": "pwr-full-unit",
+    "revision": "pwr-full-unit-20261027-r5",
+    "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+  },
+  "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "inputMeshes": 910,
+  "inputTriangles": 243649,
+  "ms": 1813.4447080000002,
+  "cpu": {
+    "user": 2007715,
+    "system": 116805
+  },
+  "memoryBefore": {
+    "rss": 415809536,
+    "heapTotal": 70436864,
+    "heapUsed": 99419023,
+    "external": 52145359,
+    "arrayBuffers": 0
+  },
+  "memoryAfter": {
+    "rss": 944209920,
+    "heapTotal": 609437696,
+    "heapUsed": 285516871,
+    "external": 93123671,
+    "arrayBuffers": 28260732
+  },
+  "process": {
+    "userCPUTime": 4507414,
+    "systemCPUTime": 332833,
+    "maxRSS": 1080480,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 68637,
+    "majorPageFault": 109,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 627,
+    "involuntaryContextSwitches": 14624
+  },
+  "outputMeshes": 3913,
+  "packedBytes": 29252592,
+  "retainedPickIndexBytes": 19026788,
+  "atomicTemporaryIndexBytes": 32158436,
+  "temporaryIndexFormula": "Per nonempty ownership cohort: 2N−1 nodes ×64bytes(bounds/children/ranges) + N×4bytes primitive IDs; this ownership tree is not retained in the prepared output.",
+  "diagnostics": {
+    "broadPhaseCandidates": 3108030,
+    "coplanarCandidates": 183625,
+    "triangles": 243625,
+    "partitionedTriangles": 23537,
+    "retainedCandidates": 3003,
+    "coincidentPairs": 1611
+  },
+  "fingerprint": "4abb0e38b49baf7c7d546233aa41e91bcfc17cf6904f5e8407681e6a0af894ad",
+  "limits": [
+    "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+    "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+    "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+  ]
+}

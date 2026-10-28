@@ -1,0 +1,69 @@
+{
+  "engine": "before",
+  "design": {
+    "id": "pwr-campus",
+    "revision": "pwr-campus-20261027-r5",
+    "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+  },
+  "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "inputMeshes": 535,
+  "inputTriangles": 131845,
+  "ms": 1318.831458,
+  "cpu": {
+    "user": 1579279,
+    "system": 83119
+  },
+  "memoryBefore": {
+    "rss": 294273024,
+    "heapTotal": 44724224,
+    "heapUsed": 75471948,
+    "external": 31919996,
+    "arrayBuffers": 1120
+  },
+  "memoryAfter": {
+    "rss": 788021248,
+    "heapTotal": 500544512,
+    "heapUsed": 251164143,
+    "external": 74514975,
+    "arrayBuffers": 2111024
+  },
+  "process": {
+    "userCPUTime": 3177268,
+    "systemCPUTime": 214344,
+    "maxRSS": 847776,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 53089,
+    "majorPageFault": 119,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 5,
+    "involuntaryContextSwitches": 9703
+  },
+  "outputMeshes": 1837,
+  "packedBytes": 18569040,
+  "retainedPickIndexBytes": 7948872,
+  "diagnostics": {
+    "broadPhaseCandidates": 3629488,
+    "coplanarCandidates": 110891,
+    "triangles": 131845,
+    "partitionedTriangles": 8096,
+    "retainedCandidates": 1302,
+    "coincidentPairs": 973
+  },
+  "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+  "limits": [
+    "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+    "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+    "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+  ]
+}

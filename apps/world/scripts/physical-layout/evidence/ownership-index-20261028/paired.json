@@ -1,0 +1,589 @@
+{
+  "baseline": "b748ae05e",
+  "candidate": "Centroid-midpoint atomic overlap index; existing interface/ray hierarchy and robust eligibility unchanged.",
+  "orders": {
+    "first": [
+      "unit:before",
+      "unit:centroid",
+      "campus:centroid",
+      "campus:before"
+    ],
+    "reverse": [
+      "unit:centroid",
+      "unit:before",
+      "campus:before",
+      "campus:centroid"
+    ]
+  },
+  "records": [
+    {
+      "pair": "first",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261027-r5",
+        "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+      },
+      "engine": "before",
+      "file": "first-unit-before.json",
+      "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 910,
+      "inputTriangles": 243649,
+      "ms": 2740.127584,
+      "cpu": {
+        "user": 2878753,
+        "system": 175081
+      },
+      "memoryBefore": {
+        "rss": 408010752,
+        "heapTotal": 69240832,
+        "heapUsed": 99418892,
+        "external": 52146524,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 1060192256,
+        "heapTotal": 717130752,
+        "heapUsed": 350857551,
+        "external": 92356175,
+        "arrayBuffers": 2923788
+      },
+      "process": {
+        "userCPUTime": 5324604,
+        "systemCPUTime": 376682,
+        "maxRSS": 1176592,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 74547,
+        "majorPageFault": 72,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 398,
+        "involuntaryContextSwitches": 16904
+      },
+      "outputMeshes": 3913,
+      "packedBytes": 29252592,
+      "diagnostics": {
+        "broadPhaseCandidates": 3946353,
+        "coplanarCandidates": 183625,
+        "triangles": 243625,
+        "partitionedTriangles": 23537,
+        "retainedCandidates": 3003,
+        "coincidentPairs": 1611
+      },
+      "fingerprint": "4abb0e38b49baf7c7d546233aa41e91bcfc17cf6904f5e8407681e6a0af894ad",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "first",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261027-r5",
+        "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+      },
+      "engine": "centroid",
+      "file": "first-unit-after.json",
+      "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 910,
+      "inputTriangles": 243649,
+      "ms": 1956.8725419999998,
+      "cpu": {
+        "user": 2015497,
+        "system": 122160
+      },
+      "memoryBefore": {
+        "rss": 417923072,
+        "heapTotal": 68029440,
+        "heapUsed": 99421103,
+        "external": 52144879,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 964280320,
+        "heapTotal": 607519744,
+        "heapUsed": 285642496,
+        "external": 93189440,
+        "arrayBuffers": 28260732
+      },
+      "process": {
+        "userCPUTime": 4742047,
+        "systemCPUTime": 337042,
+        "maxRSS": 1100544,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 68940,
+        "majorPageFault": 65,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 1,
+        "involuntaryContextSwitches": 15339
+      },
+      "outputMeshes": 3913,
+      "packedBytes": 29252592,
+      "diagnostics": {
+        "broadPhaseCandidates": 3108030,
+        "coplanarCandidates": 183625,
+        "triangles": 243625,
+        "partitionedTriangles": 23537,
+        "retainedCandidates": 3003,
+        "coincidentPairs": 1611
+      },
+      "fingerprint": "4abb0e38b49baf7c7d546233aa41e91bcfc17cf6904f5e8407681e6a0af894ad",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "first",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261027-r5",
+        "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+      },
+      "engine": "before",
+      "file": "first-campus-before.json",
+      "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 535,
+      "inputTriangles": 131845,
+      "ms": 1255.48175,
+      "cpu": {
+        "user": 1490155,
+        "system": 90816
+      },
+      "memoryBefore": {
+        "rss": 295632896,
+        "heapTotal": 45202432,
+        "heapUsed": 75475552,
+        "external": 31918208,
+        "arrayBuffers": 1120
+      },
+      "memoryAfter": {
+        "rss": 790102016,
+        "heapTotal": 498335744,
+        "heapUsed": 244529900,
+        "external": 70994508,
+        "arrayBuffers": 1583548
+      },
+      "process": {
+        "userCPUTime": 3090849,
+        "systemCPUTime": 246676,
+        "maxRSS": 846224,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 53585,
+        "majorPageFault": 60,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 0,
+        "involuntaryContextSwitches": 9858
+      },
+      "outputMeshes": 1837,
+      "packedBytes": 18569040,
+      "diagnostics": {
+        "broadPhaseCandidates": 3629488,
+        "coplanarCandidates": 110891,
+        "triangles": 131845,
+        "partitionedTriangles": 8096,
+        "retainedCandidates": 1302,
+        "coincidentPairs": 973
+      },
+      "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "first",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261027-r5",
+        "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+      },
+      "engine": "centroid",
+      "file": "first-campus-after.json",
+      "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 535,
+      "inputTriangles": 131845,
+      "ms": 990.8187920000001,
+      "cpu": {
+        "user": 1191070,
+        "system": 51512
+      },
+      "memoryBefore": {
+        "rss": 300335104,
+        "heapTotal": 44837888,
+        "heapUsed": 75457740,
+        "external": 31908284,
+        "arrayBuffers": 1120
+      },
+      "memoryAfter": {
+        "rss": 565477376,
+        "heapTotal": 307403776,
+        "heapUsed": 184088976,
+        "external": 59095920,
+        "arrayBuffers": 15295372
+      },
+      "process": {
+        "userCPUTime": 2775294,
+        "systemCPUTime": 186173,
+        "maxRSS": 630384,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 39514,
+        "majorPageFault": 109,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 5,
+        "involuntaryContextSwitches": 10268
+      },
+      "outputMeshes": 1837,
+      "packedBytes": 18569040,
+      "diagnostics": {
+        "broadPhaseCandidates": 2224458,
+        "coplanarCandidates": 110891,
+        "triangles": 131845,
+        "partitionedTriangles": 8096,
+        "retainedCandidates": 1302,
+        "coincidentPairs": 973
+      },
+      "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "reverse",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261027-r5",
+        "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+      },
+      "engine": "before",
+      "file": "reverse-unit-before.json",
+      "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 910,
+      "inputTriangles": 243649,
+      "ms": 2492.312375,
+      "cpu": {
+        "user": 2683677,
+        "system": 152787
+      },
+      "memoryBefore": {
+        "rss": 434454528,
+        "heapTotal": 77025280,
+        "heapUsed": 99421329,
+        "external": 52148145,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 1086849024,
+        "heapTotal": 722850816,
+        "heapUsed": 349281614,
+        "external": 90868222,
+        "arrayBuffers": 2923788
+      },
+      "process": {
+        "userCPUTime": 5312269,
+        "systemCPUTime": 350820,
+        "maxRSS": 1248528,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 78203,
+        "majorPageFault": 54,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 1,
+        "involuntaryContextSwitches": 14084
+      },
+      "outputMeshes": 3913,
+      "packedBytes": 29252592,
+      "retainedPickIndexBytes": 19026788,
+      "diagnostics": {
+        "broadPhaseCandidates": 3946353,
+        "coplanarCandidates": 183625,
+        "triangles": 243625,
+        "partitionedTriangles": 23537,
+        "retainedCandidates": 3003,
+        "coincidentPairs": 1611
+      },
+      "fingerprint": "4abb0e38b49baf7c7d546233aa41e91bcfc17cf6904f5e8407681e6a0af894ad",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "reverse",
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261027-r5",
+        "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+      },
+      "engine": "centroid",
+      "file": "reverse-unit-after.json",
+      "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 910,
+      "inputTriangles": 243649,
+      "ms": 1813.4447080000002,
+      "cpu": {
+        "user": 2007715,
+        "system": 116805
+      },
+      "memoryBefore": {
+        "rss": 415809536,
+        "heapTotal": 70436864,
+        "heapUsed": 99419023,
+        "external": 52145359,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 944209920,
+        "heapTotal": 609437696,
+        "heapUsed": 285516871,
+        "external": 93123671,
+        "arrayBuffers": 28260732
+      },
+      "process": {
+        "userCPUTime": 4507414,
+        "systemCPUTime": 332833,
+        "maxRSS": 1080480,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 68637,
+        "majorPageFault": 109,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 627,
+        "involuntaryContextSwitches": 14624
+      },
+      "outputMeshes": 3913,
+      "packedBytes": 29252592,
+      "retainedPickIndexBytes": 19026788,
+      "atomicTemporaryIndexBytes": 32158436,
+      "temporaryIndexFormula": "Per nonempty ownership cohort: 2N−1 nodes ×64bytes(bounds/children/ranges) + N×4bytes primitive IDs; this ownership tree is not retained in the prepared output.",
+      "diagnostics": {
+        "broadPhaseCandidates": 3108030,
+        "coplanarCandidates": 183625,
+        "triangles": 243625,
+        "partitionedTriangles": 23537,
+        "retainedCandidates": 3003,
+        "coincidentPairs": 1611
+      },
+      "fingerprint": "4abb0e38b49baf7c7d546233aa41e91bcfc17cf6904f5e8407681e6a0af894ad",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "reverse",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261027-r5",
+        "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+      },
+      "engine": "before",
+      "file": "reverse-campus-before.json",
+      "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 535,
+      "inputTriangles": 131845,
+      "ms": 1318.831458,
+      "cpu": {
+        "user": 1579279,
+        "system": 83119
+      },
+      "memoryBefore": {
+        "rss": 294273024,
+        "heapTotal": 44724224,
+        "heapUsed": 75471948,
+        "external": 31919996,
+        "arrayBuffers": 1120
+      },
+      "memoryAfter": {
+        "rss": 788021248,
+        "heapTotal": 500544512,
+        "heapUsed": 251164143,
+        "external": 74514975,
+        "arrayBuffers": 2111024
+      },
+      "process": {
+        "userCPUTime": 3177268,
+        "systemCPUTime": 214344,
+        "maxRSS": 847776,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 53089,
+        "majorPageFault": 119,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 5,
+        "involuntaryContextSwitches": 9703
+      },
+      "outputMeshes": 1837,
+      "packedBytes": 18569040,
+      "retainedPickIndexBytes": 7948872,
+      "diagnostics": {
+        "broadPhaseCandidates": 3629488,
+        "coplanarCandidates": 110891,
+        "triangles": 131845,
+        "partitionedTriangles": 8096,
+        "retainedCandidates": 1302,
+        "coincidentPairs": 973
+      },
+      "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    },
+    {
+      "pair": "reverse",
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261027-r5",
+        "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+      },
+      "engine": "centroid",
+      "file": "reverse-campus-after.json",
+      "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+      "compiler": {
+        "id": "physical-layout-native-drafting",
+        "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+      },
+      "inputMeshes": 535,
+      "inputTriangles": 131845,
+      "ms": 1082.587125,
+      "cpu": {
+        "user": 1295767,
+        "system": 55807
+      },
+      "memoryBefore": {
+        "rss": 300859392,
+        "heapTotal": 46213120,
+        "heapUsed": 75474584,
+        "external": 31918888,
+        "arrayBuffers": 1120
+      },
+      "memoryAfter": {
+        "rss": 564101120,
+        "heapTotal": 315529216,
+        "heapUsed": 184199668,
+        "external": 59155556,
+        "arrayBuffers": 15295372
+      },
+      "process": {
+        "userCPUTime": 2887810,
+        "systemCPUTime": 192943,
+        "maxRSS": 626288,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 39799,
+        "majorPageFault": 60,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 0,
+        "involuntaryContextSwitches": 8796
+      },
+      "outputMeshes": 1837,
+      "packedBytes": 18569040,
+      "retainedPickIndexBytes": 7948872,
+      "atomicTemporaryIndexBytes": 17403476,
+      "temporaryIndexFormula": "Per nonempty ownership cohort: 2N−1 nodes ×64bytes(bounds/children/ranges) + N×4bytes primitive IDs; this ownership tree is not retained in the prepared output.",
+      "diagnostics": {
+        "broadPhaseCandidates": 2224458,
+        "coplanarCandidates": 110891,
+        "triangles": 131845,
+        "partitionedTriangles": 8096,
+        "retainedCandidates": 1302,
+        "coincidentPairs": 973
+      },
+      "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+      "limits": [
+        "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+        "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+        "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+      ]
+    }
+  ],
+  "qualification": "Fresh-process Bun ownership CPU comparison only. Source compile, visible mesh generation and exact geometry/render/pick hashing are outside each timed interval. One test-only GC precedes the one measured engine call. Browser loading/performance requires separate product qualification."
+}
