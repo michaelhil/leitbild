@@ -3,7 +3,7 @@ import './native-map-route-instrumentation.ts'
 (() => {
  const q=(window as any).__nativeRouteProof
  if(!q)return
- q.planMatrix=null;q.selectionTables=[];q.operationSamples=[];q.requests=[]
+ q.planMatrix=null;q.selectionTables=[];q.operationSamples=[];q.requests=[];q.layoutRequests=[]
  const sources=new Map<string,any>(),prepared=new Map<string,any>()
  const choose=(scene:any,response:any,elementId:string)=>{const physicalId=(window as any).__nativeRouteTarget.physicalId;const index=scene.objects.findIndex((o:any)=>o.subjectIds.includes(elementId)&&(!physicalId||o.id===physicalId));if(index<0)return;const object=scene.objects[index];q.object={id:object.id,label:object.label,subjectIds:[...object.subjectIds],layerId:object.layerId};q.sourceKey=response.sourceKey;q.key=response.key;q.targetMeshIndices=response.meshes.flatMap((m:any,i:number)=>m.objectIndex===index?[i]:[]);q.operationPoints=response.meshes.filter((m:any)=>m.objectIndex===index).flatMap((m:any)=>{const values=[];for(let i=0;i+20<m.vertices.length;i+=21)values.push([0,1,2].map(a=>(m.vertices[i+a]+m.vertices[i+7+a]+m.vertices[i+14+a])/3+m.offset[a]));return values})}
  q.selectTarget=(elementId:string,physicalId?:string)=>{(window as any).__nativeRouteTarget.elementId=elementId;(window as any).__nativeRouteTarget.physicalId=physicalId;for(const[key,scene]of sources){const response=prepared.get(key);if(response&&scene.objects.some((o:any)=>o.subjectIds.includes(elementId))){choose(scene,response,elementId);return}}throw Error("Target has no actual registered/prepared source: "+elementId)}
@@ -27,6 +27,20 @@ import './native-map-route-instrumentation.ts'
   const box=canvas.getBoundingClientRect(),ratio=canvas.width/box.width,seen=new Set<string>()
   return(q.operationPoints??[]).flatMap(([x,y]:number[])=>{const px=(m[0]*x!+m[2]*y!+m[4])/ratio,py=(m[1]*x!+m[3]*y!+m[5])/ratio,key=px.toFixed(1)+','+py.toFixed(1);if(px<0||py<0||px>box.width||py>box.height||seen.has(key))return[];seen.add(key);return[{x:box.x+px,y:box.y+py}]})
  }
- const fetchOriginal=window.fetch;window.fetch=Object.assign(async function(...args:Parameters<typeof fetch>){const response=await fetchOriginal(...args),url=typeof args[0]==='string'?args[0]:args[0] instanceof URL?args[0].href:args[0].url;if(/\/displays\/(view|sample)(?:\?|$)/.test(url)){void response.clone().json().then(body=>{const refs=new Set<string>();const walk=(v:any):void=>{if(!v||typeof v!=='object')return;if(typeof v.ref==='string')refs.add(v.ref);for(const x of Object.values(v))if(x&&typeof x==='object')walk(x)};walk(body);q.requests.push({url,input:args[1]?.body,refs:[...refs]})}).catch(error=>q.errors.push(String(error)))}return response},fetchOriginal)
+ const fetchOriginal=window.fetch;window.fetch=Object.assign(async function(...args:Parameters<typeof fetch>){
+  const request=args[0],url=typeof request==='string'?request:request instanceof URL?request.href:request.url
+  const method=args[1]?.method??(request instanceof Request?request.method:'GET')
+  // Record request start, including a subsequently aborted request. Observing
+  // only successful responses would miss a hover-created acquisition.
+  const layout=method==='POST'&&/\/displays\/layout(?:\?|$)/.test(url)?{url,input:args[1]?.body,startedAt:performance.now(),finishedAt:null as number|null,status:null as number|null,error:null as string|null}:null
+  if(layout)q.layoutRequests.push(layout)
+  try{
+   const response=await fetchOriginal(...args)
+   if(layout)layout.status=response.status
+   if(/\/displays\/(view|sample)(?:\?|$)/.test(url)){void response.clone().json().then(body=>{const refs=new Set<string>();const walk=(v:any):void=>{if(!v||typeof v!=='object')return;if(typeof v.ref==='string')refs.add(v.ref);for(const x of Object.values(v))if(x&&typeof x==='object')walk(x)};walk(body);q.requests.push({url,input:args[1]?.body,refs:[...refs]})}).catch(error=>q.errors.push(String(error)))}
+   return response
+  }catch(error){if(layout)layout.error=String(error);throw error}
+  finally{if(layout)layout.finishedAt=performance.now()}
+ },fetchOriginal)
  window.addEventListener('message',event=>{if(event.origin!==location.origin||event.data?.type!=='world:layout-inspection-sample')return;const latest=event.data.snapshot?.latest;if(latest)q.operationSamples.push({scope:latest.scope,subject:latest.subjects[0],observations:latest.sample.observations,at:latest.sample.at,stamp:event.data.snapshot.stamp})})
 })()
