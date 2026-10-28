@@ -213,6 +213,15 @@ describe('the AI procedure runner through the World Module API', () => {
     await run.setAgentRestrictions(restrictingOperator, { operationIds: [], objects: [] }, 1)
 
     const basis = 'Test-only selection of the authored normal branch on the readings World takes; no plant judgement.'
+    const beforeMalformedTransition = run.snapshot().seq
+    // Progress belongs beside input in workspace_call. Silently stripping it
+    // would commit the step without the chat line the driver intended to send.
+    const malformed = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis,
+      evidenceTagIds: ['TRIP-BKR-A'], say: 'This must not disappear while its transition succeeds.' }, ai)
+    expect(malformed.status).toBe(400)
+    expect(JSON.stringify(malformed.body)).toContain('say')
+    expect(run.snapshot().seq).toBe(beforeMalformedTransition)
+    expect(run.snapshot().procedures!.runs[0]).toMatchObject({ currentStepId: 'verify-reactor-trip', inputRequest: { issue: 'Confirm local rod indication.' } })
     const transition = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis, evidenceTagIds: ['TRIP-BKR-A', 'NIS-PR-AVG'] }, ai)
     expect(transition.status).toBe(200)
     expect(transition.body.result).toMatchObject({ ok: true, next: { run: { currentStepId: 'verify-turbine-trip', stepNumber: 2 }, step: { id: 'verify-turbine-trip' } } })

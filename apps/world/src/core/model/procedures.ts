@@ -285,7 +285,7 @@ export const procedureRunTransitionPayloadSchema = z.object({
   runId: procedureRunIdSchema,
   stepId: procedureStepIdSchema,
   branchIndex: z.number().int().nonnegative(),
-}).merge(procedureDecisionBasisSchema)
+}).merge(procedureDecisionBasisSchema).strict()
 
 /** Claim a Run to work it, or release it to be shared again. */
 export const procedureRunDrivePayloadSchema = z.object({
