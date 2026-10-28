@@ -446,7 +446,10 @@ export const createViewPublisherLookup = (deps: WorkspaceCapabilityToolsDeps) =>
         throw error
       }
     })()
-    const resolved = resolveScope(scope, catalogs.resources.resources, catalogs.definitions.definitions)
+    // A Room may be narrowed or removed while the Host catalogs are loading.
+    const currentScope = deps.getRoomScope(roomId)
+    if (currentScope === undefined) throw new Error(`Room ${roomId} has no valid scope`)
+    const resolved = resolveScope(currentScope, catalogs.resources.resources, catalogs.definitions.definitions)
     const reachable = new Set(resolved.resources.flatMap(resource => resource.capabilityIds))
     return catalogs.operations.capabilities
       .filter(operation => operation.publishes?.includes('embedded-view') === true && reachable.has(operation.id))
@@ -480,7 +483,9 @@ export const createContextPublisherLookup = (deps: WorkspaceCapabilityToolsDeps)
         }
       })()
       const marked = catalogs.operations.capabilities.filter(operation => operation.publishes?.includes('context') === true)
-      return resolveScope(scope, catalogs.resources.resources, catalogs.definitions.definitions).resources.flatMap(resource =>
+      const currentScope = deps.getRoomScope(roomId)
+      if (currentScope === undefined) throw new Error(`Room ${roomId} has no valid scope`)
+      return resolveScope(currentScope, catalogs.resources.resources, catalogs.definitions.definitions).resources.flatMap(resource =>
         marked.filter(operation => resource.capabilityIds.includes(operation.id)).map(operation => ({ operationId: operation.id, resource: resource.ref })))
     },
     read: async (publisher: ContextPublisher, caller: { readonly id: string; readonly name: string }, signal?: AbortSignal): Promise<{ readonly ok: true; readonly context: PublishedContext['context'] } | { readonly ok: false; readonly refusal: ToolResult }> => {

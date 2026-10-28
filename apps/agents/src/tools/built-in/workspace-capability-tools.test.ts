@@ -443,6 +443,43 @@ describe('Workspace progressive-discovery tools', () => {
     expect(invoked[0]).toEqual({ path: `/api/workspaces/${workspaceId}/capabilities/${contextId}/invoke`, body: { resource: run, input: {}, actor: { kind: 'ai', id: 'agent-1', displayName: 'Assistant' } } })
   })
 
+  test('publisher discovery uses the current Room scope after a delayed catalog read', async () => {
+    for (const next of [{ kind: 'resource' as const, resource: otherRun }, undefined]) {
+      let scope: WorkspaceRoomScope | undefined = { kind: 'resource', resource: run }
+      const reached = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+      let readers = 0
+      const base = catalogFetch([])
+      const fetchImpl = (async (input, init) => {
+        const path = new URL(String(input)).pathname
+        if (path.endsWith('/resources')) {
+          if (++readers === 2) reached.resolve()
+          await release.promise
+        }
+        const response = await base(input, init)
+        if (!path.endsWith('/capabilities')) return response
+        const body = await response.json() as { capabilities: Array<Record<string, unknown>> }
+        return Response.json({ ...body, capabilities: body.capabilities.map(operation => ({ ...operation,
+          ...(operation.id === readId ? { publishes: ['context'] } : operation.id === writeId ? { publishes: ['embedded-view'] } : {}),
+        })) })
+      }) as typeof fetch
+      const deps = { workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => scope, fetchImpl }
+      const contexts = createContextPublisherLookup(deps).publishers('room')
+      const views = createViewPublisherLookup(deps)('room')
+      const outcomes = Promise.allSettled([contexts, views])
+      await reached.promise
+      scope = next
+      release.resolve()
+      if (next === undefined) {
+        const results = await outcomes
+        expect(results.every(result => result.status === 'rejected' && String(result.reason).includes('has no valid scope'))).toBe(true)
+      } else {
+        expect(await contexts).toEqual([{ operationId: readId, resource: otherRun }])
+        expect(await views).toEqual([])
+        await outcomes
+      }
+    }
+  })
+
   test('essential discovery and action semantics reach the actual native model schema', () => {
     const [explore, call] = toolsToDefinitions(makeTools({ kind: 'workspace' }))
     const properties = explore!.function.parameters.properties as Record<string, { description?: string }>
