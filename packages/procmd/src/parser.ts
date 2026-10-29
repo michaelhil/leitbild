@@ -1,5 +1,6 @@
 import type { ParsedProcedure, ProcedureBranch, ProcedureStep, ProcedureTag, ProcedureTextBlock } from './types.ts'
 import { assessmentLeaves, parseProcedureAssessment } from './assessment.ts'
+import { parseProcedureDecisions } from './decisions.ts'
 
 export const PARSER_PROCMD_VERSION = '0.7'
 type Mutable<T> = { -readonly [K in keyof T]: T[K] }
@@ -59,7 +60,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   let tag: Record<string, string> | undefined
   let activeBranch: Mutable<ProcedureBranch> | undefined
   let decision: Mutable<ProcedureTextBlock> | undefined
-  let fence: { marker: string; length: number; block?: Mutable<ProcedureTextBlock>; observation?: { step: Step; lines: string[] }; assessment?: { step: Step; lines: string[] } } | undefined
+  let fence: { marker: string; length: number; block?: Mutable<ProcedureTextBlock>; observation?: { step: Step; lines: string[] }; assessment?: { step: Step; lines: string[] }; decisions?: { step: Step; lines: string[] } } | undefined
 
   const flushTag = () => {
     if (!tag) return
@@ -91,7 +92,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
     const sourceLine = index + 1
     if (fence) {
       if (fence.block) fence.block.text += '\n' + raw
-      else if (!fence.observation && !fence.assessment) preamble.push(raw)
+      else if (!fence.observation && !fence.assessment && !fence.decisions) preamble.push(raw)
       if (new RegExp(`^\\s*${fence.marker}{${fence.length},}\\s*$`).test(raw)) {
         if (fence.observation) {
           const value: unknown = JSON.parse(fence.observation.lines.join('\n'))
@@ -105,13 +106,19 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
           fence.observation.step.observation = { capabilityId: spec.capabilityId, input: spec.input as Record<string, unknown>, continuous: spec.continuous === true }
         }
         if (fence.assessment) fence.assessment.step.assessment = parseProcedureAssessment(JSON.parse(fence.assessment.lines.join('\n')))
+        if (fence.decisions) fence.decisions.step.decisions = parseProcedureDecisions(JSON.parse(fence.decisions.lines.join('\n')))
         fence = undefined
-      } else { fence.observation?.lines.push(raw); fence.assessment?.lines.push(raw) }
+      } else { fence.observation?.lines.push(raw); fence.assessment?.lines.push(raw); fence.decisions?.lines.push(raw) }
       continue
     }
     const openingFence = raw.match(/^\s*(`{3,}|~{3,})/)
     if (openingFence) {
       activeBranch = undefined; decision = undefined
+      if (/^\s*(`{3,}|~{3,})procedure-decisions\s*$/.test(raw)) {
+        if (!current || current.decisions) throw new Error(`Line ${sourceLine}: decisions require a step and may occur once per step`)
+        fence = { marker: openingFence[1]![0]!, length: openingFence[1]!.length, decisions: { step: current, lines: [] } }
+        continue
+      }
       if (/^\s*(`{3,}|~{3,})procedure-assessment\s*$/.test(raw)) {
         if (!current || current.assessment) throw new Error(`Line ${sourceLine}: assessment requires a step and may occur once per step`)
         fence = { marker: openingFence[1]![0]!, length: openingFence[1]!.length, assessment: { step: current, lines: [] } }
@@ -225,11 +232,14 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   flushTag()
   if (fence?.observation) throw new Error('unterminated procedure-observation')
   if (fence?.assessment) throw new Error('unterminated procedure-assessment')
+  if (fence?.decisions) throw new Error('unterminated procedure-decisions')
   if (fence) warn(lines.length, 'unterminated fenced example retained as literal text')
   if (!steps.length) throw new Error(`no Step headings found in ${procedureId}`)
   for (const step of steps) {
     step.tagIds = [...new Set([...step.blocks.flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds),
-      ...(step.assessment ? assessmentLeaves(step.assessment.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds) : [])])]
+      ...(step.assessment ? assessmentLeaves(step.assessment.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds) : []),
+      ...(step.decisions ?? []).flatMap(decision => assessmentLeaves(decision.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds))])]
+    for (const decision of step.decisions ?? []) if (decision.branchIndex >= step.branches.length) throw new Error(`Step ${step.id}: decision branchIndex ${decision.branchIndex} has no branch`)
     for (const branch of step.branches) if (branch.targetKind === 'step' && !steps.some(candidate => candidate.id === branch.target)) warn(branch.sourceLine, `unresolved step target #${branch.target}; no transition inferred`)
   }
   return { procedureId, title, rawMarkdown,
