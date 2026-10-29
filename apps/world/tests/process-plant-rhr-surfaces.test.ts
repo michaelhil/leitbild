@@ -67,11 +67,11 @@ describe('RHR graph and existing process-display boundary', () => {
         const start = pump.offered.find(control => control.path === `${pumpId}.running`)!
         expect(start.form).toBe('twoState')
         expect(start.options.map(option => option.word).sort()).toEqual(['START', 'STOP'])
-        expect(start.state).toBe(`${pumpId}.runningState`)
+        expect(String(start.state)).toBe(`${pumpId}.runningState`)
         const feederId = `${name}Breaker${train}`
         const feeder = controls.items.find(item => item.id === feederId)!
         const contacts = feeder.offered.find(control => control.path === `${feederId}.closed`)!
-        expect(contacts.state).toBe(`${feederId}.closedState`)
+        expect(String(contacts.state)).toBe(`${feederId}.closedState`)
         expect(contacts.options.map(option => option.word).sort()).toEqual(['CLOSE', 'OPEN'])
         const topology = graph.nodes.find(node => node.id === pumpId)!
         expect(topology.class).toBe('mover')

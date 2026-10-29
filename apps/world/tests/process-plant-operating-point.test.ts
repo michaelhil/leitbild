@@ -87,7 +87,7 @@ describe('authoritative PWR full-power operating point', () => {
     const runtime = createProcessPlantRuntime({ system })
     runtime.tick(5_000)
     const outlets = system.graph.links.filter(link => link.fromComponentIndex === source.index && link.kind === 'fluidFlow')
-    expect(new Set(outlets.map(link => link.service))).toEqual(new Set(['coolingWater', 'serviceWater']))
+    expect(new Set(outlets.map(link => String(link.service)))).toEqual(new Set(['coolingWater', 'serviceWater']))
     let total = 0
     for (const outlet of outlets) {
       const pump = system.graph.components[outlet.toComponentIndex]!
