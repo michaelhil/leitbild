@@ -496,8 +496,8 @@ export const spawnAIAgent = async (
   }
 
   // A progress line goes to the turn's Room at once, as the Agent's own chat
-  // message, while its turn continues. It carries no generation evidence or
-  // telemetry and is linked to no turn: it is no answer, so display requests,
+  // message, while its turn continues. Its exact activity link is separate
+  // from final-answer generation metadata: it is no answer, so display requests,
   // proposal watches and model comparisons attach only to the answer that
   // follows, and no Agent answers it (ai-agent.ts triggersEvaluation).
   const onProgress = (progress: AgentProgress): void => {
@@ -507,6 +507,7 @@ export const spawnAIAgent = async (
       content: progress.content,
       type: 'chat',
       progress: true,
+      ...(progress.progressEvidence === undefined ? {} : { progressEvidence: progress.progressEvidence }),
       ...(progress.inReplyTo ? { inReplyTo: progress.inReplyTo } : {}),
     })
   }

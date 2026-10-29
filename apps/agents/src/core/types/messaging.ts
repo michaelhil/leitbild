@@ -44,6 +44,15 @@ export interface MessageCause {
   readonly step?: number                // 0-based step index (scripts)
 }
 
+/** Durable execution provenance for a progress notice, not final-answer generation metadata. */
+export interface ProgressEvidence {
+  readonly turnId: string
+  readonly callId: string
+  /** Exact completed tool calls reported since the preceding progress batch. */
+  readonly callIds: ReadonlyArray<string>
+  readonly operationKey?: string
+}
+
 export interface Message {
   readonly id: string
   readonly senderId: string
@@ -57,8 +66,10 @@ export interface Message {
   readonly cause?: MessageCause       // see MessageCause docstring above
   // A line an AI Agent posted while its turn still runs, saying what it just
   // did (workspace_call `say`); the turn's answer follows as an ordinary
-  // message. No Agent answers it, and it carries no generation evidence.
+  // message. No Agent answers it; exact activity links are separate from
+  // the final answer's generation metadata.
   readonly progress?: true
+  readonly progressEvidence?: ProgressEvidence
   readonly generationMs?: number
   // Reference to the separately stored complete LLM request for this reply.
   // Keeping the request outside Message prevents room reads and future model

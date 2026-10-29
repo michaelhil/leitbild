@@ -9,7 +9,7 @@
 import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
 import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider, ProviderContinuation } from '../core/types/llm.ts'
 import type { CorrectionCause, EvalEventCore } from '../core/types/agent-eval.ts'
-import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult } from '../core/types/tool.ts'
+import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult, ToolProgress } from '../core/types/tool.ts'
 import type { MessageCause, ToolTraceEntry } from '../core/types/messaging.ts'
 import type { ContextResult, FlushInfo } from './context-builder.ts'
 import { classifyLLMError } from './error-classify.ts'
@@ -472,7 +472,7 @@ export interface EvalOptions {
   // Posts a tool result's progress line (ToolResult.progress) to the person at
   // once, while the turn continues. A standalone evaluation (a model
   // comparison replay) has no conversation to post to and omits it.
-  readonly onProgress?: (line: string) => void
+  readonly onProgress?: (progress: ToolProgress & { readonly callId?: string; readonly callIds: ReadonlyArray<string> }) => void
   readonly signal?: AbortSignal
   readonly modelObserver?: {
     readonly start: (summary: Omit<ExecutionModelCallSummary, 'requestBytes' | 'messageCount' | 'toolCount'>, request: ChatRequest) => Promise<void>
@@ -504,6 +504,7 @@ export const evaluate = async (
   let metrics: LLMCallMetrics = { modelCalls: 0 }
   const { toolDefinitions, inReplyTo, requireView, onEvent: externalOnEvent, onProgress, signal, requestToolCheckin } = options ?? {}
   let pendingCorrection = false
+  let pendingProgressCallIds: string[] = []
   const onEvent = (event: EvalEventCore): void => {
     if (event.kind === 'correction') pendingCorrection = true
     externalOnEvent?.(event)
@@ -677,7 +678,18 @@ export const evaluate = async (
         const results = await toolExecutor(calls, triggerRoomId, signal, options?.executionTurnId)
         // A line says what has already happened, so it is posted even when
         // the turn is cancelled now; posted lines stay.
-        for (const result of results) for (const line of result.progress ?? []) onProgress?.(line)
+        if (onProgress) {
+          const activityCallIds = [...pendingProgressCallIds, ...calls.flatMap(call => call.callId === undefined ? [] : [call.callId])]
+          let postedProgress = false
+          for (const [index, result] of results.entries()) for (const progress of result.progress ?? []) {
+            const callId = calls[index]?.callId
+            onProgress?.({ ...progress, ...(callId === undefined ? {} : { callId }), callIds: activityCallIds })
+            postedProgress = true
+          }
+          // A batch may return several notices. They share its exact completed
+          // calls; subsequent batches start afresh, without timestamp inference.
+          pendingProgressCallIds = postedProgress ? [] : activityCallIds
+        }
         signal?.throwIfAborted()
         const serializedResults: string[] = []
         for (let i = 0; i < results.length; i++) {

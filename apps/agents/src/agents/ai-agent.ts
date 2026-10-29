@@ -20,13 +20,13 @@
 // ============================================================================
 
 import type { AIAgent, AIAgentConfig, IncludeContext, IncludePrompts, PromptSection, ContextSection, RequestedTurn } from '../core/types/agent.ts'
-import type { AgentHistory, Message } from '../core/types/messaging.ts'
+import type { AgentHistory, Message, ProgressEvidence } from '../core/types/messaging.ts'
 import type { EvalEvent, EvalEventCore, EvalEventScope } from '../core/types/agent-eval.ts'
 import { generateTraceId } from '../core/types/agent-eval.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
 import { modelSupportsImages } from '../llm/multimodal.ts'
 import type { Room } from '../core/types/room.ts'
-import type { ToolDefinition, ToolExecutor } from '../core/types/tool.ts'
+import type { ToolDefinition, ToolExecutor, ToolProgress } from '../core/types/tool.ts'
 import { DEFAULTS, SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { extractAgentProfile as extractProfile } from './shared.ts'
 import { buildContext, buildSystemSections, estimateTokens, flushIncoming, type BuildContextDeps, type ContextResult } from './context-builder.ts'
@@ -66,6 +66,7 @@ export interface AgentProgress {
   readonly roomId: string
   readonly content: string
   readonly inReplyTo?: ReadonlyArray<string>
+  readonly progressEvidence?: ProgressEvidence
 }
 
 export interface AIAgentOptions {
@@ -463,9 +464,20 @@ export const createAIAgent = (
     // A line that cannot be posted is reported, never a failed turn: the
     // change it reports has happened and its answer still follows.
     const onProgress = options?.onProgress
-    const postProgress = onProgress && ((line: string): void => {
+    const postProgress = onProgress && ((progress: ToolProgress & { readonly callId?: string; readonly callIds: ReadonlyArray<string> }): void => {
       try {
-        onProgress({ roomId: triggerRoomId, content: line, ...(inReplyTo ? { inReplyTo } : {}) })
+        let progressEvidence: ProgressEvidence | undefined
+        if (options?.executionStore !== undefined && progress.callId !== undefined) {
+          const completed = new Set(options.executionStore.listCalls(triggerRoomId, traceId).filter(call => call.completedAt !== undefined).map(call => call.id))
+          if (progress.callIds.includes(progress.callId) && progress.callIds.every(id => completed.has(id))) progressEvidence = {
+            turnId: traceId, callId: progress.callId, callIds: progress.callIds,
+            ...(progress.operationKey === undefined ? {} : { operationKey: progress.operationKey }),
+          }
+          else emit({ kind: 'warning', message: 'Progress activity link unavailable: the exact tool outcome was not durably recorded.' })
+        }
+        // Standalone agents intentionally have no persisted execution to link.
+        onProgress({ roomId: triggerRoomId, content: progress.content, ...(inReplyTo ? { inReplyTo } : {}),
+          ...(progressEvidence === undefined ? {} : { progressEvidence }) })
       } catch (error) {
         const message = `Could not post a progress line: ${error instanceof Error ? error.message : String(error)}`
         console.error(`[${config.name}] ${message}`)

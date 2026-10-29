@@ -675,7 +675,9 @@ describe('evaluate (tool loop)', () => {
 
   test('progress lines are posted as each round returns, in call order, and the model never reads them', async () => {
     const order: string[] = []
+    const progressCalls: Array<{ content: string; callId?: string; operationKey?: string; callIds: ReadonlyArray<string> }> = []
     const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'read_state', arguments: {} } }] },
       { toolCalls: [
         { function: { name: 'workspace_call', arguments: { calls: [{ key: 'start', operationId: 'world.procedure.run.start', input: {}, say: 'Started E-0 on unit 1' }] } } },
         { function: { name: 'note', arguments: {} } },
@@ -686,20 +688,24 @@ describe('evaluate (tool loop)', () => {
     const counted: LLMProvider = { ...provider, chat: async request => { order.push(`model ${calls.length + 1}`); return provider.chat(request) } }
     // A scripted executor: lines need no execution evidence.
     const exec: ToolExecutor = async toolCalls => toolCalls.map(call => {
-      const said = (call.arguments.calls as ReadonlyArray<{ say?: string }> | undefined)?.flatMap(entry => entry.say === undefined ? [] : [entry.say]) ?? []
+      const said = (call.arguments.calls as ReadonlyArray<{ say?: string; key: string }> | undefined)?.flatMap(entry => entry.say === undefined ? [] : [{ content: entry.say, operationKey: entry.key }]) ?? []
       return { success: true, data: { results: [{ key: 'k', operationId: 'op', success: true, data: { ok: true } }] }, ...(said.length > 0 ? { progress: said } : {}) }
     })
     const result = await evaluate(baseContextResult(), baseConfig, counted, exec, undefined, 'room-1', {
       toolDefinitions: [],
-      onProgress: line => { order.push(`posted ${line}`) },
+      onProgress: progress => { order.push(`posted ${progress.content}`); progressCalls.push(progress) },
     })
     expect(result.decision.response).toEqual({ action: 'respond', content: 'Unit 1 · E-0 step 2 · holding for your judgement' })
     // Each line is posted before the next model pass: live, not with the answer.
-    expect(order).toEqual(['model 1', 'posted Started E-0 on unit 1', 'model 2', 'posted E-0 step 1 · Verified → step 2', 'model 3'])
-    // The tool results the model reads carry no line: it wrote them itself.
+    expect(order).toEqual(['model 1', 'model 2', 'posted Started E-0 on unit 1', 'model 3', 'posted E-0 step 1 · Verified → step 2', 'model 4'])
+    expect(progressCalls).toEqual([
+      { content: 'Started E-0 on unit 1', operationKey: 'start', callId: 'call_1_0', callIds: ['call_0_0', 'call_1_0', 'call_1_1'] },
+      { content: 'E-0 step 1 · Verified → step 2', operationKey: 'step', callId: 'call_2_0', callIds: ['call_2_0'] },
+    ])
+    // The tool results the model reads carry no line or progress metadata.
     const toolEvidence = calls.at(-1)!.messages.filter(message => message.role === 'tool').map(message => message.content)
-    expect(toolEvidence).toHaveLength(3)
-    expect(toolEvidence.some(content => content.includes('Started E-0') || content.includes('Verified → step 2'))).toBe(false)
+    expect(toolEvidence).toHaveLength(4)
+    expect(toolEvidence.some(content => content.includes('Started E-0') || content.includes('Verified → step 2') || content.includes('progress'))).toBe(false)
   })
 
   test('a line of a call that returned is posted even when the turn is cancelled right after it', async () => {
@@ -711,10 +717,10 @@ describe('evaluate (tool loop)', () => {
     ])
     const exec: ToolExecutor = async () => {
       controller.abort()
-      return [{ success: true, data: { results: [] }, progress: ['Proposed the manual reactor trip on unit 1'] }]
+      return [{ success: true, data: { results: [] }, progress: [{ content: 'Proposed the manual reactor trip on unit 1' }] }]
     }
     const result = await evaluate(baseContextResult(), baseConfig, provider, exec, undefined, 'room-1', {
-      toolDefinitions: [], signal: controller.signal, onProgress: line => { posted.push(line) },
+      toolDefinitions: [], signal: controller.signal, onProgress: progress => { posted.push(progress.content) },
     })
     expect(posted).toEqual(['Proposed the manual reactor trip on unit 1'])
     expect(calls).toHaveLength(1)

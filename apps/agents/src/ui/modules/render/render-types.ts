@@ -4,7 +4,7 @@
 // MessageCause is imported from the server-side type module so the kind union
 // (script/trigger/biometric/...) lives in exactly one place.
 
-import type { MessageAttachment, MessageCause, ToolTraceEntry } from '../../../core/types/messaging.ts'
+import type { MessageAttachment, MessageCause, ToolTraceEntry, ProgressEvidence } from '../../../core/types/messaging.ts'
 
 export interface UIMessage {
   id: string
@@ -42,6 +42,7 @@ export interface UIMessage {
   // A line an Agent posted while its turn still runs (server Message.progress);
   // rendered as one compact row, its answer follows as an ordinary message.
   progress?: true
+  progressEvidence?: ProgressEvidence
   // Image attachments forwarded from server Message.attachments. Rendered
   // as inline thumbnails below the message body; click → full-size modal.
   attachments?: ReadonlyArray<MessageAttachment>

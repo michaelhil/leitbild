@@ -779,7 +779,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         }))
         // The line of each call that succeeded, in request order; a refused
         // or unknown outcome posts nothing. It needs no execution evidence.
-        const progress = prepared.flatMap((entry, index) => entry.say !== undefined && results[index]!.success ? [entry.say] : [])
+        const progress = prepared.flatMap((entry, index) => entry.say !== undefined && results[index]!.success ? [{ content: entry.say, operationKey: entry.key }] : [])
         return { success: true, data: { results }, ...(progress.length === 0 ? {} : { progress }) }
       } catch (error) {
         if (error && typeof error === 'object' && 'success' in error) return error as ToolResult

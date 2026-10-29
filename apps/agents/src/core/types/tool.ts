@@ -8,6 +8,12 @@ export interface ToolCall {
   readonly arguments: Record<string, unknown>
 }
 
+export interface ToolProgress {
+  readonly content: string
+  /** Exact workspace_call batch result key, where this line reports one. */
+  readonly operationKey?: string
+}
+
 export interface ToolResult {
   readonly success: boolean
   readonly data?: unknown
@@ -15,7 +21,7 @@ export interface ToolResult {
   // Lines for the person, in order, that the turn posts to its Room as the
   // calling Agent's own progress messages (Message.progress) as soon as this
   // result returns (workspace_call `say`). Never part of what the model reads.
-  readonly progress?: ReadonlyArray<string>
+  readonly progress?: ReadonlyArray<ToolProgress>
 }
 
 // Options for tool-internal LLM calls — model is inherited from the calling agent.

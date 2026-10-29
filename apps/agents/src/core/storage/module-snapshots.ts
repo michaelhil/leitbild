@@ -152,6 +152,9 @@ const messageSchema = z.object({
   inReplyTo: z.array(z.string()).optional(),
   cause: messageCauseSchema.optional(),
   progress: z.literal(true).optional(),
+  progressEvidence: z.object({
+    turnId: z.string().min(1), callId: z.string().min(1), callIds: z.array(z.string().min(1)).min(1), operationKey: z.string().min(1).optional(),
+  }).strict().optional(),
   generationMs: z.number().finite().optional(),
   generationTraceId: z.string().optional(),
   promptTokens: z.number().finite().optional(),

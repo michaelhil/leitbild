@@ -687,7 +687,7 @@ describe('Workspace progressive-discovery tools', () => {
 
     // No execution evidence is needed: a scripted or standalone executor gets the line too.
     const done = await call!.execute({ calls: [{ key: 'step', operationId: writeId, input: {}, say: `  ${line} ` }] }, context)
-    expect(done).toMatchObject({ success: true, data: { results: [{ key: 'step', success: true }] }, progress: [line] })
+    expect(done).toMatchObject({ success: true, data: { results: [{ key: 'step', success: true }] }, progress: [{ content: line, operationKey: 'step' }] })
     // The line is for the person: the Module never receives it, and the model's reading of the result does not repeat it.
     const invoked = requests.filter(request => request.url.includes('/invoke'))
     expect(invoked).toHaveLength(1)
