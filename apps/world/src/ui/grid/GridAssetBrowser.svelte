@@ -407,12 +407,14 @@
   })
 
   $effect(() => {
-    const assetId = selectedAssetId
+    simulationRunId
+    gridId
+    selectedAssetId
     untrack(() => {
       activeOperationId = null
       pendingConfirmation = null
       commandStatus = null
-      if (detail?.id !== assetId) detail = null
+      detail = null
     })
   })
 
