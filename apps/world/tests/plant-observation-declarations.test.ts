@@ -28,11 +28,11 @@ const observable = (path: string) => declaration.observables.find(candidate => c
 describe('plant observation declarations (P2)', () => {
   test('T12: published, recorded and solved primary line readings parse against core\'s quantity list and unit codes', () => {
     expect(observationDeclarationSchema.parse(declaration)).toEqual(declaration)
-    // 1,120 signals (including 118 newly declared primary line reads, none a fault the scenario injects or its truth), 81 items' states, what says the
+    // 1,138 signals (including 118 primary line reads and 18 explicit controller configuration commands, none a fault the scenario injects or its truth), 81 items' states, what says the
     // core stopped (R2 W1.2), 8 rod banks' travel, 6 safety functions, the operating mode and 3 functions' criteria.
-    expect(declaration.observables).toHaveLength(1220)
-    expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(899)
-    expect(declaration.revision).toBe(`${lineStateProjectionRevision(plant)}:1000ms:721`)
+    expect(declaration.observables).toHaveLength(1238)
+    expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(917)
+    expect(declaration.revision).toBe(`${lineStateProjectionRevision(plant)}:1000ms:739`)
   })
 
   test('T12: labels are the unit\'s own, unique within it, and unique per Run once World qualifies them (R25)', () => {
@@ -160,7 +160,7 @@ describe('plant observation declarations (P2)', () => {
 
   test('series come from the Run\'s recording, else null', () => {
     expect(observable('pressurizer.pressureMPa').series).toEqual({ seriesId: recordingSeriesIdFor(objectId, 'pressurizer.pressureMPa'), intervalMs: 1_000 })
-    expect(declaration.observables.filter(entry => entry.series !== null)).toHaveLength(721)
+    expect(declaration.observables.filter(entry => entry.series !== null)).toHaveLength(739)
     expect(plantDeclaration(objectId, plant, null).observables.every(entry => entry.series === null)).toBe(true)
   })
 

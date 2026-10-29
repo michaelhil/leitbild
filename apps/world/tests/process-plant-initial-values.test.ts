@@ -53,7 +53,9 @@ describe('declared physical domains also apply to initialized runtime values', (
   test('a deliberately manual valve is valid only when its removed controller has no dangling variable overrides', () => {
     const compile = (removeOverrides: boolean) => compileResolvedProcessPlant({
       id: 'plant:static-valve', modelRef: 'test.model', operatingPointRef: 'test.point', automationRef: 'test.automation',
-      graph: { ...plant.sourceGraph, components: plant.sourceGraph.components.map(component => {
+      graph: { ...plant.sourceGraph,
+        publishedVariables: removeOverrides ? plant.sourceGraph.publishedVariables.filter(path => path !== 'turbineBypassValve.controllerAutomatic' && path !== 'turbineBypassValve.controllerSetpoint') : plant.sourceGraph.publishedVariables,
+        components: plant.sourceGraph.components.map(component => {
         if (String(component.id) !== 'turbineBypassValve') return component
         const { controller, ...parameters } = component.parameters as Record<string, unknown>
         return { ...component, parameters, variables: removeOverrides

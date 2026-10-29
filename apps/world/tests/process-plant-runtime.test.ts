@@ -82,18 +82,20 @@ const compiledSystemWithParameters = (parameters: Record<string, Record<string, 
   parameters,
 })
 
-const compiledSystemWithStaticFeedwaterValves = () => compileTestSystem({
-  id: 'plant',
-  graph: {
+const compiledSystemWithStaticFeedwaterValves = () => {
+  const valveIds = ['feedwaterControlValveA', 'feedwaterControlValveB', 'feedwaterControlValveC', 'feedwaterControlValveD']
+  const removed = new Set(valveIds.flatMap(id => [`${id}.controllerAutomatic`, `${id}.controllerSetpoint`]))
+  return compileTestSystem({ id: 'plant', graph: {
     ...pressurizedWaterReactorPlantSpec,
+    publishedVariables: pressurizedWaterReactorPlantSpec.publishedVariables.filter(path => !removed.has(path)),
     components: pressurizedWaterReactorPlantSpec.components.map(component => {
-      if (!['feedwaterControlValveA', 'feedwaterControlValveB', 'feedwaterControlValveC', 'feedwaterControlValveD'].includes(String(component.id))) return component
+      if (!valveIds.includes(String(component.id))) return component
       const { controller, ...parameters } = component.parameters as Record<string, unknown>
       return { ...component, parameters: { ...parameters, initialPositionFraction: 1 },
         variables: component.variables.filter(variable => variable.path !== 'controllerAutomatic' && variable.path !== 'controllerSetpoint') }
     }),
-  },
-})
+  } })
+}
 
 const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileTestSystem({
   id: 'plant',
