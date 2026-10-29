@@ -77,7 +77,7 @@ export const showGenerationInspector = (options: {
   const chips = document.createElement('div')
   chips.className = 'inspector-chips'
   if (execution) {
-    chips.append(text('span', execution.turn.status, 'inspector-chip'), text('span', execution.modelCapture === 'unavailable' ? 'Model history unavailable' : `${execution.models.length} model calls${activity ? ' in turn' : ''}`, 'inspector-chip'), text('span', `${execution.calls.length} tool attempts${activity ? ' in turn' : ''}`, 'inspector-chip'))
+    chips.append(text('span', execution.turn.status, 'inspector-chip'), text('span', execution.modelCapture === 'unavailable' ? 'Model history unavailable' : `${execution.models.length} model call${execution.models.length === 1 ? '' : 's'}${activity ? ' in turn' : ''}`, 'inspector-chip'), text('span', `${execution.calls.length} tool attempt${execution.calls.length === 1 ? '' : 's'}${activity ? ' in turn' : ''}`, 'inspector-chip'))
     if (execution.turn.finishedAt !== undefined) chips.appendChild(text('span', formatElapsed(execution.turn.finishedAt - execution.turn.startedAt), 'inspector-chip'))
   } else chips.appendChild(text('span', 'Request snapshots', 'inspector-chip'))
   const modes = document.createElement('div')
@@ -88,10 +88,14 @@ export const showGenerationInspector = (options: {
     scope.className = 'inspector-mode'
     scope.setAttribute('aria-label', 'Activity scope')
     const update = createButton({ label: 'This update', onClick: () => {
-      events = activityEvents ?? []; update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false'); renderOverview()
+      events = activityEvents ?? []; update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false')
+      const selected = events.find(event => event.id === selectedId)
+      if (selected) select(selected); else renderOverview()
     } })
     const full = createButton({ label: 'Full turn', onClick: () => {
-      events = allEvents; update.setAttribute('aria-pressed', 'false'); full.setAttribute('aria-pressed', 'true'); renderOverview()
+      events = allEvents; update.setAttribute('aria-pressed', 'false'); full.setAttribute('aria-pressed', 'true')
+      const selected = events.find(event => event.id === selectedId)
+      if (selected) select(selected); else renderOverview()
     } })
     update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false')
     scope.append(update, full); modes.appendChild(scope)
@@ -309,7 +313,7 @@ export const showGenerationInspector = (options: {
     selection++; selectedId = 'overview'; detail.replaceChildren()
     if (activity) {
       detail.appendChild(text('div', activity.content, 'inspector-update'))
-      note(detail, activityEvents === undefined ? 'The exact activity boundary is unavailable. Full turn shows only the evidence actually retained.' : 'This update shows its recorded operation and the calls since the previous update. Full turn includes the earlier context and later work.')
+      note(detail, events === allEvents ? 'Showing the complete recorded turn.' : activityEvents === undefined ? 'The exact activity boundary is unavailable. Full turn shows only the evidence actually retained.' : 'Recorded activity since the previous update. Full turn includes earlier context and later work.')
     }
     detail.appendChild(text('h3', execution?.turn.messageId ? 'How this response was produced' : 'Recorded execution', 'inspector-detail-title'))
     note(detail, 'Choose a recorded step to inspect its exact input and observed output.')
