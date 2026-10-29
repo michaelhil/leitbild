@@ -1,634 +1,273 @@
-/** Manual, budget-guarded proof that the Leitbild Assistant runs E-0 itself on
- * an order: it starts E-0, trips the reactor as step 1 calls for, decides each
- * step on the plant's readings (RNO, transfers and untagged steps included)
- * and tells the person each step in a progress line. Creates only its own
- * Workspace, Run and Room; never reads credentials. Evidence for review, not
- * a benchmark.
+/** Disposable local E-0 rehearsal using the real Host/World/Agents APIs.
+ * No credentials, SDK, model stand-in, branch forcing or product Agent-loop quota.
  *
- *   bun scripts/agent-procedure-probe.ts <origin> <evidenceDir> [--model <openrouter model id>] [--reasoning-effort <effort>]
- *     [--budget-usd 1.5] [--unit "Halden Unit 2"] [--turns 1|2] [--price <in>,<cached>,<write>,<out> --worst-turn-usd <usd>] [--dry]
+ * bun scripts/agent-procedure-probe.ts <local-origin> <new-evidence-directory>
+ *   [--case normal|loop|si|all] [--run] [--model openai/gpt-6-sol]
+ *   [--patience-minutes 30] [--loop-settle-seconds 60]
  *
- * --reasoning-effort sets the Assistant's effort for the run (the Room's definition otherwise decides), as a
- * model under test may need another effort than the default model.
+ * Default: prepare fresh isolated Workspaces/Runs/Rooms for all three cases,
+ * configure the requested model at medium effort, and post no Agent message.
+ * --run explicitly permits paid calls: one natural delegation per case, no
+ * manual procedure writes or coaching. Full proof is captured by the external
+ * observer with includeEvidence:true; normal Agent status calls stay compact.
  *
- * 1. A fresh Workspace plays the Halden four-unit scenario in realtime; the unit is at power.
- * 2. A new Assistant Room from the leitbild-assistant definition (with the
- *    procedure-runner skill); --model sets its Agent's model.
- * 3. Turn 1 says "Run E-0 on <unit>". Nothing else is posted and no person
- *    acts: the Assistant should start E-0 and drive it, trip the reactor
- *    with a control write, wait in plant seconds, and decide step after
- *    step, each with a say line, until a hold, END or its turn budget.
- * 4. With --turns 2, turn 2 says "continue" if the procedure is still active
- *    and the AI still drives it.
- * After each turn it records the answer, the progress lines, model, usage,
- * tool trace, every procedure run's state and every Plant's proposals, then
- * judges the pass criteria and prints them.
- *
- * Cost: per million tokens from the table below (or --price), the part of the
- * prompt not read from the cache billed at the higher of the input and cache
- * write rates. Budget guard: before every turn, stop if spent plus the model's
- * worst-case turn would exceed --budget-usd; stop at once if a turn costs more
- * than twice its estimate (cache on).
- *
- * --dry posts no message and so calls no model: a scripted stand-in with an AI
- * actor (not a model) starts E-0, writes the trip, waits on the plant and
- * selects the first branch of each step with a basis and the step's readable
- * tags for up to six steps, under World's AI rules, against a real stack.
+ * Patience is an external wall-clock observation deadline. It cancels only its
+ * own rehearsal Agent, never changes World's loop or selects a procedure branch.
+ * USD budgets are not offered: captured execution metrics contain actual token
+ * counts, not billed USD. No guessed prices or worst-turn budget is substituted.
+ * Setup persists exact advance targets and bounded wait outcomes for inspection
+ * after transport errors/suspension; those failures never qualify an E-0 result.
  */
 import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { resolve, join } from 'node:path'
 
-// A turn costing less than this never counts as a runaway, however far over its estimate: cheap models' estimates are cents.
-const runawayFloorUsd = 0.05
-const usage = 'Usage: bun scripts/agent-procedure-probe.ts <origin> <evidenceDir> [--model <openrouter model id>] [--reasoning-effort <effort>] [--budget-usd 1.5] [--unit "Halden Unit 2"] [--turns 1|2] [--price <in>,<cached>,<write>,<out> --worst-turn-usd <usd>] [--dry]'
-
-// ---- Arguments ----
-const valued = new Set(['--model', '--reasoning-effort', '--budget-usd', '--unit', '--turns', '--price', '--worst-turn-usd'])
-const positional: string[] = []
-const flags = new Map<string, string>()
-let dry = false
-{
-  const argv = Bun.argv.slice(2)
-  for (let index = 0; index < argv.length; index++) {
-    const argument = argv[index]!
-    if (argument === '--dry') dry = true
-    else if (valued.has(argument)) {
-      const value = argv[++index]
-      if (value === undefined || flags.has(argument)) throw new Error(`${argument} needs one value. ${usage}`)
-      flags.set(argument, value)
-    } else if (argument.startsWith('--')) throw new Error(`Unknown option ${argument}. ${usage}`)
-    else positional.push(argument)
+export const procedureProbeUsage = 'bun scripts/agent-procedure-probe.ts <local-origin> <new-evidence-directory> [--case normal|loop|si|all] [--run] [--model openai/gpt-6-sol] [--patience-minutes 30] [--loop-settle-seconds 60]'
+type ProbeCase = 'normal' | 'loop' | 'si'
+export interface ProcedureProbeOptions {
+  readonly origin: string
+  readonly directory: string
+  readonly jobs: ReadonlyArray<ProbeCase>
+  readonly runModel: boolean
+  readonly model: string
+  readonly patienceMs: number
+  readonly settleSeconds: number
+}
+export const parseProcedureProbeOptions = (args: ReadonlyArray<string>): ProcedureProbeOptions => {
+  const positional: string[] = [], flags = new Map<string, string>()
+  let runModel = false
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!
+    if (arg === '--run') { if (runModel) throw Error('Duplicate --run'); runModel = true }
+    else if (arg === '--budget-usd') throw Error('USD budget unavailable: captured execution metrics retain token counts, not billed USD; this probe does not invent prices.')
+    else if (['--case', '--model', '--patience-minutes', '--loop-settle-seconds'].includes(arg)) {
+      const value = args[++index]
+      if (value === undefined || value.startsWith('--') || flags.has(arg)) throw Error(procedureProbeUsage)
+      flags.set(arg, value)
+    } else if (arg.startsWith('--')) throw Error(`Unknown ${arg}: ${procedureProbeUsage}`)
+    else positional.push(arg)
   }
-}
-const [originArgument, evidenceArgument] = positional
-if (positional.length !== 2 || !originArgument || !evidenceArgument || !/^https?:\/\/[^/]+$/.test(originArgument.replace(/\/$/, ''))) throw new Error(usage)
-const origin = originArgument.replace(/\/$/, '')
-const directory = resolve(evidenceArgument)
-const budgetUsd = Number(flags.get('--budget-usd') ?? '1.5')
-if (!(budgetUsd > 0)) throw new Error('--budget-usd must be a positive number')
-const unitLabel = flags.get('--unit') ?? 'Halden Unit 2'
-const turnLimit = Number(flags.get('--turns') ?? '1')
-if (turnLimit !== 1 && turnLimit !== 2) throw new Error('--turns is 1 or 2')
-const requestedModel = flags.get('--model')
-const requestedEffort = flags.get('--reasoning-effort')
-
-interface Price { readonly input: number; readonly cached: number; readonly write: number; readonly output: number }
-/** USD per million tokens, and the most one probe turn may cost (budget guard). */
-const PRICES: Readonly<Record<string, Price & { readonly worstTurnUsd: number }>> = {
-  'openai/gpt-6-sol': { input: 2.00, cached: 0.20, write: 2.50, output: 10, worstTurnUsd: 0.90 },
-  'openai/gpt-6-luna': { input: 0.10, cached: 0.01, write: 0.125, output: 0.50, worstTurnUsd: 0.08 },
-}
-/** Tokens per turn, estimated for an autonomous E-0 turn of about 25 rounds (most of each prompt cached), then a "continue". */
-const SCENARIO_TURNS = [
-  { uncached: 90_000, cached: 800_000, completion: 7_000 },
-  { uncached: 40_000, cached: 300_000, completion: 3_000 },
-] as const
-const priceArgument = flags.get('--price')
-const givenPrice: Price | undefined = priceArgument === undefined ? undefined : (() => {
-  const parts = priceArgument.split(',').map(Number)
-  if (parts.length !== 4 || parts.some(part => !(part >= 0))) throw new Error('--price is <input>,<cached>,<cacheWrite>,<output> in USD per million tokens')
-  return { input: parts[0]!, cached: parts[1]!, write: parts[2]!, output: parts[3]! }
-})()
-const givenWorst = flags.get('--worst-turn-usd') === undefined ? undefined : Number(flags.get('--worst-turn-usd'))
-if (givenWorst !== undefined && !(givenWorst > 0)) throw new Error('--worst-turn-usd must be a positive number')
-
-const bare = (model: string): string => model.replace(/^[^/]+\//, '')
-/** The table entry for a model id as an Agent or a provider names it: with or without its vendor, or with a dated suffix. */
-const tableEntry = (model: string) => Object.entries(PRICES).find(([key]) =>
-  key === model || bare(key) === bare(model) || (bare(model).startsWith(`${bare(key)}-`) && /^[\d-]+$/.test(bare(model).slice(bare(key).length + 1))))
-const pricingFor = (model: string) => {
-  const entry = tableEntry(model)
-  const price = givenPrice ?? entry?.[1]
-  const worstTurnUsd = givenWorst ?? entry?.[1].worstTurnUsd
-  if (price === undefined || worstTurnUsd === undefined) {
-    throw new Error(`No price for model ${model}: pass --price <in>,<cached>,<write>,<out> and --worst-turn-usd <usd>`)
-  }
-  return { model: entry?.[0] ?? model, price, worstTurnUsd }
-}
-// Refuse a model without a price before creating anything.
-if (requestedModel !== undefined) pricingFor(requestedModel)
-const estimateUsd = (price: Price, turn: number): number => {
-  const tokens = SCENARIO_TURNS[turn]!
-  return (tokens.uncached * Math.max(price.input, price.write) + tokens.cached * price.cached + tokens.completion * price.output) / 1e6
-}
-interface Usage { readonly promptTokens: number; readonly cacheRead: number; readonly cacheCreation: number | null; readonly completionTokens: number; readonly modelCalls: number | null }
-const costUsd = (spent: Usage, price: Price): number =>
-  (Math.max(0, spent.promptTokens - spent.cacheRead) * Math.max(price.input, price.write) + spent.cacheRead * price.cached + spent.completionTokens * price.output) / 1e6
-const usd = (value: number): number => Math.round(value * 10_000) / 10_000
-
-// ---- HTTP ----
-class ApiError extends Error {
-  constructor(readonly status: number, message: string) { super(message) }
-}
-const request = async (path: string, body?: unknown, method = 'POST'): Promise<any> => {
-  const response = await fetch(origin + path, {
-    ...(body === undefined ? {} : { method, body: JSON.stringify(body) }),
-    headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60_000),
-  })
-  const text = await response.text()
-  if (!response.ok) throw new ApiError(response.status, `${path}: ${response.status} ${text.slice(0, 400)}`)
-  return JSON.parse(text)
+  if (positional.length !== 2) throw Error(procedureProbeUsage)
+  const url = new URL(positional[0]!)
+  if (!['http:', 'https:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+    || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw Error('Disposable local HTTP(S) origin only; no credentials, path, query or fragment')
+  const selected = flags.get('--case') ?? 'all'
+  if (!['normal', 'loop', 'si', 'all'].includes(selected)) throw Error('--case normal|loop|si|all')
+  const model = flags.get('--model') ?? 'openai/gpt-6-sol'
+  if (!model.trim()) throw Error('--model requires a model id')
+  const patienceMs = Number(flags.get('--patience-minutes') ?? 30) * 60_000
+  const settleSeconds = Number(flags.get('--loop-settle-seconds') ?? 60)
+  if (!Number.isFinite(patienceMs) || patienceMs <= 0 || !Number.isFinite(settleSeconds) || settleSeconds < 0) throw Error('Invalid observer patience or scenario settling duration')
+  return { origin: url.origin, directory: resolve(positional[1]!), jobs: selected === 'all' ? ['normal', 'loop', 'si'] : [selected as ProbeCase], runModel, model, patienceMs, settleSeconds }
 }
 
-type Actor = { readonly kind: 'human' | 'ai'; readonly id: string; readonly displayName: string }
-const person: Actor = { kind: 'human', id: 'procedure-probe', displayName: 'Procedure probe (person)' }
-const personActorId = `actor:human:${person.id}`
-// --dry only: scripted, so the person's actions have something to act on; never a model.
-const standIn: Actor = { kind: 'ai', id: 'procedure-probe-stand-in', displayName: 'Dry-run stand-in (not a model)' }
-
-await mkdir(directory, { recursive: true })
-if (await Bun.file(join(directory, 'summary.json')).exists()) throw new Error('Evidence directory already holds a summary; choose a new one, do not overwrite evidence')
-const save = (name: string, value: unknown) => Bun.write(join(directory, `${name}.json`), JSON.stringify(value, null, 2))
-
-class ProbeStop extends Error {}
-const REQUIRED_CAPABILITIES = [
-  'agents.assistance.create', 'world.process-plant.control.proposals', 'world.process-plant.control.write', 'world.process-plant.signals.read',
-  'world.procedure.runs.list', 'world.procedure.run.step.read', 'world.procedure.run.transition', 'world.procedure.run.start', 'world.procedure.run.drive', 'world.simulation-run.wait',
-]
-const stop = (reason: string): never => { throw new ProbeStop(reason) }
-
-// ---- Probe state, written to summary.json however the probe ends ----
-const turns: Array<Record<string, any>> = []
-const notes: string[] = []
-let workspaceId = ''
-let target: { resource: Record<string, string> } | undefined
-let plants: ReadonlyArray<{ id: string; label: string }> = []
-let unit: { id: string; label: string } | undefined
-let e0: { steps: ReadonlyArray<{ id: string; label: string; tagIds: ReadonlyArray<string> }> } | undefined
-const tripPaths = new Map<string, string>()
-let pricing: ReturnType<typeof pricingFor> | undefined
-let spentUsd = 0
-let finalState: Observation | undefined
-let room: Record<string, any> | undefined
-
-const invoke = (actor: Actor, operationId: string, input: unknown, at: Record<string, unknown> = target ?? {}) =>
-  request(`/api/workspaces/${workspaceId}/capabilities/${operationId}/invoke`, { ...at, input, actor })
-
-const simulationTime = async (): Promise<string> =>
-  (await request(`/api/workspaces/${workspaceId}/world/simulation-runs/${encodeURIComponent(target!.resource.id!)}/presence`)).execution.currentSimulationTime
-
-const readProposals = async (plantId: string) => {
-  const { result } = await invoke(person, 'world.process-plant.control.proposals', { plantId })
-  return (result.proposals as ReadonlyArray<{ proposal: any; review?: any }>).map(({ proposal, review }) => ({
-    id: proposal.id as string,
-    plantId,
-    path: (proposal.write?.path ?? null) as string | null,
-    value: proposal.write?.value ?? null,
-    ...(proposal.reset === undefined ? {} : { reset: proposal.reset.ruleId as string }),
-    trip: proposal.write?.path !== undefined && proposal.write.path === tripPaths.get(plantId),
-    word: proposal.word as string,
-    status: proposal.status as string,
-    origin: proposal.proposer.origin as string,
-    proposer: proposal.proposer.actorId as string,
-    reason: proposal.reason as string,
-    procedureStep: proposal.procedureStep ?? null,
-    evidence: (proposal.evidence as ReadonlyArray<{ tagId: string; value: unknown }>).map(entry => ({ tagId: entry.tagId, value: entry.value })),
-    ...(proposal.closed === undefined ? {} : { closed: proposal.closed }),
-    ...(review === undefined ? {} : { permitted: review.permitted as boolean, ...(review.refusal === undefined ? {} : { refusal: review.refusal as string }) }),
-  }))
-}
-
-const runSummary = (run: any) => ({
-  runId: run.runId as string,
-  procedureId: run.procedureId as string,
-  plantId: run.scope.plantId as string,
-  status: run.status as string,
-  startedAt: run.startedAt as string,
-  startedBy: run.startedBy as string,
-  currentStepId: (run.currentStepId ?? null) as string | null,
-  driver: run.driver ?? null,
-  stepStates: (run.stepStates as ReadonlyArray<any>).map(state => ({
-    stepId: state.stepId as string,
-    assessment: state.assessment as string,
-    ...(state.comment === undefined ? {} : { comment: state.comment as string }),
-    decision: state.decision === undefined ? null : {
-      branchIndex: state.decision.branchIndex,
-      label: state.decision.label ?? null,
-      outcome: state.decision.outcome ?? null,
-      target: state.decision.target,
-      basis: state.decision.basis ?? null,
-      evidence: state.decision.evidence ?? [],
-      selectedBy: state.decision.selectedBy as string,
-      selectedByLabel: state.decision.selectedByLabel ?? null,
-      simulationTime: state.decision.simulationTime as string,
-    },
-  })),
-})
-type Observation = Awaited<ReturnType<typeof observe>>
-const observe = async () => {
-  const time = await simulationTime()
-  const runs = ((await invoke(person, 'world.procedure.runs.list', {})).result.runs as ReadonlyArray<any>).map(runSummary)
-  const proposals = []
-  for (const plant of plants) proposals.push(...await readProposals(plant.id))
-  return { simulationTime: time, runs, proposals }
-}
-const e0RunOf = (state: Observation) => state.runs
-  .filter(run => run.procedureId === 'E-0' && run.plantId === unit!.id)
-  .sort((left, right) => left.startedAt.localeCompare(right.startedAt)).at(-1)
-
-const breakers = async (plantId: string) => {
-  const { result } = await invoke(person, 'world.process-plant.signals.read', { plantId, signals: [{ tagId: 'TRIP-BKR-A-POS' }, { tagId: 'TRIP-BKR-B-POS' }] })
-  return (result.signals as ReadonlyArray<any>).map(entry => ({ tagId: entry.signal.tagId as string, closed: entry.variable.value as boolean, quality: entry.quality?.status ?? null }))
-}
-
-// ---- Agents ----
-let roomPath = ''
-let human: { id: string; name: string } | undefined
-let agent: { id: string; name: string } | undefined
-
-const nextReply = async (prior: ReadonlySet<string>, label: string): Promise<any> => {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < 900_000) { // Probe deadline, not a product limit: a whole E-0 turn runs ~25 rounds with plant waits.
-    // Progress lines precede the answer; the answer is the turn's first other message.
-    const reply = (await request(roomPath + '?limit=200')).messages.find((message: { id: string; senderId: string; type: string; progress?: true }) =>
-      !prior.has(message.id) && message.senderId === agent!.id && message.progress !== true && ['chat', 'pass', 'error'].includes(message.type))
-    if (reply) return reply
-    await Bun.sleep(2_000)
-  }
-  await request(`/api/workspaces/${workspaceId}/agents/agents/${encodeURIComponent(agent!.id)}/cancel`, {})
-  return stop(`No answer to ${label} within the probe deadline; the probe's Agent was cancelled`)
-}
-
-/** Every operation the turn's workspace_call batches issued, from its own execution evidence, in call order. */
-const turnOperations = async (turnId: string) => {
-  const execution = await request(`${roomPath}/executions/${encodeURIComponent(turnId)}`)
-  const operations: Array<Record<string, unknown>> = []
-  for (const summary of execution.calls ?? []) {
-    if (summary.tool !== 'workspace_call') continue
-    const call = await request(`${roomPath}/executions/${encodeURIComponent(turnId)}/calls/${encodeURIComponent(summary.id)}`)
-    const results = call.result?.data?.results ?? []
-    for (const entry of call.arguments?.calls ?? []) {
-      const result = results.find((candidate: { key: string }) => candidate.key === entry.key)
-      operations.push({
-        operationId: entry.operationId,
-        input: entry.input,
-        ...(entry.say === undefined ? {} : { say: entry.say }),
-        success: result?.success === true,
-        ...(result?.success === true ? {} : { error: String(result?.error ?? 'no result').slice(0, 400) }),
-      })
+/** QA verdict from actual execution, tool dispatch and canonical procedure proof, never answer wording. */
+export const reviewProcedureProbe = (record: any) => {
+  const calls = Object.values(record.capture.calls) as any[]
+  const operations = calls.flatMap(call => call.tool !== 'workspace_call' ? [] : (call.arguments.calls ?? []).map((input: any) => ({ executionCall: call.id, ...input, result: call.result?.data?.results?.find((row: any) => row.key === input.key) })))
+  const runs = record.procedures.runs.filter((run: any) => run.scope.plantId === record.unit.id)
+  const decisions = runs.flatMap((run: any) => run.stepStates.filter((step: any) => step.decision).map((step: any) => ({ sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, runId: run.runId, procedureId: run.procedureId, stepId: step.stepId, decision: step.decision })))
+  const humanProceduralChanges = decisions.filter((item: any) => !item.decision.selectedBy.startsWith('actor:ai:'))
+  const unsupportedAccepted = decisions.filter((item: any) => item.decision.selectedBy.startsWith('actor:ai:') && item.decision.criterion?.status !== 'supported')
+  const foreignPlantChanges = operations.filter((operation: any) => operation.result?.success && operation.input?.plantId !== undefined && operation.input.plantId !== record.unit.id && record.operationCatalog.some((descriptor: any) => descriptor.id === operation.operationId && descriptor.kind === 'command'))
+  const foreignProcedureRuns = record.procedures.runs.filter((run: any) => run.scope.plantId !== record.unit.id)
+  const bypass = operations.filter((operation: any) => ['world.procedure.step.update', 'world.procedure.run.reset', 'world.procedure.run.close'].includes(operation.operationId) && operation.result?.success)
+  const acceptedTransitions = operations.filter((operation: any) => operation.operationId === 'world.procedure.run.transition' && operation.result?.success)
+  const reportedChanges = operations.filter((operation: any) => operation.result?.success && ['world.procedure.run.transition', 'world.process-plant.control.write', 'world.process-plant.control.ramp', 'world.process-plant.action.invoke'].includes(operation.operationId))
+  const missingProgress = reportedChanges.filter((operation: any) => !operation.say || !record.messages.messages.some((message: any) => message.progress && message.content === operation.say))
+  const e0 = runs.find((run: any) => run.procedureId === 'E-0')
+  const turnStatuses = Object.values(record.capture.turns).map((execution: any) => execution.turn.status)
+  const models = Object.values(record.capture.models) as any[]
+  const modelCalls = models.length
+  const incompleteEvidence = record.procedures.evidenceIncluded !== true
+  const badExecution = !turnStatuses.length || turnStatuses.some(status => status !== 'completed') || !models.some(call => call.status === 'completed') || !calls.length
+  const e0Decisions = decisions.filter((item: any) => item.procedureId === 'E-0')
+  const terminal = e0 !== undefined && ['completed', 'transferred'].includes(e0.status)
+  const acceptedE0Transitions = acceptedTransitions.filter((operation: any) => operation.input?.runId === e0?.runId)
+  const structuralFailure = unsupportedAccepted.length || bypass.length || humanProceduralChanges.length || missingProgress.length || foreignPlantChanges.length || foreignProcedureRuns.length
+  const e0Qualified = !incompleteEvidence && !badExecution && !structuralFailure && terminal && e0Decisions.length > 0 && acceptedE0Transitions.length > 0
+  const receiving = e0?.status === 'transferred' ? runs.find((run: any) => run.procedureId !== 'E-0' && run.status === 'active') : undefined
+  const tokenMetrics = models.map(call => ({ id: call.id, model: call.model ?? call.metrics?.model ?? call.requestedModel, status: call.status, metrics: call.metrics ?? call.response?.metrics ?? {} }))
+  const hold = runs.find((run: any) => run.status === 'active' && run.inputRequest)
+  const review = {
+      effectiveModels: [...new Set(Object.values(record.capture.models).map((item: any) => item.model ?? item.metrics?.model ?? item.requestedModel))],
+      turnStatuses,
+      modelCalls, toolCalls: calls.length,
+      operations, decisions, acceptedTransitionCount: acceptedTransitions.length, acceptedE0TransitionCount: acceptedE0Transitions.length, rejected: operations.filter((operation: any) => operation.result?.success === false), unsupportedAccepted, bypass, missingProgress, humanProceduralChanges, foreignPlantChanges, foreignProcedureRuns,
+      e0Status: e0?.status, e0VisitedSteps: e0?.stepStates.filter((step: any) => step.decision).map((step: any) => step.stepId) ?? [],
+      e0UnvisitedSteps: record.e0Document.steps.filter((step: any) => !e0?.stepStates.some((state: any) => state.stepId === step.id && state.decision)).map((step: any) => step.id),
+      hold: hold?.inputRequest, sourcePinned: e0 ? { sourceId: e0.sourceId, sourceRevision: e0.sourceRevision, sourcePath: e0.sourcePath } : null,
+      e0Qualified, receivingProcedure: receiving ? { runId: receiving.runId, procedureId: receiving.procedureId, status: receiving.status, inputRequest: receiving.inputRequest } : null,
+      tokenMetrics,
+      verdict: incompleteEvidence ? 'FAILED evidence review: complete canonical proof was not captured'
+        : badExecution ? 'FAILED execution review: missing/failed/interrupted model execution or no executed tools; no E-0 pass'
+        : structuralFailure ? 'FAILED structural execution review'
+          : e0Qualified ? `MODEL-SCOPED E-0 criterion-qualified ${e0.status}; ${receiving?.inputRequest ? `receiving ${receiving.procedureId} needs input (recovery not completed)` : 'receiving recovery status must be inspected separately'}`
+            : hold ? 'SAFE HOLD: E-0 not completed; criterion/operator follow-up required'
+              : 'INCOMPLETE: inspect canonical state and all evidence',
     }
-  }
-  return operations
+  return review
+
 }
 
-/** One row per operation a tool call ran (a workspace_call batches several; resultBytes is the whole call's). The argument
- * keys tell a discovery call's kind: an operation search (queries), by id (operationIds), with schemas (includeInputSchema). */
-const toolTraceOf = (answer: any) => (answer.toolTrace as ReadonlyArray<any> | undefined ?? []).flatMap((entry, call) => {
-  const outcomes = entry.operationOutcomes as ReadonlyArray<{ operationId: string; success: boolean }> | undefined
-  const base = { call, tool: entry.tool as string, argumentKeys: (entry.argumentKeys ?? []) as ReadonlyArray<string>, resultBytes: (entry.resultBytes ?? null) as number | null }
-  if (outcomes !== undefined && outcomes.length > 0) return outcomes.map(outcome => ({ ...base, operationId: outcome.operationId, success: outcome.success }))
-  const ids = (entry.operationIds ?? []) as ReadonlyArray<string>
-  return [{ ...base, operationId: ids.length === 0 ? null : ids.join(','), success: entry.success as boolean }]
-})
+export const runProcedureProbe = async (options: ProcedureProbeOptions): Promise<any[]> => {
+  const { origin, directory, jobs, runModel, model, patienceMs, settleSeconds } = options
+  await mkdir(directory, { recursive: false })
+  const save = async (name: string, value: unknown) => await Bun.write(join(directory, name + '.json'), JSON.stringify(value, null, 2))
+  const actor = { kind: 'human', id: 'e0-criteria-rehearsal', displayName: 'E-0 rehearsal operator' }
+  const request = async (path: string, body?: unknown, method = 'POST'): Promise<any> => {
+    const response = await fetch(origin + path, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(120_000), redirect: 'error', ...(body === undefined ? {} : { method, body: JSON.stringify(body) }) })
+    const value = await response.json()
+    if (!response.ok) throw Error(`${response.status} ${path}: ${JSON.stringify(value)}`)
+    return value
+  }
+  const resourceOf = (receipt: any) => receipt.createdResources?.find((item: any) => item.type === 'world.simulation-run') ?? receipt.result?.resource
+  const scenarios = { normal: 'halden-normal-operation', loop: 'halden-offsite-power-restoration', si: 'halden-normal-operation' }
+  const results: any[] = []
 
-const usageOf = (answer: any): Usage | null => typeof answer.promptTokens !== 'number' || typeof answer.completionTokens !== 'number' ? null : {
-  promptTokens: answer.promptTokens,
-  cacheRead: answer.cacheRead ?? 0,
-  cacheCreation: answer.cacheCreation ?? null,
-  completionTokens: answer.completionTokens,
-  modelCalls: answer.modelCalls ?? null,
+  for (const kind of jobs) {
+    const record: any = { case: kind, scenarioId: scenarios[kind], origin, startedAt: new Date().toISOString(), runModel, requestedModel: model, reasoningEffort: 'medium', preparationOnly: !runModel }
+    results.push(record)
+    const checkpoint = async () => { await save(kind + '-rehearsal', record); await save('summary', results) }
+    try {
+      record.workspace = (await request('/api/workspaces', { name: `E-0 criterion rehearsal · ${kind}` })).workspace
+      const workspaceId = record.workspace.id, invoke = (operationId: string, input: unknown, target: any = { resource: record.resource }) => request(`/api/workspaces/${workspaceId}/capabilities/${operationId}/invoke`, { ...target, input, actor })
+      await checkpoint()
+      const waitForPreparation = async (phase: string, target: string) => {
+        record.preparation = { phase, targetSimulationTime: target }
+        await checkpoint()
+        for (;;) {
+          const waited = (await invoke('world.simulation-run.wait', { untilSimulationTime: target, maxWaitMs: 30_000 })).result
+          record.preparation.lastWait = waited
+          await checkpoint()
+          if (waited.reason === 'simulation-time') break
+          if (waited.reason !== 'timeout') throw Error(`${phase} preparation stopped: ${JSON.stringify(waited)}`)
+        }
+        record.preparation.completed = true
+        await checkpoint()
+      }
+      const { definitions } = await request(`/api/workspaces/${workspaceId}/definitions`)
+      const descriptor = definitions.find((entry: any) => entry.ref.type === 'world.scenario' && entry.ref.id === scenarios[kind])
+      if (!descriptor) throw Error(`Scenario missing: ${scenarios[kind]}`)
+      const definition = { ...descriptor.ref, revisionId: descriptor.currentRevisionId }
+      // Human-only setup discovers the scenario fault time; none of this script/timeline enters the AI request.
+      record.scenarioSource = (await invoke('world.scenario.read', {}, { definition })).result
+      record.resource = resourceOf(await invoke('world.scenario.start', {}, { definition }))
+      if (!record.resource) throw Error('Scenario launch returned no Run Resource')
+      await invoke('world.simulation-run.execution.set', { playback: 'paused' })
+      if (kind === 'loop') {
+        const cues = record.scenarioSource.source.timeline?.cues ?? []
+        const faultCues = cues.filter((cue: any) => cue.at?.kind === 'after_scenario_start' && cue.actions?.some((action: any) => action.type === 'invoke_capability' && action.capabilityId === 'world.electric-grid.open-branch'))
+        if (!faultCues.length) throw Error('LOOP setup has no declared grid fault cue')
+        const faultAt = Math.max(...faultCues.map((cue: any) => cue.at.seconds))
+        record.preparationAdvance = (await invoke('world.simulation-run.execution.advance', { minutes: (faultAt + settleSeconds) / 60, onComplete: 'pause' })).result
+        const target = record.preparationAdvance.acceleration.targetSimulationTime
+        await waitForPreparation('LOOP', target)
+        await invoke('world.simulation-run.execution.set', { playback: 'paused' })
+      }
+      record.plants = (await invoke('world.process-plant.plants.list', {})).result
+      record.unit = record.plants.plants.find((plant: any) => plant.label === 'Halden Unit 2')
+      if (!record.unit) throw Error('Exact Halden Unit 2 missing')
+      if (kind === 'si') {
+        // Human scenario preparation only. Discover and use the exact offered SI pushbutton.
+        // No SI-specific hints or evidence are inserted into the model's natural user request.
+        record.siPreparationControls = (await invoke('world.process-plant.controls.list', { plantId: record.unit.id })).result
+        const offered = record.siPreparationControls.items.flatMap((item: any) => item.offered.map((entry: any) => ({ item: item.id, ...entry }))).find((entry: any) => entry.control.tagId === 'SI-MAN')
+        const actuate = offered?.control.options.find((option: any) => option.value === true)
+        if (!actuate) throw Error('Canonical SI-MAN ACTUATE option is not offered; refusing to invent a command')
+        record.siPreparationWrite = (await invoke('world.process-plant.control.write', { plantId: record.unit.id, tagId: offered.control.tagId, value: actuate.value })).result
+        const responseSeconds = Math.max(1, (actuate.travelMs ?? 0) / 1000)
+        record.siPreparationAdvance = (await invoke('world.simulation-run.execution.advance', { minutes: responseSeconds / 60, onComplete: 'pause' })).result
+        const target = record.siPreparationAdvance.acceleration.targetSimulationTime
+        await waitForPreparation('SI', target)
+        await invoke('world.simulation-run.execution.set', { playback: 'paused' })
+        record.siPreparationFeedback = (await invoke('world.process-plant.signals.read', { plantId: record.unit.id, signals: [
+          { tagId: 'TRIP-BKR-A-POS' }, { tagId: 'TRIP-BKR-B-POS' }, { tagId: 'SI-MAN-DEMAND' },
+          { tagId: 'SI-PUMP-A-RUNNING' }, { tagId: 'SI-PUMP-B-RUNNING' },
+        ], evidence: true })).result
+      }
+      record.operationCatalog = (await request(`/api/workspaces/${workspaceId}/capabilities`)).capabilities.map(({ id, kind, risk }: any) => ({ id, kind, risk }))
+      record.beforeProcedure = (await invoke('world.procedure.runs.list', { includeEvidence: true })).result
+      if (record.beforeProcedure.runs.length !== 0) throw Error('Fresh rehearsal Run already has procedure state; refusing contaminated preparation')
+      record.e0Document = (await invoke('world.procedure.document.read', { procedureId: 'E-0', includeSource: true })).result
+      const opened = await invoke('agents.assistance.open', { scope: { kind: 'resource', resource: record.resource }, title: `E-0 ${kind} · full criterion rehearsal`, focusedSubjects: [record.resource] }, {})
+      record.roomId = opened.result.resource.id
+      const roomPath = `/api/workspaces/${workspaceId}/agents/rooms/${record.roomId}`
+      record.members = await request(roomPath + '/members')
+      record.human = record.members.find((member: any) => member.kind === 'human')
+      record.agent = record.members.find((member: any) => member.kind === 'ai')
+      if (!record.human || !record.agent) throw Error('Assistance Room missing person/AI')
+      const agentPath = `/api/workspaces/${workspaceId}/agents/agents/${record.agent.id}`
+      await request(agentPath, { model, reasoningEffort: 'medium' }, 'PATCH')
+      record.agentConfig = await request(agentPath)
+      if (record.agentConfig.model !== model || record.agentConfig.reasoningEffort !== 'medium' || !record.agentConfig.skills.includes('procedure-runner')) throw Error('Exact model/skill settings did not take effect')
+      if (record.agentConfig.modelInfo?.source === 'no_eligible_route') throw Error('Requested model has no eligible route')
+      record.url = `${origin}/workspaces/${workspaceId}?world=${record.resource.id}`
+      record.prompt = 'Run E-0 on Unit 2. Work through the procedure and report the result of every step in chat. Continue autonomously where the readings and controls allow it, and clearly tell me if you need my input.'
+      record.prepared = true
+      await checkpoint()
+      console.log(JSON.stringify({ case: kind, prepared: true, runModel, url: record.url, roomId: record.roomId, steps: record.e0Document.steps.length, model }))
+      if (!runModel) continue
+
+      const allTurns = async () => {
+        const turns: any[] = []
+        let next: { startedAt: number; id: string } | undefined
+        do {
+          const query = next ? '?' + new URLSearchParams({ beforeId: next.id, beforeStartedAt: String(next.startedAt) }) : ''
+          const page = await request(roomPath + '/executions' + query)
+          turns.push(...page.turns); next = page.next
+        } while (next)
+        return turns
+      }
+      record.capture = { turns: {}, calls: {}, models: {} }
+      const capture = async () => {
+        const turns = await allTurns()
+        for (const turn of turns) {
+          const execution = await request(roomPath + '/executions/' + turn.id)
+          record.capture.turns[turn.id] = execution
+          for (const call of execution.calls) {
+            const key = `${turn.id}/${call.id}`
+            // An in-flight call may later acquire its outcome: never cache an incomplete capture.
+            if (!record.capture.calls[key]?.completedAt) record.capture.calls[key] = await request(roomPath + '/executions/' + turn.id + '/calls/' + call.id)
+          }
+          for (const item of execution.models) {
+            const key = `${turn.id}/${item.id}`
+            if (!record.capture.models[key]?.completedAt) record.capture.models[key] = await request(roomPath + '/executions/' + turn.id + '/models/' + item.id)
+          }
+        }
+        record.messages = await request(roomPath + '/export')
+        record.procedures = (await invoke('world.procedure.runs.list', { includeEvidence: true })).result
+        await checkpoint()
+        return turns
+      }
+      // Exactly one natural user delegation: no branch selection, hidden coaching or manual procedure writes.
+      await request(`/api/workspaces/${workspaceId}/agents/messages`, { senderId: record.human.id, senderName: record.human.name, content: record.prompt, target: { rooms: [record.roomId] } })
+      const started = Date.now()
+      let lastCaptured = 0
+      for (;;) {
+        const turns = await allTurns()
+        if (turns.length && turns.every(turn => turn.status !== 'running')) { await capture(); break }
+        if (Date.now() - lastCaptured > 15_000) { await capture(); lastCaptured = Date.now(); console.log(JSON.stringify({ case: kind, running: true, elapsedSeconds: (Date.now() - started) / 1000, turns: turns.map(turn => ({ id: turn.id, status: turn.status })), procedures: record.procedures.runs.map((run: any) => ({ procedureId: run.procedureId, step: run.currentStepId, input: run.inputRequest?.issue })) })) }
+        if (Date.now() - started > patienceMs) {
+          record.observerDeadline = { minutes: patienceMs / 60_000, message: 'External QA observer patience reached; this is not an Agent loop quota.' }
+          await request(agentPath + '/cancel', {})
+          await capture()
+          throw Error('External QA patience reached; saved full partial execution evidence and cancelled only this rehearsal Agent')
+        }
+        await Bun.sleep(500)
+      }
+      record.review = reviewProcedureProbe(record)
+      await checkpoint()
+      console.log(JSON.stringify({ case: kind, verdict: record.review.verdict, e0Status: record.review.e0Status, visited: record.review.e0VisitedSteps.length, unvisited: record.review.e0UnvisitedSteps, modelCalls: record.review.modelCalls, toolCalls: record.review.toolCalls, hold: record.review.hold }))
+    } catch (error) { record.error = String(error); record.qualified = false; await checkpoint(); console.error(JSON.stringify({ case: kind, error: record.error })) }
+  }
+
+  return results
 }
 
-/** Before a turn starts: the budget guard, and the Room's messages so far, so the turn's answer is told apart. */
-const beforeTurn = async (turn: number) => {
-  if (spentUsd + pricing!.worstTurnUsd > budgetUsd) {
-    stop(`Budget guard before turn ${turn + 1}: $${usd(spentUsd)} spent + $${pricing!.worstTurnUsd} worst-case turn > $${budgetUsd}`)
-  }
-  const prior = new Set<string>((await request(roomPath + '?limit=200')).messages.map((message: { id: string }) => message.id))
-  return { prior, startedAt: Date.now() }
-}
-
-const ask = async (turn: number, prompt: string) => {
-  const before = await beforeTurn(turn)
-  await request(`/api/workspaces/${workspaceId}/agents/messages`, { senderId: human!.id, senderName: human!.name, content: prompt, target: { rooms: [room!.id] } })
-  return await answered(turn, prompt, before)
-}
-
-const answered = async (turn: number, prompt: string, before: Awaited<ReturnType<typeof beforeTurn>>) => {
-  const estimate = estimateUsd(pricing!.price, turn)
-  const answer = await nextReply(before.prior, `turn ${turn + 1}`)
-  const wallMs = Date.now() - before.startedAt
-  const spent = usageOf(answer)
-  const answeredBy = typeof answer.model === 'string' ? answer.model : null
-  const turnPricing = answeredBy === null ? pricing! : (() => {
-    const entry = tableEntry(answeredBy)
-    return entry === undefined && givenPrice === undefined ? null : pricingFor(answeredBy)
-  })()
-  const cost = spent === null || turnPricing === null ? null : costUsd(spent, turnPricing.price)
-  spentUsd += cost ?? 0
-  const operations = typeof answer.generationTraceId === 'string' ? await turnOperations(answer.generationTraceId) : []
-  // The progress lines the turn posted before its answer, in Room order.
-  const progress = ((await request(roomPath + '?limit=200')).messages as ReadonlyArray<{ id: string; senderId: string; progress?: true; content: string }>)
-    .filter(message => !before.prior.has(message.id) && message.senderId === agent!.id && message.progress === true).map(message => message.content)
-  const state = await observe()
-  const run = e0RunOf(state)
-  const record = {
-    turn: turn + 1,
-    prompt,
-    wallMs,
-    answer: { id: answer.id, type: answer.type, text: answer.content, generationTraceId: answer.generationTraceId ?? null, cause: answer.cause ?? null, ...(answer.errorCode === undefined ? {} : { errorCode: answer.errorCode }) },
-    model: answeredBy,
-    usage: spent,
-    costUsd: cost === null ? null : usd(cost),
-    estimateUsd: usd(estimate),
-    toolTrace: toolTraceOf(answer),
-    operations,
-    progress,
-    procedure: run === undefined ? null : { runId: run.runId, currentStepId: run.currentStepId, driver: run.driver, stepStates: run.stepStates },
-    state,
-  }
-  turns.push(record)
-  await save(`turn-${turn + 1}`, record)
-  console.log(JSON.stringify({ turn: turn + 1, type: answer.type, model: answeredBy, costUsd: record.costUsd, spentUsd: usd(spentUsd), modelCalls: spent?.modelCalls ?? null, wallMs, currentStepId: run?.currentStepId ?? null }))
-  if (answer.type !== 'chat') stop(`Turn ${turn + 1} answered with a ${answer.type} message: ${String(answer.content).slice(0, 200)}`)
-  if (spent === null) stop(`Turn ${turn + 1} reported no token usage; its cost cannot be guarded`)
-  if (turnPricing === null) stop(`Turn ${turn + 1} was answered by ${answeredBy}, which has no price; pass --price to run it`)
-  const expected = requestedModel ?? String(room!.model)
-  const sameModel = answeredBy === null || bare(answeredBy) === bare(expected) || (tableEntry(answeredBy) !== undefined && tableEntry(answeredBy)?.[0] === tableEntry(expected)?.[0])
-  if (!sameModel) stop(`Turn ${turn + 1} was answered by ${answeredBy}, not the Agent's ${expected}`)
-  if (cost! > 2 * estimate && cost! > runawayFloorUsd) stop(`Turn ${turn + 1} cost $${usd(cost!)}, more than twice its scenario estimate $${usd(estimate)}`)
-  return record
-}
-
-// ---- The --dry stand-in ----
-/** One step of a procedure run as an actor reads it (world.procedure.run.step.read): the run's current step unless stepId. */
-const readStep = async (actor: Actor, runId: string, stepId?: string): Promise<any> =>
-  (await invoke(actor, 'world.procedure.run.step.read', { runId, ...(stepId === undefined ? {} : { stepId }) })).result
-const stepSummary = (view: any) => ({
-  runId: view.run.runId as string,
-  procedureId: view.run.procedureId as string,
-  stepId: (view.step?.id ?? null) as string | null,
-  label: (view.step?.label ?? null) as string | null,
-  driver: view.run.driver ?? null,
-  simulationTime: view.simulationTime as string,
-  sequence: view.sequence as number,
-  branches: ((view.step?.branches ?? []) as ReadonlyArray<any>).map(branch => ({
-    index: branch.index as number, label: branch.label as string, outcome: (branch.outcome ?? null) as string | null, targetKind: branch.targetKind as string, target: branch.target as string,
-  })),
-  tags: ((view.tags ?? []) as ReadonlyArray<any>).map(tag => ({
-    id: tag.id as string, binding: tag.binding as string, reading: (tag.reading?.formatted ?? null) as string | null,
-    ...(tag.reading?.signal === undefined ? {} : { signal: tag.reading.signal as string }),
-    ...(tag.unavailable === undefined ? {} : { unavailable: tag.unavailable as string }),
-  })),
-})
-
-/** A stand-in call as World answers an AI agent: accepted, or refused with World's words. */
-const standInCall = async (operationId: string, input: unknown): Promise<Record<string, any>> => {
-  try {
-    const response = await invoke(standIn, operationId, input)
-    return { operationId, input, ok: true, result: response.result ?? response }
-  } catch (error) {
-    if (error instanceof ApiError) return { operationId, input, ok: false, error: error.message }
-    throw error
-  }
-}
-/** As the skill directs, mechanically: select the step's first branch, citing the step's tags that read. */
-const standInDecide = async (view: ReturnType<typeof stepSummary>): Promise<Record<string, any>> => {
-  const branch = view.branches[0]
-  if (view.stepId === null || branch === undefined) return { operationId: 'world.procedure.run.transition', ok: false, held: 'no step to work' }
-  const evidence = view.tags.filter(tag => tag.reading !== null).slice(0, 6)
-  const basis = `Dry-run stand-in, not a model: step ${view.label}, "${branch.label}". Evidence: ${evidence.map(tag => `${tag.id} ${tag.reading}`).join(', ') || 'none'} at ${view.simulationTime}.`
-  return await standInCall('world.procedure.run.transition', {
-    runId: view.runId, stepId: view.stepId, branchIndex: branch.index, basis: basis.length <= 300 ? basis : `${basis.slice(0, 299)}…`,
-    ...(evidence.length === 0 ? {} : { evidenceTagIds: evidence.map(tag => tag.id) }),
-  })
-}
-const standInTurn = async (turn: number) => {
-  const operations: Array<Record<string, unknown>> = []
-  const started = await standInCall('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId: unit!.id, label: unit!.label } })
-  operations.push({ ...started, result: undefined })
-  const trip = await standInCall('world.process-plant.control.write', { plantId: unit!.id, tagId: 'RX-TRIP-MAN', value: true })
-  operations.push({ ...trip, result: undefined })
-  const run = e0RunOf(await observe())
-  if (started.ok && run !== undefined) {
-    const waited = await standInCall('world.simulation-run.wait', { procedureRunId: run.runId, simulationSeconds: 10, maxWaitMs: 20_000 })
-    operations.push({ ...waited, result: undefined, ...(waited.ok ? { reason: waited.result.reason } : {}) })
-    let view = waited.ok && waited.result.next !== undefined ? stepSummary(waited.result.next) : stepSummary(await readStep(standIn, run.runId))
-    for (let step = 0; step < 6 && view.stepId !== null; step++) {
-      const transition = await standInDecide(view)
-      operations.push({ ...transition, result: undefined, stepId: view.stepId })
-      if (!transition.ok || transition.result?.next === undefined) break
-      view = stepSummary(transition.result.next)
-    }
-  }
-  const state = await observe()
-  const e0Run = e0RunOf(state)
-  const record = {
-    turn: turn + 1, standIn: true, prompt: null, answer: null, model: null, usage: null, costUsd: 0, estimateUsd: null, toolTrace: [], operations, progress: [],
-    procedure: e0Run === undefined ? null : { runId: e0Run.runId, currentStepId: e0Run.currentStepId, driver: e0Run.driver, stepStates: e0Run.stepStates },
-    state,
-  }
-  turns.push(record)
-  await save(`turn-${turn + 1}`, record)
-  console.log(JSON.stringify({ turn: turn + 1, standIn: true, operations: operations.map(operation => ({
-    operationId: operation.operationId, ok: operation.ok,
-    ...(operation.held === undefined ? {} : { held: operation.held }),
-    ...(operation.error === undefined ? {} : { error: String(operation.error).slice(0, 200) }),
-  })), currentStepId: e0Run?.currentStepId ?? null, driver: e0Run?.driver?.kind ?? null }))
-  return record
-}
-
-// ---- The probe ----
-const unitPhrase = (label: string): string => /\bunit\s+(\d+)\s*$/i.exec(label) ? `unit ${/\bunit\s+(\d+)\s*$/i.exec(label)![1]}` : label
-let stopReason: string | null = null
-let errored = false
-let breakersAtStart: Awaited<ReturnType<typeof breakers>> | undefined
-
-const probe = async () => {
-  // 1. Workspace and a realtime Halden Run.
-  const { workspace } = await request('/api/workspaces', { name: `Procedure runner probe${dry ? ' (dry)' : ''}` })
-  workspaceId = workspace.id
-  const { definitions } = await request(`/api/workspaces/${workspaceId}/definitions`)
-  const definition = definitions.find((entry: { ref: { id: string } }) => entry.ref.id === 'halden-power-complex')
-  if (!definition) stop('The bundled Halden scenario is absent')
-  const launched = await invoke(person, 'world.scenario.start', {}, { definition: { ...definition.ref, revisionId: definition.currentRevisionId } })
-  const resource = launched.createdResources?.find((entry: { type: string }) => entry.type === 'world.simulation-run') ?? launched.result?.resource
-  if (!resource) stop('Scenario start returned no Simulation Run')
-  target = { resource }
-  const execution = (await invoke(person, 'world.simulation-run.execution.set', { playback: 'playing', pace: 'realtime' })).result
-  const capabilities = new Set(((await request(`/api/workspaces/${workspaceId}/capabilities`)).capabilities as ReadonlyArray<{ id: string }>).map(capability => capability.id))
-  const missing = REQUIRED_CAPABILITIES.filter(id => !capabilities.has(id))
-  if (missing.length > 0) stop(`This build lacks ${missing.join(', ')}`)
-  plants = ((await invoke(person, 'world.process-plant.plants.list', {})).result.plants as ReadonlyArray<{ id: string; label: string }>).map(({ id, label }) => ({ id, label }))
-  const matches = plants.filter(plant => plant.label.toLowerCase() === unitLabel.toLowerCase() || plant.id === unitLabel)
-  if (matches.length !== 1) stop(`--unit "${unitLabel}" matches ${matches.length} of the Plants ${plants.map(plant => plant.label).join(', ')}`)
-  unit = matches[0]!
-  for (const plant of plants) {
-    const { result } = await invoke(person, 'world.process-plant.signals.read', { plantId: plant.id, signals: [{ tagId: 'RX-TRIP-MAN' }] })
-    tripPaths.set(plant.id, result.signals[0].signal.path)
-  }
-  breakersAtStart = await breakers(unit.id)
-  if (!breakersAtStart.every(reading => reading.closed === true)) notes.push(`${unit.label} starts with a trip breaker open: ${JSON.stringify(breakersAtStart)}`)
-  // E-0's steps in order, to name its steps by their ids.
-  const document = (await invoke(person, 'world.procedure.document.read', { procedureId: 'E-0' })).result
-  e0 = { steps: (document.steps as ReadonlyArray<any>).map(step => ({ id: step.id, label: step.label, tagIds: step.tagIds })) }
-
-  // 2. A new Assistant Room from the leitbild-assistant definition, on the Run.
-  const opened = await invoke(person, 'agents.assistance.create', { scope: { kind: 'resource', resource }, title: `Procedure probe${dry ? ' (dry)' : ''}` }, {})
-  const roomId = opened.result.resource.id as string
-  roomPath = `/api/workspaces/${workspaceId}/agents/rooms/${encodeURIComponent(roomId)}`
-  const roomProfile = (await request(roomPath + '?limit=1')).profile
-  const members = await request(roomPath + '/members')
-  human = members.find((member: { kind: string }) => member.kind === 'human')
-  agent = members.find((member: { kind: string }) => member.kind === 'ai')
-  if (!human || !agent) stop('The Assistant Room lacks its person or its Assistant')
-  const agentPath = `/api/workspaces/${workspaceId}/agents/agents/${encodeURIComponent(agent!.id)}`
-  const patched = requestedModel === undefined && requestedEffort === undefined ? null : await request(agentPath, {
-    ...(requestedModel === undefined ? {} : { model: requestedModel }),
-    ...(requestedEffort === undefined ? {} : { reasoningEffort: requestedEffort }),
-  }, 'PATCH')
-  const profile = await request(agentPath)
-  room = { id: roomId, name: roomProfile.name, sourceDefinition: roomProfile.sourceDefinition ?? null, agentId: agent!.id, model: profile.model, reasoningEffort: profile.reasoningEffort ?? null, skills: profile.skills, maxToolIterations: profile.maxToolIterations ?? null, modelStatus: patched?.modelStatus ?? null, modelInfo: profile.modelInfo ?? null }
-  if (roomProfile.sourceDefinition?.id !== 'leitbild-assistant') stop(`The Room was created from ${roomProfile.sourceDefinition?.id ?? 'no definition'}, not leitbild-assistant`)
-  if (!(profile.skills as ReadonlyArray<string>).includes('procedure-runner')) stop('The Assistant lacks the procedure-runner skill on this build')
-  if (requestedModel !== undefined && profile.model !== requestedModel) stop(`The Agent's model reads ${profile.model} after setting ${requestedModel}`)
-  if (requestedEffort !== undefined && profile.reasoningEffort !== requestedEffort) stop(`The Agent's reasoning effort reads ${profile.reasoningEffort ?? 'unset'} after setting ${requestedEffort}`)
-  if (patched?.modelStatus === 'unavailable') stop(`The provider reports ${requestedModel} unavailable; the Agent would answer with a fallback model`)
-  // No provider of this deployment may serve the model: the Agent would answer with another one, or not at all.
-  if (profile.modelInfo?.source === 'no_eligible_route') {
-    if (dry) notes.push(`no provider route serves ${profile.model} here (a dry run calls no model)`)
-    else stop(`No provider route serves ${profile.model} on this deployment; the Agent would fall back to another model`)
-  }
-  pricing = pricingFor(requestedModel ?? profile.model)
-  const setup = {
-    origin, dry, workspaceId, run: resource, execution, unit, plants, tripPaths: Object.fromEntries(tripPaths), breakersAtStart, room,
-    pricing: { ...pricing, budgetUsd, estimatesUsd: [0, 1].map(turn => usd(estimateUsd(pricing!.price, turn))) },
-    e0: { source: document.source, steps: e0.steps },
-    startedAt: new Date().toISOString(),
-  }
-  await save('setup', setup)
-  console.log(JSON.stringify({ workspaceId, runId: resource.id, roomId, unit: unit.label, model: profile.model, pricedAs: pricing.model }))
-
-  // 3. Turn 1: the order, and nothing else.
-  if (dry) await standInTurn(0)
-  else await ask(0, `Run E-0 on ${unitPhrase(unit.label)}`)
-
-  // 4. Turn 2: "continue", while the AI still drives an active procedure on the unit.
-  if (!dry && turnLimit === 2) {
-    const driven = (await observe()).runs.filter(entry => entry.plantId === unit!.id && entry.status === 'active' && isAi(entry.driver?.actorId))
-    if (driven.length > 0) await ask(1, 'continue')
-    else notes.push('turn 2 not asked: no active procedure on the unit is driven by the AI')
+if (import.meta.main) {
+  if (Bun.argv.length === 3 && Bun.argv[2] === '--help') console.log(procedureProbeUsage)
+  else {
+    const results = await runProcedureProbe(parseProcedureProbeOptions(Bun.argv.slice(2)))
+    if (results.some(record => record.error || record.runModel && record.review?.e0Qualified !== true)) process.exitCode = 1
   }
 }
-
-const isAi = (actorId: string | undefined | null): boolean => typeof actorId === 'string' && actorId.startsWith('actor:ai:')
-
-try { await probe() }
-catch (error) {
-  if (error instanceof ProbeStop) stopReason = error.message
-  else { errored = true; stopReason = `error: ${error instanceof Error ? error.message : String(error)}` }
-}
-if (target !== undefined) finalState = await observe().catch(error => { notes.push(`final observation failed: ${String(error)}`); return undefined })
-
-// ---- Pass criteria ----
-interface Criterion { readonly id: string; readonly label: string; readonly pass: boolean | null; readonly detail: string }
-const criteria: Criterion[] = []
-const add = (id: string, label: string, pass: boolean | null, detail: string) => criteria.push({ id, label, pass, detail })
-const state = finalState
-const run = state === undefined || unit === undefined ? undefined : e0RunOf(state)
-const decisionOf = (index: number) => {
-  const stepId = e0?.steps[index]?.id
-  return stepId === undefined ? undefined : run?.stepStates.find(entry => entry.stepId === stepId)?.decision ?? undefined
-}
-const modelTurns = turns.filter(entry => entry.standIn !== true)
-const allOperations = turns.flatMap(entry => entry.operations as ReadonlyArray<Record<string, any>>)
-// What step 1's tags read while the breakers' own position feedback reads open (they stay open after the trip):
-// a cited breaker reading shows them open when its value is that reading.
-const openReference = run === undefined || unit === undefined || e0 === undefined ? { unavailable: 'no E-0 run' } : await (async () => {
-  const now = await breakers(unit!.id)
-  if (!now.every(reading => reading.closed === false)) return { unavailable: `the breakers do not read open: ${now.map(reading => `${reading.tagId} closed=${reading.closed}`).join(', ')}` }
-  const view = stepSummary(await readStep(person, run.runId, e0!.steps[0]!.id))
-  // As World records evidence: a two-state reading names its model variable ("reactorTripBreakerA.closed = false").
-  const recorded = (tag: { readonly reading: string | null; readonly signal?: string }): string | null =>
-    tag.reading === null ? null : tag.signal === undefined ? tag.reading : `${tag.signal} = ${tag.reading.split(' ')[0]}`
-  return { readings: Object.fromEntries(view.tags.flatMap(tag => recorded(tag) === null ? [] : [[tag.id, recorded(tag)!]])) as Record<string, string>, tags: view.tags }
-})().catch(error => ({ unavailable: `reading step 1 failed: ${String(error)}` }))
-
-add('e0-driven-by-ai', `E-0 on ${unit?.label ?? unitLabel} started and driven by the AI`,
-  run === undefined ? false : isAi(run.startedBy) && (run.status !== 'active' || isAi(run.driver?.actorId)),
-  run === undefined ? 'no E-0 run' : `started by ${run.startedBy}; ${run.status}; driver ${run.driver?.actorId ?? 'none'}`)
-{
-  const writes = allOperations.filter(operation => operation.operationId === 'world.process-plant.control.write' && operation.success !== false && operation.ok !== false
-    && operation.input?.plantId === unit?.id && (operation.input?.tagId === 'RX-TRIP-MAN' || operation.input?.path === tripPaths.get(unit?.id ?? '')))
-  const proposals = state?.proposals.filter(proposal => proposal.plantId === unit?.id && proposal.origin === 'ai') ?? []
-  const open = 'readings' in openReference
-  add('trip-by-ai', 'the AI tripped the reactor itself, no proposal, and the breakers read open', writes.length >= 1 && proposals.length === 0 && open,
-    `${writes.length} trip write(s); ${proposals.length} AI proposal(s); ${open ? 'breakers open' : (openReference as { unavailable: string }).unavailable}`)
-}
-{
-  const decision = decisionOf(0)
-  const breakerTags = (e0?.steps[0]?.tagIds ?? []).filter(tagId => /TRIP-BKR/.test(tagId))
-  const cited = decision?.evidence ?? []
-  const open = 'readings' in openReference ? openReference.readings : undefined
-  // A decision's reading is the value as formatted, then any quality or caveat after "; ".
-  const breakerReadings = breakerTags.map(tagId => ({ tagId, reading: cited.find((entry: { tagId: string }) => entry.tagId === tagId)?.reading as string | undefined }))
-  const evidenced = open !== undefined && breakerReadings.length > 0 && breakerReadings.every(entry =>
-    entry.reading !== undefined && open[entry.tagId] !== undefined && entry.reading.split(';')[0]!.trim() === open[entry.tagId])
-  add('step-1-by-ai', 'step 1 Verified by the AI, with basis and breaker evidence reading open',
-    decision === undefined ? false : isAi(decision.selectedBy) && decision.outcome === 'normal' && decision.basis !== null && evidenced,
-    decision === undefined ? 'step 1 undecided'
-      : `${decision.label ?? decision.branchIndex} by ${decision.selectedBy}; basis: ${decision.basis ?? 'none'}; evidence: ${cited.map((entry: { tagId: string; reading: string }) => `${entry.tagId}=${entry.reading}`).join(', ') || 'none'}`)
-}
-{
-  const decision = decisionOf(1)
-  add('untagged-step-2-by-ai', 'step 2 (no tags) decided by the AI on a stated basis', decision === undefined ? false : isAi(decision.selectedBy) && decision.basis !== null,
-    decision === undefined ? 'step 2 undecided' : `${decision.label ?? decision.branchIndex} by ${decision.selectedBy}; basis: ${decision.basis ?? 'none'}`)
-}
-{
-  const decided = run?.stepStates.filter(entry => entry.decision !== null && isAi(entry.decision.selectedBy)) ?? []
-  const byPerson = run?.stepStates.filter(entry => entry.decision !== null && !isAi(entry.decision.selectedBy)) ?? []
-  add('past-step-4', 'the AI decided more than four E-0 steps, a person none', decided.length > 4 && byPerson.length === 0,
-    `${decided.length} AI-decided step(s): ${decided.map(entry => `${e0?.steps.find(step => step.id === entry.stepId)?.label ?? entry.stepId}:${entry.decision!.outcome ?? '?'}`).join(', ') || 'none'}; by a person: ${byPerson.length}; run ${run?.status ?? 'none'} at ${run?.currentStepId ?? 'none'}`)
-}
-{
-  const changes = modelTurns.flatMap(entry => (entry.operations as ReadonlyArray<Record<string, any>>)
-    .filter(operation => operation.success === true && ['world.procedure.run.transition', 'world.process-plant.control.write'].includes(operation.operationId)))
-  const said = changes.filter(operation => typeof operation.say === 'string' && operation.say.length > 0)
-  const lines = modelTurns.flatMap(entry => entry.progress as ReadonlyArray<string>)
-  add('step-lines', 'every accepted transition and write carried a say line, posted as progress', dry ? null : changes.length > 0 && said.length === changes.length && lines.length >= said.length,
-    dry ? 'n/a: no model turns in a dry run' : `${said.length}/${changes.length} changes with say; ${lines.length} progress line(s); first: ${lines[0] ?? 'none'}`)
-}
-{
-  const long = modelTurns.filter(entry => String(entry.answer?.text ?? '').length > 900)
-  add('short-answer', 'each answer at most 900 characters', dry ? null : modelTurns.length > 0 && long.length === 0,
-    dry ? 'n/a' : modelTurns.map(entry => `turn ${entry.turn}: ${String(entry.answer?.text ?? '').length} chars`).join('; '))
-}
-{
-  const forbidden = (operationId: string | null) => operationId !== null && operationId.split(',').some(id =>
-    id === 'world.procedure.run.reset' || /^world\.simulation-run\.execution\.(?:set|advance)$/.test(id) || id === 'world.process-plant.action.invoke')
-  const calls = modelTurns.flatMap(entry => [
-    ...(entry.toolTrace as ReadonlyArray<{ operationId: string | null }>).map(row => row.operationId),
-    ...(entry.operations as ReadonlyArray<{ operationId: string }>).map(row => row.operationId),
-  ]).filter(forbidden)
-  add('no-reset-time-or-instructor', 'no procedure reset, time control or instructor action', dry ? null : modelTurns.length === 0 ? false : calls.length === 0,
-    dry ? 'n/a: no model turns in a dry run' : calls.length === 0 ? 'none' : [...new Set(calls)].join(', '))
-}
-add('cost', `total cost within $${budgetUsd}, no turn over twice its estimate`,
-  dry ? null : turns.length > 0 && spentUsd <= budgetUsd && turns.every(entry => entry.costUsd !== null && (entry.costUsd <= 2 * entry.estimateUsd || entry.costUsd <= runawayFloorUsd)),
-  dry ? 'n/a: a dry run calls no model' : `$${usd(spentUsd)} over ${turns.length} turn(s): ${turns.map(entry => `$${entry.costUsd ?? '?'} (estimate $${entry.estimateUsd})`).join(', ')}`)
-
-const judged = criteria.filter(criterion => criterion.pass !== null)
-const pass = !dry && stopReason === null && criteria.every(criterion => criterion.pass === true)
-// A dry run proves the plumbing: the stand-in's start, trip and steps ran under World's AI rules.
-const plumbing = dry ? { completed: stopReason === null, judgedHold: judged.every(criterion => criterion.pass === true) } : null
-const summary = {
-  origin, dry, workspaceId, unit: unit ?? unitLabel, room, model: room?.model ?? null, pricing, budgetUsd,
-  spentUsd: usd(spentUsd), stopReason, errored, pass, ...(plumbing === null ? {} : { plumbing }),
-  criteria, notes, openReference,
-  turns: turns.map(entry => ({ turn: entry.turn, standIn: entry.standIn ?? false, model: entry.model, usage: entry.usage, costUsd: entry.costUsd, estimateUsd: entry.estimateUsd, wallMs: entry.wallMs ?? null, currentStepId: entry.procedure?.currentStepId ?? null, driver: entry.procedure?.driver ?? null, toolCalls: entry.toolTrace.length, progressLines: entry.progress.length })),
-  finalProcedures: state?.runs.filter(entry => entry.plantId === unit?.id) ?? null,
-  finishedAt: new Date().toISOString(),
-}
-await save('summary', summary)
-
-const mark = (value: boolean | null) => value === null ? 'n/a ' : value ? 'PASS' : 'FAIL'
-const width = Math.max(...criteria.map(criterion => criterion.label.length))
-console.log('')
-for (const criterion of criteria) console.log(`${mark(criterion.pass)}  ${criterion.label.padEnd(width)}  ${criterion.detail}`)
-console.log('')
-if (stopReason !== null) console.log(`Stopped: ${stopReason}`)
-for (const note of notes) console.log(`Note: ${note}`)
-console.log(dry
-  ? `Dry run (no model): plumbing ${plumbing!.completed && plumbing!.judgedHold ? 'proven' : 'NOT proven'}; ${judged.filter(criterion => criterion.pass).length}/${judged.length} judged criteria hold with the stand-in. Evidence: ${directory}`
-  : `${pass ? 'PASS' : 'FAIL'} · $${usd(spentUsd)} of $${budgetUsd} · evidence: ${directory}`)
-process.exitCode = dry ? (plumbing!.completed && plumbing!.judgedHold ? 0 : 1) : pass ? 0 : 1
