@@ -1,4 +1,5 @@
 import { processPlantModelDigest, processPlantSourceDigest } from './model-identity.ts'
+import { assertControllerProtectionIsolation } from './controller-protection.ts'
 import {
   compilePlantGraph,
   plantGraphSpecSchema,
@@ -154,6 +155,7 @@ export const compileResolvedProcessPlant = (
   assertProcessPlantIcSafetyFunctionsValid(compiledGraph, automation.safetyFunctions)
   assertThrottleFloorsValid(compiledGraph, automation.rules)
   assertResetTimesValid(automation.rules)
+  assertControllerProtectionIsolation(compiledGraph, automation)
   return {
     id: definition.id,
     modelRef: definition.modelRef,
