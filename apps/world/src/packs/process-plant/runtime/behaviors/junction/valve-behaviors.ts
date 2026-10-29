@@ -90,21 +90,19 @@ const updateValvePositionController = (
   const controller = valvePositionController(component)
   if (controller === null) return
   const positionPath = componentVariablePath(component, 'positionFraction')
-  const bindings = operatorControllerBindings(component)
-  const automatic = bindings === null || context.readBoolean(bindings.automatic)
   const isolated = context.readBoolean(componentVariablePath(component, 'isolationSignal'))
-  const permitted = controller.permissive === undefined || context.readNumber(controller.permissive.path) >= controller.permissive.minimum
   // Under an isolation signal the controller yields: it demands the valve shut until the signal is released.
   if (isolated) {
     context.write(positionPath, 0)
     return
   }
   // Permissives constrain manual control too; changing ownership cannot open a blocked path.
-  if (!permitted) {
+  if (controller.permissive !== undefined && context.readNumber(controller.permissive.path) < controller.permissive.minimum) {
     context.write(positionPath, controller.minPositionFraction)
     return
   }
-  if (!automatic) return
+  const bindings = operatorControllerBindings(component)
+  if (bindings !== null && !context.readBoolean(bindings.automatic)) return
   const measured = context.readNumber(controller.measuredPath)
   const setpoint = bindings === null ? controller.setpoint : context.readNumber(bindings.setpoint)
   const error = deadbandedError(measured - setpoint, controller.deadband)
