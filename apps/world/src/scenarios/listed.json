@@ -16,7 +16,7 @@
   },
   {
     "scenarioId": "halden-rhr-cooling-chain",
-    "summary": "Establish a real RHR → CCW → service-water heat path after a fictional primary release, then inspect measured cooled injection and loss-of-cooling response. Finite simulator task; no long-term recovery qualification.",
-    "tags": ["Nuclear plant", "RHR cooling", "Event at 10 s"]
+    "summary": "Establish the PWR’s RHR → CCW → service-water heat path after a primary release, then inspect cooled injection and loss of cooling.",
+    "tags": ["Nuclear plant", "RHR cooling"]
   }
 ]

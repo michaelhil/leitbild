@@ -174,12 +174,13 @@ describe('World featured Scenarios', () => {
     expect(() => featuredFrom([{ ...entry, title: 'Copied title' }])).toThrow()
   })
 
-  test('lists three other Scenarios beside the demos in order, each titled by its bundled Scenario', () => {
+  test('lists the other Scenarios beside the demos in order, each titled by its bundled Scenario', () => {
     const featuredIds = new Set(builtinFeaturedScenarioDefinitions.definitions.map(featured => String(featured.definition.id)))
     expect(builtinFeaturedScenarioDefinitions.listed.map(listed => listed.definition.id)).toEqual([
       'halden-normal-operation',
       'nordic-frequency-event',
       'supply-run',
+      'halden-rhr-cooling-chain',
     ] as never)
     for (const listed of builtinFeaturedScenarioDefinitions.listed) {
       const scenario = builtinScenarioDefinitions.find(candidate => candidate.id === listed.definition.id)!
