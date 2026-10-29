@@ -249,6 +249,37 @@ const restoredChain = () => {
 }
 
 describe('current PWR RHR cooling chain', () => {
+  test('a fresh paused full-power model already shows real receiving flows and no fictional unloaded cooling pulse', () => {
+    for (const loopCount of [2, 4, 6]) {
+      const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: `rhr-paused-${loopCount}`, loopCount }))
+      const runtime = createProcessPlantRuntime({ system })
+      expect(runtime.elapsedMs()).toBe(0)
+      const sourceTemperature = number(runtime, 'ultimateHeatSink.temperatureC')
+      for (const train of ['A', 'B']) {
+        expect(number(runtime, `componentCoolingTank${train}.temperatureC`)).toBe(sourceTemperature)
+        expect(number(runtime, `rhrHeatExchanger${train}.hotSideFlowKgPerS`)).toBe(0)
+        expect(number(runtime, `rhrHeatExchanger${train}.coldSideFlowKgPerS`)).toBe(350)
+        expect(number(runtime, `rhrHeatExchanger${train}.coolingAvailabilityFraction`)).toBe(1)
+        expect(number(runtime, `rhrHeatExchanger${train}.heatTransferMw`)).toBe(0)
+        const exchanger = `componentCoolingHeatExchanger${train}`
+        expect(number(runtime, `${exchanger}.hotSideFlowKgPerS`)).toBe(350)
+        expect(number(runtime, `${exchanger}.coldSideFlowKgPerS`)).toBe(450)
+        expect(number(runtime, `${exchanger}.hotOutletTemperatureC`)).toBe(sourceTemperature)
+        expect(number(runtime, `${exchanger}.coldOutletTemperatureC`)).toBe(sourceTemperature)
+        expect(number(runtime, `${exchanger}.heatTransferMw`)).toBe(0)
+        expect(number(runtime, `${exchanger}.effectivenessFraction`)).toBeGreaterThan(0)
+      }
+      const before = runtime.checkpoint()
+      const restored = createProcessPlantRuntime({ system, restoredCheckpoint: before })
+      expect(restored.checkpoint()).toEqual(before)
+      runtime.tick(1000)
+      for (const train of ['A', 'B']) {
+        expect(number(runtime, `componentCoolingTank${train}.temperatureC`)).toBe(sourceTemperature)
+        expect(number(runtime, `componentCoolingHeatExchanger${train}.heatTransferMw`)).toBe(0)
+      }
+    }
+  })
+
   test('actual LOCA source cools through both physical exchangers while finite closed CCW inventory remains conserved', () => {
     const runtime = restoredChain()
     expect(number(runtime, 'pressurizer.pressureMPa')).toBeLessThan(0.9)

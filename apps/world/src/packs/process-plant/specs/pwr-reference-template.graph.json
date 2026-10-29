@@ -6220,7 +6220,7 @@
         "hotSideNominalPressureDropMPa": 0.02,
         "coldSideNominalPressureDropMPa": 0.02,
         "initialHotTemperatureC": 45,
-        "initialColdTemperatureC": 30
+        "initialColdTemperatureC": 18
       },
       "variables": [
         {
@@ -6286,7 +6286,7 @@
         "coldSideDesignFlowKgPerS": 450,
         "hotSideNominalPressureDropMPa": 0.02,
         "coldSideNominalPressureDropMPa": 0.02,
-        "initialHotTemperatureC": 30,
+        "initialHotTemperatureC": 18,
         "initialColdTemperatureC": 18
       },
       "variables": [
@@ -6350,7 +6350,7 @@
       "parameters": {
         "nominalInventoryKg": 30000,
         "initialInventoryFraction": 0.95,
-        "initialTemperatureC": 30,
+        "initialTemperatureC": 18,
         "initialSoluteConcentrationPpm": 0,
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 350,
@@ -6455,7 +6455,7 @@
         "hotSideNominalPressureDropMPa": 0.02,
         "coldSideNominalPressureDropMPa": 0.02,
         "initialHotTemperatureC": 45,
-        "initialColdTemperatureC": 30
+        "initialColdTemperatureC": 18
       },
       "variables": [
         {
@@ -6521,7 +6521,7 @@
         "coldSideDesignFlowKgPerS": 450,
         "hotSideNominalPressureDropMPa": 0.02,
         "coldSideNominalPressureDropMPa": 0.02,
-        "initialHotTemperatureC": 30,
+        "initialHotTemperatureC": 18,
         "initialColdTemperatureC": 18
       },
       "variables": [
@@ -6585,7 +6585,7 @@
       "parameters": {
         "nominalInventoryKg": 30000,
         "initialInventoryFraction": 0.95,
-        "initialTemperatureC": 30,
+        "initialTemperatureC": 18,
         "initialSoluteConcentrationPpm": 0,
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 350,
@@ -14469,7 +14469,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -14523,7 +14523,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -14577,7 +14577,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -14631,7 +14631,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -14913,7 +14913,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -14967,7 +14967,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -15021,7 +15021,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",
@@ -15075,7 +15075,7 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 30
+          "initialValue": 18
         },
         {
           "path": "soluteConcentrationPpm",

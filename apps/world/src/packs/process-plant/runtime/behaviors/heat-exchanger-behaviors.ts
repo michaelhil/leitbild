@@ -1,4 +1,4 @@
-import { componentVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
+import { componentVariablePath, type ComponentBehaviorDefinition, type ComponentInitialReconciliationDefinition } from '../behavior-contract.ts'
 import { clamp, optionalParameterNumber } from '../component-helpers.ts'
 import { pressureDropMPaFromFlow } from '../physics.ts'
 import { sumIncomingLinkValue, flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
@@ -97,3 +97,16 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
     },
   },
 ]
+
+// Algebraic heat transfer is already determined by solved initial link flows
+// and temperatures. A paused fresh Run must not show placeholder zero flows
+// or a nonexistent startup heat pulse until its first numerical step.
+const initialThermalTransfer = heatExchangerBehaviorDefinitions[0]!
+export const heatExchangerInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [{
+  id: 'heat-exchanger-initial-thermal-transfer',
+  componentKind: 'heatExchanger',
+  afterLinks: true,
+  reads: initialThermalTransfer.reads,
+  writes: initialThermalTransfer.writes,
+  reconcile: initialThermalTransfer.update,
+}]
