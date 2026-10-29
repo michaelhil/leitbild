@@ -10,7 +10,8 @@ import {
 import { createContextPublisherLookup, createViewPublisherLookup, createWorkspaceCapabilityTools, workspaceCallResultForModel } from './workspace-capability-tools.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 import { createTurnCards } from '../../agents/answer-cards.ts'
-import { collectViewRefs } from '../../agents/evaluation.ts'
+import { collectViewRefs, evaluate } from '../../agents/evaluation.ts'
+import type { LLMProvider } from '../../core/types/llm.ts'
 
 const workspaceId = newWorkspaceId()
 const moduleId = moduleIdSchema.parse('world')
@@ -539,7 +540,7 @@ describe('Workspace progressive-discovery tools', () => {
       run: { runId: 'procedure-1', procedureId: 'example', ...source, scope: { objectId: 'plant:unit-2' } },
       event: { id: 'event-7', simulationRunId: run.id, seq: 7, runId: 'procedure-1', stepId: '4', branchIndex: 0, target: '5', targetKind: 'step', simulationTime: '2026-01-01T12:00:00.000Z', selectedBy: 'ai', criterionStatus: 'supported' },
     }
-    const view = { viewType: 'procedure.decision', title: 'Recorded step decision', height: 640, state: JSON.stringify(locator) }
+    const view = { viewType: 'procedure.decision', title: 'Recorded step decision', height: 640, state: JSON.stringify(locator), windowOnly: true }
     const invocations: string[] = []
     const receiptFetch = (async (input: Request | string | URL, init?: RequestInit) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
@@ -554,7 +555,12 @@ describe('Workspace progressive-discovery tools', () => {
     const before = JSON.stringify(raw)
     const shown = workspaceCallResultForModel(raw, createTurnCards())
     const [entry] = (shown.data as { results: ReadonlyArray<Record<string, unknown>> }).results
-    expect(entry).toMatchObject({ success: true, viewRef: 'call_4_0/step', data: { ok: true, decision, view: { viewType: 'procedure.decision', title: view.title, height: view.height } } })
+    expect(entry).toMatchObject({ success: true, data: { ok: true, decision } })
+    expect(entry).not.toHaveProperty('viewRef')
+    expect(entry!.data).not.toHaveProperty('view')
+    const viewRefs = new Set<string>()
+    collectViewRefs(viewRefs, 'workspace_call', raw)
+    expect(viewRefs.size).toBe(0)
     expect(JSON.stringify(shown.data)).not.toContain('state')
     expect(JSON.stringify(shown.data)).not.toContain('sequence')
     expect(JSON.stringify(shown.data)).not.toContain('criterionReadings')
@@ -565,6 +571,26 @@ describe('Workspace progressive-discovery tools', () => {
     expect((raw.data as { results: ReadonlyArray<unknown> }).results[0]).toMatchObject({ embeddedView: { ...view, subject: run, moduleId: 'world' } })
     expect(JSON.stringify(raw)).toBe(before)
     expect(invocations).toHaveLength(1)
+    // This diagnostic window is not an answer display. The ordinary loop
+    // must accept its plain answer without a forced view fence or retry.
+    let passes = 0
+    const corrections: unknown[] = []
+    const provider: LLMProvider = {
+      models: async () => ['fixture'],
+      chat: async () => {
+        passes++
+        if (passes > 2) throw new Error('Unexpected extra model round for diagnostic evidence')
+        return passes === 1
+          ? { content: '', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 }, toolCalls: [{ function: { name: 'workspace_call', arguments: { calls: [{ key: 'step', operationId: writeId, input: {} }] } } }] }
+          : { content: 'Step 4 verified; continuing to step 5.', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 } }
+      },
+    }
+    const evaluated = await evaluate({ messages: [{ role: 'user', content: 'Continue the procedure' }], flushInfo: { ids: new Set<string>(), triggerRoomId: 'room' }, warnings: [] },
+      { name: 'Tester', model: 'fixture', persona: 'Run the procedure.' }, provider, async () => [raw], undefined, 'room',
+      { onEvent: event => { if (event.kind === 'correction') corrections.push(event) } })
+    expect(evaluated.decision.response).toEqual({ action: 'respond', content: 'Step 4 verified; continuing to step 5.' })
+    expect(passes).toBe(2)
+    expect(corrections).toEqual([])
   })
 
   test('a window-only view (a dashboard\'s board) is kept as evidence a cited line opens, with no viewRef, and the model reads no view (R4 §2.6)', async () => {
