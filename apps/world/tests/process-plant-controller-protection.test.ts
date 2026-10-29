@@ -4,14 +4,7 @@ import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/p
 import { comparison, rule, write } from '../src/packs/process-plant/specs/reference-ic-helpers.ts'
 
 const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:controller-protection' }))
-// This admission test changes only the resolved controller declaration; the
-// actual operator controller schema/runtime has its own behavioral tests.
-const graph = { ...plant.graph, components: plant.graph.components.map(component => String(component.id) !== 'feedwaterControlValveA' ? component : {
-  ...component,
-  parameters: { ...(component.parameters as object), controller: {
-    ...((component.parameters as { controller: object }).controller), operator: {},
-  } },
-}) }
+const graph = plant.graph
 const assess = (effects: Parameters<typeof rule>[0]['effects'], ruleClass: 'protection' | 'interlock' | 'normalControl' = 'protection') => assertControllerProtectionIsolation(graph, {
   ...plant.automation,
   rules: [rule({ id: 'controller-hold', ruleClass, condition: comparison({ tagId: 'PZR-LVL' }, '>', 0), effects })],
@@ -35,6 +28,18 @@ describe('controller/protection authority admission', () => {
     expect(() => assess([close, write('isolate', { path: 'feedwaterControlValveB.isolationSignal' }, true)])).toThrow('isolationSignal')
     expect(() => assess([close, write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, false)])).toThrow('isolationSignal')
     expect(() => assess([write('open', { tagId: 'MFW-A-CV' }, 1), write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)])).toThrow('isolationSignal')
+  })
+
+  test('cannot bypass a protection hold indirectly through controller mode or target', () => {
+    const isolate = write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)
+    for (const effect of [
+      write('switch-auto', { tagId: 'MFW-A-CTRL-AUTO' }, true),
+      write('switch-manual', { path: 'feedwaterControlValveA.controllerAutomatic' }, false),
+      write('set-target', { tagId: 'MFW-A-CTRL-SP' }, 55),
+    ]) {
+      expect(() => assess([effect])).toThrow('isolationSignal')
+      expect(() => assess([effect, isolate])).not.toThrow()
+    }
   })
 
   test('does not make ordinary regulation or an uncontrolled valve into a protection hold', () => {
