@@ -82,11 +82,17 @@ const compiledSystemWithParameters = (parameters: Record<string, Record<string, 
   parameters,
 })
 
-const compiledSystemWithStaticFeedwaterValves = () => compiledSystemWithParameters({
-  feedwaterControlValveA: { initialPositionFraction: 1, controller: undefined },
-  feedwaterControlValveB: { initialPositionFraction: 1, controller: undefined },
-  feedwaterControlValveC: { initialPositionFraction: 1, controller: undefined },
-  feedwaterControlValveD: { initialPositionFraction: 1, controller: undefined },
+const compiledSystemWithStaticFeedwaterValves = () => compileTestSystem({
+  id: 'plant',
+  graph: {
+    ...pressurizedWaterReactorPlantSpec,
+    components: pressurizedWaterReactorPlantSpec.components.map(component => {
+      if (!['feedwaterControlValveA', 'feedwaterControlValveB', 'feedwaterControlValveC', 'feedwaterControlValveD'].includes(String(component.id))) return component
+      const { controller, ...parameters } = component.parameters as Record<string, unknown>
+      return { ...component, parameters: { ...parameters, initialPositionFraction: 1 },
+        variables: component.variables.filter(variable => variable.path !== 'controllerAutomatic' && variable.path !== 'controllerSetpoint') }
+    }),
+  },
 })
 
 const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileTestSystem({
