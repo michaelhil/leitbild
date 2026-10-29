@@ -121,7 +121,7 @@ describe('Leitbild Assistant skills', () => {
     // discovery; start, transition and wait return the next step, and the Core's controls are read alone.
     expect(runner.body).toContain('## Call these directly')
     expect(runner.body).toContain('`world.procedure.run.start` {procedureId: <requested id>, scope: {plantId, label: <unit>}} → `next`')
-    expect(runner.body).toContain('`world.procedure.run.transition` {runId, stepId, branchIndex, basis, evidenceTagIds} + `say` → `next`')
+    expect(runner.body).toContain('`world.procedure.run.transition` {runId, stepId, branchIndex, basis, evidenceTagIds?} + `say` → `next`')
     expect(runner.body).toContain('`world.simulation-run.wait` {untilSimulationTime, procedureRunId} → `next`')
     expect(runner.body).toContain("its receipt's acceleration.targetSimulationTime")
     expect(runner.body).toContain('Timeout: repeat the same target')
@@ -130,6 +130,7 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('`world.process-plant.controls.list` {plantId, items: [<equipment id>]}')
     // A step view's readings are taken just before its simulationTime: the basis quotes that time once.
     expect(runner.body).toContain('deciding criterion, reading/quality, scope and plant time')
+    expect(runner.body).toContain('Optional citations name step tags relied on; World retains full criterion proof')
     expect(runner.body).toContain('At END read runs.list; report actual Run/assessment, not intentions/refusals')
     // Agents discover Plants, tags and controls at runtime; the skill names none.
     expect(runner.body).not.toMatch(/plant:|RX-TRIP-MAN|TRIP-BKR|-POS\b|BUS-[AB]/)
