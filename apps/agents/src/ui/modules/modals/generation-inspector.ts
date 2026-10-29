@@ -72,6 +72,7 @@ export const showGenerationInspector = (options: {
   const allEvents = buildExecutionJourney(execution, inspection)
   const activityEvents = execution && activity ? progressActivityEvents(execution, allEvents, activity) : undefined
   let events = activity ? activityEvents ?? [] : allEvents
+  let compactActivity = activity !== undefined
   const bar = document.createElement('div')
   bar.className = 'inspector-toolbar'
   const chips = document.createElement('div')
@@ -89,11 +90,13 @@ export const showGenerationInspector = (options: {
     scope.setAttribute('aria-label', 'Activity scope')
     const update = createButton({ label: 'This update', onClick: () => {
       events = activityEvents ?? []; update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false')
+      setActivityPresentation(true)
       const selected = events.find(event => event.id === selectedId)
       if (selected) select(selected); else renderOverview()
     } })
     const full = createButton({ label: 'Full turn', onClick: () => {
       events = allEvents; update.setAttribute('aria-pressed', 'false'); full.setAttribute('aria-pressed', 'true')
+      setActivityPresentation(false)
       const selected = events.find(event => event.id === selectedId)
       if (selected) select(selected); else renderOverview()
     } })
@@ -109,7 +112,20 @@ export const showGenerationInspector = (options: {
   detail.tabIndex = -1
   const panels = document.createElement('div')
   panels.className = 'inspector-panels'
-  panels.append(master, detail)
+  const activityNavigation = activity ? document.createElement('details') : undefined
+  const activitySummary = activityNavigation ? text('summary', '') : undefined
+  if (activityNavigation && activitySummary) {
+    activityNavigation.className = 'inspector-activity-navigation'
+    activityNavigation.append(activitySummary, master)
+  }
+  panels.append(activityNavigation ?? master, detail)
+  const setActivityPresentation = (compact: boolean): void => {
+    compactActivity = compact
+    panels.dataset.compactActivity = String(compact)
+    chips.style.display = compact ? 'none' : ''
+    if (activityNavigation) activityNavigation.open = !compact
+  }
+  setActivityPresentation(compactActivity)
   bar.append(chips, modes)
   modal.scrollBody.append(bar, panels)
   let selectedId = 'overview'
@@ -117,6 +133,12 @@ export const showGenerationInspector = (options: {
   let mode: 'journey' | 'sequence' = 'journey'
   const toolRecords = new Map<string, ExecutionCall>()
   const modelRecords = new Map<string, ExecutionModelCall>()
+  let selectedContext: HTMLElement | undefined
+  let selectedUpdate: HTMLElement | undefined
+  const projections = document.createElement('div')
+  projections.className = 'inspector-mode'
+  if (activityNavigation && activitySummary) activitySummary.after(projections)
+  else modes.appendChild(projections)
   const modeButtons: HTMLButtonElement[] = []
   for (const [id, label] of [['journey', 'Journey'], ['sequence', 'Sequence']] as const) {
     const button = createButton({ label, onClick: () => {
@@ -125,7 +147,7 @@ export const showGenerationInspector = (options: {
       renderMaster()
     } })
     button.setAttribute('aria-pressed', String(id === mode))
-    modeButtons.push(button); modes.appendChild(button)
+    modeButtons.push(button); projections.appendChild(button)
   }
 
   const error = (host: HTMLElement, message: string, retry: () => void): void => {
@@ -272,12 +294,17 @@ export const showGenerationInspector = (options: {
     if (!record) { error(host, 'The exact tool record is unavailable.', () => { void renderTool(host, event, token) }); return }
     if (record.completedAt !== undefined) toolRecords.set(call.id, record)
     if (record.arguments && typeof record.arguments === 'object' && 'operationId' in record.arguments && typeof record.arguments.operationId === 'string') phase(host, 'Operation', record.arguments.operationId)
-    phase(host, 'Observed outcome', record.result === undefined ? 'Unknown — no durable result' : record.result.success ? 'Tool reported success' : 'Tool reported an error')
-    note(host, 'A recorded tool result is historical evidence. Accepted commands do not by themselves prove the plant reached the intended state.')
+    const context = compactActivity && selectedContext ? selectedContext : host
+    phase(context, 'Observed outcome', record.result === undefined ? 'Unknown — no durable result' : record.result.success ? 'Tool reported success' : 'Tool reported an error')
+    note(context, 'A recorded tool result is historical evidence. Accepted commands do not by themselves prove the plant reached the intended state.')
+    if (compactActivity && record.result === undefined) note(host, 'Outcome unknown: no durable result was recorded for this attempt.')
     const operations = recordedOperations(record)
     const focusedKey = activity?.evidence.callId === call.id ? activity.evidence.operationKey : undefined
     const focused = focusedKey === undefined ? undefined : operations.find(operation => operation.key === focusedKey)
     const published = focused === undefined ? undefined : recordedOperationView(focused, currentWorkspaceId())
+    // The Module's detail leads when present; retain the original chat prose
+    // in context rather than repeating it above the recorded decision.
+    if (compactActivity && published?.kind === 'view' && selectedUpdate && selectedContext) selectedContext.prepend(selectedUpdate)
     const renderOperation = (body: HTMLElement, operation: (typeof operations)[number]): void => {
       phase(body, operation.operationId, operation.result === undefined ? 'Outcome not recorded' : operation.result.success === true ? 'Operation accepted' : 'Operation refused')
       if (operation.target !== undefined) renderStructured(body, 'Target', operation.target)
@@ -287,7 +314,7 @@ export const showGenerationInspector = (options: {
       else renderStructured(body, 'Recorded refusal', operation.result, true)
     }
     tabs(host, [
-      ...(published ? [{ label: 'Published view', render: (body: HTMLElement) => {
+      ...(published ? [{ label: 'Details', render: (body: HTMLElement) => {
         if (published.kind === 'refused') { note(body, `${published.code}: ${published.error}`); return }
         const envelope = published.envelope
         const frame = document.createElement('iframe')
@@ -344,10 +371,18 @@ export const showGenerationInspector = (options: {
   const select = (event: JourneyEvent, focusDetail = false): void => {
     const token = ++selection
     selectedId = event.id
-    detail.replaceChildren(text('div', actorLabels[event.actor], 'inspector-eyebrow'), text('h3', event.title, 'inspector-detail-title'))
-    if (activity) detail.prepend(text('div', activity.content, 'inspector-update'))
-    phase(detail, stateLabel(event), event.description)
-    if (event.at !== undefined) phase(detail, 'Time', `${new Date(event.at).toLocaleTimeString()}${event.finishedAt !== undefined ? ` · ${formatElapsed(event.finishedAt - event.at)}` : ''}`)
+    detail.replaceChildren()
+    selectedUpdate = activity ? text('div', activity.content, 'inspector-update') : undefined
+    if (selectedUpdate) detail.appendChild(selectedUpdate)
+    const context = document.createElement('div')
+    context.append(text('div', actorLabels[event.actor], 'inspector-eyebrow'), text('h3', event.title, 'inspector-detail-title'))
+    phase(context, stateLabel(event), event.description)
+    if (event.at !== undefined) phase(context, 'Time', `${new Date(event.at).toLocaleTimeString()}${event.finishedAt !== undefined ? ` · ${formatElapsed(event.finishedAt - event.at)}` : ''}`)
+    if (compactActivity) {
+      const disclosure = document.createElement('details'); disclosure.className = 'inspector-disclosure'
+      disclosure.append(text('summary', 'Execution context'), context); detail.appendChild(disclosure)
+    } else detail.appendChild(context)
+    selectedContext = context
     const body = document.createElement('div'); detail.appendChild(body)
     switch (event.source.kind) {
       case 'model': body.appendChild(text('p', 'Loading exact model evidence…', 'inspector-note')); void renderModel(body, event, token); break
@@ -361,6 +396,7 @@ export const showGenerationInspector = (options: {
     if (focusDetail) detail.focus()
   }
   const renderMaster = (): void => {
+    if (activitySummary) activitySummary.textContent = `Recorded activity · ${events.length} event${events.length === 1 ? '' : 's'}`
     const scrollTop = master.scrollTop
     master.replaceChildren()
     master.dataset.mode = mode
