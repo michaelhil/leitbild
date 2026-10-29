@@ -186,54 +186,50 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
               yield call('world.procedure.run.drive', { runId: procedureRunId, action: 'claim' }); break
             case 2:
               expect(viewOf(resultOf(request)).run).toMatchObject({ runId: procedureRunId, currentStepId: 'pressure-check', driver: { kind: 'ai' } })
-              // An unsupported model assertion and an empty citation list cannot establish this branch.
+              // An unsupported model assertion with no manual citations cannot establish this branch.
               yield call('world.procedure.run.transition', { runId: procedureRunId, stepId: 'pressure-check', branchIndex: 0, basis: 'Test attack: declare low pressure despite the current criterion.', evidenceTagIds: [] }, 'UNACCEPTED pressure decision'); break
             case 3:
-              expect(resultOf(request)).toMatchObject({ success: false, error: expect.stringContaining('invalid_request: evidenceTagIds') })
-              // Correct the malformed citation list; unsupported prose still cannot establish the branch.
-              yield call('world.procedure.run.transition', { runId: procedureRunId, stepId: 'pressure-check', branchIndex: 0, basis: 'Test attack: declare low pressure despite the current criterion.' }, 'UNACCEPTED pressure assertion'); break
-            case 4:
               expect(resultOf(request)).toMatchObject({ success: false, error: expect.stringContaining('procedure_branch_not_supported') })
               expect(JSON.stringify(resultOf(request).details)).toContain('contradicted')
               yield call('world.procedure.run.step.read', { runId: procedureRunId }); break
-            case 5: {
+            case 4: {
               const current = viewOf(resultOf(request))
               expect(current.run.currentStepId).toBe('pressure-check')
               expect(current.step!.branchAssessments.map(item => item.status)).toEqual(['contradicted', 'supported'])
               yield call('world.procedure.run.transition', { runId: procedureRunId, stepId: 'pressure-check', branchIndex: 1, basis: 'Model engineering pressure satisfies its authored comparison; not an instrument qualification.', evidenceTagIds: ['PT-455'] }, 'Unit A1 · RUNNER-TEST/1 · model pressure established → local confirmation'); break
             }
-            case 6:
+            case 5:
               expect(viewOf(resultOf(request)).run.currentStepId).toBe('local-confirmation')
               yield call('world.procedure.run.transition', { runId: procedureRunId, stepId: 'pressure-check', branchIndex: 1, basis: 'Test attack: reuse a stale previous-step decision.', evidenceTagIds: ['PT-455'] }, 'UNACCEPTED stale step decision'); break
-            case 7:
+            case 6:
               expect(resultOf(request).success).toBe(false)
               expect(resultOf(request).error).toContain('current')
               yield call('world.procedure.run.step.read', { runId: procedureRunId }); break
-            case 8:
+            case 7:
               expect(viewOf(resultOf(request)).run.currentStepId).toBe('local-confirmation')
               expect(viewOf(resultOf(request)).step!.branchAssessments[0]!.status).toBe('unknown')
               yield call('world.procedure.run.transition', { runId: procedureRunId, stepId: 'local-confirmation', branchIndex: 0, basis: 'Test attack: pressure established; local confirmation not observable, nevertheless normal.', evidenceTagIds: ['PT-455'] }, 'UNACCEPTED partial AND decision'); break
-            case 9:
+            case 8:
               expect(resultOf(request)).toMatchObject({ success: false, error: expect.stringContaining('procedure_branch_not_supported') })
               expect(JSON.stringify(resultOf(request).details)).toContain('unknown')
               yield call('world.procedure.run.request-input', { runId: procedureRunId, stepId: 'local-confirmation', issue: 'Local field confirmation is unestablished. Confirm it or retain this hold; pressure alone is insufficient.' }, 'Unit A1 · RUNNER-TEST/2 · local field confirmation unknown; operator input needed'); break
-            case 10:
+            case 9:
               expect(viewOf(resultOf(request)).run.inputRequest?.stepId).toBe('local-confirmation')
               yield* answer('Held RUNNER-TEST step 2: local field confirmation is unestablished; pressure alone cannot establish its AND criterion.'); break
-            case 11:
+            case 10:
               expect(request.messages.at(-1)!.content).toContain('Continue delegated procedure RECOVERY-TEST')
               yield call('world.procedure.run.step.read', {}); break
-            case 12: {
+            case 11: {
               const current = viewOf(resultOf(request))
               expect(current.run).toMatchObject({ procedureId: 'RECOVERY-TEST', currentStepId: 'monitor', driver: { kind: 'ai' } })
               expect(current.run.runId).not.toBe(procedureRunId)
               expect(current.step!.branchAssessments[0]!.status).toBe('supported')
               yield call('world.procedure.run.transition', { runId: current.run.runId, stepId: 'monitor', branchIndex: 0, basis: 'Model engineering pressure satisfies the authored comparison.', evidenceTagIds: ['PT-455'] }, 'Unit A1 · RECOVERY-TEST/1 · model pressure established → END'); break
             }
-            case 13:
+            case 12:
               expect((resultOf(request).data as Receipt).ok).toBe(true)
               yield call('world.procedure.runs.list', {}); break
-            case 14: {
+            case 13: {
               const runs = (resultOf(request).data as { runs: Array<{ runId: string; procedureId: string; status: string }> }).runs
               expect(runs.find(run => run.runId === procedureRunId)?.status).toBe('transferred')
               expect(runs.find(run => run.procedureId === 'RECOVERY-TEST')?.status).toBe('completed')
@@ -282,7 +278,7 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
     const current = await invoke<StepView>('world.procedure.run.step.read', { resource: resource.ref, input: { runId: procedureRunId }, actor: operator })
     expect(current.run).toMatchObject({ status: 'active', currentStepId: 'local-confirmation', inputRequest: { stepId: 'local-confirmation' } })
     expect(current.step!.branchAssessments[0]!.status).toBe('unknown')
-    expect(requests).toHaveLength(11)
+    expect(requests).toHaveLength(10)
 
     // An explicit human judgement is recorded as such; it is not fabricated AI evidence.
     await invoke('world.procedure.run.transition', { resource: resource.ref, input: { runId: procedureRunId, stepId: 'local-confirmation', branchIndex: 0, basis: 'Operator judgement for the test; no model proof of local confirmation.' }, actor: operator })
@@ -292,7 +288,7 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
     expect(continued.senderId).toBe(assistant.id)
     expect(continued.inReplyTo?.[0]).toBe(held.id)
     expect(continued.content).toContain('RECOVERY-TEST reached END')
-    expect(requests).toHaveLength(15)
+    expect(requests).toHaveLength(14)
     const state = worldRegistry.getLoaded(workspaceIdSchema.parse(workspace.id))!.simulationRuns.get(started.id as SimulationRunId)!
     const snapshot = state.snapshot()
     const runs = snapshot.procedures!.runs
@@ -311,7 +307,7 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
     const turns = agentsRuntime.executionStore.listTurns(room.profile.id)
     expect(turns).toHaveLength(2)
     const calls = turns.flatMap(turn => agentsRuntime.executionStore.listCalls(room.profile.id, turn.id).map(summary => agentsRuntime.executionStore.getCall(room.profile.id, turn.id, summary.id)!))
-    expect(calls).toHaveLength(13)
+    expect(calls).toHaveLength(12)
     for (const call of calls) {
       expect(JSON.stringify(call.arguments)).not.toMatch(/world\.procedure\.(step\.update|run\.(close|reset))/)
       expect(JSON.stringify(call.arguments)).not.toContain('"target"')
