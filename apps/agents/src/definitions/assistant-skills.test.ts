@@ -130,7 +130,7 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('`world.process-plant.controls.list` {plantId, items: [<equipment id>]}')
     // A step view's readings are taken just before its simulationTime: the basis quotes that time once.
     expect(runner.body).toContain('deciding criterion, reading/quality, scope and plant time')
-    expect(runner.body).toContain('Report actual Run/assessment state, not intended/refused transitions')
+    expect(runner.body).toContain('At END read runs.list; report actual Run/assessment, not intentions/refusals')
     // Agents discover Plants, tags and controls at runtime; the skill names none.
     expect(runner.body).not.toMatch(/plant:|RX-TRIP-MAN|TRIP-BKR|-POS\b|BUS-[AB]/)
     expect(runner.body).not.toContain('E-0 step 1')
