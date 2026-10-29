@@ -12,50 +12,63 @@
  * Writes <stage>-rescored-rows.jsonl beside the stage and prints its summary. */
 import { join } from 'node:path'
 import { devScenarios, loadScenarioModule, runRequests, type EvalScenario } from './scenarios.ts'
-import { displayEvidenceOf, scoreKey, type KeyResult } from './decisive.ts'
+import { displayEvidenceOf, vignetteEvidenceOf, scoreKey, type KeyResult } from './decisive.ts'
 import { referencePlantCatalog } from './plant-catalog.ts'
 import { summariseRows, type ProbeRow } from './report.ts'
-import { operationChecks, type ComposeShown } from './operation-checks.ts'
+import { operationChecks, readOnlyWriteAudit, type ComposeShown, type TurnOperation, type OperationEvidence } from './operation-checks.ts'
 import { worryVerdict } from './worry.ts'
 
 const viewFence = (content: string): boolean => /```leitbild-view\n(view \S+)\n```/.test(content)
 
 /** What decides whether a recorded run still answers a scenario as written. */
-const runShape = (scenario: Pick<EvalScenario, 'prompt' | 'run' | 'expect' | 'operation'>): string =>
-  JSON.stringify([scenario.prompt, scenario.run.scenario, runRequests(scenario.run), scenario.run.pace ?? 'maximum', scenario.run.advanceMinutes ?? null, scenario.expect, scenario.operation ?? null])
+const runShape = (scenario: Pick<EvalScenario, 'prompt' | 'run' | 'expect' | 'operation' | 'taskIntent'>): string =>
+  JSON.stringify([scenario.prompt, scenario.run.scenario, runRequests(scenario.run), scenario.run.pace ?? 'maximum', scenario.run.advanceMinutes ?? null, scenario.expect, scenario.operation ?? null, scenario.taskIntent ?? null])
 
 export interface Recorded {
   readonly scenario: EvalScenario
   readonly row: ProbeRow & Record<string, unknown>
   readonly answer: { readonly content: string; readonly type?: string }
-  readonly composes: ReadonlyArray<{ readonly input: any; readonly result: any }>
+  readonly composes: ReadonlyArray<{ readonly input: any; readonly result: any; readonly drawn?: ReadonlyArray<string> }>
   readonly proposals?: any
   readonly operation?: { readonly attempts: ReadonlyArray<unknown> }
   readonly controls?: { readonly items: ReadonlyArray<any> }
+  readonly resource?: Readonly<Record<string, string>>
+  readonly operations?: ReadonlyArray<TurnOperation>
+  readonly operationsComplete?: boolean
+  readonly feedback?: OperationEvidence['feedback']
 }
 
 // What an accepted compose showed, as the probe's operation check reads it.
-const shownOf = (record: { readonly input: any; readonly result: any }): ComposeShown => ({
-  subjects: record.input?.subjects ?? [],
-  signals: ((record.result?.data?.signals ?? []) as ReadonlyArray<{ ref: string; tagId?: string; path: string }>).flatMap(signal => [signal.ref, signal.path, ...(signal.tagId === undefined ? [] : [signal.tagId])]),
-  mimics: ((record.input?.panels ?? []) as ReadonlyArray<any>).filter(panel => panel.kind === 'mimic').map(({ kind: _kind, ...intent }) => intent),
-})
+const shownOf = (record: Recorded['composes'][number]): ComposeShown => {
+  const shown = vignetteEvidenceOf(record)
+  return { subjects: record.input?.subjects ?? [], signals: [...shown.refs ?? []], mimics: [{ drawn: record.drawn ?? [] }] }
+}
 
 /** A recorded row with its decisive evidence scored against `scenario`'s keys, or null when the run no longer matches it. */
 export const rescoreRow = (recorded: Recorded, scenario: EvalScenario, catalog = referencePlantCatalog()): (ProbeRow & Record<string, unknown>) | null => {
   if (runShape(recorded.scenario) !== runShape(scenario)) return null
+  // Old operation artifacts never recorded complete direct receipts or
+  // observer feedback. They need a new run, not invented empty evidence.
+  if (scenario.operation !== undefined && (recorded.operations === undefined || recorded.resource === undefined || recorded.operationsComplete !== true
+    || recorded.operation === undefined || recorded.proposals === undefined || recorded.controls === undefined)) return null
   const fence = viewFence(recorded.answer.content)
   const presented = fence ? recorded.composes.filter(record => record.result?.success === true && typeof record.result.viewRef === 'string').at(-1) : undefined
-  const display = presented === undefined ? null : displayEvidenceOf(presented as never)
+  const display = presented === undefined ? null : presented.result?.data?.view?.viewType === 'display.vignette'
+    ? { ...vignetteEvidenceOf(presented), drawn: new Set(presented.drawn ?? []) }
+    : displayEvidenceOf(presented)
   const decisive: ReadonlyArray<KeyResult> = scenario.evidence.map(key => key.use === 'P0'
     ? scoreKey(key, display, recorded.answer.content, catalog)
     : { key: key.key, kind: key.kind, use: key.use, hit: null, hits: [], unknown: [] })
   const scored = decisive.filter(result => result.kind === 'signal' && result.use === 'P0')
+  const evidence = recorded.operations === undefined || recorded.resource === undefined ? undefined
+    : { resource: recorded.resource, operations: recorded.operations, complete: recorded.operationsComplete === true, ...(recorded.feedback === undefined ? {} : { feedback: recorded.feedback }) }
+  const directWriteAudit = readOnlyWriteAudit(scenario.taskIntent, evidence)
   const operation = scenario.operation === undefined || recorded.operation === undefined || recorded.proposals === undefined ? null
     : operationChecks(scenario.operation, recorded.answer.type === 'chat', recorded.answer.content, recorded.proposals, recorded.operation.attempts,
-      recorded.composes.filter(record => record.result?.success === true && typeof record.result.viewRef === 'string').map(shownOf), fence, recorded.controls?.items ?? [])
+      recorded.composes.filter(record => record.result?.success === true && typeof record.result.viewRef === 'string').map(shownOf), fence, recorded.controls?.items ?? [], evidence, catalog)
   return {
     ...recorded.row,
+    directWriteAudit,
     ...(operation === null ? {} : {
       operation: { ...operation, proposals: undefined },
       falseProposal: operation.falseProposal,

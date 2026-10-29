@@ -14,10 +14,11 @@
  * hold-out). --request-display asks for a display after every answer that
  * showed none, as the "Show display" action under an answer does.
  *
- * After every answer it reads the Run's operation proposals; for an operation
- * question it also judges whether the answer proposes what it should, claims
- * nothing executed, says what awaits a person and, where the operation upsets
- * the unit, warns of it. It never decides a proposal.
+ * Operation questions declare execute/review/refused intent. The probe keeps
+ * exact turn receipts and separately samples native response feedback after
+ * the answer; that observer sample is not model context. Explicit read-only
+ * tasks are also checked for unasked accepted direct Plant writes. It never
+ * decides a proposal or changes the Plant to make an answer pass.
  *
  * The origin must be a loopback stack (bun run dev:stack --models): the probe
  * never runs against production. Model and upstream are pinned: every call's
@@ -33,7 +34,7 @@ import { vignetteEvidenceOf, scoreKey, addedEvidenceUse, answerProse, type Compo
 import { correctionsIn, type Correction } from './corrections.ts'
 import { callsBetween, logOffset, summariseCalls, type ModelCall } from './billing.ts'
 import { referencePlantCatalog } from './plant-catalog.ts'
-import { operationChecks } from './operation-checks.ts'
+import { operationChecks, readOnlyWriteAudit, type TurnOperation, type OperationEvidence } from './operation-checks.ts'
 import { worryVerdict } from './worry.ts'
 import { DASHBOARD_READ, DASHBOARD_UPDATE, heldOf, judgeDashboard, type DashboardHeld } from './dashboard-checks.ts'
 
@@ -170,21 +171,23 @@ interface ComposeOutcome {
 }
 
 /** One operation a workspace_call of the turn issued, with its batch result. */
-interface TurnOperation { readonly operationId: string; readonly input: any; readonly result: any }
-
 // Every operation the answer's turn issued, from its own execution evidence, in call order.
-const turnOperations = async (roomId: string, turnId: string): Promise<ReadonlyArray<TurnOperation>> => {
+const turnOperations = async (roomId: string, turnId: string): Promise<{ readonly operations: ReadonlyArray<TurnOperation>; readonly complete: boolean }> => {
   const turn = await request(`/api/workspaces/${workspaceId}/agents/rooms/${roomId}/executions/${turnId}`)
   const operations: TurnOperation[] = []
+  let complete = Array.isArray(turn.calls)
   for (const summary of turn.calls ?? []) {
     if (summary.tool !== 'workspace_call') continue
     const call = await request(`/api/workspaces/${workspaceId}/agents/rooms/${roomId}/executions/${turnId}/calls/${summary.id}`)
+    if (!Array.isArray(call.arguments?.calls) || !Array.isArray(call.result?.data?.results)) complete = false
     const results = call.result?.data?.results ?? []
     for (const entry of call.arguments?.calls ?? []) {
-      operations.push({ operationId: entry.operationId, input: entry.input, result: results.find((candidate: { key: string }) => candidate.key === entry.key) })
+      const result = results.find((candidate: { key: string; operationId: string }) => candidate.key === entry.key && candidate.operationId === entry.operationId)
+      if (result === undefined) complete = false
+      operations.push({ operationId: entry.operationId, input: entry.input, result })
     }
   }
-  return operations
+  return { operations, complete }
 }
 
 // Exact compose inputs and outcomes. Full refusal texts are kept: a cut refusal hides its class.
@@ -375,7 +378,7 @@ const requestDisplay = async (roomId: string, roomPath: string, human: { id: str
   const wallMs = Date.now() - startedAt
   await Bun.sleep(1_500) // the last [llm] line lands after the reply is posted
   const costs = await turnCosts(roomId, reply, await callsBetween(agentsLog, offset, await logOffset(agentsLog)))
-  const composes = reply.generationTraceId ? composeOutcomesOf(await turnOperations(roomId, reply.generationTraceId)) : []
+  const composes = reply.generationTraceId ? composeOutcomesOf((await turnOperations(roomId, reply.generationTraceId)).operations) : []
   const cards = reply.generationTraceId ? (await request(`/api/workspaces/${workspaceId}/agents/rooms/${roomId}/executions/${reply.generationTraceId}/cards`)).cards : []
   return {
     reply,
@@ -419,6 +422,10 @@ for (const scenario of chosen) {
   }
   const prepareWallMs = Date.now() - prepareStarted
   const dashboardBefore = scenario.dashboard === undefined ? null : await heldDashboard(resource, scenario.dashboard.scope)
+  // Consequences must precede the act: a successful shutdown can remove the
+  // very flow or protection consequence whose warning is being assessed.
+  const controls = scenario.operation === undefined ? null : await readControls(resource, scenario.operation.plantId, scenario.operation.equipment)
+    .then(listed => listed, (error: unknown) => ({ items: [], resets: [], error: String(error).slice(0, 400) }))
   const opened = await invoke(workspaceId, 'agents.assistance.open', { scope: { kind: 'resource', resource }, title: `Display probe · ${scenario.id}`, focusedSubjects: [resource] })
   if (opened.result.reused) throw new Error('Probe requires a fresh Room per scenario')
   const roomId = opened.result.resource.id as string
@@ -437,7 +444,9 @@ for (const scenario of chosen) {
   const answerCalls = await callsBetween(agentsLog, offset, await logOffset(agentsLog))
   const costs = await turnCosts(roomId, answer, answerCalls)
   const fence = viewFence(answer.content)
-  const operations = answer.generationTraceId ? await turnOperations(roomId, answer.generationTraceId) : []
+  const capture = answer.generationTraceId ? await turnOperations(roomId, answer.generationTraceId) : undefined
+  const operations = capture?.operations ?? []
+  const operationsComplete = capture?.complete === true
   const composes = await withDrawings(resource, composeOutcomesOf(operations))
   const accepted = composes.filter(outcome => outcome.accepted)
   const presented = fence === null ? null : accepted.at(-1) ?? null
@@ -453,13 +462,17 @@ for (const scenario of chosen) {
   const dashboard = scenario.dashboard === undefined ? null
     : judgeDashboard(scenario.dashboard, answer.type === 'chat' ? answer.content : '', operations.filter(operation => operation.operationId === DASHBOARD_READ || operation.operationId === DASHBOARD_UPDATE),
       dashboardBefore, await heldDashboard(resource, scenario.dashboard.scope))
-  // A listing World refuses is recorded with its reason; the operation is still judged on the answer and the proposals.
-  const controls = scenario.operation === undefined ? null : await readControls(resource, scenario.operation.plantId, scenario.operation.equipment)
-    .then(listed => listed, (error: unknown) => ({ items: [], resets: [], error: String(error).slice(0, 400) }))
+  const feedback = scenario.operation?.feedback?.length ? await invoke(workspaceId, 'world.process-plant.signals.read', {
+    plantId: scenario.operation.plantId, signals: scenario.operation.feedback.map(expected => catalog.signal(expected.signal))
+      .map(signal => { if (signal === undefined) throw new Error('Unknown expected feedback signal'); return { path: signal.path } }),
+  }, { resource }).then(body => body.result, (error: unknown) => ({ plantId: scenario.operation!.plantId, signals: [], error: String(error) })) : undefined
+  const operationEvidence: OperationEvidence = { resource, operations, complete: operationsComplete, ...(feedback === undefined ? {} : { feedback }) }
+  const directWriteAudit = readOnlyWriteAudit(scenario.taskIntent, operationEvidence)
   const operation = scenario.operation === undefined || controls === null ? null
-    : operationChecks(scenario.operation, answer.type === 'chat', answer.content, proposals, proposeAttemptsOf(operations), accepted, fence !== null, controls.items)
+    : operationChecks(scenario.operation, answer.type === 'chat', answer.content, proposals, proposeAttemptsOf(operations), accepted, fence !== null, controls.items, operationEvidence, catalog)
   const row = {
     id: scenario.id,
+    taskIntent: scenario.taskIntent ?? null,
     set: scenario.set,
     flaky: scenario.flaky,
     expect: scenario.expect,
@@ -497,6 +510,7 @@ for (const scenario of chosen) {
     roomId,
     runId: resource.id,
     proposals: { count: proposals.count, controls: proposals.controls, values: proposals.values, status: proposals.status },
+    directWriteAudit,
     ...(dashboard === null ? {} : { dashboard, falseEditClaim: dashboard.falseEditClaim, unaskedChange: dashboard.unaskedChange, dashboardCorrect: dashboard.correct }),
     ...(operation === null ? {} : {
       operation: { ...operation, proposals: undefined },
@@ -514,7 +528,7 @@ for (const scenario of chosen) {
   }
   rows.push(fullRow)
   await save(`${stage}-${scenario.id}`, {
-    scenario, row: fullRow, answer, interim, calls: answerCalls, composes: composes.map(outcome => outcome.record), cards, proposals,
+    scenario, resource, operations, operationsComplete, feedback, row: fullRow, answer, interim, calls: answerCalls, composes: composes.map(outcome => outcome.record), cards, proposals,
     ...(operation === null ? {} : { operation, controls }),
     ...(requested === null ? {} : { requestedReply: requested.reply, requestedInterim: requested.interim, requestedCalls: requested.calls, requestedCards: requested.cards, requestedComposes: requested.composes }),
   })

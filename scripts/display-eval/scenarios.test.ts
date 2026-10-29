@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { allScenarios, devScenarios, FLAKY_SCENARIO_IDS, fixturePath, KEY_STATUS, loadScenarioModule, NEAR_DUPLICATES, runRequests, smokeScenarios } from './scenarios.ts'
+import { allScenarios, devScenarios, FLAKY_SCENARIO_IDS, fixturePath, KEY_STATUS, loadScenarioModule, NEAR_DUPLICATES, reviewScenarios, runRequests, smokeScenarios } from './scenarios.ts'
 import { keyNames } from './decisive.ts'
 import { referencePlantCatalog } from './plant-catalog.ts'
 import p0 from './p0-requests.json'
@@ -48,6 +48,12 @@ describe('display evaluation scenarios', () => {
     for (const scenario of devScenarios.filter(entry => entry.expect === 'display')) {
       expect({ id: scenario.id, signalKeys: scenario.evidence.filter(key => key.kind === 'signal' && key.use === 'P0').length > 0 }).toEqual({ id: scenario.id, signalKeys: true })
     }
+  })
+
+  test('operation and read-only intent is explicit; requested reviews remain separate from imperative execution', () => {
+    for (const scenario of allScenarios) expect(scenario.taskIntent).toBe(scenario.operation ? 'operate' : 'read-only')
+    expect(allScenarios.find(scenario => scenario.id === 'op-afw-throttle')!.operation).toMatchObject({ intent: 'execute', value: 0.4, feedback: [{ signal: 'AFW-A-CV-POS', value: 0.4 }] })
+    expect(reviewScenarios[0]).toMatchObject({ taskIntent: 'review', operation: { intent: 'review', operationId: 'world.process-plant.control.propose' } })
   })
 })
 
@@ -98,5 +104,13 @@ describe('the parametric probe (plan §6, AG S1-4)', () => {
     expect((await external([{ ...bare, worry: { evidence: [key] } }]))[0]).toMatchObject({ set: 'worry', evidence: [{ patterns: ['overload'] }] })
     await expect(external([bare])).rejects.toThrow('a holdout, a worry or a dashboard block')
     await expect(external([{ ...bare, worry: { evidence: [{ ...key, patterns: ['(unclosed'] }] } }])).rejects.toThrow('invalid pattern')
+  })
+
+  test('manual cases do not inherit read-only intent, old proposal-only expectations and missing response evidence are refused', async () => {
+    expect((await external([item]))[0]).not.toHaveProperty('taskIntent')
+    const operation = { plantId: 'plant:halden-2', equipment: 'auxFeedwaterValveA', command: 'AFW-A-CV', operationId: 'world.process-plant.control.write', tags: ['AFW-A-CV'], named: 'AFW valve A' }
+    await expect(external([{ ...item, operation: { ...operation, proposal: 'expected' } }])).rejects.toThrow('intent')
+    await expect(external([{ ...item, operation: { ...operation, intent: 'execute' } }])).rejects.toThrow('feedback')
+    expect((await external([{ ...item, taskIntent: 'operate', operation: { ...operation, intent: 'execute', feedback: [{ signal: 'AFW-A-CV-POS', value: 0.4 }] } }]))[0]).toMatchObject({ taskIntent: 'operate', operation: { intent: 'execute' } })
   })
 })

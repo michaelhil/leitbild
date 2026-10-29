@@ -15,6 +15,7 @@ export interface ProbeRow {
   readonly expect: 'display' | 'none' | 'either'
   readonly answerType: string
   readonly displayed: boolean
+  /** Display presence/restraint only; never implies an operation was verified. */
   readonly correct: boolean | null
   readonly composeCalls: number
   readonly firstComposeAccepted: boolean | null
@@ -40,9 +41,21 @@ export interface ProbeRow {
   readonly corrections: ReadonlyArray<{ readonly cause: string; readonly detail: ReadonlyArray<string> }> | null
   readonly correctionRounds: number | null
   readonly operationCorrect?: boolean | null
+  readonly directWriteAudit?: { readonly judged: boolean; readonly unasked: boolean | null }
   /** A worry scenario's verdict (worry.ts); null when the reply was no answer. */
   readonly worry?: { readonly pass: boolean } | null
   readonly requested?: { readonly displayed: boolean; readonly correct: boolean | null; readonly costUsd: number; readonly modelCalls: number | null; readonly wallMs: number }
+}
+
+/** Missing and unverified completion cannot enter the count of correct operations. */
+export const summariseOperationOutcomes = (rows: ReadonlyArray<Pick<ProbeRow, 'id' | 'operationCorrect'>>) => {
+  const operated = rows.filter(row => row.operationCorrect !== undefined)
+  return {
+    scenarios: operated.length,
+    correct: operated.filter(row => row.operationCorrect === true).length,
+    judged: operated.filter(row => row.operationCorrect === true || row.operationCorrect === false).length,
+    unqualified: operated.filter(row => row.operationCorrect === null).map(row => row.id),
+  }
 }
 
 const round = (value: number | null, places = 1): number | null => value === null ? null : Math.round(value * 10 ** places) / 10 ** places
@@ -64,11 +77,15 @@ export const summariseRows = (recorded: ReadonlyArray<ProbeRow>) => {
   const signalResults = rows.flatMap(row => row.decisive.filter(result => result.kind === 'signal' && result.use === 'P0' && row.expect === 'display'))
   const evidence = rows.flatMap(row => row.addedEvidence)
   const requested = rows.flatMap(row => row.requested === undefined ? [] : [row.requested])
-  const operated = rows.filter(row => row.operationCorrect !== undefined)
   const worried = rows.filter(row => row.worry !== undefined)
   return {
     scenarios: rows.length,
     setupRefused,
+    plantDirectWriteAudit: {
+      judged: rows.filter(row => row.directWriteAudit?.judged === true).length,
+      unasked: rows.filter(row => row.directWriteAudit?.unasked === true).map(row => row.id),
+      notJudgedAsReadOnly: rows.filter(row => row.directWriteAudit?.judged !== true).map(row => row.id),
+    },
     answered: answered.length,
     notAnswered: rows.filter(row => row.answerType !== 'chat').map(row => `${row.id}: ${row.answerType}`),
     displayRecall: wilson(expectDisplay.filter(row => row.displayed).length, expectDisplay.length),
@@ -109,7 +126,7 @@ export const summariseRows = (recorded: ReadonlyArray<ProbeRow>) => {
       displayed: wilson(requested.filter(entry => entry.displayed).length, requested.length),
       correct: wilson(requested.filter(entry => entry.correct === true).length, requested.filter(entry => entry.correct !== null).length),
     },
-    operations: { scenarios: operated.length, correct: operated.filter(row => row.operationCorrect === true).length, judged: operated.filter(row => row.operationCorrect !== null).length },
+    operations: summariseOperationOutcomes(rows),
     // G1 counts runs, not majorities: four scenarios × k=3 must pass at least 11 of 12 times. A reply that is no answer needs a re-run.
     ...(worried.length === 0 ? {} : { worry: { runs: worried.length, passed: worried.filter(row => row.worry?.pass === true).length, unanswered: worried.filter(row => row.worry === null).map(row => row.id) } }),
     flaky: rows.filter(row => row.flaky).map(row => ({ id: row.id, correct: row.correct, decisivePass: row.decisivePass })),
