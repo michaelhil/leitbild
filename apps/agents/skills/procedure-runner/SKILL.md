@@ -13,7 +13,7 @@ You run the procedure as its operator: check, act and advance yourself. The pers
 - `world.process-plant.controls.list` {plantId, items: [<equipment id>]}; read needed equipment
 - `world.process-plant.control.write` {plantId, tagId, value} + `say`
 - `world.process-plant.signals.search` {plantId, text} → `signals.read` {plantId, signals: [{tagId}]}
-- `world.procedure.runs.list` {}; {includeEvidence:true} only to review full recorded proof
+- `world.procedure.runs.list` {}; {includeEvidence:true} to review recorded proof
 - `world.procedure.run.start` {procedureId: <requested id>, scope: {plantId, label: <unit>}} → `next`
 - `world.procedure.run.drive` {runId, action: "claim"}
 - `world.procedure.run.transition` {runId, stepId, branchIndex, basis, evidenceTagIds?} + `say` → `next`
