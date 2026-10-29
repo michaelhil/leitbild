@@ -81,6 +81,19 @@ describe('native local procedure publication', () => {
       expect((await service.readEvidence({ sourceRevision: revisionA, sourcePath: ownerPath, section: 'scope' })).content).toContain('Exact represented plant')
     } finally { await rm(directory, { recursive: true, force: true }) }
   })
+  test('retains an observation decision owner independently of native tag criteria', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-observation-source-'))
+    try {
+      const ownerPath = 'packs/process-plant/engineering/observation.md'
+      const decisions = [{ branchIndex: 0, observation: { capabilityId: 'world.test.read-only-observation', input: {}, source: '../engineering/observation.md#state', maxAgeSeconds: 2 } }]
+      const content = markdownFor('E-0', 'Observed').replace('- Verified → END', `\`\`\`procedure-decisions\n${JSON.stringify(decisions)}\n\`\`\`\n- Verified → END`)
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => createKnowledge({ revision: revisionA, documents: [
+        { path: localPath('E-0'), content }, { path: ownerPath, content: '# Observation\n\n## State\nActual retained lifecycle evidence criterion.' },
+      ] }) })
+      await service.readDocument({ procedureId: 'E-0' })
+      expect((await service.readEvidence({ sourceRevision: revisionA, sourcePath: ownerPath, section: 'state' })).content).toContain('Actual retained lifecycle evidence criterion')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   test('catalog exposes authored applicability and uninstalled status without inventing runtime compatibility', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-applicability-'))
     try {

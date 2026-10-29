@@ -83,15 +83,17 @@ const retain = async (directory: string, path: string, contents: string): Promis
 
 const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained = false) => {
   const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
+  const entries = knowledge.index()
   const membership = source.documentPaths === undefined ? undefined : new Set(source.documentPaths)
   if (!retained && membership !== undefined) {
     if (membership.size === 0 || membership.size !== source.documentPaths!.length) throw new Error('Procedure source documentPaths must be nonempty and unique')
+    const byPath = new Map(entries.map(entry => [entry.path, entry]))
     for (const path of membership) {
-      const entry = knowledge.index().find(entry => entry.path === path)
+      const entry = byPath.get(path)
       if (!entry || entry.hub || !isProcedureMarkdown(knowledge.read(path).content)) throw new Error(`Invalid procedure source member: ${path}`)
     }
   }
-  const selected = knowledge.index().filter(entry => (retained || (membership ? membership.has(entry.path) : entry.path.startsWith(prefix) && !entry.hub))
+  const selected = entries.filter(entry => (retained || (membership ? membership.has(entry.path) : entry.path.startsWith(prefix) && !entry.hub))
     && isProcedureMarkdown(knowledge.read(entry.path).content))
     .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
     .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content }))
@@ -119,7 +121,8 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
       ...step.blocks.filter(block => block.kind === 'basis').flatMap(block => [...block.text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map(match => match[1]!)),
       ...(step.assessment ? assessmentLeaves(step.assessment.condition).map(leaf => leaf.source) : []),
       ...(step.decisions ?? []).flatMap(decision => [
-        ...assessmentLeaves(decision.condition).map(leaf => leaf.source),
+        ...(decision.condition ? assessmentLeaves(decision.condition).map(leaf => leaf.source) : []),
+        ...(decision.observation ? [decision.observation.source] : []),
         ...(decision.applicability ? [decision.applicability.source] : []),
       ]),
       ...document.tags.flatMap(tag => tag.source && /\.md(?:#[^\s]+)?$/.test(tag.source) ? [tag.source] : []),
