@@ -16,6 +16,7 @@ import { physicalSourceSchema as originalSourceSchema } from '../src/packs/physi
 import { compileProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
 import { createPwrReferencePlantDefinition } from '../src/packs/process-plant/plant-definitions.ts'
 import type { Binding } from '../src/packs/physical-layout/authoring/composition.ts'
+import historicalTargets from './fixtures/physical-layout/historical-targets-20261029.json'
 
 const artifacts = createPwrFullUnitPhysicalArtifacts()
 const source = artifacts.source
@@ -53,8 +54,10 @@ describe('Full conceptual PWR unit authoring', () => {
     expect(baseSource.elements[0]!.pose.position).toEqual([10, 16, 15])
   })
 
-  test('the exact current graph is partitioned without inventing physical machines for its logical functions', () => {
-    expect(plant.modelDigest).toBe(artifacts.coverage.modelRequirement.modelDigest)
+  test('retained coverage keeps its historical admission while unchanged current component identities retain their physical classification', () => {
+    const historical = historicalTargets.entries.find(entry => entry.selection.model.parameters.loopCount === 4)!.description
+    expect(artifacts.coverage.modelRequirement).toEqual({ modelRef: historical.modelRef, modelDigest: historical.modelDigest })
+    expect(plant.modelDigest).not.toBe(historical.modelDigest)
     expect(plant.sourceGraph.components).toHaveLength(121)
     expect(plant.sourceGraph.connections).toHaveLength(167)
     const rows = artifacts.coverage.dispositions
