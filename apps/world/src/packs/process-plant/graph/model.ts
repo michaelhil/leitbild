@@ -584,6 +584,10 @@ export interface ComponentDefinition {
   }) => Readonly<Record<string, PortDefinition>>
   readonly parametersSchema: z.ZodType<unknown>
   readonly variables: ReadonlyArray<ComponentVariableDescriptor>
+  readonly resolveAdditionalVariables?: (context: {
+    readonly component: ComponentInstanceSpec
+    readonly parameters: unknown
+  }) => ReadonlyArray<ComponentVariableDescriptor>
   /** What the kind is and does, from its parsed parameters. */
   readonly semantics: (parameters: unknown) => ComponentSemantics
 }

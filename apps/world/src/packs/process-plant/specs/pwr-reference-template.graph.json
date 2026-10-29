@@ -1585,7 +1585,20 @@
           "deadband": 0.5,
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
-          "timeConstantS": 6
+          "timeConstantS": 6,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "ratio",
+              "unit": "percent",
+              "measurand": "level",
+              "step": 1,
+              "limits": {
+                "min": 0,
+                "max": 100
+              }
+            }
+          }
         }
       },
       "variables": [
@@ -1603,6 +1616,18 @@
           "tagId": "MFW-A-CV-POS",
           "equipmentId": "feedwaterControlValveA",
           "description": "Main feedwater control valve A position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "MFW-A-CTRL-AUTO",
+          "equipmentId": "feedwaterControlValveA",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "MFW-A-CTRL-SP",
+          "equipmentId": "feedwaterControlValveA",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -1627,7 +1652,20 @@
           "deadband": 0.5,
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
-          "timeConstantS": 6
+          "timeConstantS": 6,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "ratio",
+              "unit": "percent",
+              "measurand": "level",
+              "step": 1,
+              "limits": {
+                "min": 0,
+                "max": 100
+              }
+            }
+          }
         }
       },
       "metadata": {
@@ -1647,6 +1685,18 @@
           "tagId": "MFW-B-CV-POS",
           "equipmentId": "feedwaterControlValveB",
           "description": "Main feedwater control valve B position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "MFW-B-CTRL-AUTO",
+          "equipmentId": "feedwaterControlValveB",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "MFW-B-CTRL-SP",
+          "equipmentId": "feedwaterControlValveB",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ]
     },
@@ -1666,7 +1716,20 @@
           "deadband": 0.5,
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
-          "timeConstantS": 6
+          "timeConstantS": 6,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "ratio",
+              "unit": "percent",
+              "measurand": "level",
+              "step": 1,
+              "limits": {
+                "min": 0,
+                "max": 100
+              }
+            }
+          }
         }
       },
       "metadata": {
@@ -1686,6 +1749,18 @@
           "tagId": "MFW-C-CV-POS",
           "equipmentId": "feedwaterControlValveC",
           "description": "Main feedwater control valve C position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "MFW-C-CTRL-AUTO",
+          "equipmentId": "feedwaterControlValveC",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "MFW-C-CTRL-SP",
+          "equipmentId": "feedwaterControlValveC",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ]
     },
@@ -1705,7 +1780,20 @@
           "deadband": 0.5,
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
-          "timeConstantS": 6
+          "timeConstantS": 6,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "ratio",
+              "unit": "percent",
+              "measurand": "level",
+              "step": 1,
+              "limits": {
+                "min": 0,
+                "max": 100
+              }
+            }
+          }
         }
       },
       "metadata": {
@@ -1725,6 +1813,18 @@
           "tagId": "MFW-D-CV-POS",
           "equipmentId": "feedwaterControlValveD",
           "description": "Main feedwater control valve D position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "MFW-D-CTRL-AUTO",
+          "equipmentId": "feedwaterControlValveD",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "MFW-D-CTRL-SP",
+          "equipmentId": "feedwaterControlValveD",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ]
     },
@@ -1744,7 +1844,20 @@
           "deadband": 0.5,
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
-          "timeConstantS": 6
+          "timeConstantS": 6,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "ratio",
+              "unit": "percent",
+              "measurand": "level",
+              "step": 1,
+              "limits": {
+                "min": 0,
+                "max": 100
+              }
+            }
+          }
         }
       },
       "metadata": {
@@ -1764,6 +1877,18 @@
           "tagId": "MFW-E-CV-POS",
           "equipmentId": "feedwaterControlValveE",
           "description": "Main feedwater control valve E position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "MFW-E-CTRL-AUTO",
+          "equipmentId": "feedwaterControlValveE",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "MFW-E-CTRL-SP",
+          "equipmentId": "feedwaterControlValveE",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ]
     },
@@ -1783,7 +1908,20 @@
           "deadband": 0.5,
           "minPositionFraction": 0.05,
           "maxPositionFraction": 1,
-          "timeConstantS": 6
+          "timeConstantS": 6,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "ratio",
+              "unit": "percent",
+              "measurand": "level",
+              "step": 1,
+              "limits": {
+                "min": 0,
+                "max": 100
+              }
+            }
+          }
         }
       },
       "metadata": {
@@ -1803,6 +1941,18 @@
           "tagId": "MFW-F-CV-POS",
           "equipmentId": "feedwaterControlValveF",
           "description": "Main feedwater control valve F position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "MFW-F-CTRL-AUTO",
+          "equipmentId": "feedwaterControlValveF",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "MFW-F-CTRL-SP",
+          "equipmentId": "feedwaterControlValveF",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ]
     },
@@ -2371,7 +2521,15 @@
           "deadband": 0.02,
           "minPositionFraction": 0,
           "maxPositionFraction": 1,
-          "timeConstantS": 2
+          "timeConstantS": 2,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
+          }
         }
       },
       "variables": [
@@ -2386,6 +2544,18 @@
           "tagId": "SG-A-ARV-POS",
           "equipmentId": "steamGeneratorReliefValveA",
           "description": "Steam generator A atmospheric relief valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "SG-A-ARV-AUTO",
+          "equipmentId": "steamGeneratorReliefValveA",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "SG-A-ARV-SP",
+          "equipmentId": "steamGeneratorReliefValveA",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -2415,7 +2585,15 @@
           "deadband": 0.02,
           "minPositionFraction": 0,
           "maxPositionFraction": 1,
-          "timeConstantS": 2
+          "timeConstantS": 2,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
+          }
         }
       },
       "variables": [
@@ -2430,6 +2608,18 @@
           "tagId": "SG-B-ARV-POS",
           "equipmentId": "steamGeneratorReliefValveB",
           "description": "Steam generator B atmospheric relief valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "SG-B-ARV-AUTO",
+          "equipmentId": "steamGeneratorReliefValveB",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "SG-B-ARV-SP",
+          "equipmentId": "steamGeneratorReliefValveB",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -2459,7 +2649,15 @@
           "deadband": 0.02,
           "minPositionFraction": 0,
           "maxPositionFraction": 1,
-          "timeConstantS": 2
+          "timeConstantS": 2,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
+          }
         }
       },
       "variables": [
@@ -2474,6 +2672,18 @@
           "tagId": "SG-C-ARV-POS",
           "equipmentId": "steamGeneratorReliefValveC",
           "description": "Steam generator C atmospheric relief valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "SG-C-ARV-AUTO",
+          "equipmentId": "steamGeneratorReliefValveC",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "SG-C-ARV-SP",
+          "equipmentId": "steamGeneratorReliefValveC",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -2503,7 +2713,15 @@
           "deadband": 0.02,
           "minPositionFraction": 0,
           "maxPositionFraction": 1,
-          "timeConstantS": 2
+          "timeConstantS": 2,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
+          }
         }
       },
       "variables": [
@@ -2518,6 +2736,18 @@
           "tagId": "SG-D-ARV-POS",
           "equipmentId": "steamGeneratorReliefValveD",
           "description": "Steam generator D atmospheric relief valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "SG-D-ARV-AUTO",
+          "equipmentId": "steamGeneratorReliefValveD",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "SG-D-ARV-SP",
+          "equipmentId": "steamGeneratorReliefValveD",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -2547,7 +2777,15 @@
           "deadband": 0.02,
           "minPositionFraction": 0,
           "maxPositionFraction": 1,
-          "timeConstantS": 2
+          "timeConstantS": 2,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
+          }
         }
       },
       "variables": [
@@ -2562,6 +2800,18 @@
           "tagId": "SG-E-ARV-POS",
           "equipmentId": "steamGeneratorReliefValveE",
           "description": "Steam generator E atmospheric relief valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "SG-E-ARV-AUTO",
+          "equipmentId": "steamGeneratorReliefValveE",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "SG-E-ARV-SP",
+          "equipmentId": "steamGeneratorReliefValveE",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -2591,7 +2841,15 @@
           "deadband": 0.02,
           "minPositionFraction": 0,
           "maxPositionFraction": 1,
-          "timeConstantS": 2
+          "timeConstantS": 2,
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
+          }
         }
       },
       "variables": [
@@ -2606,6 +2864,18 @@
           "tagId": "SG-F-ARV-POS",
           "equipmentId": "steamGeneratorReliefValveF",
           "description": "Steam generator F atmospheric relief valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "SG-F-ARV-AUTO",
+          "equipmentId": "steamGeneratorReliefValveF",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "SG-F-ARV-SP",
+          "equipmentId": "steamGeneratorReliefValveF",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {
@@ -2689,6 +2959,14 @@
           "permissive": {
             "path": "condenser.coolingWaterFlowKgPerS",
             "minimum": 7000
+          },
+          "operator": {
+            "initialAutomatic": true,
+            "setpoint": {
+              "quantity": "pressure",
+              "unit": "MPa",
+              "step": 0.05
+            }
           }
         }
       },
@@ -2704,6 +2982,18 @@
           "tagId": "TURB-BYP-POS",
           "equipmentId": "turbineBypassValve",
           "description": "Turbine bypass valve position feedback"
+        },
+        {
+          "path": "controllerAutomatic",
+          "tagId": "TURB-BYP-AUTO",
+          "equipmentId": "turbineBypassValve",
+          "description": "Operator request for automatic regulation; configuration, not physical response"
+        },
+        {
+          "path": "controllerSetpoint",
+          "tagId": "TURB-BYP-SP",
+          "equipmentId": "turbineBypassValve",
+          "description": "Operator target in the measured signal native unit; configuration, not physical response"
         }
       ],
       "metadata": {

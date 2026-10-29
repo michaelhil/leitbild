@@ -6,6 +6,7 @@ import type {
   CompiledPort,
   CompiledVariable,
   ComponentVariableBindingOverride,
+  ComponentVariableDescriptor,
   ComponentDefinition,
   ComponentId,
   ComponentKind,
@@ -25,6 +26,7 @@ import type {
 } from './model.ts'
 import { linkVariableSemanticsFor, validateProcessLinkContracts } from './link-contracts.ts'
 import { connectionKindSchema, deriveProcessVariableCapabilities, plantGraphSpecSchema } from './model.ts'
+import { valvePositionController, operatorControllerBindings } from './valve-controller.ts'
 import {
   readingAccepts,
   type CompiledComponentSemantics,
@@ -183,11 +185,11 @@ const electricalLinkVariables = (
 
 const assertComponentVariableOverridesValid = (
   componentId: ComponentId,
-  definition: ComponentDefinition,
+  variables: ReadonlyArray<ComponentVariableDescriptor>,
   overrides: ReadonlyArray<ComponentVariableBindingOverride>,
 ): void => {
   assertUnique(overrides, override => override.path, `component ${componentId} variable metadata path`)
-  const definitionPaths = new Set(definition.variables.map(variable => variable.path))
+  const definitionPaths = new Set(variables.map(variable => variable.path))
   for (const override of overrides) {
     if (!definitionPaths.has(override.path)) {
       throw new Error(`component ${componentId} variable metadata references unknown local variable: ${override.path}`)
@@ -645,6 +647,14 @@ const validateValveControllerBindings = (
     if (measuredVariable.descriptor.quantity === 'boolean') {
       throw new Error(`component ${component.id} valve controller measuredPath must reference a numeric variable: ${measuredPath}`)
     }
+    const operator = valvePositionController(component)?.operator
+    const bindings = operatorControllerBindings(component)
+    if (operator && bindings) {
+      const setpoint = variableByPath.get(bindings.setpoint)
+      if (!setpoint || setpoint.descriptor.quantity !== measuredVariable.descriptor.quantity || setpoint.descriptor.unit !== measuredVariable.descriptor.unit) {
+        throw new Error(`component ${component.id} controller setpoint quantity and unit must match measuredPath ${measuredPath}`)
+      }
+    }
     const permissive = (controller as { readonly permissive?: { readonly path: string } }).permissive
     if (permissive === undefined) continue
     const permissiveVariable = variableByPath.get(permissive.path as VariablePath)
@@ -714,9 +724,11 @@ export const compilePlantGraph = (
   const aspectDeclarations: Array<ReadonlyArray<StateAspectDeclaration>> = []
   const ownSemantics: CompiledComponent[] = spec.components.map((component, index) => {
     const definition = resolveDefinition(registry, component.kind)
-    assertComponentVariableOverridesValid(component.id, definition, component.variables)
-    const overrideByPath = new Map(component.variables.map(override => [override.path, override]))
     const parameters = parseWithContext(definition.parametersSchema, component.parameters, `component ${component.id} parameters`)
+    const declaredVariables = [...definition.variables, ...(definition.resolveAdditionalVariables?.({ component, parameters }) ?? [])]
+    assertUnique(declaredVariables, variable => variable.path, `component ${component.id} declared variable path`)
+    assertComponentVariableOverridesValid(component.id, declaredVariables, component.variables)
+    const overrideByPath = new Map(component.variables.map(override => [override.path, override]))
     const ports = resolveComponentPorts(component.id, definition, component, parameters)
     componentIndexById.set(component.id, index)
     definitions.set(component.id, definition)
@@ -724,7 +736,7 @@ export const compilePlantGraph = (
     const declared = definition.semantics(parameters)
     programDeclarations.push(declared.programs)
     aspectDeclarations.push(declared.aspects)
-    const variables = definition.variables.map(variable => applyComponentVariableOverride({
+    const variables = declaredVariables.map(variable => applyComponentVariableOverride({
       ...variable,
       path: variablePathFor(component.id, variable.path),
     }, overrideByPath.get(variable.path)))

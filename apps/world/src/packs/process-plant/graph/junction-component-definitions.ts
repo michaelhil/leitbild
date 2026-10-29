@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
 import { defineComponent, headerVariables, valveVariables } from './component-definition-helpers.ts'
-import { type ComponentDefinition, type ComponentKind, type PortDefinition, variablePathSchema } from './model.ts'
+import { type ComponentDefinition, type ComponentKind, type PortDefinition } from './model.ts'
 import { aspect, firstOrderLagTravelS, fixedSemantics, type ComponentSemantics, type EquipmentFunction } from './semantics.ts'
+import { valvePositionControllerSchema, valveControllerVariables } from './valve-controller.ts'
 
 const headerPortIdsSchema = z.array(idSchema).min(1).max(128)
 
@@ -64,36 +65,6 @@ const valveSemantics = (parameters: unknown): ComponentSemantics => {
   }
 }
 
-const valvePositionControllerSchema = z.object({
-  kind: z.literal('proportionalPosition'),
-  measuredPath: variablePathSchema,
-  setpoint: z.number().finite(),
-  biasPositionFraction: z.number().finite().min(0).max(1),
-  gainPerUnit: z.number().finite().nonnegative(),
-  direction: z.enum(['direct', 'reverse']).default('reverse'),
-  deadband: z.number().finite().nonnegative().optional(),
-  minPositionFraction: z.number().finite().min(0).max(1).optional(),
-  maxPositionFraction: z.number().finite().min(0).max(1).optional(),
-  timeConstantS: z.number().finite().positive().optional(),
-  /**
-   * An interlock the controller acts under: while the signal reads below the
-   * minimum the valve is driven to its minimum position (steam dumps blocked
-   * while the condenser is unavailable, C-9).
-   */
-  permissive: z.object({ path: variablePathSchema, minimum: z.number().finite() }).strict().optional(),
-}).strict().superRefine((controller, ctx) => {
-  if (
-    controller.minPositionFraction !== undefined
-    && controller.maxPositionFraction !== undefined
-    && controller.minPositionFraction > controller.maxPositionFraction
-  ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['minPositionFraction'],
-      message: 'valve controller minPositionFraction cannot exceed maxPositionFraction',
-    })
-  }
-})
 
 export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
@@ -157,6 +128,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
     }).strict(),
     semantics: valveSemantics,
     variables: valveVariables('Process valve'),
+    resolveAdditionalVariables: ({ parameters }) => valveControllerVariables(parameters),
   }),
   defineComponent({
     kind: 'steamHeader' as ComponentKind,
@@ -221,5 +193,6 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
     }).strict(),
     semantics: valveSemantics,
     variables: valveVariables('Steam valve'),
+    resolveAdditionalVariables: ({ parameters }) => valveControllerVariables(parameters),
   }),
 ]
