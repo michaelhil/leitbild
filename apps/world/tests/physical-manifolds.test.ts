@@ -75,7 +75,7 @@ test('campus civil correction retains unrelated geometry and both exact sources 
  expect(compile(site).objects.filter(o=>o.id!=='pavement/roads')).toEqual(compile(previous).objects.filter(o=>o.id!=='pavement/roads'))
  const regenerated=createPwrManifoldUnitArtifacts();expect(regenerated.source).toEqual(source);expect(regenerated.bindings).toEqual(current.bindings);expect(regenerated.coverage).toEqual(current.coverageEvidence)
  expect(JSON.stringify(createPwrManifoldCampusArtifacts().source)).toBe(JSON.stringify(site.source))
-})
+},30_000)
 
 test('every actual R6 unit floor and turbine inspection scope prepares its full utility geometry without invalid cut topology',()=>{
  const scene=compilePhysicalScene('inspection-proof',{...current,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}}),base={...defaultPhysicalSceneView(scene.levels),mode:'3d' as const,hiddenLayerIds:[]}

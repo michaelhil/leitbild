@@ -18,11 +18,13 @@ const area = (polygons: polygonClipping.MultiPolygon): number => polygons.reduce
 
 /** Check building and represented unit-equipment footprints in the same canonical
  * east/north/up frame delivered to Plan and 3D, never in an old drawing chart.
- * This does not qualify vehicle clearances or campus electrical installations. */
+ * Campus equipment envelopes are conservative: overhead members are included.
+ * This does not qualify vehicle swept paths or electrical clearances. */
 export const pwrCampusPavementConflicts = (pavement: polygonClipping.MultiPolygon, unit: PackPhysicalScene, campus: PackPhysicalScene, tolerance: number): ReadonlyArray<string> => {
   const buildings = (scene: PackPhysicalScene) => (scene.scopes ?? []).filter(scope => scope.kind === 'building').map(scope => ({ id: scope.id, bounds: scope.bounds }))
   const unitEnvelopes = [...buildings(unit), ...unit.objects.filter(object => object.kind === 'equipment').map(object => ({ id: object.id, bounds: physicalObjectsBounds([object]) }))]
-  const footprints = buildings(campus).map(envelope => ({ id: envelope.id, ring: ringFor(envelope.bounds) }))
+  const campusEnvelopes = [...buildings(campus), ...campus.objects.filter(object => object.kind === 'equipment').map(object => ({ id: object.id, bounds: physicalObjectsBounds([object]) }))]
+  const footprints = campusEnvelopes.map(envelope => ({ id: envelope.id, ring: ringFor(envelope.bounds) }))
   for (const member of arrangement.units) for (const envelope of unitEnvelopes) footprints.push({
     id: `${member.role}/${envelope.id}`,
     ring: ringFor(envelope.bounds).map(([x, y]) => {
@@ -41,12 +43,26 @@ export const authorPwrCampusCirculation = (source: Source, unit: PackPhysicalSce
   if (!previous) throw new Error('Campus circulation needs its retained topology and civil precision')
   const entrance = previous.nodes.filter(node => node.kind === 'entrance')
   if (entrance.length !== 1) throw new Error('Campus circulation needs its exact vehicle entrance')
+  const westService = source.elements.find(element => element.id === 'road/unit-3-west-service')
+  const support = campus.objects.find(object => object.id === 'pylon/tegneby-double')
+  const approachSpecs = ['road/unit-spine', 'road/unit-3-west-service'].map(id => previous.edges.find(edge => edge.id.startsWith(`${id}/`)))
+  if (!support || westService?.path?.length !== 3 || approachSpecs.some(specification => !specification)) throw new Error('The shared unit 3 service approach requires its exact retained junctions, civil specifications and first support')
+  const serviceStart: Point = [westService.path[0]![0], westService.path[0]![1]]
+  // The two roads share this approach. Clear the support on its north side,
+  // allowing the larger retained tangent bend at the existing unit junction.
+  const approachNorth = Math.max(serviceStart[1] + Math.max(...approachSpecs.map(specification => specification!.turnRadius)), physicalObjectsBounds([support]).max[1] + Math.max(...approachSpecs.map(specification => specification!.width)) / 2 + previous.surfaceTolerance)
   const roads = source.elements.filter(element => element.kind === 'road').map(element => {
     const specification = previous.edges.find(edge => edge.id.startsWith(`${element.id}/`))
     if (!specification || !element.path) throw new Error(`Campus road lacks its retained civil specification: ${element.id}`)
     let path: Point[] = element.path.map(point => [point[0], point[1]])
-    if (element.id === 'road/unit-spine') path = path.flatMap((point, index) => index === 0 ? [point] : [[path[index - 1]![0], point[1]] as Point, point])
+    if (element.id === 'road/unit-spine') path = path.flatMap((point, index) => index === 0 ? [point] : point[0] === serviceStart[0] && point[1] === serviceStart[1]
+      ? [[path[index - 1]![0], approachNorth] as Point, [point[0], approachNorth] as Point, point]
+      : [[path[index - 1]![0], point[1]] as Point, point])
       .filter((point, index, points) => index === 0 || point[0] !== points[index - 1]![0] || point[1] !== points[index - 1]![1])
+    if (element.id === 'road/unit-3-west-service') {
+      const [start, corner, end] = path as [Point, Point, Point]
+      path = [start, [start[0], approachNorth], [corner[0], approachNorth], end]
+    }
     const elevation = element.path[0]![2]
     if (element.path.some(point => point[2] !== elevation)) throw new Error(`Campus road must retain its common ground datum: ${element.id}`)
     element.path = path.map(([x, y]) => [x, y, elevation])
@@ -55,7 +71,7 @@ export const authorPwrCampusCirculation = (source: Source, unit: PackPhysicalSce
   const network = circulationFromPaths(roads, entrance[0]!.position, previous.surfaceTolerance)
   const surfaces = circulationSurfaces(network)
   const conflicts = pwrCampusPavementConflicts(surfaces.roads, unit, campus, network.surfaceTolerance)
-  if (conflicts.length) throw new Error(`Campus pavement intersects canonical building/unit-equipment footprints: ${conflicts.join(', ')}`)
+  if (conflicts.length) throw new Error(`Campus pavement intersects canonical building/equipment footprints: ${conflicts.join(', ')}`)
   source.circulation = network
   for (const [kind, surface] of Object.entries(surfaces)) {
     const pavement = source.elements.find(element => element.id === `pavement/${kind}`)

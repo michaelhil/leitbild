@@ -18805,7 +18805,12 @@
         ],
         [
           -171.409688,
-          173.59982200000002,
+          187.09982200000002,
+          0.04
+        ],
+        [
+          228.54625,
+          187.09982200000002,
           0.04
         ],
         [
@@ -19125,8 +19130,13 @@
           0.04
         ],
         [
+          228.54625,
+          187.09982200000002,
+          0.04
+        ],
+        [
           23.546249999999986,
-          173.59982200000002,
+          187.09982200000002,
           0.04
         ],
         [
@@ -20054,51 +20064,51 @@
             ],
             [
               -175.9095,
-              186.923
+              200.423
             ],
             [
               -175.702,
-              184.282
+              197.782
             ],
             [
               -175.042,
-              181.53300000000002
+              195.03300000000002
             ],
             [
               -173.96,
-              178.9215
+              192.4215
             ],
             [
               -172.4835,
-              176.5115
+              190.0115
             ],
             [
               -170.6475,
-              174.362
+              187.862
             ],
             [
               -168.498,
-              172.5265
+              186.0265
             ],
             [
               -166.088,
-              171.0495
+              184.5495
             ],
             [
               -163.47650000000002,
-              169.9675
+              183.4675
             ],
             [
               -160.7275,
-              169.3075
+              182.8075
             ],
             [
               -158.0865,
-              169.1
+              182.6
             ],
             [
               -4,
-              169.1
+              182.6
             ],
             [
               -4,
@@ -20146,11 +20156,11 @@
             ],
             [
               4,
-              169.1
+              182.6
             ],
             [
               224.046,
-              169.1
+              182.6
             ],
             [
               224.046,
@@ -20773,28 +20783,44 @@
               177.1
             ],
             [
-              231.33818231046934,
+              233.046,
               177.1
             ],
             [
+              233.046,
+              187.1
+            ],
+            [
+              232.864,
+              188.3675
+            ],
+            [
+              232.332,
+              189.5325
+            ],
+            [
+              231.493,
+              190.50050000000002
+            ],
+            [
               230.4155,
-              177.693
+              191.193
             ],
             [
               229.1865,
-              178.054
+              191.554
             ],
             [
               228.546,
-              178.054
+              191.554
             ],
             [
               228.546,
-              178.1
+              191.6
             ],
             [
               27.0465,
-              178.1
+              191.6
             ],
             [
               27.0465,
@@ -21752,7 +21778,7 @@
           [
             [
               -166.9095,
-              187.2765
+              200.7765
             ],
             [
               -166.9095,
@@ -21764,57 +21790,57 @@
             ],
             [
               -4,
-              178.1
+              191.6
             ],
             [
               -157.733,
-              178.1
+              191.6
             ],
             [
               -159.31550000000001,
-              178.2245
+              191.7245
             ],
             [
               -160.6865,
-              178.5535
+              192.0535
             ],
             [
               -161.9895,
-              179.09300000000002
+              192.59300000000002
             ],
             [
               -163.1915,
-              179.83
+              193.33
             ],
             [
               -164.264,
-              180.7455
+              194.2455
             ],
             [
               -165.1795,
-              181.818
+              195.318
             ],
             [
               -165.9165,
-              183.02
+              196.52
             ],
             [
               -166.45600000000002,
-              184.323
+              197.823
             ],
             [
               -166.785,
-              185.69400000000002
+              199.19400000000002
             ],
             [
               -166.9095,
-              187.2765
+              200.7765
             ]
           ],
           [
             [
               4,
-              178.1
+              191.6
             ],
             [
               4,
@@ -21826,11 +21852,11 @@
             ],
             [
               20.0465,
-              178.1
+              191.6
             ],
             [
               4,
-              178.1
+              191.6
             ]
           ]
         ]
@@ -27068,7 +27094,7 @@
   ],
   "evidence": {
     "accuracy": "illustrative",
-    "origin": "Illustrative campus circulation revision authored 29 October 2026 from the retained R6 manifold installation. The common inter-unit road uses orthogonal service approaches and joined tangent pavement, checked against actual canonical east/north/up building and represented unit-equipment footprints. Related unit geometry, graph bindings and coverage are retained. Vehicle and campus electrical-clearance qualification is not established. This is an architectural study, not OEM, as-built or safety qualification."
+    "origin": "Illustrative campus circulation revision authored 29 October 2026 from the retained R6 manifold installation. The common inter-unit road uses orthogonal service approaches and joined tangent pavement; the shared unit 3 approach bypasses the first Tegneby support on its north side. Complete road surfaces are checked against actual canonical east/north/up building and represented unit/campus equipment envelopes. Related unit geometry, graph bindings and coverage are retained. Vehicle swept-path and electrical-clearance qualification is not established. This is an architectural study, not OEM, as-built or safety qualification."
   },
   "siteAnchor": [
     11.48,
@@ -27211,10 +27237,10 @@
         "kind": "terminal"
       },
       {
-        "id": "junction:0,173.599822",
+        "id": "junction:0,187.099822",
         "position": [
           0,
-          173.599822
+          187.099822
         ],
         "kind": "junction"
       },
@@ -27243,10 +27269,18 @@
         "kind": "junction"
       },
       {
-        "id": "junction:23.54625,173.599822",
+        "id": "junction:23.54625,187.099822",
         "position": [
           23.54625,
-          173.599822
+          187.099822
+        ],
+        "kind": "junction"
+      },
+      {
+        "id": "junction:228.54625,187.099822",
+        "position": [
+          228.54625,
+          187.099822
         ],
         "kind": "junction"
       },
@@ -27705,7 +27739,7 @@
       {
         "id": "road/common-5/0",
         "from": "junction:0,110",
-        "to": "junction:0,173.599822",
+        "to": "junction:0,187.099822",
         "width": 8,
         "turnRadius": 12,
         "path": [
@@ -27715,21 +27749,21 @@
           ],
           [
             0,
-            173.599822
+            187.099822
           ]
         ],
         "class": "service"
       },
       {
         "id": "road/common-5/1",
-        "from": "junction:0,173.599822",
+        "from": "junction:0,187.099822",
         "to": "junction:0,360",
         "width": 8,
         "turnRadius": 12,
         "path": [
           [
             0,
-            173.599822
+            187.099822
           ],
           [
             0,
@@ -27799,7 +27833,7 @@
       {
         "id": "road/unit-spine/3",
         "from": "junction:-171.409688,360",
-        "to": "junction:0,173.599822",
+        "to": "junction:0,187.099822",
         "width": 9,
         "turnRadius": 13.5,
         "path": [
@@ -27809,43 +27843,61 @@
           ],
           [
             -171.409688,
-            173.59982200000002
+            187.09982200000002
           ],
           [
             0,
-            173.599822
+            187.099822
           ]
         ],
         "class": "service"
       },
       {
         "id": "road/unit-spine/4",
-        "from": "junction:0,173.599822",
-        "to": "junction:23.54625,173.599822",
+        "from": "junction:0,187.099822",
+        "to": "junction:23.54625,187.099822",
         "width": 9,
         "turnRadius": 13.5,
         "path": [
           [
             0,
-            173.599822
+            187.099822
           ],
           [
             23.54625,
-            173.599822
+            187.099822
           ]
         ],
         "class": "service"
       },
       {
         "id": "road/unit-spine/5",
-        "from": "junction:23.54625,173.599822",
-        "to": "junction:228.54625,173.599822",
+        "from": "junction:23.54625,187.099822",
+        "to": "junction:228.54625,187.099822",
         "width": 9,
         "turnRadius": 13.5,
         "path": [
           [
             23.54625,
-            173.599822
+            187.099822
+          ],
+          [
+            228.54625,
+            187.099822
+          ]
+        ],
+        "class": "service"
+      },
+      {
+        "id": "road/unit-spine/6",
+        "from": "junction:228.54625,187.099822",
+        "to": "junction:228.54625,173.599822",
+        "width": 9,
+        "turnRadius": 13.5,
+        "path": [
+          [
+            228.54625,
+            187.099822
           ],
           [
             228.54625,
@@ -27855,7 +27907,7 @@
         "class": "service"
       },
       {
-        "id": "road/unit-spine/6",
+        "id": "road/unit-spine/7",
         "from": "junction:228.54625,173.599822",
         "to": "junction:423.502188,-48.8033",
         "width": 9,
@@ -27877,7 +27929,7 @@
         "class": "service"
       },
       {
-        "id": "road/unit-spine/7",
+        "id": "road/unit-spine/8",
         "from": "junction:423.502188,-48.8033",
         "to": "junction:628.502188,-48.8033",
         "width": 9,
@@ -28095,7 +28147,7 @@
       {
         "id": "road/unit-3-west-service/0",
         "from": "junction:228.54625,173.599822",
-        "to": "junction:23.54625,173.599822",
+        "to": "junction:228.54625,187.099822",
         "width": 7,
         "turnRadius": 10.5,
         "path": [
@@ -28104,22 +28156,40 @@
             173.599822
           ],
           [
-            23.54625,
-            173.599822
+            228.54625,
+            187.099822
           ]
         ],
         "class": "service"
       },
       {
         "id": "road/unit-3-west-service/1",
-        "from": "junction:23.54625,173.599822",
+        "from": "junction:228.54625,187.099822",
+        "to": "junction:23.54625,187.099822",
+        "width": 7,
+        "turnRadius": 10.5,
+        "path": [
+          [
+            228.54625,
+            187.099822
+          ],
+          [
+            23.54625,
+            187.099822
+          ]
+        ],
+        "class": "service"
+      },
+      {
+        "id": "road/unit-3-west-service/2",
+        "from": "junction:23.54625,187.099822",
         "to": "junction:23.54625,360",
         "width": 7,
         "turnRadius": 10.5,
         "path": [
           [
             23.54625,
-            173.599822
+            187.099822
           ],
           [
             23.54625,
@@ -28129,7 +28199,7 @@
         "class": "service"
       },
       {
-        "id": "road/unit-3-west-service/2",
+        "id": "road/unit-3-west-service/3",
         "from": "junction:23.54625,360",
         "to": "junction:23.54625,383.599822",
         "width": 7,
