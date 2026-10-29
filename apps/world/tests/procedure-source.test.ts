@@ -139,7 +139,7 @@ describe('native local procedure publication', () => {
     try {
       const before = publication(revisionA)
       const original = await createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => before }).readDocument({ procedureId: 'E-0' })
-      const moved = procedureSources[0]!
+      const moved = { ...procedureSources[0]!, documentPaths: undefined }
       const after = createKnowledge({ revision: revisionB, documents: [
         { path: `${moved.procedurePath}/index.md`, content: '# Procedures\n\nReference guidance.' },
         { path: `${moved.procedurePath}/E-0.md`, content: markdownFor('E-0', 'Current') },
