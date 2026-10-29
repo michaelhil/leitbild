@@ -12,8 +12,8 @@ import {
   assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
-import { assessProcedureBranches } from './branch-assessment.ts'
-import { procedureEvidenceReadingText, readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
+import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
+import { procedureEvidenceReadingText, type ProcedureObservationPort } from './pack-observations.ts'
 
 export interface ProcedureCommitContext {
   readonly simulationRunId: SimulationRunId
@@ -242,24 +242,23 @@ export const prepareProcedureCommand = async (config: {
         assertAiWorksCurrentStep(run, step)
       }
       if (uncitedEvidence !== undefined) throw uncitedEvidence
-      const reads = await readProcedureTags({
+      const acquired = await readProcedureBranchEvidence({
         observations: () => {
           if (context.observations === undefined) throw new Error('Commit-local procedure observations are unavailable')
           return context.observations(run.scope.plantId)
-        }, declared: document.tags, tagIds: step.tagIds,
+        }, document, step, branchIndex: payload.branchIndex,
       })
-      const criterion = assessProcedureBranches({ step, reads, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
+      const { reads } = acquired
+      const criterion = assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
       if (context.actorKind === 'ai' && criterion.status !== 'supported') {
         throw Object.assign(new Error(`Branch ${payload.branchIndex} of step ${step.label} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`), {
-          code: 'procedure_branch_not_supported', details: { runId: run.runId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
+          code: 'procedure_branch_not_supported', details: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, procedureId: run.procedureId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
         })
       }
       const evidenceReads = reads.filter(read => evidenceTagIds.includes(read.tagId))
       const evidence = evidenceReads.map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
       if (context.actorKind === 'ai') {
-        assertAiDecisionEvidence({ step, ...(payload.basis === undefined ? {} : { basis: payload.basis }),
-          ...(payload.evidenceTagIds === undefined ? {} : { evidenceTagIds: payload.evidenceTagIds }), reads: evidenceReads,
-          readableStepTagIds: reads.filter(read => read.value !== undefined).map(read => read.tagId) })
+        assertAiDecisionEvidence({ step, ...(payload.basis === undefined ? {} : { basis: payload.basis }), reads: evidenceReads })
       }
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.

@@ -3,5 +3,5 @@ export { validateProcedurePublication, isProcedureMarkdown } from './publication
 export { parseProcedureAssessment, assessmentLeaves } from './assessment.ts'
 export type { ProcedureAssessment, ProcedureAssessmentCondition } from './assessment.ts'
 export { parseProcedureDecisions } from './decisions.ts'
-export type { ProcedureDecision } from './decisions.ts'
+export type { ProcedureDecision, ProcedureDecisionObservation } from './decisions.ts'
 export type { ParsedProcedure, ProcedureTextBlock, ProcedureBranch, ProcedureStep, ProcedureTag } from './types.ts'

@@ -238,7 +238,7 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
   for (const step of steps) {
     step.tagIds = [...new Set([...step.blocks.flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds),
       ...(step.assessment ? assessmentLeaves(step.assessment.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds) : []),
-      ...(step.decisions ?? []).flatMap(decision => assessmentLeaves(decision.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds))])]
+      ...(step.decisions ?? []).flatMap(decision => (decision.condition === undefined ? [] : assessmentLeaves(decision.condition)).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds))])]
     for (const decision of step.decisions ?? []) if (decision.branchIndex >= step.branches.length) throw new Error(`Step ${step.id}: decision branchIndex ${decision.branchIndex} has no branch`)
     for (const branch of step.branches) if (branch.targetKind === 'step' && !steps.some(candidate => candidate.id === branch.target)) warn(branch.sourceLine, `unresolved step target #${branch.target}; no transition inferred`)
   }

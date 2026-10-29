@@ -5,8 +5,8 @@ import {
   type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
 } from '../../core/model/index.ts'
 import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
-import { assessProcedureBranches } from './branch-assessment.ts'
-import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
+import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
+import { type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
 
 // One step of a live procedure Run, compact enough to work through step by
 // step: what it says, its branches, the step's tags as World reads them on
@@ -18,6 +18,9 @@ const stepCommentLength = 500
 const runSummarySchema = z.object({
   runId: procedureRunIdSchema,
   procedureId: z.string(),
+  sourceId: z.string(),
+  sourceRevision: z.string(),
+  sourcePath: z.string(),
   title: z.string(),
   status: procedureRunStatusSchema,
   plantId: z.string(),
@@ -118,6 +121,7 @@ const runSummary = (run: ProcedureRunState, document: ProcedureDocument, step?: 
   return {
     runId: run.runId,
     procedureId: run.procedureId,
+    sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath,
     title: run.title,
     status: run.status,
     plantId: run.scope.plantId,
@@ -202,10 +206,11 @@ export const composeProcedureStepView = async (config: {
   if (step === undefined) {
     throw Object.assign(new Error(`Procedure ${document.procedureId} has no step ${stepId}; its steps are ${document.steps.map(candidate => candidate.id).join(', ')}.`), { code: procedureStepNotFoundCode })
   }
-  const [reads, csfs] = await Promise.all([
-    readProcedureTags({ observations: ports.observations, declared: document.tags, tagIds: step.tagIds }),
+  const [acquired, csfs] = await Promise.all([
+    readProcedureBranchEvidence({ observations: ports.observations, document, step }),
     csfRows(document, ports),
   ])
+  const { reads } = acquired
   const observation = run.observations?.find(item => item.stepId === step.id)
   const labels = new Map(document.steps.map(candidate => [candidate.id, candidate.label]))
   const state = run.stepStates.find(item => item.stepId === step.id)
@@ -232,7 +237,7 @@ export const composeProcedureStepView = async (config: {
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
         ...(branch.because === undefined ? {} : { because: withoutLinkTargets(branch.because) }),
       })),
-      branchAssessments: assessProcedureBranches({ step, reads, plantId: run.scope.plantId, simulationTime: clock.currentTime }),
+      branchAssessments: assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: clock.currentTime }),
       ...(observation === undefined ? {} : { observation: {
         status: observation.result.status,
         ...(observation.result.reason === undefined ? {} : { reason: observation.result.reason }),

@@ -177,7 +177,7 @@ export const procedureDecisionEvidenceSchema = z.object({
 /** A branch selection's basis: up to 300 characters and the step's declared tags, which World reads at commit. */
 export const procedureDecisionBasisSchema = z.object({
   basis: z.string().trim().min(1).max(300).optional(),
-  evidenceTagIds: z.array(procedureTagIdSchema).min(1).optional(),
+  evidenceTagIds: z.array(procedureTagIdSchema).optional(),
 })
 
 /** The latest branch selected on a step, with who chose it and why. The journal keeps every earlier one. */

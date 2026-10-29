@@ -21,6 +21,7 @@ afterEach(async () => {
 })
 
 const revision = 'd'.repeat(40)
+const frameworkCriterion = { type: 'comparison', tagId: 'PT-455', operator: '>', value: 0, unit: 'MPa', bound: 'value', evidence: 'engineering-diagnostic', source: '../basis.md#runner-fixture', maxAgeSeconds: 2 }
 const e0 = `---
 type: procedure
 procedure-md: 0.7
@@ -30,12 +31,18 @@ csfs-monitored: [subcriticality, core-cooling, heat-sink, rcs-integrity, contain
 ---
 # E-0 — Reactor Trip or Safety Injection
 ## Step 1 [id: verify-reactor-trip]
-Check: reactor trip breakers «TRIP-BKR-A» AND «TRIP-BKR-B» OPEN AND neutron flux «NIS-PR-AVG» decreasing
+Check: Framework fixture only: read «TRIP-BKR-A», «TRIP-BKR-B», «NIS-PR-AVG». Its representative branch criterion checks the current pressure diagnostic «PT-455» is positive; it does not claim reactor trip qualification.
 - Verified [outcome: normal] → #verify-turbine-trip
 - Not verified [outcome: rno] → [[FR-S.1]]
+\`\`\`procedure-decisions
+${JSON.stringify([{ branchIndex: 0, condition: frameworkCriterion }])}
+\`\`\`
 ## Step 2 [id: verify-turbine-trip]
-Check: all turbine stop valves CLOSED
+Check: Framework transfer fixture: current pressure diagnostic «PT-455» is positive.
 - Verified [outcome: normal] → [[ES-0.1]]
+\`\`\`procedure-decisions
+${JSON.stringify([{ branchIndex: 0, condition: frameworkCriterion }])}
+\`\`\`
 
 ## Tags
 
@@ -54,6 +61,8 @@ Check: all turbine stop valves CLOSED
   sim-path: nis.power_range.avg
   units: percent
   equipment: nuclear-instrumentation
+- id: PT-455
+  units: MPa
 `
 
 const es01 = `---
@@ -71,7 +80,7 @@ Check: plant stable
 const setup = async (sourceCount = 1, scenarioId = 'test-plant') => {
   const dataDir = await mkdtemp(join(tmpdir(), 'world-procedure-ai-runner-'))
   directories.push(dataDir)
-  const knowledge = createKnowledge({ revision, documents: [{ path: 'procedures/E-0.md', content: e0 }, { path: 'procedures/ES-0.1.md', content: es01 }] })
+  const knowledge = createKnowledge({ revision, documents: [{ path: 'procedures/E-0.md', content: e0 }, { path: 'procedures/ES-0.1.md', content: es01 }, { path: 'basis.md', content: '# Basis\n## Runner fixture\nRepresentative positive pressure diagnostic for framework tests, not an E-0 operating criterion.' }] })
   const registry = createWorldWorkspaceRuntimeRegistry({
     dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
@@ -139,6 +148,10 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(context.body.result.context.text).toContain(' · LIVE')
     expect(sampled.body.sample.at.paused).toBe(false)
     expect(Date.parse(step.body.result.simulationTime)).toBeLessThan(Date.parse(untilSimulationTime))
+    // A fresh guarded transition while maximum pace owns the execution queue must not re-enter that queue.
+    const duringAdvance = await invoke('world.procedure.run.transition', { runId: step.body.result.run.runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Positive current diagnostic in the framework fixture.', evidenceTagIds: ['PT-455'] }, ai)
+    expect(duringAdvance.status).toBe(200)
+    expect(run.snapshot().procedures?.runs[0]?.stepStates[0]?.decision?.criterion?.status).toBe('supported')
     let waited = await invoke('world.simulation-run.wait', { untilSimulationTime }, ai)
     while (waited.body.result?.reason === 'timeout') waited = await invoke('world.simulation-run.wait', { untilSimulationTime }, ai)
     expect(waited.status).toBe(200)
@@ -162,6 +175,24 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(Date.parse(interrupted.body.result.simulationTime)).toBeLessThan(Date.parse(nextTarget))
     expect(simulationRuns.isAdvancing(run.id)).toBe(false)
   }, 60_000)
+
+  test('a guarded transition on the live clock uses acquired simulation time and retains source pin and full proof', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    const runId = started.body.result.pinned.runId
+    await run.setClock({ paused: false })
+    const selected = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+      basis: 'Current positive pressure diagnostic.', evidenceTagIds: ['PT-455'] }, ai)
+    expect(selected.status).toBe(200)
+    const criterion = run.snapshot().procedures!.runs[0]!.stepStates[0]!.decision!.criterion!
+    expect(criterion.status).toBe('supported')
+    expect(criterion.readings[0]).toMatchObject({ tagId: 'PT-455', evidence: 'engineering-diagnostic', writable: false, provenance: 'runtime-model' })
+    expect(Date.parse(criterion.simulationTime)).toBeGreaterThanOrEqual(Date.parse(criterion.readings[0]!.sampledAt!))
+    expect(selected.body.result.next.run).toMatchObject({ sourceId: 'runner-test', sourceRevision: revision, sourcePath: 'procedures/E-0.md' })
+    await run.setClock({ paused: true })
+  })
 
   test('an AI agent starts and drives E-0, reads its step with live readings, and its accepted transition answers with the next step', async () => {
     const { registry, workspaceId, run, plantId } = await setup()
@@ -195,7 +226,7 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(view.paused).toBe(true)
     expect(view.run).toMatchObject({ runId, procedureId: 'E-0', plantId, unit: 'Unit A1', currentStepId: 'verify-reactor-trip', stepNumber: 1, totalSteps: 2, driver: { kind: 'ai' } })
     expect(view.step.branches.map((branch: { outcome: string; target: string; targetLabel?: string }) => `${branch.outcome} ${branch.target} ${branch.targetLabel ?? '-'}`)).toEqual(['normal verify-turbine-trip 2', 'rno FR-S.1 -'])
-    expect(view.tags.map((tag: { id: string }) => tag.id)).toEqual(['TRIP-BKR-A', 'TRIP-BKR-B', 'NIS-PR-AVG'])
+    expect(view.tags.map((tag: { id: string }) => tag.id)).toEqual(['TRIP-BKR-A', 'TRIP-BKR-B', 'NIS-PR-AVG', 'PT-455'])
     for (const tag of structuredClone(view.tags)) expect(tag.reading).toMatchObject({ formatted: expect.any(String), quality: expect.any(String) })
     expect(view.csfs.map((csf: { id: string }) => csf.id)).toEqual(['subcriticality', 'core-cooling', 'heat-sink', 'rcs-integrity', 'containment', 'rcs-inventory'])
 
@@ -231,7 +262,7 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(decision).toMatchObject({ selectedBy: 'actor:ai:assistant', selectedByLabel: 'Assistant', basis })
     expect(decision.evidence!.map(item => item.tagId)).toEqual(['TRIP-BKR-A', 'NIS-PR-AVG'])
     // The decision records what World read, as the step read showed it (the plant is paused).
-    const shown = readTags.filter(tag => tag.id !== 'TRIP-BKR-B')
+    const shown = readTags.filter(tag => tag.id !== 'TRIP-BKR-B' && tag.id !== 'PT-455')
     // A two-state reading names its model variable; any other starts with the value the step view showed.
     decision.evidence!.forEach((item, index) => {
       const reading = shown[index]!.reading
@@ -328,8 +359,8 @@ describe('the AI procedure runner through the World Module API', () => {
     const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId, label: 'Unit A1' } }, ai)
     const runId = started.body.result.pinned.runId
     await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Test-only selection.', evidenceTagIds: ['NIS-PR-AVG'] }, ai)
-    // Step 2 cites no tag: a basis alone carries the AI's transfer.
-    const transfer = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Test-only: stop valves not observable in the model.' }, ai)
+    // The transfer is qualified by its authored framework pressure diagnostic.
+    const transfer = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Framework pressure diagnostic is positive.', evidenceTagIds: ['PT-455'] }, ai)
     expect(transfer.status).toBe(200)
     const destination = run.snapshot().procedures!.runs.find(candidate => candidate.procedureId === 'ES-0.1')!
     expect(run.snapshot().procedures!.runs.find(candidate => candidate.runId === runId)).toMatchObject({ status: 'transferred' })
@@ -412,7 +443,7 @@ describe('the AI procedure runner through the World Module API', () => {
     // A paused plant clock ends a wait for plant time at once; naming the run answers with its current step.
     const paused = await invoke('world.simulation-run.wait', { simulationSeconds: 30, procedureRunId: runId }, ai)
     expect(paused.body.result).toMatchObject({ reason: 'clock-paused', paused: true, fromSequence: run.snapshot().seq,
-      next: { run: { runId, currentStepId: 'verify-reactor-trip' }, step: { id: 'verify-reactor-trip' }, tags: [{ id: 'TRIP-BKR-A' }, { id: 'TRIP-BKR-B' }, { id: 'NIS-PR-AVG' }] } })
+      next: { run: { runId, currentStepId: 'verify-reactor-trip' }, step: { id: 'verify-reactor-trip' }, tags: [{ id: 'TRIP-BKR-A' }, { id: 'TRIP-BKR-B' }, { id: 'NIS-PR-AVG' }, { id: 'PT-455' }] } })
     expect((await invoke('world.simulation-run.wait', { simulationSeconds: 30 }, ai)).body.result.next).toBeUndefined()
 
     // An event already committed after afterSequence answers at once.

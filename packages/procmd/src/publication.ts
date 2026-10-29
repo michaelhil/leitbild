@@ -29,12 +29,13 @@ export const validateProcedurePublication = (documents: ReadonlyArray<{ readonly
       for (const tagId of step.tagIds) {
         if (!declaredTags.has(tagId)) throw new Error(`Undeclared tag ${tagId} in ${path}#${step.id}`)
       }
-      for (const condition of [...(step.assessment ? [step.assessment.condition] : []), ...(step.decisions ?? []).map(decision => decision.condition)]) for (const leaf of assessmentLeaves(condition)) {
+      for (const condition of [...(step.assessment ? [step.assessment.condition] : []), ...(step.decisions ?? []).flatMap(decision => decision.condition === undefined ? [] : [decision.condition])]) for (const leaf of assessmentLeaves(condition)) {
         validateSource?.(path, leaf.source, true)
         if (leaf.type === 'comparison' && parsed.tags.find(tag => tag.id === leaf.tagId)?.units !== leaf.unit) {
           throw new Error(`Assessment unit ${leaf.unit} does not match declared tag ${leaf.tagId} units in ${path}#${step.id}`)
         }
       }
+      for (const decision of step.decisions ?? []) if (decision.observation) validateSource?.(path, decision.observation.source, true)
       for (const decision of step.decisions ?? []) if (decision.applicability) validateSource?.(path, decision.applicability.source, true)
       for (const branch of step.branches) {
         if (branch.targetKind === 'step' && !parsed.steps.some(candidate => candidate.id === branch.target)) {

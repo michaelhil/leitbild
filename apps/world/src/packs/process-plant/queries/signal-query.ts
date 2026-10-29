@@ -1,6 +1,5 @@
 import { z } from 'zod'
-import { createHash } from 'node:crypto'
-import type { ProcessPlantProtectionConfig } from '../runtime/ic/control-protection-model.ts'
+import { processPlantEvidenceFrame } from '../evidence-frame.ts'
 import { idSchema, matchesLiteralSearch, type IsoTimestamp, type ObjectId } from '../../../core/model/index.ts'
 import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
@@ -19,15 +18,6 @@ import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requireP
 import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-units.ts'
 import { declaredObservable } from '../observation/declarations.ts'
 import { readPlant } from '../observation/read.ts'
-
-const automationDigests = new WeakMap<ProcessPlantProtectionConfig, string>()
-const automationDigest = (definition: ProcessPlantProtectionConfig): string => {
-  const previous = automationDigests.get(definition)
-  if (previous !== undefined) return previous
-  const digest = createHash('sha256').update(JSON.stringify(definition)).digest('hex')
-  automationDigests.set(definition, digest)
-  return digest
-}
 
 /** The commands issued on these signals and the resets of actuations that held them, at the Run and plant time read at. */
 const operationsOn = (config: { readonly simulationTime?: IsoTimestamp }, system: ProcessPlantRuntimeInstance, paths: ReadonlySet<string>) => {
@@ -211,9 +201,7 @@ export const answerProcessPlantSignalQuery = (config: {
           variable,
           quality: processPlantSignalQuality(variable),
           ...(payload.evidence !== true || config.simulationTime === undefined ? {} : { evidence: {
-            kind: 'engineering-diagnostic' as const, sampledAt: config.simulationTime, provenance: 'runtime-model' as const,
-            modelRef: system.plant.modelRef, modelDigest: system.plant.modelDigest,
-            automationRef: system.plant.automationRef, automationDigest: automationDigest(system.plant.automation),
+            kind: 'engineering-diagnostic' as const, sampledAt: config.simulationTime, ...processPlantEvidenceFrame(system, config.simulationTime),
           } }),
           ...(declared === undefined ? {} : { observed: declared === null ? null : {
             unit: declared.unit, quantity: declared.quantity, thresholds: declared.thresholds,

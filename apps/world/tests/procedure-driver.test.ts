@@ -80,6 +80,7 @@ const reading = (tagId: string, formatted: string, value: unknown, quality = 'go
 // Test-only Pack port: the plant's current answers per tag.
 const fakePort = (values: Readonly<Record<string, Reading>>, reads: string[]): ProcedureObservationPort => ({
   validateTags: async tags => new Map(tags.map(tag => [tag.id, { id: tag.id, status: values[tag.id] === 'missing' || values[tag.id] === undefined ? 'missing' as const : 'resolved' as const, warnings: [] }])),
+  readObservation: async () => { throw new Error('No declared query in this test port') },
   readTags: async tags => new Map(tags.map(tag => {
     reads.push(tag.id)
     const value = values[tag.id]
@@ -264,7 +265,7 @@ describe('procedure run driver and AI decision rules', () => {
     expect(rno.run('FR-S.1').status).toBe('completed')
   })
 
-  test('an AI transition off the current step, without a basis, without the step\'s readable tags, or on a tag it cannot read is refused', async () => {
+  test('an AI transition off the current step, without a basis, or on a tag it cannot read is refused', async () => {
     const h = harness()
     await h.start()
     await expect(h.execute(assistant, 'world.procedure.run.transition', { runId: h.run().runId, stepId: 'check-power', branchIndex: 1, basis: 'Flux low.', evidenceTagIds: ['NIS-PR-AVG'] }))
@@ -276,8 +277,6 @@ describe('procedure run driver and AI decision rules', () => {
     const fresh = harness()
     await fresh.start()
     await expect(fresh.transition(assistant, { branchIndex: 0, evidenceTagIds: ['TRIP-BKR-A'] })).rejects.toThrow('only with a basis')
-    await expect(fresh.transition(assistant, { branchIndex: 0, basis: 'Breakers open.' }))
-      .rejects.toThrow("Step 1's «TRIP-BKR-A», «TRIP-BKR-B», «NIS-PR-AVG» read on this plant now: cite those you relied on as evidenceTagIds")
     await expect(fresh.transition(assistant, { branchIndex: 0, basis: 'Breakers open.', evidenceTagIds: ['PT-455'] })).rejects.toThrow('«PT-455» are not cited in step 1')
     fresh.setValues({ ...tripped, 'TRIP-BKR-B': 'missing' })
     await expect(fresh.transition(assistant, { branchIndex: 0, ...fresh.evidence })).rejects.toThrow('Signal TRIP-BKR-B is not bound')
@@ -297,6 +296,16 @@ describe('procedure run driver and AI decision rules', () => {
     blind.setValues({ 'TRIP-BKR-A': 'missing', 'TRIP-BKR-B': new Error('runtime unavailable'), 'NIS-PR-AVG': 'missing' })
     await expect(blind.transition(assistant, { branchIndex: 0, basis: 'Not observable in the model: trip breakers, flux. Nothing contradicts the trip.' })).rejects.toThrow('is unknown')
     expect(blind.run().currentStepId).toBe('verify-reactor-trip')
+  })
+
+  test('complete server criterion proof permits omitted optional citations', async () => {
+    for (const citation of [undefined, []]) {
+      const h = harness()
+      await h.start()
+      await h.transition(assistant, { branchIndex: 0, basis: 'The authored synthetic test criterion is supported.', ...(citation === undefined ? {} : { evidenceTagIds: citation }) })
+      expect(h.run().currentStepId).toBe('verify-turbine-trip')
+      expect(h.run().stepStates[0]?.decision?.criterion?.readings).toHaveLength(3)
+    }
   })
 
   test('a person answering the current step keeps the AI driving; a tick, jump, off-path branch or close takes over; comments and favorites never do', async () => {
@@ -430,10 +439,7 @@ describe('procedure run driver and AI decision rules', () => {
     expect(() => assertAiWorksCurrentStep({ currentStepId: first!.id }, first!)).not.toThrow()
     expect(() => assertAiWorksCurrentStep({ currentStepId: second!.id }, first!)).toThrow("Step 1 is not the run's current step (verify-turbine-trip)")
     expect(() => assertAiDecisionEvidence({ step: second!, basis: 'Stop valves closed.', reads: [] })).not.toThrow()
-    expect(() => assertAiDecisionEvidence({ step: first!, basis: 'Breakers open.', reads: [], readableStepTagIds: [] })).not.toThrow()
-    expect(() => assertAiDecisionEvidence({ step: first!, basis: 'Breakers open.', reads: [], readableStepTagIds: ['NIS-PR-AVG'] }))
-      .toThrow("Step 1's «NIS-PR-AVG» reads on this plant now")
-    // A transition prepared without its actor never passes an AI agent's uncited selection.
-    expect(() => assertAiDecisionEvidence({ step: first!, basis: 'Breakers open.', reads: [] })).toThrow('prepared without its actor')
+    expect(() => assertAiDecisionEvidence({ step: first!, basis: 'Breakers open.', reads: [] })).not.toThrow()
+
   })
 })

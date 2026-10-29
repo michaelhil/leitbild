@@ -38,28 +38,14 @@ export const assertAiDrives = (run: ProcedureRunState, actorId: ActorId): void =
   assertAiMayDrive(run, actorId)
 }
 
-/**
- * An AI agent's selection rests on a stated basis and, wherever the step's
- * tags read on the plant now, on those it relied on, each read by World now.
- * `readableStepTagIds`: the step's tags that read now, read for a selection
- * that cites none.
- */
+/** A person-readable basis accompanies authoritative World criteria; optional citations are receipts, not proof. */
 export const assertAiDecisionEvidence = (config: {
   readonly step: ProcedureStep
   readonly basis?: string
-  readonly evidenceTagIds?: ReadonlyArray<string>
   readonly reads: ReadonlyArray<ProcedureTagRead>
-  readonly readableStepTagIds?: ReadonlyArray<string>
 }): void => {
-  const { step } = config
   if (config.basis === undefined) {
     throw new Error('An AI agent selects a branch only with a basis: what the step asks, the values read with units and plant time, and what could not be observed (at most 300 characters).')
-  }
-  if (config.evidenceTagIds === undefined) {
-    if (step.tagIds.length === 0) return
-    if (config.readableStepTagIds === undefined) throw new Error('This transition was prepared without its actor, so the step\'s tags were not read: an AI agent\'s selection cannot be checked.')
-    if (config.readableStepTagIds.length === 0) return
-    throw new Error(`Step ${step.label}'s ${config.readableStepTagIds.map(tagId => `«${tagId}»`).join(', ')} ${config.readableStepTagIds.length === 1 ? 'reads' : 'read'} on this plant now: cite those you relied on as evidenceTagIds; World reads them and records the readings with the decision.`)
   }
   for (const read of config.reads) {
     if (read.binding === 'missing') throw new Error(`«${read.tagId}» has no binding on this Plant: cite only tags World reads now, and say in the basis what is not observable.`)

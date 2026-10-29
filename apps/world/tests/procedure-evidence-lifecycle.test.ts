@@ -29,7 +29,7 @@ Basis: Test comparison of the represented pump state, with no CSF adequacy claim
 Check: Compare the represented running state.
 \`\`\`procedure-observation
 ${JSON.stringify({ capabilityId: 'world.process-plant.procedure-condition.evaluate', continuous: true, input: {
-  condition: { type: 'comparison', signal: { path: 'rcpA.running' }, operator: '==', value: true, unit: 'boolean' },
+  condition: { type: 'comparison', signal: { path: 'rcpA.runningState' }, operator: '==', value: true, unit: 'boolean' },
   basis: { modelRef, modelDigest, source: 'source:apps/world/src/packs/process-plant/specs/pwr-reference-template.graph.json', description: 'Test-only pump-running comparison; no functional sufficiency claim.' },
 } })}
 \`\`\`

@@ -1,4 +1,5 @@
 import { isoTimestampSchema, type IsoTimestamp, type ProcedureTag, type ProcedureTagId } from '../../core/model/index.ts'
+import type { ProcedureDecisionObservation } from '@leitbild/procmd'
 import type { PackProcedureContribution, PackProcedureQuery } from '../../core/packs/protocol.ts'
 
 // The wire semantics every Pack's procedure observations keep (protocol.ts
@@ -137,6 +138,8 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
   if (typeof signal.tagId === 'string' && signal.tagId !== tag.id) throw new Error(`procedure signal identity ${signal.tagId} does not match requested tag ${tag.id}`)
   if (typeof signal.path === 'string' && typeof variable.path === 'string' && signal.path !== variable.path) throw new Error('procedure signal and variable paths disagree')
   let unit = assertString(signal.unit, 'procedure signal requires unit')
+  if (variable.unit !== undefined && variable.unit !== unit) throw new Error('procedure signal and variable native units disagree')
+  if (typeof variable.writable === 'boolean' && typeof signal.writable === 'boolean' && variable.writable !== signal.writable) throw new Error('procedure signal and variable writability disagree')
   let value = variable.value
   let conversionStatus: ProcedureTagValue['conversionStatus']
   let warning: string | undefined
@@ -244,6 +247,7 @@ export interface ProcedureObservationPort {
   readonly readTag: (tag: ProcedureTag) => Promise<ProcedureTagValue>
   /** A single owning-Pack acquisition for all declared tags. */
   readonly readTags: (tags: ReadonlyArray<ProcedureTag>) => Promise<ReadonlyMap<string, ProcedureTagValue | Error>>
+  readonly readObservation: (binding: ProcedureDecisionObservation) => Promise<Readonly<Record<string, unknown>>>
   readonly evaluateCsfs: (assessmentIds: ReadonlyArray<string>) => Promise<ReadonlyMap<string, ProcedureCsfEvaluation>>
 }
 
@@ -278,6 +282,7 @@ export const createProcedureObservationPort = (config: {
       ? new Map()
       : parseProcedureTagValidations(await config.query(config.provider.tagValidationQuery(config.scopeId, tags))),
     readTags,
+    readObservation: async binding => assertRecord(await config.query({ capabilityId: binding.capabilityId, input: { ...binding.input, targetObjectId: config.scopeId } }), 'procedure decision query returned malformed evidence'),
     readTag: async tag => {
       const value = (await readTags([tag])).get(tag.id)
       if (value instanceof Error) throw value

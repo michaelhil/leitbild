@@ -75,7 +75,8 @@ const ports = (config: {
     validateTags: async tags => new Map(tags.map(tag => [tag.id, {
       id: tag.id, status: config.reads?.[tag.id] === 'missing' ? 'missing' as const : 'resolved' as const, warnings: tag.id === 'NIS-PR-AVG' ? ['requested percent unavailable'] : [],
     }])),
-    readTags: async tags => new Map(tags.map(tag => {
+    readObservation: async () => { throw new Error('No declared query in this test port') },
+  readTags: async tags => new Map(tags.map(tag => {
       config.calls?.push(tag.id)
       const value = config.reads?.[tag.id]
       return [tag.id, value === undefined || value === 'missing' ? new Error(`no ${tag.id}`) : value] as const
@@ -116,7 +117,7 @@ describe('procedure step view', () => {
     expect(view.sequence).toBe(42)
     expect(view.simulationTime).toBe(plantTime)
     expect(view.paused).toBeUndefined()
-    expect(view.run).toEqual({ runId: 'procedure-run:view', procedureId: 'E-0', title: 'Reactor Trip or Safety Injection', status: 'active',
+    expect(view.run).toEqual({ sourceId: source.sourceId, sourceRevision: source.revision, sourcePath: 'wiki/procedures/E-0.md', runId: 'procedure-run:view', procedureId: 'E-0', title: 'Reactor Trip or Safety Injection', status: 'active',
       plantId: 'plant:unit-2', unit: 'Unit 2', driver: run().driver, currentStepId: 'verify-reactor-trip', stepNumber: 1, totalSteps: 2 })
     expect(view.step!.blocks.map(block => block.kind)).toEqual(['note', 'check'])
     expect(view.step!.blocks[0]!.text).toBe('Simulator applicability, see model scope.')

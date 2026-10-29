@@ -24,3 +24,21 @@ test('branch eligibility rejects ambiguous, unbound and invented authoring const
   expect(() => validateProcedurePublication([{ path: 'test.md', content: source([{ branchIndex: 0, condition: { ...condition, unit: 'bar' } }]) }])).toThrow('does not match declared tag')
   expect(() => parseProcedure(source([{ branchIndex: 0, condition }]).replace('## Tags', '\`\`\`procedure-decisions\n[]\n\`\`\`\n## Tags'))).toThrow('once per step')
 })
+
+
+test('a decision query is explicit, scoped, sourced and exclusive with native conditions', () => {
+  const observation = { capabilityId: 'world.example.condition.read', input: { expected: true }, source: '../systems/criteria.md#observed', maxAgeSeconds: 2 }
+  const decisions = [{ branchIndex: 0, observation }]
+  expect(parseProcedure(source(decisions)).steps[0]!.decisions).toEqual(decisions)
+  const sources: string[] = []
+  validateProcedurePublication([{ path: 'procedures/test.md', content: source(decisions) }], (_path, href) => { sources.push(href) })
+  expect(sources).toEqual([observation.source])
+  for (const invalid of [
+    { branchIndex: 0 }, { branchIndex: 0, condition, observation },
+    { branchIndex: 0, observation: { ...observation, source: '' } },
+    { branchIndex: 0, observation: { ...observation, maxAgeSeconds: -1 } },
+    { branchIndex: 0, observation: { ...observation, input: { targetObjectId: 'other' } } },
+    { branchIndex: 0, observation: { ...observation, input: { plantId: 'other' } } },
+    { branchIndex: 0, observation: { ...observation, responsePath: '$.healthy' } },
+  ]) expect(() => parseProcedureDecisions([invalid])).toThrow()
+})

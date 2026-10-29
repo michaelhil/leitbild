@@ -5,6 +5,7 @@ import type { EventLog } from '../src/core/simulation-runs/event-log.ts'
 import { createSimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { createSimulationRunStateStore, type SimulationRunStateSnapshot } from '../src/core/simulation-runs/state-store.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
+import { processPlantPackView } from '../src/packs/process-plant/ui-pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { worldCoreCapabilities } from '../src/simulation/core-capabilities.ts'
 import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
@@ -21,7 +22,7 @@ const conditionCapabilityId = 'world.process-plant.procedure-condition.evaluate'
 const acquisitionBudgetMs = 1_000
 
 /** Run, Hub, Process Plant and dispatch are real; only read-side transport is gated. */
-const setup = async (options: { readonly steps?: number; readonly restored?: SimulationRunStateSnapshot; readonly hangSource?: boolean; readonly timeoutMs?: number } = {}) => {
+const setup = async (options: { readonly steps?: number; readonly restored?: SimulationRunStateSnapshot; readonly hangSource?: boolean; readonly timeoutMs?: number; readonly decision?: boolean; readonly foreignScope?: boolean } = {}) => {
   const source = scenarios.find(scenario => scenario.id === 'test-plant')!
   const resolved = createTestScenarioRuntimeResolver().resolve(source)!
   const scenario = { scenarioId: resolved.scenarioId, runtimeIds: resolved.runtimes.map(runtime => runtime.runtimeId),
@@ -49,12 +50,16 @@ ${Array.from({ length: options.steps ?? 1 }, (_, index) => `## Step ${index + 1}
 Check: Test-only runtime pump comparison; no CSF adequacy claim.
 \`\`\`procedure-observation
 ${JSON.stringify({ capabilityId: conditionCapabilityId, continuous: true, input: {
-  condition: { type: 'comparison', signal: { path: 'rcpA.running' }, operator: '==', value: true, unit: 'boolean' },
+  condition: { type: 'comparison', signal: { path: 'rcpA.runningState' }, operator: '==', value: true, unit: 'boolean' },
   basis: { modelRef: plant.modelRef, modelDigest: plant.modelDigest, source: 'test-only', description: `Transport fixture ${index}, not an operating criterion` },
 } })}
 \`\`\`
 - Assessed [outcome: normal] → END`).join('\n')}
 ` })
+  const decisionDocument = options.decision ? { ...document, steps: document.steps.map(step => {
+    const { observation, ...rest } = step
+    return { ...rest, decisions: [{ branchIndex: 0, observation: { capabilityId: observation!.capabilityId, input: observation!.input, source: '../basis.md#transport', maxAgeSeconds: 2 } }] }
+  }) } : document
   let mode: 'healthy' | 'hang' | 'reject' = 'healthy'
   let queryCalls = 0
   let sourceCalls = 0
@@ -74,15 +79,16 @@ ${JSON.stringify({ capabilityId: conditionCapabilityId, continuous: true, input:
       if (mode === 'hang') await queryGate.promise
       return response
     } }, eventLog, snapshotStore: { load: async () => saved, save: async snapshot => { saved = snapshot }, quarantine: async () => {} },
+    procedureProvider: object => object.packId === 'process-plant' ? processPlantPackView.procedures : undefined,
     observationAcquisitionTimeoutMs: options.timeoutMs ?? acquisitionBudgetMs,
     scenario: { id: scenario.scenarioId, startsAt: scenario.world.startsAt, agentRestrictions: { operationIds: [], objects: [] } },
-    runtimeCapabilities: [...adapter.capabilities.map(capability => ({ packId: adapter.packId, runtimeId: adapter.id, capability })),
+    runtimeCapabilities: [...adapter.capabilities.map(capability => ({ packId: adapter.packId, runtimeId: adapter.id, capability: options.foreignScope && capability.id === conditionCapabilityId ? { ...capability, inspectObjectIds: () => ['plant:unrelated' as never] } : capability })),
       ...worldCoreCapabilities.map(capability => ({ packId: 'world', runtimeId: 'world.core', capability }))],
     procedureSourceService: { listSources: () => [], readCatalog: async () => { throw new Error('Not needed') },
       readEvidence: async () => { throw new Error('Not needed') }, readDocument: async () => {
         sourceCalls++
         if (options.hangSource) await sourceGate.promise
-        return document
+        return decisionDocument
       } },
   })
   const command = async (capabilityId: string, input: unknown) => {
@@ -106,6 +112,62 @@ const within = async <T>(promise: Promise<T>, wallMs = 10 * acquisitionBudgetMs)
 }
 
 describe('bounded read-only procedure acquisition', () => {
+  test('a healthy scoped branch query qualifies from the actual Pack frame and retains its complete evidence', async () => {
+    const fixture = await setup({ decision: true })
+    const ai = { id: actorIdSchema.parse('actor:ai:healthy-query'), label: 'Query agent', role: 'ai_agent' as const }
+    try {
+      await fixture.start()
+      const runId = fixture.current().runId
+      await fixture.runtime.invokeCapability(ai, { capabilityId: 'world.procedure.run.drive', input: { runId, action: 'claim' } })
+      const outcome = await fixture.runtime.invokeCapability(ai, { capabilityId: 'world.procedure.run.transition', input: { runId, stepId: 'read-0', branchIndex: 0, basis: 'Current read-only pump response satisfies the declared query.' } })
+      expect(outcome.kind === 'command' && outcome.result.ok).toBe(true)
+      expect(fixture.current().status).toBe('completed')
+      expect(fixture.current().stepStates[0]?.decision?.criterion).toMatchObject({ status: 'supported', observation: { result: {
+        targetObjectId: fixture.plant.id, simulationTime: fixture.runtime.snapshot().clock!.currentTime,
+        evidenceKind: 'engineering-diagnostic', provenance: 'runtime-model', automationDigest: expect.any(String),
+        evidence: [{ variable: { path: 'rcpA.runningState', writable: false, value: true }, status: 'satisfied' }],
+      } } })
+    } finally { await fixture.runtime.close() }
+  })
+
+  test('a branch query whose capability inspects another object is rejected before acquisition', async () => {
+    const fixture = await setup({ decision: true, foreignScope: true })
+    const ai = { id: actorIdSchema.parse('actor:ai:scope'), label: 'Scope agent', role: 'ai_agent' as const }
+    try {
+      await fixture.start()
+      const runId = fixture.current().runId
+      await fixture.runtime.invokeCapability(ai, { capabilityId: 'world.procedure.run.drive', input: { runId, action: 'claim' } })
+      const outcome = await fixture.runtime.invokeCapability(ai, { capabilityId: 'world.procedure.run.transition', input: { runId, stepId: 'read-0', branchIndex: 0, basis: 'Declared current evidence.' } })
+      expect(outcome.kind === 'command' && outcome.result).toMatchObject({ ok: false, code: 'procedure_branch_not_supported', details: { assessment: { status: 'unknown', reasons: [expect.stringContaining('only its scoped operational object')] } } })
+      expect(fixture.calls().query).toBe(0)
+      expect(fixture.current().status).toBe('active')
+    } finally { await fixture.runtime.close() }
+  })
+
+  test('a stalled commit-local criterion query refuses with structured unknown proof and releases the publish queue', async () => {
+    const fixture = await setup({ decision: true, timeoutMs: 250 })
+    const ai = { id: actorIdSchema.parse('actor:ai:timeout'), label: 'Timeout agent', role: 'ai_agent' as const }
+    try {
+      await fixture.start()
+      const runId = fixture.current().runId
+      const claim = await fixture.runtime.invokeCapability(ai, { capabilityId: 'world.procedure.run.drive', input: { runId, action: 'claim' } })
+      expect(claim.kind === 'command' && claim.result.ok).toBe(true)
+      fixture.mode('hang')
+      const transition = fixture.runtime.invokeCapability(ai, { capabilityId: 'world.procedure.run.transition', input: { runId, stepId: 'read-0', branchIndex: 0, basis: 'Current declared query evidence.' } })
+      await waitForCondition('commit query enters gated transport', () => fixture.calls().query > 0)
+      const unrelated = fixture.command('world.process-plant.control.write', { plantId: fixture.plant.id, path: 'rcpA.running', value: false })
+      const [outcome] = await within(Promise.all([transition, unrelated]))
+      expect(outcome.kind).toBe('command')
+      if (outcome.kind !== 'command') throw new Error('Expected transition command')
+      expect(outcome.result).toMatchObject({ ok: false, code: 'procedure_branch_not_supported', details: { assessment: { status: 'unknown', reasons: [expect.stringContaining('wall-time transport budget')] } } })
+      expect(fixture.current().status).toBe('active')
+      expect(fixture.current().stepStates).toHaveLength(0)
+      await within(fixture.runtime.setClock({ paused: true }))
+      fixture.queryGate.resolve()
+      fixture.mode('healthy')
+    } finally { fixture.queryGate.resolve(); await fixture.runtime.close() }
+  })
+
   test('hung query withdraws green, suppresses duplicate pending reads, ignores late evidence and permits controls, retry and close', async () => {
     const fixture = await setup()
     try {

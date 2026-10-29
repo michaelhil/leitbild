@@ -898,6 +898,7 @@ export const createSimulationRunRuntime = async (config: {
         await publishGenerated(async () => {
           await evaluateProcedureObservationsNow()
           const snapshot = state.snapshot()
+          const evidenceBudget = { deadline: performance.now() + observationAcquisitionTimeoutMs, exhausted: false }
           // Document preparation may outlive a controller's restriction change.
           // Recheck current AI authority at the serialized procedure commit,
           // including the actual live Run scope rather than just caller targets.
@@ -919,7 +920,7 @@ export const createSimulationRunRuntime = async (config: {
             objectIds: new Set(snapshot.objects.map(object => object.id)),
             objects: new Map(snapshot.objects.map(object => [object.id, object])),
             factory: { eventId, nextSeq: () => ++seq },
-            observations: plantId => procedureObservations(actor, plantId, true),
+            observations: plantId => procedureObservations(actor, plantId, evidenceBudget),
             clock: () => runClock.read().currentTime,
           })
         })
@@ -1500,7 +1501,7 @@ export const createSimulationRunRuntime = async (config: {
 
   // The scope's owning Pack answers through its declared read Capabilities,
   // invoked as the caller: World interprets none of its plant logic.
-  const procedureObservations = (actor: Actor, plantId: string, atCommit = false): ProcedureObservationPort => {
+  const procedureObservations = (actor: Actor, plantId: string, atCommit?: { readonly deadline: number; exhausted: boolean }): ProcedureObservationPort => {
     const object = state.snapshot().objects.find(candidate => candidate.id === plantId)
     if (!object) throw new Error(`procedure target no longer exists: ${plantId}`)
     const provider = config.procedureProvider?.(object)
@@ -1510,12 +1511,18 @@ export const createSimulationRunRuntime = async (config: {
       scopeId: plantId,
       provider,
       query: async query => {
+        const active = runtimeCapabilities.get(query.capabilityId)
+        if (!active || active.capability.kind !== 'query') throw new Error(`Procedure evidence requires an active read-only capability: ${query.capabilityId}`)
+        const input = active.capability.input.parse(query.input)
+        const targets = active.capability.inspectObjectIds?.(input) ?? []
+        if (!targets.includes(objectIdSchema.parse(plantId)) || targets.some(target => target !== plantId)) throw new Error('Procedure evidence must inspect only its scoped operational object')
         if (atCommit) {
           admit(actor, query.capabilityId)
           if (runtimeCapabilities.get(query.capabilityId)?.capability.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
         }
         const outcome = atCommit
-          ? await invokeCapabilityThroughRuntime(actor, { capabilityId: query.capabilityId, input: query.input }, commandSourceOf(actor))
+          ? await acquireObservation(JSON.stringify(['procedure-commit', actor.id, query.capabilityId, input]),
+              async () => await invokeCapabilityThroughRuntime(actor, { capabilityId: query.capabilityId, input }, commandSourceOf(actor)), atCommit)
           : await invokeCapability(actor, { capabilityId: query.capabilityId, input: query.input })
         if (outcome.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
         return outcome.result

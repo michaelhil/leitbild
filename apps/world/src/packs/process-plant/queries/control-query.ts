@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { idSchema, objectIdSchema } from '../../../core/model/index.ts'
+import { idSchema, objectIdSchema, type IsoTimestamp } from '../../../core/model/index.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { evaluateProcessPlantAssessments } from '../assessments.ts'
 import { processPlantControlWritePayloadSchema } from '../commands.ts'
@@ -55,13 +55,14 @@ export const controlsListQuerySchema = z.object({
 export const answerProcessPlantControlQuery = (config: {
   readonly request: PackRuntimeQuery
   readonly plants: ReadonlyMap<string, ProcessPlantRuntimeInstance>
+  readonly simulationTime?: IsoTimestamp
 }): unknown | undefined => {
   if (!processPlantControlQueryKinds.some(kind => kind === config.request.capabilityId)) return undefined
   if (config.request.capabilityId === 'world.process-plant.procedure-condition.evaluate') {
     const payload = procedureConditionEvaluateQuerySchema.parse(config.request.input)
     const plant = requirePlant(config.plants, payload.targetObjectId)
     refuseInjectedFaultsIn(plant.plant.graph, payload.condition)
-    return { targetObjectId: payload.targetObjectId, ...evaluateProcessPlantProcedureCondition({ plant, condition: payload.condition, basis: payload.basis }) }
+    return { targetObjectId: payload.targetObjectId, ...evaluateProcessPlantProcedureCondition({ plant, condition: payload.condition, basis: payload.basis, ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }) }) }
   }
   if (config.request.capabilityId === 'world.process-plant.conditions.evaluate') {
     const payload = conditionsEvaluateQuerySchema.parse(config.request.input)

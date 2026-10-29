@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
+import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createProcessPlantProtectionRunner, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { processPlantSignalReferenceSchema } from '../src/packs/process-plant/signals.ts'
 import { evaluateProcessPlantProcedureCondition, processPlantProcedureConditionSchema, type ProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
@@ -69,6 +69,20 @@ describe('read-only procedure condition evidence', () => {
     expect(processPlantProcedureConditionSchema.safeParse({ type: 'vote', required: 3, conditions: [power(0)] }).success).toBe(false)
     const result = answerProcessPlantQuery({ request: { capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() })
     expect(capability.output.parse(result)).toMatchObject({ targetObjectId: compiled.id, status: 'satisfied' })
+  })
+
+  test('I&C state reads actual rules and latches; missing state, failures and physical command substitutions remain unknown', () => {
+    const protection = createProcessPlantProtectionRunner({ system: compiled, protection: compiled.automation })
+    const current = { ...plant, protection }
+    const inactive = { type: 'ic-rule-state', ruleId: 'safety-injection-manual', field: 'active', value: false, source: '../basis.md#si' } as const
+    expect(evaluate(inactive, current).status).toBe('satisfied')
+    expect(evaluate({ ...inactive, ruleId: 'UNMODELED-PHASE-B' }, current).status).toBe('unknown')
+    expect(evaluate(inactive, plant).status).toBe('unknown')
+    const failed = { ...current, protection: { ...protection, snapshot: () => ({ ...protection.snapshot(), failures: [{ ruleId: inactive.ruleId, elapsedMs: 0, message: 'Acquisition failed' }] }) } }
+    expect(evaluate(inactive, failed)).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('Acquisition failed') }] })
+    expect(evaluate({ type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ tagId: 'SI-PUMP-A' }), operator: '==', value: true, unit: 'boolean' }, current)).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('Writable commands/demands') }] })
+    const latched = { ...current, protection: { ...protection, snapshot: () => ({ ...protection.snapshot(), rules: protection.snapshot().rules.map(rule => rule.ruleId === inactive.ruleId ? { ...rule, active: false, latched: true } : rule) }) } }
+    expect(evaluate({ ...inactive, field: 'latched', value: true }, latched)).toMatchObject({ status: 'satisfied', evidence: [{ type: 'ic-rule-state', field: 'latched', value: true }] })
   })
 
   test('critical safety functions are judged by declared reference-model trees that read the actual loops, never as qualified criteria', () => {
