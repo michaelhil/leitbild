@@ -1,6 +1,6 @@
 import{test,expect}from'bun:test'
 import{createHash}from'node:crypto'
-import{createPwrDraftingUnitArtifacts,createPwrDraftingCampusArtifacts}from'../src/packs/physical-layout/authoring/pwr-drafting.ts'
+import{resolvePhysicalDesign,pwrOperatorUnitPhysicalDesignRef,pwrOperatorCampusPhysicalDesignRef}from'../src/packs/physical-layout/design.ts'
 import{physicalSourceFacts,parameters}from'../src/packs/physical-layout/native/drafting/source.ts'
 import{canonicalPhysicalJson,draftingLayoutDataSchema}from'../src/packs/physical-layout/model.ts'
 import{physicalSourceDependencyFailure}from'../src/packs/physical-layout/source-dependencies.ts'
@@ -14,15 +14,17 @@ import{weatherPack}from'../src/packs/weather/pack.ts'
 import{physicalLayoutPack}from'../src/packs/physical-layout/pack.ts'
 import{createDirectRoutingAdapter}from'../src/routing/direct-adapter.ts'
 const hash=(value:unknown)=>createHash('sha256').update(canonicalPhysicalJson(value)).digest('hex')
-test('unit-only physical edits cannot silently repin campus geometry derived from the previous source',()=>{
- const unit=createPwrDraftingUnitArtifacts(),campus=createPwrDraftingCampusArtifacts(),witnesses=campus.source.sourceDependencies!,current=witnesses.map(witness=>({role:witness.role,sourceId:unit.source.id,physicalSourceDigest:hash(physicalSourceFacts(unit.source)),physicalShapeDigest:witness.physicalShapeDigest}))
+test('unit-only physical edits cannot silently repin campus geometry derived from the previous source',async()=>{
+ const [admittedUnit,admittedCampus]=await Promise.all([pwrOperatorUnitPhysicalDesignRef,pwrOperatorCampusPhysicalDesignRef].map(resolvePhysicalDesign))
+ if(admittedUnit!.profile!=='drafting'||admittedCampus!.profile!=='drafting')throw Error('Expected current admitted drafting profiles')
+ const unit=structuredClone(admittedUnit!),campus=structuredClone(admittedCampus!),presentation=structuredClone(admittedUnit!),witnesses=campus.source.sourceDependencies!,current=witnesses.map(witness=>({role:witness.role,sourceId:unit.source.id,physicalSourceDigest:hash(physicalSourceFacts(unit.source)),physicalShapeDigest:witness.physicalShapeDigest}))
  expect(physicalSourceDependencyFailure(witnesses,current)).toBeNull()
  expect(physicalSourceDependencyFailure([],current)).toContain('no authored source/shape witness')
  const generator=unit.source.elements.find(element=>element.id==='tg-generator')!,old=parameters(unit.source,generator);generator.override={length:old.length+1}
  const changed=current.map(member=>({...member,physicalSourceDigest:hash(physicalSourceFacts(unit.source))}))
  expect(physicalSourceDependencyFailure(witnesses,changed)).toContain('re-author')
  expect(physicalSourceDependencyFailure(witnesses,current.map(member=>({...member,physicalShapeDigest:'d'.repeat(64)})))).toContain('compiled shape')
- const presentation=createPwrDraftingUnitArtifacts();presentation.source.planIntent!.dimensionUnit='m'
+ presentation.source.planIntent!.dimensionUnit='m'
  expect(physicalSourceDependencyFailure(witnesses,current.map(member=>({...member,physicalSourceDigest:hash(physicalSourceFacts(presentation.source))})))).toBeNull()
 },30_000)
 test('runtime refuses a stale source witness even when a caller repins the campus physical dependency to match a new unit',async()=>{
