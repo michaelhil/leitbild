@@ -6,6 +6,9 @@ import { plantDeclaration } from '../src/packs/process-plant/observation/declara
 import { commandNotFollowed } from '../src/packs/process-plant/observation/derived.ts'
 import { answerProcessPlantObservationQuery } from '../src/packs/process-plant/observation/query.ts'
 import { servedPlantTopology } from '../src/packs/process-plant/observation/topology.ts'
+import { validateOperatorWrite } from '../src/packs/process-plant/operations/command-guard.ts'
+import type { ListedItem } from '../src/packs/process-plant/operations/instance-ports.ts'
+import type { VariablePath } from '../src/packs/process-plant/graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { observedInput, readingLook } from '../src/ui/embed/vignette/readout.ts'
 import { observeListings } from './display-parity/listings.ts'
@@ -82,6 +85,53 @@ const listedFacts = (items: ReadonlyArray<any>) => items.map(item => ({
   withheld: item.withheld ?? [],
 }))
 
+/** Listed P1 difference: this existing valve now has explicit AUTO/MAN and a
+ * target. T01 remains immutable; every other historical action stays exact.
+ * Its newly exposed numeric position/demand must read the native variables,
+ * while P1/P1b still compare the physical state words to T01 independently. */
+const withBypassController = (items: ReadonlyArray<any>, instance: ProcessPlantRuntimeInstance) => items.map(item => {
+  if (item.id !== 'turbineBypassValve') return item
+  const automatic = item.withheld.find((control: any) => control.path === 'turbineBypassValve.positionFraction')
+  expect(automatic).toEqual({ path: 'turbineBypassValve.positionFraction', tagId: 'TURB-BYP', reason: {
+    kind: 'automatic', measured: 'main-steam-header-to-turbine-bypass-valve.pressureMPa', setpoint: 7.6,
+    text: 'AUTO · Turbine bypass valve inlet pressure held to 7.6 MPa',
+    manual: 'Manual operation needs an AUTO/MAN mode the model does not have: its controller writes this demand every step',
+  } })
+  expect(item.offered).toEqual([])
+  const option = (word: string) => ({ word, consequences: [], heldBy: null })
+  const common = { throttledUnder: [] }
+  return { ...item, offered: [
+    { ...common, tagId: 'TURB-BYP', form: 'demand', now: {
+      demand: instance.runtime.readVariable('turbineBypassValve.positionFraction' as VariablePath),
+      position: instance.runtime.readVariable('turbineBypassValve.effectivePositionFraction' as VariablePath),
+    }, options: [option('OPEN'), option('SHUT')] },
+    { ...common, tagId: 'TURB-BYP-AUTO', form: 'twoState', now: null, options: [option('AUTO'), option('MAN')] },
+    { ...common, tagId: 'TURB-BYP-SP', form: 'setpoint', now: null, options: [] },
+  ], withheld: [
+    ...item.withheld.filter((control: any) => control !== automatic),
+    { ...automatic, reason: { ...automatic.reason,
+      text: automatic.reason.text.replace('held to', 'target'),
+      manual: 'Select MAN to operate the valve position; protection and isolation remain in force',
+    } },
+  ] }
+})
+
+/** Independent authored expectations for this reference model, not regenerated
+ * output of derivePlantControls. Process duty (relief) does not remove an
+ * explicitly enabled controller's MAN position; safety valves remain absent. */
+const CONTROLLER_AFFORDANCES = [
+  ...['A', 'B', 'C', 'D'].map(loop => ({ id: `feedwaterControlValve${loop}`, positionTag: `MFW-${loop}-CV`, modeTag: `MFW-${loop}-CTRL-AUTO`, targetTag: `MFW-${loop}-CTRL-SP`, target: 55, unit: 'percent', quantity: 'ratio' })),
+  ...['A', 'B', 'C', 'D'].map(loop => ({ id: `steamGeneratorReliefValve${loop}`, positionTag: `SG-${loop}-ARV`, modeTag: `SG-${loop}-ARV-AUTO`, targetTag: `SG-${loop}-ARV-SP`, target: 7.86, unit: 'MPa', quantity: 'pressure' })),
+  { id: 'turbineBypassValve', positionTag: 'TURB-BYP', modeTag: 'TURB-BYP-AUTO', targetTag: 'TURB-BYP-SP', target: 7.6, unit: 'MPa', quantity: 'pressure' },
+]
+const ISOLATED_MFW = ['A', 'B', 'C', 'D'].map(loop => `feedwaterControlValve${loop}`)
+const MAN_POSITION_BLOCKED: Readonly<Record<string, ReadonlyArray<string>>> = {
+  steady: [],
+  'loss-main-feedwater+120s': ISOLATED_MFW,
+  'loss-offsite-power+60s': [...ISOLATED_MFW, 'turbineBypassValve'],
+  'porv-open-35+120s': [],
+}
+
 const topology = servedPlantTopology(PLANT_ID as never, plantModel())
 
 describe('T39 plant swap parity', () => {
@@ -99,7 +149,7 @@ describe('T39 plant swap parity', () => {
           const ids = old.drawn.map(entry => entry.slice(0, entry.indexOf(':')))
           expect([...scoped.scoped.nodes].sort()).toEqual([...ids].sort())
           // What the element pop-over's actions list for each drawn item (controls.list, by node id).
-          expect(listedFacts(ask<{ readonly items: ReadonlyArray<any> }>('world.process-plant.controls.list', { plantId: PLANT_ID, items: ids }).items)).toEqual(old.items as never)
+          expect(listedFacts(ask<{ readonly items: ReadonlyArray<any> }>('world.process-plant.controls.list', { plantId: PLANT_ID, items: ids }).items)).toEqual(withBypassController(old.items, instance))
           // An operated item's state observable reads what the drawing's word said, in its controls' words, with the command it does not follow.
           const states = ids.filter(id => declared.has(ref(`${id}.state`)))
           const observed = read(instance, states.map(id => ref(`${id}.state`)))
@@ -114,6 +164,59 @@ describe('T39 plant swap parity', () => {
             expect([id, observation.why ?? null]).toEqual([id, commandedWord(word)])
           }
         })
+      })
+
+      test('P1c: all authored controller affordances expose real current authority without changing the recorded physical state', () => {
+        // The historical P1/P1b/P2/P3 instance is never mutated by these operator actions.
+        const operated = plantIn(state)
+        const protection = operated.protection
+        if (protection === undefined) throw new Error('Characterization states require their actual I&C runner')
+        const numberAt = (path: VariablePath): number => {
+          const value = operated.runtime.readVariable(path)
+          if (typeof value !== 'number') throw new Error(`Expected native numeric feedback: ${path}`)
+          return value
+        }
+        const query = askOf(operated)
+        const items = query<{ readonly items: ReadonlyArray<ListedItem> }>('world.process-plant.controls.list', { plantId: PLANT_ID }).items
+        expect(items.flatMap(item => item.offered.filter(control => control.control.form === 'setpoint').map(() => item.id)).sort()).toEqual(CONTROLLER_AFFORDANCES.map(controller => controller.id).sort())
+        for (const expected of CONTROLLER_AFFORDANCES) {
+          const item = items.find(item => item.id === expected.id)!
+          const position = item.offered.find(control => control.control.tagId === expected.positionTag)!
+          const mode = item.offered.find(control => control.control.tagId === expected.modeTag)!
+          const target = item.offered.find(control => control.control.tagId === expected.targetTag)!
+          expect(position.control).toMatchObject({ path: `${expected.id}.positionFraction`, state: `${expected.id}.effectivePositionFraction`, form: 'demand',
+            demand: { min: 0, max: 1, step: 0.01, unit: 'fraction' },
+            controller: { automatic: `${expected.id}.controllerAutomatic`, setpoint: `${expected.id}.controllerSetpoint` } })
+          expect(position.now).toEqual({ demand: numberAt(position.control.path), position: numberAt(position.control.state!) })
+          expect(position.unavailable).toContain('Select MAN')
+          expect(mode.control).toMatchObject({ path: `${expected.id}.controllerAutomatic`, form: 'twoState', options: [{ word: 'AUTO', value: true }, { word: 'MAN', value: false }] })
+          expect(target.control).toMatchObject({ path: `${expected.id}.controllerSetpoint`, form: 'setpoint', setpoint: { quantity: expected.quantity, unit: expected.unit } })
+          expect(operated.runtime.readVariable(mode.control.path)).toBe(true)
+          expect(operated.runtime.readVariable(target.control.path)).toBe(expected.target)
+          for (const origin of ['person', 'ai'] as const) {
+            const validate = (path: VariablePath, value: number | boolean) => validateOperatorWrite({ system: operated.plant, runtime: operated.runtime, protection, origin, payload: { plantId: PLANT_ID, path, value } })
+            expect(validate(position.control.path, 0.4)).toMatchObject({ accepted: false, reason: expect.stringContaining('select MAN') })
+            expect(validate(mode.control.path, false).accepted).toBe(true)
+            expect(validate(target.control.path, expected.target).accepted).toBe(true)
+          }
+          operated.runtime.writeCommand({ type: 'setVariable', path: mode.control.path, value: false })
+        }
+        operated.runtime.tick(1_000)
+        protection.evaluate({ runtime: operated.runtime, elapsedMs: operated.runtime.elapsedMs(), simulationRunId: 'run-characterization' as never, sourceRuntimeId: 'process-plant.local' })
+        for (const expected of CONTROLLER_AFFORDANCES) {
+          const manual = query<{ readonly items: ReadonlyArray<ListedItem> }>('world.process-plant.controls.list', { plantId: PLANT_ID, items: [expected.id] }).items[0]!
+          const position = manual.offered.find(control => control.control.tagId === expected.positionTag)!
+          const mode = manual.offered.find(control => control.control.tagId === expected.modeTag)!
+          expect(operated.runtime.readVariable(mode.control.path)).toBe(false)
+          for (const origin of ['person', 'ai'] as const) {
+            const validation = validateOperatorWrite({ system: operated.plant, runtime: operated.runtime, protection, origin,
+              payload: { plantId: PLANT_ID, path: position.control.path, value: 0.4 } })
+            expect(validation.accepted).toBe(!MAN_POSITION_BLOCKED[state.id]!.includes(expected.id))
+          }
+          expect(manual.offered.find(control => control.control.path === position.control.path)?.unavailable).toBeUndefined()
+          expect(manual.position?.value).toBe(numberAt(position.control.state!))
+        }
+        expect(items.filter(item => /safetyValve|safety-valve/i.test(item.id)).flatMap(item => item.offered)).toEqual([])
       })
 
       test('P1b: each item the overview and the details drew with a state word declares its state in that word, the command it does not follow as its why, bound on its node', () => {
