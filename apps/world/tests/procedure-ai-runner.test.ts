@@ -194,6 +194,49 @@ describe('the AI procedure runner through the World Module API', () => {
     await run.setClock({ paused: true })
   })
 
+  test('a transition receipt preserves its exact committed decision across revisits, without duplicating proof in the command journal', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
+    const human = access(workspaceId, { kind: 'human' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId, label: 'Unit A1' } }, ai)
+    const runId = started.body.result.pinned.runId
+    const before = await invoke('world.procedure.run.step.read', { runId }, ai)
+    expect(before.body.result.step.id).toBe('verify-reactor-trip')
+    const first = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Current framework pressure diagnostic is positive.' }, ai)
+    expect(first.status).toBe(200)
+    const receipt = first.body.result.decision
+    const recorded = run.events().find(event => event.type === 'procedure.branch.selected' && event.provenance.causedByCommandId === first.body.result.commandId)
+    expect(receipt).toMatchObject({
+      run: { runId, procedureId: 'E-0', sourceId: 'runner-test', sourceRevision: revision, sourcePath: 'procedures/E-0.md', scope: { plantId, label: 'Unit A1' } },
+      event: { type: 'procedure.branch.selected', simulationRunId: run.id, runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+        selectedBy: 'actor:ai:assistant', criterion: { status: 'supported' } },
+    })
+    expect(receipt.event).toEqual(recorded)
+    expect(first.body.result.next.step.id).toBe('verify-turbine-trip')
+    const commandEvent = run.events().find(event => event.type === 'command.result' && event.result.commandId === first.body.result.commandId)
+    expect(commandEvent).not.toHaveProperty('result.decision')
+
+    // A later refusal cannot claim a committed decision, even with a prior step's proof available.
+    const eventsBeforeRefusal = run.events().filter(event => event.type === 'procedure.branch.selected').length
+    const refused = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Old step is no longer current.' }, ai)
+    expect(refused.status).toBe(409)
+    expect(refused.body).not.toHaveProperty('result.decision')
+    expect(run.events().filter(event => event.type === 'procedure.branch.selected')).toHaveLength(eventsBeforeRefusal)
+
+    // Deliberate human navigation and a new selection do not rewrite the earlier receipt.
+    expect((await invoke('world.procedure.step.update', { runId, stepId: 'verify-reactor-trip', currentStepId: 'verify-reactor-trip' }, human)).status).toBe(200)
+    const second = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Human revisits the framework diagnostic.' }, human)
+    expect(second.status).toBe(200)
+    expect(second.body.result.decision.event.id).not.toBe(receipt.event.id)
+    expect(second.body.result.decision.event.selectedBy).not.toBe(receipt.event.selectedBy)
+    expect(receipt.event).toEqual(recorded)
+    expect(receipt.event.provenance.causedByCommandId).toBe(first.body.result.commandId)
+    expect(receipt.event.seq).toBeLessThan(second.body.result.decision.event.seq)
+    expect(run.snapshot().procedures!.runs[0]!.stepStates.find(step => step.stepId === 'verify-reactor-trip')!.decision!.selectedBy)
+      .toBe(second.body.result.decision.event.selectedBy)
+  })
+
   test('an AI agent starts and drives E-0, reads its step with live readings, and its accepted transition answers with the next step', async () => {
     const { registry, workspaceId, run, plantId } = await setup()
     const invoke = invoker(registry, workspaceId, run.id)
@@ -366,6 +409,12 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(run.snapshot().procedures!.runs.find(candidate => candidate.runId === runId)).toMatchObject({ status: 'transferred' })
     expect(destination).toMatchObject({ status: 'active', driver: { kind: 'ai', actorId: 'actor:ai:assistant' } })
     expect(transfer.body.result.next).toMatchObject({ run: { runId: destination.runId, procedureId: 'ES-0.1', currentStepId: 'monitor', stepNumber: 1 }, step: { id: 'monitor' } })
+    expect(transfer.body.result.decision).toMatchObject({
+      run: { runId, procedureId: 'E-0', sourceId: 'runner-test', sourceRevision: revision, sourcePath: 'procedures/E-0.md', scope: { plantId } },
+      event: { runId, stepId: 'verify-turbine-trip', targetKind: 'procedure', target: 'ES-0.1', criterion: { status: 'supported' } },
+    })
+    expect(transfer.body.result.decision.event).toEqual(run.events().find(event => event.type === 'procedure.branch.selected' && event.provenance.causedByCommandId === transfer.body.result.commandId))
+    expect(transfer.body.result.decision.run.runId).not.toBe(transfer.body.result.next.run.runId)
   })
 
   test('human takeover after an AI read holds every Plant operation, while another unit remains direct', async () => {

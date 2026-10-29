@@ -4,6 +4,7 @@ import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/
 import type { RunHistorianStatus } from '../../features/historian/policy.ts'
 import { recordingSeriesQuerySchema, type RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
+import { procedureTransitionDecision, type ProcedureTransitionDecision } from '../../features/procedures/transition-receipt.ts'
 import { createProcedureObservationPort,type ProcedureObservationPort } from '../../features/procedures/pack-observations.ts'
 import { createObservationCache, createObservationPort, observationProviderFor, type ObservationPort } from '../../features/displays/observation/port.ts'
 import { createProcedureSourceService,type ProcedureSourceService, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
@@ -895,6 +896,7 @@ export const createSimulationRunRuntime = async (config: {
           },
         })
         if (commit === null) return null
+        let decision: ProcedureTransitionDecision | undefined
         await publishGenerated(async () => {
           await evaluateProcedureObservationsNow()
           const snapshot = state.snapshot()
@@ -911,7 +913,7 @@ export const createSimulationRunRuntime = async (config: {
             const denied = targets.filter(objectId => restrictions.objects.some(entry => entry.objectId === objectId && entry.deny.includes('change')))
             if (denied.length > 0) throw new Error(`AI change access is restricted for: ${denied.join(', ')}`)
           }
-          return commit({
+          const events = await commit({
             simulationRunId: config.id, at: nowIso(), procedures: snapshot.procedures,
             simulationTime: runClock.read().currentTime,
             commandSource,
@@ -923,8 +925,17 @@ export const createSimulationRunRuntime = async (config: {
             observations: plantId => procedureObservations(actor, plantId, evidenceBudget),
             clock: () => runClock.read().currentTime,
           })
+          if (command.kind === 'world.procedure.run.transition') {
+            const selected = events.find((event): event is Extract<SimulationRunEvent, { type: 'procedure.branch.selected' }> => event.type === 'procedure.branch.selected')
+            const run = snapshot.procedures?.runs.find(run => run.runId === selected?.runId)
+            if (!selected || !run) throw new Error('Procedure transition produced no pinned decision receipt')
+            // Capture the exact commit batch, never the latest step or a later journal search.
+            decision = procedureTransitionDecision(run, selected)
+          }
+          return events
         })
-        return { ok: true, commandId: command.id, acceptedAt: at }
+        const result = { ok: true as const, commandId: command.id, acceptedAt: at, ...(decision === undefined ? {} : { decision }) }
+        return result
       } catch (error) {
         assertCommitAvailable()
         return {
@@ -1175,6 +1186,10 @@ export const createSimulationRunRuntime = async (config: {
         ...(viewer === undefined ? {} : { viewer }), origin: commandOriginOf(actor), procedureDriven: procedureDrivenBy(command), procedureHolds: procedureHolds(),
       })
     await drainRuntimeEmissions()
+    // The branch event already journals the complete proof. Its API receipt
+    // carries the same event without persisting another copy in command.result.
+    const journalResult: CommandResult = command.kind === 'world.procedure.run.transition' && result.ok
+      ? { ok: true, commandId: result.commandId, acceptedAt: result.acceptedAt } : result
     await publishOneGenerated(() => ({
       id: eventId(),
       simulationRunId: config.id,
@@ -1182,7 +1197,7 @@ export const createSimulationRunRuntime = async (config: {
       at: result.ok ? result.acceptedAt : result.rejectedAt,
       provenance: { source: 'simulator', causedByCommandId: command.id },
       type: 'command.result',
-      result,
+      result: journalResult,
     }), { history: commandEventDisposition })
     return result
   }

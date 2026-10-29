@@ -1433,7 +1433,7 @@
         </div>
       {/each}
     {/if}
-    <small>Values read when this opened. World does not evaluate this step's checks; a selected branch records a judgement.</small>
+    <small>Values read when this opened, separately from recorded decision evidence. World evaluates declared branch criteria when selecting a branch; prose checks and manual judgments are not automatic proof.</small>
   </div>
 {/snippet}
 

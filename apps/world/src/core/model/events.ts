@@ -127,7 +127,7 @@ export type SimulationRunEvent =
       readonly resetBy: ActorId
     })
 
-const eventBaseSchema = z.object({
+export const eventBaseSchema = z.object({
   id: eventIdSchema,
   simulationRunId: simulationRunIdSchema,
   seq: z.number().int().nonnegative(),
