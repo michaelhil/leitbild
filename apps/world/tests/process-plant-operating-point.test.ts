@@ -79,6 +79,38 @@ describe('authoritative PWR full-power operating point', () => {
     expect(processPlantDefinitionCatalog().operatingPoints[0]?.description).toContain('100%')
   })
 
+  test('full-power sizing supplies every shared-source consumer while explicit undersizing remains a real constraint', () => {
+    const definition = createPwrReferencePlantDefinition({ id: 'test:shared-water' })
+    const system = compileProcessPlant(definition)
+    const source = system.graph.components.find(component => component.id === 'ultimateHeatSink')!
+    const capacity = Number((source.parameters as Record<string, unknown>).maxOutletFlowKgPerS)
+    const runtime = createProcessPlantRuntime({ system })
+    runtime.tick(5_000)
+    const outlets = system.graph.links.filter(link => link.fromComponentIndex === source.index && link.kind === 'fluidFlow')
+    expect(new Set(outlets.map(link => link.service))).toEqual(new Set(['coolingWater', 'serviceWater']))
+    let total = 0
+    for (const outlet of outlets) {
+      const pump = system.graph.components[outlet.toComponentIndex]!
+      const delivered = Number(runtime.readVariable(`${outlet.id}.flowKgPerS` as VariablePath))
+      expect(delivered).toBeGreaterThan(0)
+      // At an unconstrained source, the small service-water branches may not
+      // steal an equal share from the much larger condenser cooling branch.
+      expect(delivered).toBeCloseTo(Number(runtime.readVariable(`${pump.id}.flowKgPerS` as VariablePath)), 6)
+      total += delivered
+    }
+    expect(total).toBeLessThanOrEqual(capacity)
+    const limitedSystem = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:undersized-water',
+      parameterOverrides: { ultimateHeatSink: { maxOutletFlowKgPerS: 500 } },
+    }))
+    const limited = createProcessPlantRuntime({ system: limitedSystem })
+    limited.tick(5_000)
+    const delivered = outlets.reduce((sum, outlet) => sum + Number(limited.readVariable(`${outlet.id}.flowKgPerS` as VariablePath)), 0)
+    expect(delivered).toBeLessThanOrEqual(500)
+    expect((limitedSystem.graph.components.find(component => component.id === source.id)!.parameters as Record<string, unknown>).maxOutletFlowKgPerS).toBe(500)
+    expect(Number(limited.readVariable('condenser.coolingWaterFlowKgPerS' as VariablePath)))
+      .toBeLessThan(Number(runtime.readVariable('condenser.coolingWaterFlowKgPerS' as VariablePath)))
+  })
+
   test('restore retains actual progressed state instead of reapplying the operating point', () => {
     const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:restore' }))
     const runtime = createProcessPlantRuntime({ system })
