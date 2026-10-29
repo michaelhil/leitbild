@@ -6,7 +6,7 @@ import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, proce
 import type { ProcessPlantSignalReference, ProcessPlantSignalView } from './signals.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
-import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator } from './runtime/ic/control-protection-model.ts'
+import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator, type ProcessPlantIcSnapshot } from './runtime/ic/control-protection-model.ts'
 
 export type ProcedureConditionStatus = 'satisfied' | 'challenged' | 'unknown'
 export type ProcessPlantProcedureCondition =
@@ -99,10 +99,11 @@ export const evaluateProcessPlantProcedureCondition = (config: {
   const snapshots = new Map<VariablePath, ProcessPlantVariableSnapshot>()
   const unavailableSnapshots = new Map<VariablePath, string>()
   let visited = 0
+  let icSnapshot: ProcessPlantIcSnapshot | undefined
   const evaluate = (condition: ProcessPlantProcedureCondition, depth: number): ProcedureConditionStatus => {
     if (++visited > 512 || depth > 32) throw new Error('Procedure condition exceeds the 512-node or 32-level evaluation limit.')
     if (condition.type === 'ic-rule-state') {
-      const snapshot = plant.protection?.snapshot()
+      const snapshot = icSnapshot ??= plant.protection?.snapshot()
       const rule = plant.plant.automation.rules.find(candidate => candidate.id === condition.ruleId)
       const state = snapshot?.rules.find(candidate => candidate.ruleId === condition.ruleId)
       const failure = snapshot?.failures.find(candidate => candidate.ruleId === condition.ruleId)

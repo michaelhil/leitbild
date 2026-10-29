@@ -76,6 +76,10 @@ describe('read-only procedure condition evidence', () => {
     const current = { ...plant, protection }
     const inactive = { type: 'ic-rule-state', ruleId: 'safety-injection-manual', field: 'active', value: false, source: '../basis.md#si' } as const
     expect(evaluate(inactive, current).status).toBe('satisfied')
+    let snapshotReads = 0
+    const counted = { ...current, protection: { ...protection, snapshot: () => { snapshotReads++; return protection.snapshot() } } }
+    expect(evaluate({ type: 'all', conditions: [inactive, { ...inactive, field: 'latched' }] }, counted).status).toBe('satisfied')
+    expect(snapshotReads).toBe(1)
     expect(evaluate({ ...inactive, ruleId: 'UNMODELED-PHASE-B' }, current).status).toBe('unknown')
     expect(evaluate(inactive, plant).status).toBe('unknown')
     const failed = { ...current, protection: { ...protection, snapshot: () => ({ ...protection.snapshot(), failures: [{ ruleId: inactive.ruleId, elapsedMs: 0, message: 'Acquisition failed' }] }) } }
