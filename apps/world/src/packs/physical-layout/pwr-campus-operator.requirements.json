@@ -1,0 +1,124 @@
+{
+  "ownerRole": "grid",
+  "ownerPackId": "electric-grid",
+  "placement": {
+    "anchor": [
+      11.48,
+      59.08
+    ],
+    "bearing": 0,
+    "subjectId": "bus:curated-halden-pwr-switchyard@420"
+  },
+  "relatedMembers": [
+    {
+      "role": "unit-1",
+      "packId": "process-plant",
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05",
+      "anchor": [
+        11.47,
+        59.087
+      ],
+      "physicalLayout": {
+        "physical": {
+          "id": "pwr-full-unit",
+          "digest": "43f989a162bc375168971b06e9c6c95ee4bae4e335d7ae351c037665df851fb4"
+        },
+        "bearing": 0
+      }
+    },
+    {
+      "role": "unit-2",
+      "packId": "process-plant",
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05",
+      "anchor": [
+        11.477,
+        59.085
+      ],
+      "physicalLayout": {
+        "physical": {
+          "id": "pwr-full-unit",
+          "digest": "43f989a162bc375168971b06e9c6c95ee4bae4e335d7ae351c037665df851fb4"
+        },
+        "bearing": 0
+      }
+    },
+    {
+      "role": "unit-3",
+      "packId": "process-plant",
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05",
+      "anchor": [
+        11.484,
+        59.083
+      ],
+      "physicalLayout": {
+        "physical": {
+          "id": "pwr-full-unit",
+          "digest": "43f989a162bc375168971b06e9c6c95ee4bae4e335d7ae351c037665df851fb4"
+        },
+        "bearing": 0
+      }
+    },
+    {
+      "role": "unit-4",
+      "packId": "process-plant",
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05",
+      "anchor": [
+        11.491,
+        59.081
+      ],
+      "physicalLayout": {
+        "physical": {
+          "id": "pwr-full-unit",
+          "digest": "43f989a162bc375168971b06e9c6c95ee4bae4e335d7ae351c037665df851fb4"
+        },
+        "bearing": 0
+      }
+    }
+  ],
+  "connections": [
+    {
+      "system": {
+        "role": "unit-1",
+        "portId": "grid-420kv"
+      },
+      "network": {
+        "role": "grid",
+        "portId": "unit-1-420kv"
+      }
+    },
+    {
+      "system": {
+        "role": "unit-2",
+        "portId": "grid-420kv"
+      },
+      "network": {
+        "role": "grid",
+        "portId": "unit-2-420kv"
+      }
+    },
+    {
+      "system": {
+        "role": "unit-3",
+        "portId": "grid-420kv"
+      },
+      "network": {
+        "role": "grid",
+        "portId": "unit-3-420kv"
+      }
+    },
+    {
+      "system": {
+        "role": "unit-4",
+        "portId": "grid-420kv"
+      },
+      "network": {
+        "role": "grid",
+        "portId": "unit-4-420kv"
+      }
+    }
+  ]
+}

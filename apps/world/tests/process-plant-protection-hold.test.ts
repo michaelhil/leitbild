@@ -123,9 +123,9 @@ describe('a throttle under an actuation that drove a demand to an end of its spa
       'sg-a-level-low-low-afw-actuation', 'sg-b-level-low-low-afw-actuation', 'sg-c-level-low-low-afw-actuation', 'sg-d-level-low-low-afw-actuation',
     ])
     for (const rule of floored) expect(rule.throttleFloor!.basis).toContain('FR-H.1')
-    expect(plant.modelDigest).toBe('47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea')
-    // 1711 since each of the 20 centrifugal pumps gained the fault that fails it to start (R2, plan v5 §5.2).
-    expect(plant.graph.variables.length).toBe(1711)
+    expect(plant.modelDigest).toBe('c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05')
+    // The controller tranche adds two real configuration variables on nine valves.
+    expect(plant.graph.variables.length).toBe(1729)
     // The same graph under the I&C config without any floor: the same digest and variables.
     const withoutFloors = compileResolvedProcessPlant({
       id: plant.id, modelRef: plant.modelRef, operatingPointRef: plant.operatingPointRef, automationRef: plant.automationRef,

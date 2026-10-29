@@ -32,105 +32,11 @@ guardPlantTests()
 describe('process plant model composition', () => {
   test('the deployed PWR checkpoint identity changes only by decision', () => {
     const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:checkpoint', loopCount: 4 }))
-    // Even descriptive graph edits affect the full-graph checkpoint digest, so
-    // any change here must be an owner's decision. Frozen at 827c5690 through
-    // the Agent upgrade; changed on 2026-10-10 when the owner chose to delete
-    // the spec's hand-picked display profiles, accepting that PWR Runs
-    // checkpointed before then cannot be restored and must be restarted.
-    // Changed again on 2026-10-10, approved by the owner, when the model was
-    // made to report equipment state truthfully; PWR Runs checkpointed before
-    // then must be restarted. Changed again on 2026-10-10, approved by the
-    // owner, when the emergency diesels' output breakers were made to stand
-    // open in standby, again when the non-safety loads were moved to unit
-    // buses, again when the diesels, buses and unit auxiliary transformer
-    // were given realistic ratings, and again when the turbine-driven AFW
-    // pump lost its AC feed, and again when the reactor protection gained
-    // its loop delta-T channels, safety injection pump curves, accumulator
-    // injection and the PORV block valve, its motor fed from safety bus A
-    // apart from the heaters' unit bus. Changed again on 2026-10-10,
-    // approved by the owner as model-truth changes, when the main steam
-    // safety valve was made to discharge to the atmosphere instead of into
-    // containment, again for the steam generators' narrow-range level, the
-    // auxiliary feedwater ratings and the main steam pressure set points,
-    // again for the steam generators' tube metal and their atmospheric
-    // relief valves, and again when the primary system was given IF97
-    // coolant properties, a closed energy balance, a letdown line, a
-    // pressurizer coupled to the loops' inventory and saturation, and
-    // realistic loop and tube-metal sizes. Changed again on 2026-10-10,
-    // approved by the owner, when the pressurizer gained its code safety
-    // valves and relief header, again when low-pressure SI became blockable
-    // below P-11, again when the steam-line N-16 monitors were made to read
-    // in proportion to fission power, and again when the core's fission
-    // power was given a 0 to 4,500 MW hard range, and on 2026-10-11,
-    // approved by the owner as a model-truth change, when reactor coolant
-    // breaks were made to discharge at their critical flow, the coolant's
-    // moderator void to feed back on reactivity and the pressurizer's
-    // compressed water to be tracked, and again when the pressurizer was
-    // given its level control (a Tavg level program and charging set to hold
-    // it) and its 17 % low-level cutoff of heaters and letdown, with letdown
-    // and charging resized to a four-loop plant's, and again when the
-    // pressurizer's heaters were split into a control group on unit bus A
-    // and a 1.5 MW backup group on diesel-backed safety bus A, through its
-    // own breaker, and again when the steam generators' narrow-range level
-    // instruments declared the 0 to 100 % span their indication saturates at,
-    // and again when the reactor coolant loops were given their hydraulics
-    // (flywheel coastdown, a vessel pressure drop the loops share, reverse
-    // flow in an idle loop and natural circulation by buoyancy), and again,
-    // as a model-truth change, when the pressurizer's level deviation from
-    // its program was given its tag (PZR-LVL-DEV), so its low-deviation alarm
-    // replaces the fixed 35 % low-level alarm that stood after every trip,
-    // and again when the core was given six delayed-neutron groups, decay
-    // heat on the ANS-5.1 curve and a scram worth on its trip breakers, and
-    // again when its nuclear instruments were given their spans, the power
-    // range and startup rate, and P-6 and P-10, and again when rod control
-    // was given its Tref program, and again when the PORV was rated at a
-    // Westinghouse PORV's 26.5 kg/s of steam at 16.2 MPa, and again when the
-    // auxiliary feedwater header was given its pressure balance and each
-    // steam generator its AFW flow signal, and again when each steam
-    // generator gained a wide-range level beside its narrow-range one, and
-    // again when the pressurizer's heaters were rated like a Westinghouse
-    // four-loop plant's, 0.4 MW proportional and 1.4 MW backup, and again
-    // when the narrow-range levels' spans moved from each steam generator to
-    // their kind, beside their hard range, again when the pressurizer's
-    // level program and its deviation from it were published beside its
-    // level, again when the link flows no plant instrument measures (leak,
-    // relief and release flows) were marked simulator-only, again when the
-    // rods gained their position indication and rod bottom bistable, again
-    // when the diesels gained their kW, voltage and frequency, the buses
-    // their kilovolts, and each safety train its load sequencer and the
-    // loads it sequences, again when the pressurizer relief tank became a
-    // nitrogen-blanketed quench tank and the relief lines gained their
-    // tailpipe temperatures and the PORV its acoustic flow monitor, its
-    // readings their normal bands, again when the turbine-driven auxiliary
-    // feedwater pump was given its 30 s run-up, again when the
-    // condensate storage tank was sized from its Technical Specification
-    // reserve, again when the steam generators' narrow range was
-    // recalibrated to the upper quarter of their wide range, and again when
-    // the hotwell and the feedwater tank were given their level control;
-    // PWR Runs checkpointed before then must be restarted. Changed again on
-    // 2026-10-12, once for the C1 model freeze (plan-final §3, owner's
-    // delegation), when the core and turbine-generator displays were given
-    // what they read: the source-range startup rate and its 2.5e4 cps at P-6,
-    // the reactor trip breakers published, the rods in steps and in eight
-    // banks, each loop's delta-T power and flow, the natural-circulation
-    // trends, the manual reactor trip, turbine trip and safety injection
-    // pushbuttons, P-14's turbine trip annunciated, the turbine-generator's
-    // load, speed, breaker and grid signals, the main steam isolation and
-    // turbine stop valves as trip valves, and the offsite supply voltage the
-    // relays read (1552 variables before, 1592 after); PWR Runs checkpointed
-    // before then must be restarted. Changed again on 2026-10-13, once for the
-    // C2b model fixes the owner approved before the demo: the steam generator
-    // relief valves' positions and flows to the atmosphere published, the
-    // turbine-driven AFW pump driven on steam from steam generators B and C
-    // through its two steam supply valves, and each steam line given its bank
-    // of safety valves ahead of its isolation valve in place of the header's
-    // valve (1592 variables before, 1691 after), and the steam generators
-    // made to boil their feed at its enthalpy rise from a declared 227 °C
-    // feedwater (1,900 kg/s of steam at full power), their boiling swell
-    // calibrated to a fifth of the narrow range, and the feed regulating
-    // valves stood at 75 % at full power (no variable added); PWR Runs
-    // checkpointed before then must be restarted.
-    expect(system.modelDigest).toBe('47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea')
+    // Owner-approved 29 October controller tranche: real AUTO/MAN and typed
+    // targets, with resolved component variables/ports/semantics in identity.
+    // Fresh sandbox Runs only; old checkpoints and proof are never rewritten.
+    // Scope and operating semantics: wiki world/packs/process-plant/signals-and-actions.md.
+    expect(system.modelDigest).toBe('c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))

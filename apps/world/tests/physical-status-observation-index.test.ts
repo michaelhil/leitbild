@@ -17,7 +17,7 @@ import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { pwrConnectedUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { pwrOperatorUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -76,12 +76,12 @@ test('varied duplicate/missing/ref order, first state words and worst quality eq
 test('actual acquired R5 subjects retain all live/frozen statuses against the prior filter', async () => {
   const packs = [processPlantPack, physicalLayoutPack], definition = scenarioDefinitionSchema.parse({ id: 'status-index-proof', title: 'Status index proof', packs: [
     { id: 'process-plant', config: {}, items: [{ type: 'plant', id: 'plant:proof', label: 'PWR', location: [11.47, 59.087], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] },
-    { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: 'layout:proof', label: 'Full unit', design: pwrConnectedUnitPhysicalDesignRef, members: { unit: 'plant:proof' }, bearing: 0 }] },
+    { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: 'layout:proof', label: 'Full unit', design: pwrOperatorUnitPhysicalDesignRef, members: { unit: 'plant:proof' }, bearing: 0 }] },
   ], world: { startsAt: '2026-10-27T00:00:00Z' }, view: { map: { center: [11.47, 59.087], zoom: 16 } } })
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-status-index-')), workspaceId = newWorkspaceId(), registry = createSimulationRunRegistry({ dataDir, workspaceId, scenarioDefinitions: [definition], compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs }), runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter()] })
   try {
     const run = await registry.create({ scenarioId: definition.id }); await run.setClock({ paused: true })
-    const request = new Request(`http://leitbild.test/api/workspaces/${workspaceId}/world/simulation-runs/${run.id}/displays/layout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layoutObjectId: 'layout:proof', expectedRevision: pwrConnectedUnitPhysicalDesignRef.digest }) })
+    const request = new Request(`http://leitbild.test/api/workspaces/${workspaceId}/world/simulation-runs/${run.id}/displays/layout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layoutObjectId: 'layout:proof', expectedRevision: pwrOperatorUnitPhysicalDesignRef.digest }) })
     const response = await handleSimulationRunApi(request, new URL(request.url), { registry, accessContext: accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'anonymous' } }), roleHolders: () => ({}) })
     expect(response?.status).toBe(200); const acquired = layoutLiveResponseSchema.parse(await response!.json())
     expect(acquired.subjects.length).toBeGreaterThan(100)

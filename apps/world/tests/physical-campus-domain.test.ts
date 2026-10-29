@@ -15,7 +15,7 @@ import { actorIdSchema, geoPointFromLonLat, objectIdSchema, type IsoTimestamp, t
 import { sideViewOfSnapshot } from '../src/core/simulation-runs/side-view.ts'
 import type { SimulationRunStateSnapshot } from '../src/core/simulation-runs/state-store.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { processPlantPack } from '../src/packs/process-plant/pack.ts'
+import { historicalPhysicalProcessPlantPack as processPlantPack } from './fixtures/physical-layout/historical-targets.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { physicalLayoutPack, physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
