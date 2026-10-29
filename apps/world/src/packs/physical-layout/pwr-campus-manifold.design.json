@@ -1,10 +1,10 @@
 {
   "design": {
     "id": "pwr-campus",
-    "revision": "pwr-campus-20261028-r6",
-    "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+    "revision": "pwr-campus-20261029-r7",
+    "digest": "aa3d95dad26ff940d610628c64fef00d072cfff29861e253bd47ec9c52c91dce"
   },
-  "sourceDigest": "5eceed8ebf7cde5f0ab3764c75ea925ac9d1fa112b49bb017b2d408e7684bfd3",
+  "sourceDigest": "2ba33126b7abe088968d02138efd7badc82d702e7e3a79831a9fa256e956289a",
   "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
   "modelRequirement": {
     "modelRef": "electric-grid.halden.four-unit",
@@ -153,9 +153,9 @@
     ]
   },
   "physicalApplicability": {
-    "sourceDigest": "c60ac02a5d37642c48e39d7f4452ffa0085b1b293aeb97ed23e1724038251a48",
-    "geometryDigest": "e669c54baefc3c9d73e7bd35540b1dcb5fe079317a8de1d8dad8720578bdd765",
-    "digest": "d4988d7a0ee80afdc44ec699547b91ff16ee05f6490272fe54f713f88aab544d"
+    "sourceDigest": "ac4615a736721978c56d94a221394aa8b0027214c485401a219cfd5bff961bb9",
+    "geometryDigest": "773588cfe12f715be49050cd012f1ebffdf62969c6cada28a17bd32c1521e4e3",
+    "digest": "69894c0b12d78f77b21164f8da87fefe561fb203dc5444379b55ead4e5da384c"
   },
   "presentation": {
     "scopes": [

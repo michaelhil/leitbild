@@ -69,12 +69,12 @@ test('all eight added turbine fittings mount on actual non-foundation family tri
  }
 })
 
-test('campus geometry is unchanged and both exact sources regenerate without altering the physical owner model',async()=>{
+test('campus civil correction retains unrelated geometry and both exact sources regenerate without altering the physical owner model',async()=>{
  const previous=await resolvePhysicalDesign(pwrConnectedCampusPhysicalDesignRef);if(previous.profile!=='drafting')throw Error('Expected drafting campus')
  const compile=(d:typeof current)=>compilePhysicalScene('test',{...d,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}})
- expect(compile(site).objects).toEqual(compile(previous).objects)
+ expect(compile(site).objects.filter(o=>o.id!=='pavement/roads')).toEqual(compile(previous).objects.filter(o=>o.id!=='pavement/roads'))
  const regenerated=createPwrManifoldUnitArtifacts();expect(regenerated.source).toEqual(source);expect(regenerated.bindings).toEqual(current.bindings);expect(regenerated.coverage).toEqual(current.coverageEvidence)
- expect(createPwrManifoldCampusArtifacts().source).toEqual(site.source)
+ expect(JSON.stringify(createPwrManifoldCampusArtifacts().source)).toBe(JSON.stringify(site.source))
 })
 
 test('every actual R6 unit floor and turbine inspection scope prepares its full utility geometry without invalid cut topology',()=>{

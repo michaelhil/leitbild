@@ -8,9 +8,10 @@ import campusCoverage from '../pwr-campus-connected.coverage.json'
 import {canonicalPhysicalJson,physicalCorrespondenceSchema} from '../model.ts'
 import {physicalCoverageEvidenceSchema} from '../coverage.ts'
 import {physicalSourceSchema,physicalSourceFacts,elementWorld,parameters,type Element,type V3} from '../native/drafting/source.ts'
-import {compilePhysicalObjects,compilePhysicalScene} from '../native/drafting/compile-scene.ts'
+import {compilePhysicalObjects,compilePhysicalScene,physicalObjectsBounds} from '../native/drafting/compile-scene.ts'
 import {solvePhysicalRoutingNetwork} from '../native/routing/compile.ts'
 import {physicalSceneShapeFacts} from '../source-validation.ts'
+import {authorPwrCampusCirculation} from './pwr-circulation.ts'
 
 type Axis=[-1|0|1,-1|0|1,-1|0|1]
 interface Tap {readonly port:string;readonly at:number;readonly outward:Axis}
@@ -132,9 +133,11 @@ export const createPwrManifoldCampusArtifacts=()=>{
  // A future intrinsic-shape port can remove this instance context without
  // duplicating the frozen native pipeline or dropping its accepted routes.
  const scene=compilePhysicalScene('authoring-dependency',{...unit,design:{digest:'authoring'},owner:{objectId:'authoring'},placement:{anchor:[0,0],bearing:0},bounds:{min:[-1e9,-1e9,-1e9],max:[1e9,1e9,1e9]}})
+ const campus=compilePhysicalScene('authoring-campus',{source,bindings,design:{digest:'authoring'},owner:{objectId:'authoring'},placement:{anchor:[0,0],bearing:0},bounds:physicalObjectsBounds(compilePhysicalObjects({source,bindings}))})
+ authorPwrCampusCirculation(source,scene,campus)
  const physicalSourceDigest=hash(physicalSourceFacts(unit.source)),physicalShapeDigest=hash(physicalSceneShapeFacts(scene.objects))
  if(!source.sourceDependencies?.length)throw Error('Manifold revision needs retained campus/unit dependencies')
  source.sourceDependencies=source.sourceDependencies.map(w=>{if(w.sourceId!==unit.source.id)throw Error(`Unexpected campus source dependency: ${w.sourceId}`);return{...w,physicalSourceDigest,physicalShapeDigest}})
- source.evidence.origin='Illustrative R6 campus source authored 28 October 2026 from the retained R5 connected campus source. Campus geometry, graph bindings and coverage are retained; exact member source and compiled-shape dependencies are revalidated against the R6 manifold installation. This is an architectural study, not OEM, as-built or safety qualification.'
+ source.evidence.origin='Illustrative campus circulation revision authored 29 October 2026 from the retained R6 manifold installation. The common inter-unit road uses orthogonal service approaches and joined tangent pavement, checked against actual canonical east/north/up building and represented unit-equipment footprints. Related unit geometry, graph bindings and coverage are retained. Vehicle and campus electrical-clearance qualification is not established. This is an architectural study, not OEM, as-built or safety qualification.'
  return{source:physicalSourceSchema.parse(source),bindings,coverage}
 }

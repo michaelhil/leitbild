@@ -269,8 +269,8 @@
           "label": "Halden shared campus and switchyard",
           "design": {
             "id": "pwr-campus",
-            "revision": "pwr-campus-20261028-r6",
-            "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+            "revision": "pwr-campus-20261029-r7",
+            "digest": "aa3d95dad26ff940d610628c64fef00d072cfff29861e253bd47ec9c52c91dce"
           },
           "members": {
             "grid": "grid:halden-four-unit",
