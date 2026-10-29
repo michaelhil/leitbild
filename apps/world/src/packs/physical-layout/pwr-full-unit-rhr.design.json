@@ -2,13 +2,13 @@
   "design": {
     "id": "pwr-full-unit",
     "revision": "pwr-full-unit-20261029-r8",
-    "digest": "8a00958142501d1d16b2934da13347a735f669e9a1b47b78742c8c472831f3e6"
+    "digest": "f3114405ff54372e35038298aed07b0467df995aec0cf2a1db5a36b1d4334192"
   },
   "sourceDigest": "ac25dd308d95f5be5f1bb5ba0f8a88c8bef470c30761173a0835d8dc40964355",
   "bindingDigest": "ca03a7a9634cbe76122daee86ffcc01a4a6a1781f5a39e256153a45e35008cd2",
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
-    "modelDigest": "b365524f4b2544ab28f905724a361dd3ddc7e39145d06cefef111114371e030e"
+    "modelDigest": "7e7cc130a90d78f8705f06d47dbb613d3fd3b018297f767c79bd695805d27908"
   },
   "bounds": {
     "min": [
@@ -27,7 +27,7 @@
     "id": "physical-layout-native-drafting",
     "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
   },
-  "coverageDigest": "6b29a4b61f1f5f064fdee393d7a2f8c76331543fd84ba4dc803929af47681458",
+  "coverageDigest": "9ed5e11e9304cf0b474ffa8a3a085e97db695797826e6555d2a22241590b865c",
   "requirements": {
     "ownerRole": "unit",
     "ownerPackId": "process-plant",
@@ -38,7 +38,7 @@
   "physicalApplicability": {
     "sourceDigest": "45b974286e38086313edf7bc4e947bb86b4bb3aa29f5ddae323f8c844f1c219a",
     "geometryDigest": "949727147d3c0a17976a80026d387ec0f38776e426ed7c79067cadb3e7a426fe",
-    "digest": "412667b00fd368fdf004000b2f7216189c690fff99586210c7d35dd98c1ccba1"
+    "digest": "7a130bfc6b75d384381dc4581aac7a35cf244846f2b61e89bcbd3d8f53251c7d"
   },
   "presentation": {
     "scopes": [
