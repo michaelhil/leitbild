@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { BUNDLED_ROOM_DEFINITIONS, getBundledRoomDefinition } from './room-definition-catalog.ts'
+import { BUNDLED_ROOM_DEFINITIONS, getBundledRoomDefinition, roomDefinitionSchema } from './room-definition-catalog.ts'
 
 describe('bundled Room Definitions', () => {
   test('ids are unique and every Prompt Deck action has the content it needs', () => {
@@ -25,10 +25,22 @@ describe('bundled Room Definitions', () => {
     const assistant = definition.room.agents[0]!
     expect(assistant.includeContext).toEqual({ participants: true, activity: false, knownAgents: false })
     expect(assistant.tools).toEqual(['product_search', 'product_read', 'place_resolve', 'wiki_lookup'])
-    // A cost guard: past 40 tool rounds in one turn the Assistant asks the person whether to continue.
-    // A whole E-0 run takes about 25, so it finishes without a check-in.
+    // Check-ins are optional operator configuration, not a hidden task quota.
     expect(assistant.maxToolIterations).toBeUndefined()
     expect(assistant).not.toHaveProperty('toolGrants')
     expect(definition.room).not.toHaveProperty('scope')
+  })
+
+  test('an authored check-in threshold accepts any positive integer without a fifty-round ceiling', () => {
+    const definition = getBundledRoomDefinition('leitbild-assistant')!
+    const withThreshold = (maxToolIterations: number) => ({ ...definition, room: { ...definition.room,
+      agents: [{ ...definition.room.agents[0]!, maxToolIterations }],
+    } })
+    for (const threshold of [51, 1_000, Number.MAX_SAFE_INTEGER]) {
+      expect(roomDefinitionSchema.parse(withThreshold(threshold)).room.agents[0]!.maxToolIterations).toBe(threshold)
+    }
+    for (const threshold of [0, -1, 1.5, Infinity, NaN]) {
+      expect(roomDefinitionSchema.safeParse(withThreshold(threshold)).success).toBe(false)
+    }
   })
 })

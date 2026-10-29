@@ -83,7 +83,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
       tools: z.array(z.string()).optional().describe('Tool names available to this agent. When omitted, agent has access to every registered tool. Pass an empty array for no tools.'),
       historyLimit: z.number().int().optional().describe('Max number of old messages retained per room in the agent\'s context window.'),
       historyTokenBudget: z.number().int().positive().optional().describe('Prior-history replay target in tokens, not a hard model or current-tool-evidence cap. Omitted uses the default replay target.'),
-      maxToolIterations: z.number().int().optional().describe('Max tool-loop iterations before the agent is forced to answer or pass.'),
+      maxToolIterations: z.number().int().optional().describe('Optional tool-round threshold for an operator check-in; omit for no threshold.'),
       tags: z.array(z.string()).optional().describe('Capability/role tags enabling [[tag:X]] addressing.'),
       thinking: z.boolean().optional().describe('Ollama thinking toggle; independent of cloud reasoning effort.'),
       reasoningEffort: z.enum(REASONING_EFFORTS).optional().describe('Explicit reasoning effort. Omit for provider default; support depends on the actual provider route.'),
@@ -187,7 +187,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
 
   mcpServer.tool(
     'update_agent_context',
-    'Update per-agent Context panel toggles and limits (includePrompts, includeContext, includeTools, maxToolIterations).',
+    'Update per-agent Context panel toggles and the optional tool-round check-in threshold (includePrompts, includeContext, includeTools, maxToolIterations).',
     {
       name: z.string().describe('Agent name'),
       includePrompts: z.object({
@@ -204,7 +204,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
         knownAgents: z.boolean().optional(),
       }).optional().describe('CONTEXT sub-section toggles. Partial.'),
       includeTools: z.boolean().optional().describe('Master tools on/off (false = send zero tool definitions).'),
-      maxToolIterations: z.number().optional().describe('Max tool-call rounds per turn.'),
+      maxToolIterations: z.number().optional().describe('Optional tool-round check-in threshold; omitted preserves the current setting.'),
     },
     async ({ name, includePrompts, includeContext, includeTools, maxToolIterations }) => {
       try {
