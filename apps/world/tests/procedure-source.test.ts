@@ -42,6 +42,45 @@ const publication = (revision: string, title = 'Reactor Trip') => createKnowledg
 ] })
 
 describe('native local procedure publication', () => {
+  test('exact membership joins authored owners without copying or overriding procedure identities', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-exact-procedures-'))
+    try {
+      const selected = [localPath('E-0'), 'archive/reference/procedures/E-1.md']
+      const source = { ...localSource, documentPaths: selected }
+      const documents = [
+        { path: selected[0]!, content: markdownFor('E-0', 'Model-scoped').replace('- Verified → END', '- Continue → [[E-1]]') },
+        { path: selected[1]!, content: markdownFor('E-1', 'Retained reference') },
+        { path: 'archive/reference/procedures/E-0.md', content: markdownFor('E-0', 'Original reference') },
+      ]
+      const loadKnowledge = async () => createKnowledge({ revision: revisionA, documents })
+      const service = createProcedureSourceService({ sources: [source], retentionDirectory: directory, loadKnowledge })
+      expect((await service.readCatalog()).procedures.map(item => [item.procedureId, item.title])).toEqual([
+        ['E-0', 'Model-scoped'], ['E-1', 'Retained reference'],
+      ])
+      await service.readDocument({ procedureId: 'E-0' })
+      const offline = createProcedureSourceService({ sources: [{ ...localSource, documentPaths: ['changed.md'] }], retentionDirectory: directory,
+        loadKnowledge: async () => { throw new Error('Offline') } })
+      expect((await offline.readDocument({ procedureId: 'E-0', sourceRevision: revisionA })).title).toBe('Model-scoped')
+      await expect(createProcedureSourceService({ sources: [{ ...source, documentPaths: [...selected, 'archive/reference/procedures/E-0.md'] }], retentionDirectory: directory, loadKnowledge }).readCatalog()).rejects.toThrow('Duplicate procedure id')
+      for (const documentPaths of [[], ['missing.md'], [selected[0]!, selected[0]!]]) {
+        await expect(createProcedureSourceService({ sources: [{ ...source, documentPaths }], retentionDirectory: directory, loadKnowledge }).readCatalog()).rejects.toThrow()
+      }
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
+  test('retains branch criterion and applicability source sections at the exact procedure pin', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-branch-evidence-'))
+    try {
+      const ownerPath = 'packs/process-plant/engineering/criterion.md'
+      const decisions = [{ branchIndex: 0, condition: { type: 'comparison', tagId: 'POS', operator: '==', value: false, unit: 'boolean', evidence: 'engineering-diagnostic', source: '../engineering/criterion.md#position', maxAgeSeconds: 1 }, applicability: { description: 'This model only', source: '../engineering/criterion.md#scope' } }]
+      const content = markdownFor('E-0', 'Guarded').replace('- Verified → END', `\`\`\`procedure-decisions\n${JSON.stringify(decisions)}\n\`\`\`\n- Verified → END`) + '\n## Tags\n- id: POS\n  units: boolean\n'
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => createKnowledge({ revision: revisionA, documents: [
+        { path: localPath('E-0'), content }, { path: ownerPath, content: '# Criterion\n\n## Position\nActual feedback only.\n\n## Scope\nExact represented plant.' },
+      ] }) })
+      await service.readDocument({ procedureId: 'E-0' })
+      expect((await service.readEvidence({ sourceRevision: revisionA, sourcePath: ownerPath, section: 'position' })).content).toContain('Actual feedback only')
+      expect((await service.readEvidence({ sourceRevision: revisionA, sourcePath: ownerPath, section: 'scope' })).content).toContain('Exact represented plant')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   test('catalog exposes authored applicability and uninstalled status without inventing runtime compatibility', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-applicability-'))
     try {

@@ -15,6 +15,9 @@ export interface ProcedureSourceConfig {
   readonly repository: string
   readonly ref: string
   readonly procedurePath: string
+  /** Exact publication membership when procedures have different authored owners.
+   * Missing or non-procedure members are errors; this never overrides duplicate ids. */
+  readonly documentPaths?: ReadonlyArray<string>
   /** Synchronous owner validation against the canonical target at command commit. */
   readonly assertTargetApplicable?: (document: ProcedureDocument, object: OperationalObject) => void
 }
@@ -80,7 +83,15 @@ const retain = async (directory: string, path: string, contents: string): Promis
 
 const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained = false) => {
   const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
-  const selected = knowledge.index().filter(entry => (retained || (entry.path.startsWith(prefix) && !entry.hub))
+  const membership = source.documentPaths === undefined ? undefined : new Set(source.documentPaths)
+  if (!retained && membership !== undefined) {
+    if (membership.size === 0 || membership.size !== source.documentPaths!.length) throw new Error('Procedure source documentPaths must be nonempty and unique')
+    for (const path of membership) {
+      const entry = knowledge.index().find(entry => entry.path === path)
+      if (!entry || entry.hub || !isProcedureMarkdown(knowledge.read(path).content)) throw new Error(`Invalid procedure source member: ${path}`)
+    }
+  }
+  const selected = knowledge.index().filter(entry => (retained || (membership ? membership.has(entry.path) : entry.path.startsWith(prefix) && !entry.hub))
     && isProcedureMarkdown(knowledge.read(entry.path).content))
     .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
     .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content }))
@@ -107,6 +118,10 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
     const hrefs = [
       ...step.blocks.filter(block => block.kind === 'basis').flatMap(block => [...block.text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map(match => match[1]!)),
       ...(step.assessment ? assessmentLeaves(step.assessment.condition).map(leaf => leaf.source) : []),
+      ...(step.decisions ?? []).flatMap(decision => [
+        ...assessmentLeaves(decision.condition).map(leaf => leaf.source),
+        ...(decision.applicability ? [decision.applicability.source] : []),
+      ]),
       ...document.tags.flatMap(tag => tag.source && /\.md(?:#[^\s]+)?$/.test(tag.source) ? [tag.source] : []),
     ]
     for (const href of hrefs) {
