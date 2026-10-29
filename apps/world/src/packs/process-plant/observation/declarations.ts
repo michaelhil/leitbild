@@ -93,6 +93,11 @@ const labelOf = (plant: CompiledProcessPlant, binding: ProcessSignalBinding): st
   const reads = name === undefined ? binding.label : `${binding.label} (${name})`
   if (binding.owner.type === 'link') {
     const link = graph.links[binding.owner.linkIndex]!
+    // A link may author its complete operator-facing reading name, just as a
+    // component does. Its native signal description remains available for
+    // discovery; appending its two ends again would duplicate that context.
+    const named = link.metadata?.presentation?.names?.[String(binding.path).slice(String(link.id).length + 1)]
+    if (named !== undefined) return named
     // The compiler's energized descriptor already spells both full endpoint
     // names. Name this newly declared primary read once by their authored
     // operator names, instead of repeating those ends around a separator.

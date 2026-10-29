@@ -11962,6 +11962,14 @@
       ],
       "physical": {
         "diameterM": 0.32
+      },
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A → RHR-HX A",
+            "temperatureC": "Temperature · RHR A → RHR-HX A"
+          }
+        }
       }
     },
     {
@@ -11999,6 +12007,14 @@
       ],
       "physical": {
         "diameterM": 0.32
+      },
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B → RHR-HX B",
+            "temperatureC": "Temperature · RHR B → RHR-HX B"
+          }
+        }
       }
     },
     {
@@ -14411,7 +14427,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR-HX A → RHR header",
+            "temperatureC": "Temperature · RHR-HX A → RHR header",
+            "soluteConcentrationPpm": "Boron concentration · RHR-HX A → RHR header"
+          }
+        }
+      }
     },
     {
       "id": "ccw-inventory-a-to-pump",
@@ -14456,7 +14481,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW A inventory → CCW A",
+            "temperatureC": "Temperature · CCW A inventory → CCW A",
+            "soluteConcentrationPpm": "Boron concentration · CCW A inventory → CCW A"
+          }
+        }
+      }
     },
     {
       "id": "ccw-pump-a-to-rhr-heat-exchanger",
@@ -14501,7 +14535,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW A → RHR-HX A",
+            "temperatureC": "Temperature · CCW A → RHR-HX A",
+            "soluteConcentrationPpm": "Boron concentration · CCW A → RHR-HX A"
+          }
+        }
+      }
     },
     {
       "id": "rhr-heat-exchanger-a-to-ccw-heat-exchanger",
@@ -14546,7 +14589,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR-HX A → CCW-HX A",
+            "temperatureC": "Temperature · RHR-HX A → CCW-HX A",
+            "soluteConcentrationPpm": "Boron concentration · RHR-HX A → CCW-HX A"
+          }
+        }
+      }
     },
     {
       "id": "ccw-heat-exchanger-a-to-inventory",
@@ -14591,7 +14643,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW-HX A → CCW A inventory",
+            "temperatureC": "Temperature · CCW-HX A → CCW A inventory",
+            "soluteConcentrationPpm": "Boron concentration · CCW-HX A → CCW A inventory"
+          }
+        }
+      }
     },
     {
       "id": "ultimate-heat-sink-to-service-water-pump-a",
@@ -14636,7 +14697,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · UHS → SW A",
+            "temperatureC": "Temperature · UHS → SW A",
+            "soluteConcentrationPpm": "Boron concentration · UHS → SW A"
+          }
+        }
+      }
     },
     {
       "id": "service-water-pump-a-to-ccw-heat-exchanger",
@@ -14681,7 +14751,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SW A → CCW-HX A",
+            "temperatureC": "Temperature · SW A → CCW-HX A",
+            "soluteConcentrationPpm": "Boron concentration · SW A → CCW-HX A"
+          }
+        }
+      }
     },
     {
       "id": "ccw-heat-exchanger-a-to-discharge",
@@ -14726,7 +14805,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW-HX A → CW discharge",
+            "temperatureC": "Temperature · CCW-HX A → CW discharge",
+            "soluteConcentrationPpm": "Boron concentration · CCW-HX A → CW discharge"
+          }
+        }
+      }
     },
     {
       "id": "ccw-pump-b-feeder-to-motor",
@@ -14783,7 +14871,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR-HX B → RHR header",
+            "temperatureC": "Temperature · RHR-HX B → RHR header",
+            "soluteConcentrationPpm": "Boron concentration · RHR-HX B → RHR header"
+          }
+        }
+      }
     },
     {
       "id": "ccw-inventory-b-to-pump",
@@ -14828,7 +14925,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW B inventory → CCW B",
+            "temperatureC": "Temperature · CCW B inventory → CCW B",
+            "soluteConcentrationPpm": "Boron concentration · CCW B inventory → CCW B"
+          }
+        }
+      }
     },
     {
       "id": "ccw-pump-b-to-rhr-heat-exchanger",
@@ -14873,7 +14979,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW B → RHR-HX B",
+            "temperatureC": "Temperature · CCW B → RHR-HX B",
+            "soluteConcentrationPpm": "Boron concentration · CCW B → RHR-HX B"
+          }
+        }
+      }
     },
     {
       "id": "rhr-heat-exchanger-b-to-ccw-heat-exchanger",
@@ -14918,7 +15033,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR-HX B → CCW-HX B",
+            "temperatureC": "Temperature · RHR-HX B → CCW-HX B",
+            "soluteConcentrationPpm": "Boron concentration · RHR-HX B → CCW-HX B"
+          }
+        }
+      }
     },
     {
       "id": "ccw-heat-exchanger-b-to-inventory",
@@ -14963,7 +15087,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW-HX B → CCW B inventory",
+            "temperatureC": "Temperature · CCW-HX B → CCW B inventory",
+            "soluteConcentrationPpm": "Boron concentration · CCW-HX B → CCW B inventory"
+          }
+        }
+      }
     },
     {
       "id": "ultimate-heat-sink-to-service-water-pump-b",
@@ -15008,7 +15141,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · UHS → SW B",
+            "temperatureC": "Temperature · UHS → SW B",
+            "soluteConcentrationPpm": "Boron concentration · UHS → SW B"
+          }
+        }
+      }
     },
     {
       "id": "service-water-pump-b-to-ccw-heat-exchanger",
@@ -15053,7 +15195,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SW B → CCW-HX B",
+            "temperatureC": "Temperature · SW B → CCW-HX B",
+            "soluteConcentrationPpm": "Boron concentration · SW B → CCW-HX B"
+          }
+        }
+      }
     },
     {
       "id": "ccw-heat-exchanger-b-to-discharge",
@@ -15098,7 +15249,16 @@
           "unit": "ppm",
           "initialValue": 0
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CCW-HX B → CW discharge",
+            "temperatureC": "Temperature · CCW-HX B → CW discharge",
+            "soluteConcentrationPpm": "Boron concentration · CCW-HX B → CW discharge"
+          }
+        }
+      }
     }
   ],
   "publishedVariables": [
