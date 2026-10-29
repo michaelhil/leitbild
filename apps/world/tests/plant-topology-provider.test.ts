@@ -132,11 +132,23 @@ describe('plant topology provider (P5)', () => {
   })
 
   test('ports carry their circuit and every service on them; media are the services, groups the loops', () => {
-    expect(node('core').ports.find(port => port.id === 'coldLegA')).toEqual({ id: 'coldLegA', rank: 'coldLegA', media: ['charging', 'primaryCoolant', 'primaryInjection', 'safetyInjection'], direction: 'in', circuit: 'coolant' })
+    expect(node('core').ports.find(port => port.id === 'coldLegA')).toEqual({ id: 'coldLegA', rank: 'coldLegA', media: ['charging', 'primaryCoolant', 'primaryInjection', 'residualHeatRemoval', 'safetyInjection'], direction: 'in', circuit: 'coolant' })
     expect(node('sgA').ports.map(port => [port.id, port.circuit, port.media.join('+')])).toEqual([
       ['primaryInlet', 'primary', 'primaryCoolant'], ['primaryOutlet', 'primary', 'primaryCoolant'], ['feedwaterInlet', 'secondary', 'auxFeedwater+feedwater'],
       ['steamOutlet', 'secondary', 'mainSteam'], ['steamReliefOutlet', 'relief', 'mainSteam'],
     ])
+    // The added cooling chain keeps each exchanger's two fluid circuits distinct all the way to the terminal injection.
+    for (const train of ['A', 'B']) {
+      expect(node(`rhrHeatExchanger${train}`).ports.map(port => [port.id, port.circuit, port.media])).toEqual([
+        ['hotIn', 'hot', ['residualHeatRemoval']], ['hotOut', 'hot', ['residualHeatRemoval']],
+        ['coldIn', 'cold', ['componentCoolingWater']], ['coldOut', 'cold', ['componentCoolingWater']],
+      ])
+      expect(node(`componentCoolingHeatExchanger${train}`).ports.map(port => [port.id, port.circuit, port.media])).toEqual([
+        ['hotIn', 'hot', ['componentCoolingWater']], ['hotOut', 'hot', ['componentCoolingWater']],
+        ['coldIn', 'cold', ['serviceWater']], ['coldOut', 'cold', ['serviceWater']],
+      ])
+    }
+    expect(graph.edges.find(edge => edge.id === 'rhr-isolation-valve-to-cold-leg-a')).toMatchObject({ medium: 'residualHeatRemoval', from: { node: 'rhrIsolationValve', port: 'outlet' }, to: { node: 'core', port: 'coldLegA' } })
     expect(graph.media.find(medium => medium.id === 'electricalPower')?.kind).toBe('electric-ac')
     expect(graph.media.find(medium => medium.id === 'mainSteam')?.kind).toBe('steam')
     expect(graph.media.find(medium => medium.id === 'feedwater')).toEqual({ id: 'feedwater', label: 'Feedwater', kind: 'fluid' })
