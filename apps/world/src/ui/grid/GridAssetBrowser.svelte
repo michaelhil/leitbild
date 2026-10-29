@@ -403,7 +403,7 @@
     simulationRunId
     gridId
     refreshRevision
-    untrack(() => refreshAssets(false))
+    untrack(() => void loadAssets(false))
   })
 
   $effect(() => {
@@ -413,8 +413,16 @@
       pendingConfirmation = null
       commandStatus = null
       if (detail?.id !== assetId) detail = null
-      if (assetId) void loadDetail(assetId)
     })
+  })
+
+  $effect(() => {
+    simulationRunId
+    gridId
+    refreshRevision
+    const assetId = selectedAssetId
+    // A selected detail has one read path for both selection and revision changes.
+    untrack(() => { if (assetId !== null) void loadDetail(assetId) })
   })
 
   runOnMount(() => {
