@@ -42,6 +42,18 @@ describe('controller/protection authority admission', () => {
     }
   })
 
+  test('a contradictory isolation release cannot defeat the same protective action in either order', () => {
+    const close = write('close', { tagId: 'MFW-A-CV' }, 0)
+    const isolate = write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)
+    const release = write('release', { path: 'feedwaterControlValveA.isolationSignal' }, false)
+    for (const effects of [[close, isolate, release], [close, release, isolate], [isolate, close, release], [release, close, isolate]]) {
+      expect(() => assess(effects)).toThrow('isolationSignal')
+    }
+    expect(() => assess([isolate, release])).toThrow('isolationSignal')
+    expect(() => assess([release, isolate])).toThrow('isolationSignal')
+    expect(() => assess([close, isolate, write('repeat-isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)])).not.toThrow()
+  })
+
   test('does not make ordinary regulation or an uncontrolled valve into a protection hold', () => {
     expect(() => assess([write('regulate', { tagId: 'MFW-A-CV' }, 0.5)], 'normalControl')).not.toThrow()
     expect(() => assess([write('close-manual', { tagId: 'AFW-A-CV' }, 0)])).not.toThrow()
