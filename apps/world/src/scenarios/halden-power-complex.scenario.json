@@ -288,8 +288,8 @@
           "label": "Halden Unit 1 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261029-r7",
-            "digest": "4d9215c311ae8842f3e8fa50875d83e1fbec769e5d3d5b5b923e3e310430ddd4"
+            "revision": "pwr-full-unit-20261029-r8",
+            "digest": "8a00958142501d1d16b2934da13347a735f669e9a1b47b78742c8c472831f3e6"
           },
           "members": {
             "unit": "plant:halden-1"
@@ -306,8 +306,8 @@
           "label": "Halden Unit 2 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261029-r7",
-            "digest": "4d9215c311ae8842f3e8fa50875d83e1fbec769e5d3d5b5b923e3e310430ddd4"
+            "revision": "pwr-full-unit-20261029-r8",
+            "digest": "8a00958142501d1d16b2934da13347a735f669e9a1b47b78742c8c472831f3e6"
           },
           "members": {
             "unit": "plant:halden-2"
@@ -324,8 +324,8 @@
           "label": "Halden Unit 3 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261029-r7",
-            "digest": "4d9215c311ae8842f3e8fa50875d83e1fbec769e5d3d5b5b923e3e310430ddd4"
+            "revision": "pwr-full-unit-20261029-r8",
+            "digest": "8a00958142501d1d16b2934da13347a735f669e9a1b47b78742c8c472831f3e6"
           },
           "members": {
             "unit": "plant:halden-3"
@@ -342,8 +342,8 @@
           "label": "Halden Unit 4 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261029-r7",
-            "digest": "4d9215c311ae8842f3e8fa50875d83e1fbec769e5d3d5b5b923e3e310430ddd4"
+            "revision": "pwr-full-unit-20261029-r8",
+            "digest": "8a00958142501d1d16b2934da13347a735f669e9a1b47b78742c8c472831f3e6"
           },
           "members": {
             "unit": "plant:halden-4"
@@ -360,8 +360,8 @@
           "label": "Halden shared campus and switchyard",
           "design": {
             "id": "pwr-campus",
-            "revision": "pwr-campus-20261029-r9",
-            "digest": "30afb22eae750607701d202f010e6148a4af670fa6c102a1fd131c08c93d06e4"
+            "revision": "pwr-campus-20261029-r10",
+            "digest": "15aa5dfbcf46641340832872c3e3adb5510235ca319b69ffb9df42e17c7c9222"
           },
           "members": {
             "grid": "grid:halden-four-unit",

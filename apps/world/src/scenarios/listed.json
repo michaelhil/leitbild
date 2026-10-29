@@ -13,5 +13,10 @@
     "scenarioId": "supply-run",
     "summary": "Keep kitchens, shelters, a clinic and a pumping station in fictional Halden supplied with trucks of different sizes from two depots.",
     "tags": ["Logistics", "30 min"]
+  },
+  {
+    "scenarioId": "halden-rhr-cooling-chain",
+    "summary": "Establish a real RHR → CCW → service-water heat path after a fictional primary release, then inspect measured cooled injection and loss-of-cooling response. Finite simulator task; no long-term recovery qualification.",
+    "tags": ["Nuclear plant", "RHR cooling", "Event at 10 s"]
   }
 ]

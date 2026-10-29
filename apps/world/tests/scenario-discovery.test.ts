@@ -14,6 +14,7 @@ describe('bundled scenario discovery', () => {
       'halden-normal-operation',
       'halden-offsite-power-restoration',
       'halden-power-complex',
+      'halden-rhr-cooling-chain',
       'halden-weather-response',
       'nordic-frequency-event',
       'nordland-corridor-security',
