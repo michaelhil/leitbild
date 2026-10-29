@@ -673,6 +673,15 @@ const validateHeatExchangerComponent = (component: CompiledComponent, links: Rea
   assertPortConnected(component, links, 'hotOut', 'outgoing')
   assertPortConnected(component, links, 'coldIn', 'incoming')
   assertPortConnected(component, links, 'coldOut', 'outgoing')
+  for (const side of ['hot', 'cold']) {
+    const services = new Set(links.filter(link => link.kind === 'fluidFlow'
+      && ((link.toComponentIndex === component.index && String(link.toPortName) === `${side}In`)
+        || (link.fromComponentIndex === component.index && String(link.fromPortName) === `${side}Out`)))
+      .map(link => link.service))
+    if (services.size !== 1 || services.has(undefined)) {
+      throw new Error(`heat exchanger ${component.id} ${side} circuit requires one named fluid service across its inlet and outlet`)
+    }
+  }
 }
 
 const validateAccumulatorComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {

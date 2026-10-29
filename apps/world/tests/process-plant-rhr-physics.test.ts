@@ -60,6 +60,12 @@ describe('RHR physical prerequisites', () => {
     expect(number(runtime, 'coldOut.soluteConcentrationPpm')).toBe(0)
   })
 
+  test('a service discontinuity on an exchanger side is rejected instead of silently starving its circuit', () => {
+    const graph = hxGraph()
+    const malformed = { ...graph, connections: graph.connections.map(link => String(link.id) === 'coldOut' ? { ...link, service: 'wrongCircuit' as typeof link.service } : link) }
+    expect(() => runtimeFor(malformed)).toThrow('cold circuit requires one named fluid service')
+  })
+
   test('a stopped cooling pump removes transfer immediately without lagged artificial cooling', () => {
     const runtime = runtimeFor(hxGraph())
     run(runtime, 10)
