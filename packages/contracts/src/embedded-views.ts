@@ -28,8 +28,10 @@ const embeddedViewPublicationShape = {
   title: z.string().min(1).max(120),
   height: z.number().int().min(EMBEDDED_VIEW_MIN_HEIGHT).max(EMBEDDED_VIEW_MAX_HEIGHT),
   state: z.string().min(2).max(EMBEDDED_VIEW_STATE_MAX_LENGTH),
-  // Shown only in the window, opened from a line an answer cites (a dashboard: receipts link to the board, nothing
-  // embeds it by reference): no answer presents it by reference, inline or as a chip of its own.
+  // Shown only in a deliberately opened containing window (the display window,
+  // or the Inspector's diagnostic pane). No answer presents it by reference,
+  // inline or as a chip of its own. E.g. dashboard receipts link to a board;
+  // a procedure progress update opens its recorded decision in the Inspector.
   windowOnly: z.literal(true).optional(),
 }
 export const embeddedViewPublicationSchema = z.object(embeddedViewPublicationShape).strict()
