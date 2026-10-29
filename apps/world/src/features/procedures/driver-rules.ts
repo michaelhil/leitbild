@@ -59,7 +59,7 @@ export const assertAiDecisionEvidence = (config: {
     if (step.tagIds.length === 0) return
     if (config.readableStepTagIds === undefined) throw new Error('This transition was prepared without its actor, so the step\'s tags were not read: an AI agent\'s selection cannot be checked.')
     if (config.readableStepTagIds.length === 0) return
-    throw new Error(`Step ${step.label}'s ${config.readableStepTagIds.map(tagId => `«${tagId}»`).join(', ')} ${config.readableStepTagIds.length === 1 ? 'reads' : 'read'} on this plant now: cite those you relied on as evidenceTagIds (1 to 6); World reads them and records the readings with the decision.`)
+    throw new Error(`Step ${step.label}'s ${config.readableStepTagIds.map(tagId => `«${tagId}»`).join(', ')} ${config.readableStepTagIds.length === 1 ? 'reads' : 'read'} on this plant now: cite those you relied on as evidenceTagIds; World reads them and records the readings with the decision.`)
   }
   for (const read of config.reads) {
     if (read.binding === 'missing') throw new Error(`«${read.tagId}» has no binding on this Plant: cite only tags World reads now, and say in the basis what is not observable.`)

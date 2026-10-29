@@ -75,6 +75,11 @@ const ports = (config: {
     validateTags: async tags => new Map(tags.map(tag => [tag.id, {
       id: tag.id, status: config.reads?.[tag.id] === 'missing' ? 'missing' as const : 'resolved' as const, warnings: tag.id === 'NIS-PR-AVG' ? ['requested percent unavailable'] : [],
     }])),
+    readTags: async tags => new Map(tags.map(tag => {
+      config.calls?.push(tag.id)
+      const value = config.reads?.[tag.id]
+      return [tag.id, value === undefined || value === 'missing' ? new Error(`no ${tag.id}`) : value] as const
+    })),
     readTag: async tag => {
       config.calls?.push(tag.id)
       const read = config.reads?.[tag.id]

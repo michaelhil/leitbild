@@ -53,7 +53,7 @@ describe('procedure client', () => {
     const queries: string[] = []
     const independent: PackProcedureContribution = {
       scopeIdForObject: object => String(object.id),
-      signalReadQuery: (resource, tag) => ({ capabilityId: 'world.example.observations.read', input: { resource, measurements: [tag.id] } }),
+      signalReadQuery: (resource, tags) => ({ capabilityId: 'world.example.observations.read', input: { resource, measurements: tags.map(tag => tag.id) } }),
       tagValidationQuery: (resource, tags) => ({ capabilityId: 'world.example.references.validate', input: { resource, references: tags.map(tag => tag.id) } }),
       assessmentsQuery: (resource, assessmentIds) => ({ capabilityId: 'world.example.assessments.read', input: { resource, assessmentIds } }),
     }
@@ -62,7 +62,7 @@ describe('procedure client', () => {
       queries.push(url)
       expect(JSON.parse(String(init?.body)).input.resource).toBe('example:one')
       if (url.includes('references.validate')) return Response.json({ kind: 'query', result: { tags: [{ id: 'T', status: 'resolved', warnings: [] }] } })
-      if (url.includes('observations.read')) return Response.json({ kind: 'query', result: { signals: [{ signal: { unit: 'degC', label: 'Temperature' }, variable: { value: 21 } }] } })
+      if (url.includes('observations.read')) return Response.json({ kind: 'query', result: { signals: [{ signal: { tagId: 'T', unit: 'degC', label: 'Temperature' }, variable: { value: 21 } }] } })
       const level = { question: 'Level above 10 %', basis: 'Tree', answer: 'no', comparisons: [
         { reads: [{ signal: 'L', path: 'tank.levelPercent', label: 'Level', value: 0, unit: 'percent' }], operator: '>', threshold: 10, unit: 'percent', answer: 'no' },
         { reads: [{ signal: 'F1', path: 'a.flow', label: 'Flow', value: 20, unit: 'kg/s' }, { signal: 'F2', path: 'b.flow', label: 'Flow', value: 10, unit: 'kg/s' }], combines: 'total', measured: 30, operator: '>=', threshold: 27.8, unit: 'kg/s', answer: 'yes' },
@@ -225,7 +225,7 @@ describe('procedure client', () => {
     ] as const) {
       const result = await readProcedureTagValue('run-test' as SimulationRunId, plant.id, { id, units }, provider)
       const row = responses.at(-1)!
-      expect(requests.at(-1)).toEqual({ plantId: plant.id, signals: [{ tagId: id, requestedUnit: units }] })
+      expect(requests.at(-1)).toEqual({ plantId: plant.id, evidence: true, signals: [{ tagId: id, requestedUnit: units }] })
       expect(result).toMatchObject({ value: row.valueView!.value, unit: row.valueView!.unit, conversionStatus: row.valueView!.status, quality: row.quality.status, path: row.signal.path })
       expect(result.formatted).toEndWith(` ${row.valueView!.unit}`)
       if (row.valueView!.status === 'unavailable') {
@@ -237,7 +237,7 @@ describe('procedure client', () => {
       }
     }
     const native = await readProcedureTagValue('run-test' as SimulationRunId, plant.id, { id: 'NIS-PR-AVG' }, provider)
-    expect(requests.at(-1)).toEqual({ plantId: plant.id, signals: [{ tagId: 'NIS-PR-AVG' }] })
+    expect(requests.at(-1)).toEqual({ plantId: plant.id, evidence: true, signals: [{ tagId: 'NIS-PR-AVG' }] })
     expect(responses.at(-1)).not.toHaveProperty('valueView')
     expect(native).toMatchObject({ value: responses.at(-1)!.variable.value, unit: 'percent' })
     expect(native).not.toHaveProperty('conversionStatus')

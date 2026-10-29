@@ -1,4 +1,4 @@
-import type { ProcedureTag, ProcedureTagId } from '../../core/model/index.ts'
+import { isoTimestampSchema, type IsoTimestamp, type ProcedureTag, type ProcedureTagId } from '../../core/model/index.ts'
 import type { PackProcedureContribution, PackProcedureQuery } from '../../core/packs/protocol.ts'
 
 // The wire semantics every Pack's procedure observations keep (protocol.ts
@@ -23,6 +23,9 @@ export interface ProcedureTagValue {
   readonly quality?: string
   readonly path?: string
   readonly writable?: boolean
+  readonly scopeId?: string
+  readonly signalTagId?: string
+  readonly evidence?: { readonly kind: 'instrument' | 'engineering-diagnostic'; readonly sampledAt: IsoTimestamp; readonly provenance: string; readonly modelRef?: string; readonly modelDigest?: string; readonly automationRef?: string; readonly automationDigest?: string }
   readonly conversionStatus?: 'native' | 'converted' | 'unavailable'
   readonly warning?: string
 }
@@ -131,6 +134,8 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
   const first = assertRecord(listed, 'procedure signal query returned malformed signal')
   const signal = assertRecord(first.signal, 'procedure tag read row requires signal')
   const variable = assertRecord(first.variable, 'procedure tag read row requires variable')
+  if (typeof signal.tagId === 'string' && signal.tagId !== tag.id) throw new Error(`procedure signal identity ${signal.tagId} does not match requested tag ${tag.id}`)
+  if (typeof signal.path === 'string' && typeof variable.path === 'string' && signal.path !== variable.path) throw new Error('procedure signal and variable paths disagree')
   let unit = assertString(signal.unit, 'procedure signal requires unit')
   let value = variable.value
   let conversionStatus: ProcedureTagValue['conversionStatus']
@@ -152,8 +157,20 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
   }
   if (typeof value !== 'boolean' && (typeof value !== 'number' || !Number.isFinite(value))) throw new Error('procedure signal requires a finite number or boolean value')
   const quality = optionalRecord(first.quality)
+  const rawEvidence = optionalRecord(first.evidence)
+  let evidence: ProcedureTagValue['evidence']
+  if (rawEvidence !== null) {
+    if (rawEvidence.kind !== 'instrument' && rawEvidence.kind !== 'engineering-diagnostic') throw new Error('procedure signal evidence kind is unestablished')
+    const sampledAt = isoTimestampSchema.parse(rawEvidence.sampledAt)
+    evidence = { kind: rawEvidence.kind, sampledAt, provenance: assertString(rawEvidence.provenance, 'procedure signal evidence requires provenance'),
+      ...(typeof rawEvidence.modelRef === 'string' ? { modelRef: rawEvidence.modelRef } : {}), ...(typeof rawEvidence.modelDigest === 'string' ? { modelDigest: rawEvidence.modelDigest } : {}),
+      ...(typeof rawEvidence.automationRef === 'string' ? { automationRef: rawEvidence.automationRef } : {}), ...(typeof rawEvidence.automationDigest === 'string' ? { automationDigest: rawEvidence.automationDigest } : {}) }
+  }
   return {
     tagId: tag.id,
+    ...(typeof result.plantId === 'string' ? { scopeId: result.plantId } : {}),
+    ...(typeof signal.tagId === 'string' ? { signalTagId: signal.tagId } : {}),
+    ...(evidence === undefined ? {} : { evidence }),
     label: typeof signal.label === 'string' ? signal.label : tag.id,
     value,
     formatted: formatSignalValue(typeof value === 'number' ? formattedNumber(value, 3) : value, unit),
@@ -225,6 +242,8 @@ export const parseProcedureCsfEvaluations = (raw: unknown): ReadonlyMap<string, 
 export interface ProcedureObservationPort {
   readonly validateTags: (tags: ReadonlyArray<ProcedureTag>) => Promise<ReadonlyMap<string, ProcedureTagValidation>>
   readonly readTag: (tag: ProcedureTag) => Promise<ProcedureTagValue>
+  /** A single owning-Pack acquisition for all declared tags. */
+  readonly readTags: (tags: ReadonlyArray<ProcedureTag>) => Promise<ReadonlyMap<string, ProcedureTagValue | Error>>
   readonly evaluateCsfs: (assessmentIds: ReadonlyArray<string>) => Promise<ReadonlyMap<string, ProcedureCsfEvaluation>>
 }
 
@@ -233,15 +252,43 @@ export const createProcedureObservationPort = (config: {
   readonly scopeId: string
   readonly provider: PackProcedureContribution
   readonly query: (query: PackProcedureQuery) => Promise<unknown>
-}): ProcedureObservationPort => ({
-  validateTags: async tags => tags.length === 0
-    ? new Map()
-    : parseProcedureTagValidations(await config.query(config.provider.tagValidationQuery(config.scopeId, tags))),
-  readTag: async tag => parseProcedureTagValue(tag, await config.query(config.provider.signalReadQuery(config.scopeId, tag))),
-  evaluateCsfs: async assessmentIds => assessmentIds.length === 0
-    ? new Map()
-    : parseProcedureCsfEvaluations(await config.query(config.provider.assessmentsQuery(config.scopeId, assessmentIds))),
-})
+}): ProcedureObservationPort => {
+  const readTags: ProcedureObservationPort['readTags'] = async tags => {
+    if (tags.length === 0) return new Map()
+    const raw = assertRecord(await config.query(config.provider.signalReadQuery(config.scopeId, tags)), 'procedure signal query returned no result')
+    const rows = assertArray(raw.signals, 'procedure signal query returned no signals').map(row => assertRecord(row, 'procedure signal row is malformed'))
+    const requested = new Set(tags.map(tag => tag.id))
+    const keyed = new Map<string, Record<string, unknown>>()
+    for (const row of rows) {
+      const signal = assertRecord(row.signal, 'procedure signal row requires signal')
+      const id = assertString(signal.tagId, 'procedure signal row requires canonical tagId')
+      if (!requested.has(id) || keyed.has(id)) throw new Error(`procedure signal query returned unexpected or duplicated identity ${id}`)
+      keyed.set(id, row)
+    }
+    return new Map<string, ProcedureTagValue | Error>(tags.map(tag => {
+      try {
+        const row = keyed.get(tag.id)
+        if (row === undefined) throw new Error(`procedure signal query omitted ${tag.id}`)
+        return [tag.id, parseProcedureTagValue(tag, { ...raw, signals: [row] })] as const
+      } catch (error) { return [tag.id, error instanceof Error ? error : new Error(String(error))] as const }
+    }))
+  }
+  return {
+    validateTags: async tags => tags.length === 0
+      ? new Map()
+      : parseProcedureTagValidations(await config.query(config.provider.tagValidationQuery(config.scopeId, tags))),
+    readTags,
+    readTag: async tag => {
+      const value = (await readTags([tag])).get(tag.id)
+      if (value instanceof Error) throw value
+      if (value === undefined) throw new Error(`procedure signal query omitted ${tag.id}`)
+      return value
+    },
+    evaluateCsfs: async assessmentIds => assessmentIds.length === 0
+      ? new Map()
+      : parseProcedureCsfEvaluations(await config.query(config.provider.assessmentsQuery(config.scopeId, assessmentIds))),
+  }
+}
 
 /** One procedure tag as World read it on a plant: its binding, and its value or why there is none. */
 export interface ProcedureTagRead {
@@ -274,20 +321,24 @@ export const readProcedureTags = async (config: {
     port = config.observations()
     validations = await port.validateTags(tags.filter((tag): tag is ProcedureTag => tag !== undefined))
   } catch (error) { failure = failureText(error) }
-  return await Promise.all(config.tagIds.map(async (tagId, index): Promise<ProcedureTagRead> => {
+  let values: ReadonlyMap<string, ProcedureTagValue | Error> = new Map()
+  if (failure === undefined && port !== undefined) {
+    const readable = tags.filter((tag): tag is ProcedureTag => tag !== undefined && validations.get(tag.id)?.status !== 'missing')
+    try { values = await port.readTags(readable) }
+    catch (error) { failure = failureText(error) }
+  }
+  return config.tagIds.map((tagId, index): ProcedureTagRead => {
     const tag = tags[index]
     if (tag === undefined) return { tagId, binding: 'missing', warnings: [], unavailable: 'not declared in the procedure document' }
-    if (failure !== undefined || port === undefined) return { tagId, binding: 'unchecked', warnings: [], unavailable: failure ?? 'no observation port' }
     const validation = validations.get(tagId)
+    if (validation?.status === 'missing') return { tagId, binding: 'missing', warnings: validation.warnings, unavailable: 'procedure tag is not bound to this Plant' }
+    if (failure !== undefined || port === undefined) return { tagId, binding: validation?.status ?? 'unchecked', warnings: validation?.warnings ?? [], unavailable: failure ?? 'no observation port' }
     if (validation === undefined) return { tagId, binding: 'unchecked', warnings: [], unavailable: 'the Pack did not validate this tag' }
-    if (validation.status === 'missing') return { tagId, binding: 'missing', warnings: validation.warnings, unavailable: 'procedure tag is not bound to this Plant' }
-    try {
-      const value = await port.readTag(tag)
-      return { tagId, binding: validation.status, warnings: validation.warnings, value }
-    } catch (error) {
-      return { tagId, binding: validation.status, warnings: validation.warnings, unavailable: failureText(error) }
-    }
-  }))
+    const value = values.get(tagId)
+    return value === undefined || value instanceof Error
+      ? { tagId, binding: validation.status, warnings: validation.warnings, unavailable: value instanceof Error ? value.message : 'the Pack did not return this tag' }
+      : { tagId, binding: validation.status, warnings: validation.warnings, value }
+  })
 }
 
 const evidenceReadingLength = 160

@@ -919,6 +919,8 @@ export const createSimulationRunRuntime = async (config: {
             objectIds: new Set(snapshot.objects.map(object => object.id)),
             objects: new Map(snapshot.objects.map(object => [object.id, object])),
             factory: { eventId, nextSeq: () => ++seq },
+            observations: plantId => procedureObservations(actor, plantId, true),
+            clock: () => runClock.read().currentTime,
           })
         })
         return { ok: true, commandId: command.id, acceptedAt: at }
@@ -929,6 +931,8 @@ export const createSimulationRunRuntime = async (config: {
           commandId: command.id,
           rejectedAt: at,
           reason: error instanceof Error ? error.message : String(error),
+          ...(typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? { code: error.code } : {}),
+          ...(typeof error === 'object' && error !== null && 'details' in error && typeof error.details === 'object' && error.details !== null && !Array.isArray(error.details) ? { details: error.details as Record<string, unknown> } : {}),
         }
       }
     }
@@ -1496,7 +1500,7 @@ export const createSimulationRunRuntime = async (config: {
 
   // The scope's owning Pack answers through its declared read Capabilities,
   // invoked as the caller: World interprets none of its plant logic.
-  const procedureObservations = (actor: Actor, plantId: string): ProcedureObservationPort => {
+  const procedureObservations = (actor: Actor, plantId: string, atCommit = false): ProcedureObservationPort => {
     const object = state.snapshot().objects.find(candidate => candidate.id === plantId)
     if (!object) throw new Error(`procedure target no longer exists: ${plantId}`)
     const provider = config.procedureProvider?.(object)
@@ -1506,7 +1510,13 @@ export const createSimulationRunRuntime = async (config: {
       scopeId: plantId,
       provider,
       query: async query => {
-        const outcome = await invokeCapability(actor, { capabilityId: query.capabilityId, input: query.input })
+        if (atCommit) {
+          admit(actor, query.capabilityId)
+          if (runtimeCapabilities.get(query.capabilityId)?.capability.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
+        }
+        const outcome = atCommit
+          ? await invokeCapabilityThroughRuntime(actor, { capabilityId: query.capabilityId, input: query.input }, commandSourceOf(actor))
+          : await invokeCapability(actor, { capabilityId: query.capabilityId, input: query.input })
         if (outcome.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
         return outcome.result
       },

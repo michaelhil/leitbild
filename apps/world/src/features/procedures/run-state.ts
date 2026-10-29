@@ -12,6 +12,7 @@ import {
   assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
+import { assessProcedureBranches } from './branch-assessment.ts'
 import { procedureEvidenceReadingText, readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
 
 export interface ProcedureCommitContext {
@@ -27,6 +28,9 @@ export interface ProcedureCommitContext {
   readonly actorKind: ProcedureActorKind
   /** The actor's display name where the request named one, recorded beside its decisions and driving. */
   readonly actorLabel?: string
+  /** Commit-local admitted reads; they never re-enter the Run execution queue. */
+  readonly observations?: (plantId: string) => ProcedureObservationPort
+  readonly clock?: () => IsoTimestamp
 }
 
 const activeRunFor = (procedures: ProcedureControlState | undefined, runId: string): ProcedureRunState => {
@@ -53,8 +57,8 @@ const assertInstalledProcedure = (document: ProcedureDocument): void => {
   }
 }
 
-// Network work happens outside the Simulation Run commit queue. The returned
-// function is synchronous and rechecks mutable state inside that queue.
+// Source acquisition happens outside the Simulation Run commit queue. The returned
+// function rechecks mutable state and acquires branch evidence inside that queue.
 export const prepareProcedureCommand = async (config: {
   readonly command: CommandEnvelope
   readonly procedures: ProcedureControlState | undefined
@@ -69,7 +73,7 @@ export const prepareProcedureCommand = async (config: {
   readonly observations?: (plantId: string) => ProcedureObservationPort
   /** Who issues the command, as its commit will be told: an AI agent's transition citing no evidence reads the step's tags here. */
   readonly actorKind?: ProcedureActorKind
-}): Promise<((context: ProcedureCommitContext) => ReadonlyArray<SimulationRunEvent>) | null> => {
+}): Promise<((context: ProcedureCommitContext) => ReadonlyArray<SimulationRunEvent> | Promise<ReadonlyArray<SimulationRunEvent>>) | null> => {
   const { command } = config
   const assertDocumentScope = (context: ProcedureCommitContext, document: ProcedureDocument, scope: ProcedureRunScope): void => {
     assertLiveScope(context, scope)
@@ -224,27 +228,12 @@ export const prepareProcedureCommand = async (config: {
       throw new Error(`procedure ${targetDocument.procedureId} does not contain destination step ${branch.targetStepId}`)
     }
     const preparedTarget = targetDocument ? currentRunFor(config.procedures, preparedRun.sourceId, targetDocument.procedureId, preparedRun.scope) : undefined
-    // Evidence is up to six of this step's own tags, which World reads now on
-    // the run's plant, as the caller, and records with the decision.
+    // Citations are bounded by this pinned step's declared tag identities, not an arbitrary count.
     const evidenceTagIds = payload.evidenceTagIds ?? []
     if (new Set(evidenceTagIds).size !== evidenceTagIds.length) throw new Error('evidenceTagIds name a tag more than once')
     const uncited = evidenceTagIds.filter(tagId => !step.tagIds.includes(tagId))
-    // Refused at commit, after who drives and whether the step is the current one.
-    const uncitedEvidence = uncited.length === 0 ? undefined : new Error(`${uncited.map(tagId => `«${tagId}»`).join(', ')} ${uncited.length === 1 ? 'is' : 'are'} not cited in step ${step.label}; evidence is up to six of the step's own tags${step.tagIds.length === 0 ? ', and it cites none' : `: ${step.tagIds.join(', ')}`}.`)
-    const observations = () => {
-      if (config.observations === undefined) throw new Error('this command path reads no plant observations')
-      return config.observations(preparedRun.scope.plantId)
-    }
-    const evidenceReads: ReadonlyArray<ProcedureTagRead> = evidenceTagIds.length === 0 || uncitedEvidence !== undefined ? [] : await readProcedureTags({
-      observations, declared: document.tags, tagIds: evidenceTagIds,
-    })
-    const evidence = evidenceReads.map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
-    // An AI agent cites no evidence only where none of the step's tags reads now.
-    const readableStepTagIds = config.actorKind === 'ai' && payload.evidenceTagIds === undefined && step.tagIds.length > 0
-      ? (await readProcedureTags({ observations, declared: document.tags, tagIds: step.tagIds }))
-          .filter(read => read.value !== undefined).map(read => read.tagId)
-      : undefined
-    return context => {
+    const uncitedEvidence = uncited.length === 0 ? undefined : new Error(`${uncited.map(tagId => `«${tagId}»`).join(', ')} are not cited in step ${step.label}; evidence must name its declared tags.`)
+    return async context => {
       const run = activeRunFor(context.procedures, payload.runId)
       assertDocumentScope(context, document, run.scope)
       if (targetDocument) assertDocumentScope(context, targetDocument, run.scope)
@@ -253,10 +242,24 @@ export const prepareProcedureCommand = async (config: {
         assertAiWorksCurrentStep(run, step)
       }
       if (uncitedEvidence !== undefined) throw uncitedEvidence
+      const reads = await readProcedureTags({
+        observations: () => {
+          if (context.observations === undefined) throw new Error('Commit-local procedure observations are unavailable')
+          return context.observations(run.scope.plantId)
+        }, declared: document.tags, tagIds: step.tagIds,
+      })
+      const criterion = assessProcedureBranches({ step, reads, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
+      if (context.actorKind === 'ai' && criterion.status !== 'supported') {
+        throw Object.assign(new Error(`Branch ${payload.branchIndex} of step ${step.label} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`), {
+          code: 'procedure_branch_not_supported', details: { runId: run.runId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
+        })
+      }
+      const evidenceReads = reads.filter(read => evidenceTagIds.includes(read.tagId))
+      const evidence = evidenceReads.map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
       if (context.actorKind === 'ai') {
         assertAiDecisionEvidence({ step, ...(payload.basis === undefined ? {} : { basis: payload.basis }),
           ...(payload.evidenceTagIds === undefined ? {} : { evidenceTagIds: payload.evidenceTagIds }), reads: evidenceReads,
-          ...(readableStepTagIds === undefined ? {} : { readableStepTagIds }) })
+          readableStepTagIds: reads.filter(read => read.value !== undefined).map(read => read.tagId) })
       }
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.
@@ -294,10 +297,11 @@ export const prepareProcedureCommand = async (config: {
         ...(branch.targetStepId === undefined ? {} : { targetStepId: branch.targetStepId }),
         ...(branch.outcome === undefined ? {} : { outcome: branch.outcome }),
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
-        simulationTime: context.simulationTime ?? context.at, selectedBy: command.actorId,
+        simulationTime: criterion.simulationTime, selectedBy: command.actorId,
         ...(context.actorLabel === undefined ? {} : { selectedByLabel: context.actorLabel }),
         ...(payload.basis === undefined ? {} : { basis: payload.basis }),
         ...(evidence.length === 0 ? {} : { evidence }),
+        criterion,
         ...(run.observations?.find(item => item.stepId === step.id) === undefined ? {} : {
           observation: run.observations!.find(item => item.stepId === step.id)!,
         }) })

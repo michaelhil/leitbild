@@ -24,9 +24,9 @@ export const processPlantPackView = {
       const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
       return parsed.success ? String(object.id) : null
     },
-    signalReadQuery: (plantId, tag) => ({
+    signalReadQuery: (plantId, tags) => ({
       capabilityId: 'world.process-plant.signals.read',
-      input: { plantId, signals: [{ tagId: tag.id, ...(tag.units === undefined ? {} : { requestedUnit: tag.units }) }] },
+      input: { plantId, evidence: true, signals: tags.map(tag => ({ tagId: tag.id, ...(tag.units === undefined ? {} : { requestedUnit: tag.units }) })) },
     }),
     tagValidationQuery: (plantId, tags) => ({
       capabilityId: 'world.process-plant.procedure-tags.validate',

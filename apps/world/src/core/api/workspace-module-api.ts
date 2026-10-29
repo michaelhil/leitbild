@@ -1840,7 +1840,7 @@ const invokeCapability = async (
       throw error
     }
     if (outcome.kind === 'command' && !outcome.result.ok) {
-      return apiError(409, 'simulation_command_rejected', outcome.result.reason)
+      return apiError(409, outcome.result.code ?? 'simulation_command_rejected', outcome.result.reason, outcome.result.details)
     }
     if (outcome.kind === 'command' && capabilityId === procedureRunTransitionCommandKind && invocation.access.actor.kind === 'ai') {
       const { runId } = procedureRunTransitionPayloadSchema.parse(invocation.input)

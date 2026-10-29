@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
+import type { ProcessPlantProtectionConfig } from '../runtime/ic/control-protection-model.ts'
 import { idSchema, matchesLiteralSearch, type IsoTimestamp, type ObjectId } from '../../../core/model/index.ts'
 import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
@@ -17,6 +19,15 @@ import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requireP
 import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-units.ts'
 import { declaredObservable } from '../observation/declarations.ts'
 import { readPlant } from '../observation/read.ts'
+
+const automationDigests = new WeakMap<ProcessPlantProtectionConfig, string>()
+const automationDigest = (definition: ProcessPlantProtectionConfig): string => {
+  const previous = automationDigests.get(definition)
+  if (previous !== undefined) return previous
+  const digest = createHash('sha256').update(JSON.stringify(definition)).digest('hex')
+  automationDigests.set(definition, digest)
+  return digest
+}
 
 /** The commands issued on these signals and the resets of actuations that held them, at the Run and plant time read at. */
 const operationsOn = (config: { readonly simulationTime?: IsoTimestamp }, system: ProcessPlantRuntimeInstance, paths: ReadonlySet<string>) => {
@@ -40,6 +51,7 @@ export const signalsReadQuerySchema = z.object({
   signals: z.array(processPlantSignalReferenceSchema.safeExtend({
     requestedUnit: z.string().trim().min(1).max(128).optional().describe('Optional presentation unit. Raw variable and quality remain unchanged; unsupported conversion returns the actual value/unit with an explicit unavailable reason.'),
   })).min(1),
+  evidence: z.literal(true).optional().describe('Adds actual engineering diagnostic provenance, acquired Run time and model/I&C configuration identities; does not qualify instrumentation.'),
   operations: z.literal(true).optional().describe('Adds the commands issued on these signals and the resets of actuations that held them, with the Run and plant time read at.'),
   observed: z.literal(true).optional().describe('Adds each signal\'s observation as World reads it (priority, the limit it is past) and its declared limits.'),
 }).strict()
@@ -198,6 +210,11 @@ export const answerProcessPlantSignalQuery = (config: {
           signal: processPlantSignalView(binding),
           variable,
           quality: processPlantSignalQuality(variable),
+          ...(payload.evidence !== true || config.simulationTime === undefined ? {} : { evidence: {
+            kind: 'engineering-diagnostic' as const, sampledAt: config.simulationTime, provenance: 'runtime-model' as const,
+            modelRef: system.plant.modelRef, modelDigest: system.plant.modelDigest,
+            automationRef: system.plant.automationRef, automationDigest: automationDigest(system.plant.automation),
+          } }),
           ...(declared === undefined ? {} : { observed: declared === null ? null : {
             unit: declared.unit, quantity: declared.quantity, thresholds: declared.thresholds,
             observation: readPlant({ objectId: payload.plantId as ObjectId, system, recording: null, simulationTime: config.simulationTime ?? rejectCapabilityTarget('signals.read with observed needs the Run time the Plants stand at'), history: undefined }, [String(binding.path)])[0],

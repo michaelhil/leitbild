@@ -777,7 +777,7 @@ export interface PackUiContribution {
 export interface PackProcedureContribution {
   readonly scopeIdForObject: (object: OperationalObject) => string | null
   /** The declared Capability must return PackProcedureSignalReadResult. */
-  readonly signalReadQuery: (scopeId: string, tag: ProcedureTag) => PackProcedureQuery
+  readonly signalReadQuery: (scopeId: string, tags: ReadonlyArray<ProcedureTag>) => PackProcedureQuery
   /** The declared Capability must return PackProcedureTagValidationResult. */
   readonly tagValidationQuery: (scopeId: string, tags: ReadonlyArray<ProcedureTag>) => PackProcedureQuery
   /** The declared Capability must return PackProcedureAssessmentResult. */
@@ -794,6 +794,15 @@ export interface PackProcedureQuery {
 export interface PackProcedureSignalObservation {
   readonly signal: { readonly unit: string; readonly tagId?: string; readonly label?: string; readonly path?: string }
   readonly variable: { readonly value: number | boolean; readonly unit?: string; readonly path?: string }
+  readonly evidence?: {
+    readonly kind: 'instrument' | 'engineering-diagnostic'
+    readonly sampledAt: string
+    readonly provenance: string
+    readonly modelRef?: string
+    readonly modelDigest?: string
+    readonly automationRef?: string
+    readonly automationDigest?: string
+  }
   readonly quality?: { readonly status: string }
   readonly valueView?: {
     readonly status: 'native' | 'converted' | 'unavailable'

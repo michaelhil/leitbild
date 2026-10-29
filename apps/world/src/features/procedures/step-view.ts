@@ -4,6 +4,8 @@ import {
   procedureRunIdSchema, procedureRunStatusSchema, procedureStepDecisionSchema, procedureTextBlockSchema,
   type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
 } from '../../core/model/index.ts'
+import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
+import { assessProcedureBranches } from './branch-assessment.ts'
 import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
 
 // One step of a live procedure Run, compact enough to work through step by
@@ -68,6 +70,7 @@ const stepSchema = z.object({
   title: z.string().optional(),
   blocks: z.array(z.object({ kind: procedureTextBlockSchema.shape.kind, text: z.string() }).strict()),
   branches: z.array(stepBranchSchema),
+  branchAssessments: z.array(procedureBranchAssessmentSchema),
   observation: z.object({ status: z.enum(['satisfied', 'challenged', 'unknown']), reason: z.string().optional(), simulationTime: isoTimestampSchema }).strict().optional(),
   state: z.object({
     assessment: procedureAssessmentSchema,
@@ -229,6 +232,7 @@ export const composeProcedureStepView = async (config: {
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
         ...(branch.because === undefined ? {} : { because: withoutLinkTargets(branch.because) }),
       })),
+      branchAssessments: assessProcedureBranches({ step, reads, plantId: run.scope.plantId, simulationTime: clock.currentTime }),
       ...(observation === undefined ? {} : { observation: {
         status: observation.result.status,
         ...(observation.result.reason === undefined ? {} : { reason: observation.result.reason }),

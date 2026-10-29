@@ -267,6 +267,7 @@ const recordProcedureDecision = (
     target: event.target,
     ...(event.basis === undefined ? {} : { basis: event.basis }),
     ...(event.evidence === undefined ? {} : { evidence: event.evidence }),
+    ...(event.criterion === undefined ? {} : { criterion: event.criterion }),
     selectedBy: event.selectedBy,
     ...(event.selectedByLabel === undefined ? {} : { selectedByLabel: event.selectedByLabel }),
     simulationTime: event.simulationTime,

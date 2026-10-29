@@ -5,7 +5,7 @@ export interface ProcedureDecision {
   readonly branchIndex: number
   readonly condition: ProcedureAssessmentCondition
   /** A visible, sourced scope statement. It never changes condition truth by itself. */
-  readonly applicability?: { readonly description: string; readonly source: string }
+  readonly applicability?: { readonly description: string; readonly source: string; readonly model?: { readonly ref: string; readonly digest: string }; readonly automation?: { readonly ref: string; readonly digest: string } }
 }
 
 export const parseProcedureDecisions = (value: unknown): ReadonlyArray<ProcedureDecision> => {
@@ -22,9 +22,16 @@ export const parseProcedureDecisions = (value: unknown): ReadonlyArray<Procedure
     if (row.applicability !== undefined) {
       if (row.applicability === null || typeof row.applicability !== 'object' || Array.isArray(row.applicability)) throw new Error('procedure-decisions applicability requires an object')
       const scope = row.applicability as Record<string, unknown>
-      for (const key of Object.keys(scope)) if (!['description', 'source'].includes(key)) throw new Error(`unsupported applicability field ${key}`)
+      for (const key of Object.keys(scope)) if (!['description', 'source', 'model', 'automation'].includes(key)) throw new Error(`unsupported applicability field ${key}`)
       if (typeof scope.description !== 'string' || !scope.description.trim() || typeof scope.source !== 'string' || !scope.source.trim()) throw new Error('procedure-decisions applicability requires description and source')
-      applicability = { description: scope.description, source: scope.source }
+      const identity = (value: unknown): { readonly ref: string; readonly digest: string } => {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('applicability identity requires ref and digest')
+        const data = value as Record<string, unknown>
+        if (Object.keys(data).some(key => !['ref', 'digest'].includes(key)) || typeof data.ref !== 'string' || !data.ref.trim() || typeof data.digest !== 'string' || !/^[a-f0-9]{64}$/.test(data.digest)) throw new Error('applicability identity requires exact ref and SHA-256 digest')
+        return { ref: data.ref, digest: data.digest }
+      }
+      applicability = { description: scope.description, source: scope.source,
+        ...(scope.model === undefined ? {} : { model: identity(scope.model) }), ...(scope.automation === undefined ? {} : { automation: identity(scope.automation) }) }
     }
     return { branchIndex: row.branchIndex, condition: parseProcedureAssessment({ condition: row.condition }).condition,
       ...(applicability === undefined ? {} : { applicability }) }
