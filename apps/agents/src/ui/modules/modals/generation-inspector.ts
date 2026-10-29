@@ -288,10 +288,12 @@ export const showGenerationInspector = (options: {
     }
     tabs(host, [
       ...(published ? [{ label: 'Published view', render: (body: HTMLElement) => {
+        if (published.kind === 'refused') { note(body, `${published.code}: ${published.error}`); return }
+        const envelope = published.envelope
         const frame = document.createElement('iframe')
-        frame.title = published.title
-        frame.src = embeddedViewPath(published) + embeddedViewFragment(published)
-        frame.style.cssText = `display:block;width:100%;height:${published.height}px;border:0`
+        frame.title = envelope.title
+        frame.src = embeddedViewPath(envelope) + embeddedViewFragment(envelope)
+        frame.style.cssText = `display:block;width:100%;height:${envelope.height}px;border:0`
         frame.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'")
         frame.setAttribute('referrerpolicy', 'same-origin')
         body.appendChild(frame)

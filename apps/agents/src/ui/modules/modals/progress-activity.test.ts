@@ -45,8 +45,8 @@ test('only a successful validated same-Workspace publication can render inside a
   const workspaceId = '11111111-1111-4111-8111-111111111111'
   const embeddedView = { moduleId: 'world', subject: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run' }, viewType: 'procedure.decision', title: 'Recorded decision', height: 480, state: '{"eventId":"event:exact"}' }
   const operation = { key: 'step', operationId: 'world.procedure.run.transition', input: {}, result: { success: true, embeddedView } }
-  expect(recordedOperationView(operation, workspaceId)).toEqual(embeddedView)
-  expect(recordedOperationView(operation, '22222222-2222-4222-8222-222222222222')).toBeUndefined()
+  expect(recordedOperationView(operation, workspaceId)).toEqual({ kind: 'view', envelope: embeddedView })
+  expect(recordedOperationView(operation, '22222222-2222-4222-8222-222222222222')).toMatchObject({ kind: 'refused', code: 'view_workspace_mismatch' })
   expect(recordedOperationView({ ...operation, result: { ...operation.result, success: false } }, workspaceId)).toBeUndefined()
-  expect(recordedOperationView({ ...operation, result: { success: true, embeddedView: { ...embeddedView, moduleId: 'agents' } } }, workspaceId)).toBeUndefined()
+  expect(recordedOperationView({ ...operation, result: { success: true, embeddedView: { ...embeddedView, moduleId: 'agents' } } }, workspaceId)).toMatchObject({ kind: 'refused' })
 })

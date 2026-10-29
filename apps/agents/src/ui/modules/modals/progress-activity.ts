@@ -1,7 +1,6 @@
 import type { ExecutionInspection, JourneyEvent } from './execution-journey.ts'
 import type { ExecutionCall } from '../../../core/executions/store.ts'
 import { checkViewEnvelope } from '../../../core/render-validators/view-fence.ts'
-import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
 
 export interface ProgressActivity {
   readonly content: string
@@ -57,8 +56,9 @@ export const recordedOperations = (call: ExecutionCall): ReadonlyArray<RecordedO
   })
 }
 
-export const recordedOperationView = (operation: RecordedOperation, workspaceId: string): EmbeddedViewEnvelope | undefined => {
+export const recordedOperationView = (operation: RecordedOperation, workspaceId: string): ReturnType<typeof checkViewEnvelope> | undefined => {
+  // A publication is optional. A provided but invalid one remains an explicit
+  // refusal, rather than silently hiding why its view could not be opened.
   if (operation.result?.success !== true || operation.result.embeddedView === undefined) return
-  const checked = checkViewEnvelope(operation.result.embeddedView, workspaceId)
-  return checked.kind === 'view' ? checked.envelope : undefined
+  return checkViewEnvelope(operation.result.embeddedView, workspaceId)
 }
