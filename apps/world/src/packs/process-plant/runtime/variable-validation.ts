@@ -1,11 +1,16 @@
 import type { CompiledVariable, VariablePath } from '../graph/index.ts'
 import type { ProcessPlantValue } from './model.ts'
 
-export const processPlantExpectedValueType = (variable: CompiledVariable): 'boolean' | 'number' =>
+/** The validator depends on declared type/unit/domain, not compiled runtime indices. */
+export type ProcessPlantValueDeclaration = Pick<CompiledVariable, 'path'> & {
+  readonly descriptor: Pick<CompiledVariable['descriptor'], 'quantity' | 'unit' | 'limits'>
+}
+
+export const processPlantExpectedValueType = (variable: ProcessPlantValueDeclaration): 'boolean' | 'number' =>
   variable.descriptor.quantity === 'boolean' ? 'boolean' : 'number'
 
 export const assertProcessPlantValueMatchesDeclaredType = (
-  variable: CompiledVariable,
+  variable: ProcessPlantValueDeclaration,
   value: ProcessPlantValue,
 ): void => {
   const expectedType = processPlantExpectedValueType(variable)
@@ -21,7 +26,7 @@ export const assertProcessPlantValueMatchesCurrentType = (
 }
 
 export const assertProcessPlantValueWithinPhysicalBounds = (
-  variable: CompiledVariable,
+  variable: ProcessPlantValueDeclaration,
   value: ProcessPlantValue,
 ): void => {
   if (typeof value !== 'number') return
@@ -61,7 +66,7 @@ export const assertProcessPlantValueIsFinite = (
 }
 
 export const assertProcessPlantVariableValueValid = (
-  variable: CompiledVariable,
+  variable: ProcessPlantValueDeclaration,
   value: ProcessPlantValue,
 ): void => {
   assertProcessPlantValueMatchesDeclaredType(variable, value)

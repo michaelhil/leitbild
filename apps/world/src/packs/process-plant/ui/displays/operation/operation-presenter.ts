@@ -1,6 +1,7 @@
-import { displayValue, formatQuantity } from '../../../quantity-text.ts'
+import { displayValue, formatConfigurationQuantity, formatQuantity } from '../../../quantity-text.ts'
+export { displayConfigurationValue as controllerTargetShown, nativeConfigurationValue as controllerTargetNative } from '../../../quantity-text.ts'
 import type { ProcessVariableValue, VariablePath } from '../../../graph/index.ts'
-import { demandSetting, followAllowanceMs, type ControlOption, type OfferedControl, type OpposingRule } from '../../../operations/controls.ts'
+import { demandSetting, setpointSetting, followAllowanceMs, type ControllerSetpoint, type ControlOption, type OfferedControl, type OpposingRule } from '../../../operations/controls.ts'
 import type { RuleStanding } from '../../../operations/control-standing.ts'
 import type { ListedControl, ListedItem, ListedReset } from '../../../operations/instance-ports.ts'
 import type { OperationConsequence } from '../../../operations/consequence.ts'
@@ -129,6 +130,7 @@ export interface ControlView {
   readonly path: VariablePath
   readonly target: string
   readonly form: OfferedControl['form']
+  readonly unavailable?: string
   /** The state the equipment reads now, in the options' words; null for a pushbutton, or a position between them ("35 %"). */
   readonly now: string | null
   /** A demand control's command beside where it stands, where they differ ("CMD 40 %"); null otherwise. */
@@ -136,6 +138,7 @@ export interface ControlView {
   readonly options: ReadonlyArray<OptionView>
   /** A demand control's span and setting; absent on two-state controls and pushbuttons. */
   readonly demand?: DemandView
+  readonly setpoint?: ControllerSetpoint & { readonly control: OfferedControl; readonly value: number }
   /** A demand control's: what a setting below where it stands throttles now. */
   readonly throttleLine?: ConsequenceView
   /**
@@ -183,6 +186,7 @@ export interface ItemControlView {
  * nothing folds. Either part is null where it holds nothing.
  */
 export const faceplateControls = (view: ItemControlView, context: { readonly pinned: boolean; readonly short: boolean; readonly proposalPending: boolean }): { readonly open: ItemControlView | null; readonly folded: ItemControlView | null; readonly count: number } => {
+  view = { ...view, controls: view.controls.filter(control => control.unavailable === undefined) }
   const empty = (part: ItemControlView): boolean => part.controls.length === 0 && part.resets.length === 0 && part.auto.length === 0 && part.withheld.length === 0 && part.position === null
   // A faceplate short of room folds every control while no proposal waits, as a pinned overlay always does.
   if (context.pinned || (context.short && !context.proposalPending)) return { open: null, folded: empty(view) ? null : view, count: view.controls.length + view.resets.length }
@@ -246,6 +250,10 @@ const currentOption = (control: OfferedControl, now: OperationNow): ControlOptio
 
 const nowWords = (control: OfferedControl, now: OperationNow): string | null => {
   if (control.form === 'pushbutton' || control.state === undefined) return null
+  if (control.setpoint !== undefined) {
+    const reading = now.read(control.path)
+    return typeof reading === 'number' ? `Target ${formatConfigurationQuantity(reading, control.setpoint.unit)}` : null
+  }
   // A demand control reads where it stands on its own step ("35 %"), or at an end in its word.
   if (control.demand !== undefined) {
     const reading = now.read(control.state)
@@ -305,8 +313,8 @@ const optionView = (listed: ListedControl, option: ControlOption, index: number,
       ...(blocks === undefined ? [] : blocks.rules.map(rule => `Blocks ${rule.action} · ${rule.label}`)),
     ],
     opposing: standing.opposing.map(rule => `${rule.action} · ${rule.label} ${opposingWords(control, rule)}: ${standingWords(rule, now)}`),
-    heldBy: held === undefined ? null
-      : `${held.label} holds ${control.target} ${wordFor(control, held.value)} since ${now.clock(held.atElapsedMs)}: overriding it is not offered here${resetClause(held.ruleId, resets)}`,
+    heldBy: listed.unavailable ?? (held === undefined ? null
+      : `${held.label} holds ${control.target} ${wordFor(control, held.value)} since ${now.clock(held.atElapsedMs)}: overriding it is not offered here${resetClause(held.ruleId, resets)}`),
     isolated: standing.isolated ? `Its isolation input stands: ${control.target} stays shut whatever it is commanded` : null,
     travelMs: option.travelMs,
     consequence: consequenceView(listed.consequenceLines[index]),
@@ -385,12 +393,16 @@ export const itemControlView = (item: ListedItem, now: OperationNow, resets: Rea
       path: control.path,
       target: control.target,
       form: control.form,
+      ...(listed.unavailable === undefined ? {} : { unavailable: listed.unavailable }),
       // A block reads whether it stands; any other pushbutton has no state of its own.
       now: blocks === undefined ? nowWords(control, now) : blocks.blocked ? 'blocked' : 'not blocked',
       commanded: demand === undefined || Math.abs(demand.setting - demand.position) <= demand.step / 2 ? null : `CMD ${demand.settingText}`,
       throttled: (listed.throttledUnder ?? []).map(rule => `Throttled under ${rule.label}`),
       options: control.options.map((option, index) => optionView(listed, option, index, current, now, resets)),
       ...(demand === undefined ? {} : { demand }),
+      ...(control.setpoint === undefined ? {} : { setpoint: { ...control.setpoint, control,
+        value: (() => { const value = now.read(control.path); if (typeof value !== 'number') throw new Error(`${control.path} reads no controller target`); return value })(),
+      } }),
       ...(listed.throttleLine === undefined ? {} : { throttleLine: consequenceView(listed.throttleLine)! }),
       ...(holdView(listed, demand) === undefined ? {} : { hold: holdView(listed, demand)! }),
       withheldOptions: control.withheldOptions.map(option => ({ word: option.word, reason: option.reason })),
@@ -435,7 +447,7 @@ export const demandOption = (control: ControlView, value: number): OptionView | 
     slideOnly: false,
     consequences: [],
     opposing: [],
-    heldBy: belowFloor ? hold.text : null,
+    heldBy: control.unavailable ?? (belowFloor ? hold.text : null),
     travelMs: end?.travelMs ?? null,
     isolated: control.options.find(option => option.isolated !== null)?.isolated ?? null,
     consequence: value < demand.position ? control.throttleLine ?? null : null,
@@ -443,8 +455,18 @@ export const demandOption = (control: ControlView, value: number): OptionView | 
 }
 
 /** The option a value of a control is: one it lists, or a demand control's setting between its ends. */
-export const optionOf = (control: ControlView, value: ProcessVariableValue): OptionView | undefined =>
-  control.options.find(option => option.value === value) ?? (typeof value === 'number' ? demandOption(control, value) ?? undefined : undefined)
+export const optionOf = (control: ControlView, value: ProcessVariableValue): OptionView | undefined => {
+  const setpoint = control.setpoint
+  if (setpoint !== undefined) {
+    const setting = setpointSetting(setpoint.control, value)
+    if (!setting.ok || typeof value !== 'number') return undefined
+    return { key: `${control.path}=${value}`, word: setting.word, value,
+      current: setpoint.value === value,
+      action: `${setting.word} ${control.target}`, confirm: 'button', slideOnly: false,
+      consequences: [], opposing: [], heldBy: null, travelMs: null, isolated: null, consequence: null }
+  }
+  return control.options.find(option => option.value === value) ?? (typeof value === 'number' ? demandOption(control, value) ?? undefined : undefined)
+}
 
 // --- Feedback ---------------------------------------------------------------
 
@@ -643,13 +665,15 @@ export const proposalCard = (
     already: option.current ? `Already ${toState ?? option.word}: approving it changes nothing` : null,
     checked: review === null ? { permitted: false, text: 'Not checked yet' }
       : review.permitted ? { permitted: true, text: 'I&C allows this command now' } : { permitted: false, text: review.refusal ?? 'The I&C refuses it now' },
-    expected: control.form === 'pushbutton' ? `${listed.control.target} pressed: ${option.consequences.length === 0 ? 'no trip follows' : option.consequences.join('; ')}`
+    expected: control.form === 'setpoint' ? `Controller target changes to ${option.word.slice(4)}; verify the measured process response separately`
+      : control.form === 'pushbutton' ? `${listed.control.target} pressed: ${option.consequences.length === 0 ? 'no trip follows' : option.consequences.join('; ')}`
       : `${listed.control.target} reads ${toState ?? option.word} ${travel}`,
     consequence: consequenceView(proposal.consequence) ?? option.consequence,
     consequences: option.consequences,
     opposing: option.opposing,
     reversibility: control.protection?.role === 'block' ? 'Not reversed here: the block stands until its logic resets it'
       : control.form === 'pushbutton' ? 'Not reversed here: what it actuates latches until it is reset, which is offered once its condition has cleared'
+      : control.form === 'setpoint' ? 'A different controller target is a new command'
       : other === undefined ? 'No opposite command is offered' : `Reversible: ${other.action} is a new command`,
     approve: !pending ? null : {
       label: approveLabel(option.action),

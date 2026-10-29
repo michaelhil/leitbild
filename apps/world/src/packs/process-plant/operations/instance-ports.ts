@@ -7,7 +7,7 @@ import { actuationResets, resetRefusal, type ActuationReset, type ResetContext }
 import { actuationHold, throttledUnder, validateOperatorWrite } from './command-guard.ts'
 import { itemCarrier, offVerb, operationConsequence, type ConsequenceContext, type OperationConsequence } from './consequence.ts'
 import { optionStanding, ruleStatesFrom, type OptionStanding, type StandingContext } from './control-standing.ts'
-import { offeredOption, plantControlsFor, type ControlOption, type ControlRule, type ItemControls, type OfferedControl, type WithheldControl } from './controls.ts'
+import { automaticReason, offeredOption, plantControlsFor, type ControlOption, type ControlRule, type ItemControls, type OfferedControl, type WithheldControl } from './controls.ts'
 import { pushbuttonProtection, type PushbuttonProtection } from './pushbutton-protection.ts'
 import type { ProposalPorts } from './proposals.ts'
 
@@ -120,6 +120,9 @@ export const proposalPortsFor = (instance: ProcessPlantRuntimeInstance, origin: 
 /** One offered control as controls.list gives it: the derivation, where each option's rules stand now, and how long it takes to follow. */
 export interface ListedControl {
   readonly control: OfferedControl
+  /** Stable descriptor retained for pending proposals; currently unavailable
+   * to operate because its normal controller owns the manual demand. */
+  readonly unavailable?: string
   /** optionStanding for each option, in option order. */
   readonly standing: ReadonlyArray<OptionStanding>
   /** The longest declared travel of its options; null where none declares one (the state is then awaited, never judged not followed). */
@@ -177,7 +180,9 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
   }
   return controls.items
     .filter(entry => itemIds === undefined || itemIds.includes(entry.id))
-    .map(entry => ({
+    .map(entry => {
+      const automatic = entry.offered.filter(control => control.controller !== undefined && instance.runtime.readVariable(control.controller.automatic) === true)
+      return {
       id: entry.id,
       label: entry.label,
       ...(entry.position === undefined ? {} : { position: { path: entry.position, value: numberAt(entry.position) } }),
@@ -193,6 +198,9 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
         })
         return {
           control,
+          ...(automatic.includes(control) ? { unavailable: (() => { const reason = automaticReason(instance.plant.graph, {
+            measured: control.controller!.measured, setpoint: numberAt(control.controller!.setpoint), operator: control.controller!,
+          }); return `${reason.text}. ${reason.manual}` })() } : {}),
           standing: control.options.map(option => optionStanding(instance.plant, control, option, context)),
           travelMs: travel.length === 0 ? null : Math.max(...travel),
           ...(demand === undefined || control.state === undefined ? {} : { now: { demand, position: numberAt(control.state) } }),
@@ -203,6 +211,10 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
           ...(protection === undefined ? {} : { protection }),
         }
       }),
-      withheld: entry.withheld,
-    }))
+      withheld: [...entry.withheld, ...automatic.map(control => ({ path: control.path,
+        ...(control.tagId === undefined ? {} : { tagId: control.tagId }),
+        reason: automaticReason(instance.plant.graph, { measured: control.controller!.measured,
+          setpoint: numberAt(control.controller!.setpoint), operator: control.controller! }),
+      }))],
+    } })
 }

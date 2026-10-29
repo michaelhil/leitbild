@@ -14,7 +14,7 @@ import {
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
 import { formatQuantity } from '../src/packs/process-plant/quantity-text.ts'
-import { followAllowanceMs, plantControlsFor, type ItemControls, type PlantControls } from '../src/packs/process-plant/operations/controls.ts'
+import { followAllowanceMs, offeredOption, plantControlsFor, type ItemControls, type PlantControls } from '../src/packs/process-plant/operations/controls.ts'
 import { listedControlsFor, listedResetsFor, proposalPortsFor } from '../src/packs/process-plant/operations/instance-ports.ts'
 import { decideProposal, emptyProposalBook, proposeOperation, reviewProposal, type ProposalPorts } from '../src/packs/process-plant/operations/proposals.ts'
 import { pushbuttonProtection } from '../src/packs/process-plant/operations/pushbutton-protection.ts'
@@ -22,12 +22,15 @@ import {
   actorName,
   ATTRIBUTION_MS,
   commandPhase,
+  controllerTargetShown,
+  controllerTargetNative,
   consequenceView,
   demandOption,
   faceplateControls,
   itemControlView,
   moreActuations,
   operationNow,
+  optionOf,
   operationsLogRows,
   pendingProposals,
   proposalCard,
@@ -40,6 +43,15 @@ import {
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
 
 guardPlantTests()
+
+test('controller target fields preserve native values while using the same displayed units as readings', () => {
+  for (const [native, unit, shown] of [[0.45, 'fraction', 45], [7200, 'Pa', 7.2], [7.4, 'MPa', 7.4], [60, 'percent', 60]] as const) {
+    expect(controllerTargetShown(native, unit)).toBe(shown)
+    expect(controllerTargetNative(shown, unit)).toBe(native)
+  }
+  expect(Number.isNaN(controllerTargetNative(NaN, 'MPa'))).toBe(true)
+  expect(controllerTargetNative(controllerTargetShown(7.425, 'MPa'), 'MPa')).toBe(7.425)
+})
 
 // The operation parts of a display, on the four-loop reference Plant as the
 // model declares it: the stuck-open PORV whose block valve an AI proposes to
@@ -82,6 +94,34 @@ const unit = () => {
   return { plant, runtime, protection, step, controls, tag, now, listed, itemOffering, itemWithholding, validate, ports, fault, resets }
 }
 
+test('controller targets accept exact native values rather than a display-increment grid or physical-state tolerance', () => {
+  const current = unit()
+  const item = current.itemOffering(current.tag('SG-A-ARV-SP').path)
+  const target = () => itemControlView(current.listed(item), current.now()).controls.find(control => control.form === 'setpoint')!
+  for (const value of [7.86, 7.4, 7.425]) {
+    const offer = offeredOption(current.plant, current.controls, { path: current.tag('SG-A-ARV-SP').path, value }, path => current.runtime.readVariable(path))
+    expect(offer).toMatchObject({ ok: true, word: `SET ${value} MPa` })
+    expect(optionOf(target(), value)?.word).toBe(`SET ${value} MPa`)
+    expect(current.validate({ path: current.tag('SG-A-ARV-SP').path, value })).toMatchObject({ accepted: true })
+    const proposed = proposeOperation(emptyProposalBook, { id: `target-${value}`, plantId: current.plant.id,
+      write: { path: current.tag('SG-A-ARV-SP').path, value }, reason: 'Review the exact pressure-controller configuration target', evidence: ['PT-455' as never],
+      proposer: { actorId: 'assistant', origin: 'ai' }, at: { elapsedMs: current.runtime.elapsedMs(), wallMs: current.runtime.elapsedMs() },
+    }, current.ports)
+    expect(proposed.ok).toBe(true)
+    const proposal = proposed.book.proposals[0]!
+    expect(proposal.write?.value).toBe(value)
+    expect(proposalCard(proposal, reviewProposal(proposal, current.ports), current.listed(item), current.now()).action).toStartWith(`SET ${value} MPa`)
+  }
+  current.runtime.writeCommand({ type: 'setVariable', path: current.tag('SG-A-ARV-SP').path, value: 7.85 })
+  current.step()
+  expect(optionOf(target(), 7.86)?.current).toBe(false)
+  expect(optionOf(target(), 7.85)?.current).toBe(true)
+  for (const value of [-1, NaN, Infinity]) {
+    expect(offeredOption(current.plant, current.controls, { path: current.tag('SG-A-ARV-SP').path, value }, path => current.runtime.readVariable(path)).ok).toBe(false)
+    expect(optionOf(target(), value)).toBeUndefined()
+  }
+})
+
 describe('the CONTROL section of an item', () => {
   test('an isolating valve in its host offers OPEN and SHUT, the one it reads not selectable, and Execute names verb, tag and label', () => {
     const plant = unit()
@@ -100,10 +140,11 @@ describe('the CONTROL section of an item', () => {
     const plant = unit()
     plant.step()
     const feedValve = plant.tag('MFW-A-CV')
-    const view = itemControlView(plant.listed(plant.itemWithholding(feedValve.path)), plant.now())
-    // Read-only: a manual demand needs an AUTO/MAN mode the model does not have, and the popover says so.
-    expect(view.auto).toEqual([{ text: 'AUTO · SG-A-LVL-NR held to 55 %', manual: expect.stringContaining('AUTO/MAN mode the model does not have') }])
-    expect(view.controls.some(control => control.path === feedValve.path)).toBe(false)
+    const view = itemControlView(plant.listed(plant.itemOffering(feedValve.path)), plant.now())
+    expect(view.auto).toEqual([{ text: 'AUTO · SG-A-LVL-NR target 55 %', manual: expect.stringContaining('Select MAN') }])
+    const shown = faceplateControls(view, { pinned: false, short: false, proposalPending: false }).open!
+    expect(shown.controls.some(control => control.path === feedValve.path)).toBe(false)
+    expect(shown.controls.map(control => control.form)).toEqual(['twoState', 'setpoint'])
   })
 
   test('stopping an RCP at power sets its reactor trip going: the stop is confirmed by a slide, and its start is withheld with why', () => {
@@ -380,10 +421,10 @@ describe('demand controls and valve positions', () => {
     const plant = unit()
     plant.step()
     const feed = plant.tag('MFW-A-CV')
-    const item = itemControlView(plant.listed(plant.itemWithholding(feed.path)), plant.now())
-    expect(item.controls).toEqual([])
+    const item = itemControlView(plant.listed(plant.itemOffering(feed.path)), plant.now())
+    expect(item.controls.find(control => control.path === feed.path)?.unavailable).toContain('Select MAN')
     expect(item.position).toMatch(/%$/)
-    expect(item.auto[0]?.manual).toContain('AUTO/MAN mode')
+    expect(item.auto[0]?.manual).toContain('Select MAN')
   }, PLANT_HANG_GUARD_MS)
 
   test('a setting between the ends an actuation drove the valve to reads "Throttled under" the actuation, in World\'s label, in its row and in the log', () => {

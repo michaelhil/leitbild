@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type {
   CompiledComponent,
   CompiledPlantGraph,
@@ -7,19 +6,22 @@ import type {
   ProcessSignalBinding,
   ProcessSignalTagId,
   ProcessUnit,
+  ProcessQuantity,
   ProcessVariableValue,
   StateAspect,
   VariablePath,
 } from '../graph/index.ts'
-import { energyEnds, variablePathSchema } from '../graph/index.ts'
+import { energyEnds } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcRule } from '../runtime/index.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
-import { displayValue, formatQuantity, unitLabel } from '../quantity-text.ts'
+import { displayValue, formatConfigurationQuantity, formatQuantity, unitLabel } from '../quantity-text.ts'
+import { assertProcessPlantVariableValueValid } from '../runtime/variable-validation.ts'
 import { actionOf, icRuleKind } from '../ic/thresholds.ts'
 import { equipmentItemId, equipmentItemLabel, notEquipmentReason, type EquipmentItem } from '../equipment/items.ts'
 import { instructorOnlyRefusal } from './command-guard.ts'
 import { demandStepOf, modulatingDemandSpan } from './demand-span.ts'
+import { operatorControllerBindings, valvePositionController } from '../graph/valve-controller.ts'
 
 // What a person may operate on each item of equipment, read from what the model
 // declares: an aspect's writable command is a two-state control in the
@@ -96,6 +98,23 @@ export interface AnalogDemand {
   readonly words: { readonly open: string; readonly throttle: string }
 }
 
+/** An operator's controller target, in the measured signal's native unit.
+ * Bounds exist only where the model declares a real domain; no slider ceiling
+ * is invented for an unbounded pressure target. */
+export interface ControllerSetpoint {
+  readonly quantity: ProcessQuantity
+  readonly unit: ProcessUnit
+  readonly shownUnit: string
+  readonly step: number
+  readonly limits?: { readonly min: number; readonly max: number }
+}
+
+export interface OperatorController {
+  readonly automatic: VariablePath
+  readonly setpoint: VariablePath
+  readonly measured: VariablePath
+}
+
 export interface OfferedControl {
   /** The command variable written. */
   readonly path: VariablePath
@@ -103,10 +122,14 @@ export interface OfferedControl {
   /** What a button names besides its word: tag and label ("MOV-8000A PZR block valve"). */
   readonly target: string
   /** Two options, one pushbutton, or a demand set in its span with its two ends as options. */
-  readonly form: 'twoState' | 'pushbutton' | 'demand'
+  readonly form: 'twoState' | 'pushbutton' | 'demand' | 'setpoint'
   /** The span a demand control is set in; on a demand control only. */
   readonly demand?: AnalogDemand
-  /** The aspect it commands, and the solved state that says whether the equipment followed. */
+  readonly setpoint?: ControllerSetpoint
+  /** The controller owns this manual valve demand while AUTO is requested. */
+  readonly controller?: OperatorController
+  /** The aspect it commands and its feedback. Controller configuration uses
+   * its applied setting here, never as proof of physical receiver response. */
   readonly aspect?: StateAspect
   readonly state?: VariablePath
   /** The isolation input that shuts the equipment whatever this command demands. */
@@ -199,31 +222,41 @@ const twoStateValues = (binding: ProcessSignalBinding): { readonly on: ProcessVa
       : binding.quantity === 'ratio' && binding.unit === 'percent' ? { on: 100, off: 0 }
         : null
 
-const declaredControllerSchema = z.object({
-  measuredPath: variablePathSchema,
-  setpoint: z.number().finite(),
-}).passthrough()
-
 /**
  * The controller a component declares on its demand, which writes that
- * demand every step from what it measures (a feed regulating valve held to
+ * demand in automatic from what it measures (a feed regulating valve held to
  * its steam generator's level); null where it declares none.
  */
-export const declaredController = (component: CompiledComponent): { readonly measured: VariablePath; readonly setpoint: number } | null => {
-  const parameters = component.parameters
-  if (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters)) return null
-  const controller = (parameters as Readonly<Record<string, unknown>>).controller
-  if (controller === undefined) return null
-  const parsed = declaredControllerSchema.parse(controller)
-  return { measured: parsed.measuredPath, setpoint: parsed.setpoint }
+export const declaredController = (component: CompiledComponent): { readonly measured: VariablePath; readonly setpoint: number; readonly operator?: OperatorController } | null => {
+  const controller = valvePositionController(component)
+  if (controller === null) return null
+  const operator = operatorControllerBindings(component)
+  return { measured: controller.measuredPath, setpoint: controller.setpoint,
+    ...(operator === null ? {} : { operator: { ...operator, measured: controller.measuredPath } }) }
 }
 
-const automaticReason = (graph: CompiledPlantGraph, controller: { readonly measured: VariablePath; readonly setpoint: number }): WithheldReason => {
+export const automaticReason = (graph: CompiledPlantGraph, controller: { readonly measured: VariablePath; readonly setpoint: number; readonly operator?: OperatorController }): Extract<WithheldReason, { kind: 'automatic' }> => {
   const measured = graph.signalBindingByPath.get(controller.measured)
   if (measured === undefined) throw new Error(`controller measures an unknown variable: ${controller.measured}`)
   const unit = unitLabel(measured.unit)
-  const setpoint = `${Number(displayValue(controller.setpoint, measured.unit).toPrecision(12))}${unit === '' ? '' : ` ${unit}`}`
-  return { kind: 'automatic', measured: controller.measured, setpoint: controller.setpoint, text: `AUTO · ${measured.tagId ?? measured.label} held to ${setpoint}`, manual: manualText }
+  const setpoint = controller.operator === undefined
+    ? `${Number(displayValue(controller.setpoint, measured.unit).toPrecision(12))}${unit === '' ? '' : ` ${unit}`}`
+    : formatConfigurationQuantity(controller.setpoint, measured.unit)
+  return { kind: 'automatic', measured: controller.measured, setpoint: controller.setpoint, text: `AUTO · ${measured.tagId ?? measured.label} ${controller.operator === undefined ? 'held to' : 'target'} ${setpoint}`, manual: controller.operator === undefined ? manualText : 'Select MAN to operate the valve position; protection and isolation remain in force' }
+}
+
+/** A finite target in the native physical domain; not a claim that the measured
+ * process has already reached that target. */
+export const setpointSetting = (control: OfferedControl, value: ProcessVariableValue): { readonly ok: true; readonly word: string } | { readonly ok: false; readonly reason: string } => {
+  const target = control.setpoint
+  if (target === undefined) throw new Error(`${control.path} is no controller target`)
+  try {
+    assertProcessPlantVariableValueValid({ path: control.path, descriptor: { quantity: target.quantity, unit: target.unit,
+      ...(target.limits === undefined ? {} : { limits: { hardRange: target.limits } }),
+    } }, value)
+  } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) } }
+  if (typeof value !== 'number') return { ok: false, reason: `${control.target} takes a numeric target` }
+  return { ok: true, word: `SET ${formatConfigurationQuantity(value, target.unit)}` }
 }
 
 /**
@@ -370,14 +403,14 @@ const classify = (
     readonly aspects: ReadonlyArray<CompiledStateAspect>
     readonly isolations: ReadonlySet<VariablePath>
     readonly equipmentFunction: EquipmentFunction | undefined
-    readonly controller: { readonly measured: VariablePath; readonly setpoint: number } | null
+    readonly controller: ReturnType<typeof declaredController>
     readonly label: string
   },
   binding: ProcessSignalBinding,
 ): Classified => {
   if (context.isolations.has(binding.path)) return withheld(binding, { kind: 'isolationInput', text: isolationText })
   const aspect = context.aspects.find(candidate => candidate.command === binding.path)
-  if (aspect !== undefined && context.controller !== null) return withheld(binding, automaticReason(plant.graph, context.controller))
+  if (aspect !== undefined && context.controller !== null && context.controller.operator === undefined) return withheld(binding, automaticReason(plant.graph, context.controller))
   const words = aspect === undefined ? undefined : aspectWords(aspect, context.equipmentFunction)
   const declared = declaredWords(context.component, binding.path)
   const target = `${binding.tagId === undefined ? '' : `${binding.tagId} `}${context.label}`
@@ -388,6 +421,7 @@ const classify = (
     ...(aspect === undefined ? {} : { aspect: aspect.aspect }),
     ...(aspect?.state === undefined ? {} : { state: aspect.state.path }),
     ...(aspect?.isolation === undefined ? {} : { isolation: aspect.isolation }),
+    ...(aspect === undefined || context.controller?.operator === undefined ? {} : { controller: context.controller.operator }),
   }
   const optionContext = { command: binding.path, ...(aspect === undefined ? {} : { aspect }), memories: [] as ReadonlyArray<VariablePath> }
   const offer = (form: OfferedControl['form'], choices: ReadonlyArray<{ readonly word: string; readonly value: ProcessVariableValue; readonly state?: string; readonly on: boolean }>, memories: ReadonlyArray<VariablePath> = [], demand?: AnalogDemand): Classified => {
@@ -398,6 +432,20 @@ const classify = (
     })
     if (kept.length === 0) return withheld(binding, { kind: 'declared', text: [...new Set(dropped.map(option => option.reason))].join('; ') })
     return { offered: { ...base, form, ...(demand === undefined ? {} : { demand }), options: kept.map(choice => optionFor(plant, { ...optionContext, memories }, choice)), withheldOptions: dropped } }
+  }
+  const operator = context.controller?.operator
+  if (operator && binding.path === operator.automatic) return { offered: {
+    ...base, state: binding.path, form: 'twoState', options: [
+      optionFor(plant, optionContext, { word: 'AUTO', value: true, state: 'AUTO', on: true }),
+      optionFor(plant, optionContext, { word: 'MAN', value: false, state: 'MAN', on: false }),
+    ], withheldOptions: [],
+  } }
+  if (operator && binding.path === operator.setpoint) {
+    const source = valvePositionController(context.component)!.operator!.setpoint
+    return { offered: { ...base, state: binding.path, form: 'setpoint', options: [], withheldOptions: [], setpoint: {
+      quantity: source.quantity, unit: source.unit, shownUnit: unitLabel(source.unit), step: source.step,
+      ...(source.limits === undefined ? {} : { limits: source.limits }),
+    } } }
   }
   // A pushbutton is never an aspect's input (the compiler holds it to that): it is worded as its presentation words it pressed.
   if (context.component.metadata?.presentation?.momentary?.includes(localPath(context.component, binding.path)) === true) {
@@ -578,6 +626,16 @@ export const offeredOption = (
   for (const entry of controls.items) {
     for (const control of entry.offered) {
       if (control.path !== write.path) continue
+      if (control.controller !== undefined && read(control.controller.automatic) === true) {
+        const setpoint = read(control.controller.setpoint)
+        if (typeof setpoint !== 'number') throw new Error(`${control.controller.setpoint} reads no controller target`)
+        const reason = automaticReason(plant.graph, { measured: control.controller.measured, setpoint, operator: control.controller })
+        return { ok: false, reason: `${reason.text}. ${reason.manual}` }
+      }
+      if (control.setpoint !== undefined) {
+        const setting = setpointSetting(control, write.value)
+        return setting.ok ? { ok: true, item: entry.id, word: setting.word } : setting
+      }
       const option = control.options.find(candidate => candidate.value === write.value)
       if (option !== undefined) return { ok: true, item: entry.id, word: option.word }
       const withheldOption = control.withheldOptions.find(candidate => candidate.value === write.value)

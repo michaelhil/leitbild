@@ -26,6 +26,12 @@ export const unitLabel = (unit: string): string => unitLabels[unit] ?? unit
 export const displayValue = (value: number, unit: string): number =>
   unit === 'fraction' ? Number((value * 100).toPrecision(12)) : unit === 'Pa' ? Number((value / 1000).toPrecision(12)) : value
 
+/** Configuration requests retain their numeric precision: instrument resolution
+ * is presentation guidance, never an undocumented rounding of a command. */
+export const displayConfigurationValue = (value: number, unit: string): number => unit === 'fraction' ? value * 100 : unit === 'Pa' ? value / 1000 : value
+export const nativeConfigurationValue = (shown: number, unit: string): number => unit === 'fraction' ? shown / 100 : unit === 'Pa' ? shown * 1000 : shown
+export const formatConfigurationQuantity = (value: number, unit: string): string => `${displayConfigurationValue(value, unit)}${unitLabel(unit) === '' ? '' : ` ${unitLabel(unit)}`}`
+
 /**
  * The finest step a signal's reading is shown in, in its native unit: a
  * thousandth of what the model declares it reads over: its instrument span,

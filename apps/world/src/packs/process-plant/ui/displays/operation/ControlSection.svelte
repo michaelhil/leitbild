@@ -3,6 +3,7 @@
   import '@oicl/openbridge-webcomponents/dist/components/progress-bar/progress-bar.js'
   import '@oicl/openbridge-webcomponents/dist/components/slide-button/slide-button.js'
   import '@oicl/openbridge-webcomponents/dist/components/slider/slider.js'
+  import '@oicl/openbridge-webcomponents/dist/components/number-input-field/number-input-field.js'
   import '@oicl/openbridge-webcomponents/dist/icons/icon-chevron-left-google.js'
   import '@oicl/openbridge-webcomponents/dist/icons/icon-chevron-right-google.js'
   import '@oicl/openbridge-webcomponents/dist/components/toggle-button-group/toggle-button-group.js'
@@ -10,7 +11,7 @@
   import type { ProcessVariableValue, VariablePath } from '../../../graph/index.ts'
   import { runOnMount } from '../../../../../ui/svelte-lifecycle.svelte.ts'
   import { listen } from './listen.ts'
-  import { commandPhase, moreActuations, optionOf, SELECTION_TIMEOUT_MS, STALE_CONTROLS, type ControlView, type DemandView, type ItemControlView, type OperationNow, type OptionView, type SentCommand } from './operation-presenter.ts'
+  import { commandPhase, controllerTargetShown, controllerTargetNative, moreActuations, optionOf, SELECTION_TIMEOUT_MS, STALE_CONTROLS, type ControlView, type DemandView, type ItemControlView, type OperationNow, type OptionView, type SentCommand } from './operation-presenter.ts'
 
   // An item's CONTROL section (plan §4.2): select a command, see World check
   // it on the exact payload (the I&C's refusal in its own words), what it
@@ -57,6 +58,22 @@
   let standing = $state.raw<Readonly<Record<string, Check | 'checking'>>>({})
   let sent = $state.raw<(SentCommand & { readonly key: string; readonly commandId?: string }) | null>(null)
   let busy = $state(false)
+  let targets = $state<Readonly<Record<string, number>>>({})
+
+  const editTarget = (control: ControlView, value: number): void => {
+    targets = { ...targets, [control.path]: value }
+    if (selection?.path === control.path) clear()
+  }
+  const selectTarget = (control: ControlView, value: number): void => {
+    const option = optionOf(control, value)
+    if (option !== undefined) void select(control, option)
+  }
+  const targetAt = (control: ControlView): number => {
+    if (targets[control.path] !== undefined) return targets[control.path]!
+    if (sent?.path === control.path && typeof sent.value === 'number'
+      && (phase?.kind === 'sent' || phase?.kind === 'travelling')) return sent.value
+    return control.setpoint!.value
+  }
 
   /** A demand control's setting from where its slider stands (%), on its step, in the command's unit. */
   const settingAt = (demand: DemandView, shown: number): number => {
@@ -138,6 +155,10 @@
     try {
       const result = await execute(writeOf(control, option))
       if (sent === command) sent = { ...command, result: result.ok ? { ok: true } : result, ...(result.ok && result.commandId !== undefined ? { commandId: result.commandId } : {}) }
+      if (result.ok && targets[control.path] === option.value) {
+        const { [control.path]: _completed, ...remaining } = targets
+        targets = remaining
+      }
     } catch (error) {
       if (sent === command) sent = { ...command, result: { ok: false, reason: error instanceof Error ? error.message : String(error) } }
     } finally {
@@ -241,6 +262,24 @@
         ><obi-chevron-left-google slot="icon-left"></obi-chevron-left-google><obi-chevron-right-google slot="icon-right"></obi-chevron-right-google></obc-slider>
         <!-- Under a standing actuation: how far it may be throttled, and why no lower (its floor stops the slider). -->
         {#if control.hold !== undefined}<p class="floor">{control.hold.text}</p>{/if}
+      {:else if control.form === 'setpoint' && control.setpoint !== undefined}
+        <obc-number-input-field
+          role="group"
+          aria-label={`Controller target for ${control.target}`}
+          label="Controller target"
+          unit={control.setpoint.shownUnit}
+          value={controllerTargetShown(targetAt(control), control.setpoint.unit)}
+          rejectUpdatesOnFocus={true}
+          disabled={stale}
+          error={targets[control.path] !== undefined && optionOf(control, targets[control.path]!) === undefined}
+          errorText="Enter a finite target in the declared physical domain"
+          helperText={`Suggested increment ${controllerTargetShown(control.setpoint.step, control.setpoint.unit)} ${control.setpoint.shownUnit}${control.setpoint.limits === undefined ? '' : ` · ${controllerTargetShown(control.setpoint.limits.min, control.setpoint.unit)}–${controllerTargetShown(control.setpoint.limits.max, control.setpoint.unit)} ${control.setpoint.shownUnit}`}`}
+          onkeydown={(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); selectTarget(control, targets[control.path] ?? control.setpoint!.value) } }}
+          use:listen={{
+            input: event => editTarget(control, controllerTargetNative((event as CustomEvent<{ value: number }>).detail.value, control.setpoint!.unit)),
+            change: event => selectTarget(control, controllerTargetNative((event as CustomEvent<{ value: number }>).detail.value, control.setpoint!.unit)),
+          }}
+        ></obc-number-input-field>
       {:else if control.form === 'twoState'}
         <obc-toggle-button-group
           value={expanded ? selection!.key : ''}
