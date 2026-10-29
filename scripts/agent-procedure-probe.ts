@@ -136,7 +136,8 @@ export const runProcedureProbe = async (options: ProcedureProbeOptions): Promise
         record.preparation = { phase, targetSimulationTime: target }
         await checkpoint()
         for (;;) {
-          const waited = (await invoke('world.simulation-run.wait', { untilSimulationTime: target, maxWaitMs: 30_000 })).result
+          // Let the owning Capability apply its published wait default.
+          const waited = (await invoke('world.simulation-run.wait', { untilSimulationTime: target })).result
           record.preparation.lastWait = waited
           await checkpoint()
           if (waited.reason === 'simulation-time') break
