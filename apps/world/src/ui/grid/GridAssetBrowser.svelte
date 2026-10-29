@@ -33,6 +33,7 @@
   import { invokeSimulationRunCapability, querySimulationRunCapability } from '../simulation-run-client.ts'
   import { untrack } from 'svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
+  import { createGridAssetRequestOrder } from './asset-request-order.ts'
 
   type AssetKind = 'bus' | 'branch' | 'generator' | 'load' | 'storage' | 'hvdc'
   type MapTarget =
@@ -60,7 +61,7 @@
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly gridId: string
-    readonly refreshRevision: number
+    readonly refreshRevision: string
     /** The selected asset; the panel owns it so the map can select and highlight it too. */
     readonly selectedAssetId: string | null
     readonly onSelectAsset: (assetId: string | null) => void
@@ -93,7 +94,8 @@
   let commandStatus = $state<string | null>(null)
   let commandEmergency = $state(false)
   let pendingConfirmation = $state<{ readonly operationId: string; readonly value: number; readonly emergency: boolean } | null>(null)
-  let loadSequence = 0
+  const listRequests = createGridAssetRequestOrder(() => JSON.stringify([simulationRunId, gridId, refreshRevision, searchText, kind, offset]))
+  const detailRequests = createGridAssetRequestOrder(() => JSON.stringify([simulationRunId, gridId, refreshRevision, selectedAssetId]))
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
   const numberField = (fields: Readonly<Record<string, unknown>> | undefined, key: string): number => {
@@ -142,19 +144,20 @@
   }
 
   const loadDetail = async (assetId: string): Promise<void> => {
+    const request = detailRequests.begin()
     try {
       const result = await queryResult('world.electric-grid.asset.get', { gridId, assetId }) as { readonly asset: AssetDetail }
-      if (selectedAssetId !== assetId) return
+      if (!request.current() || selectedAssetId !== assetId) return
       detail = result.asset
       error = null
     } catch (err) {
-      if (selectedAssetId === assetId) error = err instanceof Error ? err.message : String(err)
+      if (request.current() && selectedAssetId === assetId) error = err instanceof Error ? err.message : String(err)
     }
   }
 
   /** Background refreshes on a new revision keep the list still; only user-initiated loads show the spinner. */
   const loadAssets = async (userInitiated: boolean): Promise<void> => {
-    const sequence = ++loadSequence
+    const request = listRequests.begin()
     if (userInitiated) loading = true
     try {
       const result = await queryResult('world.electric-grid.assets.search', {
@@ -164,15 +167,15 @@
         offset,
         limit: pageSize,
       }) as { readonly total: number; readonly assets: ReadonlyArray<AssetListItem> }
-      if (sequence !== loadSequence) return
+      if (!request.current()) return
       total = result.total
       assets = result.assets
       loaded = true
       error = null
     } catch (err) {
-      if (sequence === loadSequence) error = err instanceof Error ? err.message : String(err)
+      if (request.current()) error = err instanceof Error ? err.message : String(err)
     } finally {
-      if (sequence === loadSequence) loading = false
+      if (request.current()) loading = false
     }
   }
 
@@ -297,6 +300,8 @@
   const invokeOperation = async (operationId: string, value: number, emergency: boolean): Promise<void> => {
     if (!detail) return
     pendingConfirmation = null
+    const requestedRunId = simulationRunId, requestedGridId = gridId, requestedAssetId = detail.id
+    const stillSelected = (): boolean => simulationRunId === requestedRunId && gridId === requestedGridId && selectedAssetId === requestedAssetId
     commandStatus = 'Sending…'
     try {
       const response = await invokeSimulationRunCapability(simulationRunId, {
@@ -305,11 +310,12 @@
       })
       if (response.kind !== 'command') throw new Error(`Capability ${operationId} is not a command`)
       if (!response.result.ok) throw new Error(`Rejected: ${response.result.reason ?? 'no reason given'}`)
+      if (!stillSelected()) return
       activeOperationId = null
       commandStatus = 'Accepted'
-      await Promise.all([loadAssets(false), loadDetail(detail.id)])
+      await Promise.all([loadAssets(false), loadDetail(requestedAssetId)])
     } catch (err) {
-      commandStatus = err instanceof Error ? err.message : String(err)
+      if (stillSelected()) commandStatus = err instanceof Error ? err.message : String(err)
     }
   }
 
@@ -387,13 +393,17 @@
     ]
   }
 
+  const refreshAssets = (userInitiated: boolean): void => {
+    void loadAssets(userInitiated)
+    // Refresh the selection even while its previous detail query is in flight.
+    if (selectedAssetId !== null) void loadDetail(selectedAssetId)
+  }
+
   $effect(() => {
+    simulationRunId
+    gridId
     refreshRevision
-    untrack(() => {
-      void loadAssets(false)
-      // The selection effect loads a newly selected asset; a revision refreshes the one shown.
-      if (detail !== null) void loadDetail(detail.id)
-    })
+    untrack(() => refreshAssets(false))
   })
 
   $effect(() => {
@@ -410,6 +420,8 @@
   runOnMount(() => {
     return () => {
       if (searchTimer) clearTimeout(searchTimer)
+      listRequests.dispose()
+      detailRequests.dispose()
     }
   })
 </script>
@@ -420,7 +432,7 @@
       <Search size={14} />
       <input value={searchText} oninput={(event) => updateSearch(event.currentTarget.value)} placeholder="Search assets" />
     </label>
-    <button type="button" class="icon-button" title="Refresh assets" aria-label="Refresh assets" onclick={() => void loadAssets(true)}>
+    <button type="button" class="icon-button" title="Refresh assets" aria-label="Refresh assets" onclick={() => refreshAssets(true)}>
       <span class:spinning={loading}><RefreshCw size={14} /></span>
     </button>
   </div>
@@ -435,7 +447,7 @@
     <div class="asset-list" aria-label="Grid assets">
       {#if assets.length === 0 && loaded && !loading}<p class="empty">No matching assets.</p>{/if}
       {#each assets as asset (asset.id)}
-        <button type="button" class="asset-row" class:selected={selectedAssetId === asset.id} onclick={() => selectAsset(asset)}>
+        <button type="button" class="asset-row" class:selected={selectedAssetId === asset.id} aria-pressed={selectedAssetId === asset.id} onclick={() => selectAsset(asset)}>
           <span class="status-dot {asset.status.tone}" title={asset.status.label}></span>
           <span class="asset-copy">
             <strong>{asset.label}</strong>

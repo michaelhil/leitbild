@@ -22,6 +22,7 @@
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly objects: ReadonlyArray<OperationalObject>
+    readonly dataRevision: number
     readonly onClose: () => void
     readonly onFocusMap?: (target: MapTarget) => void
     /** `<gridId>#<assetId>` selected on the map or in this panel. */
@@ -31,7 +32,7 @@
     readonly onMapCover: (cover: MapCover) => void
   }
 
-  const { simulationRunId, objects, onClose, onFocusMap = () => undefined, selectedItemId = null, onSelectItem = () => undefined, onMapCover }: Props = $props()
+  const { simulationRunId, objects, dataRevision, onClose, onFocusMap = () => undefined, selectedItemId = null, onSelectItem = () => undefined, onMapCover }: Props = $props()
 
   interface GridOverviewSummary {
     readonly gridId: string
@@ -96,6 +97,7 @@
   }))
   const gridId = $derived(gridItems.some(item => item.object.id === selectedGridId) ? selectedGridId : gridItems[0]?.object.id ?? null)
   const selectedGridItem = $derived(gridItems.find(item => item.object.id === gridId) ?? gridItems[0])
+  const refreshRevision = $derived(`${selectedGridItem?.object.revision ?? 0}:${dataRevision}`)
   const system = $derived(summary?.projection ?? selectedGridItem?.data.projection)
   const branches = $derived(summary?.constrainedBranches ?? [])
   const generators = $derived(summary?.generators ?? [])
@@ -342,8 +344,10 @@
   }
 
   $effect(() => {
-    selectedGridItem?.object.revision
-    void loadSummary()
+    simulationRunId
+    gridId
+    refreshRevision
+    untrack(() => void loadSummary())
   })
 
   runOnMount(() => {
@@ -517,7 +521,7 @@
       </div>
     {:else if view === 'alarms' && gridId}
       {#key gridId}
-        <GridAlarmList {simulationRunId} {gridId} refreshRevision={selectedGridItem?.object.revision ?? 0} timeZone={gridLocalTimeZone} onLocate={assetId => void locateAsset(assetId)} />
+        <GridAlarmList {simulationRunId} {gridId} {refreshRevision} timeZone={gridLocalTimeZone} onLocate={assetId => void locateAsset(assetId)} />
       {/key}
     {:else if view === 'contingency' && gridId}
       {#key gridId}
@@ -525,7 +529,7 @@
       {/key}
     {:else if gridId}
       {#key gridId}
-        <GridAssetBrowser {simulationRunId} {gridId} refreshRevision={selectedGridItem?.object.revision ?? 0} {selectedAssetId} onSelectAsset={assetId => selectAsset(assetId, true)} {onFocusMap} />
+        <GridAssetBrowser {simulationRunId} {gridId} {refreshRevision} {selectedAssetId} onSelectAsset={assetId => selectAsset(assetId, true)} {onFocusMap} />
       {/key}
     {/if}
     {#if queryError}<p class="query-error">{queryError}</p>{/if}

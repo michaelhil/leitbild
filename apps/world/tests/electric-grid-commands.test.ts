@@ -390,6 +390,31 @@ const connectAdapter = async () => {
 }
 
 describe('electric grid command Capabilities', () => {
+  test('paused and playing Agent/human trips publish the same revision path used by live inspectors', async () => {
+    for (const paused of [true, false]) for (const actor of ['ai:inspector', 'human:inspector']) {
+      const connection = await connectAdapter()
+      try {
+        await connection.setClock({ currentTime: isoAt(0), updatedAt: isoAt(0), paused })
+        const before = (await connection.getSnapshot()).objects.find(object => object.id === 'grid:norway')!
+        const emitted: PackRuntimeEvent[] = []
+        const unsubscribe = connection.subscribe(emission => emitted.push(...emission.events))
+        const result = await connection.sendCommand({
+          id: `command:${crypto.randomUUID()}` as CommandId, simulationRunId: 'run:grid-commands' as SimulationRunId,
+          actorId: `actor:${actor}` as ActorId, kind: gridTripGeneratorCommandKind,
+          targetObjectIds: ['grid:norway' as ObjectId], payload: { assetId: kvilldalId }, issuedAt: isoAt(0),
+        }, {})
+        expect(result.ok).toBe(true)
+        const update = emitted.find(event => event.type === 'object.upserted' && event.provenance.causedByCommandId === result.commandId)
+        expect(update?.type).toBe('object.upserted')
+        if (update?.type !== 'object.upserted') throw new Error('Trip emitted no Grid update')
+        expect(update.object.revision).toBeGreaterThan(before.revision)
+        expect(update.provenance.source).toBe(actor.startsWith('ai:') ? 'ai' : 'operator')
+        const detail = await connection.invokeQuery({ capabilityId: 'world.electric-grid.asset.get', input: { gridId: 'grid:norway', assetId: kvilldalId } }) as { asset: { state: { state: string; dispatchMw: number } } }
+        expect(detail.asset.state).toMatchObject({ state: 'tripped', dispatchMw: 0 })
+        unsubscribe()
+      } finally { await connection.close() }
+    }
+  })
   test('publish absolute, idempotent commands with consequence risk and bilingual search terms', () => {
     const commands = createLocalElectricGridPackRuntimeAdapter().capabilities.filter(capability => capability.kind === 'command')
     expect(commands.map(capability => capability.id)).not.toContain('world.electric-grid.return-generator-to-service')
