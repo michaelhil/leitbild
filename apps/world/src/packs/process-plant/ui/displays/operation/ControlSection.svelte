@@ -65,6 +65,11 @@
     if (selection?.path === control.path) clear()
   }
   const selectTarget = (control: ControlView, value: number): void => {
+    // Enter selects before blur emits the same change. Keep its accepted check
+    // so clicking Execute does not disable that button during pointer activation.
+    // A refused check may be retried; execution still validates fresh authority.
+    if (selection?.path === control.path && selection.value === value
+      && (check === 'checking' || check?.accepted === true)) return
     const option = optionOf(control, value)
     if (option !== undefined) void select(control, option)
   }
