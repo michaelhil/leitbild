@@ -71,9 +71,19 @@ export const showGenerationQueryModal = (inspection: GenerationQueryInspection, 
 }
 
 export const handleViewContext = async (message: UIMessage): Promise<void> => {
-  if (!message.roomId || !message.generationTraceId) return
+  if (!message.roomId) return
   const room = $rooms.get()[message.roomId]
   if (!room) return
+  if (message.progress === true && message.progressEvidence) {
+    const execution = await safeFetchJson<ExecutionInspection>(executionPath(room.id, message.progressEvidence.turnId))
+    if (!execution) {
+      showToast(document.body, 'Recorded activity is unavailable for this update.', { type: 'error', position: 'fixed' })
+      return
+    }
+    showGenerationInspector({ execution, activity: { content: message.content, evidence: message.progressEvidence } })
+    return
+  }
+  if (!message.generationTraceId) return
   const [inspection, execution] = await Promise.all([
     safeFetchJson<GenerationQueryInspection>(`/rooms/${encodeURIComponent(room.id)}/messages/${encodeURIComponent(message.id)}/generation-query`),
     safeFetchJson<ExecutionInspection>(executionPath(room.id, message.generationTraceId)),

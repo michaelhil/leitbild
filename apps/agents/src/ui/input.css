@@ -240,6 +240,14 @@
 .inspector-fact { display: flex; gap: .75rem; align-items: baseline; justify-content: space-between; padding: .5rem 0; border-bottom: 1px solid var(--border); font-size: .76rem; }
 .inspector-fact strong { font-weight: 600; flex-shrink: 0; }
 .inspector-fact > span { color: var(--text-muted); text-align: right; overflow-wrap: anywhere; }
+.msg-progress-inspect { width: 100%; text-align: left; cursor: pointer; }
+.msg-progress-inspect:hover, .msg-progress-inspect:focus-visible { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg-progress-hint { color: var(--accent); font-size: .65rem; white-space: nowrap; margin-left: auto; }
+.inspector-update { border-left: 3px solid var(--accent); padding: .65rem .8rem; margin-bottom: .75rem; white-space: pre-wrap; font-size: .85rem; }
+.inspector-tree { border-left: 1px solid var(--border); padding-left: .75rem; margin: .4rem 0; font-size: .78rem; }
+.inspector-tree > summary { cursor: pointer; padding: .35rem 0; font-weight: 600; overflow-wrap: anywhere; }
+.inspector-tree-leaf { display: grid; grid-template-columns: minmax(6rem, 35%) minmax(0, 1fr); gap: .75rem; padding: .3rem 0; border-bottom: 1px solid var(--border); font-size: .78rem; }
+.inspector-tree-leaf > span { white-space: pre-wrap; overflow-wrap: anywhere; }
 .inspector-flow { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; font-size: .78rem; }
 .inspector-flow span { padding: .6rem .85rem; background: var(--surface-muted); border: 1px solid var(--border); border-radius: .4rem; }
 .inspector-flow span:not(:last-child)::after { content: ' →'; color: var(--text-subtle); margin-left: .6rem; }

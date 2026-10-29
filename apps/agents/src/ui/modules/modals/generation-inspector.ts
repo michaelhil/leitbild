@@ -4,6 +4,9 @@ import { showToast } from '../toast.ts'
 import { buildExecutionJourney, readableEvidence, extractPromptSections, formatElapsed, type ExecutionInspection, type GenerationQueryInspection, type JourneyActor, type JourneyEvent } from './execution-journey.ts'
 import type { ExecutionCall } from '../../../core/executions/store.ts'
 import type { ExecutionModelCall } from '../../../core/executions/model-evidence.ts'
+import { progressActivityEvents, recordedOperations, recordedOperationView, type ProgressActivity } from './progress-activity.ts'
+import { currentWorkspaceId } from '../api-client.ts'
+import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
 
 export const executionPath = (roomId: string, turnId: string): string =>
   `/rooms/${encodeURIComponent(roomId)}/executions/${encodeURIComponent(turnId)}`
@@ -48,9 +51,10 @@ const stateLabel = (event: JourneyEvent): string => event.state === 'recorded' ?
 export const showGenerationInspector = (options: {
   readonly inspection?: GenerationQueryInspection
   readonly execution?: ExecutionInspection
+  readonly activity?: ProgressActivity
 }): void => {
-  const { inspection, execution } = options
-  const modal = createModal({ title: 'Prompt & Generation Inspector', width: 'max-w-6xl', maxHeight: '94vh' })
+  const { inspection, execution, activity } = options
+  const modal = createModal({ title: activity ? 'Activity behind this update' : 'Prompt & Generation Inspector', width: 'max-w-6xl', maxHeight: '94vh' })
   modal.card.classList.add('execution-inspector')
   modal.scrollBody.classList.add('execution-inspector-body')
   const close = createButton({ label: 'Close', title: 'Close Inspector (Escape)', onClick: modal.close })
@@ -65,18 +69,33 @@ export const showGenerationInspector = (options: {
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
   })
-  const events = buildExecutionJourney(execution, inspection)
+  const allEvents = buildExecutionJourney(execution, inspection)
+  const activityEvents = execution && activity ? progressActivityEvents(execution, allEvents, activity) : undefined
+  let events = activity ? activityEvents ?? [] : allEvents
   const bar = document.createElement('div')
   bar.className = 'inspector-toolbar'
   const chips = document.createElement('div')
   chips.className = 'inspector-chips'
   if (execution) {
-    chips.append(text('span', execution.turn.status, 'inspector-chip'), text('span', execution.modelCapture === 'unavailable' ? 'Model history unavailable' : `${execution.models.length} model calls`, 'inspector-chip'), text('span', `${execution.calls.length} tool attempts`, 'inspector-chip'))
+    chips.append(text('span', execution.turn.status, 'inspector-chip'), text('span', execution.modelCapture === 'unavailable' ? 'Model history unavailable' : `${execution.models.length} model calls${activity ? ' in turn' : ''}`, 'inspector-chip'), text('span', `${execution.calls.length} tool attempts${activity ? ' in turn' : ''}`, 'inspector-chip'))
     if (execution.turn.finishedAt !== undefined) chips.appendChild(text('span', formatElapsed(execution.turn.finishedAt - execution.turn.startedAt), 'inspector-chip'))
   } else chips.appendChild(text('span', 'Request snapshots', 'inspector-chip'))
   const modes = document.createElement('div')
   modes.className = 'inspector-mode'
   modes.setAttribute('aria-label', 'Execution view')
+  if (activity) {
+    const scope = document.createElement('div')
+    scope.className = 'inspector-mode'
+    scope.setAttribute('aria-label', 'Activity scope')
+    const update = createButton({ label: 'This update', onClick: () => {
+      events = activityEvents ?? []; update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false'); renderOverview()
+    } })
+    const full = createButton({ label: 'Full turn', onClick: () => {
+      events = allEvents; update.setAttribute('aria-pressed', 'false'); full.setAttribute('aria-pressed', 'true'); renderOverview()
+    } })
+    update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false')
+    scope.append(update, full); modes.appendChild(scope)
+  }
   const master = document.createElement('nav')
   master.className = 'inspector-master'
   master.setAttribute('aria-label', 'Recorded execution events')
@@ -125,6 +144,28 @@ export const showGenerationInspector = (options: {
         renderRaw(host, record, true)
       } }))
     }
+  }
+  // A schema-neutral view of the owning Module's recorded evidence. Nested
+  // values mount only when opened; large historical payloads remain lazy.
+  const renderStructured = (host: HTMLElement, label: string, record: unknown, open = false): void => {
+    if (record === null || typeof record !== 'object') {
+      const row = document.createElement('div'); row.className = 'inspector-tree-leaf'
+      row.append(text('strong', label), text('span', record === undefined ? 'Not recorded' : String(record)))
+      host.appendChild(row); return
+    }
+    const entries = Object.entries(record)
+    const details = document.createElement('details'); details.className = 'inspector-tree'
+    details.appendChild(text('summary', `${label} · ${entries.length} ${Array.isArray(record) ? 'items' : 'fields'}`))
+    let rendered = false
+    const render = (): void => {
+      if (rendered || !details.open) return
+      rendered = true
+      const body = document.createElement('div')
+      for (const [key, value] of entries) renderStructured(body, Array.isArray(record) ? String(Number(key) + 1) : key, value)
+      details.appendChild(body)
+    }
+    details.ontoggle = render; host.appendChild(details)
+    if (open) { details.open = true; render() }
   }
   const tabs = (host: HTMLElement, choices: ReadonlyArray<{ readonly label: string; readonly render: (body: HTMLElement) => void }>): void => {
     const row = document.createElement('div')
@@ -205,7 +246,7 @@ export const showGenerationInspector = (options: {
         if (!record.response.content && !record.requestedTools?.length) note(body, 'The recorded response contains no text or tool requests.')
         if (record.response.finishReason) phase(body, 'Finish reason', record.response.finishReason)
         for (const requested of record.requestedTools ?? []) {
-          const actual = requested.executionCallId ? events.find(item => item.source.kind === 'tool' && item.source.call.id === requested.executionCallId) : undefined
+          const actual = requested.executionCallId ? allEvents.find(item => item.source.kind === 'tool' && item.source.call.id === requested.executionCallId) : undefined
           const row = document.createElement('div'); row.className = 'inspector-fact'
           row.appendChild(text('strong', requested.tool))
           row.appendChild(actual ? createButton({ label: 'Inspect actual attempt', onClick: () => select(actual) }) : text('span', 'Requested · no matching execution record'))
@@ -225,11 +266,40 @@ export const showGenerationInspector = (options: {
     if (token !== selection || !modal.overlay.isConnected) return
     host.replaceChildren()
     if (!record) { error(host, 'The exact tool record is unavailable.', () => { void renderTool(host, event, token) }); return }
-    toolRecords.set(call.id, record)
+    if (record.completedAt !== undefined) toolRecords.set(call.id, record)
     if (record.arguments && typeof record.arguments === 'object' && 'operationId' in record.arguments && typeof record.arguments.operationId === 'string') phase(host, 'Operation', record.arguments.operationId)
     phase(host, 'Observed outcome', record.result === undefined ? 'Unknown — no durable result' : record.result.success ? 'Tool reported success' : 'Tool reported an error')
     note(host, 'A recorded tool result is historical evidence. Accepted commands do not by themselves prove the plant reached the intended state.')
+    const operations = recordedOperations(record)
+    const focusedKey = activity?.evidence.callId === call.id ? activity.evidence.operationKey : undefined
+    const focused = focusedKey === undefined ? undefined : operations.find(operation => operation.key === focusedKey)
+    const published = focused === undefined ? undefined : recordedOperationView(focused, currentWorkspaceId())
+    const renderOperation = (body: HTMLElement, operation: (typeof operations)[number]): void => {
+      phase(body, operation.operationId, operation.result === undefined ? 'Outcome not recorded' : operation.result.success === true ? 'Operation accepted' : 'Operation refused')
+      if (operation.target !== undefined) renderStructured(body, 'Target', operation.target)
+      renderStructured(body, 'Input', operation.input)
+      if (operation.result === undefined) note(body, 'No matching durable result. This does not establish that nothing happened.')
+      else if (operation.result.success === true) renderStructured(body, 'Recorded result', operation.result.data, true)
+      else renderStructured(body, 'Recorded refusal', operation.result, true)
+    }
     tabs(host, [
+      ...(published ? [{ label: 'Published view', render: (body: HTMLElement) => {
+        const frame = document.createElement('iframe')
+        frame.title = published.title
+        frame.src = embeddedViewPath(published) + embeddedViewFragment(published)
+        frame.style.cssText = `display:block;width:100%;height:${published.height}px;border:0`
+        frame.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'")
+        frame.setAttribute('referrerpolicy', 'same-origin')
+        body.appendChild(frame)
+      } }] : []),
+      ...(operations.length ? [{ label: 'Operations', render: (body: HTMLElement) => {
+        if (focused) renderOperation(body, focused)
+        for (const operation of operations) {
+          if (operation === focused) continue
+          if (focused) lazyDisclosure(body, operation.operationId, target => renderOperation(target, operation))
+          else renderOperation(body, operation)
+        }
+      } }] : []),
       { label: 'Result', render: body => { if (record.result === undefined) note(body, 'Inspect current state before retrying an action with no recorded result.'); else renderRaw(body, record.result) } },
       { label: 'Arguments', render: body => renderRaw(body, record.arguments) },
       { label: 'Raw', render: body => renderRaw(body, record) },
@@ -237,6 +307,10 @@ export const showGenerationInspector = (options: {
   }
   const renderOverview = (): void => {
     selection++; selectedId = 'overview'; detail.replaceChildren()
+    if (activity) {
+      detail.appendChild(text('div', activity.content, 'inspector-update'))
+      note(detail, activityEvents === undefined ? 'The exact activity boundary is unavailable. Full turn shows only the evidence actually retained.' : 'This update shows its recorded operation and the calls since the previous update. Full turn includes the earlier context and later work.')
+    }
     detail.appendChild(text('h3', execution?.turn.messageId ? 'How this response was produced' : 'Recorded execution', 'inspector-detail-title'))
     note(detail, 'Choose a recorded step to inspect its exact input and observed output.')
     const flow = document.createElement('div'); flow.className = 'inspector-flow'
@@ -265,6 +339,7 @@ export const showGenerationInspector = (options: {
     const token = ++selection
     selectedId = event.id
     detail.replaceChildren(text('div', actorLabels[event.actor], 'inspector-eyebrow'), text('h3', event.title, 'inspector-detail-title'))
+    if (activity) detail.prepend(text('div', activity.content, 'inspector-update'))
     phase(detail, stateLabel(event), event.description)
     if (event.at !== undefined) phase(detail, 'Time', `${new Date(event.at).toLocaleTimeString()}${event.finishedAt !== undefined ? ` · ${formatElapsed(event.finishedAt - event.at)}` : ''}`)
     const body = document.createElement('div'); detail.appendChild(body)
@@ -312,6 +387,8 @@ export const showGenerationInspector = (options: {
     master.scrollTop = scrollTop
   }
   document.body.appendChild(modal.overlay)
-  renderOverview()
+  const boundary = activityEvents?.find(event => event.source.kind === 'tool' && event.source.call.id === activity?.evidence.callId)
+  if (boundary) select(boundary)
+  else renderOverview()
   close.focus()
 }

@@ -112,7 +112,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   // The Host's conversation view shows membership in its member row instead.
   if (isJoinLeave && (ageMs > 10_000 || isFocusedRoomView)) return
 
-  const div = document.createElement('div')
+  const inspectableProgress = msg.progress === true && msg.progressEvidence !== undefined && onViewContext !== undefined
+  const div = document.createElement(inspectableProgress ? 'button' : 'div')
   div.setAttribute('data-msg-id', msg.id)
   // Stage cards (script engine setup messages) are sent with senderId='system'
   // but senderName='Stage'. They are scene-boundary markers we want visible,
@@ -183,6 +184,17 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     textEl.className = 'text-text min-w-0 break-words'
     textEl.textContent = msg.content
     div.append(nameEl, timeEl, textEl)
+    if (inspectableProgress) {
+      div.setAttribute('type', 'button')
+      div.classList.add('msg-progress-inspect')
+      div.setAttribute('aria-label', `Inspect activity: ${msg.content}`)
+      div.title = 'Inspect the recorded activity behind this update'
+      const hint = document.createElement('span')
+      hint.className = 'msg-progress-hint'
+      hint.textContent = 'Details ›'
+      div.appendChild(hint)
+      div.onclick = () => onViewContext(msg)
+    }
   } else if (isSystem || isRoomSummary) {
     // System messages are normally plain text (compact, muted). Biometric-
     // caused system messages carry a ```biometric fenced block that must
