@@ -10,7 +10,7 @@ import { assertPwrReferenceProcedureTarget } from './packs/process-plant/procedu
 /** Product-owned procedure catalogs. The generic World procedure engine does not choose content. */
 export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
   sourceId: 'leitbild',
-  label: 'Leitbild model-scoped E-0 and reference transfer procedures',
+  label: 'Leitbild model-scoped PWR tasks and reference transfer procedures',
   repository: 'Leitbild-wiki',
   ref: 'publication',
   procedurePath: 'world/packs/process-plant/procedures',
@@ -18,9 +18,10 @@ export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
   // The original reference E-0 remains wiki evidence, not an implicit override.
   documentPaths: [
     'world/packs/process-plant/procedures/E-0.md',
+    'world/packs/process-plant/procedures/ES-0.1.md',
     ...[
       'E-1', 'E-2', 'E-3', 'ECA-0.0', 'ECA-1.1', 'ECA-1.2', 'ECA-2.1',
-      'ECA-3.1', 'ECA-3.2', 'ECA-3.3', 'ES-0.0', 'ES-0.1', 'ES-0.2',
+      'ECA-3.1', 'ECA-3.2', 'ECA-3.3', 'ES-0.0', 'ES-0.2',
       'ES-1.1', 'ES-1.2', 'ES-1.3', 'ES-1.4', 'ES-3.1', 'ES-3.2', 'ES-3.3',
       'FR-C.1', 'FR-C.2', 'FR-C.3', 'FR-H.1', 'FR-H.2', 'FR-H.3', 'FR-H.4',
       'FR-H.5', 'FR-I.1', 'FR-I.2', 'FR-I.3', 'FR-P.1', 'FR-P.2', 'FR-S.1',
