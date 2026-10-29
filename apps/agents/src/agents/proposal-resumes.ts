@@ -15,17 +15,19 @@
 // At most one turn per proposal. No turn when a later turn of the Agent has
 // already taken the procedure up since the approval (the person said
 // "continue"), while it is answering in that Room the check waits for the
-// answer. Watches live in memory for a bounded time; a runtime that stops
-// forgets them, and the person continues as before.
+// answer. Watches follow World's proposal lifecycle, not a wall-time quota.
+// They live in memory; a runtime that stops forgets them, and the person
+// continues as before.
 // ============================================================================
 
 import type { ExecutionStore, ExecutionCall } from '../core/executions/store.ts'
 import type { RoomDirectory } from '../core/rooms/directory.ts'
 import type { Room } from '../core/types/room.ts'
 import type { AIAgent, RequestedTurn, Team } from '../core/types/agent.ts'
+import { workspaceResourceReferenceSchema, type WorkspaceResourceReference } from '@leitbild/contracts'
 import { PROCEDURE_RUNNER_SKILL, PROPOSAL_RESUME_CAUSE } from '../core/proposal-resume.ts'
 import { collectTurnOperations, type TurnOperation } from './operation-claims.ts'
-import { actorWords, PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
+import { actorWords, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
 import { asAIAgent } from './shared.ts'
 
 /** Operations of a procedure Run (World); a turn that calls one works a procedure. */
@@ -35,9 +37,6 @@ const PROCEDURE_OPERATION_PREFIX = 'world.procedure.'
 // An approval resumes the agent within a few seconds; the display window
 // reads the same proposals as often. Reads stop once a proposal closes.
 const POLL_MS = 3_000
-// A proposal lapses after 2 plant minutes (a person may extend it once), but a
-// paused clock keeps it pending; the watch gives up after this much wall time.
-const WATCH_MS = 30 * 60_000
 // Turns read per page while looking for one that took the procedure up.
 const TURNS_PAGE = 20
 
@@ -48,7 +47,6 @@ export interface ProposalResumeDeps {
   /** World's status of each proposal, read through the Host as the proposing agent. */
   readonly readStatus: ProposalCardReader['read']
   readonly pollMs?: number
-  readonly watchMs?: number
   readonly now?: () => number
   /** Runs `run` once after `ms`; returns its cancel. */
   readonly setTimer?: (run: () => void, ms: number) => () => void
@@ -71,7 +69,10 @@ interface Watch {
   readonly roomId: string
   readonly agentId: string
   readonly answerId: string
-  readonly until: number
+  readonly startedAt: number
+  readonly scopeRevision: number
+  readonly abort: AbortController
+  readonly procedureRuns: ReadonlyMap<string, ReadonlySet<string>>
   readonly watched: Map<string, Watched>
   approved: Approved[]
 }
@@ -125,9 +126,63 @@ const operationsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyArray<TurnOp
 const worksProcedure = (operations: ReadonlyArray<TurnOperation>): boolean =>
   operations.some(operation => operation.operationId.startsWith(PROCEDURE_OPERATION_PREFIX))
 
+const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const ownerKey = (resource: WorkspaceResourceReference, plantId: string): string =>
+  JSON.stringify([resource.workspaceId, resource.moduleId, resource.type, resource.id, plantId])
+
+/** Actual matched results retain the Resource and World-owned Run identity;
+ * a successful read is useful for identity, never proof of progression. */
+const procedureResults = (calls: ReadonlyArray<ExecutionCall>) => calls.flatMap(call => {
+  if (call.tool !== 'workspace_call' || call.result?.success !== true || !record(call.arguments) || !Array.isArray(call.arguments.calls)
+    || !record(call.result.data) || !Array.isArray(call.result.data.results)) return []
+  const args = call.arguments.calls
+  return call.result.data.results.flatMap(entry => {
+    if (!record(entry) || entry.success !== true || typeof entry.operationId !== 'string' || !entry.operationId.startsWith(PROCEDURE_OPERATION_PREFIX)
+      || !record(entry.data)) return []
+    const arg = args.find(value => record(value) && value.key === entry.key && value.operationId === entry.operationId)
+    const resource = record(entry.target) && entry.target.kind === 'resource' ? workspaceResourceReferenceSchema.safeParse(entry.target.ref) : undefined
+    if (!record(arg) || !record(arg.input) || !resource?.success) return []
+    const view = record(entry.data.next) ? entry.data.next : entry.data
+    const run = record(view.run) ? view.run : undefined
+    const inputScope = record(arg.input.scope) ? arg.input.scope : undefined
+    const pinned = record(entry.data.pinned) ? entry.data.pinned : undefined
+    return [{ operationId: entry.operationId, input: arg.input, data: entry.data, resource: resource.data,
+      at: call.completedAt,
+      plantId: typeof run?.plantId === 'string' ? run.plantId : typeof inputScope?.plantId === 'string' ? inputScope.plantId : undefined,
+      runId: typeof arg.input.runId === 'string' ? arg.input.runId : typeof run?.runId === 'string' ? run.runId : typeof pinned?.runId === 'string' ? pinned.runId : undefined }]
+  })
+})
+
+const procedureRunsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyMap<string, ReadonlySet<string>> => {
+  const runs = new Map<string, Set<string>>()
+  for (const result of procedureResults(calls)) {
+    if (result.plantId === undefined || result.runId === undefined) continue
+    const key = ownerKey(result.resource, result.plantId), ids = runs.get(key) ?? new Set<string>()
+    ids.add(result.runId); runs.set(key, ids)
+  }
+  return runs
+}
+
+const progressionOperations: ReadonlySet<string> = new Set([
+  'world.procedure.run.start', 'world.procedure.run.transition', 'world.procedure.run.drive',
+  'world.procedure.run.request-input', 'world.procedure.run.close', 'world.procedure.run.reset',
+])
+
+const committedProgression = (results: ReturnType<typeof procedureResults>, watch: Watch, approved: Approved): boolean => {
+  return results.some(result => {
+    if (!progressionOperations.has(result.operationId) || result.data.ok !== true || typeof result.data.commandId !== 'string' || result.data.commandId.length === 0
+      || result.at === undefined || result.at <= approved.pendingSeenAt) return false
+    const plantId = result.plantId ?? results.find(read => read.runId === result.runId && ownerKey(read.resource, '') === ownerKey(result.resource, ''))?.plantId
+    if (plantId === undefined) return false
+    const owner = ownerKey(result.resource, plantId)
+    if (ownerKey(approved.operation.outcome.resource, approved.operation.plantId) !== owner) return false
+    const knownRuns = watch.procedureRuns.get(owner)
+    return knownRuns === undefined || (result.runId !== undefined && knownRuns.has(result.runId))
+  })
+}
+
 export const createProposalResumes = (deps: ProposalResumeDeps) => {
   const pollMs = deps.pollMs ?? POLL_MS
-  const watchMs = deps.watchMs ?? WATCH_MS
   const now = deps.now ?? Date.now
   const setTimer = deps.setTimer ?? ((run, ms) => {
     const timer = setTimeout(run, ms)
@@ -141,24 +196,40 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
   let running: Promise<void> | undefined
   let disposed = false
 
-  const end = (watch: Watch, why?: string): void => {
+  const end = (watch: Watch, why?: string): undefined => {
     watches.delete(watch.turnId)
+    watch.abort.abort()
     if (why !== undefined) console.warn(`[proposal-resume] No resume for turn ${watch.turnId} in room ${watch.roomId}: ${why}`)
+    return undefined
   }
 
-  // Whether a turn of the Agent in the Room that started after `since` has
-  // taken the procedure up itself: worked its Run or read the proposals.
-  const tookUpSince = (watch: Watch, since: number): boolean => {
+  const eligible = (watch: Watch): { room: Room; ai: AIAgent } | undefined => {
+    if (disposed || watches.get(watch.turnId) !== watch || watch.abort.signal.aborted) return undefined
+    const room = deps.rooms.getRoom(watch.roomId)
+    if (room === undefined) return end(watch, 'the room no longer exists')
+    if (room.profile.scopeRevision !== watch.scopeRevision) return end(watch, 'the Room Scope changed')
+    const agent = deps.team.getAgent(watch.agentId), ai = agent === undefined ? undefined : asAIAgent(agent)
+    if (ai?.requestTurn === undefined || !ai.getSkills().includes(PROCEDURE_RUNNER_SKILL)) return end(watch, 'its agent can no longer continue procedures')
+    if (!room.hasMember(ai.id) || room.isMuted(ai.id)) return end(watch, `${ai.name} is no longer an unmuted member of the room`)
+    if (room.deliveryMode === 'manual') return end(watch, 'the room delivers manually')
+    return { room, ai }
+  }
+
+  // Actual later outcomes for each approval, not the time a turn began.
+  // Other owners' progress and read-only advice do not consume its resume.
+  const tookUpSince = (watch: Watch): ReadonlySet<string> => {
+    const taken = new Set<string>()
     let before: { readonly startedAt: number; readonly id: string } | undefined
     for (;;) {
       const page = deps.executions.listTurns(watch.roomId, { limit: TURNS_PAGE, ...(before === undefined ? {} : { before }) })
       for (const turn of page) {
-        if (turn.startedAt <= since) return false
+        if (turn.startedAt < watch.startedAt) return taken
         if (turn.agentId !== watch.agentId || turn.id === watch.turnId) continue
-        const operations = operationsOf(callsOf(deps.executions, watch.roomId, turn.id))
-        if (worksProcedure(operations) || operations.some(operation => operation.operationId === PROPOSALS_OPERATION_ID)) return true
+        const results = procedureResults(callsOf(deps.executions, watch.roomId, turn.id))
+        for (const approved of watch.approved) if (committedProgression(results, watch, approved)) taken.add(approved.operation.outcome.proposalId)
+        if (taken.size === watch.approved.length) return taken
       }
-      if (page.length < TURNS_PAGE) return false
+      if (page.length < TURNS_PAGE) return taken
       before = page.at(-1)!
     }
   }
@@ -168,12 +239,10 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
     // that takes the procedure up: ask again on a later read.
     if (room.paused) return
     if (ai.state.get() === 'generating' && ai.state.getContext() === room.profile.id) return
-    const since = Math.max(...watch.approved.map(entry => entry.pendingSeenAt))
-    if (tookUpSince(watch, since)) {
-      console.info(`[proposal-resume] ${ai.name} already continued in room ${watch.roomId} after the approval; no resume for turn ${watch.turnId}`)
-      watch.approved = []
-      return
-    }
+    const taken = tookUpSince(watch)
+    watch.approved = watch.approved.filter(approved => !taken.has(approved.operation.outcome.proposalId))
+    if (watch.approved.length === 0) return
+    if (!eligible(watch)) return // Scope or membership may change while inspecting execution records.
     const result = ai.requestTurn!(room.profile.id, {
       instruction: proposalResumeInstruction(watch.approved, watch.answerId),
       inReplyTo: [watch.answerId],
@@ -187,8 +256,10 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
   }
 
   const read = async (watch: Watch, ai: AIAgent): Promise<void> => {
+    if (!eligible(watch)) return
     const sentAt = now()
-    const cards = await deps.readStatus([...watch.watched.values()].map(entry => entry.operation), { id: ai.id, name: ai.name })
+    const cards = await deps.readStatus([...watch.watched.values()].map(entry => entry.operation), { id: ai.id, name: ai.name }, watch.abort.signal)
+    if (!eligible(watch)) return // Late status evidence cannot outlive its Room authority.
     for (const card of cards) {
       if (card.outcome.kind === 'refused') continue
       const entry = watch.watched.get(card.outcome.proposalId)
@@ -209,23 +280,17 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
   }
 
   const step = async (watch: Watch): Promise<void> => {
-    if (now() > watch.until) return end(watch, 'its proposals were not decided in time')
-    const room = deps.rooms.getRoom(watch.roomId)
-    if (room === undefined) return end(watch, 'the room no longer exists')
-    const agent = deps.team.getAgent(watch.agentId)
-    const ai = agent === undefined ? undefined : asAIAgent(agent)
-    if (ai?.requestTurn === undefined) return end(watch, 'its agent can no longer take requested turns')
-    if (!room.hasMember(ai.id) || room.isMuted(ai.id)) return end(watch, `${ai.name} is no longer an unmuted member of the room`)
-    // A manual Room's person activates its agents; an approval does not.
-    if (room.deliveryMode === 'manual') return end(watch, 'the room delivers manually')
+    const active = eligible(watch)
+    if (!active) return
+    const { room, ai } = active
     if (watch.watched.size > 0) {
       try {
         await read(watch, ai)
       } catch (error) {
         // The Host did not answer; read again next time.
-        console.warn(`[proposal-resume] Could not read proposals of turn ${watch.turnId}:`, error)
+        if (!watch.abort.signal.aborted) console.warn(`[proposal-resume] Could not read proposals of turn ${watch.turnId}:`, error)
       }
-      if (disposed) return
+      if (!eligible(watch)) return
     }
     if (watch.approved.length > 0) resume(watch, room, ai)
     if (watch.watched.size === 0 && watch.approved.length === 0) end(watch)
@@ -270,7 +335,7 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
         const validatedFailure = turn.status === 'failed' && room?.getRetainedMessages().some(message => message.id === input.messageId
           && message.senderId === turn.agentId && message.generationTraceId === turn.id && message.type === 'error'
           && String(message.errorCode) === 'response_validation_failed') === true
-        if (turn.status !== 'completed' && !validatedFailure) return
+        if (!room || (turn.status !== 'completed' && !validatedFailure)) return
         const calls = callsOf(deps.executions, turn.roomId, turn.id)
         const recorded = proposedOperationsOf(calls)
           .filter((operation): operation is Watched['operation'] => operation.outcome.kind === 'recorded')
@@ -287,7 +352,7 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
           roomId: turn.roomId,
           agentId: turn.agentId,
           answerId: input.messageId,
-          until: startedAt + watchMs,
+          startedAt: turn.startedAt, scopeRevision: room.profile.scopeRevision, abort: new AbortController(), procedureRuns: procedureRunsOf(calls),
           watched: new Map(forProcedure.map(operation => [operation.outcome.proposalId, { operation, pendingSeenAt: turn.finishedAt ?? startedAt }])),
           approved: [],
         })
@@ -304,7 +369,7 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
       disposed = true
       cancelTimer?.()
       cancelTimer = undefined
-      watches.clear()
+      for (const watch of [...watches.values()]) end(watch)
     },
   }
 }

@@ -1,8 +1,9 @@
 // ============================================================================
 // Proposal cards — what became of the operations an answer's turn proposed.
 //
-// An AI agent operates plant equipment by proposing it; a person approves in
-// World's display window (plan C1 §4.4). The answer of the proposing turn
+// An AI agent can propose an operation for review; a person approves in
+// World's display window. Explicit direct commands use their own validated
+// operation and do not become proposals here. The answer of the proposing turn
 // carries a card with the action, its target and World's live status, read
 // from World (control.proposals), never from the agent's prose. The turn's
 // own execution evidence says what it proposed: each successful propose
@@ -163,10 +164,10 @@ export const createProposalCardReader = (deps: ProposalCardReaderDeps) => {
   const fetchImpl = deps.fetchImpl ?? fetch
   const invokePath = `${new URL(deps.hostBaseUrl).origin}/api/workspaces/${encodeURIComponent(deps.workspaceId)}/capabilities/${encodeURIComponent(PROPOSALS_OPERATION_ID)}/invoke`
   // The Plant's whole book (its pending proposals and its last closed ones), so a proposal it no longer keeps is told apart from a refused read.
-  const readPlant = async (resource: WorkspaceResourceReference, plantId: string, agent: { readonly id: string; readonly name: string }) => {
+  const readPlant = async (resource: WorkspaceResourceReference, plantId: string, agent: { readonly id: string; readonly name: string }, signal?: AbortSignal) => {
     const response = await fetchImpl(invokePath, {
       method: 'POST',
-      signal: AbortSignal.timeout(HOST_READ_TIMEOUT_MS),
+      signal: signal === undefined ? AbortSignal.timeout(HOST_READ_TIMEOUT_MS) : AbortSignal.any([signal, AbortSignal.timeout(HOST_READ_TIMEOUT_MS)]),
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ resource, input: { plantId }, actor: { kind: 'ai', id: agent.id, displayName: agent.name } }),
     })
@@ -175,12 +176,12 @@ export const createProposalCardReader = (deps: ProposalCardReaderDeps) => {
     return { ok: true as const, result: proposalsResultSchema.parse(body).result }
   }
   return {
-    read: async (operations: ReadonlyArray<ProposedOperation>, agent: { readonly id: string; readonly name: string }): Promise<ReadonlyArray<ProposalCard>> => {
+    read: async (operations: ReadonlyArray<ProposedOperation>, agent: { readonly id: string; readonly name: string }, signal?: AbortSignal): Promise<ReadonlyArray<ProposalCard>> => {
       const groups = new Map<string, { readonly resource: WorkspaceResourceReference; readonly plantId: string }>()
       for (const operation of operations) {
         if (operation.outcome.kind === 'recorded') groups.set(JSON.stringify([operation.outcome.resource, operation.plantId]), { resource: operation.outcome.resource, plantId: operation.plantId })
       }
-      const reads = new Map(await Promise.all([...groups].map(async ([key, group]) => [key, await readPlant(group.resource, group.plantId, agent)] as const)))
+      const reads = new Map(await Promise.all([...groups].map(async ([key, group]) => [key, await readPlant(group.resource, group.plantId, agent, signal)] as const)))
       return operations.map((operation): ProposalCard => {
         const { outcome, ...proposed } = operation
         if (outcome.kind === 'refused') return { ...proposed, outcome }

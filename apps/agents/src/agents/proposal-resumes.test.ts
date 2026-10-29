@@ -32,6 +32,19 @@ const propose = (id: string, commandId: string, input: Record<string, unknown> =
 const operation = (id: string, operationId: string) => workspaceCall(id, [{ key: 'op', operationId, input: {} }], [
   { key: 'op', operationId, success: true, data: {} },
 ])
+const procedureOperation = (id: string, operationId: string, options: {
+  plantId?: string; runId?: string; resource?: typeof run; accepted?: boolean; stepId?: string
+} = {}) => {
+  const plantId = options.plantId ?? PLANT, runId = options.runId ?? 'procedure:e0'
+  const input = operationId === 'world.procedure.run.start' ? { procedureId: 'E-0', scope: { plantId } }
+    : { runId, stepId: options.stepId ?? 'step:one', branchIndex: 0 }
+  const command = operationId !== 'world.procedure.run.step.read'
+  return workspaceCall(id, [{ key: 'op', operationId, input }], [{ key: 'op', operationId,
+    target: { kind: 'resource', ref: options.resource ?? run }, success: options.accepted !== false,
+    data: { ...(command ? { ok: true, commandId: `accepted:${id}` } : {}),
+      ...(command ? { next: { run: { runId, plantId, currentStepId: 'step:two' } } } : { run: { runId, plantId, currentStepId: 'step:one' } }) },
+  }])
+}
 
 const fakeAgent = (skills: ReadonlyArray<string>) => {
   const turns: Array<{ roomId: string; turn: RequestedTurn }> = []
@@ -51,7 +64,7 @@ const fakeAgent = (skills: ReadonlyArray<string>) => {
   return { agent, turns, control }
 }
 
-const setup = (options: { readonly skills?: ReadonlyArray<string>; readonly watchMs?: number } = {}) => {
+const setup = (options: { readonly skills?: ReadonlyArray<string> } = {}) => {
   const rooms = createRoomDirectory({})
   const team = createTeam()
   const room = rooms.createRoom({ name: 'Assistant', createdBy: SYSTEM_SENDER_ID })
@@ -62,12 +75,15 @@ const setup = (options: { readonly skills?: ReadonlyArray<string>; readonly watc
 
   // World's proposal book of the Plant, as the Host returns it.
   const world = new Map<string, { status: Status; actorId?: string }>()
-  const host = { reads: 0, down: false, refusal: undefined as string | undefined, bodies: [] as unknown[] }
+  const host = { reads: 0, down: false, refusal: undefined as string | undefined, bodies: [] as unknown[],
+    delay: undefined as Promise<void> | undefined, signal: undefined as AbortSignal | undefined }
   const reader = createProposalCardReader({
     workspaceId,
     hostBaseUrl: 'http://127.0.0.1:4000',
     fetchImpl: (async (_url: string, init: RequestInit) => {
       host.reads += 1
+      host.signal = init.signal ?? undefined
+      if (host.delay) await host.delay
       if (host.down) throw new Error('connect ECONNREFUSED 127.0.0.1:4000')
       if (host.refusal !== undefined) return Response.json({ error: { code: 'agent_access_restricted', message: host.refusal } }, { status: 403 })
       host.bodies.push(JSON.parse(String(init.body)))
@@ -84,7 +100,6 @@ const setup = (options: { readonly skills?: ReadonlyArray<string>; readonly watc
   const resumes = createProposalResumes({
     rooms, team, executions: store, readStatus: reader.read,
     now: () => clock.now,
-    ...(options.watchMs === undefined ? {} : { watchMs: options.watchMs }),
     setTimer: (_run, ms) => { timers.push(ms); return () => {} },
   })
   const tick = async (): Promise<void> => {
@@ -93,11 +108,11 @@ const setup = (options: { readonly skills?: ReadonlyArray<string>; readonly watc
   }
 
   // A turn of the agent in the Room, as its execution evidence records it.
-  const turn = (id: string, calls: ReadonlyArray<ReturnType<typeof workspaceCall>>, status: Exclude<ExecutionTurn['status'], 'running'> = 'completed'): void => {
-    store.beginTurn({ id, roomId: room.profile.id, agentId: agent.id, startedAt: clock.now })
+  const turn = (id: string, calls: ReadonlyArray<ReturnType<typeof workspaceCall>>, status: Exclude<ExecutionTurn['status'], 'running'> = 'completed', startedAt = clock.now): void => {
+    store.beginTurn({ id, roomId: room.profile.id, agentId: agent.id, startedAt })
     for (const call of calls) {
       store.recordAttempt(id, { id: call.id, tool: 'workspace_call', arguments: call.arguments, startedAt: clock.now })
-      store.recordOutcome(id, call.id, call.result)
+      store.recordOutcome(id, call.id, call.result, clock.now)
     }
     store.finishTurn(id, status)
   }
@@ -224,7 +239,7 @@ describe('resuming a procedure once its proposal is approved', () => {
     taken.decide('command:trip', 'approved')
     // The person pressed Continue procedure: the agent read its proposal and started E-0.
     taken.clock.now += 1
-    taken.turn('turn-2', [operation('call_0_0', PROPOSALS_OPERATION_ID), operation('call_1_0', 'world.procedure.run.start')])
+    taken.turn('turn-2', [operation('call_0_0', PROPOSALS_OPERATION_ID), procedureOperation('call_1_0', 'world.procedure.run.start')])
     await taken.tick()
     expect(taken.turns).toHaveLength(0)
     expect(taken.resumes.watching()).toEqual([])
@@ -254,6 +269,95 @@ describe('resuming a procedure once its proposal is approved', () => {
     s.decide('command:trip', 'approved')
     await s.tick()
     expect(s.turns).toHaveLength(1)
+  })
+
+  test('read-only scheduled advice after approval is not an accepted procedure continuation', async () => {
+    const s = setup()
+    s.turn('turn-1', [propose('call_0_0', 'command:trip'), procedureOperation('call_1_0', 'world.procedure.run.step.read')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    // A quiet scheduled pass has execution evidence, but no posted answer.
+    s.turn('advisory-pass', [operation('call_0_0', PROPOSALS_OPERATION_ID), procedureOperation('call_1_0', 'world.procedure.run.step.read')])
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+    expect(s.resumes.watching()).toEqual([])
+  })
+
+  test.each(['refused', 'other-unit', 'other-resource', 'other-procedure-run'] as const)('%s procedure work does not suppress this proposal continuation', async condition => {
+    const s = setup()
+    s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition', {
+      ...(condition === 'refused' ? { accepted: false } : {}),
+      ...(condition === 'other-unit' ? { plantId: 'plant:unit-3' } : {}),
+      ...(condition === 'other-resource' ? { resource: workspaceResourceReferenceSchema.parse({ ...run, id: 'run-other' }) } : {}),
+      ...(condition === 'other-procedure-run' ? { runId: 'procedure:another' } : {}),
+    })])
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+  })
+
+  test('an accepted current-step transition counts by actual outcome time, even when its turn started before approval', async () => {
+    const s = setup()
+    s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    const startedAt = s.clock.now
+    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition')], 'completed', startedAt)
+    await s.tick()
+    expect(s.turns).toHaveLength(0)
+    expect(s.resumes.watching()).toEqual([])
+  })
+
+  test('accepted progress on one unit does not discard a different unit\'s approved proposal', async () => {
+    const s = setup()
+    s.turn('turn-1', [
+      procedureOperation('call_0_0', 'world.procedure.run.step.read'),
+      procedureOperation('call_1_0', 'world.procedure.run.step.read', { plantId: 'plant:unit-3', runId: 'procedure:unit-3' }),
+      propose('call_2_0', 'command:unit-2'), propose('call_3_0', 'command:unit-3', { ...tripInput, plantId: 'plant:unit-3' }),
+    ])
+    s.world.set('command:unit-2', { status: 'pending' }); s.world.set('command:unit-3', { status: 'pending' }); s.answered('turn-1')
+    await s.tick(); s.decide('command:unit-2', 'approved'); s.decide('command:unit-3', 'approved'); s.clock.now++
+    s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition')])
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+    expect(s.turns[0]!.turn.instruction).toContain('Plant plant:unit-3')
+    expect(s.turns[0]!.turn.instruction).not.toContain('Plant plant:unit-2')
+    expect(s.resumes.watching()).toEqual([])
+  })
+
+  test('a Room scope change stops status reads and continuation, including an in-flight status response', async () => {
+    for (const duringRead of [false, true]) {
+      const s = setup(), release = Promise.withResolvers<void>()
+      s.turn('turn-1', [propose('call_0_0', 'command:trip')])
+      s.world.set('command:trip', { status: 'approved' }); s.answered('turn-1')
+      if (duringRead) s.host.delay = release.promise
+      const pending = duringRead ? s.tick() : undefined
+      s.room.setScope({ kind: 'resource', resource: workspaceResourceReferenceSchema.parse({ ...run, id: 'different-run' }) }, s.room.profile.scopeRevision)
+      release.resolve()
+      await (pending ?? s.tick())
+      expect(s.host.reads).toBe(duringRead ? 1 : 0)
+      if (duringRead) expect(s.host.signal?.aborted).toBe(true)
+      expect(s.turns).toHaveLength(0)
+      expect(s.resumes.watching()).toEqual([])
+      await s.tick()
+      expect(s.host.reads).toBe(duringRead ? 1 : 0)
+    }
+  })
+
+  test('disposing an in-flight status read aborts its existing transport and cannot admit a late continuation', async () => {
+    const s = setup(), release = Promise.withResolvers<void>()
+    s.turn('turn-1', [propose('call_0_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'approved' }); s.answered('turn-1')
+    s.host.delay = release.promise
+    const pending = s.tick()
+    expect(s.host.reads).toBe(1)
+    s.resumes.dispose()
+    expect(s.host.signal?.aborted).toBe(true)
+    release.resolve(); await pending
+    expect(s.turns).toHaveLength(0)
+    expect(s.resumes.watching()).toEqual([])
   })
 
   test('while the agent answers in that room the resume waits, then runs unless that answer took the procedure up', async () => {
@@ -349,19 +453,26 @@ describe('resuming a procedure once its proposal is approved', () => {
     expect(gone.turns).toHaveLength(0)
   })
 
-  test('a proposal left pending gives up after the watch time', async () => {
-    const s = setup({ watchMs: 2 * POLL_MS })
+  test('a paused Plant may approve beyond the former wall-time limit and a busy Agent still resumes once free', async () => {
+    const s = setup()
     s.turn('turn-1', [propose('call_0_0', 'command:trip')])
     s.world.set('command:trip', { status: 'pending' })
     s.answered('turn-1')
-    await s.tick()
+    s.clock.now += 8 * 60 * 60_000
     await s.tick()
     expect(s.resumes.watching()).toEqual(['turn-1'])
-    await s.tick()
-    expect(s.resumes.watching()).toEqual([])
     s.decide('command:trip', 'approved')
+    s.control.generatingIn = s.room.profile.id
     await s.tick()
     expect(s.turns).toHaveLength(0)
+    s.clock.now += 2 * 60 * 60_000
+    await s.tick()
+    expect(s.turns).toHaveLength(0)
+    expect(s.resumes.watching()).toEqual(['turn-1'])
+    s.control.generatingIn = undefined
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+    expect(s.resumes.watching()).toEqual([])
   })
 
   test('the display window\'s operator approves as "an operator", never by a raw id (W7.4)', async () => {
