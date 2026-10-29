@@ -17,11 +17,11 @@ test('Halden recording preview uses Pack-owned series selection and sampling cad
     const definition = testScenarioDefinitions.find(source => source.id === 'halden-power-complex')!
     const preview = await registry.previewScenario(definition)
     const plants = preview.recording.selections.find(selection => selection.packId === 'process-plant')!
-    // Four current Plants, each with 739 operations series: the existing 721
-    // plus eighteen controller selection/target values. Configuration history
-    // remains distinguishable from measured response; injected fault truth stays excluded.
-    expect(plants.initialSeriesCount).toBe(2956)
-    expect(plants.samplesPerSimulationSecond).toBe(2956)
+    // Four current Plants, each with 816 operations series: the controller
+    // tranche's 739 plus 77 real RHR/CCW/SW states, controls, tagged readings
+    // and power balances. Fault-injection truth remains excluded by the profile.
+    expect(plants.initialSeriesCount).toBe(3264)
+    expect(plants.samplesPerSimulationSecond).toBe(3264)
     expect(preview.recording.selections.every(selection => selection.initialSeriesCount !== null)).toBe(true)
     // At full sampling, before exception recording: the derived sample budget over the selections' rate (just over three minutes).
     const rate = preview.recording.selections.reduce((sum, selection) => sum + selection.samplesPerSimulationSecond!, 0)
