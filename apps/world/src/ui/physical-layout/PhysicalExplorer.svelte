@@ -13,7 +13,7 @@
   import { explorerGroupKey, explorerLayoutKey, explorerScopeChoices, levelForPhysicalFocus, levelForScopeFocus, physicalOccurrenceInScope, physicalOccurrenceOnLevel, type ExplorerScopeChoice } from './explorer-model.ts'
   import { physicalCollectionFloorGroups, physicalCollectionFloorChanges, physicalCollectionMixedSettings, physicalPlanLevelAfterModeChange } from './collection-floors.ts'
   import { physicalCollectionLayerChoices, physicalCollectionLayerChanges } from './collection-layers.ts'
-  import { physicalExplorerFitPadding, type ExplorerViewportPadding } from './explorer-viewport.ts'
+  import { physicalExplorerCameraCovers, physicalExplorerFitPadding, type ExplorerViewportPadding, type ExplorerViewportRect } from './explorer-viewport.ts'
   import { physicalExplorerKeyboardRoute, physicalExplorerNeedsLive } from './explorer-interaction.ts'
   import { createPhysicalSceneOverview } from '../map/physical-scene/overview.ts'
   import type { PhysicalSceneHit, PhysicalScenePresentation, PhysicalSceneView, PhysicalScenePalette, PhysicalSceneFitRequest } from '../map/physical-scene/types.ts'
@@ -86,7 +86,6 @@
   runOnMount(() => () => paintQueue.destroy())
   let controls = $state<{ dismiss: () => boolean } | null>(null)
   let cameraControls = $state<{ dismiss: () => boolean } | null>(null)
-  let cameraElement = $state<HTMLElement | null>(null)
   let overlayElement = $state<HTMLElement | null>(null)
   let controller = $state.raw<PhysicalSceneController | null>(null)
   let viewportFailure = $state<string | null>(null)
@@ -101,8 +100,7 @@
   let inspectionFrame = $state<HTMLIFrameElement | null>(null)
   let inspectionHeight = $state<number | null>(null)
   let toolsElement = $state<HTMLElement | null>(null)
-  let toolsBox = $state<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null>(null)
-  let cameraBox = $state<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null>(null)
+  let controlCovers = $state<ReadonlyArray<ExplorerViewportRect>>([])
   let focusLocations = $state<{ readonly sceneId: string; readonly subjectId: string; readonly label: string; readonly occurrenceIds: ReadonlyArray<string> } | null>(null)
   let floorChoice = $state<{ readonly sceneId: string; readonly occurrenceId: string; readonly label: string; readonly levelIds: ReadonlyArray<string> } | null>(null)
   let scopeFloorChoice = $state<{ readonly key: string; readonly sceneId: string; readonly label: string; readonly levelIds: ReadonlyArray<string> } | null>(null)
@@ -145,10 +143,10 @@
   let focusGeneration = 0
   const fitPadding = (request?: PhysicalSceneFitRequest) => {
     const padding = reservedPadding
-    const surface = controller?.surface.element.getBoundingClientRect(), tools = toolsElement?.getBoundingClientRect(), camera = cameraElement?.getBoundingClientRect()
+    const surface = controller?.surface.element.getBoundingClientRect()
     if (!surface) return padding
     const nativeControls = [...map.getContainer().querySelectorAll<HTMLElement>('.maplibregl-ctrl')].map(element => element.getBoundingClientRect()).filter(box => box.width > 0 && box.height > 0)
-    const covers = [tools, camera, ...nativeControls].filter((cover): cover is DOMRect => cover !== undefined).map(cover => ({ x: cover.left - surface.left, y: cover.top - surface.top, width: cover.width, height: cover.height }))
+    const covers = [...(toolsElement ? physicalExplorerCameraCovers(toolsElement, surface) : []), ...nativeControls.map(cover => ({ x: cover.left - surface.left, y: cover.top - surface.top, width: cover.width, height: cover.height }))]
     if (inspected !== null) covers.push({ ...cardPoint, width: inspectionWidth, height: allocatedInspectionHeight })
     return physicalExplorerFitPadding(surface, { ...padding, top: Math.max(padding.top, clearTop > surface.top ? clearTop - surface.top + 8 : 0) }, covers, request?.measure)
   }
@@ -293,9 +291,9 @@
     const current = controller, target = draftingCanvas, colors = draftingColors, palette = draftingPalette, width = size.width, height = size.height
     if (!target || !current || !colors || !palette) { paintQueue.cancel(); return }
     const sceneViews = paintScenes, marks = flowMarks, selection = highlighted, scopeId = focusedScopeId
-    const intent = { scene: paintSceneKey, screen: screenRevision, style: paintRevision, focus: focusedId, group: focusedGroupId, active, suspended, documentVisible, theme, runId, perspectiveEpoch, objects, bindings, hiddenCategoryIds, tools: toolsBox, camera: cameraBox }
+    const intent = { scene: paintSceneKey, screen: screenRevision, style: paintRevision, focus: focusedId, group: focusedGroupId, active, suspended, documentVisible, theme, runId, perspectiveEpoch, objects, bindings, hiddenCategoryIds, covers: controlCovers }
     const pose = JSON.stringify(current.cameraPose()), ratio = window.devicePixelRatio || 1
-    const covers = [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null)
+    const covers = controlCovers
     const drafting = !active || suspended || !documentVisible ? [] : sceneViews.flatMap(presentation => {
       if (presentation.status !== 'ready' || presentation.view.mode !== '2d' || focusedId !== null && presentation.descriptor.id !== focusedId || focusedGroupId !== null && presentation.descriptor.group?.id !== focusedGroupId) return []
       const scene = current.scene(presentation.descriptor.id)
@@ -311,7 +309,7 @@
         || active !== intent.active || suspended !== intent.suspended || documentVisible !== intent.documentVisible
         || theme !== intent.theme || draftingPalette !== palette || draftingColors !== colors
         || runId !== intent.runId || perspectiveEpoch !== intent.perspectiveEpoch || objects !== intent.objects || bindings !== intent.bindings || hiddenCategoryIds !== intent.hiddenCategoryIds
-        || toolsBox !== intent.tools || cameraBox !== intent.camera || flowMarks !== marks || highlighted !== selection
+        || controlCovers !== intent.covers || flowMarks !== marks || highlighted !== selection
         || size.width !== width || size.height !== height || (window.devicePixelRatio || 1) !== ratio
         || JSON.stringify(current.cameraPose()) !== pose
         || drafting.some(value => current.scene(value.scene.id) !== value.scene || current.subjectStyles(value.scene.id) !== value.status)) return
@@ -508,14 +506,14 @@
   $effect(() => {
     annotationScheduler?.setActive(active && !suspended && documentVisible)
     const generation = JSON.stringify([screenRevision, annotationSceneKey, focusedId, focusedScopeId, focusedGroupId])
-    const candidates = sparseLayoutBadges(proposedBadges, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
-    const marks = sparseLayoutBadges(proposedFlowMarks, size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
+    const candidates = sparseLayoutBadges(proposedBadges, size, controlCovers)
+    const marks = sparseLayoutBadges(proposedFlowMarks, size, controlCovers)
     annotationScheduler?.update(generation, [...candidates.map(value => ({ key: `status:${value.sceneId}:${value.occurrenceId}:${value.elementId}`, priority: value.rank, value })), ...marks.map(value => ({ key: `flow:${value.key}`, priority: value.rank, value }))])
   })
   const flowMarks = $derived.by(() => { const visible = new Set(testedFlowMarks.map(mark => mark.key)); return retainVisibleFlowMarks(proposedFlowMarks.filter(mark => visible.has(mark.key))) })
   const badges = $derived.by(() => {
     const visible = new Set(testedBadges.map(value => `${value.sceneId}:${value.occurrenceId}:${value.elementId}`))
-    return sparseLayoutBadges(proposedBadges.filter(value => visible.has(`${value.sceneId}:${value.occurrenceId}:${value.elementId}`)), size, [toolsBox, cameraBox].filter((box): box is NonNullable<typeof box> => box !== null))
+    return sparseLayoutBadges(proposedBadges.filter(value => visible.has(`${value.sceneId}:${value.occurrenceId}:${value.elementId}`)), size, controlCovers)
   })
   const cardPoint = $derived.by(() => {
     void screenRevision
@@ -640,25 +638,23 @@
   const toolsTop = $derived.by(() => { void screenRevision; return Math.max(8, clearTop - (controller?.surface.element.getBoundingClientRect().top ?? 0) + 8) })
   $effect(() => {
     const element = toolsElement
-    if (element === null) { toolsBox = null; return }
+    const surface = controller?.surface.element
+    if (element === null || !surface) { controlCovers = []; return }
     const measure = (): void => {
-      const box = element.getBoundingClientRect(), parent = controller?.surface.element.getBoundingClientRect()
-      if (!parent) return
-      toolsBox = { x: box.left - parent.left, y: box.top - parent.top, width: box.width, height: box.height }
+      const next = physicalExplorerCameraCovers(element, surface.getBoundingClientRect())
+      const previous = untrack(() => controlCovers)
+      if (next.length !== previous.length || next.some((box, index) => Object.keys(box).some(key => box[key as keyof ExplorerViewportRect] !== previous[index]?.[key as keyof ExplorerViewportRect]))) controlCovers = next
     }
     const observer = new ResizeObserver(measure)
-    observer.observe(element); measure()
-    return () => observer.disconnect()
-  })
-  $effect(() => {
-    const element = cameraElement
-    if (!element) { cameraBox = null; return }
-    const measure = (): void => {
-      const box = element.getBoundingClientRect(), parent = controller?.surface.element.getBoundingClientRect()
-      if (parent) cameraBox = { x: box.left - parent.left, y: box.top - parent.top, width: box.width, height: box.height }
+    const observePanels = (): void => {
+      observer.disconnect(); observer.observe(surface); observer.observe(element)
+      for (const panel of element.querySelectorAll('[data-layout-camera-cover]')) observer.observe(panel)
+      measure()
     }
-    const observer = new ResizeObserver(measure); observer.observe(element); measure()
-    return () => observer.disconnect()
+    const changes = new MutationObserver(observePanels)
+    changes.observe(element, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] })
+    observePanels()
+    return () => { observer.disconnect(); changes.disconnect() }
   })
 
   runOnMount(() => {
@@ -761,13 +757,13 @@
   {#if scenes.length > 0 && focused !== null}
     {#if controlsOpen}<div class="layout-tools" bind:this={toolsElement} style:right={`${coverRight + 12}px`} style:top={`${toolsTop}px`}>
       {#snippet cameraNavigation()}
-        <CameraControls bind:this={cameraControls} bind:element={cameraElement} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
+        <CameraControls bind:this={cameraControls} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
       {/snippet}
       <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={requestedPhysicalLayoutView(focused)} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           navigationControls={focused.view.mode === '3d' ? cameraNavigation : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}
-        <section class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
+        <section data-layout-camera-cover class="layout-components" aria-label="Find physical equipment"><header><strong>Find equipment</strong><button type="button" aria-label="Close equipment search" onclick={() => componentsOpen = false}>×</button></header>
           <label>Find a component<input type="search" bind:value={filter} /></label>
           <label class="state-layer"><input type="checkbox" bind:checked={showStateWords} /> Ordinary operating-state labels</label>
           {#if componentScope !== null}<p>Subjects associated with {componentScope.label}.</p><button type="button" onclick={() => componentScope = null}>Show all components</button>{/if}
@@ -780,12 +776,12 @@
         </section>
       {/if}
       {#if focusLocations}
-        <section class="layout-components" aria-label="Choose physical occurrence"><header><strong>{focusLocations.label}</strong><button type="button" aria-label="Close physical occurrence choice" onclick={() => focusLocations = null}>×</button></header>
+        <section data-layout-camera-cover class="layout-components" aria-label="Choose physical occurrence"><header><strong>{focusLocations.label}</strong><button type="button" aria-label="Close physical occurrence choice" onclick={() => focusLocations = null}>×</button></header>
           {#if focusLocations.occurrenceIds.length === 0}<p>No admitted physical placement. The component remains available in its process display.</p>{:else}<p>Choose the physical part or housing to focus.</p>{#each focusLocations.occurrenceIds as occurrenceId (occurrenceId)}<button type="button" onclick={() => { if (focusLocations) focusOccurrence(focusLocations.sceneId, occurrenceId) }}>{controller?.scene(focusLocations.sceneId)?.objects.find(value => value.id === occurrenceId)?.label ?? occurrenceId}</button>{/each}{/if}
         </section>
       {/if}
-      {#if floorChoice}<section class="layout-components" aria-label="Choose physical focus floor"><header><strong>{floorChoice.label}</strong><button type="button" aria-label="Close focus floor choice" onclick={() => floorChoice = null}>×</button></header><p>This equipment spans more than one floor. Choose a view.</p><button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, 'all') }}>Show in 3D context</button>{#each floorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, levelId) }}>{scenes.find(scene => scene.descriptor.id === floorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
-      {#if scopeFloorChoice}<section class="layout-components" aria-label="Choose area floor"><header><strong>{scopeFloorChoice.label}</strong><button type="button" aria-label="Close area floor choice" onclick={() => scopeFloorChoice = null}>×</button></header><p>The current floor does not intersect this area. Choose a floor or show its whole 3D context.</p><button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, 'all') }}>Show whole area in 3D</button>{#each scopeFloorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, levelId) }}>{scenes.find(scene => scene.descriptor.id === scopeFloorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
+      {#if floorChoice}<section data-layout-camera-cover class="layout-components" aria-label="Choose physical focus floor"><header><strong>{floorChoice.label}</strong><button type="button" aria-label="Close focus floor choice" onclick={() => floorChoice = null}>×</button></header><p>This equipment spans more than one floor. Choose a view.</p><button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, 'all') }}>Show in 3D context</button>{#each floorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (floorChoice) focusOccurrence(floorChoice.sceneId, floorChoice.occurrenceId, levelId) }}>{scenes.find(scene => scene.descriptor.id === floorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
+      {#if scopeFloorChoice}<section data-layout-camera-cover class="layout-components" aria-label="Choose area floor"><header><strong>{scopeFloorChoice.label}</strong><button type="button" aria-label="Close area floor choice" onclick={() => scopeFloorChoice = null}>×</button></header><p>The current floor does not intersect this area. Choose a floor or show its whole 3D context.</p><button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, 'all') }}>Show whole area in 3D</button>{#each scopeFloorChoice.levelIds as levelId (levelId)}<button type="button" onclick={() => { if (scopeFloorChoice) chooseScope(scopeFloorChoice.key, levelId) }}>{scenes.find(scene => scene.descriptor.id === scopeFloorChoice?.sceneId)?.descriptor.levels.find(level => level.id === levelId)?.label ?? levelId}</button>{/each}</section>{/if}
     </div>{/if}
 
   {:else if viewportFailure !== null}
@@ -801,7 +797,7 @@
 <style>
   .explorer-overlay { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }.explorer-overlay.inactive { visibility: hidden; }
   .layout-plan-annotations { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; font-size: 12px; }
-  .layout-tools { position: absolute; left: 12px; z-index: 5; max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; color: var(--text); }.layout-tools > :global(*) { pointer-events: auto; }
+  .layout-tools { position: absolute; left: 12px; z-index: 5; max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; pointer-events: none; color: var(--text); }.layout-tools :global([data-layout-camera-cover]) { pointer-events: auto; }
   button, input { min-height: 44px; box-sizing: border-box; font: inherit; }button { color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; cursor: pointer; }button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .layout-components { display: grid; gap: 6px; width: min(440px, 100%); margin-left: auto; max-height: min(52dvh, 560px); overflow: auto; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 12px; }.layout-components header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }.layout-components header button { min-width: 44px; padding: 0; font-size: 20px; }.layout-components > label { display: grid; gap: 4px; }.layout-components p { margin: 3px 0; color: var(--muted); line-height: 1.5; font-size: 11px; }.layout-components input[type="search"] { min-width: 0; width: 100%; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }.layout-components .state-layer { display: flex; align-items: center; gap: 8px; }.state-layer input { min-height: 18px; width: 18px; accent-color: var(--accent); }
   .component-row { display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--border); padding-top: 4px; }.component-row > span { flex: 1; min-width: 0; display: grid; gap: 3px; }.component-row strong, .component-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.component-row small { color: var(--muted); font-size: 10px; }.component-row button { flex: none; padding: 6px; }

@@ -1,6 +1,17 @@
 export interface ExplorerViewportRect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 export interface ExplorerViewportPadding { readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
 
+/** Foreground panels own both camera occlusion and pointer coverage. A layout
+ * wrapper can span a tall right-hand sheet while its left side is empty. */
+export const physicalExplorerCameraCovers = (root: Pick<ParentNode, 'querySelectorAll'>, surface: Pick<DOMRect, 'left' | 'top'>): ReadonlyArray<ExplorerViewportRect> =>
+  [...root.querySelectorAll<HTMLElement>('[data-layout-camera-cover]')].flatMap(element => {
+    const box = element.getBoundingClientRect()
+    if (box.width <= 0 || box.height <= 0) return []
+    const cover = { x: box.left - surface.left, y: box.top - surface.top, width: box.width, height: box.height }
+    if (!Object.values(cover).every(Number.isFinite)) throw new Error('A physical layout panel has non-finite camera coverage')
+    return [cover]
+  })
+
 /**
  * Find a clear rectangle for the common camera's fit operation. Both viewport
  * The host's actual target-aware camera fit chooses the largest displayed model,

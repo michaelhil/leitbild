@@ -62,7 +62,7 @@
 {/snippet}
 
 <section class="explorer-controls" aria-label={`${title}: physical layout controls`}>
- <div class="toolbar">
+ <div class="toolbar" data-layout-camera-cover>
   <div class="scope-row">
     <button class="scope" type="button" title={path} aria-label={`Choose physical scope: ${path}`} aria-expanded={scopeOpen} onclick={() => { scopeOpen = !scopeOpen; viewOpen = false; floorsOpen = false }}><strong>{title}</strong><span>{scopeKey === null ? 'All admitted layouts' : path} ▾</span></button>
     <div class="modes" role="group" aria-label="Layout representation"><button type="button" aria-pressed={view.mode === '2d'} onclick={() => change({ mode: '2d' })}>Plan</button><button type="button" aria-pressed={view.mode === '3d'} onclick={() => change({ mode: '3d' })}>3D</button></div>
@@ -71,9 +71,9 @@
   {:else if floorGroups.length > 0}<button class="floors-toggle" type="button" aria-expanded={floorsOpen} onclick={() => { floorsOpen = !floorsOpen; scopeOpen = false; viewOpen = false }}>Floors <span>· {floorGroups.length} {floorGroups.length === 1 ? 'model' : 'models'} ▾</span></button>{/if}
   <div class="action-row"><button type="button" onclick={() => { scopeOpen = false; viewOpen = false; floorsOpen = false; onfind() }}>Find</button><button type="button" onclick={() => { scopeOpen = false; viewOpen = false; floorsOpen = false; onfit() }}>Fit</button><button type="button" aria-expanded={viewOpen} onclick={() => { viewOpen = !viewOpen; scopeOpen = false; floorsOpen = false }}>View</button>{#if onclose}<button class="close" type="button" aria-label="Close layout controls" onclick={onclose}>×</button>{/if}</div>
  </div>
-  {#if floorsOpen && floorGroups.length > 0}<section class="sheet collection-floors" aria-label="Floors by physical model"><header><strong>Floors by model</strong><button type="button" aria-label="Close floor choices" onclick={() => floorsOpen = false}>×</button></header>{#each floorGroups as group (group.key)}<label class="floor-row collection-floor" title={group.memberLabels.join(', ')}><span>{group.label}<small>{group.scenes.length} {group.scenes.length === 1 ? 'layout' : 'layouts'} · {group.memberLabels.join(', ')}</small></span><select aria-label={`Layout level: ${group.label} · ${group.memberLabels.join(', ')}`} value={group.levelId ?? ''} onchange={event => { floorsOpen = false; onfloorchange?.(group.key, event.currentTarget.value) }}>{#if group.levelId === null}<option value="" disabled>Mixed floors</option>{/if}{#each group.levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>{/each}</section>{/if}
+  {#if floorsOpen && floorGroups.length > 0}<section data-layout-camera-cover class="sheet collection-floors" aria-label="Floors by physical model"><header><strong>Floors by model</strong><button type="button" aria-label="Close floor choices" onclick={() => floorsOpen = false}>×</button></header>{#each floorGroups as group (group.key)}<label class="floor-row collection-floor" title={group.memberLabels.join(', ')}><span>{group.label}<small>{group.scenes.length} {group.scenes.length === 1 ? 'layout' : 'layouts'} · {group.memberLabels.join(', ')}</small></span><select aria-label={`Layout level: ${group.label} · ${group.memberLabels.join(', ')}`} value={group.levelId ?? ''} onchange={event => { floorsOpen = false; onfloorchange?.(group.key, event.currentTarget.value) }}>{#if group.levelId === null}<option value="" disabled>Mixed floors</option>{/if}{#each group.levels as level (level.id)}<option value={level.id}>{levelLabel(level)}</option>{/each}{#if view.mode === '3d'}<option value="all">Stack · all floors</option>{/if}</select></label>{/each}</section>{/if}
   {#if scopeOpen}
-    <nav class="sheet scopes" aria-label="Physical scope hierarchy">
+    <nav data-layout-camera-cover class="sheet scopes" aria-label="Physical scope hierarchy">
       <header><strong>Choose an area</strong><button type="button" aria-label="Close area chooser" onclick={() => scopeOpen = false}>×</button></header>
       <label class="area-search">Find an area<input type="search" bind:value={scopeQuery} placeholder="Building, room or floor" /></label>
       <button type="button" aria-current={scopeKey === null ? 'location' : undefined} onclick={() => choose(null)}>All available layouts</button>
@@ -85,7 +85,7 @@
     </nav>
   {/if}
   {#if viewOpen}
-    <section class="sheet settings" aria-label="Layout view and information layers"><header><strong>View</strong><button type="button" aria-label="Close view settings" onclick={() => viewOpen = false}>×</button></header>
+    <section data-layout-camera-cover class="sheet settings" aria-label="Layout view and information layers"><header><strong>View</strong><button type="button" aria-label="Close view settings" onclick={() => viewOpen = false}>×</button></header>
       <label><input type="checkbox" checked={view.live} indeterminate={mixedSettings.includes('live')} onchange={event => change({ live: event.currentTarget.checked })} /> Live status{mixedSettings.includes('live') ? ' · Mixed' : ''}</label>
       <label><input type="checkbox" checked={view.cutaway} indeterminate={mixedSettings.includes('cutaway')} onchange={event => change({ cutaway: event.currentTarget.checked })} /> Inspection cutaway{mixedSettings.includes('cutaway') ? ' · Mixed' : ''}</label>
       {#if choices.find(choice => choice.key === scopeKey)?.sceneId}<label><input type="checkbox" checked={view.surroundings ?? false} onchange={event => change({ surroundings: event.currentTarget.checked })} /> Surrounding buildings</label>{/if}
@@ -97,7 +97,7 @@
     </section>
   {/if}
   <div class="control-footer">
-    <p class="evidence" role="status">{#if onretry}<button type="button" aria-label={retryLabel} disabled={suspended} onclick={onretry}>Retry</button>{/if}{suspended ? 'Inspection suspended while choosing an operational target.' : status}{view.live ? '' : ' · Status layer off'}{view.mode === '3d' && view.levelId === 'all' && levels.length > 0 ? ' · Choose a floor to inspect the interior.' : ''}</p>
+    <p data-layout-camera-cover class="evidence" role="status">{#if onretry}<button type="button" aria-label={retryLabel} disabled={suspended} onclick={onretry}>Retry</button>{/if}{suspended ? 'Inspection suspended while choosing an operational target.' : status}{view.live ? '' : ' · Status layer off'}{view.mode === '3d' && view.levelId === 'all' && levels.length > 0 ? ' · Choose a floor to inspect the interior.' : ''}</p>
     {@render navigationControls?.()}
   </div>
 </section>

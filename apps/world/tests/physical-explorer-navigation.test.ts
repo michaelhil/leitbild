@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 import { explorerGroupKey, explorerLayoutKey, explorerScopeAncestors, explorerScopeBranches, explorerScopeChoices, type ExplorerScopeBranch, type ExplorerScopeChoice } from '../src/ui/physical-layout/explorer-model.ts'
-import { physicalExplorerFitPadding, physicalExplorerFitRect } from '../src/ui/physical-layout/explorer-viewport.ts'
+import { physicalExplorerCameraCovers, physicalExplorerFitPadding, physicalExplorerFitRect } from '../src/ui/physical-layout/explorer-viewport.ts'
+import { fitPhysicalPerspective } from '../src/ui/map/physical-scene/perspective-fit.ts'
+import { boundsCorners, cross, dot, normalize, subtract, type Vector3 } from '../src/ui/map/physical-scene/math.ts'
 import type { PhysicalSceneDescriptor } from '../src/ui/map/physical-scene/types.ts'
 import { Map as MapLibreMap } from 'maplibre-gl'
 import { createMapPhysicalViewport } from '../src/ui/map/physical-scene/map-viewport.ts'
@@ -78,6 +80,40 @@ test('source, group and scope navigation identities cannot collide through separ
 })
 
 const zero = { top: 0, right: 0, bottom: 0, left: 0 }
+test('a deferred fit reads the current declared panel regions without covering a transparent wrapper', () => {
+  const origin = { left: 360, top: 42 }
+  const panels = [{ left: 372, top: 50, width: 896, height: 44 }]
+  const root = { querySelectorAll(selector: string) { expect(selector).toBe('[data-layout-camera-cover]'); return panels.map(box => ({ getBoundingClientRect: () => box })) } } as unknown as ParentNode
+  expect(physicalExplorerCameraCovers(root, origin)).toEqual([{ x: 12, y: 8, width: 896, height: 44 }])
+  // An operator opens View while the new floor geometry is still preparing.
+  panels.push({ left: 828, top: 100, width: 440, height: 480 }, { left: 828, top: 100, width: 0, height: 0 })
+  expect(physicalExplorerCameraCovers(root, origin)).toEqual([{ x: 12, y: 8, width: 896, height: 44 }, { x: 468, y: 58, width: 440, height: 480 }])
+  panels.pop(); panels.pop()
+  expect(physicalExplorerCameraCovers(root, origin)).toHaveLength(1)
+})
+
+test('a tall right-hand sheet keeps a stacked building beside it instead of shrinking it into a bottom strip', () => {
+  const size = { width: 920, height: 650 }
+  const panels = [{ x: 12, y: 8, width: 896, height: 44 }, { x: 468, y: 58, width: 440, height: 480 }, { x: 12, y: 544, width: 566, height: 28 }, { x: 584, y: 544, width: 324, height: 44 }]
+  const input = { bounds: { min: [-44.8, -27.6, -.4] as [number, number, number], max: [44.5, 26.1, 31.55] as [number, number, number] }, target: [0, 2, 11.5] as Vector3, ...size, verticalFieldOfView: Math.PI / 4, bearing: 40.107, pitch: 57.914, nearRatio: .02 }
+  const measure = (padding: typeof zero) => -fitPhysicalPerspective({ ...input, padding }).distance
+  const padding = physicalExplorerFitPadding(size, zero, panels, measure), fit = fitPhysicalPerspective({ ...input, padding })
+  const oldPadding = physicalExplorerFitPadding(size, zero, [{ x: 12, y: 8, width: 896, height: 580 }], measure)
+  expect(fit.distance).toBeLessThan(fitPhysicalPerspective({ ...input, padding: oldPadding }).distance)
+  expect(size.width - padding.right).toBeLessThanOrEqual(468)
+  expect(padding.top).toBeLessThan(538)
+  // Independently project the returned camera: all eight real 3D corners fit
+  // the usable region, and that region intersects none of the actual panels.
+  const back = normalize(subtract(fit.eye, fit.target)), bearing = input.bearing * Math.PI / 180, right: Vector3 = [Math.cos(bearing), Math.sin(bearing), 0], up = cross(right, back), tangent = Math.tan(input.verticalFieldOfView / 2)
+  for (const corner of boundsCorners(input.bounds)) {
+    const q = subtract(corner, fit.eye), depth = -dot(q, back)
+    const x = (dot(q, right) / (depth * tangent * size.width / size.height) + 1) * size.width / 2, y = (1 - dot(q, up) / (depth * tangent)) * size.height / 2
+    expect(x).toBeGreaterThanOrEqual(padding.left - 1e-7); expect(x).toBeLessThanOrEqual(size.width - padding.right + 1e-7)
+    expect(y).toBeGreaterThanOrEqual(padding.top - 1e-7); expect(y).toBeLessThanOrEqual(size.height - padding.bottom + 1e-7)
+  }
+  for (const panel of panels) expect(size.width - padding.right <= panel.x || padding.left >= panel.x + panel.width || size.height - padding.bottom <= panel.y || padding.top >= panel.y + panel.height).toBe(true)
+})
+
 test('floating corner controls retain full usable height and improve actual common-camera fit scale', () => {
   const viewport = { width: 1280, height: 720 }
   const covers = [{ x: 888, y: 12, width: 380, height: 208 }, { x: 944, y: 574, width: 324, height: 100 }]
