@@ -6,8 +6,9 @@ import {
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
+import { operatorControllerBindings } from '../src/packs/process-plant/graph/valve-controller.ts'
 import { validateOperatorWrite } from '../src/packs/process-plant/operations/command-guard.ts'
-import { derivePlantControls, followAllowanceMs, type OfferedControl } from '../src/packs/process-plant/operations/controls.ts'
+import { derivePlantControls, followAllowanceMs, offeredOption, type OfferedControl } from '../src/packs/process-plant/operations/controls.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -75,16 +76,27 @@ describe('travel times declared beside the behaviour', () => {
 
   test('a % write, validated as a person\'s, moves each modulating valve there within the stroke time the way it moves', () => {
     const demands = controls.items.flatMap(entry => entry.offered).filter(candidate => candidate.form === 'demand')
-    expect(demands.length).toBe(5)
+    const operatorPositions = plant.graph.components.flatMap(component => operatorControllerBindings(component) === null ? []
+      : component.semantics.aspects.flatMap(aspect => aspect.aspect === 'position' && aspect.command !== undefined ? [aspect.command] : []))
+    expect(demands.filter(demand => demand.controller !== undefined).map(demand => demand.path).sort()).toEqual([...operatorPositions].sort())
     for (const demand of demands) {
       const runtime = createProcessPlantRuntime({ system: plant })
       runtime.tick(1_000)
+      if (demand.controller !== undefined) {
+        expect(offeredOption(plant, controls, { path: demand.path, value: 0.4 }, path => runtime.readVariable(path))).toMatchObject({ ok: false, reason: expect.stringContaining('AUTO') })
+        const manual = { plantId: plant.id, path: demand.controller.automatic, value: false }
+        expect(validateOperatorWrite({ system: plant, runtime, payload: manual, origin: 'person' }).accepted).toBe(true)
+        runtime.writeCommand({ type: 'setVariable', path: manual.path, value: manual.value })
+        runtime.tick(1_000)
+        expect(runtime.readVariable(manual.path)).toBe(false)
+      }
       const state = demand.state as VariablePath
       const from = Number(runtime.readVariable(state))
       // A part move away from where it stands: up from a shut valve, down from an open one.
       const target = from < 0.5 ? 0.4 : 0.3
       const validation = validateOperatorWrite({ system: plant, runtime, payload: { plantId: plant.id, path: demand.path, value: target }, origin: 'person' })
       expect(validation.accepted).toBe(true)
+      expect(offeredOption(plant, controls, { path: demand.path, value: target }, path => runtime.readVariable(path)).ok).toBe(true)
       runtime.writeCommand({ type: 'setVariable', path: demand.path, value: target })
       const travelMs = demand.options.find(candidate => candidate.word === (target > from ? 'OPEN' : 'SHUT'))!.travelMs!
       let elapsed = 0

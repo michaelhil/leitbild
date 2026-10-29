@@ -454,7 +454,9 @@ const classify = (
   if (aspect !== undefined) {
     // Words declared for the aspect's state replace its own (a generator on its breaker reads ON LINE).
     const stated = aspect.state === undefined ? undefined : stateWordsOf(plant.graph, aspect.state.path)
-    const demand = analogDemandOf(aspect, context.equipmentFunction, binding)
+    // An opted-in controller makes its own valve position operator-modulated
+    // in MAN, including a valve whose process duty remains pressure relief.
+    const demand = analogDemandOf(aspect, operator === undefined ? context.equipmentFunction : 'modulating', binding)
     if (demand !== null) {
       return offer('demand', [
         { word: valveWords.on.word, value: demand.max, state: stated?.on ?? valveWords.on.state, on: true },

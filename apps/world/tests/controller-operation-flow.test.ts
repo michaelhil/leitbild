@@ -18,6 +18,7 @@ import { readElementOperation } from '../src/packs/process-plant/ui/displays/ope
 import { commandPhase, faceplateControls, itemControlView, operationNow, optionOf, proposalCard } from '../src/packs/process-plant/ui/displays/operation/operation-presenter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
+import { followAllowanceMs } from '../src/packs/process-plant/operations/controls.ts'
 
 test('real Run controller discovery, shared faceplate, stale proposal and fresh-model restart preserve exact operator authority', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'leitbild-controller-flow-'))
@@ -110,6 +111,24 @@ test('real Run controller discovery, shared faceplate, stale proposal and fresh-
     expect(reliefTarget.setpoint?.value).toBe(7.425)
     expect(reliefTarget.now).toBe('Target 7.425 MPa')
     expect(optionOf(reliefTarget, 7.86)?.current).toBe(false)
+
+    await set('SG-A-ARV-AUTO', false)
+    const manualRelief = await readElementOperation(client, runtime.id, plantId, 'steamGeneratorReliefValveA')
+    const manualReliefView = itemControlView(manualRelief.item, operationNow(manualRelief.read!.sample, manualRelief.read!.units), manualRelief.resets)
+    const position = faceplateControls(manualReliefView, { pinned: false, short: false, proposalPending: false }).open!.controls.find(control => control.path === 'steamGeneratorReliefValveA.positionFraction')!
+    expect(position).toMatchObject({ form: 'demand', demand: { shown: { min: 0, max: 100, step: 1, unit: '%' } } })
+    expect(await client.validate(runtime.id, plantId, { path: position.path, value: 0.4 })).toMatchObject({ accepted: true })
+    const reliefProposal = await runtime.invokeCapability(ai, { capabilityId: 'world.process-plant.control.propose', input: { plantId, tagId: 'SG-A-ARV', value: 0.4, reason: 'Review a partial manual atmospheric valve setting', evidence: ['SG-A-PRESS'] } })
+    if (reliefProposal.kind !== 'command' || !reliefProposal.result.ok) throw Error('Manual relief proposal refused')
+    const proposedRelief = await readElementOperation(client, runtime.id, plantId, 'steamGeneratorReliefValveA')
+    const pendingRelief = proposedRelief.proposals.find(proposal => proposal.write?.path === position.path)!
+    expect(await client.decide(runtime.id, plantId, pendingRelief.id, 'approve', null)).toMatchObject({ ok: true })
+    const openingTravel = position.options.find(option => option.value === 1)!.travelMs!
+    await advance(Math.ceil(followAllowanceMs(openingTravel)))
+    const physicalRelief = await client.read(runtime.id, plantId, [position.path, position.statePath!])
+    expect(physicalRelief.sample.values.find(value => value.path === position.path)?.value).toBe(0.4)
+    expect(Math.abs(Number(physicalRelief.sample.values.find(value => value.path === position.statePath)?.value) - 0.4)).toBeLessThanOrEqual(0.01)
+    await set('SG-A-ARV-AUTO', true)
 
     const runId = runtime.id
     await registry.shutdown()

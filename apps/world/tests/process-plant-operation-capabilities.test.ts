@@ -131,10 +131,12 @@ describe('a modulating valve set to a % (owner feedback, plan-final §12 item 3)
       const [valve] = afw.offered
       expect(valve).toMatchObject({ control: { tagId: 'AFW-A-CV', form: 'demand', demand: { min: 0, max: 1, step: 0.01, unit: 'fraction', shownUnit: '%' } }, now: { demand: 0, position: 0 } })
       expect(afw.position).toEqual({ path: valve!.control.state!, value: 0 })
-      // A controller's valve is withheld as AUTO with what manual operation would take, and still shows its position.
+      // An opted-in controller exposes mode/target while AUTO refuses its manual position demand.
       const feed = listed.items.find(item => item.id === 'feedwaterControlValveA')!
-      expect(feed.offered).toEqual([])
-      expect(feed.withheld[0]!.reason).toMatchObject({ kind: 'automatic', manual: expect.stringContaining('AUTO/MAN') })
+      expect(feed.offered.find(control => control.control.tagId === 'MFW-A-CV')).toMatchObject({ control: { form: 'demand' }, unavailable: expect.stringContaining('Select MAN') })
+      expect(feed.offered.find(control => control.control.tagId === 'MFW-A-CTRL-AUTO')).toMatchObject({ control: { form: 'twoState', options: [{ word: 'AUTO', value: true }, { word: 'MAN', value: false }] } })
+      expect(feed.offered.find(control => control.control.tagId === 'MFW-A-CTRL-SP')).toMatchObject({ control: { form: 'setpoint', setpoint: { unit: 'percent' } } })
+      expect(await query(run, operator, 'world.process-plant.control.validate', { plantId, tagId: 'MFW-A-CV', value: 0.4 })).toMatchObject({ accepted: false, reason: expect.stringContaining('select MAN') })
       expect(feed.position!.value).toBeGreaterThan(0)
       // World checks the exact % write as a person's.
       expect(await query(run, operator, 'world.process-plant.control.validate', { plantId, tagId: 'AFW-A-CV', value: 0.4 })).toMatchObject({ accepted: true })
