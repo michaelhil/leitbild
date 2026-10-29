@@ -45,6 +45,11 @@ const procedureOperation = (id: string, operationId: string, options: {
       ...(command ? { next: { run: { runId, plantId, currentStepId: 'step:two' } } } : { run: { runId, plantId, currentStepId: 'step:one' } }) },
   }])
 }
+const approvedRead = (id: string, proposalId: string, options: { plantId?: string; resource?: typeof run; approved?: boolean; success?: boolean } = {}) => workspaceCall(id,
+  [{ key: 'op', operationId: PROPOSALS_OPERATION_ID, input: { plantId: options.plantId ?? PLANT } }], [{
+    key: 'op', operationId: PROPOSALS_OPERATION_ID, target: { kind: 'resource', ref: options.resource ?? run }, success: options.success !== false,
+    data: { proposals: [{ proposal: { id: proposalId, status: options.approved === false ? 'pending' : 'approved' } }] },
+  }])
 
 const fakeAgent = (skills: ReadonlyArray<string>) => {
   const turns: Array<{ roomId: string; turn: RequestedTurn }> = []
@@ -108,11 +113,13 @@ const setup = (options: { readonly skills?: ReadonlyArray<string> } = {}) => {
   }
 
   // A turn of the agent in the Room, as its execution evidence records it.
-  const turn = (id: string, calls: ReadonlyArray<ReturnType<typeof workspaceCall>>, status: Exclude<ExecutionTurn['status'], 'running'> = 'completed', startedAt = clock.now): void => {
+  const turn = (id: string, calls: ReadonlyArray<ReturnType<typeof workspaceCall>>, status: Exclude<ExecutionTurn['status'], 'running'> = 'completed', startedAt = clock.now, callStartedAt?: number): void => {
     store.beginTurn({ id, roomId: room.profile.id, agentId: agent.id, startedAt })
     for (const call of calls) {
-      store.recordAttempt(id, { id: call.id, tool: 'workspace_call', arguments: call.arguments, startedAt: clock.now })
+      store.recordAttempt(id, { id: call.id, tool: 'workspace_call', arguments: call.arguments, startedAt: callStartedAt ?? clock.now })
+      clock.now++
       store.recordOutcome(id, call.id, call.result, clock.now)
+      clock.now++
     }
     store.finishTurn(id, status)
   }
@@ -239,7 +246,7 @@ describe('resuming a procedure once its proposal is approved', () => {
     taken.decide('command:trip', 'approved')
     // The person pressed Continue procedure: the agent read its proposal and started E-0.
     taken.clock.now += 1
-    taken.turn('turn-2', [operation('call_0_0', PROPOSALS_OPERATION_ID), procedureOperation('call_1_0', 'world.procedure.run.start')])
+    taken.turn('turn-2', [approvedRead('call_0_0', 'command:trip'), procedureOperation('call_1_0', 'world.procedure.run.start')])
     await taken.tick()
     expect(taken.turns).toHaveLength(0)
     expect(taken.resumes.watching()).toEqual([])
@@ -287,24 +294,80 @@ describe('resuming a procedure once its proposal is approved', () => {
     const s = setup()
     s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
     s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
-    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    await s.tick(); s.decide('command:trip', 'approved')
+    s.control.generatingIn = s.room.profile.id
+    await s.tick(); s.clock.now++
     s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition', {
       ...(condition === 'refused' ? { accepted: false } : {}),
       ...(condition === 'other-unit' ? { plantId: 'plant:unit-3' } : {}),
       ...(condition === 'other-resource' ? { resource: workspaceResourceReferenceSchema.parse({ ...run, id: 'run-other' }) } : {}),
       ...(condition === 'other-procedure-run' ? { runId: 'procedure:another' } : {}),
     })])
+    s.control.generatingIn = undefined
     await s.tick()
     expect(s.turns).toHaveLength(1)
   })
 
-  test('an accepted current-step transition counts by actual outcome time, even when its turn started before approval', async () => {
+  test('a transition in the last-pending to first-approved interval cannot be assumed to follow approval', async () => {
+    const s = setup()
+    s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    await s.tick(); s.clock.now++
+    s.turn('before-approval', [procedureOperation('call_0_0', 'world.procedure.run.transition')])
+    s.decide('command:trip', 'approved')
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+  })
+
+  test('a command response returned after observed approval does not prove its earlier attempt followed approval', async () => {
+    const s = setup()
+    s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    await s.tick()
+    const began = ++s.clock.now
+    s.decide('command:trip', 'approved'); s.control.generatingIn = s.room.profile.id
+    await s.tick(); s.clock.now++
+    s.turn('delayed-response', [procedureOperation('call_0_0', 'world.procedure.run.transition')], 'completed', began, began)
+    s.control.generatingIn = undefined
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+  })
+
+  test.each(['wrong-proposal', 'wrong-unit', 'wrong-resource', 'pending', 'failed'] as const)('%s read is not causal approval evidence for a later command', async condition => {
+    const s = setup()
+    s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    s.turn('turn-2', [approvedRead('call_0_0', condition === 'wrong-proposal' ? 'another-proposal' : 'command:trip', {
+      ...(condition === 'wrong-unit' ? { plantId: 'plant:unit-3' } : {}),
+      ...(condition === 'wrong-resource' ? { resource: workspaceResourceReferenceSchema.parse({ ...run, id: 'run-other' }) } : {}),
+      ...(condition === 'pending' ? { approved: false } : {}),
+      ...(condition === 'failed' ? { success: false } : {}),
+    }), procedureOperation('call_1_0', 'world.procedure.run.transition')])
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+  })
+
+  test('an approved read after the command is not evidence that approval preceded its attempt', async () => {
+    const s = setup()
+    s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
+    s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
+    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition'), approvedRead('call_1_0', 'command:trip')])
+    await s.tick()
+    expect(s.turns).toHaveLength(1)
+  })
+
+  test('an accepted current-step transition counts when its attempt starts after observed approval, even when its turn began earlier', async () => {
     const s = setup()
     s.turn('turn-1', [procedureOperation('call_0_0', 'world.procedure.run.step.read'), propose('call_1_0', 'command:trip')])
     s.world.set('command:trip', { status: 'pending' }); s.answered('turn-1')
     const startedAt = s.clock.now
-    await s.tick(); s.decide('command:trip', 'approved'); s.clock.now++
+    await s.tick(); s.decide('command:trip', 'approved')
+    s.control.generatingIn = s.room.profile.id
+    await s.tick(); s.clock.now++
     s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition')], 'completed', startedAt)
+    s.control.generatingIn = undefined
     await s.tick()
     expect(s.turns).toHaveLength(0)
     expect(s.resumes.watching()).toEqual([])
@@ -318,8 +381,11 @@ describe('resuming a procedure once its proposal is approved', () => {
       propose('call_2_0', 'command:unit-2'), propose('call_3_0', 'command:unit-3', { ...tripInput, plantId: 'plant:unit-3' }),
     ])
     s.world.set('command:unit-2', { status: 'pending' }); s.world.set('command:unit-3', { status: 'pending' }); s.answered('turn-1')
-    await s.tick(); s.decide('command:unit-2', 'approved'); s.decide('command:unit-3', 'approved'); s.clock.now++
+    await s.tick(); s.decide('command:unit-2', 'approved'); s.decide('command:unit-3', 'approved')
+    s.control.generatingIn = s.room.profile.id
+    await s.tick(); s.clock.now++
     s.turn('turn-2', [procedureOperation('call_0_0', 'world.procedure.run.transition')])
+    s.control.generatingIn = undefined
     await s.tick()
     expect(s.turns).toHaveLength(1)
     expect(s.turns[0]!.turn.instruction).toContain('Plant plant:unit-3')

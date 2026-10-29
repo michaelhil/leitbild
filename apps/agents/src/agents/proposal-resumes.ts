@@ -27,7 +27,7 @@ import type { AIAgent, RequestedTurn, Team } from '../core/types/agent.ts'
 import { workspaceResourceReferenceSchema, type WorkspaceResourceReference } from '@leitbild/contracts'
 import { PROCEDURE_RUNNER_SKILL, PROPOSAL_RESUME_CAUSE } from '../core/proposal-resume.ts'
 import { collectTurnOperations, type TurnOperation } from './operation-claims.ts'
-import { actorWords, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
+import { actorWords, PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
 import { asAIAgent } from './shared.ts'
 
 /** Operations of a procedure Run (World); a turn that calls one works a procedure. */
@@ -54,14 +54,13 @@ export interface ProposalResumeDeps {
 
 interface Watched {
   readonly operation: ProposedOperation & { readonly outcome: { readonly kind: 'recorded'; readonly proposalId: string } }
-  /** When a read last found it pending was sent: the approval came after. */
-  pendingSeenAt: number
 }
 
 interface Approved {
   readonly operation: Watched['operation']
   readonly proposal: WorldProposal
-  readonly pendingSeenAt: number
+  /** This runtime actually observed approval; not World's decision time. */
+  readonly observedAt: number
 }
 
 interface Watch {
@@ -147,7 +146,7 @@ const procedureResults = (calls: ReadonlyArray<ExecutionCall>) => calls.flatMap(
     const inputScope = record(arg.input.scope) ? arg.input.scope : undefined
     const pinned = record(entry.data.pinned) ? entry.data.pinned : undefined
     return [{ operationId: entry.operationId, input: arg.input, data: entry.data, resource: resource.data,
-      at: call.completedAt,
+      startedAt: call.startedAt, at: call.completedAt,
       plantId: typeof run?.plantId === 'string' ? run.plantId : typeof inputScope?.plantId === 'string' ? inputScope.plantId : undefined,
       runId: typeof arg.input.runId === 'string' ? arg.input.runId : typeof run?.runId === 'string' ? run.runId : typeof pinned?.runId === 'string' ? pinned.runId : undefined }]
   })
@@ -168,10 +167,30 @@ const progressionOperations: ReadonlySet<string> = new Set([
   'world.procedure.run.request-input', 'world.procedure.run.close', 'world.procedure.run.reset',
 ])
 
-const committedProgression = (results: ReturnType<typeof procedureResults>, watch: Watch, approved: Approved): boolean => {
+/** An exact earlier read can prove approval before the watch's next poll.
+ * Equal or missing times are uncertain, never fabricated causal ordering. */
+const approvedReadBefore = (calls: ReadonlyArray<ExecutionCall>, approved: Approved, startedAt: number): boolean => calls.some(call => {
+  if (call.completedAt === undefined || call.completedAt >= startedAt || call.tool !== 'workspace_call' || call.result?.success !== true
+    || !record(call.arguments) || !Array.isArray(call.arguments.calls) || !record(call.result.data) || !Array.isArray(call.result.data.results)) return false
+  const args = call.arguments.calls
+  return call.result.data.results.some(entry => {
+    if (!record(entry) || entry.operationId !== PROPOSALS_OPERATION_ID || entry.success !== true || !record(entry.data) || !Array.isArray(entry.data.proposals)) return false
+    const arg = args.find(value => record(value) && value.key === entry.key && value.operationId === PROPOSALS_OPERATION_ID)
+    const resource = record(entry.target) && entry.target.kind === 'resource' ? workspaceResourceReferenceSchema.safeParse(entry.target.ref) : undefined
+    if (!record(arg) || !record(arg.input) || arg.input.plantId !== approved.operation.plantId || !resource?.success
+      || ownerKey(resource.data, approved.operation.plantId) !== ownerKey(approved.operation.outcome.resource, approved.operation.plantId)) return false
+    return entry.data.proposals.some(value => record(value) && record(value.proposal)
+      && value.proposal.id === approved.operation.outcome.proposalId && value.proposal.status === 'approved')
+  })
+})
+
+const committedProgression = (calls: ReadonlyArray<ExecutionCall>, results: ReturnType<typeof procedureResults>, watch: Watch, approved: Approved): boolean => {
   return results.some(result => {
     if (!progressionOperations.has(result.operationId) || result.data.ok !== true || typeof result.data.commandId !== 'string' || result.data.commandId.length === 0
-      || result.at === undefined || result.at <= approved.pendingSeenAt) return false
+      || result.at === undefined) return false
+    // A completed response does not locate its command after an approval.
+    // Require that the attempt began after an actually observed approval.
+    if (result.startedAt <= approved.observedAt && !approvedReadBefore(calls, approved, result.startedAt)) return false
     const plantId = result.plantId ?? results.find(read => read.runId === result.runId && ownerKey(read.resource, '') === ownerKey(result.resource, ''))?.plantId
     if (plantId === undefined) return false
     const owner = ownerKey(result.resource, plantId)
@@ -225,8 +244,8 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
       for (const turn of page) {
         if (turn.startedAt < watch.startedAt) return taken
         if (turn.agentId !== watch.agentId || turn.id === watch.turnId) continue
-        const results = procedureResults(callsOf(deps.executions, watch.roomId, turn.id))
-        for (const approved of watch.approved) if (committedProgression(results, watch, approved)) taken.add(approved.operation.outcome.proposalId)
+        const calls = callsOf(deps.executions, watch.roomId, turn.id), results = procedureResults(calls)
+        for (const approved of watch.approved) if (committedProgression(calls, results, watch, approved)) taken.add(approved.operation.outcome.proposalId)
         if (taken.size === watch.approved.length) return taken
       }
       if (page.length < TURNS_PAGE) return taken
@@ -257,9 +276,9 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
 
   const read = async (watch: Watch, ai: AIAgent): Promise<void> => {
     if (!eligible(watch)) return
-    const sentAt = now()
     const cards = await deps.readStatus([...watch.watched.values()].map(entry => entry.operation), { id: ai.id, name: ai.name }, watch.abort.signal)
     if (!eligible(watch)) return // Late status evidence cannot outlive its Room authority.
+    const observedAt = now()
     for (const card of cards) {
       if (card.outcome.kind === 'refused') continue
       const entry = watch.watched.get(card.outcome.proposalId)
@@ -270,12 +289,9 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
         continue
       }
       const proposal = card.outcome.proposal
-      if (proposal.status === 'pending') {
-        entry.pendingSeenAt = sentAt
-        continue
-      }
+      if (proposal.status === 'pending') continue
       watch.watched.delete(card.outcome.proposalId)
-      if (proposal.status === 'approved') watch.approved.push({ operation: entry.operation, proposal, pendingSeenAt: entry.pendingSeenAt })
+      if (proposal.status === 'approved') watch.approved.push({ operation: entry.operation, proposal, observedAt })
     }
   }
 
@@ -345,7 +361,6 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
           && worksProcedure(operationsOf(calls))
         const forProcedure = recorded.filter(operation => operation.procedureStep !== undefined || runner)
         if (forProcedure.length === 0) return
-        const startedAt = now()
         watchedTurns.add(turn.id)
         watches.set(turn.id, {
           turnId: turn.id,
@@ -353,7 +368,7 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
           agentId: turn.agentId,
           answerId: input.messageId,
           startedAt: turn.startedAt, scopeRevision: room.profile.scopeRevision, abort: new AbortController(), procedureRuns: procedureRunsOf(calls),
-          watched: new Map(forProcedure.map(operation => [operation.outcome.proposalId, { operation, pendingSeenAt: turn.finishedAt ?? startedAt }])),
+          watched: new Map(forProcedure.map(operation => [operation.outcome.proposalId, { operation }])),
           approved: [],
         })
         schedule()
