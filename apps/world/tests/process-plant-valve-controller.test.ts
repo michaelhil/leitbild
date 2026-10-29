@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { compileProcessPlant, compileResolvedProcessPlant, createProcessPlantProtectionRunner, createProcessPlantRuntime, createPwrReferencePlantDefinition, type VariablePath } from '../src/packs/process-plant/index.ts'
 import { valvePositionController, operatorControllerBindings } from '../src/packs/process-plant/graph/valve-controller.ts'
+import { validateOperatorWrite } from '../src/packs/process-plant/operations/command-guard.ts'
+import { createProcessPlantRuntimeInstances } from '../src/packs/process-plant/sim/runtime-instance-factory.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -59,6 +61,91 @@ describe('operator authority on the existing proportional valve controller', () 
     expect(Number(read('turbineBypassValve.positionFraction'))).toBeGreaterThan(0.5)
     expect(Number(read('turbineBypassValve.effectivePositionFraction'))).toBeGreaterThan(0.3)
     expect(Number(read('turbineBypassValve.outletFlowKgPerS'))).toBeGreaterThan(0)
+  })
+
+  test('the shared operator guard refuses manual position in AUTO and permits real MAN authority', () => {
+    const { runtime, set, run } = started()
+    const path = 'feedwaterControlValveA.positionFraction' as VariablePath
+    const validate = (origin: 'person' | 'ai' | 'system' | undefined) => validateOperatorWrite({
+      system: plant, runtime, payload: { plantId: plant.id, path, value: 0.4 }, origin,
+    })
+    for (const origin of ['person', 'ai', undefined] as const) expect(validate(origin)).toMatchObject({ accepted: false, reason: expect.stringContaining('select MAN') })
+    // System/instructor setup has its existing separate authority, as I&C and solver writes do.
+    expect(validate('system').accepted).toBe(true)
+    set('feedwaterControlValveA.controllerAutomatic', false)
+    run(1)
+    expect(validate('person').accepted).toBe(true)
+    expect(validate('ai').accepted).toBe(true)
+    set('feedwaterControlValveA.controllerAutomatic', true)
+    run(1)
+    expect(validate('person').accepted).toBe(false)
+    expect(validateOperatorWrite({ system: plant, runtime, payload: { plantId: plant.id, path: 'auxFeedwaterValveA.positionFraction' as VariablePath, value: 0.4 }, origin: 'person' }).accepted).toBe(true)
+  })
+
+  test('AUTO takes an active manual ramp permanently, including queued and restored ownership changes', () => {
+    const instance = () => createProcessPlantRuntimeInstances({ compiledPlants: [plant], runtimeState: null }).get(plant.id)!
+    const path = 'feedwaterControlValveA.positionFraction' as VariablePath
+    const mode = 'feedwaterControlValveA.controllerAutomatic' as VariablePath
+    const run = instance()
+    run.runtime.writeCommand({ type: 'setVariable', path: mode, value: false })
+    run.runtime.tick(1_000)
+    run.ramps.start({ id: 'ramp:manual', path, target: 0, durationMs: 60_000 })
+    run.ramps.apply(1_000)
+    expect(run.ramps.snapshot().active).toHaveLength(1)
+    // A mode request is queued until the solver step. A final old-MAN application can enter the same batch;
+    // the AUTO controller must own the actual step, and the next ramp application must end that program.
+    run.runtime.writeCommand({ type: 'setVariable', path: mode, value: true })
+    const ramp = run.ramps.snapshot().active[0]!
+    const queuedManualDemand = ramp.from + (ramp.target - ramp.from) * ((2_000 - ramp.startedAtMs) / ramp.durationMs)
+    run.ramps.apply(2_000)
+    run.runtime.tick(1_000)
+    expect(run.runtime.readVariable(mode)).toBe(true)
+    expect(Number(run.runtime.readVariable(path))).not.toBeCloseTo(queuedManualDemand, 6)
+    expect(Number(run.runtime.readVariable('feedwaterControlValveA.effectivePositionFraction' as VariablePath))).toBeGreaterThan(0)
+    run.ramps.apply(3_000)
+    expect(run.ramps.snapshot().active).toEqual([])
+    run.runtime.writeCommand({ type: 'setVariable', path: mode, value: false })
+    run.runtime.tick(1_000)
+    const demand = run.runtime.readVariable(path)
+    run.ramps.apply(60_000)
+    expect(run.runtime.readVariable(path)).toBe(demand)
+
+    const restored = createProcessPlantRuntimeInstances({ compiledPlants: [plant], runtimeState: {
+      schemaVersion: 1,
+      plants: [{ plantId: plant.id, runtime: instance().runtime.checkpoint(), ramps: { active: [{ id: 'ramp:restored', path, from: 0.6, target: 0, startedAtMs: 0, durationMs: 60_000 }] } }],
+    } }).get(plant.id)!
+    expect(restored.runtime.readVariable(mode)).toBe(true)
+    restored.ramps.apply(1_000)
+    expect(restored.ramps.snapshot().active).toEqual([])
+  })
+
+  test('an actual isolation or lost condenser permissive ends a MAN ramp rather than resuming it later', () => {
+    for (const blockedBy of ['isolation', 'condenser'] as const) {
+      const instance = createProcessPlantRuntimeInstances({ compiledPlants: [plant], runtimeState: null }).get(plant.id)!
+      const path = 'turbineBypassValve.positionFraction' as VariablePath
+      const set = (path: string, value: boolean | number) => instance.runtime.writeCommand({ type: 'setVariable', path: path as VariablePath, value })
+      set('turbineBypassValve.controllerAutomatic', false)
+      instance.runtime.tick(1_000)
+      instance.ramps.start({ id: `ramp:${blockedBy}`, path, target: 1, durationMs: 120_000 })
+      if (blockedBy === 'isolation') {
+        set('turbineBypassValve.isolationSignal', true)
+        instance.runtime.tick(1_000)
+      } else {
+        set('circulatingWaterPump.running', false)
+        instance.runtime.tick(60_000)
+        expect(Number(instance.runtime.readVariable('condenser.coolingWaterFlowKgPerS' as VariablePath))).toBeLessThan(7_000)
+      }
+      const validation = validateOperatorWrite({ system: plant, runtime: instance.runtime, payload: { plantId: plant.id, path, value: 1 }, origin: 'person' })
+      expect(validation).toMatchObject({ accepted: false, reason: expect.stringContaining(blockedBy === 'isolation' ? 'isolation' : 'coolingWaterFlowKgPerS') })
+      instance.ramps.apply(instance.runtime.elapsedMs() + 1_000)
+      expect(instance.ramps.snapshot().active).toEqual([])
+      set('turbineBypassValve.isolationSignal', false)
+      set('circulatingWaterPump.running', true)
+      instance.runtime.tick(60_000)
+      instance.ramps.apply(instance.runtime.elapsedMs() + 1_000)
+      instance.runtime.tick(1_000)
+      expect(instance.runtime.readVariable(path)).toBe(0)
+    }
   })
 
   test('a blocked condenser permissive closes the bypass in MAN despite repeated open demands', () => {

@@ -6,6 +6,7 @@ import {
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { createPlantOperations } from '../operations/plant-operations.ts'
+import { manualControllerPositionRefusal } from '../control-write-validation.ts'
 import {
   restoredOperationsFor,
   restoredProtectionSnapshotFor,
@@ -29,6 +30,7 @@ export const createProcessPlantRuntimeInstances = (config: {
     const restoredProtectionSnapshot = restoredProtectionSnapshotFor(config.runtimeState, plant.id)
     const ramps = createProcessPlantRampRunner({
       runtime,
+      canApply: path => manualControllerPositionRefusal({ system: plant, runtime, path }) === null,
       ...(restoredRamps === undefined ? {} : { restoredSnapshot: restoredRamps }),
     })
     // An automatic action's write ends a ramp on the same variable: the ramp no longer reopens a valve a trip shut.

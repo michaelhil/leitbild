@@ -9,7 +9,7 @@ import {
 } from '../command-kinds.ts'
 import type { ProcessPlantControlWritePayload } from '../commands.ts'
 import type { ProcessPlantUnitPackData } from '../model.ts'
-import { validateProcessPlantControlWrite, type ProcessPlantControlWriteValidation } from '../control-write-validation.ts'
+import { manualControllerPositionRefusal, validateProcessPlantControlWrite, type ProcessPlantControlWriteValidation } from '../control-write-validation.ts'
 import { formatQuantity } from '../quantity-text.ts'
 import { actionOf, icRuleKind } from '../ic/thresholds.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
@@ -221,7 +221,10 @@ export const validateOperatorWrite = (config: {
     })
     return `${hold.text}${resetClause(resets.find(reset => reset.ruleId === hold.ruleId))}`
   }
-  const refusal = instructorOnlyRefusal(binding, config.origin) ?? holding()
+  const ownership = config.origin === 'system' ? null : manualControllerPositionRefusal({
+    system: config.system, runtime: config.runtime, path: validation.targetPath, value: config.payload.value,
+  })
+  const refusal = instructorOnlyRefusal(binding, config.origin) ?? ownership ?? holding()
   if (refusal === null) return validation
   return { accepted: false, reason: refusal, signal: validation.signal, targetPath: validation.targetPath, currentValue: validation.currentValue }
 }

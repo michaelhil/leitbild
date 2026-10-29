@@ -1,14 +1,50 @@
 import type { ProcessPlantControlWritePayload } from './commands.ts'
-import type { VariablePath } from './graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph, VariablePath } from './graph/index.ts'
+import { operatorControllerBindings, valvePositionController } from './graph/valve-controller.ts'
 import type { CompiledProcessPlant } from './plant-compiler.ts'
 import type { ProcessPlantProtectionRunner, ProcessPlantRuntime, ProcessPlantValue } from './runtime/index.ts'
 import { assertProcessPlantVariableValueValid } from './runtime/variable-validation.ts'
+import { componentVariablePath } from './runtime/behavior-contract.ts'
 import {
   processPlantSignalView,
   resolveProcessPlantSignalBinding,
   type ProcessPlantSignalReference,
   type ProcessPlantSignalView,
 } from './signals.ts'
+
+// Immutable graph bindings only; ownership and physical holds are read afresh for every command/ramp application.
+const controlledPositions = new WeakMap<CompiledPlantGraph, ReadonlyMap<VariablePath, CompiledComponent>>()
+const controllerForPosition = (graph: CompiledPlantGraph, path: VariablePath): CompiledComponent | undefined => {
+  let positions = controlledPositions.get(graph)
+  if (positions === undefined) {
+    positions = new Map(graph.components.flatMap(component => operatorControllerBindings(component) === null
+      ? [] : [[componentVariablePath(component, 'positionFraction'), component] as const]))
+    controlledPositions.set(graph, positions)
+  }
+  return positions.get(path)
+}
+
+/** The existing controller's authority over a manual position, including physical constraints in MAN. */
+export const manualControllerPositionRefusal = (config: {
+  readonly system: CompiledProcessPlant
+  readonly runtime: ProcessPlantRuntime
+  readonly path: VariablePath
+  /** Absent when asking whether an ongoing manual ramp may apply at all. */
+  readonly value?: ProcessPlantValue
+}): string | null => {
+  const component = controllerForPosition(config.system.graph, config.path)
+  if (component === undefined) return null
+  const bindings = operatorControllerBindings(component)!
+  const controller = valvePositionController(component)!
+  if (config.runtime.readVariable(bindings.automatic) === true) return `${config.path} is owned by its automatic controller; select MAN before setting or ramping its manual position`
+  if (config.runtime.readVariable(componentVariablePath(component, 'isolationSignal')) === true && config.value !== 0) return `${config.path} is held closed by its isolation signal`
+  if (controller.permissive !== undefined) {
+    const measured = config.runtime.readVariable(controller.permissive.path)
+    if (typeof measured !== 'number') throw new Error(`valve controller permissive is not numeric: ${controller.permissive.path}`)
+    if (measured < controller.permissive.minimum && config.value !== controller.minPositionFraction) return `${config.path} is held at ${controller.minPositionFraction}: ${controller.permissive.path} must be at least ${controller.permissive.minimum} before its controller permits opening`
+  }
+  return null
+}
 
 export type ProcessPlantControlWriteValidation =
   | {
