@@ -1,3 +1,4 @@
+import { procedureRunsListInputSchema, procedureRunsListResultSchema, projectProcedureRuns } from '../../features/procedures/run-list.ts'
 import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
 import {
   inspectionViewSchema,
@@ -35,7 +36,6 @@ import {
   agentRestrictionsStateSchema,
   operationalObjectSchema,
   procedureCatalogSchema,
-  procedureControlStateSchema,
   procedureDocumentSchema,
   procedureIdSchema,
   procedureRunIdSchema,
@@ -1518,16 +1518,16 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'List procedure runs',
-      description: 'Lists current procedure execution state in this Simulation Run.',
+      description: 'Lists procedure identity, pinned source, status, current step, driver, input requests, step placekeeping and decision metadata in this Simulation Run. Latest continuous-watch status, reason and time remain visible; recorded criterion proof, cited readings and raw watch evidence are omitted by default (evidenceIncluded:false). Pass includeEvidence:true to retrieve the complete retained evidence for review or qualification. This query projection does not change canonical procedure state or the journal.',
       risk: 'read',
       idempotent: true,
-      inputSchema: z.toJSONSchema(emptyInputSchema, { io: 'input' }),
-      outputSchema: capabilityJsonSchema(procedureControlStateSchema),
+      inputSchema: z.toJSONSchema(procedureRunsListInputSchema, { io: 'input' }),
+      outputSchema: capabilityJsonSchema(procedureRunsListResultSchema),
     },
     invoke: async (registry, invocation) => {
-      emptyInputSchema.parse(invocation.input)
+      const input = procedureRunsListInputSchema.parse(invocation.input)
       const runtime = await registry.load(requireSimulationRunResource(invocation))
-      return json({ result: visibleProcedureState(runtime, invocation) })
+      return json({ result: projectProcedureRuns(visibleProcedureState(runtime, invocation), input.includeEvidence) })
     },
   },
   {

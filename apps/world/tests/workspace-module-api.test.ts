@@ -125,7 +125,7 @@ describe('World Module API', () => {
     if (plants.kind !== 'query') throw new Error('Expected real plant identity query')
     const plant = (plants.result as { plants: Array<{ id: string; modelRef: string; modelDigest: string }> }).plants[0]!
     const conditionInput = {
-      condition: { type: 'comparison', signal: { path: 'rcpA.running' }, operator: '==', value: true, unit: 'boolean' },
+      condition: { type: 'comparison', signal: { path: 'rcpA.runningState' }, operator: '==', value: true, unit: 'boolean' },
       basis: { modelRef: plant.modelRef, modelDigest: plant.modelDigest, source: 'test:api-access', description: 'restricted-physical-evidence-canary' },
     }
     knowledge = createKnowledge({ revision, documents: [{ path: sourcePath, content: `---
@@ -161,7 +161,12 @@ Action: Test-only handover.
     expect((await invoke('world.procedure.run.transition', { runId: procedureRun.runId, stepId: 'pump', branchIndex: 0 }, human)).status).toBe(200)
     const open = await invoke('world.procedure.runs.list', {})
     expect(open.body!.result.runs).toHaveLength(1)
-    expect(JSON.stringify(open.body)).toContain('restricted-physical-evidence-canary')
+    expect(open.body!.result.evidenceIncluded).toBe(false)
+    expect(JSON.stringify(open.body)).not.toContain('restricted-physical-evidence-canary')
+    expect(JSON.stringify(open.body)).toContain('restricted-comment-canary')
+    const complete = await invoke('world.procedure.runs.list', { includeEvidence: true })
+    expect(complete.body!.result.evidenceIncluded).toBe(true)
+    expect(JSON.stringify(complete.body)).toContain('restricted-physical-evidence-canary')
     const journalBeforeRestriction = run.snapshot().seq
     await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse(plant.id), deny: ['inspect', 'change'] }] }, 0)
     expect((await invoke('world.process-plant.procedure-condition.evaluate', { ...conditionInput, targetObjectId: plant.id })).status).toBe(403)
@@ -170,7 +175,8 @@ Action: Test-only handover.
     expect(context.body!.result.context.text).not.toContain(plant.id)
     expect(context.body!.result.context.text).toContain('1 objects hidden by this Run\'s AI restrictions')
     expect((await invoke('world.procedure.runs.list', {})).body!.result.runs).toEqual([])
-    expect(JSON.stringify((await invoke('world.procedure.runs.list', {}, human)).body)).toContain('restricted-physical-evidence-canary')
+    expect((await invoke('world.procedure.runs.list', { includeEvidence: true })).body!.result.runs).toEqual([])
+    expect(JSON.stringify((await invoke('world.procedure.runs.list', { includeEvidence: true }, human)).body)).toContain('restricted-physical-evidence-canary')
     const historical = await invoke('world.simulation-run.changes', { afterSequence: 0, limit: 200 })
     expect(historical.status).toBe(200)
     expect(JSON.stringify(historical.body)).not.toContain('restricted-physical-evidence-canary')
