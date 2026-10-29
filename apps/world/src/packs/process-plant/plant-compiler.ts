@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { processPlantModelDigest, processPlantSourceDigest } from './model-identity.ts'
 import {
   compilePlantGraph,
   plantGraphSpecSchema,
@@ -40,24 +40,6 @@ export interface CompiledProcessPlant {
   readonly initialState: ReadonlyArray<ProcessPlantInitialVariableValue>
   readonly automation: ProcessPlantProtectionConfig
 }
-
-// A Plant's identity is everything that can change its simulation. How
-// operators name equipment (metadata.presentation) cannot, so renaming never
-// orphans a persisted Run checkpoint.
-const withoutPresentation = <T extends { readonly metadata?: { readonly presentation?: unknown } | undefined }>(item: T): T => {
-  if (item.metadata?.presentation === undefined) return item
-  const { presentation: _presentation, ...metadata } = item.metadata
-  if (Object.keys(metadata).length > 0) return { ...item, metadata }
-  const { metadata: _metadata, ...rest } = item
-  return rest as T
-}
-
-const modelDigestFor = (graph: PlantGraphSpec): string =>
-  createHash('sha256').update(JSON.stringify({
-    ...graph,
-    components: graph.components.map(withoutPresentation),
-    connections: graph.connections.map(withoutPresentation),
-  })).digest('hex')
 
 const compiledModelCache = new Map<string, CompiledPlantGraph>()
 const maxCompiledModelCacheEntries = 32
@@ -159,8 +141,9 @@ export const compileResolvedProcessPlant = (
     cloneGraphSpec(definition.graph),
     definition.parameterOverrides as Record<string, unknown> | undefined,
   )
-  const modelDigest = modelDigestFor(graph)
-  const compiledGraph = compiledGraphFor(graph, modelDigest)
+  const sourceDigest = processPlantSourceDigest(graph)
+  const compiledGraph = compiledGraphFor(graph, sourceDigest)
+  const modelDigest = processPlantModelDigest(sourceDigest, compiledGraph)
   definition.validateGraph?.(compiledGraph)
   const initialState = parseInitialState(definition.valueOverrides as Record<string, unknown> | undefined)
   assertInitialStateTargetsDeclaredVariables(compiledGraph, initialState)
