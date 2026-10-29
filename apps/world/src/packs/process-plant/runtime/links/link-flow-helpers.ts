@@ -215,6 +215,30 @@ export const outgoingDemandWeightTotal = (
   return total
 }
 
+/** One physical inventory/outlet has one mass budget, even when its
+ * downstream uses have different service labels or very different pump sizes. */
+const storedFluidOutletFlow = (
+  system: CompiledProcessPlant,
+  requested: CompiledProcessLink,
+  context: LinkBehaviorReadContext,
+  availableFlowKgPerS: number,
+): number => {
+  let totalDemand = 0
+  let requestedDemand = 0
+  for (const index of system.graph.outgoingLinksByComponent[requested.fromComponentIndex] ?? []) {
+    const sibling = system.graph.links[index]!
+    if (sibling.kind !== 'fluidFlow' || sibling.fromPortName !== requested.fromPortName) continue
+    const target = system.graph.components[sibling.toComponentIndex]!
+    const demand = target.kind === 'centrifugalPump'
+      ? pumpAvailableFlowKgPerS(system, target, context, sibling.service)
+      : availableFlowKgPerS * componentValveFactorForInboundLink(system, sibling, context)
+        * (serviceUsesDownstreamDemand(sibling.service) ? downstreamServiceDemandFraction(system, sibling, context) : 1)
+    totalDemand += demand
+    if (sibling.index === requested.index) requestedDemand = demand
+  }
+  return totalDemand > 0 ? requestedDemand * Math.min(1, availableFlowKgPerS / totalDemand) : 0
+}
+
 export const distributeFlowFromComponent = (
   system: CompiledProcessPlant,
   link: CompiledProcessLink,
@@ -223,6 +247,9 @@ export const distributeFlowFromComponent = (
 ): number => {
   // A pressure-balanced header shares what its pumps deliver as its branches take it at its pressure.
   const fromComponent = system.graph.components[link.fromComponentIndex]
+  if (fromComponent?.kind === 'processTank' || (fromComponent?.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut')) {
+    return storedFluidOutletFlow(system, link, context, availableFlowKgPerS)
+  }
   if (isPressureBalancedHeader(fromComponent)) {
     const branchFlows = headerPressureBalance(system, fromComponent, context).branchFlowKgPerS
     const totalBranchFlow = [...branchFlows.values()].reduce((total, flow) => total + flow, 0)
@@ -310,6 +337,11 @@ export const pumpAvailableFlowKgPerS = (
   context: LinkBehaviorReadContext,
   service: CompiledProcessLink['service'],
 ): number => {
+  const currentFlow = Math.max(0, context.readNumber(componentVariablePath(pump, 'flowKgPerS')))
+  const hasInjectionCurve = typeof (pump.parameters as Readonly<Record<string, unknown>>).reactorCoolantShutoffPressureMPa === 'number'
+  // A pressure-balanced header may drive a pump above its nominal/rated
+  // flow. Preserve that solved curve; a nominal rating is not a flow limit.
+  if (!hasInjectionCurve && !serviceUsesDownstreamDemand(service)) return currentFlow
   const speed = Math.max(0, context.readNumber(componentVariablePath(pump, 'speedFraction')))
   let availability = reactorCoolantDeliveryFraction(system, pump, context, speed)
   if (serviceUsesDownstreamDemand(service)) {
@@ -318,7 +350,7 @@ export const pumpAvailableFlowKgPerS = (
       .filter(link => link.kind === 'fluidFlow' && link.service === service)
     availability *= outlets.length === 0 ? 1 : Math.max(...outlets.map(link => downstreamServiceDemandFraction(system, link, context)))
   }
-  return Math.min(Math.max(0, context.readNumber(componentVariablePath(pump, 'flowKgPerS'))),
+  return Math.min(currentFlow,
     parameterNumber(pump, 'nominalFlowKgPerS') * speed * availability)
 }
 

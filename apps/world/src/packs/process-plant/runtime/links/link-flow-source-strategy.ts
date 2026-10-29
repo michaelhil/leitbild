@@ -101,19 +101,16 @@ export const processLinkFlowSourceFor = (config: {
     }
   }
   if (fromComponent.kind === 'processTank') {
+    const inventory = context.readNumber(componentVariablePath(fromComponent, 'inventoryKg'))
+    const inventoryBudget = context.dtSeconds > 0 ? inventory / context.dtSeconds : inventory > 0 ? Number.POSITIVE_INFINITY : 0
     const sourceFlow = distributeFlowFromComponent(
-      system,
-      link,
-      context,
-      context.readNumber(componentVariablePath(fromComponent, 'availableOutletFlowKgPerS')),
+      system, link, context,
+      Math.min(context.readNumber(componentVariablePath(fromComponent, 'availableOutletFlowKgPerS')), inventoryBudget),
     )
-    const demandFraction = serviceUsesDownstreamDemand(link.service)
-      ? downstreamServiceDemandFraction(system, link, context)
-      : 1
     return {
-      flowKgPerS: sourceFlow * demandFraction,
-      alreadyIncludesPathAvailability: false,
-      alreadyIncludesTargetValveDemand: false,
+      flowKgPerS: sourceFlow,
+      alreadyIncludesPathAvailability: true,
+      alreadyIncludesTargetValveDemand: true,
       bypassTargetPumpLimit: false,
     }
   }

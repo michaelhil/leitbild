@@ -8,7 +8,7 @@ import {
   outgoingComponentLinks,
   sumProcessLinkValue,
 } from '../../component-link-helpers.ts'
-import { clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../../component-helpers.ts'
+import { approach, clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../../component-helpers.ts'
 import { balancedBranchPressures } from './header-pressure-balance.ts'
 
 type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle' | 'bypass'
@@ -158,7 +158,12 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
     const timeConstant = target >= current
       ? optionalParameterNumber(component, 'strokeOpenTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
       : optionalParameterNumber(component, 'strokeCloseTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
-    const nextPosition = relaxToward(current, target, context.dtSeconds, timeConstant)
+    // An isolating actuator traverses a finite stroke in its authored travel
+    // time. A first-order lag never reaches shut and leaks forever; analog
+    // regulation and self-acting valves keep their existing lag response.
+    const nextPosition = mode === 'isolation'
+      ? approach(current, target, context.dtSeconds / timeConstant)
+      : relaxToward(current, target, context.dtSeconds, timeConstant)
     const minimumPosition = optionalParameterNumber(component, 'leakageFractionClosed', 0)
     context.write(
       componentVariablePath(component, 'effectivePositionFraction'),

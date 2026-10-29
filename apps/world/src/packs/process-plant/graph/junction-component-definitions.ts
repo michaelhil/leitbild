@@ -32,9 +32,9 @@ const valveFunctions: Readonly<Record<string, EquipmentFunction>> = {
   safety: 'relieving',
 }
 
-// A valve's position follows its demand as a first-order lag, with its
-// opening or closing time constant, else its stroke time constant, else
-// 0.1 s (valve-behaviors.ts, which reads the same parameters).
+// An isolating valve has finite full-stroke travel. Analog and self-acting
+// valves retain their first-order settling time; both read the same authored
+// opening/closing parameters as valve-behaviors.ts.
 const valveStrokeSchema = z.object({
   valveMode: z.string().default('control'),
   strokeTimeConstantS: z.number().optional(),
@@ -48,7 +48,8 @@ const valveSemantics = (parameters: unknown): ComponentSemantics => {
   const valveFunction = valveFunctions[mode]
   if (valveFunction === undefined) throw new Error(`valve mode ${mode} has no declared function`)
   const timeConstant = parsed.strokeTimeConstantS ?? 0.1
-  const travel = { onS: firstOrderLagTravelS(parsed.strokeOpenTimeS ?? timeConstant), offS: firstOrderLagTravelS(parsed.strokeCloseTimeS ?? timeConstant) }
+  const travelS = mode === 'isolation' ? (seconds: number): number => seconds : firstOrderLagTravelS
+  const travel = { onS: travelS(parsed.strokeOpenTimeS ?? timeConstant), offS: travelS(parsed.strokeCloseTimeS ?? timeConstant) }
   return {
     function: valveFunction,
     aspects: [aspect('position', { variable: 'effectivePositionFraction', reading: 'value' }, 'positionFraction', 'isolationSignal', travel)],

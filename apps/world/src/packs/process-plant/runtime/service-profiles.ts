@@ -8,6 +8,8 @@ export const processPlantServices = {
   condensate: service('condensate'),
   containmentSpray: service('containmentSpray'),
   coolingWater: service('coolingWater'),
+  componentCoolingWater: service('componentCoolingWater'),
+  serviceWater: service('serviceWater'),
   exhaustSteam: service('exhaustSteam'),
   feedwater: service('feedwater'),
   letdown: service('letdown'),

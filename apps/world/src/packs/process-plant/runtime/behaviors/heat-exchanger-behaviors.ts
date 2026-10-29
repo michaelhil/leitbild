@@ -48,7 +48,16 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
       const bypassFraction = optionalParameterNumber(component, 'bypassFraction', 0)
       const effectivenessLimit = optionalParameterNumber(component, 'effectivenessLimit', 0.92)
       const ntu = limitingCapacity > 0 ? ua * (1 - foulingFactor) / limitingCapacity : 0
-      const effectiveness = clamp((1 - Math.exp(-Math.max(0, ntu))) * (1 - bypassFraction), 0, effectivenessLimit)
+      // Counterflow epsilon-NTU with both finite stream heat capacities.
+      // expm1 and the factored denominator retain precision as Cr approaches 1;
+      // the exactly equal-capacity limit is NTU / (1 + NTU).
+      const capacityRatio = limitingCapacity > 0 ? limitingCapacity / Math.max(hotCapacityMwPerC, coldCapacityMwPerC) : 0
+      const oneMinusRatio = 1 - capacityRatio
+      const attenuation = -Math.expm1(-ntu * oneMinusRatio)
+      const counterflowEffectiveness = limitingCapacity <= 0 ? 0 : oneMinusRatio === 0
+        ? ntu / (1 + ntu)
+        : attenuation / (oneMinusRatio + capacityRatio * attenuation)
+      const effectiveness = clamp(counterflowEffectiveness * (1 - bypassFraction), 0, effectivenessLimit)
       const heatTransferCapacity = limitingCapacity * Math.abs(temperatureDelta) * effectivenessLimit
       const heatTransfer = limitingCapacity * temperatureDelta * effectiveness
       const coolingAvailability = clamp(coldFlow / Math.max(0.001, optionalParameterNumber(component, 'coldSideDesignFlowKgPerS', 1)), 0, 1)
@@ -79,7 +88,7 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
       context.write(componentVariablePath(component, 'coldSideFlowKgPerS'), coldFlow)
       context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
       context.write(componentVariablePath(component, 'heatTransferCapacityMw'), heatTransferCapacity)
-      context.write(componentVariablePath(component, 'approachTemperatureC'), Math.max(0, hotOutlet - coldOutlet))
+      context.write(componentVariablePath(component, 'approachTemperatureC'), Math.min(Math.abs(hotInlet - coldOutlet), Math.abs(hotOutlet - coldInlet)))
       context.write(componentVariablePath(component, 'effectivenessFraction'), effectiveness)
       context.write(componentVariablePath(component, 'coolingAvailabilityFraction'), coolingAvailability)
       context.write(componentVariablePath(component, 'hotSidePressureDropMPa'), hotSidePressureDrop)
