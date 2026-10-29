@@ -11,6 +11,7 @@ import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/sig
 import { actuationHold, againstActuation, protectionHoldRefusal, throttledUnder, validateOperatorWrite } from '../src/packs/process-plant/operations/command-guard.ts'
 import { compileResolvedProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
 import { minimumFeedFlowKgPerS } from '../src/packs/process-plant/specs/reference-ic-safety-functions.ts'
+import { processPlantAutomationDigest } from '../src/packs/process-plant/evidence-frame.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -115,7 +116,7 @@ describe('a throttle under an actuation that drove a demand to an end of its spa
     expect(againstActuation(null, undefined, true, false)).toBe('opposes')
   })
 
-  test('the I&C config declares the floor: the model digest and the variable count stay as they were', () => {
+  test('throttle floors change I&C identity without changing the process model or its state slots', () => {
     const floored = plant.automation.rules.filter(rule => rule.throttleFloor !== undefined)
     expect(floored.map(rule => rule.id).sort()).toEqual([
       'loss-of-offsite-power-afw-actuation', 'main-feedwater-pumps-tripped-afw-start',
@@ -123,10 +124,8 @@ describe('a throttle under an actuation that drove a demand to an end of its spa
       'sg-a-level-low-low-afw-actuation', 'sg-b-level-low-low-afw-actuation', 'sg-c-level-low-low-afw-actuation', 'sg-d-level-low-low-afw-actuation',
     ])
     for (const rule of floored) expect(rule.throttleFloor!.basis).toContain('FR-H.1')
-    expect(plant.modelDigest).toBe('c2c62226354cb651712ab1bb890c8095e07dde3ead95c489e0871ab3d303dd05')
-    // The controller tranche adds two real configuration variables on nine valves.
-    expect(plant.graph.variables.length).toBe(1729)
-    // The same graph under the I&C config without any floor: the same digest and variables.
+    // Compare the actual model with and without I&C-only metadata, so unrelated
+    // additions to the Plant do not replace this boundary test with a stale pin.
     const withoutFloors = compileResolvedProcessPlant({
       id: plant.id, modelRef: plant.modelRef, operatingPointRef: plant.operatingPointRef, automationRef: plant.automationRef,
       graph: plant.sourceGraph,
@@ -134,7 +133,8 @@ describe('a throttle under an actuation that drove a demand to an end of its spa
     })
     expect(withoutFloors.automation.rules.some(rule => rule.throttleFloor !== undefined)).toBe(false)
     expect(withoutFloors.modelDigest).toBe(plant.modelDigest)
-    expect(withoutFloors.graph.variables.length).toBe(plant.graph.variables.length)
+    expect(withoutFloors.graph.variables).toEqual(plant.graph.variables)
+    expect(processPlantAutomationDigest(withoutFloors.automation)).not.toBe(processPlantAutomationDigest(plant.automation))
   })
 
   test('with every AFW control valve at its floor after a trip, total feed stays above the FR-H.1 minimum', () => {
