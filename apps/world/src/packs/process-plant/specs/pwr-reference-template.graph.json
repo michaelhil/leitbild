@@ -3152,7 +3152,8 @@
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 0,
         "thermalTimeConstantS": 600,
-        "initialSoluteConcentrationPpm": 0
+        "initialSoluteConcentrationPpm": 0,
+        "thermalModel": "inventoryBalance"
       },
       "metadata": {
         "presentation": {
@@ -3632,7 +3633,8 @@
         "nominalHeadPa": 800000,
         "flowTimeConstantS": 8,
         "maxFlowRampKgPerS2": 80,
-        "initialRunning": false
+        "initialRunning": false,
+        "reactorCoolantShutoffPressureMPa": 0.9
       },
       "variables": [
         {
@@ -3666,7 +3668,8 @@
         "nominalHeadPa": 800000,
         "flowTimeConstantS": 8,
         "maxFlowRampKgPerS2": 80,
-        "initialRunning": false
+        "initialRunning": false,
+        "reactorCoolantShutoffPressureMPa": 0.9
       },
       "variables": [
         {
@@ -3813,11 +3816,19 @@
           "externalRefs": [
             "ess.cspray.header_flow"
           ]
+        },
+        {
+          "path": "sumpTemperatureC",
+          "tagId": "CTMT-SUMP-TEMP",
+          "equipmentId": "containment",
+          "description": "Containment sump liquid mixed temperature; independent of containment atmosphere"
         }
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "radiationSourceTermMSvPerH": "CTMT radiation" },
+          "shortNames": {
+            "radiationSourceTermMSvPerH": "CTMT radiation"
+          },
           "shortLabel": "CTMT"
         }
       }
@@ -4827,24 +4838,35 @@
     },
     {
       "id": "componentCoolingWaterPumpA",
-      "kind": "electricalLoad",
+      "kind": "centrifugalPump",
       "label": "Component Cooling Water Pump A",
       "parameters": {
-        "nominalLoadMw": 0.6,
-        "essential": true
+        "nominalFlowKgPerS": 350,
+        "nominalHeadPa": 1000000,
+        "hydraulicEfficiencyFraction": 0.5833333333333334,
+        "fluidDensityKgPerM3": 1000,
+        "initialRunning": true,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 100
       },
       "variables": [
         {
-          "path": "connected",
-          "tagId": "BRK-CCW-A-CLOSED",
+          "path": "running",
+          "tagId": "CCW-PUMP-A",
           "equipmentId": "componentCoolingWaterPumpA",
-          "description": "Component Cooling Water Pump A feeder breaker close command; shed as safety bus A dies, closed again by its load sequencer step"
+          "description": "CCW pump A run command; its feeder must also be energized"
         },
         {
-          "path": "energized",
-          "tagId": "CCW-A-ENERGIZED",
+          "path": "runningState",
+          "tagId": "CCW-PUMP-A-RUNNING",
           "equipmentId": "componentCoolingWaterPumpA",
-          "description": "Component Cooling Water Pump A motor energized from safety bus A; an electrical load only, with no process model"
+          "description": "CCW pump A actual running feedback"
+        },
+        {
+          "path": "flowKgPerS",
+          "tagId": "CCW-A-FLOW",
+          "equipmentId": "componentCoolingWaterPumpA",
+          "description": "CCW pump A delivered hydraulic flow"
         }
       ],
       "metadata": {
@@ -4855,24 +4877,35 @@
     },
     {
       "id": "serviceWaterPumpA",
-      "kind": "electricalLoad",
+      "kind": "centrifugalPump",
       "label": "Service Water Pump A",
       "parameters": {
-        "nominalLoadMw": 0.75,
-        "essential": true
+        "nominalFlowKgPerS": 450,
+        "nominalHeadPa": 1000000,
+        "hydraulicEfficiencyFraction": 0.6,
+        "fluidDensityKgPerM3": 1000,
+        "initialRunning": true,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 100
       },
       "variables": [
         {
-          "path": "connected",
-          "tagId": "BRK-SW-A-CLOSED",
+          "path": "running",
+          "tagId": "SW-PUMP-A",
           "equipmentId": "serviceWaterPumpA",
-          "description": "Service Water Pump A feeder breaker close command; shed as safety bus A dies, closed again by its load sequencer step"
+          "description": "SW pump A run command; its feeder must also be energized"
         },
         {
-          "path": "energized",
-          "tagId": "SW-A-ENERGIZED",
+          "path": "runningState",
+          "tagId": "SW-PUMP-A-RUNNING",
           "equipmentId": "serviceWaterPumpA",
-          "description": "Service Water Pump A motor energized from safety bus A; an electrical load only, with no process model"
+          "description": "SW pump A actual running feedback"
+        },
+        {
+          "path": "flowKgPerS",
+          "tagId": "SW-A-FLOW",
+          "equipmentId": "serviceWaterPumpA",
+          "description": "SW pump A delivered hydraulic flow"
         }
       ],
       "metadata": {
@@ -4963,24 +4996,35 @@
     },
     {
       "id": "componentCoolingWaterPumpB",
-      "kind": "electricalLoad",
+      "kind": "centrifugalPump",
       "label": "Component Cooling Water Pump B",
       "parameters": {
-        "nominalLoadMw": 0.6,
-        "essential": true
+        "nominalFlowKgPerS": 350,
+        "nominalHeadPa": 1000000,
+        "hydraulicEfficiencyFraction": 0.5833333333333334,
+        "fluidDensityKgPerM3": 1000,
+        "initialRunning": true,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 100
       },
       "variables": [
         {
-          "path": "connected",
-          "tagId": "BRK-CCW-B-CLOSED",
+          "path": "running",
+          "tagId": "CCW-PUMP-B",
           "equipmentId": "componentCoolingWaterPumpB",
-          "description": "Component Cooling Water Pump B feeder breaker close command; shed as safety bus B dies, closed again by its load sequencer step"
+          "description": "CCW pump B run command; its feeder must also be energized"
         },
         {
-          "path": "energized",
-          "tagId": "CCW-B-ENERGIZED",
+          "path": "runningState",
+          "tagId": "CCW-PUMP-B-RUNNING",
           "equipmentId": "componentCoolingWaterPumpB",
-          "description": "Component Cooling Water Pump B motor energized from safety bus B; an electrical load only, with no process model"
+          "description": "CCW pump B actual running feedback"
+        },
+        {
+          "path": "flowKgPerS",
+          "tagId": "CCW-B-FLOW",
+          "equipmentId": "componentCoolingWaterPumpB",
+          "description": "CCW pump B delivered hydraulic flow"
         }
       ],
       "metadata": {
@@ -4991,24 +5035,35 @@
     },
     {
       "id": "serviceWaterPumpB",
-      "kind": "electricalLoad",
+      "kind": "centrifugalPump",
       "label": "Service Water Pump B",
       "parameters": {
-        "nominalLoadMw": 0.75,
-        "essential": true
+        "nominalFlowKgPerS": 450,
+        "nominalHeadPa": 1000000,
+        "hydraulicEfficiencyFraction": 0.6,
+        "fluidDensityKgPerM3": 1000,
+        "initialRunning": true,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 100
       },
       "variables": [
         {
-          "path": "connected",
-          "tagId": "BRK-SW-B-CLOSED",
+          "path": "running",
+          "tagId": "SW-PUMP-B",
           "equipmentId": "serviceWaterPumpB",
-          "description": "Service Water Pump B feeder breaker close command; shed as safety bus B dies, closed again by its load sequencer step"
+          "description": "SW pump B run command; its feeder must also be energized"
         },
         {
-          "path": "energized",
-          "tagId": "SW-B-ENERGIZED",
+          "path": "runningState",
+          "tagId": "SW-PUMP-B-RUNNING",
           "equipmentId": "serviceWaterPumpB",
-          "description": "Service Water Pump B motor energized from safety bus B; an electrical load only, with no process model"
+          "description": "SW pump B actual running feedback"
+        },
+        {
+          "path": "flowKgPerS",
+          "tagId": "SW-B-FLOW",
+          "equipmentId": "serviceWaterPumpB",
+          "description": "SW pump B delivered hydraulic flow"
         }
       ],
       "metadata": {
@@ -6083,6 +6138,492 @@
               "text": "Spring-loaded safety valves lift on their own set pressures: they have no operator control"
             }
           }
+        }
+      }
+    },
+    {
+      "id": "componentCoolingWaterPumpBreakerA",
+      "kind": "electricalBreaker",
+      "label": "CCW Pump A Feeder Breaker",
+      "parameters": {
+        "nominalPowerMw": 0.6,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "BRK-CCW-A-CLOSED",
+          "equipmentId": "componentCoolingWaterPumpBreakerA",
+          "description": "CCW pump A feeder close command; shed on dead safety bus and restored by its load sequencer step"
+        },
+        {
+          "path": "closedState",
+          "tagId": "BRK-CCW-A-POS",
+          "equipmentId": "componentCoolingWaterPumpBreakerA",
+          "description": "CCW pump A feeder achieved contact position"
+        },
+        {
+          "path": "energized",
+          "tagId": "CCW-A-ENERGIZED",
+          "equipmentId": "componentCoolingWaterPumpBreakerA",
+          "description": "CCW pump A feeder outlet energized"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CCW A feeder"
+        }
+      }
+    },
+    {
+      "id": "serviceWaterPumpBreakerA",
+      "kind": "electricalBreaker",
+      "label": "SW Pump A Feeder Breaker",
+      "parameters": {
+        "nominalPowerMw": 0.75,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "BRK-SW-A-CLOSED",
+          "equipmentId": "serviceWaterPumpBreakerA",
+          "description": "SW pump A feeder close command; shed on dead safety bus and restored by its load sequencer step"
+        },
+        {
+          "path": "closedState",
+          "tagId": "BRK-SW-A-POS",
+          "equipmentId": "serviceWaterPumpBreakerA",
+          "description": "SW pump A feeder achieved contact position"
+        },
+        {
+          "path": "energized",
+          "tagId": "SW-A-ENERGIZED",
+          "equipmentId": "serviceWaterPumpBreakerA",
+          "description": "SW pump A feeder outlet energized"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SW A feeder"
+        }
+      }
+    },
+    {
+      "id": "rhrHeatExchangerA",
+      "kind": "heatExchanger",
+      "label": "RHR Heat Exchanger A",
+      "parameters": {
+        "uaMwPerC": 1.2,
+        "hotSideDesignFlowKgPerS": 520,
+        "coldSideDesignFlowKgPerS": 350,
+        "hotSideVolumeM3": 2,
+        "coldSideVolumeM3": 2,
+        "hotSideDensityKgPerM3": 1000,
+        "coldSideDensityKgPerM3": 1000,
+        "hotSideNominalPressureDropMPa": 0.02,
+        "coldSideNominalPressureDropMPa": 0.02,
+        "initialHotTemperatureC": 45,
+        "initialColdTemperatureC": 30
+      },
+      "variables": [
+        {
+          "path": "hotInletTemperatureC",
+          "tagId": "RHR-HX-A-HOT-INLET-TEMP",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A hot inlet temperature"
+        },
+        {
+          "path": "hotOutletTemperatureC",
+          "tagId": "RHR-HX-A-OUTLET-TEMP",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A hot outlet temperature"
+        },
+        {
+          "path": "coldInletTemperatureC",
+          "tagId": "RHR-HX-A-COLD-INLET-TEMP",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A cold inlet temperature"
+        },
+        {
+          "path": "coldOutletTemperatureC",
+          "tagId": "RHR-HX-A-COLD-OUTLET-TEMP",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A cold outlet temperature"
+        },
+        {
+          "path": "hotSideFlowKgPerS",
+          "tagId": "RHR-HX-A-HOT-FLOW",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A actual hot-side flow"
+        },
+        {
+          "path": "coldSideFlowKgPerS",
+          "tagId": "RHR-HX-A-COLD-FLOW",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A actual cold-side flow"
+        },
+        {
+          "path": "heatTransferMw",
+          "tagId": "RHR-HX-A-HEAT",
+          "equipmentId": "rhrHeatExchangerA",
+          "description": "RHR heat exchanger A actual hot-to-cold heat transfer"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR-HX A",
+          "shortNames": {
+            "hotOutletTemperatureC": "RHR-HX A outlet temp",
+            "heatTransferMw": "RHR-HX A heat"
+          }
+        }
+      }
+    },
+    {
+      "id": "componentCoolingHeatExchangerA",
+      "kind": "heatExchanger",
+      "label": "Component Cooling Heat Exchanger A",
+      "parameters": {
+        "uaMwPerC": 1.8,
+        "hotSideDesignFlowKgPerS": 350,
+        "coldSideDesignFlowKgPerS": 450,
+        "hotSideVolumeM3": 2,
+        "coldSideVolumeM3": 2,
+        "hotSideDensityKgPerM3": 1000,
+        "coldSideDensityKgPerM3": 1000,
+        "hotSideNominalPressureDropMPa": 0.02,
+        "coldSideNominalPressureDropMPa": 0.02,
+        "initialHotTemperatureC": 30,
+        "initialColdTemperatureC": 18
+      },
+      "variables": [
+        {
+          "path": "hotInletTemperatureC",
+          "tagId": "CCW-HX-A-HOT-INLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A hot inlet temperature"
+        },
+        {
+          "path": "hotOutletTemperatureC",
+          "tagId": "CCW-HX-A-OUTLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A hot outlet temperature"
+        },
+        {
+          "path": "coldInletTemperatureC",
+          "tagId": "CCW-HX-A-COLD-INLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A cold inlet temperature"
+        },
+        {
+          "path": "coldOutletTemperatureC",
+          "tagId": "CCW-HX-A-COLD-OUTLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A cold outlet temperature"
+        },
+        {
+          "path": "hotSideFlowKgPerS",
+          "tagId": "CCW-HX-A-HOT-FLOW",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A actual hot-side flow"
+        },
+        {
+          "path": "coldSideFlowKgPerS",
+          "tagId": "CCW-HX-A-COLD-FLOW",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A actual cold-side flow"
+        },
+        {
+          "path": "heatTransferMw",
+          "tagId": "CCW-HX-A-HEAT",
+          "equipmentId": "componentCoolingHeatExchangerA",
+          "description": "Component Cooling heat exchanger A actual hot-to-cold heat transfer"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CCW-HX A",
+          "shortNames": {
+            "hotOutletTemperatureC": "CCW-HX A outlet temp",
+            "heatTransferMw": "CCW-HX A heat"
+          }
+        }
+      }
+    },
+    {
+      "id": "componentCoolingTankA",
+      "kind": "processTank",
+      "label": "Component Cooling Water Inventory A",
+      "parameters": {
+        "nominalInventoryKg": 30000,
+        "initialInventoryFraction": 0.95,
+        "initialTemperatureC": 30,
+        "initialSoluteConcentrationPpm": 0,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 350,
+        "thermalModel": "inventoryBalance"
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "CCW-A-TANK-LEVEL",
+          "equipmentId": "componentCoolingTankA",
+          "description": "Finite component cooling water inventory A level"
+        },
+        {
+          "path": "temperatureC",
+          "tagId": "CCW-A-TANK-TEMP",
+          "equipmentId": "componentCoolingTankA",
+          "description": "Finite component cooling water inventory A mixed return temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CCW A inventory"
+        }
+      }
+    },
+    {
+      "id": "componentCoolingWaterPumpBreakerB",
+      "kind": "electricalBreaker",
+      "label": "CCW Pump B Feeder Breaker",
+      "parameters": {
+        "nominalPowerMw": 0.6,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "BRK-CCW-B-CLOSED",
+          "equipmentId": "componentCoolingWaterPumpBreakerB",
+          "description": "CCW pump B feeder close command; shed on dead safety bus and restored by its load sequencer step"
+        },
+        {
+          "path": "closedState",
+          "tagId": "BRK-CCW-B-POS",
+          "equipmentId": "componentCoolingWaterPumpBreakerB",
+          "description": "CCW pump B feeder achieved contact position"
+        },
+        {
+          "path": "energized",
+          "tagId": "CCW-B-ENERGIZED",
+          "equipmentId": "componentCoolingWaterPumpBreakerB",
+          "description": "CCW pump B feeder outlet energized"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CCW B feeder"
+        }
+      }
+    },
+    {
+      "id": "serviceWaterPumpBreakerB",
+      "kind": "electricalBreaker",
+      "label": "SW Pump B Feeder Breaker",
+      "parameters": {
+        "nominalPowerMw": 0.75,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "BRK-SW-B-CLOSED",
+          "equipmentId": "serviceWaterPumpBreakerB",
+          "description": "SW pump B feeder close command; shed on dead safety bus and restored by its load sequencer step"
+        },
+        {
+          "path": "closedState",
+          "tagId": "BRK-SW-B-POS",
+          "equipmentId": "serviceWaterPumpBreakerB",
+          "description": "SW pump B feeder achieved contact position"
+        },
+        {
+          "path": "energized",
+          "tagId": "SW-B-ENERGIZED",
+          "equipmentId": "serviceWaterPumpBreakerB",
+          "description": "SW pump B feeder outlet energized"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SW B feeder"
+        }
+      }
+    },
+    {
+      "id": "rhrHeatExchangerB",
+      "kind": "heatExchanger",
+      "label": "RHR Heat Exchanger B",
+      "parameters": {
+        "uaMwPerC": 1.2,
+        "hotSideDesignFlowKgPerS": 520,
+        "coldSideDesignFlowKgPerS": 350,
+        "hotSideVolumeM3": 2,
+        "coldSideVolumeM3": 2,
+        "hotSideDensityKgPerM3": 1000,
+        "coldSideDensityKgPerM3": 1000,
+        "hotSideNominalPressureDropMPa": 0.02,
+        "coldSideNominalPressureDropMPa": 0.02,
+        "initialHotTemperatureC": 45,
+        "initialColdTemperatureC": 30
+      },
+      "variables": [
+        {
+          "path": "hotInletTemperatureC",
+          "tagId": "RHR-HX-B-HOT-INLET-TEMP",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B hot inlet temperature"
+        },
+        {
+          "path": "hotOutletTemperatureC",
+          "tagId": "RHR-HX-B-OUTLET-TEMP",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B hot outlet temperature"
+        },
+        {
+          "path": "coldInletTemperatureC",
+          "tagId": "RHR-HX-B-COLD-INLET-TEMP",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B cold inlet temperature"
+        },
+        {
+          "path": "coldOutletTemperatureC",
+          "tagId": "RHR-HX-B-COLD-OUTLET-TEMP",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B cold outlet temperature"
+        },
+        {
+          "path": "hotSideFlowKgPerS",
+          "tagId": "RHR-HX-B-HOT-FLOW",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B actual hot-side flow"
+        },
+        {
+          "path": "coldSideFlowKgPerS",
+          "tagId": "RHR-HX-B-COLD-FLOW",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B actual cold-side flow"
+        },
+        {
+          "path": "heatTransferMw",
+          "tagId": "RHR-HX-B-HEAT",
+          "equipmentId": "rhrHeatExchangerB",
+          "description": "RHR heat exchanger B actual hot-to-cold heat transfer"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR-HX B",
+          "shortNames": {
+            "hotOutletTemperatureC": "RHR-HX B outlet temp",
+            "heatTransferMw": "RHR-HX B heat"
+          }
+        }
+      }
+    },
+    {
+      "id": "componentCoolingHeatExchangerB",
+      "kind": "heatExchanger",
+      "label": "Component Cooling Heat Exchanger B",
+      "parameters": {
+        "uaMwPerC": 1.8,
+        "hotSideDesignFlowKgPerS": 350,
+        "coldSideDesignFlowKgPerS": 450,
+        "hotSideVolumeM3": 2,
+        "coldSideVolumeM3": 2,
+        "hotSideDensityKgPerM3": 1000,
+        "coldSideDensityKgPerM3": 1000,
+        "hotSideNominalPressureDropMPa": 0.02,
+        "coldSideNominalPressureDropMPa": 0.02,
+        "initialHotTemperatureC": 30,
+        "initialColdTemperatureC": 18
+      },
+      "variables": [
+        {
+          "path": "hotInletTemperatureC",
+          "tagId": "CCW-HX-B-HOT-INLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B hot inlet temperature"
+        },
+        {
+          "path": "hotOutletTemperatureC",
+          "tagId": "CCW-HX-B-OUTLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B hot outlet temperature"
+        },
+        {
+          "path": "coldInletTemperatureC",
+          "tagId": "CCW-HX-B-COLD-INLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B cold inlet temperature"
+        },
+        {
+          "path": "coldOutletTemperatureC",
+          "tagId": "CCW-HX-B-COLD-OUTLET-TEMP",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B cold outlet temperature"
+        },
+        {
+          "path": "hotSideFlowKgPerS",
+          "tagId": "CCW-HX-B-HOT-FLOW",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B actual hot-side flow"
+        },
+        {
+          "path": "coldSideFlowKgPerS",
+          "tagId": "CCW-HX-B-COLD-FLOW",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B actual cold-side flow"
+        },
+        {
+          "path": "heatTransferMw",
+          "tagId": "CCW-HX-B-HEAT",
+          "equipmentId": "componentCoolingHeatExchangerB",
+          "description": "Component Cooling heat exchanger B actual hot-to-cold heat transfer"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CCW-HX B",
+          "shortNames": {
+            "hotOutletTemperatureC": "CCW-HX B outlet temp",
+            "heatTransferMw": "CCW-HX B heat"
+          }
+        }
+      }
+    },
+    {
+      "id": "componentCoolingTankB",
+      "kind": "processTank",
+      "label": "Component Cooling Water Inventory B",
+      "parameters": {
+        "nominalInventoryKg": 30000,
+        "initialInventoryFraction": 0.95,
+        "initialTemperatureC": 30,
+        "initialSoluteConcentrationPpm": 0,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 350,
+        "thermalModel": "inventoryBalance"
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "CCW-B-TANK-LEVEL",
+          "equipmentId": "componentCoolingTankB",
+          "description": "Finite component cooling water inventory B level"
+        },
+        {
+          "path": "temperatureC",
+          "tagId": "CCW-B-TANK-TEMP",
+          "equipmentId": "componentCoolingTankB",
+          "description": "Finite component cooling water inventory B mixed return temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "CCW B inventory"
         }
       }
     }
@@ -11339,7 +11880,7 @@
       "from": "containment.sumpOut",
       "to": "rhrPumpA.inlet",
       "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
+      "service": "residualHeatRemoval",
       "nominalFluid": "water",
       "designPhase": "liquid",
       "solverModel": "sourceSink",
@@ -11373,7 +11914,7 @@
       "from": "containment.sumpOut",
       "to": "rhrPumpB.inlet",
       "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
+      "service": "residualHeatRemoval",
       "nominalFluid": "water",
       "designPhase": "liquid",
       "solverModel": "sourceSink",
@@ -11403,18 +11944,18 @@
       ]
     },
     {
-      "id": "rhr-pump-a-to-header",
+      "id": "rhr-pump-a-to-heat-exchanger",
       "from": "rhrPumpA.outlet",
-      "to": "rhrHeader.inletA",
+      "to": "rhrHeatExchangerA.hotIn",
       "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
+      "service": "residualHeatRemoval",
       "nominalFluid": "water",
       "designPhase": "liquid",
       "solverModel": "incompressibleLiquid",
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "RHR pump A discharge flow",
+          "label": "RHR pump A heat exchanger inlet flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -11425,7 +11966,7 @@
         },
         {
           "path": "temperatureC",
-          "label": "RHR pump A discharge temperature",
+          "label": "RHR pump A heat exchanger inlet temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -11434,21 +11975,24 @@
           "unit": "degC",
           "initialValue": 45
         }
-      ]
+      ],
+      "physical": {
+        "diameterM": 0.32
+      }
     },
     {
-      "id": "rhr-pump-b-to-header",
+      "id": "rhr-pump-b-to-heat-exchanger",
       "from": "rhrPumpB.outlet",
-      "to": "rhrHeader.inletB",
+      "to": "rhrHeatExchangerB.hotIn",
       "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
+      "service": "residualHeatRemoval",
       "nominalFluid": "water",
       "designPhase": "liquid",
       "solverModel": "incompressibleLiquid",
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "RHR pump B discharge flow",
+          "label": "RHR pump B heat exchanger inlet flow",
           "kind": "derived",
           "discipline": "hydraulic",
           "writable": false,
@@ -11459,7 +12003,7 @@
         },
         {
           "path": "temperatureC",
-          "label": "RHR pump B discharge temperature",
+          "label": "RHR pump B heat exchanger inlet temperature",
           "kind": "derived",
           "discipline": "thermal",
           "writable": false,
@@ -11468,14 +12012,17 @@
           "unit": "degC",
           "initialValue": 45
         }
-      ]
+      ],
+      "physical": {
+        "diameterM": 0.32
+      }
     },
     {
       "id": "rhr-header-to-isolation-valve",
       "from": "rhrHeader.outletA",
       "to": "rhrIsolationValve.inlet",
       "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
+      "service": "residualHeatRemoval",
       "nominalFluid": "water",
       "designPhase": "liquid",
       "solverModel": "incompressibleLiquid",
@@ -11509,7 +12056,7 @@
       "from": "rhrIsolationValve.outlet",
       "to": "core.coldLegA",
       "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
+      "service": "residualHeatRemoval",
       "nominalFluid": "water",
       "designPhase": "liquid",
       "solverModel": "incompressibleLiquid",
@@ -12931,13 +13478,13 @@
     {
       "id": "safety-bus-a-to-ccw-pump-a",
       "from": "safetyBusA.outlet",
-      "to": "componentCoolingWaterPumpA.power",
+      "to": "componentCoolingWaterPumpBreakerA.inlet",
       "connectionKind": "electricalPower"
     },
     {
       "id": "safety-bus-a-to-sw-pump-a",
       "from": "safetyBusA.outlet",
-      "to": "serviceWaterPumpA.power",
+      "to": "serviceWaterPumpBreakerA.inlet",
       "connectionKind": "electricalPower"
     },
     {
@@ -12955,13 +13502,13 @@
     {
       "id": "safety-bus-b-to-ccw-pump-b",
       "from": "safetyBusB.outlet",
-      "to": "componentCoolingWaterPumpB.power",
+      "to": "componentCoolingWaterPumpBreakerB.inlet",
       "connectionKind": "electricalPower"
     },
     {
       "id": "safety-bus-b-to-sw-pump-b",
       "from": "safetyBusB.outlet",
-      "to": "serviceWaterPumpB.power",
+      "to": "serviceWaterPumpBreakerB.inlet",
       "connectionKind": "electricalPower"
     },
     {
@@ -13824,6 +14371,750 @@
           "initialValue": 0.02
         }
       ]
+    },
+    {
+      "id": "ccw-pump-a-feeder-to-motor",
+      "from": "componentCoolingWaterPumpBreakerA.outlet",
+      "to": "componentCoolingWaterPumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "sw-pump-a-feeder-to-motor",
+      "from": "serviceWaterPumpBreakerA.outlet",
+      "to": "serviceWaterPumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "rhr-heat-exchanger-a-to-header",
+      "from": "rhrHeatExchangerA.hotOut",
+      "to": "rhrHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.32
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-inventory-a-to-pump",
+      "from": "componentCoolingTankA.outlet",
+      "to": "componentCoolingWaterPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "componentCoolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-pump-a-to-rhr-heat-exchanger",
+      "from": "componentCoolingWaterPumpA.outlet",
+      "to": "rhrHeatExchangerA.coldIn",
+      "connectionKind": "fluidFlow",
+      "service": "componentCoolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "rhr-heat-exchanger-a-to-ccw-heat-exchanger",
+      "from": "rhrHeatExchangerA.coldOut",
+      "to": "componentCoolingHeatExchangerA.hotIn",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-heat-exchanger-a-to-inventory",
+      "from": "componentCoolingHeatExchangerA.hotOut",
+      "to": "componentCoolingTankA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "componentCoolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ultimate-heat-sink-to-service-water-pump-a",
+      "from": "ultimateHeatSink.outlet",
+      "to": "serviceWaterPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "serviceWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.35
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "service-water-pump-a-to-ccw-heat-exchanger",
+      "from": "serviceWaterPumpA.outlet",
+      "to": "componentCoolingHeatExchangerA.coldIn",
+      "connectionKind": "fluidFlow",
+      "service": "serviceWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.35
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-heat-exchanger-a-to-discharge",
+      "from": "componentCoolingHeatExchangerA.coldOut",
+      "to": "coolingWaterDischarge.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "serviceWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.35
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-pump-b-feeder-to-motor",
+      "from": "componentCoolingWaterPumpBreakerB.outlet",
+      "to": "componentCoolingWaterPumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "sw-pump-b-feeder-to-motor",
+      "from": "serviceWaterPumpBreakerB.outlet",
+      "to": "serviceWaterPumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "rhr-heat-exchanger-b-to-header",
+      "from": "rhrHeatExchangerB.hotOut",
+      "to": "rhrHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.32
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-inventory-b-to-pump",
+      "from": "componentCoolingTankB.outlet",
+      "to": "componentCoolingWaterPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "componentCoolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-pump-b-to-rhr-heat-exchanger",
+      "from": "componentCoolingWaterPumpB.outlet",
+      "to": "rhrHeatExchangerB.coldIn",
+      "connectionKind": "fluidFlow",
+      "service": "componentCoolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "rhr-heat-exchanger-b-to-ccw-heat-exchanger",
+      "from": "rhrHeatExchangerB.coldOut",
+      "to": "componentCoolingHeatExchangerB.hotIn",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-heat-exchanger-b-to-inventory",
+      "from": "componentCoolingHeatExchangerB.hotOut",
+      "to": "componentCoolingTankB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "componentCoolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.28
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 30
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ultimate-heat-sink-to-service-water-pump-b",
+      "from": "ultimateHeatSink.outlet",
+      "to": "serviceWaterPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "serviceWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.35
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "service-water-pump-b-to-ccw-heat-exchanger",
+      "from": "serviceWaterPumpB.outlet",
+      "to": "componentCoolingHeatExchangerB.coldIn",
+      "connectionKind": "fluidFlow",
+      "service": "serviceWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.35
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "ccw-heat-exchanger-b-to-discharge",
+      "from": "componentCoolingHeatExchangerB.coldOut",
+      "to": "coolingWaterDischarge.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "serviceWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "diameterM": 0.35
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ]
     }
   ],
   "publishedVariables": [
@@ -14614,10 +15905,6 @@
     "dieselGeneratorA.frequencyHz",
     "loadSequencerA.step",
     "loadCentresA.energized",
-    "componentCoolingWaterPumpA.connected",
-    "componentCoolingWaterPumpA.energized",
-    "serviceWaterPumpA.connected",
-    "serviceWaterPumpA.energized",
     "containmentFanCoolersA.connected",
     "containmentFanCoolersA.energized",
     "safetyBusB.voltageKv",
@@ -14628,10 +15915,6 @@
     "dieselGeneratorB.frequencyHz",
     "loadSequencerB.step",
     "loadCentresB.energized",
-    "componentCoolingWaterPumpB.connected",
-    "componentCoolingWaterPumpB.energized",
-    "serviceWaterPumpB.connected",
-    "serviceWaterPumpB.energized",
     "containmentFanCoolersB.connected",
     "containmentFanCoolersB.energized",
     "pressurizerReliefTank.pressureMPa",
@@ -14731,6 +16014,101 @@
     "steamGeneratorReliefValveF.controllerAutomatic",
     "steamGeneratorReliefValveF.controllerSetpoint",
     "turbineBypassValve.controllerAutomatic",
-    "turbineBypassValve.controllerSetpoint"
+    "turbineBypassValve.controllerSetpoint",
+    "componentCoolingWaterPumpA.running",
+    "componentCoolingWaterPumpA.runningState",
+    "componentCoolingWaterPumpA.flowKgPerS",
+    "componentCoolingWaterPumpA.demandMw",
+    "componentCoolingWaterPumpBreakerA.closed",
+    "componentCoolingWaterPumpBreakerA.closedState",
+    "componentCoolingWaterPumpBreakerA.energized",
+    "serviceWaterPumpA.running",
+    "serviceWaterPumpA.runningState",
+    "serviceWaterPumpA.flowKgPerS",
+    "serviceWaterPumpA.demandMw",
+    "serviceWaterPumpBreakerA.closed",
+    "serviceWaterPumpBreakerA.closedState",
+    "serviceWaterPumpBreakerA.energized",
+    "rhrHeatExchangerA.hotInletTemperatureC",
+    "rhrHeatExchangerA.hotOutletTemperatureC",
+    "rhrHeatExchangerA.coldInletTemperatureC",
+    "rhrHeatExchangerA.coldOutletTemperatureC",
+    "rhrHeatExchangerA.hotSideFlowKgPerS",
+    "rhrHeatExchangerA.coldSideFlowKgPerS",
+    "rhrHeatExchangerA.heatTransferMw",
+    "componentCoolingHeatExchangerA.hotInletTemperatureC",
+    "componentCoolingHeatExchangerA.hotOutletTemperatureC",
+    "componentCoolingHeatExchangerA.coldInletTemperatureC",
+    "componentCoolingHeatExchangerA.coldOutletTemperatureC",
+    "componentCoolingHeatExchangerA.hotSideFlowKgPerS",
+    "componentCoolingHeatExchangerA.coldSideFlowKgPerS",
+    "componentCoolingHeatExchangerA.heatTransferMw",
+    "componentCoolingTankA.inventoryKg",
+    "componentCoolingTankA.temperatureC",
+    "componentCoolingTankA.levelPercent",
+    "rhr-heat-exchanger-a-to-header.flowKgPerS",
+    "rhr-heat-exchanger-a-to-header.temperatureC",
+    "ccw-inventory-a-to-pump.flowKgPerS",
+    "ccw-inventory-a-to-pump.temperatureC",
+    "ccw-pump-a-to-rhr-heat-exchanger.flowKgPerS",
+    "ccw-pump-a-to-rhr-heat-exchanger.temperatureC",
+    "rhr-heat-exchanger-a-to-ccw-heat-exchanger.flowKgPerS",
+    "rhr-heat-exchanger-a-to-ccw-heat-exchanger.temperatureC",
+    "ccw-heat-exchanger-a-to-inventory.flowKgPerS",
+    "ccw-heat-exchanger-a-to-inventory.temperatureC",
+    "ultimate-heat-sink-to-service-water-pump-a.flowKgPerS",
+    "ultimate-heat-sink-to-service-water-pump-a.temperatureC",
+    "service-water-pump-a-to-ccw-heat-exchanger.flowKgPerS",
+    "service-water-pump-a-to-ccw-heat-exchanger.temperatureC",
+    "ccw-heat-exchanger-a-to-discharge.flowKgPerS",
+    "ccw-heat-exchanger-a-to-discharge.temperatureC",
+    "componentCoolingWaterPumpB.running",
+    "componentCoolingWaterPumpB.runningState",
+    "componentCoolingWaterPumpB.flowKgPerS",
+    "componentCoolingWaterPumpB.demandMw",
+    "componentCoolingWaterPumpBreakerB.closed",
+    "componentCoolingWaterPumpBreakerB.closedState",
+    "componentCoolingWaterPumpBreakerB.energized",
+    "serviceWaterPumpB.running",
+    "serviceWaterPumpB.runningState",
+    "serviceWaterPumpB.flowKgPerS",
+    "serviceWaterPumpB.demandMw",
+    "serviceWaterPumpBreakerB.closed",
+    "serviceWaterPumpBreakerB.closedState",
+    "serviceWaterPumpBreakerB.energized",
+    "rhrHeatExchangerB.hotInletTemperatureC",
+    "rhrHeatExchangerB.hotOutletTemperatureC",
+    "rhrHeatExchangerB.coldInletTemperatureC",
+    "rhrHeatExchangerB.coldOutletTemperatureC",
+    "rhrHeatExchangerB.hotSideFlowKgPerS",
+    "rhrHeatExchangerB.coldSideFlowKgPerS",
+    "rhrHeatExchangerB.heatTransferMw",
+    "componentCoolingHeatExchangerB.hotInletTemperatureC",
+    "componentCoolingHeatExchangerB.hotOutletTemperatureC",
+    "componentCoolingHeatExchangerB.coldInletTemperatureC",
+    "componentCoolingHeatExchangerB.coldOutletTemperatureC",
+    "componentCoolingHeatExchangerB.hotSideFlowKgPerS",
+    "componentCoolingHeatExchangerB.coldSideFlowKgPerS",
+    "componentCoolingHeatExchangerB.heatTransferMw",
+    "componentCoolingTankB.inventoryKg",
+    "componentCoolingTankB.temperatureC",
+    "componentCoolingTankB.levelPercent",
+    "rhr-heat-exchanger-b-to-header.flowKgPerS",
+    "rhr-heat-exchanger-b-to-header.temperatureC",
+    "ccw-inventory-b-to-pump.flowKgPerS",
+    "ccw-inventory-b-to-pump.temperatureC",
+    "ccw-pump-b-to-rhr-heat-exchanger.flowKgPerS",
+    "ccw-pump-b-to-rhr-heat-exchanger.temperatureC",
+    "rhr-heat-exchanger-b-to-ccw-heat-exchanger.flowKgPerS",
+    "rhr-heat-exchanger-b-to-ccw-heat-exchanger.temperatureC",
+    "ccw-heat-exchanger-b-to-inventory.flowKgPerS",
+    "ccw-heat-exchanger-b-to-inventory.temperatureC",
+    "ultimate-heat-sink-to-service-water-pump-b.flowKgPerS",
+    "ultimate-heat-sink-to-service-water-pump-b.temperatureC",
+    "service-water-pump-b-to-ccw-heat-exchanger.flowKgPerS",
+    "service-water-pump-b-to-ccw-heat-exchanger.temperatureC",
+    "ccw-heat-exchanger-b-to-discharge.flowKgPerS",
+    "ccw-heat-exchanger-b-to-discharge.temperatureC",
+    "containment.sumpTemperatureC"
   ]
 }

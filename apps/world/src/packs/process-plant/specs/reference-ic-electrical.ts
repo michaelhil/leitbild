@@ -28,9 +28,10 @@ const lossOfVoltageFraction = 0.7
 // Some 3 to 5 MW in all on each 7 MW diesel. As the bus dies its
 // undervoltage relays open the sequenced loads' feeder breakers, so none
 // returns before its step. The safety injection and RHR pumps start on a safety
-// injection signal, not on this sequence; the component cooling water,
-// service water and fan cooler loads have no process model, only their
-// electrical load.
+// injection signal, not on this sequence. Component cooling water and
+// service water now have real hydraulic pumps behind these sequenced feeder
+// breakers; their standing run commands cannot create flow while the feeder is
+// dead. The fan-cooler banks remain electrical loads only.
 interface SequencedLoad {
   readonly step: number
   readonly id: string
