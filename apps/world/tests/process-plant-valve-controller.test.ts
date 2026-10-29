@@ -33,6 +33,13 @@ describe('operator authority on the existing proportional valve controller', () 
     }
   })
 
+  test('another component kind may use its own controller parameters without being parsed as a valve', () => {
+    const core = plant.graph.components.find(component => component.kind === 'reactorCore')!
+    const otherController = { ...core, parameters: { ...(core.parameters as object), controller: { kind: 'coreController', targetPowerMw: 1_000 } } }
+    expect(valvePositionController(otherController)).toBeNull()
+    expect(operatorControllerBindings(otherController)).toBeNull()
+  })
+
   test('initial AUTO and setpoints retain the authored current operating behavior', () => {
     const { read, run } = started()
     expect(read('turbineBypassValve.controllerAutomatic')).toBe(true)

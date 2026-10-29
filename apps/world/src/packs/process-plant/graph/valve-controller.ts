@@ -32,6 +32,7 @@ export type ValvePositionController = z.infer<typeof valvePositionControllerSche
 
 const parsedControllers = new WeakMap<CompiledComponent, ValvePositionController | null>()
 export const valvePositionController = (component: CompiledComponent): ValvePositionController | null => {
+  if (component.kind !== 'processValve' && component.kind !== 'steamValve') return null
   const cached = parsedControllers.get(component)
   if (cached !== undefined) return cached
   const declared = (component.parameters as { readonly controller?: unknown }).controller
