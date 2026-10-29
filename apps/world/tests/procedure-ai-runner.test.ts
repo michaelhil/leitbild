@@ -209,10 +209,16 @@ describe('the AI procedure runner through the World Module API', () => {
     const recorded = run.events().find(event => event.type === 'procedure.branch.selected' && event.provenance.causedByCommandId === first.body.result.commandId)
     expect(receipt).toMatchObject({
       run: { runId, procedureId: 'E-0', sourceId: 'runner-test', sourceRevision: revision, sourcePath: 'procedures/E-0.md', scope: { plantId, label: 'Unit A1' } },
-      event: { type: 'procedure.branch.selected', simulationRunId: run.id, runId, stepId: 'verify-reactor-trip', branchIndex: 0,
-        selectedBy: 'actor:ai:assistant', criterion: { status: 'supported' } },
+      event: { simulationRunId: run.id, runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+        selectedBy: 'actor:ai:assistant', criterionStatus: 'supported' },
     })
-    expect(receipt.event).toEqual(recorded)
+    expect(receipt.event).not.toHaveProperty('criterion')
+    expect(first.body.result.view).toMatchObject({ viewType: 'procedure.decision', windowOnly: true })
+    const locator = JSON.parse(first.body.result.view.state)
+    expect(first.body.result.view.state.length).toBeLessThan(4096)
+    const read = await invoke('world.procedure.decision.read', locator, ai)
+    expect(read.status).toBe(200)
+    expect(read.body.result.event).toEqual(recorded)
     expect(first.body.result.next.step.id).toBe('verify-turbine-trip')
     const commandEvent = run.events().find(event => event.type === 'command.result' && event.result.commandId === first.body.result.commandId)
     expect(commandEvent).not.toHaveProperty('result.decision')
@@ -230,11 +236,30 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(second.status).toBe(200)
     expect(second.body.result.decision.event.id).not.toBe(receipt.event.id)
     expect(second.body.result.decision.event.selectedBy).not.toBe(receipt.event.selectedBy)
-    expect(receipt.event).toEqual(recorded)
-    expect(receipt.event.provenance.causedByCommandId).toBe(first.body.result.commandId)
+    expect((await invoke('world.procedure.decision.read', locator, ai)).body.result.event).toEqual(recorded)
+    expect(locator.commandId).toBe(first.body.result.commandId)
     expect(receipt.event.seq).toBeLessThan(second.body.result.decision.event.seq)
     expect(run.snapshot().procedures!.runs[0]!.stepStates.find(step => step.stepId === 'verify-reactor-trip')!.decision!.selectedBy)
       .toBe(second.body.result.decision.event.selectedBy)
+
+    for (const changed of [
+      { sourceRevision: 'e'.repeat(40) }, { sourceId: 'runner-other' }, { sourcePath: 'procedures/ES-0.1.md' },
+      { eventId: second.body.result.decision.event.id }, { sequence: second.body.result.decision.event.seq },
+      { commandId: second.body.result.commandId }, { runId: 'procedure-run:another' },
+    ]) {
+      const wrong = await invoke('world.procedure.decision.read', { ...locator, ...changed }, ai)
+      expect(wrong.status).toBe(404)
+      expect(wrong.body.error.code).toBe('procedure_decision_unavailable')
+    }
+
+    const restrictions = (await invoke('world.simulation-run.agent-restrictions.read', {}, human)).body.result
+    expect((await invoke('world.simulation-run.agent-restrictions.set', { expectedRevision: restrictions.revision,
+      restrictions: { operationIds: restrictions.operationIds, objects: [{ objectId: plantId, deny: ['inspect'] }] } }, human)).status).toBe(200)
+    expect((await invoke('world.procedure.decision.read', locator, ai)).status).toBe(403)
+    expect((await invoke('world.procedure.decision.read', locator, human)).body.result.event).toEqual(recorded)
+    expect((await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId, label: 'Unit A1' } }, human)).status).toBe(200)
+    expect(run.snapshot().procedures!.runs.some(run => run.runId === runId)).toBe(false)
+    expect((await invoke('world.procedure.decision.read', locator, human)).body.result.event).toEqual(recorded)
   })
 
   test('an AI agent starts and drives E-0, reads its step with live readings, and its accepted transition answers with the next step', async () => {
@@ -411,9 +436,10 @@ describe('the AI procedure runner through the World Module API', () => {
     expect(transfer.body.result.next).toMatchObject({ run: { runId: destination.runId, procedureId: 'ES-0.1', currentStepId: 'monitor', stepNumber: 1 }, step: { id: 'monitor' } })
     expect(transfer.body.result.decision).toMatchObject({
       run: { runId, procedureId: 'E-0', sourceId: 'runner-test', sourceRevision: revision, sourcePath: 'procedures/E-0.md', scope: { plantId } },
-      event: { runId, stepId: 'verify-turbine-trip', targetKind: 'procedure', target: 'ES-0.1', criterion: { status: 'supported' } },
+      event: { runId, stepId: 'verify-turbine-trip', targetKind: 'procedure', target: 'ES-0.1', criterionStatus: 'supported' },
     })
-    expect(transfer.body.result.decision.event).toEqual(run.events().find(event => event.type === 'procedure.branch.selected' && event.provenance.causedByCommandId === transfer.body.result.commandId))
+    const historical = await invoke('world.procedure.decision.read', JSON.parse(transfer.body.result.view.state), ai)
+    expect(historical.body.result.event).toEqual(run.events().find(event => event.type === 'procedure.branch.selected' && event.provenance.causedByCommandId === transfer.body.result.commandId))
     expect(transfer.body.result.decision.run.runId).not.toBe(transfer.body.result.next.run.runId)
   })
 

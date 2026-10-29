@@ -21,7 +21,8 @@ import {
   type ObjectId,
 } from '../core/model/index.ts'
 import { procedureStepViewSchema } from '../features/procedures/step-view.ts'
-import { procedureTransitionDecisionSchema } from '../features/procedures/transition-receipt.ts'
+import { procedureTransitionReceiptSchema } from '../features/procedures/transition-receipt.ts'
+import { embeddedViewPublicationSchema } from '@leitbild/contracts'
 import { defineSimulationCapability } from './capabilities.ts'
 import type { SimulationCapability } from './protocol.ts'
 
@@ -68,7 +69,8 @@ const procedureStepResultSchema = z.discriminatedUnion('ok', [
 ])
 
 const procedureTransitionResultSchema = z.discriminatedUnion('ok', [
-  commandResultSchema.options[0].extend({ decision: procedureTransitionDecisionSchema, next: procedureStepViewSchema.optional(), nextUnavailable: z.string().optional() }),
+  commandResultSchema.options[0].extend({ decision: procedureTransitionReceiptSchema, view: embeddedViewPublicationSchema,
+    next: procedureStepViewSchema.optional(), nextUnavailable: z.string().optional() }),
   commandResultSchema.options[1],
 ])
 
@@ -100,7 +102,7 @@ export const worldCoreCapabilities: ReadonlyArray<SimulationCapability> = [
   command({
     id: procedureRunTransitionCommandKind,
     title: 'Follow procedure branch',
-    description: 'Input {runId, stepId, branchIndex, basis?, evidenceTagIds?}. Atomically follows a declared local-step, procedure, retry, END, or ABORT branch from the pinned document. Records the chosen branch, who chose it, an optional basis (at most 300 characters) and the step\'s declared tags as evidenceTagIds, which World reads now on the run\'s plant and records with the decision. A procedure transfer preserves source placekeeping and hands the run\'s driver on; an explicitly parallel branch keeps it active. Only authored outcome labels change step assessment. Read the step (world.procedure.run.step.read) to select stepId and branchIndex. An AI agent selects on a run it drives only a branch whose authored criterion World supports on fresh evidence at commit; unestablished or contradicted criteria are refused with structured assessment details. Read step.branchAssessments first. It works its current step (a normal, RNO or unknown outcome; to a step, another procedure or END), always with a basis, with optional evidenceTagIds for any additional cited readings: each explicit citation must name a readable tag; the complete criterion proof is acquired and retained by World independently. A person selecting a branch off the current step of a run an AI agent drives takes it over. Every accepted result carries decision: the exact committed branch event and its pinned source Run identity, including the selected step\'s criterion proof. This is historical evidence, distinct from next. Accepted for an AI agent, the result also carries next: the step the run is now at, as step.read returns it; after a transfer, the destination\'s current step, which it now drives (the run alone after END).',
+    description: 'Input {runId, stepId, branchIndex, basis?, evidenceTagIds?}. Atomically follows a declared local-step, procedure, retry, END, or ABORT branch from the pinned document. Records the chosen branch, who chose it, an optional basis (at most 300 characters) and the step\'s declared tags as evidenceTagIds, which World reads now on the run\'s plant and records with the decision. A procedure transfer preserves source placekeeping and hands the run\'s driver on; an explicitly parallel branch keeps it active. Only authored outcome labels change step assessment. Read the step (world.procedure.run.step.read) to select stepId and branchIndex. An AI agent selects on a run it drives only a branch whose authored criterion World supports on fresh evidence at commit; unestablished or contradicted criteria are refused with structured assessment details. Read step.branchAssessments first. It works its current step (a normal, RNO or unknown outcome; to a step, another procedure or END), always with a basis, with optional evidenceTagIds for any additional cited readings: each explicit citation must name a readable tag; the complete criterion proof is acquired and retained by World independently. A person selecting a branch off the current step of a run an AI agent drives takes it over. Every accepted result carries decision: a compact exact event receipt with its pinned source Run identity, branch, criterion status and simulation time. Its published view reads the complete immutable proof only when opened; world.procedure.decision.read accepts that view state for explicit historical review. This is distinct from next. Accepted for an AI agent, the result also carries next: the step the run is now at, as step.read returns it; after a transfer, the destination\'s current step, which it now drives (the run alone after END).',
     input: procedureRunTransitionPayloadSchema,
     output: procedureTransitionResultSchema,
     targets: () => [],

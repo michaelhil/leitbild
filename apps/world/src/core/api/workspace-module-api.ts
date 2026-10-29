@@ -1,4 +1,5 @@
 import { procedureRunsListInputSchema, procedureRunsListResultSchema, projectProcedureRuns } from '../../features/procedures/run-list.ts'
+import { procedureDecisionReadInputSchema, procedureTransitionDecisionSchema, retainedProcedureDecision } from '../../features/procedures/transition-receipt.ts'
 import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
 import {
   inspectionViewSchema,
@@ -1528,6 +1529,26 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const input = procedureRunsListInputSchema.parse(invocation.input)
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       return json({ result: projectProcedureRuns(visibleProcedureState(runtime, invocation), input.includeEvidence) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.procedure.decision.read', moduleId: WORLD_MODULE_ID, kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read recorded procedure decision',
+      description: 'Reads one exact historical branch decision and its complete retained criterion proof. Pass the immutable selector from an accepted transition view: runId, sourceId, sourceRevision, sourcePath, eventId, sequence and commandId. All must match the retained branch event and the original procedure Run start. Never returns current measurements or a later decision on the same step. This detailed review is not required to continue from an accepted transition receipt.',
+      risk: 'read', idempotent: true,
+      inputSchema: capabilityJsonSchema(procedureDecisionReadInputSchema), outputSchema: capabilityJsonSchema(procedureTransitionDecisionSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = procedureDecisionReadInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const decision = retainedProcedureDecision(runtime.events(), input)
+      if (!decision) return apiError(404, 'procedure_decision_unavailable', 'The exact recorded decision and pinned source are unavailable; current state is not substituted')
+      if (deniedInspectionSubjects(runtime, invocation).has(decision.run.scope.plantId)) {
+        return apiError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${decision.run.scope.plantId}`)
+      }
+      return json({ result: decision })
     },
   },
   {

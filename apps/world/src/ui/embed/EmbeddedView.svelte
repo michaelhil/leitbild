@@ -3,6 +3,7 @@
   import { DASHBOARD_VIEW_TYPE, VIGNETTE_VIEW_TYPE } from '../process-display/display-window-messages.ts'
   import Vignette from './vignette/Vignette.svelte'
   import { LAYOUT_INSPECTION_VIEW_TYPE } from '../physical-layout/inspection.ts'
+  import { PROCEDURE_DECISION_VIEW_TYPE } from '../../features/procedures/decision-view-type.ts'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
 
@@ -10,6 +11,7 @@
   const vignette = $derived(envelope.viewType === VIGNETTE_VIEW_TYPE && ofRun)
   const dashboard = $derived(envelope.viewType === DASHBOARD_VIEW_TYPE && ofRun)
   const layoutInspection = $derived(envelope.viewType === LAYOUT_INSPECTION_VIEW_TYPE && ofRun)
+  const procedureDecision = $derived(envelope.viewType === PROCEDURE_DECISION_VIEW_TYPE && ofRun)
 </script>
 
 {#if vignette}
@@ -19,6 +21,12 @@
     <Inspection {envelope} />
   {:catch error}
     <p class="embed-failure">This quick look cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
+  {/await}
+{:else if procedureDecision}
+  {#await import('./procedures/Decision.svelte') then { default: Decision }}
+    <Decision {envelope} />
+  {:catch error}
+    <p class="embed-failure">This recorded decision cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
   {/await}
 {:else if dashboard}
   <!-- A dashboard's frame loads its own code: a display's frame never does (§5.8). -->

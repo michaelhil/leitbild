@@ -4,7 +4,7 @@ import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/
 import type { RunHistorianStatus } from '../../features/historian/policy.ts'
 import { recordingSeriesQuerySchema, type RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
-import { procedureTransitionDecision, type ProcedureTransitionDecision } from '../../features/procedures/transition-receipt.ts'
+import { procedureTransitionDecision, publishProcedureTransitionDecision } from '../../features/procedures/transition-receipt.ts'
 import { createProcedureObservationPort,type ProcedureObservationPort } from '../../features/procedures/pack-observations.ts'
 import { createObservationCache, createObservationPort, observationProviderFor, type ObservationPort } from '../../features/displays/observation/port.ts'
 import { createProcedureSourceService,type ProcedureSourceService, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
@@ -896,7 +896,7 @@ export const createSimulationRunRuntime = async (config: {
           },
         })
         if (commit === null) return null
-        let decision: ProcedureTransitionDecision | undefined
+        let publishedDecision: ReturnType<typeof publishProcedureTransitionDecision> | undefined
         await publishGenerated(async () => {
           await evaluateProcedureObservationsNow()
           const snapshot = state.snapshot()
@@ -930,11 +930,12 @@ export const createSimulationRunRuntime = async (config: {
             const run = snapshot.procedures?.runs.find(run => run.runId === selected?.runId)
             if (!selected || !run) throw new Error('Procedure transition produced no pinned decision receipt')
             // Capture the exact commit batch, never the latest step or a later journal search.
-            decision = procedureTransitionDecision(run, selected)
+            publishedDecision = publishProcedureTransitionDecision(procedureTransitionDecision(run, selected))
           }
           return events
         })
-        const result = { ok: true as const, commandId: command.id, acceptedAt: at, ...(decision === undefined ? {} : { decision }) }
+        const result = { ok: true as const, commandId: command.id, acceptedAt: at,
+          ...publishedDecision }
         return result
       } catch (error) {
         assertCommitAvailable()
