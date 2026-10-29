@@ -532,6 +532,41 @@ describe('Workspace progressive-discovery tools', () => {
     expect(standalone).toMatchObject({ success: true, data: { results: [{ viewError: expect.stringContaining('no execution evidence') }] } })
   })
 
+  test('a decision receipt stays actionable while its owner-published evidence locator remains opaque', async () => {
+    const source = { sourceId: 'source-1', sourceRevision: 'revision-1', sourcePath: 'procedures/example.md' }
+    const locator = { runId: 'procedure-1', ...source, eventId: 'event-7', sequence: 7, commandId: 'command-1' }
+    const decision = {
+      run: { runId: 'procedure-1', procedureId: 'example', ...source, scope: { objectId: 'plant:unit-2' } },
+      event: { id: 'event-7', simulationRunId: run.id, seq: 7, runId: 'procedure-1', stepId: '4', branchIndex: 0, target: '5', targetKind: 'step', simulationTime: '2026-01-01T12:00:00.000Z', selectedBy: 'ai', criterionStatus: 'supported' },
+    }
+    const view = { viewType: 'procedure.decision', title: 'Recorded step decision', height: 640, state: JSON.stringify(locator) }
+    const invocations: string[] = []
+    const receiptFetch = (async (input: Request | string | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      if (new URL(request.url).pathname.endsWith('/invoke')) {
+        invocations.push(request.url)
+        return Response.json({ result: { ok: true, decision, view } })
+      }
+      return catalogFetch([])(input, init)
+    }) as typeof fetch
+    const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl: receiptFetch })
+    const raw = await call!.execute({ calls: [{ key: 'step', operationId: writeId, input: {}, say: 'Step 4 verified' }] }, { ...context, executionCallId: 'call_4_0' })
+    const before = JSON.stringify(raw)
+    const shown = workspaceCallResultForModel(raw, createTurnCards())
+    const [entry] = (shown.data as { results: ReadonlyArray<Record<string, unknown>> }).results
+    expect(entry).toMatchObject({ success: true, viewRef: 'call_4_0/step', data: { ok: true, decision, view: { viewType: 'procedure.decision', title: view.title, height: view.height } } })
+    expect(JSON.stringify(shown.data)).not.toContain('state')
+    expect(JSON.stringify(shown.data)).not.toContain('sequence')
+    expect(JSON.stringify(shown.data)).not.toContain('criterionReadings')
+    expect(JSON.stringify(shown.data)).not.toContain('command-1')
+    expect(entry).not.toHaveProperty('embeddedView')
+    // The Inspector still resolves the exact owner-published view from the
+    // immutable result; Agents does not request its proof while evaluating.
+    expect((raw.data as { results: ReadonlyArray<unknown> }).results[0]).toMatchObject({ embeddedView: { ...view, subject: run, moduleId: 'world' } })
+    expect(JSON.stringify(raw)).toBe(before)
+    expect(invocations).toHaveLength(1)
+  })
+
   test('a window-only view (a dashboard\'s board) is kept as evidence a cited line opens, with no viewRef, and the model reads no view (R4 §2.6)', async () => {
     const board = { viewType: 'display.dashboard', title: 'Whole Run · dashboard', height: 960, state: '{"scope":"run"}', windowOnly: true }
     const card = { at: { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' }, more: 0, adjusted: [], items: [{ key: 'k1', label: 'Unit One · speed', reading: '93.2 %', numbers: [{ value: 93.2, decimals: 1 }], at: 'Unit One' }] }
