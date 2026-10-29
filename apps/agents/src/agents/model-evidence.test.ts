@@ -80,6 +80,66 @@ test.each(['question', 'trigger'] as const)('a real Agent/tool/inspection chain 
   } finally { store.close() }
 })
 
+test('a scheduled pass stays quiet with inspectable model/tool evidence; ordinary passes, scheduled answers and errors still post', async () => {
+  const store = createExecutionStore(':memory:')
+  const rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Advice', createdBy: 'test' })
+  const tools = createToolRegistry()
+  tools.register({ name: 'read_state', description: 'Read current state', parameters: {}, execute: async () => ({ success: true, data: { changed: false } }) })
+  let mode: 'quiet' | 'pass' | 'respond' | 'error' = 'quiet', pass = 0, finished = 0, linked = 0
+  const outcomes: string[] = []
+  const provider: LLMProvider = { models: async () => ['test'], chat: async () => {
+    if (mode === 'error') throw new Error('Scheduled provider failure')
+    if (mode === 'respond') return { content: 'A condition changed.', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 } }
+    return { content: '', generationMs: 1, tokensUsed: { prompt: 1, completion: 1 }, toolCalls: [{
+      function: mode === 'quiet' && ++pass === 1 ? { name: 'read_state', arguments: {} } : { name: 'pass', arguments: { reason: 'No material change.' } },
+    }] }
+  } }
+  const agent = await spawnAIAgent({ name: 'Advisor', model: 'test', persona: 'Report material changes.', tools: ['read_state'] }, { bound: () => provider } as unknown as LLMService,
+    rooms, createWorkspaceSettings(), createTeam(), (_target, params) => [room.post(params)], tools, {
+      executionStore: store,
+      onTurnMessageLinked: () => { linked++ }, onTurnFinished: () => { finished++ },
+      onEvalEvent: (_scope, event) => { if (event.kind === 'eval_completed') outcomes.push(event.outcome) },
+    })
+  room.addMember(agent.id); await agent.join(room)
+  try {
+    const before = room.getMessageCount()
+    await agent.fireTriggerExecute!('Read the state and report only material changes.', room.profile.id)
+    expect(room.getMessageCount()).toBe(before)
+    expect(linked).toBe(0)
+    expect(finished).toBe(1)
+    expect(outcomes).toEqual(['pass'])
+    const turn = store.listTurns(room.profile.id)[0]!
+    expect(turn.status).toBe('completed')
+    expect(turn.messageId).toBeUndefined()
+    const context = { system: { rooms, executionStore: store } } as unknown as RouteContext
+    const get = async (suffix: string) => {
+      const path = `/rooms/${room.profile.id}/executions/${turn.id}${suffix}`
+      const route = roomRoutes.find(route => route.method === 'GET' && route.pattern.test(path))!
+      const response = await route.handler(new Request(`http://local${path}`), path.match(route.pattern)!, context)
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+    expect(await get('')).toMatchObject({ turn: { status: 'completed' }, modelCapture: 'recorded', models: [{ id: 'model_1' }, { id: 'model_2' }], calls: [{ id: 'call_0_0', tool: 'read_state' }] })
+    expect(await get('/models/model_2')).toMatchObject({ status: 'completed', requestedTools: [{ tool: 'pass' }] })
+    expect(await get('/calls/call_0_0')).toMatchObject({ result: { success: true, data: { changed: false } } })
+
+    mode = 'pass'
+    agent.receive(room.post({ senderId: 'human', content: 'Do you have anything to add?', type: 'chat' }))
+    await agent.whenIdle()
+    expect(room.getRecent(1)[0]).toMatchObject({ type: 'pass', content: '[pass] No material change.' })
+    mode = 'respond'
+    await agent.fireTriggerExecute!('Report the changed state.', room.profile.id)
+    expect(room.getRecent(1)[0]).toMatchObject({ type: 'chat', content: 'A condition changed.' })
+    mode = 'error'
+    await agent.fireTriggerExecute!('Report the state.', room.profile.id)
+    expect(room.getRecent(1)[0]).toMatchObject({ type: 'error' })
+    expect(room.getRecent(1)[0]?.content).toContain('Scheduled provider failure')
+    expect(outcomes).toEqual(['pass', 'pass', 'respond', 'error'])
+    expect(finished).toBe(4)
+    expect(linked).toBe(3)
+  } finally { store.close() }
+})
+
 test('provider failure keeps the exact attempted request and observed error without fabricating a response', async () => {
   const store = createExecutionStore(':memory:'), rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
   const provider: LLMProvider = { models: async () => ['test'], chat: async () => { throw new Error('Provider refused this request') } }

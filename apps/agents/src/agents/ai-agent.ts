@@ -1027,7 +1027,10 @@ export const createAIAgent = (
           undefined, undefined, captured, preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled
-        onDecision({ ...decision, generationTraceId: triggerTraceId })
+        // A scheduled "nothing changed" stays quiet. Its observed model/tool
+        // evidence remains in Room execution history without inventing a posted
+        // message or a message-owned comparison/delegation attachment.
+        if (decision.response.action !== 'pass') onDecision({ ...decision, generationTraceId: triggerTraceId })
         outcome = decision.response.action
       } catch (err) {
         if (cm.isEpochCurrent(epoch)) {
