@@ -17,23 +17,11 @@ test('Halden recording preview uses Pack-owned series selection and sampling cad
     const definition = testScenarioDefinitions.find(source => source.id === 'halden-power-complex')!
     const preview = await registry.previewScenario(definition)
     const plants = preview.recording.selections.find(selection => selection.packId === 'process-plant')!
-    // Every published signal of the reference Plant, the electrical, protection, secondary and thermal work's among
-    // them, the pressurizer's backup heater group, every pump's loop reverse flow, every valve's isolation signal,
-    // the pressurizer's level deviation from its program, each core's delayed-neutron and decay-heat groups, its
-    // power range, startup rate, P-6 and P-10, Tref and Tavg's deviation from it, each steam generator's
-    // auxiliary feedwater flow and wide-range level, and the feedwater tank's level control valve and the hotwell
-    // reject valve and its flow; and, 55 more a Plant, its rod position and rod bottom, its diesels' meters, load
-    // sequencers and sequenced loads, its buses' kilovolts, and its relief tank and tailpipes; and, 41 more a Plant
-    // (C1), its rod steps and bank positions, source-range startup rate, trip breakers, each loop's ΔT power, flow and
-    // forced flow, the turbine's load, speed and breaker, the grid's frequency, availability and supply voltage, and
-    // the natural-circulation checks' rates; and, 18 more a Plant (C2b), each steam generator relief valve's flow to
-    // the atmosphere, and the turbine-driven AFW pump's two steam supply valves and their lines' flows; and, 23 more
-    // a Plant, each steam line's bank of safety valves and its flow to the atmosphere in place of the header's valve;
-    // less, 81 a Plant, the faults a scenario injects, which no person or AI agent reads back (isInjectedFault): 28
-    // valves' position failure and failed position each, 17 lines' leak areas, 4 tube leaks, 2 diesels' availability,
-    // and the pressurizer relief valve's failure and failed position.
-    expect(plants.initialSeriesCount).toBe(2884)
-    expect(plants.samplesPerSimulationSecond).toBe(2884)
+    // Four current Plants, each with 739 operations series: the existing 721
+    // plus eighteen controller selection/target values. Configuration history
+    // remains distinguishable from measured response; injected fault truth stays excluded.
+    expect(plants.initialSeriesCount).toBe(2956)
+    expect(plants.samplesPerSimulationSecond).toBe(2956)
     expect(preview.recording.selections.every(selection => selection.initialSeriesCount !== null)).toBe(true)
     // At full sampling, before exception recording: the derived sample budget over the selections' rate (just over three minutes).
     const rate = preview.recording.selections.reduce((sum, selection) => sum + selection.samplesPerSimulationSecond!, 0)
