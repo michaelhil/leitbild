@@ -54,14 +54,14 @@ describe('Full conceptual PWR unit authoring', () => {
     expect(baseSource.elements[0]!.pose.position).toEqual([10, 16, 15])
   })
 
-  test('retained coverage keeps its historical admission while unchanged current component identities retain their physical classification', () => {
+  test('retained coverage keeps its historical graph admission independently of the extended current model', () => {
     const historical = historicalTargets.entries.find(entry => entry.selection.model.parameters.loopCount === 4)!.description
     expect(artifacts.coverage.modelRequirement).toEqual({ modelRef: historical.modelRef, modelDigest: historical.modelDigest })
     expect(plant.modelDigest).not.toBe(historical.modelDigest)
-    expect(plant.sourceGraph.components).toHaveLength(121)
-    expect(plant.sourceGraph.connections).toHaveLength(167)
+    expect(historical.subjects).toHaveLength(121)
+    expect(historical.connections).toHaveLength(167)
     const rows = artifacts.coverage.dispositions
-    expect(rows.map(row => row.subjectId).sort()).toEqual(plant.sourceGraph.components.map(component => String(component.id)).sort())
+    expect(rows.map(row => row.subjectId).sort()).toEqual(historical.subjects.map(subject => subject.id).sort())
     expect(rows.filter(row => row.disposition === 'direct')).toHaveLength(82)
     expect(rows.filter(row => row.disposition === 'assembly')).toHaveLength(25)
     const bound = new Set(artifacts.bindings.map(binding => binding.elementId))
