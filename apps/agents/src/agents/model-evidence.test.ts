@@ -19,7 +19,7 @@ import type { AIAgent } from '../core/types/agent.ts'
 const temporary: string[] = []
 afterEach(() => { for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }) })
 
-test('a real Agent/tool/inspection chain retains every request, correction and repeated provider-id execution', async () => {
+test.each(['question', 'trigger'] as const)('a real Agent/tool/inspection chain retains every request, correction and repeated provider-id execution (%s)', async origin => {
   const dir = mkdtempSync(join(tmpdir(), 'leitbild-model-chain-')); temporary.push(dir)
   const store = createExecutionStore(join(dir, 'executions.sqlite'))
   const rooms = createRoomDirectory({ deliver: () => {} }), room = rooms.createRoom({ name: 'Room', createdBy: 'test' })
@@ -43,8 +43,11 @@ test('a real Agent/tool/inspection chain retains every request, correction and r
     { bound: options => { chainSwitch = options.onChainSwitch; return provider } } satisfies LLMService, rooms, createWorkspaceSettings(), createTeam(),
     (_target, params) => [room.post(params)], tools, { executionStore: store, onEvalEvent: (_scope, event) => { if (event.kind === 'model_fallback') liveFallbacks++ } })
   room.addMember(agent.id); await agent.join(room)
-  agent.receive(room.post({ senderId: 'human', content: 'Inspect the value, verify it and show a map.', type: 'chat' }))
-  await agent.whenIdle()
+  if (origin === 'trigger') await agent.fireTriggerExecute!('Inspect the value, verify it and show a map.', room.profile.id)
+  else {
+    agent.receive(room.post({ senderId: 'human', content: 'Inspect the value, verify it and show a map.', type: 'chat' }))
+    await agent.whenIdle()
+  }
   try {
     const turn = store.listTurns(room.profile.id)[0]!, evidence = store.modelEvidence(room.profile.id, turn.id)
     expect(turn.status).toBe('completed')

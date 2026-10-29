@@ -292,6 +292,77 @@ export const createAIAgent = (
   //   • members     → getRoomMembers (participant profiles + running summary)
   //   • compression → getCompressedIds (folded into single room_summary)
 
+  // Scheduled advice and ordinary questions use the same scoped, fresh turn
+  // preparation. Only a trigger's trailing prompt differs: it is evidence in
+  // the model request, not a new message in the Room's transcript.
+  const prepareTurnContext = async (
+    roomId: string,
+    epoch: number,
+    signal: AbortSignal,
+    emit: (event: EvalEventCore) => void,
+    instruction?: string,
+    trailingPrompt?: string,
+  ) => {
+    const resolved = resolveEffective
+      ? resolveEffective(currentModel)
+      : { model: currentModel, fallback: false, reason: 'preferred_available' }
+    const effectiveModel = resolved.model
+    if (resolved.fallback && effectiveModel !== currentModel) {
+      if (lastFallbackTarget !== effectiveModel) {
+        emit({ kind: 'model_fallback', preferred: currentModel, effective: effectiveModel, reason: resolved.reason })
+      }
+      lastFallbackTarget = effectiveModel
+    } else if (!resolved.fallback) {
+      lastFallbackTarget = null
+    }
+    const info = await llmProvider.modelInfo?.(effectiveModel)
+    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
+    describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
+    // A scripted turn's context is the script's alone, so it reads no Run context.
+    const runContext = getScriptContext?.(roomId, config.name) === undefined
+      ? await options?.fetchRunContext?.(roomId, focusedSubjectsByRoom.get(roomId) ?? [], { id: agentId, name: config.name }, signal)
+      : undefined
+    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
+    const effectiveToolDefs = effectiveToolsForRoom(roomId)
+    const baseDeps = contextDeps(effectiveModel, effectiveToolDefs, instruction)
+    // Human questions arriving while a scheduled read awaits still need their
+    // own answer. They join the pending queue, not this transient prompt.
+    const deps = trailingPrompt === undefined ? baseDeps : { ...baseDeps, history: { ...agentHistory, incoming: [] } }
+    const appendPrompt = (context: ContextResult): ContextResult => trailingPrompt === undefined ? context : {
+      ...context,
+      messages: [...context.messages, { role: 'user', content: trailingPrompt }],
+      flushInfo: { ids: new Set<string>(), triggerRoomId: roomId },
+    }
+    const initialContext = appendPrompt(buildContext({ ...deps, ...(runContext === undefined ? {} : { runContext }) }, roomId))
+    // Comparison starting input omits the automatic Run context (owner,
+    // 20 Oct); exact live Inspector requests retain what the model reads.
+    // This separate build counts no metrics twice.
+    const { metricsSink: _counted, ...quiet } = deps
+    const captured = runContext === undefined ? undefined : appendPrompt(buildContext(quiet, roomId))
+    // Only prior replay uses the working target. During a tool turn, keep
+    // complete new evidence and fit older history to actual known capacity.
+    const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
+    const contextResult: ContextResult = { ...initialContext,
+      tokenBudget: info && info.contextMax > 0 ? Math.max(0, info.contextMax - toolTokens - OUTPUT_RESERVE - SAFETY_MARGIN) : undefined,
+    }
+    emit({ kind: 'context_ready', messages: contextResult.messages, model: effectiveModel,
+      temperature: currentTemperature, toolCount: effectiveToolDefs?.length ?? 0 })
+    for (const warning of contextResult.warnings) emit({ kind: 'warning', message: warning })
+    // Compare skill declarations with the exact Room tool surface, for every
+    // turn origin. A mismatch is visible evidence, not a new permission gate.
+    if (getActiveSkillsDeclarations && effectiveToolDefs) {
+      const surfaceNames = new Set(effectiveToolDefs.map(definition => definition.function.name))
+      for (const skill of getActiveSkillsDeclarations(currentSkills, roomId)) {
+        const missing = skill.declaredTools.filter(tool => !surfaceNames.has(tool))
+        if (missing.length > 0) emit({ kind: 'warning',
+          message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.` })
+      }
+    }
+    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
+    return { effectiveModel, effectiveToolDefs, contextResult,
+      captured: captured === undefined ? undefined : { ...captured, tokenBudget: contextResult.tokenBudget } }
+  }
+
   // --- Evaluation loop: per-room generation with pending queue ---
 
   const notifyTurnFinished = (executionTurnId: string): void => {
@@ -580,86 +651,16 @@ export const createAIAgent = (
       let wasRespond = false
       let outcome: 'respond' | 'pass' | 'error' = 'error'
       try {
-        // Model resolution belongs to the turn too: it can fail or emit a
-        // fallback before context construction starts.
-        const resolved = resolveEffective
-          ? resolveEffective(currentModel)
-          : { model: currentModel, fallback: false, reason: 'preferred_available' }
-        const effectiveModel = resolved.model
-        if (resolved.fallback && effectiveModel !== currentModel) {
-          if (lastFallbackTarget !== effectiveModel) {
-            emit({ kind: 'model_fallback', preferred: currentModel, effective: effectiveModel, reason: resolved.reason })
-          }
-          lastFallbackTarget = effectiveModel
-        } else if (!resolved.fallback) {
-          lastFallbackTarget = null
-        }
-        const info = await llmProvider.modelInfo?.(effectiveModel)
-        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
-        describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
-        // A scripted turn's context is the script's alone, so it reads no Run context.
-        const runContext = getScriptContext?.(triggerRoomId, config.name) === undefined
-          ? await options?.fetchRunContext?.(triggerRoomId, focusedSubjectsByRoom.get(triggerRoomId) ?? [], { id: agentId, name: config.name }, abortController.signal)
-          : undefined
-        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
-        const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
-        const deps = contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction)
-        const initialContext = buildContext({ ...deps, ...(runContext === undefined ? {} : { runContext }) }, triggerRoomId)
-        // Comparison starting input omits the automatic Run context (owner,
-        // 20 Oct); exact live Inspector requests retain what the model reads.
-        // This separate build counts no metrics twice.
-        const { metricsSink: _counted, ...quiet } = deps
-        const captured = runContext === undefined ? undefined : buildContext(quiet, triggerRoomId)
-        // Only prior replay uses the working target. During a tool turn, keep
-        // complete new evidence and fit older history to actual known capacity.
-        const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
-        const contextResult: ContextResult = { ...initialContext,
-          tokenBudget: info && info.contextMax > 0 ? Math.max(0, info.contextMax - toolTokens - OUTPUT_RESERVE - SAFETY_MARGIN) : undefined,
-        }
+        const prepared = await prepareTurnContext(triggerRoomId, epoch, abortController.signal, emit, requested?.instruction)
+        if (!prepared) return // Cancellation during preparation starts no model call.
+        const { contextResult, effectiveModel, effectiveToolDefs, captured } = prepared
         // A requested turn replies first to what it was asked about.
         const replyIds = [...new Set([...(requested?.inReplyTo ?? []), ...contextResult.flushInfo.ids])]
         const inReplyTo = replyIds.length > 0 ? replyIds : undefined
-        // Pack-aware tool count for the context_ready event — same resolution
-        // path the eval will take, so the UI's tool-count badge matches what
-        // the LLM actually sees.
-        // Emit context_ready + any context builder warnings before LLM call
-        if (emit) {
-          emit({
-            kind: 'context_ready',
-            messages: contextResult.messages,
-            model: effectiveModel,
-            temperature: currentTemperature,
-            toolCount: effectiveToolDefs?.length ?? 0,
-          })
-          for (const w of contextResult.warnings) {
-            emit({ kind: 'warning', message: w })
-          }
-          // Skill / tool surface coherence check: if an active skill declares
-          // `allowed-tools: [...]` in its frontmatter, every tool it lists
-          // should be in the LLM-facing surface — otherwise the prompt and
-          // tool list contradict each other and models rationalise refusal
-          // (the prod biometrics symptom). Coherence warnings show up in the
-          // diagnostic API immediately. Not a hard gate — the skill text
-          // wins as a recommendation, but the agent may still call other
-          // tools. The warning makes the mismatch visible.
-          if (getActiveSkillsDeclarations && effectiveToolDefs) {
-            const surfaceNames = new Set(effectiveToolDefs.map(d => d.function.name))
-            const skills = getActiveSkillsDeclarations(currentSkills, triggerRoomId)
-            for (const skill of skills) {
-              const missing = skill.declaredTools.filter(t => !surfaceNames.has(t))
-              if (missing.length > 0) {
-                emit({
-                  kind: 'warning',
-                  message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.`,
-                })
-              }
-            }
-          }
-        }
         preparing = false
         const { decision, flushInfo } = await runEvaluate(
           contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, emit, effectiveToolDefs, inReplyTo, requested?.requireView,
-          captured === undefined ? undefined : { ...captured, tokenBudget: contextResult.tokenBudget },
+          captured,
           preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled — discard stale result
@@ -1006,33 +1007,24 @@ export const createAIAgent = (
       const abortController = new AbortController()
       activeAbortController = abortController
       const triggerTraceId = generateTraceId()
-      const { emit, finish } = createTurnEvents(roomId, triggerTraceId, abortController.signal)
+      const { emit: liveEmit, finish } = createTurnEvents(roomId, triggerTraceId, abortController.signal)
+      const preparationStages: ExecutionStage[] = []
+      let preparing = true
+      const emit = (event: EvalEventCore): void => {
+        liveEmit(event)
+        const stage = preparing ? executionStageEvent(event) : undefined
+        if (stage) preparationStages.push({ id: `stage_${preparationStages.length + 1}`, at: Date.now(), event: stage })
+      }
       let outcome: 'respond' | 'pass' | 'error' = 'error'
 
       try {
-        // Resolve effective model (mirrors tryEvaluate).
-        const resolved = resolveEffective
-          ? resolveEffective(currentModel)
-          : { model: currentModel, fallback: false, reason: 'preferred_available' as const }
-        const effectiveModel = resolved.model
-
-        const effectiveToolDefs = effectiveToolsForRoom(roomId)
-        const baseCtx = buildContext(contextDeps(effectiveModel, effectiveToolDefs), roomId)
-        // Append the trigger prompt as a transient trailing user message.
-        // Not in incoming, so flushIncoming has nothing to do; the prompt
-        // never lands in room history.
-        const messages = [
-          ...baseCtx.messages,
-          { role: 'user' as const, content: prompt },
-        ]
-        const contextResult = {
-          ...baseCtx,
-          messages,
-          flushInfo: { ids: new Set<string>(), triggerRoomId: roomId },
-        }
-
+        const prepared = await prepareTurnContext(roomId, epoch, abortController.signal, emit, undefined, prompt)
+        if (!prepared) return // Cancellation during preparation starts no model call.
+        const { contextResult, effectiveModel, effectiveToolDefs, captured } = prepared
+        preparing = false
         const { decision } = await runEvaluate(
           contextResult, effectiveModel, roomId, abortController.signal, triggerTraceId, emit, effectiveToolDefs,
+          undefined, undefined, captured, preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled
         onDecision({ ...decision, generationTraceId: triggerTraceId })
