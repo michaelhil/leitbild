@@ -182,6 +182,7 @@ const primaryBoundaryFlows = (system: ReactorBehaviorSystem, vessel: ReactorBeha
     injectionInflow: combineBoundaryInflows([
       boundaryInflowByService(system, context, 'primaryInjection', primaryBoundaryLink),
       boundaryInflowByService(system, context, 'safetyInjection', primaryBoundaryLink),
+      boundaryInflowByService(system, context, 'residualHeatRemoval', primaryBoundaryLink),
     ]),
     // Letdown is what leaves the vessel on its letdown line, and the same
     // flow reaches the volume control tank.
@@ -489,6 +490,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         || link.service === 'charging'
         || link.service === 'primaryInjection'
         || link.service === 'safetyInjection'
+        || link.service === 'residualHeatRemoval'
       const mixedInletTemperature = flowWeightedIncomingLinkValue(system, component.index, 'temperatureC', context, primaryInletLink)
         ?? averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC'))
@@ -683,7 +685,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const currentBoron = context.readNumber(componentVariablePath(component, 'boronConcentrationPpm'))
       const chargingBoron = chargingInflow.soluteConcentrationPpm ?? currentBoron
       const injectionBoron = injectionInflow.soluteConcentrationPpm
-        ?? averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context, link => link.service === 'primaryInjection' || link.service === 'safetyInjection')
+        ?? averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context, link => link.service === 'primaryInjection' || link.service === 'safetyInjection' || link.service === 'residualHeatRemoval')
         ?? currentBoron
       const systemMass = nextInventory
         + context.readNumber(componentVariablePath(pressurizer, 'waterInventoryKg'))

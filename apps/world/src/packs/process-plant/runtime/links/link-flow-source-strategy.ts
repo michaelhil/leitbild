@@ -56,7 +56,7 @@ export interface ProcessLinkFlowSource {
 export const processLinkFlowSourceFor = (config: {
   readonly system: CompiledProcessPlant
   readonly link: CompiledProcessLink
-  readonly context: LinkBehaviorReadContext
+  readonly context: LinkBehaviorReadContext & { readonly dtSeconds: number }
 }): ProcessLinkFlowSource => {
   const { system, link, context } = config
   const fromComponent = system.graph.components[link.fromComponentIndex]
@@ -232,7 +232,11 @@ export const processLinkFlowSourceFor = (config: {
   }
   if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {
     return {
-      flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'sumpOutflowKgPerS')),
+      flowKgPerS: distributeFlowFromComponent(system, link, context, Math.min(
+        optionalParameterNumber(fromComponent, 'maxSumpOutflowKgPerS', 0),
+        context.dtSeconds > 0 ? context.readNumber(componentVariablePath(fromComponent, 'sumpInventoryKg')) / context.dtSeconds
+          : context.readNumber(componentVariablePath(fromComponent, 'sumpInventoryKg')) > 0 ? Number.POSITIVE_INFINITY : 0,
+      )),
       alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,

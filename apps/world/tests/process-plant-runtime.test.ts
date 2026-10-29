@@ -1087,7 +1087,6 @@ describe('process plant runtime', () => {
           hotSideDesignFlowKgPerS: 80,
           coldSideDesignFlowKgPerS: 80,
           effectivenessLimit: 0.85,
-          thermalMassMJPerC: 0,
           initialHotTemperatureC: 180,
           initialColdTemperatureC: 30,
         }),

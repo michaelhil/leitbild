@@ -17,6 +17,7 @@ export const processPlantServices = {
   primaryRelease: service('primaryRelease'),
   primaryRelief: service('primaryRelief'),
   safetyInjection: service('safetyInjection'),
+  residualHeatRemoval: service('residualHeatRemoval'),
 } as const
 
 // A tank's outflow on these services is throttled by how open the valves on
@@ -25,11 +26,13 @@ export const processPlantServices = {
 const downstreamDemandServices: ReadonlySet<ConnectionService> = new Set([
   processPlantServices.condensate,
   processPlantServices.feedwater,
+  processPlantServices.residualHeatRemoval,
 ])
 
 const demandTerminalByService: ReadonlyMap<ConnectionService, ReadonlySet<string>> = new Map([
   [processPlantServices.condensate, new Set(['processTank'])],
   [processPlantServices.feedwater, new Set(['steamGenerator'])],
+  [processPlantServices.residualHeatRemoval, new Set(['reactorCore'])],
 ])
 
 export const serviceMatches = (

@@ -1,7 +1,10 @@
 import type { CompiledProcessLink, VariablePath } from '../../graph/index.ts'
 import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { componentVariablePath, processLinkVariablePath } from '../behavior-contract.ts'
-import { clamp } from '../component-helpers.ts'
+import { isIncomingFluidForOutlet, sameComponentFluidCircuit } from '../fluid-circuits.ts'
+import { reactorCoolantDeliveryFraction } from '../pump-delivery.ts'
+import { serviceUsesDownstreamDemand } from '../service-profiles.ts'
+import { clamp, parameterNumber } from '../component-helpers.ts'
 import { downstreamDemandPathsForLink } from '../topology-cache.ts'
 import { headerPressureBalance, isPressureBalancedHeader } from '../behaviors/junction/header-pressure-balance.ts'
 
@@ -190,7 +193,7 @@ const outgoingDemandWeight = (
   const target = system.graph.components[link.toComponentIndex]
   if (target?.kind === 'centrifugalPump') {
     const nominal = Number((target.parameters as Record<string, unknown>).nominalFlowKgPerS)
-    return Math.max(0, context.readNumber(componentVariablePath(target, 'flowKgPerS'))) / nominal
+    return Math.max(0, pumpAvailableFlowKgPerS(system, target, context, link.service)) / nominal
   }
   return downstreamValveDemandWeight(system, link, context) ?? 1
 }
@@ -200,11 +203,13 @@ export const outgoingDemandWeightTotal = (
   componentIndex: number,
   service: CompiledProcessLink['service'],
   context: LinkBehaviorReadContext,
+  outletPort: string,
 ): number => {
   let total = 0
   for (const linkIndex of system.graph.outgoingLinksByComponent[componentIndex] ?? []) {
     const link = system.graph.links[linkIndex]
     if (!link || link.kind !== 'fluidFlow' || !serviceMatches(link, service)) continue
+    if (!sameComponentFluidCircuit(system.graph.components[componentIndex]!, outletPort, String(link.fromPortName))) continue
     total += outgoingDemandWeight(system, link, context)
   }
   return total
@@ -223,7 +228,7 @@ export const distributeFlowFromComponent = (
     const totalBranchFlow = [...branchFlows.values()].reduce((total, flow) => total + flow, 0)
     return totalBranchFlow <= 0 ? 0 : availableFlowKgPerS * (branchFlows.get(link.index) ?? 0) / totalBranchFlow
   }
-  const totalDemandWeight = outgoingDemandWeightTotal(system, link.fromComponentIndex, link.service, context)
+  const totalDemandWeight = outgoingDemandWeightTotal(system, link.fromComponentIndex, link.service, context, String(link.fromPortName))
   if (totalDemandWeight <= 0) return 0
   return availableFlowKgPerS * outgoingDemandWeight(system, link, context) / totalDemandWeight
 }
@@ -255,8 +260,7 @@ export const passiveFlowFromIncomingService = (
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
-  const service = link.service
-  const matchingService = (candidate: CompiledProcessLink): boolean => candidate.kind === 'fluidFlow' && serviceMatches(candidate, service)
+  const matchingService = (candidate: CompiledProcessLink): boolean => isIncomingFluidForOutlet(system, link, candidate)
   const incomingFlow = sumIncomingLinkValue(system, link.fromComponentIndex, 'flowKgPerS', context, matchingService)
   return distributeFlowFromComponent(system, link, context, incomingFlow)
 }
@@ -298,10 +302,30 @@ export const componentFlowBalanceForService = (
   }
 }
 
+/** A solved pump state never defeats a presently closed path or an exceeded
+ * shutoff head while its lagged flow state winds down. */
+export const pumpAvailableFlowKgPerS = (
+  system: CompiledProcessPlant,
+  pump: CompiledProcessPlant['graph']['components'][number],
+  context: LinkBehaviorReadContext,
+  service: CompiledProcessLink['service'],
+): number => {
+  const speed = Math.max(0, context.readNumber(componentVariablePath(pump, 'speedFraction')))
+  let availability = reactorCoolantDeliveryFraction(system, pump, context, speed)
+  if (serviceUsesDownstreamDemand(service)) {
+    const outlets = (system.graph.outgoingLinksByComponent[pump.index] ?? [])
+      .map(index => system.graph.links[index]!)
+      .filter(link => link.kind === 'fluidFlow' && link.service === service)
+    availability *= outlets.length === 0 ? 1 : Math.max(...outlets.map(link => downstreamServiceDemandFraction(system, link, context)))
+  }
+  return Math.min(Math.max(0, context.readNumber(componentVariablePath(pump, 'flowKgPerS'))),
+    parameterNumber(pump, 'nominalFlowKgPerS') * speed * availability)
+}
+
 export const sourceLimitedPumpFlow = (
   system: CompiledProcessPlant,
   link: CompiledProcessLink,
-  context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
+  context: LinkBehaviorReadContext,
   pumpFlow: number,
 ): number => {
   const incomingFlow = incomingLinkValueStats(
@@ -311,7 +335,9 @@ export const sourceLimitedPumpFlow = (
     context,
     candidate => candidate.kind === 'fluidFlow' && serviceMatches(candidate, link.service),
   )
-  if (incomingFlow.matchingLinks === 0) return pumpFlow
+  const pump = system.graph.components[link.fromComponentIndex]!
+  const deliverable = Math.min(pumpFlow, pumpAvailableFlowKgPerS(system, pump, context, link.service))
+  if (incomingFlow.matchingLinks === 0) return deliverable
   if (incomingFlow.valuedLinks === 0) return 0
-  return Math.min(pumpFlow, incomingFlow.total)
+  return Math.min(deliverable, incomingFlow.total)
 }

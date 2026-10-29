@@ -10,7 +10,7 @@ import {
 } from '../behavior-contract.ts'
 import { approach, clamp, optionalParameterNumber, parameterNumber, relaxToward, type ComponentNumericReadContext } from '../component-helpers.ts'
 import { primaryCircuitHydraulics, primaryLoopPumpHeadPa, primaryLoopSignedFlowKgPerS, solvePrimaryLoopFlows, type PrimaryCircuitHydraulics } from '../primary-loop-hydraulics.ts'
-import { primarySystemPressurizer } from '../system-topology.ts'
+import { reactorCoolantDeliveryFraction } from '../pump-delivery.ts'
 import { incomingComponentLinks, outgoingComponentLinks } from '../component-link-helpers.ts'
 import { downstreamServiceDemandFraction } from '../links/link-flow-helpers.ts'
 import { serviceUsesDownstreamDemand } from '../service-profiles.ts'
@@ -18,18 +18,6 @@ import { componentHasElectricalPower, type ElectricalReadContext } from './elect
 import { headerPressureBalance, pressureBalancedHeaderFedBy } from './junction/header-pressure-balance.ts'
 
 type PumpBehaviorInput = Parameters<ComponentBehaviorDefinition['update']>[0]
-
-// A pump that injects into the reactor coolant system pumps against its
-// pressure, read at the pressurizer: Q = Qrunout * n * sqrt(1 - P / (P0 * n^2)),
-// with the shutoff pressure P0 scaled by the square of the speed n.
-const reactorCoolantDeliveryFraction = ({ system, component, context }: PumpBehaviorInput, speed: number): number => {
-  const shutoffPressure = (component.parameters as Readonly<Record<string, unknown>>).reactorCoolantShutoffPressureMPa
-  if (typeof shutoffPressure !== 'number') return 1
-  const pressurizer = primarySystemPressurizer(system)
-  if (pressurizer === null) throw new Error(`pump ${component.id} injects into the reactor coolant system, which has no pressurizer to read its pressure from`)
-  const pressure = context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
-  return Math.sqrt(clamp(1 - pressure / Math.max(1e-6, shutoffPressure * speed * speed), 0, 1))
-}
 
 const maxSpeedFraction = 1.2
 
@@ -142,7 +130,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
       context.write(componentVariablePath(component, 'runningState'), running)
       context.write(componentVariablePath(component, 'speedRpm'), pumpRotorSpeedRpm(component, context, running, speed))
       const balancedFlow = balancedHeaderFlow(input, running)
-      const targetFlow = running ? balancedFlow ?? parameterNumber(component, 'nominalFlowKgPerS') * speed * reactorCoolantDeliveryFraction(input, speed) * dischargeOpenFraction(input) : 0
+      const targetFlow = running ? balancedFlow ?? parameterNumber(component, 'nominalFlowKgPerS') * speed * reactorCoolantDeliveryFraction(system, component, context, speed) * dischargeOpenFraction(input) : 0
       const currentFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
       const timeConstant = optionalParameterNumber(component, 'flowTimeConstantS', 0)
       const maxRamp = optionalParameterNumber(component, 'maxFlowRampKgPerS2', Number.POSITIVE_INFINITY)
@@ -198,7 +186,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
       const nominalHead = parameterNumber(component, 'nominalHeadPa')
       const developedHead = running ? nominalHead * speed * speed : 0
       // As it then runs: no more than the valves downstream of it pass (dischargeOpenFraction).
-      const componentFlow = running ? balancedHeaderFlow({ system, component, context }, running) ?? nominalFlow * speed * dischargeOpenFraction({ system, component, context }) : 0
+      const componentFlow = running ? balancedHeaderFlow({ system, component, context }, running) ?? nominalFlow * speed * reactorCoolantDeliveryFraction(system, component, context, speed) * dischargeOpenFraction({ system, component, context }) : 0
       context.write(componentVariablePath(component, 'flowKgPerS'), componentFlow)
       context.write(componentVariablePath(component, 'speedRpm'), running ? speed * nominalSpeedRpm(component) : 0)
       context.write(componentVariablePath(component, 'demandMw'), running

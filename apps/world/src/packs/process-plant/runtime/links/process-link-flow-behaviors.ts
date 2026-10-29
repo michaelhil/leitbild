@@ -5,6 +5,7 @@ import {
   componentValveCapacityForInboundLink,
   componentValveFactorForInboundLink,
   hasProcessLinkVariable,
+  pumpAvailableFlowKgPerS,
 } from './link-flow-helpers.ts'
 import { processLinkFlowSourceFor } from './link-flow-source-strategy.ts'
 import { pressureDrivenLeakFlowKgPerS } from '../physics.ts'
@@ -28,7 +29,7 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
       const source = processLinkFlowSourceFor({ system, link, context })
       let flowSource = source.flowKgPerS
       if (!source.bypassTargetPumpLimit && toComponent.kind === 'centrifugalPump') {
-        flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
+        flowSource = Math.min(flowSource, pumpAvailableFlowKgPerS(system, toComponent, context, link.service))
       }
       // A reactor coolant loop's legs carry what the loops' hydraulics solve,
       // above their rated flow as well when three pumps drive four loops.

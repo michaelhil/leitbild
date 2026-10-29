@@ -21,6 +21,8 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       makeupFlowKgPerS: z.number().finite().nonnegative(),
       maxOutletFlowKgPerS: z.number().finite().nonnegative(),
       thermalTimeConstantS: z.number().finite().positive().optional(),
+      /** An insulated, finite well-mixed inventory. No imposed ambient sink at zero flow. */
+      thermalModel: z.literal('inventoryBalance').optional(),
       /**
        * A level controller on what the tank takes in, as a feedwater tank's
        * level control valve throttles the condensate pumps' flow into it: fully

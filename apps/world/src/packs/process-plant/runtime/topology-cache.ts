@@ -1,6 +1,7 @@
 import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink } from '../graph/index.ts'
 import { primaryLoopIdForLink, primaryLoopIdForPump } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
+import { sameComponentFluidCircuit } from './fluid-circuits.ts'
 import { physicalNumber } from './links/process-link-physical.ts'
 import { isMainSteamService, isServiceDemandTerminal, serviceMatches } from './service-profiles.ts'
 
@@ -36,6 +37,7 @@ const collectDownstreamDemandPaths = (
   componentIndex: number,
   service: CompiledProcessLink['service'],
   visited: ReadonlySet<number>,
+  inletPort: string,
 ): ReadonlyArray<ProcessLinkPath> => {
   if (service === undefined) return []
   if (isFluidDemandTerminal(system, componentIndex, service)) return [[]]
@@ -47,7 +49,8 @@ const collectDownstreamDemandPaths = (
   for (const linkIndex of system.graph.outgoingLinksByComponent[componentIndex] ?? []) {
     const link = system.graph.links[linkIndex]
     if (!link || link.kind !== 'fluidFlow' || !serviceMatches(link, service)) continue
-    for (const downstreamPath of collectDownstreamDemandPaths(system, link.toComponentIndex, service, nextVisited)) {
+    if (!sameComponentFluidCircuit(system.graph.components[componentIndex]!, inletPort, String(link.fromPortName))) continue
+    for (const downstreamPath of collectDownstreamDemandPaths(system, link.toComponentIndex, service, nextVisited, String(link.toPortName))) {
       paths.push([link, ...downstreamPath])
     }
   }
@@ -65,7 +68,7 @@ export const downstreamDemandPathsForLink = (
   }
   const cached = cachedForSystem.get(link.index)
   if (cached !== undefined) return cached
-  const paths = collectDownstreamDemandPaths(system, link.toComponentIndex, link.service, new Set())
+  const paths = collectDownstreamDemandPaths(system, link.toComponentIndex, link.service, new Set(), String(link.toPortName))
   cachedForSystem.set(link.index, paths)
   return paths
 }

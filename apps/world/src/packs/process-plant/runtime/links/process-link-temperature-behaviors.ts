@@ -1,3 +1,4 @@
+import { isIncomingFluidForOutlet } from '../fluid-circuits.ts'
 import { ratedFlowForLink, type CompiledComponent, type CompiledProcessLink } from '../../graph/index.ts'
 import type { CompiledProcessPlant } from '../../plant-compiler.ts'
 import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
@@ -5,7 +6,7 @@ import { relaxToward, type ComponentNumericReadContext } from '../component-help
 import { primaryLoopLegReversed, reactorCoreNetInflowKgPerS } from '../primary-loop-hydraulics.ts'
 import { primarySystemContainment, primarySystemReactorCore } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa } from '../thermophysics.ts'
-import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable, serviceMatches } from './link-flow-helpers.ts'
+import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
 
 /** The upper plenum's water, which the forward-running hot legs carry: the
  * core's outlet flow mixed with what loops driven backwards bring into it. */
@@ -129,14 +130,14 @@ export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLin
       } else if (fromComponent.kind === 'heatExchanger' && String(link.fromPortName) === 'coldOut') {
         target = context.readNumber(componentVariablePath(fromComponent, 'coldOutletTemperatureC'))
       } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {
-        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
+        target = context.readNumber(componentVariablePath(fromComponent, 'sumpTemperatureC'))
       } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'ventOut') {
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else if (fromComponent.kind === 'accumulator' && String(link.fromPortName) === 'outlet') {
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else {
-        target = flowWeightedIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
-          ?? averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
+        target = flowWeightedIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => isIncomingFluidForOutlet(system, link, candidate))
+          ?? averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => isIncomingFluidForOutlet(system, link, candidate))
           ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
       }
       context.write(

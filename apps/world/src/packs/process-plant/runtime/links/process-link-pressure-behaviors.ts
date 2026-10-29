@@ -1,3 +1,4 @@
+import { isIncomingFluidForOutlet } from '../fluid-circuits.ts'
 import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
 import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
 import { pressureDropMPaFromFlow } from '../physics.ts'
@@ -71,13 +72,13 @@ export const processLinkPressureBehaviorDefinitions: ReadonlyArray<ProcessLinkBe
         link.fromComponentIndex,
         'pressureMPa',
         context,
-        candidate => candidate.service === link.service,
+        candidate => isIncomingFluidForOutlet(system, link, candidate),
       ) ?? averageIncomingLinkValue(
         system,
         link.fromComponentIndex,
         'pressureMPa',
         context,
-        candidate => candidate.service === link.service,
+        candidate => isIncomingFluidForOutlet(system, link, candidate),
       )
       if (sourcePressure !== null) context.write(processLinkVariablePath(link, 'pressureMPa'), sourcePressure)
     },
