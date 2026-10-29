@@ -131,7 +131,8 @@ describe('Leitbild Assistant skills', () => {
     // A step view's readings are taken just before its simulationTime: the basis quotes that time once.
     expect(runner.body).toContain('deciding criterion, reading/quality, scope and plant time')
     expect(runner.body).toContain('Optional citations name step tags relied on; World retains full criterion proof')
-    expect(runner.body).toContain('At END read runs.list; report actual Run/assessment, not intentions/refusals')
+    expect(runner.body).toContain('At END read runs.list; report actual status')
+    expect(runner.body).toContain('{includeEvidence:true} to review recorded proof')
     // Agents discover Plants, tags and controls at runtime; the skill names none.
     expect(runner.body).not.toMatch(/plant:|RX-TRIP-MAN|TRIP-BKR|-POS\b|BUS-[AB]/)
     expect(runner.body).not.toContain('E-0 step 1')
