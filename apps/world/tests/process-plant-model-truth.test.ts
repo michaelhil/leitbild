@@ -13,6 +13,8 @@ import {
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
+import { steamGeneratorDomeState } from '../src/packs/process-plant/runtime/steam-generator-dome.ts'
+import { compressedWaterState, saturatedWaterSteam } from '../src/packs/process-plant/runtime/water-properties.ts'
 import { processPlantElectricalPortsAt } from '../src/packs/process-plant/electrical-ports.ts'
 import { icThresholdsForSignal } from '../src/packs/process-plant/ic/thresholds.ts'
 import { formatQuantity } from '../src/packs/process-plant/quantity-text.ts'
@@ -717,7 +719,8 @@ describe('a turbine trip', () => {
     expect(Number(plantRun.tag('SG-A-LVL-NR'))).toBeLessThan(levelBefore - 20)
     // The dumps open to the condenser and the safety valves stay shut.
     expect(dumpOpening).toBeGreaterThan(0.3)
-    expect(highestPressure).toBeLessThan(8.1)
+    const safetySetpoint = Number(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!.parameters.setpointMPa)
+    expect(highestPressure).toBeLessThan(safetySetpoint)
     expect(safetyValveOpening).toBe(0)
   })
 
@@ -900,17 +903,35 @@ describe('main steam safety valves', () => {
     // None stands on the header past the isolation valves.
     expect(graph.components.some(component => String(component.id) === 'mainSteamSafetyValve')).toBe(false)
 
+    const nominal = createProcessPlantRuntime({ system: plant })
     const overpressured = compileProcessPlant(createPwrReferencePlantDefinition({
       id: 'plant:mssv-lift',
-      valueOverrides: Object.fromEntries(['A', 'B', 'C', 'D'].map(loop => [`sg${loop}.pressureMPa`, 10])),
+      // Pressure is derived from finite steam mass and dome volume. Start with
+      // the corresponding extra stock, not just a pressure indication that
+      // the first physical step would correctly recompute at nominal stock.
+      valueOverrides: Object.fromEntries(['A', 'B', 'C', 'D'].flatMap(loop => {
+        const component = graph.components.find(component => component.id === `sg${loop}`)!
+        const read = (local: string) => Number(nominal.readVariable(`sg${loop}.${local}` as VariablePath))
+        const liquidInventoryKg = read('secondaryInventoryKg')
+        const initial = { liquidInventoryKg, liquidTemperatureC: read('secondaryTemperatureC'), steamMassKg: read('steamMassKg'), pressureMPa: read('pressureMPa') }
+        const totalVolume = steamGeneratorDomeState(component, initial).steamSpaceVolumeM3
+          + liquidInventoryKg / compressedWaterState(initial.liquidTemperatureC, initial.pressureMPa).densityKgPerM3
+        const saturation = saturatedWaterSteam(10)
+        const steamSpace = totalVolume - liquidInventoryKg / compressedWaterState(saturation.temperatureC, 10).densityKgPerM3
+        return [[`sg${loop}.pressureMPa`, 10], [`sg${loop}.secondaryTemperatureC`, saturation.temperatureC],
+          [`sg${loop}.tubeMetalTemperatureC`, saturation.temperatureC + 3], [`sg${loop}.steamMassKg`, saturation.vapourDensityKgPerM3 * steamSpace]]
+      })),
     }))
     const runtime = createProcessPlantRuntime({ system: overpressured })
     const protection = createProcessPlantProtectionRunner({ system: overpressured, protection: overpressured.automation })
     const read = (path: string) => Number(runtime.readVariable(path as VariablePath))
+    // The first step establishes containment's algebraic gas pressure. Keep
+    // that baseline and include the safety-valve response from this very step.
     runtime.tick(1_000)
+    expect(read('sgA.pressureMPa')).toBeGreaterThan(Number(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!.parameters.fullLiftMPa))
     const containmentPressure = read('containment.pressureMPa')
-    let lift = 0
-    let containmentInflow = 0
+    let lift = read('mainSteamSafetyValveA.effectivePositionFraction')
+    let containmentInflow = read('containment.incomingMassKgPerS')
     for (let second = 0; second < 30; second += 1) {
       runtime.tick(1_000)
       protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-model-truth' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
@@ -1054,19 +1075,23 @@ describe('signal labels', () => {
 describe('the condenser hotwell', () => {
   const hotwellLow = 'alarm:condenser-hotwell-level-low:hotwell-level-low'
 
-  test('alarms below 35 %, as the condensate pumps draw a low hotwell down after a trip', () => {
+  test('a near-low initial hotwell alarms below 35 % as condensate pumps draw it down after a trip', () => {
     const level = resolveProcessPlantSignalBinding(graph, { path: 'condenser.condensateLevelPercent' as never }).path
     expect(icThresholdsForSignal(plant, level).thresholds.map(threshold => [threshold.value, threshold.kind, threshold.direction])).toEqual([[35, 'alarm', 'low']])
-    // From its 55 % normal level a trip draws the hotwell down to about 43 % while the feedwater tank's level control
-    // valve shuts the condensate off; from 42 % the same draw-down passes the alarm.
+    // Start above the actual low alarm, with little reserve. The finite SG
+    // steam return competes with the condensate draw; do not assume the old
+    // fixed 12-point drawdown regardless of that arriving material.
+    const initialLevel = 36
     const low = compileProcessPlant(createPwrReferencePlantDefinition({
       id: 'plant:model-truth-hotwell',
       loopCount: 4,
-      valueOverrides: { 'condenser.condensateInventoryKg': 0.42 * 250_000, 'condenser.condensateLevelPercent': 42 },
+      valueOverrides: { 'condenser.condensateInventoryKg': initialLevel / 100 * 250_000, 'condenser.condensateLevelPercent': initialLevel },
     }))
     const plantRun = started(low)
     plantRun.run(5_000)
-    expect(Number(plantRun.read('condenser.condensateLevelPercent'))).toBeCloseTo(42, 0)
+    expect(Number(plantRun.read('condenser.condensateLevelPercent'))).toBeCloseTo(initialLevel, 0)
+    expect(plantRun.read('condensatePumpA.runningState')).toBe(true)
+    expect(plantRun.read('condensatePumpB.runningState')).toBe(true)
     expect(plantRun.activeIds()).not.toContain(hotwellLow)
     plantRun.act('turbine-trip')
     let alarmedAt: number | null = null
