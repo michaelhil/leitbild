@@ -43,6 +43,8 @@ import { compileProcessPlant } from '../src/packs/process-plant/plant-compiler.t
 import { createPwrReferencePlantDefinition } from '../src/packs/process-plant/plant-definitions.ts'
 import { pwrFullPowerParameters } from '../src/packs/process-plant/assembly/pwr-operating-point.ts'
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
+import { compressedWaterState, saturatedWaterSteam } from '../src/packs/process-plant/runtime/water-properties.ts'
+import { steamGeneratorDomeState } from '../src/packs/process-plant/runtime/steam-generator-dome.ts'
 
 guardPlantTests()
 
@@ -103,6 +105,29 @@ const compiledSystemWithInitialState = (initialState: Record<string, unknown>) =
   atFullPower: true,
   initialState,
 })
+
+// A pressure disturbance needs matching actual dome mass and temperature.
+// Overriding only a derived pressure would be undone by the next EOS solve.
+const compiledSystemWithSteamPressures = (pressures: Readonly<Record<string, number>>) => {
+  const system = compiledSystem()
+  const runtime = createProcessPlantRuntime({ system })
+  const initial: Record<string, number> = {}
+  for (const [id, pressureMPa] of Object.entries(pressures)) {
+    const component = system.graph.components.find(row => String(row.id) === id)!
+    const read = (local: string) => Number(runtime.readVariable(`${id}.${local}` as VariablePath))
+    const liquidInventoryKg = read('secondaryInventoryKg')
+    const nominal = { liquidInventoryKg, liquidTemperatureC: read('secondaryTemperatureC'), steamMassKg: read('steamMassKg'), pressureMPa: read('pressureMPa') }
+    const volume = steamGeneratorDomeState(component, nominal).steamSpaceVolumeM3
+      + liquidInventoryKg / compressedWaterState(nominal.liquidTemperatureC, nominal.pressureMPa).densityKgPerM3
+    const saturation = saturatedWaterSteam(pressureMPa)
+    const steamVolume = volume - liquidInventoryKg / compressedWaterState(saturation.temperatureC, pressureMPa).densityKgPerM3
+    initial[`${id}.pressureMPa`] = pressureMPa
+    initial[`${id}.secondaryTemperatureC`] = saturation.temperatureC
+    initial[`${id}.tubeMetalTemperatureC`] = saturation.temperatureC + 3
+    initial[`${id}.steamMassKg`] = saturation.vapourDensityKgPerM3 * steamVolume
+  }
+  return compiledSystemWithInitialState(initial)
+}
 
 const compiledSystemWithConnectionPhysical = (
   connectionId: string,
@@ -1263,9 +1288,15 @@ describe('process plant runtime', () => {
   })
 
   test('turbine bypass remains closed in normal operation and opens to the condenser after turbine trip pressure rise', () => {
-    const runtime = createProcessPlantRuntime({ system: compileProcessPlant(createPwrReferencePlantDefinition({ id: 'bypass' })) })
+    const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'bypass' }))
+    const runtime = createProcessPlantRuntime({ system })
+    const protection = createProcessPlantProtectionRunner({ system, protection: system.automation })
+    const step = () => {
+      runtime.tick(100)
+      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-bypass' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+    }
 
-    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    for (let index = 0; index < 50; index += 1) step()
     expect(Number(runtime.readVariable(valueOf('turbine-bypass-valve-to-condenser.flowKgPerS')))).toBeCloseTo(0, 6)
 
     runtime.writeCommand({ type: 'setVariable', path: valueOf('turbineStopValve.positionFraction'), value: 0 })
@@ -1273,17 +1304,20 @@ describe('process plant runtime', () => {
     let maxBypassFlow = 0
     let maxBypassPressure = 0
     let maxBypassOpening = 0
+    let maxSafetyValveOpening = 0
+    let maxCondenserSteamFlow = 0
     const initialSteamFlow = Number(runtime.readVariable(valueOf('turbine.steamFlowKgPerS')))
     for (let index = 0; index < 900; index += 1) {
-      runtime.tick(100)
+      step()
       maxBypassFlow = Math.max(maxBypassFlow, Number(runtime.readVariable(valueOf('turbine-bypass-valve-to-condenser.flowKgPerS'))))
       maxBypassPressure = Math.max(maxBypassPressure, Number(runtime.readVariable(valueOf('main-steam-header-to-turbine-bypass-valve.pressureMPa'))))
       maxBypassOpening = Math.max(maxBypassOpening, Number(runtime.readVariable(valueOf('turbineBypassValve.effectivePositionFraction'))))
+      maxCondenserSteamFlow = Math.max(maxCondenserSteamFlow, Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS'))))
+      for (const loop of ['A', 'B', 'C', 'D']) maxSafetyValveOpening = Math.max(maxSafetyValveOpening, Number(runtime.readVariable(valueOf(`mainSteamSafetyValve${loop}.effectivePositionFraction`))))
     }
 
-    let maxSafetyValveOpening = 0
     for (let index = 0; index < 100; index += 1) {
-      runtime.tick(100)
+      step()
       for (const loop of ['A', 'B', 'C', 'D']) maxSafetyValveOpening = Math.max(maxSafetyValveOpening, Number(runtime.readVariable(valueOf(`mainSteamSafetyValve${loop}.effectivePositionFraction`))))
     }
     // The steam dumps open above no-load pressure (7.6 MPa) and hold the rise
@@ -1291,10 +1325,11 @@ describe('process plant runtime', () => {
     expect(maxBypassPressure).toBeGreaterThan(7.65)
     expect(maxBypassPressure).toBeLessThan(8.27)
     expect(maxSafetyValveOpening).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('core.powerRangePercent')))).toBeLessThan(5)
     // Opening is pressure-driven, not a fixed percentage; require useful release.
     expect(maxBypassOpening).toBeGreaterThan(0)
     expect(maxBypassFlow).toBeGreaterThan(initialSteamFlow * 0.03)
-    expect(Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS')))).toBeGreaterThan(initialSteamFlow * 0.03)
+    expect(maxCondenserSteamFlow).toBeGreaterThan(initialSteamFlow * 0.03)
   })
 
   test('reactor temperature feedback suppresses fission power when fuel starts hot', () => {
@@ -1849,7 +1884,7 @@ describe('process plant runtime', () => {
       expect(read(`rcp${loop}.loopFlowKgPerS`), loop).toBeLessThan(1.15 * ratedLoopFlow)
     }
     // ... so the core keeps 70 to 75 % of its rated flow.
-    const coreFlow = read('core.averageHotLegFlowKgPerS')
+    const coreFlow = read('core.primaryLoopNetFlowKgPerS')
     expect(coreFlow).toBeCloseTo(3 * read('rcpB.loopFlowKgPerS') - reverseFlow, 0)
     expect(coreFlow / (4 * ratedLoopFlow)).toBeGreaterThan(0.7)
     expect(coreFlow / (4 * ratedLoopFlow)).toBeLessThan(0.75)
@@ -1976,12 +2011,7 @@ describe('process plant runtime', () => {
 
   test('main steam header pressure ignores isolated steam generator branches with no flow', () => {
     const runtime = createProcessPlantRuntime({
-      system: compiledSystemWithInitialState({
-        'sgA.pressureMPa': 9,
-        'sgB.pressureMPa': 6,
-        'sgC.pressureMPa': 6,
-        'sgD.pressureMPa': 6,
-      }),
+      system: compiledSystemWithSteamPressures({ sgA: 9, sgB: 6, sgC: 6, sgD: 6 }),
     })
 
     runtime.writeCommand({ type: 'setVariable', path: valueOf('mainSteamIsolationValveA.positionFraction'), value: 0 })
@@ -1994,12 +2024,7 @@ describe('process plant runtime', () => {
 
   test('main steam safety valve relieves steam to atmosphere, not into containment, when the turbine path is isolated', () => {
     const runtime = createProcessPlantRuntime({
-      system: compiledSystemWithInitialState({
-        'sgA.pressureMPa': 10,
-        'sgB.pressureMPa': 10,
-        'sgC.pressureMPa': 10,
-        'sgD.pressureMPa': 10,
-      }),
+      system: compiledSystemWithSteamPressures({ sgA: 10, sgB: 10, sgC: 10, sgD: 10 }),
     })
 
     runtime.tick(100)

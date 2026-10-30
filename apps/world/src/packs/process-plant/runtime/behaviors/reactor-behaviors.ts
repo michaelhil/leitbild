@@ -366,7 +366,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'decayHeatMw',
       ...delayedNeutronGroupLocalPaths,
       ...decayHeatGroupLocalPaths,
-      'averageHotLegFlowKgPerS',
+      'primaryLoopNetFlowKgPerS',
       'powerRangePercent',
       'aboveP10',
       'intermediateRangeCurrentAmps',
@@ -444,7 +444,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const primaryFlow = reactorCoreNetInflowKgPerS(system, component, context)
       const nominalPrimaryFlow = optionalParameterNumber(component, 'nominalPrimaryFlowKgPerS', Math.max(1, primaryFlow))
       const minimumCooling = optionalParameterNumber(component, 'minimumNaturalCirculationCoolingFraction', 0.08)
-      context.write(componentVariablePath(component, 'averageHotLegFlowKgPerS'), primaryFlow)
+      context.write(componentVariablePath(component, 'primaryLoopNetFlowKgPerS'), primaryFlow)
       const coolingMargin = clamp(primaryFlow / Math.max(1, nominalPrimaryFlow), minimumCooling, 1.2)
       const thermalFraction = clamp(totalThermalPower / ratedPower, 0, 1.25)
       // The core is cooled while its flow carries its heat within the rise

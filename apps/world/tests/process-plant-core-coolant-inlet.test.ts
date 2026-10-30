@@ -5,6 +5,7 @@ import { initialComponentValueFor } from '../src/packs/process-plant/runtime/com
 import { reactorCoreCoolantInlet } from '../src/packs/process-plant/runtime/core-coolant-inlet.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
 import { liquidEnthalpyKjPerKg } from '../src/packs/process-plant/runtime/water-properties.ts'
+import { reactorCoreNetInflowKgPerS } from '../src/packs/process-plant/runtime/primary-loop-hydraulics.ts'
 
 const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:core-inlet', loopCount: 4 }))
 const core = system.graph.components.find(component => component.kind === 'reactorCore')!
@@ -69,5 +70,18 @@ describe('core coolant heat and mass transport', () => {
     expect(reactorCoreCoolantInlet(system, core, table, 1).netFlowKgPerS).toBe(30)
     feed('rhr-injection-valve-a-to-cold-leg-a', 0, 80)
     expect(reactorCoreCoolantInlet(system, core, table, 1).specificEnthalpyKjPerKg).toBeNull()
+  })
+
+  test('the loop-only indication preserves reverse direction under its signed net-flow contract', () => {
+    const { table, feed, coldLegs } = fixture()
+    const reversed = coldLegs[0]!
+    feed(String(reversed.id), 25, 100)
+    table.write(componentVariablePath(system.graph.components[reversed.fromComponentIndex]!, 'loopReverseFlowKgPerS'), 25)
+    const net = reactorCoreNetInflowKgPerS(system, core, table)
+    expect(net).toBe(-25)
+    const indication = componentVariablePath(core, 'primaryLoopNetFlowKgPerS')
+    table.write(indication, net)
+    expect(table.snapshotVariable(indication)).toMatchObject({ value: -25, quantity: 'flowRateDelta', unit: 'kg/s' })
+    expect(table.has(componentVariablePath(core, 'averageHotLegFlowKgPerS'))).toBe(false)
   })
 })

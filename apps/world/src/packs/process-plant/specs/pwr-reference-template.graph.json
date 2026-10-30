@@ -276,7 +276,7 @@
         "presentation": {
           "shortLabel": "Core",
           "names": { "coreExitTemperatureC": "CET", "powerRangePercent": "reactor power" },
-          "shortNames": { "totalThermalPowerMw": "Core MWt", "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" , "sourceRangeEnergized": "SR HV", "aboveP6": "P-6", "aboveP10": "P-10", "averageTemperatureDeviationC": "Tavg − Tref", "referenceAverageTemperatureC": "Tref", "coolantInletTemperatureC": "Core inlet temp", "coolantOutletTemperatureC": "Core outlet temp", "averageHotLegFlowKgPerS": "Hot-leg flow", "shutdownBankAStepsWithdrawn": "Bank SA steps", "shutdownBankBStepsWithdrawn": "Bank SB steps", "shutdownBankCStepsWithdrawn": "Bank SC steps", "shutdownBankDStepsWithdrawn": "Bank SD steps" },
+          "shortNames": { "totalThermalPowerMw": "Core MWt", "intermediateRangeCurrentAmps": "IR current", "sourceRangeCountRateCps": "SR count rate", "intermediateRangeStartupRateDpm": "IR startup rate", "sourceRangeStartupRateDpm": "SR startup rate", "rodStepsWithdrawn": "Rod steps" , "sourceRangeEnergized": "SR HV", "aboveP6": "P-6", "aboveP10": "P-10", "averageTemperatureDeviationC": "Tavg − Tref", "referenceAverageTemperatureC": "Tref", "coolantInletTemperatureC": "Core inlet temp", "coolantOutletTemperatureC": "Core outlet temp", "primaryLoopNetFlowKgPerS": "Net loop flow", "shutdownBankAStepsWithdrawn": "Bank SA steps", "shutdownBankBStepsWithdrawn": "Bank SB steps", "shutdownBankCStepsWithdrawn": "Bank SC steps", "shutdownBankDStepsWithdrawn": "Bank SD steps" },
           "states": {
             "sourceRangeEnergized": { "on": "Source-range HV on", "off": "Source-range HV off" },
             "aboveP6": { "on": "Above P-6", "off": "Below P-6" },
@@ -17422,7 +17422,7 @@
     "core.coolantInletTemperatureC",
     "core.coolantOutletTemperatureC",
     "core.coreExitTemperatureC",
-    "core.averageHotLegFlowKgPerS",
+    "core.primaryLoopNetFlowKgPerS",
     "core.pumpHeatMw",
     "core.heatToCoolantMw",
     "core.vapourGenerationKgPerS",

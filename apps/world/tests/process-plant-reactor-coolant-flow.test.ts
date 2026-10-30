@@ -60,7 +60,7 @@ const afterFault = (fault: (act: (actionId: string) => void, write: (path: strin
   }
   const sample = (at: number): Sample => ({
     second: at,
-    coreFlow: read('core.averageHotLegFlowKgPerS'),
+    coreFlow: read('core.primaryLoopNetFlowKgPerS'),
     loopFlows: loops.map(loop => read(`rcp${loop}.loopFlowKgPerS`) - read(`rcp${loop}.loopReverseFlowKgPerS`)),
     coreRise: read('core.coolantOutletTemperatureC') - read('core.coolantInletTemperatureC'),
     coreExit: tag('CET-AVG'),

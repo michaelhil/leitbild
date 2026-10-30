@@ -99,7 +99,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       // A load-weighted 105 to 145 °C, not the saturation temperature of the condenser's back pressure a real
       // low-pressure exhaust stands near: no instrument shows it.
       variable({ path: 'exhaustTemperatureC', label: 'Turbine exhaust temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC', simulatorOnly: true }),
-      variable({ path: 'impulseLoadPercent', label: 'Turbine load (impulse pressure, from steam flow)', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'load', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'impulseLoadPercent', label: 'Turbine load (impulse pressure, from steam flow)', description: 'Percent of nominal steam flow: may exceed 100 percent during excess flow. This is a modeled load indication, not a qualified first-stage pressure instrument.', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'load', quantity: 'power', unit: 'percent' }),
       variable({ path: 'speedRpm', label: 'Turbine-generator speed (synchronous)', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'rotationalSpeed', unit: 'rpm' }),
     ],
   }),
