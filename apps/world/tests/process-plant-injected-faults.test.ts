@@ -34,7 +34,7 @@ const faults = plant.graph.signalBindings.filter(isInjectedFault)
 const instance = (): ProcessPlantRuntimeInstance => {
   const runtime = createProcessPlantRuntime({ system: plant })
   const protection = createProcessPlantProtectionRunner({ system: plant, protection: plant.automation })
-  return { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), protection, operations: createPlantOperations(), performance: createProcessPlantRuntimePerformance() }
+  return { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), protection, operations: createPlantOperations({ graph: plant.graph }), performance: createProcessPlantRuntimePerformance() }
 }
 
 const askOf = (system: ProcessPlantRuntimeInstance) => (capabilityId: string, input: unknown): unknown => answerProcessPlantQuery({

@@ -69,7 +69,7 @@ export const plantIn = (state: CharacterizationState): ProcessPlantRuntimeInstan
     }
   }
   for (let second = 0; second < state.seconds; second += 1) step()
-  return { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), protection, operations: createPlantOperations(), performance: createProcessPlantRuntimePerformance() }
+  return { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), protection, operations: createPlantOperations({ graph: plant.graph }), performance: createProcessPlantRuntimePerformance() }
 }
 
 /** The Plant's Capabilities, as a person asks them of the Run, at the state's Run time. */

@@ -28,6 +28,7 @@ export const createProcessPlantRuntimeInstances = (config: {
     })
     const restoredRamps = restoredRampSnapshotFor(config.runtimeState, plant.id)
     const restoredProtectionSnapshot = restoredProtectionSnapshotFor(config.runtimeState, plant.id)
+    const restoredOperations = restoredOperationsFor(config.runtimeState, plant.id)
     const ramps = createProcessPlantRampRunner({
       runtime,
       canApply: path => manualControllerPositionRefusal({ system: plant, runtime, path }) === null,
@@ -45,7 +46,7 @@ export const createProcessPlantRuntimeInstances = (config: {
       runtime,
       ramps,
       protection,
-      operations: createPlantOperations(restoredOperationsFor(config.runtimeState, plant.id)),
+      operations: createPlantOperations({ graph: plant.graph, ...(restoredOperations === undefined ? {} : { restored: restoredOperations }) }),
       performance: createProcessPlantRuntimePerformance(),
     }
   })(),

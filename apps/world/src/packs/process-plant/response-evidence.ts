@@ -86,7 +86,7 @@ export const evaluateProcessPlantResponse = (config: {
   let notBeforeElapsedMs = 0
   for (const anchor of input.afterOperations ?? []) {
     const binding = readableProcessPlantSignalBinding(plant.plant.graph, anchor.signal)
-    const latest = plant.operations?.log().filter(operation => operation.path === binding.path).at(-1)
+    const latest = plant.operations?.latest(binding.path)
     if (!binding.writable || binding.unit !== anchor.unit || latest === undefined || latest.value !== anchor.value || latest.kind === 'ramp'
       || plant.runtime.readVariableSnapshot(binding.path).value !== anchor.value || latest.elapsedMs > plant.runtime.elapsedMs()) {
       return failure('The latest retained accepted control operation does not establish every required command anchor; do not recreate missing history from current demands.')

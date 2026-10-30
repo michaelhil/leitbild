@@ -4,6 +4,8 @@ import { createSimulationClock, type SimulationClock } from '../src/core/model/t
 import type { CommandOrigin, PackRuntimeConnection, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 import {
   createLocalProcessPlantPackRuntimeAdapter,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   processPlantControlRampCommandKind,
   processPlantControlWriteCommandKind,
   type VariablePath,
@@ -22,6 +24,9 @@ guardPlantTests()
 // none (plan-final O-D4, QA-19).
 
 const simulationRunId = 'run:operations-record' as SimulationRunId
+const operationGraph = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:operation-index', loopCount: 4 })).graph
+const pressureTarget = 'steamGeneratorReliefValveA.controllerSetpoint' as VariablePath
+const valvePath = 'hotwellRejectValve.positionFraction' as VariablePath
 const builtIn = scenarios.find(scenario => scenario.id === 'test-plant')!
 const basePlant = builtIn.initialObjects.find(object => object.packId === 'process-plant')!
 const plantId = String(basePlant.id)
@@ -58,10 +63,10 @@ const sample = async (connection: PackRuntimeConnection, paths: ReadonlyArray<st
 
 describe('the operations record', () => {
   test('logs people\'s and AI agents\' accepted commands, newest last, keeping the last 64', () => {
-    const operations = createPlantOperations()
+    const operations = createPlantOperations({ graph: operationGraph })
     expect(operations.snapshot()).toBeUndefined()
     for (let index = 0; index < OPERATIONS_KEPT + 3; index += 1) {
-      operations.record({ commandId: `command:${index}`, path: 'p.x' as VariablePath, value: index, origin: 'person', actorId: 'actor:human:op', elapsedMs: index, kind: 'write' }, { elapsedMs: index, wallMs: index })
+      operations.record({ commandId: `command:${index}`, path: pressureTarget, value: index, origin: 'person', actorId: 'actor:human:op', elapsedMs: index, kind: 'write' }, { elapsedMs: index, wallMs: index })
     }
     expect(operations.log().length).toBe(OPERATIONS_KEPT)
     expect(operations.log()[0]!.commandId).toBe('command:3')
@@ -75,10 +80,10 @@ describe('the operations record', () => {
       reading: () => ({ ok: true, path: 'p.pt' as VariablePath, value: 15 }),
       resettable: ruleId => ({ ok: false, reason: `${ruleId} is not reset in this test` }),
     }
-    const operations = createPlantOperations()
-    const proposed = proposeOperation(operations.book(), { id: 'command:p', plantId: 'p', write: { path: 'p.valve' as VariablePath, value: 0 }, reason: 'isolate', evidence: ['PT' as never], proposer: { actorId: 'actor:ai:a', origin: 'ai' }, at: { elapsedMs: 0, wallMs: 0 } }, ports)
+    const operations = createPlantOperations({ graph: operationGraph })
+    const proposed = proposeOperation(operations.book(), { id: 'command:p', plantId: 'p', write: { path: valvePath, value: 0 }, reason: 'isolate', evidence: ['PT' as never], proposer: { actorId: 'actor:ai:a', origin: 'ai' }, at: { elapsedMs: 0, wallMs: 0 } }, ports)
     operations.setBook(proposed.book)
-    const transitions = operations.record({ commandId: 'command:w', path: 'p.valve' as VariablePath, value: 0, origin: 'person', actorId: 'actor:human:op', elapsedMs: 5, kind: 'write' }, { elapsedMs: 5, wallMs: 5 })
+    const transitions = operations.record({ commandId: 'command:w', path: valvePath, value: 0, origin: 'person', actorId: 'actor:human:op', elapsedMs: 5, kind: 'write' }, { elapsedMs: 5, wallMs: 5 })
     expect(transitions.map(transition => [transition.type, transition.proposal.id])).toEqual([['superseded', 'command:p']])
   })
 })

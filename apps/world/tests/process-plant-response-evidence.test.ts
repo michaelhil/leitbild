@@ -9,7 +9,7 @@ import { answerProcessPlantQuery } from '../src/packs/process-plant/query.ts'
 import { recordingSeriesIdFor, type IsoTimestamp, type RecordedSample } from '../src/core/model/index.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 import { processPlantSimRuntimeId } from '../src/packs/process-plant/sim/constants.ts'
-import { createPlantOperations } from '../src/packs/process-plant/operations/plant-operations.ts'
+import { createPlantOperations, OPERATIONS_KEPT, type OperationRecord } from '../src/packs/process-plant/operations/plant-operations.ts'
 import { processSignalTagIdSchema } from '../src/packs/process-plant/graph/index.ts'
 import { variablePathSchema } from '../src/packs/process-plant/graph/index.ts'
 import { evaluateProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
@@ -40,6 +40,9 @@ const sample = (seconds: number, measured = value, sequence = seconds + 1): Reco
 const config = (samples: ReadonlyArray<RecordedSample> = [sample(0), sample(60), sample(120)]) => ({
   plant, input, simulationTime: at(120), recordingIntervalMs: 1000, recordedSeriesIds: new Set([seriesId]), recordedHistory: { read: () => samples },
 })
+/** Test fixture supplies both current receipt index and recent presentation log explicitly. */
+const operationsFrom = (log: ReadonlyArray<OperationRecord>) => createPlantOperations({ graph: compiled.graph,
+  restored: { log: [...log], latestByPath: [...new Map(log.map(record => [record.path, record])).values()], proposals: [] } })
 
 describe('explicitly sampled Plant response', () => {
   test('retains endpoint, envelope, timestamps, compression and current proof without changing physical state', () => {
@@ -118,7 +121,7 @@ describe('explicitly sampled Plant response', () => {
     const control = compiled.graph.signalBindingByTagId.get(processSignalTagIdSchema.parse('SG-A-ARV-SP'))!
     const demand = Number(plant.runtime.readVariable(control.path))
     const receipt = { commandId: 'command:human-before-handoff', path: control.path, value: demand, origin: 'person' as const, actorId: 'person:operator', elapsedMs: 30_000, kind: 'write' as const }
-    const operations = createPlantOperations({ log: [receipt], proposals: [] })
+    const operations = operationsFrom([receipt])
     const anchored = { ...input, windowSeconds: 60, afterOperations: [{ signal: { tagId: control.tagId! }, value: demand, unit: control.unit }],
       comparisons: [{ ...input.comparisons[0]!, statistic: 'change' as const, operator: '>' as const, value: 0 }] }
     const beforeActionOnly = [sample(0, value - 1), sample(90), sample(120)]
@@ -138,12 +141,30 @@ describe('explicitly sampled Plant response', () => {
     const demand = Number(plant.runtime.readVariable(control.path))
     const receipt = { commandId: 'command:target', path: control.path, value: demand, origin: 'ai' as const, actorId: 'agent:operator', elapsedMs: 0, kind: 'write' as const }
     const anchored = { ...input, afterOperations: [{ signal: { tagId: control.tagId! }, value: demand, unit: control.unit }] }
-    for (const operations of [undefined, createPlantOperations({ log: [receipt, { ...receipt, value: demand + 1, elapsedMs: 10_000 }], proposals: [] }), createPlantOperations({ log: [{ ...receipt, kind: 'ramp' }], proposals: [] })]) {
+    for (const operations of [undefined, operationsFrom([receipt, { ...receipt, value: demand + 1, elapsedMs: 10_000 }]), operationsFrom([{ ...receipt, kind: 'ramp' }])]) {
       expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, ...(operations === undefined ? {} : { operations }) }, input: anchored })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('latest retained accepted') })
     }
-    const operations = createPlantOperations({ log: [receipt], proposals: [] })
+    const operations = operationsFrom([receipt])
     const two = processPlantResponseQuerySchema.parse({ ...anchored, afterOperations: [...anchored.afterOperations, { signal: { tagId: 'SG-B-ARV-SP' }, value: demand, unit: control.unit }] })
     expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations }, input: two }).status).toBe('unknown')
+  })
+
+  test('a human intervention remains response evidence after unrelated recent-log eviction and restore', () => {
+    const control = compiled.graph.signalBindingByTagId.get(processSignalTagIdSchema.parse('SG-A-ARV-SP'))!
+    const unrelated = compiled.graph.signalBindingByTagId.get(processSignalTagIdSchema.parse('SG-B-ARV-SP'))!
+    const demand = Number(plant.runtime.readVariable(control.path))
+    const receipt: OperationRecord = { commandId: 'command:human-handoff', path: control.path, value: demand, origin: 'person', actorId: 'person:operator', elapsedMs: 0, kind: 'write' }
+    const operations = createPlantOperations({ graph: compiled.graph })
+    operations.record(receipt, { elapsedMs: 0, wallMs: epoch })
+    for (let index = 0; index <= OPERATIONS_KEPT; index++) operations.record({ ...receipt, commandId: `command:unrelated-${index}`, path: unrelated.path, elapsedMs: index + 1 }, { elapsedMs: index + 1, wallMs: epoch + index + 1 })
+    expect(operations.log().some(row => row.commandId === receipt.commandId)).toBe(false)
+    const restored = createPlantOperations({ graph: compiled.graph, restored: operations.snapshot()! })
+    const anchored = { ...input, windowSeconds: 60, afterOperations: [{ signal: { tagId: control.tagId! }, value: demand, unit: control.unit }] }
+    const proof = evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations: restored }, input: anchored })
+    expect(proof.status).toBe('satisfied')
+    expect(proof.afterOperations).toMatchObject([{ receipt: { commandId: receipt.commandId, actorId: 'person:operator', origin: 'person' } }])
+    restored.record({ ...receipt, commandId: 'command:newer-contrary-target', value: demand + 1, elapsedMs: 1000 }, { elapsedMs: 1000, wallMs: epoch + 1000 })
+    expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations: restored }, input: anchored })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('latest retained accepted') })
   })
 
   test('commands and nonnative units cannot qualify response; hidden fault truth is refused', () => {
