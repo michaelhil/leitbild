@@ -21,7 +21,7 @@ import { flowPlan, type FlowSizing } from './flow.ts'
 import { groupName, itemText, type TopologyLayout } from './layout.ts'
 import type { ScopedTopology } from './scope.ts'
 import { farState, stopLabel, stopLines, stopStated, type DrawnStop, type StopWords } from './stops.ts'
-import { FLOW_TEXT, FLOW_TRACE, readingRoom, TEXT_INSET, textWidth, type FlowTextStyle } from './text.ts'
+import { FLOW_TEXT, FLOW_TRACE, readingPrefix, readingRoom, TEXT_INSET, textWidth, type FlowTextStyle } from './text.ts'
 
 /**
  * The renderer's grid pitch and its text lines, each as high and as wide as Noto Sans sets it (text.ts) at its
@@ -71,7 +71,7 @@ export const nameStem = (name: string): string => {
 }
 
 /** What the sizing reads of a bound observable: its unit, its declared state words, and whether it reads over decades. */
-export type DeclaredOf = (ref: string) => Pick<Observable, 'unit' | 'states' | 'decades'> | undefined
+export type DeclaredOf = (ref: string) => Pick<Observable, 'unit' | 'states' | 'decades' | 'quantity' | 'shortLabel'> | undefined
 
 /** `words`: how its stops write their labels (stops.ts): flowLayout sets them on one line, else on two, where it finds room. */
 export const flowSizing = (graph: TopologyGraph, declaredOf: DeclaredOf, words: StopWords = 'inline'): FlowSizing<null> => {
@@ -93,7 +93,10 @@ export const flowSizing = (graph: TopologyGraph, declaredOf: DeclaredOf, words: 
   const command = (bindings: ReadonlyArray<Binding>, positioned: boolean) =>
     line(widest([...bindings.flatMap(ends).map(word => `CMD ${word}`), ...(positioned ? ['CMD 100 %'] : []), ...UNKNOWN_WORDS], 'command'), true)
   const reading = (chain: ReadonlyArray<Binding>, style: FlowTextStyle): number =>
-    Math.max(...chain.map(binding => readingRoom(declaredOf(binding.ref), binding.word, chain.length > 1 ? IN_TURN_FIGURES : VALUE_FIGURES, style)))
+    Math.max(...chain.map(binding => {
+      const declared = declaredOf(binding.ref)
+      return readingRoom(declared, readingPrefix(declared, binding.word), chain.length > 1 ? IN_TURN_FIGURES : VALUE_FIGURES, style)
+    }))
   return {
     key: 'vignette-flow-13',
     visible: () => true,

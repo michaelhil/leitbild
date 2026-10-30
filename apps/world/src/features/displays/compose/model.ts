@@ -136,7 +136,7 @@ export interface SlotDeclaration { readonly key: string; readonly label: string;
 
 /** A binding the caller reads, with its observable's declared quantity, unit, states (a state marked `active` reads as on) and decades, so a drawing writes the reading as the card does. */
 /** A drawing's binding with its declared unit and words; a traced one with its record's series. */
-export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & { readonly series?: NonNullable<Observable['series']> }
+export type TopologyBinding = TopologyNode['bindings'][number] & Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades' | 'shortLabel'> & { readonly series?: NonNullable<Observable['series']> }
 export interface TopologyNodeView extends Pick<TopologyNode, 'id' | 'label' | 'shortLabel' | 'element'> {
   /** A stop's label says "to" or "from" and names its far ends (topology/stops.ts). */
   readonly class: TopologyNode['class'] | 'stop'

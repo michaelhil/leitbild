@@ -156,7 +156,7 @@ export const topologyOf = async (run: SearchRun, objectId: ObjectId): Promise<To
 }
 
 /** What the renderer draws: the layout, every drawn node (stops as `s<n>`, with their far ends) and edge with its medium's kind, and bindings the caller reads, with their declared units. */
-export const topologySection = (objectId: string, packId: string, scoped: ScopedTopology, drawing: Drawing, rows: number, declaredOf: (ref: string) => Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & Partial<Pick<Observable, 'series'>> | undefined): VignetteSection => {
+export const topologySection = (objectId: string, packId: string, scoped: ScopedTopology, drawing: Drawing, rows: number, declaredOf: (ref: string) => Pick<Observable, 'quantity' | 'unit' | 'states' | 'decades'> & Partial<Pick<Observable, 'series' | 'shortLabel'>> | undefined): VignetteSection => {
   const { graph } = scoped
   const [nodes, edges] = [new Set(scoped.nodes), new Set(scoped.edges)]
   const kindOf = (medium: string) => graph.media.find(entry => entry.id === medium)!.kind
@@ -167,7 +167,7 @@ export const topologySection = (objectId: string, packId: string, scoped: Scoped
     const declared = declaredOf(binding.ref)
     // A traced reading carries its record's series, which the samples serve (W6.6).
     const series = binding.trace === true ? declared?.series ?? null : null
-    return declared === undefined ? [] : [{ ...binding, quantity: declared.quantity, unit: declared.unit, ...(declared.states === undefined ? {} : { states: declared.states }), ...(declared.decades === true ? { decades: true as const } : {}), ...(series === null ? {} : { series }) }]
+    return declared === undefined ? [] : [{ ...binding, quantity: declared.quantity, unit: declared.unit, ...(declared.quantity === 'temperature-difference' && declared.shortLabel !== undefined ? { shortLabel: declared.shortLabel } : {}), ...(declared.states === undefined ? {} : { states: declared.states }), ...(declared.decades === true ? { decades: true as const } : {}), ...(series === null ? {} : { series }) }]
   })
   return {
     kind: 'topology', rows, objectId, packId, family: graph.family, layout: drawing.layout,

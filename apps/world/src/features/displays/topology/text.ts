@@ -79,6 +79,15 @@ export const textFigures = (figures: number, style: FlowTextStyle): number => Ma
 export const DECADES_TEXT = '8.8×10⁻¹¹'
 
 /**
+ * A Pack's explicit reading word, else the declared name of a temperature
+ * difference. Its Celsius unit alone also names an absolute temperature, so
+ * a bare margin would look like coolant temperature. Layout and drawing use
+ * this same prefix; other quantities keep their existing unit-led readings.
+ */
+export const readingPrefix = (declared: Partial<Pick<Observable, 'quantity' | 'shortLabel'>> | undefined, word: string | undefined): string | undefined =>
+  word ?? (declared?.quantity === 'temperature-difference' ? declared.shortLabel ?? 'Temperature difference' : undefined)
+
+/**
  * The room a reading takes in `style`: its word ("LVL "), a value of so many figures (or, read over decades, a
  * two-digit power of ten where that is wider) and its unit's symbol.
  */

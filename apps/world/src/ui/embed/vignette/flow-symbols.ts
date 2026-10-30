@@ -24,7 +24,7 @@ import type { AlertRow } from '../../../features/displays/alerts/rows.ts'
 import type { TopologyBinding, VignetteSection } from '../../../features/displays/compose/model.ts'
 import { groupName, itemText } from '../../../features/displays/topology/layout.ts'
 import { farState } from '../../../features/displays/topology/stops.ts'
-import { FLOW_TEXT, FLOW_TRACE, TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
+import { FLOW_TEXT, FLOW_TRACE, readingPrefix, TEXT_INSET, type FlowTextStyle } from '../../../features/displays/topology/text.ts'
 import { VIGNETTE_ROW_PX } from './grid.ts'
 import { CHEVRON_PIECE, chevronSegment, endStraight, pipeSegments, pipeValue, stubEndSegment, type PipeLook } from './pipe-segments.ts'
 import { stub } from './network.ts'
@@ -372,8 +372,10 @@ export const flowDrawing = (section: Topology, observations: ReadonlyArray<Obser
           if (binding === null) return { text: '?', kind: 'reading' as const, style: readingStyle }
           const look = readingOf(binding, 'number')
           const value = look.unit === '' ? look.text : `${look.text} ${look.unit}`
-          // A share says what it reads (its Pack's word, "LVL", "PWR"), in the room the sizing reserved for the word beside the value.
-          return { text: binding.word === undefined ? value : `${binding.word} ${value}`, kind: 'reading' as const, style: readingStyle }
+          // Use the same semantic prefix the sizing measured: a Pack's word
+          // (LVL/PWR), or the name distinguishing a temperature difference.
+          const prefix = readingPrefix(binding, binding.word)
+          return { text: prefix === undefined ? value : `${prefix} ${value}`, kind: 'reading' as const, style: readingStyle }
         }),
         // What it traces over its last ten minutes, under its readings (W6.6); an exchanger traces in its tile.
         ...(view.class === 'transfer' ? [] : view.bindings.filter(binding => binding.trace === true).slice(0, 1).map(binding => ({ text: '', kind: 'trace' as const, style: readingStyle, ref: binding.ref }))),

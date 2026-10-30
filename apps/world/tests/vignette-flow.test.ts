@@ -285,6 +285,28 @@ describe('flow symbols', () => {
 })
 
 describe('text room (UX audit #68; plan §5.5, containment)', () => {
+  test('a temperature difference keeps its declared name and measured text room in a real equipment detail', () => {
+    const objectId = 'plant:margin-detail'
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: objectId, loopCount: 4 }))
+    const graph = servedPlantTopology(objectId as never, plant)
+    const declaredOf = declaredBy(objectId, plant)
+    const result = scopeTopology(graph, { around: ['rhrShutdownSuctionValveA1'], media: ['residualHeatRemoval', 'electricalPower'], reach: 3 })
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw Error(result.refusal.code)
+    const drawing = flowLayout(result.scoped, ROOM, declaredOf)
+    expect(drawing).not.toBeNull()
+    if (drawing === null) throw Error('No room for the actual equipment detail')
+    const section = topologySection(objectId, 'process-plant', result.scoped, drawing, 38, declaredOf) as Topology
+    const margin = section.nodes.find(node => node.id === 'vessel')!.bindings.find(binding => binding.ref.endsWith('#vessel.subcoolingMarginC'))!
+    expect(margin).toMatchObject({ quantity: 'temperature-difference', shortLabel: 'Subcooling', unit: 'degC' })
+    const observations = section.nodes.flatMap(node => node.bindings.map(binding => observation(binding.ref, binding.ref === margin.ref ? 38.5 : 100)))
+    const rendered = flowDrawing(section, observations, [], false)
+    const vessel = rendered.texts.find(text => text.id === 'vessel')!
+    expect(vessel.lines.filter(line => line.kind === 'reading').map(line => line.text)).toContain('Subcooling 38.5 °C')
+    for (const line of vessel.lines) expect(textWidth(line.text, line.style)).toBeLessThanOrEqual(vessel.width)
+    expect(overlapping(drawing.layout)).toEqual([])
+  })
+
   // Every line a drawn item writes stays inside the box its layout kept for it, as wide as Noto Sans sets it in its
   // style (W6.5): its name; its state word, or the word that says it stopped ("Rods off bottom"), and under it the
   // command it does not follow ("commanded RUN" ran 32 px past the RCPs' boxes on Run A); each reading at the longest
@@ -351,7 +373,7 @@ describe('text room (UX audit #68; plan §5.5, containment)', () => {
 
   test('every line an item writes fits its box: names, state words and the command not followed, and readings with their word, at their longest', () => {
     for (const loops of [2, 3, 4]) expect(outside(`plant:room-${loops}`, 'overview', loops)).toEqual([])
-    const around: ReadonlyArray<readonly [string, number]> = [['sgA', 1], ['pressurizer', 1], ['condenser', 2], ['turbine', 2], ['safetyBusA', 2], ['feedwaterTank', 3], ['rcpA', 2]]
+    const around: ReadonlyArray<readonly [string, number]> = [['sgA', 1], ['pressurizer', 1], ['condenser', 2], ['turbine', 2], ['safetyBusA', 2], ['feedwaterTank', 3], ['rcpA', 2], ['rhrShutdownSuctionValveA1', 3]]
     for (const [element, reach] of around) {
       const request = { around: [element], reach }
       expect(outside('plant:room', request, 4)).toEqual([])

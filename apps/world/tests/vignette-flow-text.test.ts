@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import * as hb from 'harfbuzzjs'
-import { FLOW_TEXT, FLOW_TEXT_CHARACTERS, textFigures, textWidth, type FlowTextStyle } from '../src/features/displays/topology/text.ts'
+import { FLOW_TEXT, FLOW_TEXT_CHARACTERS, readingPrefix, readingRoom, textFigures, textWidth, type FlowTextStyle } from '../src/features/displays/topology/text.ts'
 import { NOTO_SANS_MODULE, notoSansSubset } from '../src/ui/embed/noto-sans-font.ts'
 
 // The drawing's text in OpenBridge's Noto Sans (plan v5 W6.5; U-26; the old mimic-text-metrics and mimic-font tests,
@@ -32,10 +32,20 @@ const samples: ReadonlyArray<readonly [FlowTextStyle, string]> = [
   ['word', 'OFF LINE'], ['word', 'part open'], ['word', 'STOP 2/2'], ['word', 'Rods off bottom'], ['word', 'LIVE 1/2'],
   ['command', 'CMD RUN'], ['command', 'CMD CLOSED'], ['command', 'CMD 40 %'], ['command', 'CMD trip'],
   ['reading', '15.51 MPa'], ['reading', '4.4×10⁻⁷ A'], ['reading', '1000000 cps'], ['reading', '113 kg/s'], ['reading', '302.4 °C'],
-  ['vesselReading', 'LVL 100.0 %'], ['vesselReading', '7.45 MPa'], ['vesselReading', '7533 Pa'],
+  ['vesselReading', 'LVL 100.0 %'], ['vesselReading', '7.45 MPa'], ['vesselReading', '7533 Pa'], ['vesselReading', 'Subcooling 38.5 °C'],
 ]
 
 describe('the drawing\'s text widths, measured against Noto Sans (W6.5)', () => {
+  test('difference names are generic, preserve explicit Pack words, and participate in measured reading room', () => {
+    const difference = { quantity: 'temperature-difference' as const, shortLabel: 'Subcooling', unit: 'degC' as const }
+    expect(readingPrefix(difference, undefined)).toBe('Subcooling')
+    expect(readingPrefix({ quantity: 'temperature-difference' }, undefined)).toBe('Temperature difference')
+    expect(readingPrefix(difference, 'MARG')).toBe('MARG')
+    expect(readingPrefix({ quantity: 'temperature' }, undefined)).toBeUndefined()
+    expect(readingRoom(difference, readingPrefix(difference, undefined), 5, 'vesselReading'))
+      .toBeGreaterThanOrEqual(textWidth('Subcooling 38.5 °C', 'vesselReading'))
+  })
+
   test('every character the composer measures advances as OpenBridge\'s Noto Sans sets it, regular and bold', () => {
     for (const weight of [400, 700] as const) {
       const style: FlowTextStyle = weight === 400 ? 'word' : 'command'
