@@ -1,11 +1,13 @@
 {
-  "sourceCommit": "f539c41be023a3989048fce374ef363e4ffa30d3",
+  "sourceCommit": "d6f7333d2b9a1b86e51e5f5365980ee577cbb418",
   "dirty": false,
   "command": "bun scripts/process-plant/shutdown-cooling-qualification.ts --output-directory /tmp/sdc-proof",
   "modelRef": "process-plant.pwr.reference",
   "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5",
   "initial": {
     "elapsedS": 0,
+    "tripBreakerAClosed": true,
+    "tripBreakerBClosed": true,
     "primaryPressureMPa": 15.5,
     "hotLegTemperatureC": 323.3453764752701,
     "coldLegTemperatureC": 288,
@@ -44,6 +46,8 @@
   },
   "admission": {
     "elapsedS": 11338,
+    "tripBreakerAClosed": false,
+    "tripBreakerBClosed": false,
     "primaryPressureMPa": 2.044938382129189,
     "hotLegTemperatureC": 176.6578700892677,
     "coldLegTemperatureC": 176.30661053013472,
@@ -86,7 +90,7 @@
   },
   "preparationPorvReleaseKg": 0,
   "preparationAccumulatorInjectionKg": 0,
-  "acceptedOperationCount": 14771,
+  "acceptedOperationCount": 14772,
   "cases": [
     {
       "variant": "normal",
@@ -96,6 +100,8 @@
       "sampleCount": 19,
       "first": {
         "elapsedS": 11356,
+        "tripBreakerAClosed": false,
+        "tripBreakerBClosed": false,
         "primaryPressureMPa": 1.9740415572813468,
         "hotLegTemperatureC": 176.49419927274516,
         "coldLegTemperatureC": 176.14305290878949,
@@ -134,6 +140,8 @@
       },
       "last": {
         "elapsedS": 11536,
+        "tripBreakerAClosed": false,
+        "tripBreakerBClosed": false,
         "primaryPressureMPa": 1.3898555953148373,
         "hotLegTemperatureC": 169.75754209986724,
         "coldLegTemperatureC": 169.41661034590888,
@@ -183,6 +191,8 @@
       "sampleCount": 19,
       "first": {
         "elapsedS": 11356,
+        "tripBreakerAClosed": false,
+        "tripBreakerBClosed": false,
         "primaryPressureMPa": 1.9740415572813468,
         "hotLegTemperatureC": 176.49419927274516,
         "coldLegTemperatureC": 176.14305290878949,
@@ -221,6 +231,8 @@
       },
       "last": {
         "elapsedS": 11536,
+        "tripBreakerAClosed": false,
+        "tripBreakerBClosed": false,
         "primaryPressureMPa": 1.4758225477338875,
         "hotLegTemperatureC": 175.43263700978798,
         "coldLegTemperatureC": 175.08274915607657,
@@ -270,6 +282,8 @@
       "sampleCount": 19,
       "first": {
         "elapsedS": 11356,
+        "tripBreakerAClosed": false,
+        "tripBreakerBClosed": false,
         "primaryPressureMPa": 1.9740415572813468,
         "hotLegTemperatureC": 176.49419927274516,
         "coldLegTemperatureC": 176.14305290878949,
@@ -308,6 +322,8 @@
       },
       "last": {
         "elapsedS": 11536,
+        "tripBreakerAClosed": false,
+        "tripBreakerBClosed": false,
         "primaryPressureMPa": 1.3923446603251792,
         "hotLegTemperatureC": 170.1247162763493,
         "coldLegTemperatureC": 169.78387544576125,
@@ -358,8 +374,8 @@
     "Preparation feedback targets and six-hour experiment budget are experiment inputs, not new plant limits, hidden Scenario automation or an operator procedure."
   ],
   "fullOutputSha256": {
-    "report": "58eed7bacb0717d46304df8551702c842a7a09c5ca38eec36702ede100de169c",
-    "admissionCheckpoint": "cf8d0de789245f1556036ec2bcac5b649d4baf0f6396d30093fa7d0631037df2",
-    "acceptedOperations": "dfd439b7125de38be9f76df0700acbfa70757fa302b7fffd50e454321dd28a5b"
+    "report": "91bdf8d8851b41ebd75e65a7fc3cb22bf71b14ad31c05fc4451af2abff5679d8",
+    "admissionCheckpoint": "34258228f85346f599e69b276eb4a953369dea6a7f35bb2fcf576adc152b826f",
+    "acceptedOperations": "717357e40e68cd2f2c0f8c56276ac0ffbf6d0b81f94099b06078e59a2fb86b35"
   }
 }
