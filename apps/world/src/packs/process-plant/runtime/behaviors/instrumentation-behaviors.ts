@@ -133,7 +133,7 @@ const rcsInventoryKg = (system: CompiledProcessPlant, balance: CompiledComponent
     + context.readNumber(componentVariablePath(pressurizer, 'steamMassKg'))
 }
 
-const rcsInventoryReads = ['vessel.chargingFlowKgPerS', 'vessel.safetyInjectionFlowKgPerS', 'vessel.letdownFlowKgPerS', 'pressurizer.reliefFlowKgPerS', 'pressurizer.safetyValveFlowKgPerS', 'vessel.primaryCoolantInventoryKg', 'pressurizer.waterInventoryKg', 'pressurizer.steamMassKg', 'leakRateKgPerS', 'balancedInventoryKg']
+const rcsInventoryReads = ['vessel.chargingFlowKgPerS', 'vessel.safetyInjectionFlowKgPerS', 'vessel.letdownFlowKgPerS', 'vessel.shutdownCoolingWithdrawalFlowKgPerS', 'pressurizer.reliefFlowKgPerS', 'pressurizer.safetyValveFlowKgPerS', 'vessel.primaryCoolantInventoryKg', 'pressurizer.waterInventoryKg', 'pressurizer.steamMassKg', 'leakRateKgPerS', 'balancedInventoryKg']
 
 interface ActedReading {
   readonly path: VariablePath
@@ -212,7 +212,12 @@ export const instrumentationBehaviorDefinitions: ReadonlyArray<ComponentBehavior
       const pressurizer = required(primarySystemPressurizer(system), `RCS inventory balance ${component.id} needs a pressurizer`)
       const relief = context.readNumber(componentVariablePath(pressurizer, 'reliefFlowKgPerS'))
         + context.readNumber(componentVariablePath(pressurizer, 'safetyValveFlowKgPerS'))
-      const unaccounted = flow('chargingFlowKgPerS') + flow('safetyInjectionFlowKgPerS') - flow('letdownFlowKgPerS') - relief - inventoryChange
+      // The injection reading includes actual RHR return. Its corresponding
+      // achieved RCS withdrawal is another identified boundary flow, not a
+      // leak or makeup. Count both independently: a lost return still changes
+      // inventory, while a separate unaccounted loss must remain visible.
+      const unaccounted = flow('chargingFlowKgPerS') + flow('safetyInjectionFlowKgPerS')
+        - flow('letdownFlowKgPerS') - flow('shutdownCoolingWithdrawalFlowKgPerS') - relief - inventoryChange
       const leakRate = context.readNumber(componentVariablePath(component, 'leakRateKgPerS'))
       context.write(componentVariablePath(component, 'leakRateKgPerS'), relaxToward(leakRate, unaccounted, context.dtSeconds, parameterNumber(component, 'averagingTimeConstantS')))
       context.write(componentVariablePath(component, 'balancedInventoryKg'), inventory)
