@@ -20,7 +20,7 @@ const subject = (bindings: TopologyBinding[], values: VignetteValue[], node = fa
 } as LayoutSubjectTopology })
 
 test('layout status uses actual owner conduction before a false degraded flag, preserving unknown and frozen state', () => {
-  const degradation = value('bus.degraded', { quantity: 'boolean', unit: '', valueType: 'boolean', states: [{ value: 'true', label: 'Voltage degraded' }, { value: 'false', label: 'Voltage normal' }] })
+  const degradation = value('bus.degraded', { quantity: 'state', unit: '', valueType: 'boolean', states: [{ value: 'true', label: 'Voltage degraded' }, { value: 'false', label: 'Voltage normal' }] })
   const conducting = value('bus.state', { quantity: 'state', unit: '', valueType: 'enum', states: [{ value: 'on', label: 'LIVE', active: true }, { value: 'off', label: 'DEAD' }] })
   const bus = subject([binding('conducting', conducting)], [conducting], true)
   const owner = { packId: 'process-plant', objectId: 'plant:one', elementId: bus.elementId, label: bus.label }
