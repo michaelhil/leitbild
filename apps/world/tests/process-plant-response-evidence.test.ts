@@ -45,7 +45,7 @@ describe('explicitly sampled Plant response', () => {
     const response = evaluateProcessPlantResponse(config())
     expect(response.status).toBe('satisfied')
     expect(response.interpretation).toContain('no uninterrupted hold')
-    expect(response.recordings[0]).toMatchObject({ storedSampleCount: 3, sampleTimes: [at(0), at(60), at(120)], maximumGapMs: 60_000,
+    expect(response.recordings[0]).toMatchObject({ storedSampleCount: 3, sampleTimestampOrigin: at(0), sampleOffsetsMs: [0, 60_000, 120_000], maximumGapMs: 60_000,
       minimum: value, maximum: value, change: 0, elapsedSeconds: 120, endpointRatePerSecond: 0, recordingRelativeDeadband: 1e-5,
       first: { simulationTime: at(0), elapsedMs: 0, value }, current: { simulationTime: at(120), elapsedMs: 120_000, value } })
     expect(response.current.status).toBe('satisfied')

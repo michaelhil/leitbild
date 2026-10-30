@@ -49,7 +49,23 @@ export const evaluateProcessPlantResponse = (config: {
   const identity = { targetObjectId: input.targetObjectId, ...processPlantEvidenceFrame(plant, config.simulationTime), simTimeMs: plant.runtime.elapsedMs(),
     basis: { ...input.basis, qualification: 'sampled-model-response' as const }, automaticCsfQualified: false as const,
     interpretation: 'Stored-sample envelope and endpoint change only; no uninterrupted hold, instrument qualification, future capacity or recovery claim.' }
-  const current = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }) })
+  const acquired = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }) })
+  // A response retains the complete deciding facts, not a second copy of the
+  // graph's descriptive schemas on every leaf. Exact model/source identity,
+  // all operands, native values/units/ranges, availability and reasons remain.
+  const current = { ...acquired, evidence: acquired.evidence.map(row => {
+    if (!('reference' in row)) return row
+    const { signal: fullSignal, variable: fullVariable, ...assessment } = row
+    const signal = fullSignal === undefined ? undefined : (() => {
+      const { capabilities: _capabilities, limits: _limits, owner: _owner, kind: _kind, discipline: _discipline, quantity: _quantity, externalRefs: _externalRefs, description: _description, ...identity } = fullSignal
+      return identity
+    })()
+    const variable = fullVariable === undefined ? undefined : (() => {
+      const { capabilities: _capabilities, description: _description, externalRefs: _externalRefs, equipmentId: _equipmentId, tagId: _tagId, discipline: _discipline, kind: _kind, quantity: _quantity, ...reading } = fullVariable
+      return reading
+    })()
+    return { ...assessment, ...(signal === undefined ? {} : { signal }), ...(variable === undefined ? {} : { variable }) }
+  }) }
   const evidence: Array<Record<string, unknown>> = []
   const recordings: Array<Record<string, unknown>> = []
   const anchors: Array<Record<string, unknown>> = []
@@ -147,7 +163,8 @@ export const evaluateProcessPlantResponse = (config: {
       if (reason === undefined && (integratedSpanSeconds === undefined || integratedSpanSeconds < input.windowSeconds)) reason = 'The retained samples do not cover the required integrated physical response duration.'
       const summary = { ...base, ...(input.afterOperations === undefined ? {} : { notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
         status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
-        storedSampleCount: selected.length, sampleTimes: selected.flatMap(sample => sample.simulationTime ?? []), maximumGapMs,
+        storedSampleCount: selected.length, sampleTimestampOrigin: first?.simulationTime ?? to,
+        sampleOffsetsMs: times.map(at => at - (times[0] ?? now)), maximumGapMs,
         ...(first === undefined ? {} : { first: { ...(first.simulationTime === undefined ? {} : { simulationTime: first.simulationTime }), ...(first.elapsedMs === undefined ? {} : { elapsedMs: first.elapsedMs }), value: first.value } }),
         ...(value === undefined ? {} : { current: { simulationTime: to, elapsedMs: plant.runtime.elapsedMs(), value } }),
         ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(change === undefined ? {} : { change }),
