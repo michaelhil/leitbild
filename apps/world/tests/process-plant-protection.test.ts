@@ -643,16 +643,23 @@ describe('what each trip does', () => {
     expect(plantRun.tag('TDAFW-STM-B')).toBe(0)
   }, PLANT_HANG_GUARD_MS)
 
-  test('after a turbine trip from power every alarm that comes in within five minutes is declared expected after the reactor trip', () => {
+  test('trip consequences retain their metadata while an SG pressure excursion is not automatically declared expected', () => {
     const plantRun = started()
     plantRun.run(5_000)
     const before = plantRun.runtime.elapsedMs()
     plantRun.act('turbine-trip')
     plantRun.run(300_000)
     const alarms = plantRun.protection.snapshot().alarms.filter(lifecycle => (lifecycle.firstActiveElapsedMs ?? -1) >= before)
-    // The pressurizer's pressure dips below its low alarm, the generators' levels shrink, their relief valves lift.
+    // Known consequences retain their declared relationship to the trip.
+    // A finite steam-dome pressure excursion is a separate actual alarm;
+    // elapsed time since a trip must not silently mark every alarm expected.
     expect(alarms.map(lifecycle => lifecycle.ruleId)).toEqual(expect.arrayContaining(['pzr-pressure-low', 'sg-a-level-low', 'sg-a-atmospheric-relief-valve-open']))
-    for (const lifecycle of alarms) expect(lifecycle.annunciator?.expectedAfter, lifecycle.id).toEqual({ firstOutGroup: 'reactor-trip', withinMs: 300_000 })
+    const pressureAlarms = alarms.filter(lifecycle => /^sg-[a-d]-pressure-high$/.test(lifecycle.ruleId))
+    expect(pressureAlarms.map(lifecycle => lifecycle.ruleId).sort()).toEqual(['sg-a-pressure-high', 'sg-b-pressure-high', 'sg-c-pressure-high', 'sg-d-pressure-high'])
+    for (const lifecycle of pressureAlarms) expect(lifecycle.annunciator?.expectedAfter, lifecycle.id).toBeUndefined()
+    for (const lifecycle of alarms.filter(lifecycle => !pressureAlarms.includes(lifecycle))) {
+      expect(lifecycle.annunciator?.expectedAfter, lifecycle.id).toEqual({ firstOutGroup: 'reactor-trip', withinMs: 300_000 })
+    }
   }, PLANT_HANG_GUARD_MS)
 
   test('a reactor trip trips the turbine through P-4 and annunciates it with the other turbine trips', () => {
