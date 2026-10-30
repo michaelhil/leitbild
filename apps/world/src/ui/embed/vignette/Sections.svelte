@@ -89,7 +89,7 @@
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
-    <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills || section.kind === 'topology' && (section.heading !== undefined || section.family === 'flow' && opening?.where === 'window') ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
+    <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills || section.kind === 'values' && section.blocks?.some(block => block.kind === 'owner') || section.kind === 'topology' && (section.heading !== undefined || section.family === 'flow' && opening?.where === 'window') ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
       {#if section.kind === 'values' && section.blocks !== undefined}
         <!-- An answer's values of several elements, grouped by element (W7.4), in the column's rows. -->
         <div class="values"><ElementBlocks blocks={section.blocks} {view} {observations} series={snapshot.series} {now} {frozen} /></div>

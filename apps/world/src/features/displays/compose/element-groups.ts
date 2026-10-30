@@ -4,7 +4,7 @@
  * each in its own group, one value per quantity each, at most four) read as one table, a line per element; a value alone on its
  * element, or on none, reads as a row whose label names it. Only where the values are on several elements.
  */
-import type { GroupedSection, ValueBlock, VignetteElement, VignetteValue } from './model.ts'
+import type { ElementValueBlock, GroupedSection, ValueBlock, VignetteElement, VignetteValue } from './model.ts'
 import { refObjectId } from '../../../core/model/alerts.ts'
 
 const MAX_COLUMNS = 4
@@ -58,10 +58,10 @@ const onElement = (group: Group): group is Named => group.element !== null
 
 /** The rows a list of blocks takes: a name over each element's values, a head over each table. */
 export const blockRows = (blocks: ReadonlyArray<ValueBlock>): number =>
-  blocks.reduce((sum, block) => sum + (block.kind === 'table' ? block.table.rows : (block.element === null ? 0 : 1) + block.values.length), 0)
+  blocks.reduce((sum, block) => sum + (block.kind === 'table' ? block.table.rows : (block.kind === 'owner' || block.element !== null ? 1 : 0) + block.values.length), 0)
 
 /** The values grouped by element in the order their elements first appear, or null where that groups nothing; `objectOf` names a value's object. */
-export const elementBlocks = (values: ReadonlyArray<VignetteValue>, objectOf: (value: VignetteValue) => string | undefined = () => undefined): ReadonlyArray<ValueBlock> | null => {
+export const elementBlocks = (values: ReadonlyArray<VignetteValue>, objectOf: (value: VignetteValue) => string | undefined = () => undefined): ReadonlyArray<ElementValueBlock> | null => {
   const qualified = new Set(values.map(value => refObjectId(value.ref))).size > 1
   const order: Array<string | null> = []
   const byElement = new Map<string | null, { readonly element: VignetteElement | null; readonly values: VignetteValue[] }>()
@@ -76,7 +76,7 @@ export const elementBlocks = (values: ReadonlyArray<VignetteValue>, objectOf: (v
     const group = byElement.get(id)!
     return { element: group.element, values: [...group.values.filter(value => value.valueType === 'criterion'), ...group.values.filter(value => value.valueType !== 'criterion')] }
   })
-  const blocks: ValueBlock[] = []
+  const blocks: ElementValueBlock[] = []
   for (let at = 0; at < groups.length;) {
     const group = groups[at]!
     // The run of parallel elements this one starts: elements of its class with the same quantities.
@@ -95,4 +95,16 @@ export const elementBlocks = (values: ReadonlyArray<VignetteValue>, objectOf: (v
   }
   // Nothing grouped: the values read as rows, as before.
   return blocks.every(block => block.kind === 'element' && block.element === null) ? null : blocks
+}
+
+/** Qualified element/table groups already identify their owners. Otherwise a
+ * mixed-owner list gets owner headings, from the declaration's actual labels. */
+export const valueBlocks = (values: ReadonlyArray<VignetteValue>, objectOf: (value: VignetteValue) => string): ReadonlyArray<ValueBlock> | null => {
+  const blocks = elementBlocks(values, objectOf)
+  const owners = [...new Set(values.map(value => refObjectId(value.ref)))]
+  if (owners.length < 2 || blocks !== null && blocks.every(block => block.kind === 'table' || block.element !== null)) return blocks
+  return owners.map((objectId): Extract<ValueBlock, { kind: 'owner' }> => {
+    const owned = values.filter(value => refObjectId(value.ref) === objectId)
+    return { kind: 'owner', objectId, label: objectOf(owned[0]!), values: owned }
+  })
 }

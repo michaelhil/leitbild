@@ -152,9 +152,13 @@ export interface GroupedSection {
 }
 
 /** Values of one element under its name (none: values on no element), or parallel elements as one table (W7.4). */
-export type ValueBlock =
+export type ElementValueBlock =
   | { readonly kind: 'element'; readonly element: VignetteElement | null; readonly values: ReadonlyArray<VignetteValue> }
   | { readonly kind: 'table'; readonly table: GroupedSection }
+
+/** Mixed-owner rows name their owner once, so a long owner label cannot hide each reading's name. */
+export type ValueBlock = ElementValueBlock
+  | { readonly kind: 'owner'; readonly objectId: string; readonly label: string; readonly values: ReadonlyArray<VignetteValue> }
 
 export type VignetteSection =
   /**

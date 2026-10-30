@@ -42,6 +42,9 @@
 {#each blocks as block, index (index)}
   {#if block.kind === 'table'}
     <GroupedValues section={block.table} {observations} {frozen} />
+  {:else if block.kind === 'owner'}
+    <h3 class="owner">{block.label}</h3>
+    <ValueRows rows={valueRows({ values: block.values, observations, series, now, title: block.label, subject: { object: block.label }, frozen })} {now} />
   {:else}
     <!-- The element's name gives way by whole words where its row is short; its whole label stays in the title. -->
     {#if block.element !== null}<div class="element" role="heading" aria-level={3}><ComponentName objectId={componentValueOwner(block.values)} elementId={block.element.id} name={block.element.shortLabel ?? block.element.label} fullName={block.element.label} /></div>{/if}
@@ -52,4 +55,5 @@
 <style>
   /* An element's name over its rows: one row, neutral, the weight of a heading. */
   .element { height: var(--row); line-height: var(--row); overflow: hidden; white-space: nowrap; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--element-neutral-color); }
+  .owner { margin: 0; min-height: var(--row); line-height: var(--row); overflow-wrap: anywhere; font-size: 12px; font-weight: 600; color: var(--element-neutral-color); }
 </style>

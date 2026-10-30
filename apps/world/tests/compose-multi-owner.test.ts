@@ -3,6 +3,7 @@ import { displaySpecSchema } from '../src/core/observation/spec.ts'
 import { composeVignette } from '../src/features/displays/compose/compose.ts'
 import { compileVignette, type ViewRun } from '../src/features/displays/compose/view.ts'
 import { fixtureComposeRun } from './fixtures/compose-runs.ts'
+import { blockRows } from '../src/features/displays/compose/element-groups.ts'
 
 let fixture: Awaited<ReturnType<typeof fixtureComposeRun>>, run: ViewRun
 beforeAll(async () => { fixture = await fixtureComposeRun(); run = await fixture.runOf() })
@@ -51,4 +52,16 @@ test('long owner names preserve the distinguishing unit identity in each topolog
   if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
   const view = await compileVignette(namedRun, outcome.state)
   expect(view.sections.filter(section => section.kind === 'topology').map(section => section.heading)).toEqual([...names.values()])
+})
+
+test('mixed-owner value headings are reserved by composition and keep exact inspection identities', async () => {
+  const outcome = await composeVignette(run, displaySpecSchema.parse({ title: 'Compare speeds', question: 'Compare both units.', subjects: ['unit:one', 'unit:two'], views: [{ kind: 'values', signals: ['unit:one#speed', 'unit:two#speed'] }] }))
+  if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+  const view = await compileVignette(run, outcome.state)
+  const values = view.sections.find(section => section.kind === 'values')
+  if (values?.kind !== 'values' || values.blocks === undefined) throw Error('Expected named owner blocks')
+  expect(values.blocks.map(block => block.kind === 'owner' && block.label)).toEqual(['Unit One', 'Unit Two'])
+  expect(values.rows).toBe(blockRows(values.blocks))
+  expect(outcome.state.views.find(section => section.kind === 'values')?.rows).toBe(blockRows(values.blocks))
+  expect(values.blocks.flatMap(block => block.kind === 'owner' ? block.values.map(value => value.ref) : [])).toEqual(['unit:one#speed', 'unit:two#speed'])
 })

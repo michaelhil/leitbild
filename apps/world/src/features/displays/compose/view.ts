@@ -20,7 +20,7 @@ import {
 import { presentedOf } from './present.ts'
 import { stripsOf } from './strips.ts'
 import type { ComposeRun } from './resolve.ts'
-import { elementBlocks, valueElementKey, valueElementName } from './element-groups.ts'
+import { valueBlocks, valueElementKey, valueElementName } from './element-groups.ts'
 import { bindingRefs, drawingOf, scopeWithin, topologyOf, topologySection, tracedRefs } from './topology.ts'
 
 /** Lets the server's other work run before going on (a record read is synchronous). */
@@ -239,7 +239,7 @@ export const compileVignette = async (run: ComposeRun, state: VignetteState): Pr
     else if (view.kind === 'values') {
       // Named values: parallel ones as one table; values of several elements grouped by element (W7.4); else rows.
       const named = values(view.refs ?? [])
-      const blocks = elementBlocks(named, value => visibleObject(run, refObjectId(value.ref))?.label)
+      const blocks = valueBlocks(named, value => declared.get(value.ref)!.object.label)
       sections.push(groupValues(named, value => visibleObject(run, refObjectId(value.ref))?.label) ?? { kind: 'values', rows: view.rows, values: named, ...(blocks === null ? {} : { blocks }) })
     }
     else if (view.kind === 'trend') sections.push({ kind: 'trend', rows: view.rows, horizonMs: horizonMs(view.horizon), strips: stripsOf(values(view.refs).filter(value => value.series !== null)).slice(0, 4) })

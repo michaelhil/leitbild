@@ -132,7 +132,7 @@ describe('an answer\'s view (W7.3, W7.4, W8.2)', () => {
     const view = await compileVignette(await runNow(), state)
     const values = view.sections[0] as Extract<VignetteSection, { kind: 'values' }>
     const blocks = values.blocks!
-    expect(blocks.map(block => block.kind === 'table' ? `table ${block.table.quantities.map(quantity => quantity.label).join('|')} × ${block.table.lines.map(line => line.element.shortLabel).join(',')}` : `${block.element?.shortLabel ?? 'rows'}: ${block.values.length}`))
+    expect(blocks.map(block => block.kind === 'table' ? `table ${block.table.quantities.map(quantity => quantity.label).join('|')} × ${block.table.lines.map(line => line.element.shortLabel).join(',')}` : `${block.kind === 'owner' ? block.label : block.element?.shortLabel ?? 'rows'}: ${block.values.length}`))
       .toEqual(['RTB A: 2', 'RTB B: 2', 'table flow × AFW valve A → SG A,AFW valve B → SG B,AFW valve C → SG C,AFW valve D → SG D', 'table Run command × RCP A,RCP B,RCP C,RCP D'])
     expect(values.rows).toBe(blockRows(blocks))
     expect(state.views[0]!.rows).toBe(blockRows(blocks))
