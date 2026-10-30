@@ -60,9 +60,9 @@ describe('travel times declared beside the behaviour', () => {
     // Toward the end it does not stand at.
     const atPower = createProcessPlantRuntime({ system: plant })
     atPower.tick(1_000)
-    const opening = option('RHR-ISOL', Number(atPower.readVariable(control('RHR-ISOL').state as VariablePath)) < 0.5 ? 'OPEN' : 'SHUT')
+    const opening = option('RHR-SUMP-A', Number(atPower.readVariable(control('RHR-SUMP-A').state as VariablePath)) < 0.5 ? 'OPEN' : 'SHUT')
     const target = Number(opening.value)
-    const [early, late] = statesAfter('RHR-ISOL', opening.word, [opening.travelMs! / 3, opening.travelMs! + plant.graph.timestep.fixedStepMs]) as [number, number]
+    const [early, late] = statesAfter('RHR-SUMP-A', opening.word, [opening.travelMs! / 3, opening.travelMs! + plant.graph.timestep.fixedStepMs]) as [number, number]
     expect(Math.abs(early - target)).toBeGreaterThan(0.2)
     expect(Math.abs(late - target)).toBe(0)
   })

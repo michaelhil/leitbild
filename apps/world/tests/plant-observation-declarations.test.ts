@@ -28,13 +28,13 @@ const observable = (path: string) => declaration.observables.find(candidate => c
 describe('plant observation declarations (P2)', () => {
   test('T12: published, recorded and solved primary line readings parse against core\'s quantity list and unit codes', () => {
     expect(observationDeclarationSchema.parse(declaration)).toEqual(declaration)
-    // 1,251 signals (113 more real RHR/CCW/SW readings, including their
-    // connections, than the controller tranche; never injected-fault truth),
-    // 89 items' states (eight added by four actual pumps and four new breakers), what says the
+    // 1,383 signals, including actual per-train source and delivery readings
+    // (never injected-fault truth or the six unsolved private pressures),
+    // 98 operated items' states, what says the
     // core stopped (R2 W1.2), 8 rod banks' travel, 6 safety functions, the operating mode and 3 functions' criteria.
-    expect(declaration.observables).toHaveLength(1359)
-    expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(1016)
-    expect(declaration.revision).toBe(`${lineStateProjectionRevision(plant)}:1000ms:816`)
+    expect(declaration.observables).toHaveLength(1500)
+    expect(plantDeclaration(objectId, plant, null).observables).toHaveLength(1128)
+    expect(declaration.revision).toBe(`${lineStateProjectionRevision(plant)}:1000ms:884`)
   })
 
   test('T12: labels are the unit\'s own, unique within it, and unique per Run once World qualifies them (R25)', () => {
@@ -106,7 +106,7 @@ describe('plant observation declarations (P2)', () => {
 
   test('D1: each item that runs, is live, or opens and shuts declares its state as an enum in the words its controls use', () => {
     const states = declaration.observables.filter(entry => entry.ref.endsWith('.state'))
-    expect(states).toHaveLength(89)
+    expect(states).toHaveLength(98)
     expect(states.every(entry => entry.valueType === 'enum' && entry.quantity === 'state' && entry.series === null && entry.thresholds.length === 0)).toBe(true)
     const words = (path: string) => [observable(path).label, observable(path).element, observable(path).states!.map(state => `${state.value}=${state.label}`).join(' ')]
     const items = ['rcpA', 'offsiteBreakerA', 'mainSteamIsolationValveA', 'pressurizer.reliefValve', 'turbine', 'safetyBusA', 'pressurizer.safetyValves', 'safetyAccumulatorA.dischargeIsolationValve']
@@ -162,9 +162,9 @@ describe('plant observation declarations (P2)', () => {
 
   test('series come from the Run\'s recording, else null', () => {
     expect(observable('pressurizer.pressureMPa').series).toEqual({ seriesId: recordingSeriesIdFor(objectId, 'pressurizer.pressureMPa'), intervalMs: 1_000 })
-    // The prior 739 plus 77 RHR/CCW/SW states, controls, tagged readings and
-    // power balances; unrecorded engineering diagnostics still have no series.
-    expect(declaration.observables.filter(entry => entry.series !== null)).toHaveLength(816)
+    // The earlier cooling-chain 816 plus 68 source-transfer states, controls
+    // and actual readings; unrecorded engineering diagnostics have no series.
+    expect(declaration.observables.filter(entry => entry.series !== null)).toHaveLength(884)
     expect(plantDeclaration(objectId, plant, null).observables.every(entry => entry.series === null)).toBe(true)
   })
 
