@@ -21,7 +21,7 @@ import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { physicalLayoutPack, physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
 import { campusLayoutDataSchema, draftingLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
-import { currentPwrPhysicalDesignRef, pwrFullUnitPhysicalDesignRef, pwrCampusPhysicalDesignRef, pwrRecirculationUnitPhysicalDesignRef, pwrRecirculationCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { currentPwrPhysicalDesignRef, pwrFullUnitPhysicalDesignRef, pwrCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef, pwrShutdownCoolingCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
@@ -181,7 +181,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
     let reads = 0
     const observationSpy = spyOn(run, 'observations').mockImplementation(actor => { const port = originalObservations(actor); return { ...port, read: async input => { reads++; return port.read(input) } } })
     try {
-      const result = await read(registry, run, 'layout:halden-campus', pwrRecirculationCampusPhysicalDesignRef.digest)
+      const result = await read(registry, run, 'layout:halden-campus', pwrShutdownCoolingCampusPhysicalDesignRef.digest)
       expect(result.status).toBe(409)
       expect(result.body).toMatchObject({ error: { code: 'layout_location_mismatch' } })
       expect(reads).toBe(0)
@@ -196,7 +196,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
     await restored.setClock({ paused: true })
     expect(registry.loadedCompiledScenario(restored.id).connections).toEqual(before)
     expect(canonicalPhysicalJson(objectFor(restored.snapshot().objects, 'layout:halden-campus').packData)).toBe(sourceBefore)
-    expect((await read(registry, restored, 'layout:halden-campus', pwrRecirculationCampusPhysicalDesignRef.digest)).status).toBe(200)
+    expect((await read(registry, restored, 'layout:halden-campus', pwrShutdownCoolingCampusPhysicalDesignRef.digest)).status).toBe(200)
     const originalScenario = registry.loadedCompiledScenario.bind(registry)
     const changed = before.map((connection, index) => ({ ...connection, network: { ...connection.network,
       portId: index === 0 ? before[1]!.network.portId : index === 1 ? before[0]!.network.portId : connection.network.portId } }))
@@ -205,7 +205,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
     let reads = 0
     const observationSpy = spyOn(restored, 'observations').mockImplementation(actor => { const port = originalObservations(actor); return { ...port, read: async input => { reads++; return port.read(input) } } })
     try {
-      const result = await read(registry, restored, 'layout:halden-campus', pwrRecirculationCampusPhysicalDesignRef.digest)
+      const result = await read(registry, restored, 'layout:halden-campus', pwrShutdownCoolingCampusPhysicalDesignRef.digest)
       expect(result.status).toBe(409)
       expect(result.body).toMatchObject({ error: { code: 'layout_connection_mismatch' } })
       expect(reads).toBe(0)
@@ -215,9 +215,9 @@ describe('Real full-plant and shared-yard acquisition', () => {
   test('full unit and Grid bindings read complete bounded owner samples, and internal core alarms locate at their housing', async () => withRun(async (registry, run) => {
     const elapsed: number[] = []
     const retainedSubjects = draftingLayoutDataSchema.parse(objectFor(run.snapshot().objects, 'layout:halden-1').packData).coverage.representedSubjectIds
-    let sample = layoutLiveResponseSchema.parse((await read(registry, run, 'layout:halden-1', pwrRecirculationUnitPhysicalDesignRef.digest)).body)
+    let sample = layoutLiveResponseSchema.parse((await read(registry, run, 'layout:halden-1', pwrShutdownCoolingUnitPhysicalDesignRef.digest)).body)
     for (let index = 0; index < 3; index++) {
-      const started = performance.now(), response = await read(registry, run, 'layout:halden-1', pwrRecirculationUnitPhysicalDesignRef.digest)
+      const started = performance.now(), response = await read(registry, run, 'layout:halden-1', pwrShutdownCoolingUnitPhysicalDesignRef.digest)
       elapsed.push(performance.now() - started)
       expect(response.status).toBe(200); sample = layoutLiveResponseSchema.parse(response.body)
       expect(new Set(sample.subjects.map(subject => subject.elementId))).toEqual(new Set(retainedSubjects))
@@ -225,7 +225,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
       expect(sample.subjects.every(subject => subject.values.length <= 8 && subject.values.every(value => acquired.has(value.ref)))).toBe(true)
     }
     console.log(`Full PWR owner layout acquisition, warm local milliseconds: ${elapsed.map(value => value.toFixed(1)).join(', ')}; ${sample.sample.observations.length} acquired observations`)
-    const yard = await read(registry, run, 'layout:halden-campus', pwrRecirculationCampusPhysicalDesignRef.digest)
+    const yard = await read(registry, run, 'layout:halden-campus', pwrShutdownCoolingCampusPhysicalDesignRef.digest)
     expect(yard.status).toBe(200)
     const grid = layoutLiveResponseSchema.parse(yard.body)
     expect(grid.subjects).toHaveLength(11)
@@ -237,7 +237,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
     expect(command.kind).toBe('command')
     const target = new Date(Date.parse(run.snapshot().clock!.currentTime) + 2_000).toISOString() as IsoTimestamp
     await run.runMaximumPace(target, { shouldStop: () => false, onProgress: () => undefined }); await run.setClock({ paused: true })
-    const after = layoutLiveResponseSchema.parse((await read(registry, run, 'layout:halden-1', pwrRecirculationUnitPhysicalDesignRef.digest)).body)
+    const after = layoutLiveResponseSchema.parse((await read(registry, run, 'layout:halden-1', pwrShutdownCoolingUnitPhysicalDesignRef.digest)).body)
     const coreAlerts = after.sample.alerts.filter(row => subjectOf(row) === 'core')
     expect(coreAlerts.length).toBeGreaterThan(0)
     const layout = objectFor(run.snapshot().objects, 'layout:halden-1'), scene = await loadPhysicalLayoutScene(layout)
@@ -255,7 +255,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
     let reads = 0
     const observations = spyOn(run, 'observations').mockImplementation(actor => { const port = original(actor); return { ...port, read: async input => { reads++; return port.read(input) } } })
     try {
-      const result = await read(registry, run, 'layout:halden-campus', pwrRecirculationCampusPhysicalDesignRef.digest)
+      const result = await read(registry, run, 'layout:halden-campus', pwrShutdownCoolingCampusPhysicalDesignRef.digest)
       expect(result.status).toBe(409)
       expect(result.body).toMatchObject({ error: { code: 'layout_member_mismatch' } })
       expect(reads).toBe(0)

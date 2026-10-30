@@ -15,7 +15,7 @@ import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { pwrRecirculationUnitPhysicalDesignRef, pwrRhrUnitPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
+import { pwrShutdownCoolingUnitPhysicalDesignRef, pwrRecirculationUnitPhysicalDesignRef, pwrRhrUnitPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { layoutLiveResponseSchema, type LayoutLiveResponse } from '../src/ui/physical-layout/read-model.ts'
 import { resolvePhysicalSubjectOperation } from '../src/ui/physical-layout/operation.ts'
@@ -25,20 +25,20 @@ const actor = { id: actorIdSchema.parse('actor:rhr-live'), label: 'RHR live insp
 const packs = [processPlantPack, physicalLayoutPack]
 const definition = scenarioDefinitionSchema.parse({ id: 'rhr-live-proof', title: 'Actual RHR layout inspection', view: { map: { center: [11.477, 59.085], zoom: 16 } }, world: { startsAt: '2026-10-29T04:00:00.000Z' }, packs: [
   { id: 'process-plant', config: {}, items: [{ type: 'plant', id: plantId, label: 'Current four-loop PWR', location: [11.477, 59.085], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] },
-  { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: layoutId, label: 'Current RHR unit', design: pwrRecirculationUnitPhysicalDesignRef, members: { unit: plantId }, bearing: 0 }] },
+  { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: layoutId, label: 'Current RHR unit', design: pwrShutdownCoolingUnitPhysicalDesignRef, members: { unit: plantId }, bearing: 0 }] },
 ], timeline: { cues: [{ id: 'primary-release', at: { kind: 'after_scenario_start', seconds: 10 }, title: 'Actual primary release', actions: [{ type: 'invoke_capability', capabilityId: 'world.process-plant.control.write', input: { plantId, path: 'rcp-a-to-core.leak.areaFraction', value: .5 } }] }] } })
 
 // The actual World/Pack admission, numerical runtime, shared owner observation
 // reader and people-facing map API are exercised together. Nothing supplies a
 // fabricated physical-target description, process observation or topology.
-test('current R9 live map reads one fresh owner sample for graph-exact source-transfer machines, routes and physical feedback', async () => {
+test('current R10 live map retains fresh owner source-transfer machines, routes and physical feedback', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-rhr-live-'))
   const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: [definition],
     compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }),
     scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs }), runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter()] })
   try {
     const run = await registry.create({ scenarioId: definition.id }); await run.setClock({ paused: true })
-    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: plantId, loopCount: 4 })), design = await resolvePhysicalDesign(pwrRecirculationUnitPhysicalDesignRef)
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: plantId, loopCount: 4 })), design = await resolvePhysicalDesign(pwrShutdownCoolingUnitPhysicalDesignRef)
     if (design.profile !== 'drafting') throw Error('Expected current RHR drafting admission')
     expect(design.modelRequirement).toEqual({ modelRef: plant.modelRef, modelDigest: plant.modelDigest })
     const observations = run.observations.bind(run)
@@ -50,7 +50,7 @@ test('current R9 live map reads one fresh owner sample for graph-exact source-tr
     const read = async () => {
       const before = ownerReads
       const request = new Request(`http://leitbild.test/api/workspaces/${registry.workspaceId}/world/simulation-runs/${run.id}/displays/layout`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layoutObjectId: layoutId, expectedRevision: pwrRecirculationUnitPhysicalDesignRef.digest }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layoutObjectId: layoutId, expectedRevision: pwrShutdownCoolingUnitPhysicalDesignRef.digest }),
       })
       const response = await handleSimulationRunApi(request, new URL(request.url), { registry,
         accessContext: accessContextSchema.parse({ workspaceId: registry.workspaceId, requestId: newRequestId(), actor: { kind: 'anonymous' } }), roleHolders: () => ({}) })
@@ -135,8 +135,15 @@ test('current R9 live map reads one fresh owner sample for graph-exact source-tr
       }
       const historical = await resolvePhysicalDesign(pwrRhrUnitPhysicalDesignRef)
       if (historical.profile !== 'drafting') throw Error('Expected exact previous physical admission')
+      const sourceTransfer = await resolvePhysicalDesign(pwrRecirculationUnitPhysicalDesignRef)
+      if (sourceTransfer.profile !== 'drafting') throw Error('Expected exact retained source-transfer installation')
       const retainedRoutes = new Map(historical.source.routing!.connections.map(route => [route.graphConnectionId, route]))
-      const newRouteIds = design.source.routing!.connections.filter(route => JSON.stringify(route) !== JSON.stringify(retainedRoutes.get(route.graphConnectionId))).map(route => route.graphConnectionId)
+      // This existing real-flow experiment exercises the ES-1.3 source-transfer
+      // installation, not an RCS shutdown-cooling alignment. Preserve its exact
+      // 26 admitted routes and their actual live semantics under current R10.
+      const transferred = sourceTransfer.source.routing!.connections.filter(route => JSON.stringify(route) !== JSON.stringify(retainedRoutes.get(route.graphConnectionId)))
+      for (const route of transferred) expect(design.source.routing!.connections.find(candidate => candidate.graphConnectionId === route.graphConnectionId)).toEqual(route)
+      const newRouteIds = transferred.map(route => route.graphConnectionId)
       expect(newRouteIds).toHaveLength(26)
       for (const id of newRouteIds) {
         const subject = subjects.get(id)!, edge = plant.sourceGraph.connections.find(edge => edge.id === id)!
