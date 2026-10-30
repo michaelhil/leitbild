@@ -11,6 +11,8 @@ import { guardPlantTests } from './plant-hang-guard.ts'
 import { processPlantSimRuntimeId } from '../src/packs/process-plant/sim/constants.ts'
 import { createPlantOperations } from '../src/packs/process-plant/operations/plant-operations.ts'
 import { processSignalTagIdSchema } from '../src/packs/process-plant/graph/index.ts'
+import { variablePathSchema } from '../src/packs/process-plant/graph/index.ts'
+import { evaluateProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
 
 guardPlantTests()
 const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:sampled-response', loopCount: 2 }))
@@ -49,6 +51,14 @@ describe('explicitly sampled Plant response', () => {
       minimum: value, maximum: value, change: 0, elapsedSeconds: 120, endpointRatePerSecond: 0, recordingRelativeDeadband: 1e-5,
       first: { simulationTime: at(0), elapsedMs: 0, value }, current: { simulationTime: at(120), elapsedMs: 120_000, value } })
     expect(response.current.status).toBe('satisfied')
+    const recorded = response.recordings[0]!
+    expect((recorded.sampleOffsetsMs as number[]).map(offset => new Date(Date.parse(String(recorded.sampleTimestampOrigin)) + offset).toISOString())).toEqual([at(0), at(60), at(120)])
+    const raw = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, simulationTime: at(120) })
+    const original = raw.evidence[0]!
+    if (!('variable' in original) || original.variable === undefined) throw new Error('Expected the actual acquired physical leaf')
+    expect(response.current.evidence[0]).toMatchObject({ comparison: original.comparison, reference: original.reference, status: original.status,
+      rangeValidity: original.rangeValidity, variable: { path: original.variable.path, value: original.variable.value, canonicalValue: original.variable.canonicalValue,
+        unit: original.variable.unit, writable: original.variable.writable } })
     expect(plant.runtime.checkpoint()).toEqual(before)
   })
 
@@ -143,6 +153,22 @@ describe('explicitly sampled Plant response', () => {
     expect(evaluateProcessPlantResponse({ ...config(), input: command })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('Writable commands') }] })
     const fault = processPlantResponseQuerySchema.parse({ ...input, comparisons: [{ ...input.comparisons[0]!, signal: { path: 'vessel.primaryLeakFlowKgPerS' }, unit: 'kg/s' }] })
     expect(() => evaluateProcessPlantResponse({ ...config(), input: fault })).toThrow('not a reading')
+  })
+
+  test('a currently unpowered indication stays unknown even when its private numeric value and retained response are positive', () => {
+    const channel = variablePathSchema.parse('deltaTChannelA.deltaTC')
+    const supply = variablePathSchema.parse('deltaTChannelA.supplyAvailable')
+    const failed = { ...plant, runtime: { ...plant.runtime, readVariableSnapshot: (path: typeof channel) => {
+      const snapshot = plant.runtime.readVariableSnapshot(path)
+      return path === supply ? { ...snapshot, value: false, canonicalValue: false } : snapshot
+    } } }
+    const reading = Number(plant.runtime.readVariable(channel))
+    expect(reading).toBeGreaterThan(0)
+    const selected = processPlantResponseQuerySchema.parse({ ...input, comparisons: [{ signal: { path: channel }, statistic: 'minimum', operator: '>', value: 0, unit: 'degC' }] })
+    const response = evaluateProcessPlantResponse({ ...config(), plant: failed, input: selected, recordedSeriesIds: new Set([recordingSeriesIdFor(compiled.id, channel)]) })
+    expect(response.status).toBe('unknown')
+    expect(response.evidence[0]).toMatchObject({ status: 'unknown', reason: expect.stringContaining('supply') })
+    expect(Number(failed.runtime.readVariable(channel))).toBe(reading)
   })
 
   test('public discovery, target inspection and strict output validation preserve the sampled proof', () => {
