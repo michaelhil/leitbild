@@ -69,7 +69,12 @@ export const evaluateProcessPlantResponse = (config: {
   const evidence: Array<Record<string, unknown>> = []
   const recordings: Array<Record<string, unknown>> = []
   const anchors: Array<Record<string, unknown>> = []
-  const failure = (reason: string) => ({ ...identity, status: 'unknown' as const, reason, current, evidence, recordings, afterOperations: anchors })
+  const currentFrameApplies = input.targetObjectId === plant.plant.id && input.basis.modelRef === plant.plant.modelRef && input.basis.modelDigest === plant.plant.modelDigest
+  const failure = (reason: string) => {
+    const challenged = currentFrameApplies && current.status === 'challenged'
+    return { ...identity, status: challenged ? 'challenged' as const : 'unknown' as const,
+      reason: challenged ? `Current physical prerequisites are challenged. ${reason}` : reason, current, evidence, recordings, afterOperations: anchors }
+  }
   if (input.targetObjectId !== plant.plant.id) return failure('Response target does not match the answering Plant.')
   if (input.basis.modelRef !== plant.plant.modelRef || input.basis.modelDigest !== plant.plant.modelDigest) return failure('Response basis does not match the current Plant model and digest.')
   const now = config.simulationTime === undefined ? Number.NaN : Date.parse(config.simulationTime)

@@ -82,6 +82,22 @@ describe('explicitly sampled Plant response', () => {
     expect(evaluateProcessPlantResponse({ ...config(), recordedSeriesIds: new Set() })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('not selected') }] })
   })
 
+  test('known current failure remains challenged while a healthy incomplete response stays unknown', () => {
+    const incomplete = processPlantResponseQuerySchema.parse({ ...input, windowSeconds: 180 })
+    const challenged = processPlantResponseQuerySchema.parse({ ...incomplete, condition: { type: 'comparison', signal: { tagId: 'SG-A-PRESS' }, operator: '<', value: 0, unit: 'MPa' } })
+    const healthy = evaluateProcessPlantResponse({ ...config(), input: incomplete })
+    expect(healthy).toMatchObject({ status: 'unknown', current: { status: 'satisfied' }, reason: expect.stringContaining('not accumulated') })
+    const failed = evaluateProcessPlantResponse({ ...config(), input: challenged })
+    expect(failed.status).toBe('challenged')
+    expect(failed.current.status).toBe('challenged')
+    expect(failed.reason).toContain('Current physical prerequisites are challenged')
+    expect(failed.reason).toContain('not accumulated')
+    expect(failed.current.evidence[0]).toMatchObject({ reference: { tagId: 'SG-A-PRESS' }, variable: { value, unit: 'MPa' }, status: 'challenged' })
+    expect(evaluateProcessPlantResponse({ plant, input: challenged, simulationTime: at(120) })).toMatchObject({ status: 'challenged', reason: expect.stringContaining('active Plant recording') })
+    const foreign = processPlantResponseQuerySchema.parse({ ...challenged, targetObjectId: 'plant:foreign-target' })
+    expect(evaluateProcessPlantResponse({ ...config(), input: foreign })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('does not match') })
+  })
+
   test('ordinary Run-time remainders use the authored integration step rather than assuming elapsed and acquired clocks coincide', () => {
     const partial = instance()
     partial.runtime.tick(120_043)
