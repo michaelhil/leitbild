@@ -44,6 +44,7 @@ const tick = (runtime: Runtime, protection: Protection, milliseconds: number) =>
 }
 const sample = (runtime: Runtime) => ({
   elapsedS: runtime.elapsedMs() / 1000,
+  tripBreakerAClosed: runtime.readVariable('reactorTripBreakerA.closedState' as VariablePath), tripBreakerBClosed: runtime.readVariable('reactorTripBreakerB.closedState' as VariablePath),
   primaryPressureMPa: read(runtime, 'pressurizer.pressureMPa'), hotLegTemperatureC: read(runtime, 'core.coolantOutletTemperatureC'), coldLegTemperatureC: read(runtime, 'core.coolantInletTemperatureC'),
   coreExitTemperatureC: read(runtime, 'core.coreExitTemperatureC'),
   pressurizerLevelPercent: read(runtime, 'pressurizer.levelPercent'), subcoolingMarginC: read(runtime, 'vessel.subcoolingMarginC'), collapsedLiquidLevelPercent: read(runtime, 'vessel.collapsedLiquidLevelPercent'),
@@ -62,6 +63,7 @@ const sample = (runtime: Runtime) => ({
 const runtime = createProcessPlantRuntime({ system: plant }), protection = createProcessPlantProtectionRunner({ system: plant, protection: plant.automation })
 const preparationSamples = [sample(runtime)]
 command(runtime, protection, 'reactorTripBreakerA.closed', false)
+command(runtime, protection, 'reactorTripBreakerB.closed', false)
 command(runtime, protection, 'turbineStopValve.positionFraction', 0)
 command(runtime, protection, 'turbine.loadFraction', 0)
 command(runtime, protection, 'letdownValve.positionFraction', 0)
