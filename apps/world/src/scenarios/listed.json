@@ -18,5 +18,10 @@
     "scenarioId": "halden-rhr-cooling-chain",
     "summary": "Establish the PWR’s RHR → CCW → service-water heat path after a primary release, then inspect cooled injection and loss of cooling.",
     "tags": ["Nuclear plant", "RHR cooling"]
+  },
+  {
+    "scenarioId": "halden-cold-leg-recirculation",
+    "summary": "Transfer the PWR’s ECCS source from RWST to the sump through cooled RHR and same-train SI piggyback paths, with actual cold-leg delivery and a continuing-duty handoff.",
+    "tags": ["Nuclear plant", "Source transfer"]
   }
 ]

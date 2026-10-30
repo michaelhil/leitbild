@@ -65,8 +65,8 @@
           "label": "Halden Unit 2 full plant",
           "design": {
             "id": "pwr-full-unit",
-            "revision": "pwr-full-unit-20261029-r8",
-            "digest": "f3114405ff54372e35038298aed07b0467df995aec0cf2a1db5a36b1d4334192"
+            "revision": "pwr-full-unit-20261030-r9",
+            "digest": "459f5dbbd25240706308c3bb3cc8f2a684750c638a1823c920412ed3bef13f30"
           },
           "members": {
             "unit": "plant:halden-2"
