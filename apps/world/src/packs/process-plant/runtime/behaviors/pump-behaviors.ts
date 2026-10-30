@@ -16,6 +16,7 @@ import { downstreamServiceDemandFraction } from '../links/link-flow-helpers.ts'
 import { serviceUsesDownstreamDemand } from '../service-profiles.ts'
 import { componentHasElectricalPower, type ElectricalReadContext } from './electrical-behaviors.ts'
 import { headerPressureBalance, pressureBalancedHeaderFedBy } from './junction/header-pressure-balance.ts'
+import { directedPumpDeliveredFlow, downstreamPumpSuctionDemandOpen } from '../directed-fluid-delivery.ts'
 
 type PumpBehaviorInput = Parameters<ComponentBehaviorDefinition['update']>[0]
 
@@ -49,6 +50,7 @@ const pumpCanRun = (system: CompiledProcessPlant, component: CompiledComponent, 
 // reactor trip leaves them, it runs on, dead-headed on its minimum-flow line,
 // and delivers nothing. 1 for any other pump.
 const dischargeOpenFraction = ({ system, component, context }: Pick<PumpBehaviorInput, 'system' | 'component' | 'context'>): number => {
+  if (downstreamPumpSuctionDemandOpen(system, component, context)) return 1
   const discharge = outgoingComponentLinks(system, component, link => link.kind === 'fluidFlow' && serviceUsesDownstreamDemand(link.service))
   return discharge.length === 0 ? 1 : Math.max(...discharge.map(link => downstreamServiceDemandFraction(system, link, context)))
 }
@@ -115,7 +117,21 @@ const primaryLoopOf = (system: CompiledProcessPlant, component: CompiledComponen
 const primaryLoopFlowTarget = (system: CompiledProcessPlant, loop: { readonly circuit: PrimaryCircuitHydraulics; readonly index: number }, context: ComponentNumericReadContext): number =>
   solvePrimaryLoopFlows(system, loop.circuit, loop.circuit.loops.map(other => rotorSpeedFraction(other.pump, context)), context)[loop.index]!
 
+const reconcileDirectedPumpDelivery = ({ system, component, context }: PumpBehaviorInput): void => {
+  const delivered = directedPumpDeliveredFlow(system, component, context)
+  if (delivered === null) return
+  context.write(componentVariablePath(component, 'flowKgPerS'), delivered)
+  const running = context.readBoolean(componentVariablePath(component, 'runningState'))
+  const speed = context.readNumber(componentVariablePath(component, 'speedFraction'))
+  const head = parameterNumber(component, 'nominalHeadPa') * speed * speed
+  context.write(componentVariablePath(component, 'demandMw'), running ? delivered * head / optionalParameterNumber(component, 'fluidDensityKgPerM3', 800) / optionalParameterNumber(component, 'hydraulicEfficiencyFraction', 0.82) / 1_000_000 : 0)
+}
+
 export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
+  {
+    id: 'centrifugal-pump-delivered-flow', phase: 'solveThermalTransfer', componentKind: 'centrifugalPump',
+    reads: ['runningState', 'speedFraction', 'allocated outgoing:flowKgPerS'], writes: ['flowKgPerS', 'demandMw'], update: reconcileDirectedPumpDelivery,
+  },
   {
     id: 'centrifugal-pump-flow',
     phase: 'solveFluidFlowComponents',
@@ -173,6 +189,10 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
 ]
 
 export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
+  {
+    id: 'centrifugal-pump-initial-delivered-flow', componentKind: 'centrifugalPump', afterLinks: true,
+    reads: ['runningState', 'speedFraction', 'allocated outgoing:flowKgPerS'], writes: ['flowKgPerS', 'demandMw'], reconcile: reconcileDirectedPumpDelivery,
+  },
   {
     id: 'centrifugal-pump-initial-state',
     componentKind: 'centrifugalPump',

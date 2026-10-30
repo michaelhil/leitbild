@@ -13,6 +13,7 @@ import { componentBehaviorDefinitions, componentInitialReconciliationDefinitions
 import type { ProcessPlantSolverPhase } from './model.ts'
 import { processLinkBehaviorDefinitions } from './links/process-link-behaviors.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
+import { prepareDirectedFluidDelivery } from './directed-fluid-delivery.ts'
 
 type ProcessPlantExecutionInvocation =
   | {
@@ -257,6 +258,7 @@ export const runProcessPlantExecutionPhase = (config: {
   readonly phase: ProcessPlantSolverPhase
   readonly dtSeconds: number
 }): void => {
+  if (config.phase === 'solveFluidFlowLinks') prepareDirectedFluidDelivery(config.system, config.context, config.dtSeconds)
   for (const invocation of config.plan.invocationsByPhase.get(config.phase) ?? []) {
     config.context.configure({
       behaviorId: invocation.behavior.id,

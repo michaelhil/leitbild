@@ -23,6 +23,7 @@ import {
   resolveProcessPlantOperatingPoint,
 } from './plant-definitions.ts'
 import { assertPrimaryLoopTopologyValid } from './graph/index.ts'
+import { assertDirectedFluidDeliveryValid } from './runtime/directed-fluid-delivery.ts'
 
 export interface ProcessPlantInitialVariableValue {
   readonly path: VariablePath
@@ -146,6 +147,7 @@ export const compileResolvedProcessPlant = (
   const compiledGraph = compiledGraphFor(graph, sourceDigest)
   const modelDigest = processPlantModelDigest(sourceDigest, compiledGraph)
   definition.validateGraph?.(compiledGraph)
+  assertDirectedFluidDeliveryValid(compiledGraph)
   const initialState = parseInitialState(definition.valueOverrides as Record<string, unknown> | undefined)
   assertInitialStateTargetsDeclaredVariables(compiledGraph, initialState)
   // Validated once here, so every reader sees declared operating modes, annunciator systems, safety functions and their references whole.

@@ -6,7 +6,7 @@ import { relaxToward, type ComponentNumericReadContext } from '../component-help
 import { primaryLoopLegReversed, reactorCoreNetInflowKgPerS } from '../primary-loop-hydraulics.ts'
 import { primarySystemContainment, primarySystemReactorCore } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa } from '../thermophysics.ts'
-import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
+import { flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
 
 /** The upper plenum's water, which the forward-running hot legs carry: the
  * core's outlet flow mixed with what loops driven backwards bring into it. */
@@ -137,7 +137,6 @@ export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLin
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else {
         target = flowWeightedIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => isIncomingFluidForOutlet(system, link, candidate))
-          ?? averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => isIncomingFluidForOutlet(system, link, candidate))
           ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
       }
       context.write(

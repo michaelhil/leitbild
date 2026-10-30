@@ -1141,7 +1141,7 @@ describe('process plant runtime', () => {
           nominalFluid: 'water',
           designPhase: 'liquid',
           solverModel: 'incompressibleLiquid',
-          variables: liquidVariables(35, 0.101325),
+          variables: [...liquidVariables(35, 0.101325), processLinkVariableDescriptorSchema.parse({ path: 'soluteConcentrationPpm', label: 'Unborated acceptance-test liquid', kind: 'state', discipline: 'chemical', writable: false, publish: 'telemetry', quantity: 'concentration', unit: 'ppm', initialValue: 0 })],
         }),
       ],
     })

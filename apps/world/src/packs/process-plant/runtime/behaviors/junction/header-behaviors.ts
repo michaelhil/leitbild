@@ -1,8 +1,6 @@
 import type { CompiledProcessLink } from '../../../graph/index.ts'
 import { componentVariablePath, processLinkVariablePath, type ComponentBehaviorDefinition, type ComponentInitialReconciliationDefinition } from '../../behavior-contract.ts'
 import {
-  firstFluidService,
-  fluidLinksForService,
   incomingComponentLinks,
   outgoingComponentLinks,
   sumProcessLinkValue,
@@ -60,15 +58,15 @@ const updateHeaderDiagnostics = (
   const { system, component, context } = input
   const incomingCandidates = incomingComponentLinks(system, component)
   const outgoingCandidates = outgoingComponentLinks(system, component)
-  const service = firstFluidService([...incomingCandidates, ...outgoingCandidates])
-  const incomingLinks = fluidLinksForService(incomingCandidates, service)
-  const outgoingLinks = fluidLinksForService(outgoingCandidates, service)
+  // A header joins one declared fluid circuit. Service labels describe its
+  // consumers, not different material inventories inside the same manifold.
+  const incomingLinks = incomingCandidates.filter(link => link.kind === 'fluidFlow')
+  const outgoingLinks = outgoingCandidates.filter(link => link.kind === 'fluidFlow')
   const inletFlow = sumProcessLinkValue(incomingLinks, 'flowKgPerS', context)
   const outletFlow = sumProcessLinkValue(outgoingLinks, 'flowKgPerS', context)
   const previousMixedTemperature = context.readNumber(componentVariablePath(component, 'mixedTemperatureC'))
   const incomingMixedTemperature = weightedAverageLinkValue(incomingLinks, 'temperatureC', context)
-    ?? weightedAverageLinkValue(outgoingLinks, 'temperatureC', context)
-    ?? optionalParameterNumber(component, 'initialTemperatureC', 220)
+    ?? previousMixedTemperature
   const mixedTemperature = relaxToward(
     previousMixedTemperature,
     incomingMixedTemperature,

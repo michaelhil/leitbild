@@ -54,9 +54,8 @@ const updateValveFlowDiagnostics = (
   const { system, component, context } = input
   const incomingLinks = incomingComponentLinks(system, component)
   const outgoingLinks = outgoingComponentLinks(system, component)
-  const service = firstFluidService([...incomingLinks, ...outgoingLinks])
-  const matchingIncoming = fluidLinksForService(incomingLinks, service)
-  const matchingOutgoing = fluidLinksForService(outgoingLinks, service)
+  const matchingIncoming = incomingLinks.filter(link => link.kind === 'fluidFlow')
+  const matchingOutgoing = outgoingLinks.filter(link => link.kind === 'fluidFlow')
   const inletFlow = sumProcessLinkValue(matchingIncoming, 'flowKgPerS', context)
   const outletFlow = sumProcessLinkValue(matchingOutgoing, 'flowKgPerS', context)
   // A valve on a pressure-balanced header's branch drops the header's pressure to its vessel's.

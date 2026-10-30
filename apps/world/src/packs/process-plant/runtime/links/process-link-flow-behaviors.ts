@@ -12,6 +12,7 @@ import { pressureDrivenLeakFlowKgPerS } from '../physics.ts'
 import { physicalFlowCapacityKgPerS, physicalNumber } from './process-link-physical.ts'
 import { primarySystemReactorVessel } from '../system-topology.ts'
 import { primaryBreakFlow } from './primary-break-flow.ts'
+import { directedFluidDeliveryFlow } from '../directed-fluid-delivery.ts'
 
 export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
@@ -21,6 +22,11 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
     writes: ['flowKgPerS'],
     appliesTo: (link): boolean => link.kind === 'fluidFlow' && hasProcessLinkVariable(link, 'flowKgPerS'),
     update: ({ system, link, context }): void => {
+      const directed = directedFluidDeliveryFlow(system, link, context)
+      if (directed !== null) {
+        context.write(processLinkVariablePath(link, 'flowKgPerS'), directed)
+        return
+      }
       const fromComponent = system.graph.components[link.fromComponentIndex]
       const toComponent = system.graph.components[link.toComponentIndex]
       if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)

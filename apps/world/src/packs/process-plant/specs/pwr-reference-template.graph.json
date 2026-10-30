@@ -3762,7 +3762,7 @@
         "initialTemperatureC": 25,
         "initialPressureMPa": 0.101325,
         "headerVolumeM3": 1,
-        "distributionMode": "demandWeighted"
+        "distributionMode": "directedDelivery"
       },
       "variables": [
         {
@@ -3810,7 +3810,7 @@
         "initialTemperatureC": 45,
         "initialPressureMPa": 0.101325,
         "headerVolumeM3": 1,
-        "distributionMode": "demandWeighted"
+        "distributionMode": "directedDelivery"
       },
       "variables": [
         {
@@ -3948,7 +3948,7 @@
         "initialTemperatureC": 25,
         "initialPressureMPa": 0.101325,
         "headerVolumeM3": 1,
-        "distributionMode": "demandWeighted"
+        "distributionMode": "directedDelivery"
       },
       "variables": [
         {
@@ -4056,7 +4056,7 @@
         "initialTemperatureC": 25,
         "initialPressureMPa": 0.101325,
         "headerVolumeM3": 1,
-        "distributionMode": "demandWeighted"
+        "distributionMode": "directedDelivery"
       },
       "variables": [
         {
@@ -4104,7 +4104,7 @@
         "initialTemperatureC": 45,
         "initialPressureMPa": 0.101325,
         "headerVolumeM3": 1,
-        "distributionMode": "demandWeighted"
+        "distributionMode": "directedDelivery"
       },
       "variables": [
         {
@@ -4242,7 +4242,7 @@
         "initialTemperatureC": 25,
         "initialPressureMPa": 0.101325,
         "headerVolumeM3": 1,
-        "distributionMode": "demandWeighted"
+        "distributionMode": "directedDelivery"
       },
       "variables": [
         {

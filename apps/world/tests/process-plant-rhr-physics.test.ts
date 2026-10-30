@@ -230,16 +230,28 @@ const operatingChain = () => {
   const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'rhr-current-model', loopCount: 4 }))
   const runtime = createProcessPlantRuntime({ system })
   const protection = createProcessPlantProtectionRunner({ system, protection: system.automation })
+  const transferred = new Set<string>()
   for (let seconds = 0; seconds < 300; seconds++) {
     if (seconds === 10) runtime.writeCommand({ type: 'setVariable', path: path('rcp-a-to-core.leak.areaFraction'), value: 0.5 })
     if (seconds === 120) {
       runtime.writeCommand({ type: 'setVariable', path: path('rhrPumpA.running'), value: true })
       runtime.writeCommand({ type: 'setVariable', path: path('rhrPumpB.running'), value: true })
-      runtime.writeCommand({ type: 'setVariable', path: path('rhrIsolationValve.positionFraction'), value: 1 })
+      for (const train of ['A', 'B']) {
+        runtime.writeCommand({ type: 'setVariable', path: path(`rhrSumpSuctionValve${train}.positionFraction`), value: 1 })
+        runtime.writeCommand({ type: 'setVariable', path: path(`rhrInjectionValve${train}.positionFraction`), value: 1 })
+      }
+    }
+    for (const train of ['A', 'B']) if (!transferred.has(train)
+      && number(runtime, `rhrSumpSuctionValve${train}.effectivePositionFraction`) === 1
+      && number(runtime, `containment-sump-to-rhr-sump-suction-valve-${train.toLowerCase()}.flowKgPerS`) > 0) {
+      runtime.writeCommand({ type: 'setVariable', path: path(`rhrRwstSuctionValve${train}.positionFraction`), value: 0 })
+      transferred.add(train)
     }
     runtime.tick(1000)
     protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-rhr-physics' as never, sourceRuntimeId: 'process-plant.local' })
   }
+  expect([...transferred].sort()).toEqual(['A', 'B'])
+  for (const train of ['A', 'B']) expect(number(runtime, `rhrRwstSuctionValve${train}.effectivePositionFraction`)).toBe(0)
   return { system, checkpoint: runtime.checkpoint() }
 }
 let chain: ReturnType<typeof operatingChain> | undefined
@@ -296,7 +308,7 @@ describe('current PWR RHR cooling chain', () => {
       expect(number(runtime, `componentCoolingHeatExchanger${train}.heatBalanceResidualMw`)).toBeCloseTo(0, 8)
     }
     expect(number(runtime, 'containment.sumpTemperatureC')).toBeGreaterThan(number(runtime, 'containment.temperatureC'))
-    expect(number(runtime, 'rhr-isolation-valve-to-cold-leg-a.flowKgPerS')).toBeGreaterThan(0)
+    for (const train of ['a', 'b']) expect(number(runtime, `rhr-injection-valve-${train}-to-cold-leg-${train}.flowKgPerS`)).toBeGreaterThan(0)
   })
 
   test('loss of one SW feeder removes its driven heat-rejection path and warms finite CCW, without defeating the other train', () => {
@@ -315,12 +327,14 @@ describe('current PWR RHR cooling chain', () => {
     expect(number(runtime, 'componentCoolingTankA.inventoryKg')).toBeCloseTo(28500, 7)
   })
 
-  test('closing the return isolation stops actual sump draw and hot-side transfer on both trains', () => {
+  test('closing both independent direct returns stops actual sump draw and hot-side transfer on both trains', () => {
     const runtime = restoredChain()
-    runtime.writeCommand({ type: 'setVariable', path: path('rhrIsolationValve.positionFraction'), value: 0 })
+    for (const train of ['A', 'B']) runtime.writeCommand({ type: 'setVariable', path: path(`rhrInjectionValve${train}.positionFraction`), value: 0 })
     run(runtime, 12)
-    expect(number(runtime, 'rhrIsolationValve.effectivePositionFraction')).toBe(0)
-    expect(number(runtime, 'rhr-isolation-valve-to-cold-leg-a.flowKgPerS')).toBe(0)
+    for (const train of ['A', 'B']) {
+      expect(number(runtime, `rhrInjectionValve${train}.effectivePositionFraction`)).toBe(0)
+      expect(number(runtime, `rhr-injection-valve-${train.toLowerCase()}-to-cold-leg-${train.toLowerCase()}.flowKgPerS`)).toBe(0)
+    }
     expect(number(runtime, 'containment.sumpOutflowKgPerS')).toBe(0)
     expect(number(runtime, 'rhrHeatExchangerA.hotSideFlowKgPerS')).toBe(0)
     expect(number(runtime, 'rhrHeatExchangerB.hotSideFlowKgPerS')).toBe(0)
@@ -343,11 +357,11 @@ describe('current PWR RHR cooling chain', () => {
     const runtime = createProcessPlantRuntime({ system })
     runtime.writeCommand({ type: 'setVariable', path: path('rhrPumpA.running'), value: true })
     runtime.writeCommand({ type: 'setVariable', path: path('rhrPumpB.running'), value: true })
-    runtime.writeCommand({ type: 'setVariable', path: path('rhrIsolationValve.positionFraction'), value: 1 })
+    for (const train of ['A', 'B']) runtime.writeCommand({ type: 'setVariable', path: path(`rhrInjectionValve${train}.positionFraction`), value: 1 })
     run(runtime, 30)
     expect(number(runtime, 'pressurizer.pressureMPa')).toBeGreaterThan(0.9)
     expect(number(runtime, 'rhrPumpA.flowKgPerS')).toBe(0)
     expect(number(runtime, 'rhrPumpB.flowKgPerS')).toBe(0)
-    expect(number(runtime, 'rhr-isolation-valve-to-cold-leg-a.flowKgPerS')).toBe(0)
+    for (const train of ['a', 'b']) expect(number(runtime, `rhr-injection-valve-${train}-to-cold-leg-${train}.flowKgPerS`)).toBe(0)
   })
 })

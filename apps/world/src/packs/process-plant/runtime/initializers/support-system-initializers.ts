@@ -37,6 +37,7 @@ export const supportSystemInitialValueDefinitions: ReadonlyArray<ComponentInitia
       if (localPath === 'airMassKg') return airMass
       if (localPath === 'steamMassKg') return steamMass
       if (localPath === 'sumpTemperatureC') return optionalParameterNumber(component, 'initialSumpTemperatureC', temperatureC)
+      if (localPath === 'sumpSoluteConcentrationPpm') return optionalParameterNumber(component, 'initialSumpSoluteConcentrationPpm', 0)
       if (localPath === 'sumpInventoryKg') return optionalParameterNumber(component, 'initialSumpInventoryKg', 0)
       if (localPath === 'sumpLevelPercent') {
         const referenceInventory = optionalParameterNumber(component, 'sumpLevelReferenceInventoryKg', 100_000)

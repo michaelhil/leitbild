@@ -8,6 +8,6 @@ export const sameComponentFluidCircuit = (component: CompiledComponent, firstPor
 /** An upstream reading that belongs to the fluid leaving this exact port. */
 export const isIncomingFluidForOutlet = (system: CompiledProcessPlant, outlet: CompiledProcessLink, candidate: CompiledProcessLink): boolean => {
   const component = system.graph.components[outlet.fromComponentIndex]
-  return component !== undefined && candidate.kind === 'fluidFlow' && candidate.service === outlet.service
+  return component !== undefined && candidate.kind === 'fluidFlow' && candidate.nominalFluid === outlet.nominalFluid
     && sameComponentFluidCircuit(component, String(outlet.fromPortName), String(candidate.toPortName))
 }

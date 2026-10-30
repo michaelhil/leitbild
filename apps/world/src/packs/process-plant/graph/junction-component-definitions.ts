@@ -98,7 +98,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
        * coefficient to a vessel with a pressure, and the header stands where
        * the pumps' curves deliver what the outlets pass to their vessels.
        */
-      distributionMode: z.enum(['demandWeighted', 'pressureWeighted', 'pressureBalance']).optional(),
+      distributionMode: z.enum(['demandWeighted', 'pressureWeighted', 'pressureBalance', 'directedDelivery']).optional(),
       portIds: headerPortIdsSchema.optional(),
     }).strict(),
     resolveAdditionalPorts: ({ parameters }) => headerPortsFor(headerPortIdsFrom(parameters), 'hydraulicThermal'),

@@ -3,7 +3,7 @@ import { clamp, optionalParameterNumber } from '../component-helpers.ts'
 import { saturationTemperatureCFromPressureMPa } from '../thermophysics.ts'
 import { mixedLiquidTemperatureStep } from '../thermal-inventory.ts'
 import { inventoryBalanceStep } from '../physics.ts'
-import { sumOutgoingComponentLinkValue } from '../component-link-helpers.ts'
+import { incomingComponentLinks, sumOutgoingComponentLinkValue } from '../component-link-helpers.ts'
 import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
 
 const gasPressureMPa = (config: {
@@ -22,12 +22,13 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
     id: 'containment-lumped-atmosphere-sump',
     phase: 'updateComponentState',
     componentKind: 'containmentVolume',
-    reads: ['incoming:flowKgPerS', 'incoming:temperatureC', 'incoming:radiationMSvPerH', 'pressureMPa', 'temperatureC', 'steamMassKg', 'sumpInventoryKg', 'sumpTemperatureC', 'outgoing:flowKgPerS'],
+    reads: ['incoming:flowKgPerS', 'incoming:temperatureC', 'incoming:soluteConcentrationPpm', 'incoming:radiationMSvPerH', 'pressureMPa', 'temperatureC', 'steamMassKg', 'sumpInventoryKg', 'sumpTemperatureC', 'sumpSoluteConcentrationPpm', 'outgoing:flowKgPerS'],
     writes: [
       'atmosphereMassKg',
       'steamMassKg',
       'sumpInventoryKg',
       'sumpTemperatureC',
+      'sumpSoluteConcentrationPpm',
       'sumpLevelPercent',
       'pressureMPa',
       'temperatureC',
@@ -89,6 +90,26 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         outflowKgPerS: sumpOutflow,
         dtSeconds: context.dtSeconds,
       })
+      // The tracer is nonvolatile: primary liquid's incoming solute remains
+      // in the sump as the existing atmosphere model flashes part of its water.
+      // Spray carries its actual dissolved material; pure steam/condensate
+      // carries none. This is not boron solubility or precipitation chemistry.
+      let incomingSoluteRateKgPpmPerS = 0
+      for (const link of incomingComponentLinks(system, component, link => ['massEnergyIn', 'steamIn', 'sprayIn'].includes(String(link.toPortName)))) {
+        const flow = context.readNumber(processLinkVariablePath(link, 'flowKgPerS'))
+        if (flow <= 0) continue
+        const concentration = processLinkVariablePath(link, 'soluteConcentrationPpm')
+        if (!context.has(concentration)) {
+          if (link.nominalFluid === 'steam') continue
+          throw new Error(`containment liquid inflow ${link.id} requires an actual dissolved-solute reading`)
+        }
+        incomingSoluteRateKgPpmPerS += flow * context.readNumber(concentration)
+      }
+      const currentSumpSolute = context.readNumber(componentVariablePath(component, 'sumpSoluteConcentrationPpm'))
+      const remainingSumpMass = Math.max(0, context.readNumber(componentVariablePath(component, 'sumpInventoryKg')) - sumpOutflow * context.dtSeconds)
+      const nextSumpSolute = nextSumpInventory > 0
+        ? (remainingSumpMass * currentSumpSolute + incomingSoluteRateKgPpmPerS * context.dtSeconds) / nextSumpInventory
+        : currentSumpSolute
       const sumpLevelReferenceInventory = optionalParameterNumber(component, 'sumpLevelReferenceInventoryKg', 100_000)
       const sumpLevelPercent = clamp(nextSumpInventory / sumpLevelReferenceInventory * 100, 0, 100)
       const airMass = context.readNumber(componentVariablePath(component, 'airMassKg'))
@@ -111,6 +132,7 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       context.write(componentVariablePath(component, 'sumpInventoryKg'), nextSumpInventory)
       context.write(componentVariablePath(component, 'sumpTemperatureC'), nextSumpTemperature)
+      context.write(componentVariablePath(component, 'sumpSoluteConcentrationPpm'), nextSumpSolute)
       context.write(componentVariablePath(component, 'sumpLevelPercent'), sumpLevelPercent)
       context.write(componentVariablePath(component, 'pressureMPa'), Math.max(0.01, pressure))
       context.write(componentVariablePath(component, 'temperatureC'), nextTemperature)

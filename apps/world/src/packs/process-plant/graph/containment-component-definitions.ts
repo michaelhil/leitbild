@@ -21,6 +21,7 @@ export const containmentComponentDefinitions: ReadonlyArray<ComponentDefinition>
       initialHumidityFraction: z.number().finite().min(0).max(1).optional(),
       initialSumpInventoryKg: z.number().finite().nonnegative().optional(),
       initialSumpTemperatureC: z.number().finite().optional(),
+      initialSumpSoluteConcentrationPpm: z.number().finite().nonnegative().optional(),
       heatLossMwPerC: z.number().finite().nonnegative().optional(),
       designPressureMPa: z.number().finite().positive().optional(),
       sumpLevelReferenceInventoryKg: z.number().finite().positive().optional(),
@@ -35,6 +36,7 @@ export const containmentComponentDefinitions: ReadonlyArray<ComponentDefinition>
       variable({ path: 'steamMassKg', label: 'Containment steam mass', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg', simulatorOnly: true }),
       variable({ path: 'sumpInventoryKg', label: 'Containment sump inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg', simulatorOnly: true }),
       variable({ path: 'sumpTemperatureC', label: 'Containment sump liquid temperature', kind: 'state', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'sumpSoluteConcentrationPpm', label: 'Containment sump dissolved solute', kind: 'state', discipline: 'chemical', writable: false, publish: 'telemetry', quantity: 'concentration', unit: 'ppm', simulatorOnly: true }),
       variable({ path: 'sumpLevelPercent', label: 'Containment sump level', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'level', quantity: 'ratio', unit: 'percent' }),
       // A dry containment stands about atmospheric (0.101 MPa) in operation: from 4 kPa below it to 6 kPa above.
       variable({ path: 'pressureMPa', label: 'Containment pressure', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa', limits: { normalRange: { min: 0.097, max: 0.107 } } }),
