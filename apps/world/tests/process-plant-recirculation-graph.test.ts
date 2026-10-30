@@ -18,7 +18,7 @@ test('each RHR train has two isolated suction sources and independent direct and
   for (const loopCount of [2, 4, 6]) {
     const plant = plantOf(loopCount), graph = plant.sourceGraph
     expect(graph.components.some(component => ['rhrHeader', 'rhrIsolationValve'].includes(component.id))).toBe(false)
-    const incident = (id: string, direction: 'from' | 'to') => graph.connections.filter(edge => edge[direction].startsWith(`${id}.`)).map(edge => [edge.from, edge.to, edge.service])
+    const incident = (id: string, direction: 'from' | 'to') => graph.connections.filter(edge => edge[direction].startsWith(`${id}.`)).map(edge => [String(edge.from), String(edge.to), edge.service === undefined ? undefined : String(edge.service)])
     for (const train of ['A', 'B']) {
       expect(incident(`rhrSuctionHeader${train}`, 'to')).toEqual([
         [`rhrRwstSuctionValve${train}.outlet`, `rhrSuctionHeader${train}.inletA`, 'residualHeatRemoval'],
@@ -68,7 +68,7 @@ test('source and injection valves expose ordinary controls, achieved feedback an
     expect(node.bindings.some(binding => binding.role === 'position' && binding.ref === `${plant.id}#${id}.effectivePositionFraction`)).toBe(true)
     for (const [path, expectedTag, writable] of [['positionFraction', `${tag}-${train}`, true], ['effectivePositionFraction', `${tag}-${train}-POS`, false]] as const) {
       const signal = plant.graph.signalBindingByPath.get(`${id}.${path}` as never)!
-      expect(signal.tagId).toBe(expectedTag); expect(signal.writable).toBe(writable); expect(signal.published).toBe(true)
+      expect(String(signal.tagId)).toBe(expectedTag); expect(signal.writable).toBe(writable); expect(signal.published).toBe(true)
     }
     expect(plant.automation.rules.flatMap(rule => rule.commandGates).some(gate => 'path' in gate.signal && gate.signal.path === `${id}.positionFraction`)).toBe(false)
   }
