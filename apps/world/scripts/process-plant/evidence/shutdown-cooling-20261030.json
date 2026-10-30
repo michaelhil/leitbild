@@ -1,9 +1,9 @@
 {
-  "sourceCommit": "d6f7333d2b9a1b86e51e5f5365980ee577cbb418",
+  "sourceCommit": "593ba882fa2200e28448b5b8e4e607db0a0fd7c5",
   "dirty": false,
   "command": "bun scripts/process-plant/shutdown-cooling-qualification.ts --output-directory /tmp/sdc-proof",
   "modelRef": "process-plant.pwr.reference",
-  "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5",
+  "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5",
   "initial": {
     "elapsedS": 0,
     "tripBreakerAClosed": true,
@@ -374,8 +374,8 @@
     "Preparation feedback targets and six-hour experiment budget are experiment inputs, not new plant limits, hidden Scenario automation or an operator procedure."
   ],
   "fullOutputSha256": {
-    "report": "91bdf8d8851b41ebd75e65a7fc3cb22bf71b14ad31c05fc4451af2abff5679d8",
-    "admissionCheckpoint": "34258228f85346f599e69b276eb4a953369dea6a7f35bb2fcf576adc152b826f",
+    "report": "cb6ab3089bcf8786d6bd17b8d7cfea1ae40e6c512221e8adb6d14f671d0c4e82",
+    "admissionCheckpoint": "78e845d69b7fd73a004f1ded5a0f8a72836e76600fc464adbb6eeebb360618eb",
     "acceptedOperations": "717357e40e68cd2f2c0f8c56276ac0ffbf6d0b81f94099b06078e59a2fb86b35"
   }
 }
