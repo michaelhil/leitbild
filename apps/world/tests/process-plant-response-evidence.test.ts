@@ -68,6 +68,17 @@ describe('explicitly sampled Plant response', () => {
     expect(evaluateProcessPlantResponse({ ...config(), recordedSeriesIds: new Set() })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('not selected') }] })
   })
 
+  test('ordinary Run-time remainders use the authored integration step rather than assuming elapsed and acquired clocks coincide', () => {
+    const partial = instance()
+    partial.runtime.tick(120_043)
+    const rows = [{ ...sample(0), simulationTime: at(0.011) }, { ...sample(60), simulationTime: at(60.057) }, { ...sample(120), simulationTime: at(120.043) }]
+    const response = evaluateProcessPlantResponse({ ...config(rows), plant: partial, simulationTime: at(120.043) })
+    expect(response.status).toBe('satisfied')
+    expect(response.evidence[0]).toMatchObject({ integratedSpanSeconds: 120, first: { simulationTime: at(0.011) }, current: { simulationTime: at(120.043), elapsedMs: 120_000 } })
+    const bad = rows.map(row => ({ ...row, simulationTime: at((row.elapsedMs! + compiled.graph.timestep.fixedStepMs + 1000) / 1000) }))
+    expect(evaluateProcessPlantResponse({ ...config(bad), plant: partial, simulationTime: at(120.043) }).status).toBe('unknown')
+  })
+
   test('missing left boundary and long silence stay unknown even with a fresh green endpoint', () => {
     expect(evaluateProcessPlantResponse(config([sample(60), sample(120)]))).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('left boundary') }] })
     expect(evaluateProcessPlantResponse(config([sample(0), sample(120)]))).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('unresolved response gap') }] })

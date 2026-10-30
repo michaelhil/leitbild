@@ -78,7 +78,9 @@ export const evaluateProcessPlantResponse = (config: {
     anchors.push({ signal: processPlantSignalView(binding), receipt: latest })
   }
   if (input.afterOperations !== undefined && plant.runtime.elapsedMs() - notBeforeElapsedMs < durationMs) return failure('The requested response duration has not elapsed after all required accepted control operations.')
-  const anchoredAt = now - plant.runtime.elapsedMs() + notBeforeElapsedMs
+  const clockOrigin = now - plant.runtime.advancedMs()
+  const anchoredAt = clockOrigin + notBeforeElapsedMs
+  const fixedStepMs = plant.plant.graph.timestep.fixedStepMs
   const from = new Date(fromMs).toISOString() as IsoTimestamp
   const to = config.simulationTime!
   const summaries = new Map<string, { readonly status: Status; readonly summary: Record<string, unknown>; readonly minimum: number | undefined; readonly maximum: number | undefined; readonly change: number | undefined }>()
@@ -111,15 +113,22 @@ export const evaluateProcessPlantResponse = (config: {
             const sample = samples[index]!
             const at = sample.simulationTime === undefined ? Number.NaN : Date.parse(sample.simulationTime)
             const previous = samples[index - 1]
+            // Recorded elapsed time is integrated time. Acquisition Run time can
+            // include a remainder short of one authored step (ISO stamps have
+            // millisecond precision); do not reject honest ordinary pauses.
+            const offset = sample.elapsedMs === undefined ? Number.NaN : at - sample.elapsedMs - clockOrigin
             if (sample.runtimeId !== processPlantSimRuntimeId || sample.seriesId !== seriesId || !Number.isFinite(at) || at < fromMs || at > now || sample.elapsedMs === undefined || sample.elapsedMs > plant.runtime.elapsedMs()
-              || Math.abs((at - sample.elapsedMs) - (now - plant.runtime.elapsedMs())) > 1) reason = 'A retained sample does not establish this signal and simulation-time frame.'
+              || offset < -1 || offset >= fixedStepMs + 1) reason = 'A retained sample does not establish this signal and simulation-time frame.'
             else if (sample.quality !== 'good' || typeof sample.value !== 'number' || !Number.isFinite(sample.value)) reason = 'A retained response sample is unavailable or not good quality.'
             else if (previous !== undefined && (at < Date.parse(previous.simulationTime!) || sample.elapsedMs < previous.elapsedMs!)) reason = 'Retained response time reverses; the window is not one advancing simulation trajectory.'
           }
         }
       } catch (error) { reason = error instanceof Error ? error.message : String(error) }
       let left = -1
-      samples.forEach((sample, index) => { const at = Date.parse(sample.simulationTime ?? ''); if (at <= start && at >= anchoredAt) left = index })
+      samples.forEach((sample, index) => {
+        const at = Date.parse(sample.simulationTime ?? '')
+        if (at <= start && at >= anchoredAt && (input.afterOperations === undefined || sample.elapsedMs !== undefined && sample.elapsedMs > notBeforeElapsedMs)) left = index
+      })
       const selected = left < 0 ? samples : samples.slice(left)
       const first = selected[0]
       if (reason === undefined && (left < 0 || first === undefined)) reason = 'The retained record does not cover the left boundary of the requested response window.'
@@ -132,12 +141,15 @@ export const evaluateProcessPlantResponse = (config: {
       const maximum = value === undefined ? undefined : values.reduce((maximum, measured) => Math.max(maximum, measured), value)
       const change = value === undefined || typeof first?.value !== 'number' ? undefined : value - first.value
       const elapsedSeconds = first?.simulationTime === undefined ? undefined : (now - Date.parse(first.simulationTime)) / 1000
+      const integratedSpanSeconds = first?.elapsedMs === undefined ? undefined : (plant.runtime.elapsedMs() - first.elapsedMs) / 1000
+      if (reason === undefined && (integratedSpanSeconds === undefined || integratedSpanSeconds < input.windowSeconds)) reason = 'The retained samples do not cover the required integrated physical response duration.'
       const summary = { ...base, ...(input.afterOperations === undefined ? {} : { afterOperations: anchors, notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
         status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
         storedSampleCount: selected.length, sampleTimes: selected.flatMap(sample => sample.simulationTime ?? []), maximumGapMs,
         ...(first === undefined ? {} : { first: { ...(first.simulationTime === undefined ? {} : { simulationTime: first.simulationTime }), ...(first.elapsedMs === undefined ? {} : { elapsedMs: first.elapsedMs }), value: first.value } }),
         ...(value === undefined ? {} : { current: { simulationTime: to, elapsedMs: plant.runtime.elapsedMs(), value } }),
         ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(change === undefined ? {} : { change }),
+        ...(integratedSpanSeconds === undefined ? {} : { integratedSpanSeconds }),
         ...(elapsedSeconds === undefined ? {} : { elapsedSeconds, ...(elapsedSeconds > 0 && change !== undefined ? { endpointRatePerSecond: change / elapsedSeconds } : {}) }) }
       cached = { status: reason === undefined ? 'satisfied' : 'unknown', summary, minimum, maximum, change }
       summaries.set(key, cached)
