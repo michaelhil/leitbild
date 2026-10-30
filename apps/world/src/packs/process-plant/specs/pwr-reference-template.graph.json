@@ -12139,7 +12139,9 @@
           "publish": "telemetry",
           "quantity": "concentration",
           "unit": "ppm",
-          "initialValue": 2200
+          "initialValue": 2200,
+          "simulatorOnly": true,
+          "description": "Modeled transported dissolved-boron concentration; a numerical diagnostic, not a qualified plant instrument."
         }
       ],
       "metadata": {
@@ -12194,7 +12196,9 @@
           "publish": "telemetry",
           "quantity": "concentration",
           "unit": "ppm",
-          "initialValue": 2200
+          "initialValue": 2200,
+          "simulatorOnly": true,
+          "description": "Modeled transported dissolved-boron concentration; a numerical diagnostic, not a qualified plant instrument."
         }
       ],
       "metadata": {
@@ -12249,7 +12253,9 @@
           "publish": "telemetry",
           "quantity": "concentration",
           "unit": "ppm",
-          "initialValue": 2200
+          "initialValue": 2200,
+          "simulatorOnly": true,
+          "description": "Modeled transported dissolved-boron concentration; a numerical diagnostic, not a qualified plant instrument."
         }
       ],
       "metadata": {
@@ -12304,7 +12310,9 @@
           "publish": "telemetry",
           "quantity": "concentration",
           "unit": "ppm",
-          "initialValue": 2200
+          "initialValue": 2200,
+          "simulatorOnly": true,
+          "description": "Modeled transported dissolved-boron concentration; a numerical diagnostic, not a qualified plant instrument."
         }
       ],
       "metadata": {
@@ -12359,7 +12367,9 @@
           "publish": "telemetry",
           "quantity": "concentration",
           "unit": "ppm",
-          "initialValue": 2200
+          "initialValue": 2200,
+          "simulatorOnly": true,
+          "description": "Modeled transported dissolved-boron concentration; a numerical diagnostic, not a qualified plant instrument."
         }
       ],
       "metadata": {
@@ -12516,7 +12526,9 @@
           "publish": "telemetry",
           "quantity": "concentration",
           "unit": "ppm",
-          "initialValue": 1200
+          "initialValue": 1200,
+          "simulatorOnly": true,
+          "description": "Modeled transported dissolved-boron concentration; a numerical diagnostic, not a qualified plant instrument."
         }
       ],
       "metadata": {
