@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test'
-import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
+import retained from './fixtures/physical-layout/recirculation-targets-20261030.json'
 import beforeSourceData from '../src/packs/physical-layout/pwr-full-unit-rhr.source.json'
 import beforeBindingsData from '../src/packs/physical-layout/pwr-full-unit-rhr.bindings.json'
 import beforeCampusSourceData from '../src/packs/physical-layout/pwr-campus-rhr.source.json'
 import beforeCampusBindingsData from '../src/packs/physical-layout/pwr-campus-rhr.bindings.json'
-import { createPwrRecirculationUnitArtifacts, createPwrRecirculationCampusArtifacts } from '../src/packs/physical-layout/authoring/pwr-recirculation.ts'
+import { pwrRecirculationUnitPhysicalDesignRef, pwrRecirculationCampusPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
 import { physicalCoverageIssues } from '../src/packs/physical-layout/coverage.ts'
 import { physicalSourceSchema } from '../src/packs/physical-layout/native/drafting/source.ts'
 import { physicalCorrespondenceSchema } from '../src/packs/physical-layout/model.ts'
@@ -15,11 +15,17 @@ import { physicalDraftingAuthoringBounds } from '../src/packs/physical-layout/na
 const beforeSource = physicalSourceSchema.parse(beforeSourceData), beforeCampusSource = physicalSourceSchema.parse(beforeCampusSourceData)
 const beforeBindings = physicalCorrespondenceSchema.array().parse(beforeBindingsData), beforeCampusBindings = physicalCorrespondenceSchema.array().parse(beforeCampusBindingsData)
 
-test('offline recirculation installation preserves original architecture and accepted routes while installing graph-exact train hardware', () => {
-  const unit = createPwrRecirculationUnitArtifacts(), campus = createPwrRecirculationCampusArtifacts(unit)
-  const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'recirculation:authoring-test' }))
-  expect(unit.coverage.modelRequirement).toEqual({ modelRef: plant.modelRef, modelDigest: plant.modelDigest })
-  const retired = new Set(unit.retiredElements), elements = new Map(unit.source.elements.map(element => [element.id, element]))
+test('retained recirculation installation preserves architecture, exact captured graph ports and accepted routes under its immutable admission', async () => {
+  // Historical installation is admitted against its actual captured graph;
+  // regenerating R9 with today's hardware would silently change its meaning.
+  // Current R10 authoring/reproducibility is exercised in its own admission test.
+  const [unitDesign, campus] = await Promise.all([resolvePhysicalDesign(pwrRecirculationUnitPhysicalDesignRef), resolvePhysicalDesign(pwrRecirculationCampusPhysicalDesignRef)])
+  if (unitDesign.profile !== 'drafting' || campus.profile !== 'drafting') throw Error('Expected exact retained native drafting admissions')
+  const unit = { ...unitDesign, coverage: unitDesign.coverageEvidence }
+  expect(retained.sourceCommit).toBe('1a1dabb69ecab03bd274544d5217279d55a7a9ae')
+  expect(unit.coverage.modelRequirement).toEqual({ modelRef: retained.modelRef, modelDigest: retained.modelDigest })
+  const subjects = new Set([...retained.subjects.map(component => component.id), ...retained.connections.map(edge => edge.id)])
+  const retired = new Set(beforeBindings.filter(binding => !subjects.has(binding.elementId)).map(binding => binding.physicalElementId)), elements = new Map(unit.source.elements.map(element => [element.id, element]))
   for (const before of beforeSource.elements) if (!retired.has(before.id)) expect(elements.get(before.id)).toEqual(before)
   for (const annotation of beforeSource.planAnnotations!) if (annotation.kind !== 'label' || !retired.has(annotation.anchor.elementId)) expect(unit.source.planAnnotations).toContainEqual(annotation)
   expect(unit.source.types).toEqual(beforeSource.types)
@@ -28,11 +34,11 @@ test('offline recirculation installation preserves original architecture and acc
   expect(unit.source.levels).toEqual(beforeSource.levels)
   for (const key of ['floorJoints', 'grids', 'contexts', 'projectedOpenings', 'sections'] as const) expect(unit.source.planIntent![key]).toEqual(beforeSource.planIntent![key])
   for (const route of beforeSource.routing!.connections) if (!retired.has(route.id)) expect(unit.source.routing!.connections.find(current => current.id === route.id)).toEqual(route)
-  expect(physicalCoverageIssues({ evidence: unit.coverage, physicalIds: [...unit.source.elements.map(element => element.id), ...unit.source.routing!.connections.map(route => route.id)], ownerSubjectIds: [...plant.sourceGraph.components.map(component => String(component.id)), ...plant.sourceGraph.connections.map(edge => String(edge.id))], bindings: unit.bindings })).toEqual([])
+  expect(physicalCoverageIssues({ evidence: unit.coverage, physicalIds: [...unit.source.elements.map(element => element.id), ...unit.source.routing!.connections.map(route => route.id)], ownerSubjectIds: [...subjects], bindings: unit.bindings })).toEqual([])
   expect(unit.coverage.dispositions.some(row => row.disposition === 'unresolved')).toBe(false)
   const terminals = new Map(unit.source.routing!.terminals.map(terminal => [terminal.id, terminal]))
   for (const route of unit.source.routing!.connections) {
-    const edge = plant.sourceGraph.connections.find(edge => edge.id === route.graphConnectionId)!
+    const edge = retained.connections.find(edge => edge.id === route.graphConnectionId)!
     const from = terminals.get(route.from)!, to = terminals.get(route.to)!
     expect(edge).toBeDefined()
     expect(`${from.subjectId}.${from.port}`).toBe(String(edge.from)); expect(`${to.subjectId}.${to.port}`).toBe(String(edge.to))
