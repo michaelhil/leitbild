@@ -121,7 +121,6 @@ export const evaluateProcessPlantResponse = (config: {
             const offset = sample.elapsedMs === undefined ? Number.NaN : at - sample.elapsedMs - clockOrigin
             if (sample.runtimeId !== processPlantSimRuntimeId || sample.seriesId !== seriesId || !Number.isFinite(at) || at < fromMs || at > now || sample.elapsedMs === undefined || sample.elapsedMs > plant.runtime.elapsedMs()
               || offset < -1 || offset >= fixedStepMs + 1) reason = 'A retained sample does not establish this signal and simulation-time frame.'
-            else if (sample.quality !== 'good' || typeof sample.value !== 'number' || !Number.isFinite(sample.value)) reason = 'A retained response sample is unavailable or not good quality.'
             else if (previous !== undefined && (at < Date.parse(previous.simulationTime!) || sample.elapsedMs < previous.elapsedMs!)) reason = 'Retained response time reverses; the window is not one advancing simulation trajectory.'
           }
         }
@@ -129,11 +128,12 @@ export const evaluateProcessPlantResponse = (config: {
       let left = -1
       samples.forEach((sample, index) => {
         const at = Date.parse(sample.simulationTime ?? '')
-        if (at <= start && at >= anchoredAt && (input.afterOperations === undefined || sample.elapsedMs !== undefined && sample.elapsedMs > notBeforeElapsedMs)) left = index
+        if (at <= start && (input.afterOperations === undefined || at >= anchoredAt && sample.elapsedMs !== undefined && sample.elapsedMs > notBeforeElapsedMs)) left = index
       })
       const selected = left < 0 ? samples : samples.slice(left)
       const first = selected[0]
       if (reason === undefined && (left < 0 || first === undefined)) reason = 'The retained record does not cover the left boundary of the requested response window.'
+      if (reason === undefined && selected.some(sample => sample.quality !== 'good' || typeof sample.value !== 'number' || !Number.isFinite(sample.value))) reason = 'A retained response sample is unavailable or not good quality.'
       const times = selected.flatMap(sample => sample.simulationTime === undefined || !Number.isFinite(Date.parse(sample.simulationTime)) ? [] : [Date.parse(sample.simulationTime)])
       const uniqueTimes = new Set([...times, now])
       const maximumGapMs = times.reduce((maximum, at, index) => Math.max(maximum, index === 0 ? 0 : at - times[index - 1]!), times.length === 0 ? 0 : now - times.at(-1)!)

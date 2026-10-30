@@ -86,6 +86,9 @@ describe('explicitly sampled Plant response', () => {
     const retainedBefore = evaluateProcessPlantResponse({ ...config([sample(0), sample(60), sample(120)]), input: { ...input, windowSeconds: 100 } })
     expect(retainedBefore.status).toBe('satisfied')
     expect(retainedBefore.recordings[0]).toMatchObject({ requestedFrom: at(20), first: { simulationTime: at(0) }, elapsedSeconds: 120 })
+    const outside = evaluateProcessPlantResponse({ ...config([{ ...sample(0), quality: 'bad' }, sample(60), sample(120)]), input: { ...input, windowSeconds: 60 } })
+    expect(outside.status).toBe('satisfied')
+    expect(outside.recordings[0]).toMatchObject({ first: { simulationTime: at(60) }, storedSampleCount: 2 })
   })
 
   test('bad quality, mixed runtime identity, wrong series, reversed time and foreign elapsed epoch are not a sampled trajectory', () => {
