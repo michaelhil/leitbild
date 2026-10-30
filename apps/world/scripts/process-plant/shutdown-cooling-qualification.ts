@@ -45,6 +45,7 @@ const tick = (runtime: Runtime, protection: Protection, milliseconds: number) =>
 const sample = (runtime: Runtime) => ({
   elapsedS: runtime.elapsedMs() / 1000,
   primaryPressureMPa: read(runtime, 'pressurizer.pressureMPa'), hotLegTemperatureC: read(runtime, 'core.coolantOutletTemperatureC'), coldLegTemperatureC: read(runtime, 'core.coolantInletTemperatureC'),
+  coreExitTemperatureC: read(runtime, 'core.coreExitTemperatureC'),
   pressurizerLevelPercent: read(runtime, 'pressurizer.levelPercent'), subcoolingMarginC: read(runtime, 'vessel.subcoolingMarginC'), collapsedLiquidLevelPercent: read(runtime, 'vessel.collapsedLiquidLevelPercent'),
   primaryMassKg: read(runtime, 'vessel.primaryCoolantInventoryKg') + read(runtime, 'pressurizer.waterInventoryKg') + read(runtime, 'pressurizer.steamMassKg'),
   primaryMassBalanceResidualKg: read(runtime, 'vessel.primaryInventoryBalanceResidualKg'),
@@ -53,6 +54,9 @@ const sample = (runtime: Runtime) => ({
   rcsSourceFlowKgPerS: read(runtime, 'rcs-to-rhr-shutdown-suction-a.flowKgPerS'), rhrReturnFlowKgPerS: read(runtime, 'rhr-injection-valve-a-to-cold-leg-a.flowKgPerS'),
   rwstSourceFlowKgPerS: read(runtime, 'rwst-to-rhr-rwst-suction-valve-a.flowKgPerS'), sumpSourceFlowKgPerS: read(runtime, 'containment-sump-to-rhr-sump-suction-valve-a.flowKgPerS'),
   rhrHeatTransferMw: read(runtime, 'rhrHeatExchangerA.heatTransferMw'), terminalHeatTransferMw: read(runtime, 'componentCoolingHeatExchangerA.heatTransferMw'), ccwTemperatureC: read(runtime, 'componentCoolingTankA.temperatureC'),
+  rhrHotInletTemperatureC: read(runtime, 'rhrHeatExchangerA.hotInletTemperatureC'), rhrHotOutletTemperatureC: read(runtime, 'rhrHeatExchangerA.hotOutletTemperatureC'),
+  ccwHotInletTemperatureC: read(runtime, 'componentCoolingHeatExchangerA.hotInletTemperatureC'), ccwHotOutletTemperatureC: read(runtime, 'componentCoolingHeatExchangerA.hotOutletTemperatureC'),
+  rhrColdSideFlowKgPerS: read(runtime, 'rhrHeatExchangerA.coldSideFlowKgPerS'), ccwHotSideFlowKgPerS: read(runtime, 'componentCoolingHeatExchangerA.hotSideFlowKgPerS'), ccwColdSideFlowKgPerS: read(runtime, 'componentCoolingHeatExchangerA.coldSideFlowKgPerS'),
   porvReleaseFlowKgPerS: read(runtime, 'pressurizer.reliefFlowKgPerS'), accumulatorFlowKgPerS: ['A', 'B', 'C', 'D'].reduce((sum, loop) => sum + read(runtime, `safetyAccumulator${loop}.outletFlowKgPerS`), 0),
 })
 const runtime = createProcessPlantRuntime({ system: plant }), protection = createProcessPlantProtectionRunner({ system: plant, protection: plant.automation })
@@ -131,12 +135,14 @@ for (const variant of ['normal', 'no-rhr', 'no-service-water'] as const) {
 const normal = results[0]!, noRhr = results[1]!, failed = results[2]!, first = normal.samples[0]!, last = normal.samples.at(-1)!, failedLast = failed.samples.at(-1)!
 const requireFact = (fact: boolean, message: string) => { if (!fact) throw Error(`Numerical qualification failed: ${message}`) }
 requireFact(last.hotLegTemperatureC < first.hotLegTemperatureC, 'ordinary admitted RCS does not cool with RHR')
+requireFact(last.coreExitTemperatureC < first.coreExitTemperatureC, 'published core-exit indication does not cool with RHR')
 requireFact(last.hotLegTemperatureC < noRhr.samples.at(-1)!.hotLegTemperatureC, 'RHR has no causal improvement over identical-state no-RHR counterfactual')
 for (const row of normal.samples.slice(1)) {
   requireFact(row.rcsSourceFlowKgPerS > 0 && Math.abs(row.rcsSourceFlowKgPerS - row.rhrReturnFlowKgPerS) < 1e-6, 'actual closed source and returned mass are unequal')
   requireFact(row.rwstSourceFlowKgPerS === 0 && row.sumpSourceFlowKgPerS === 0, 'external source is not isolated')
   requireFact(row.pressurizerLevelPercent > 0 && row.pressurizerLevelPercent < 100 && row.subcoolingMarginC > 0, 'bounded response loses represented liquid/subcooling')
   requireFact(Math.abs(row.primaryMassBalanceResidualKg) < 1e-6 && Math.abs(row.sgMetalBalanceResidualMw) < 1e-6, 'mass or finite metal balance does not close')
+  requireFact(row.rhrColdSideFlowKgPerS > 0 && row.ccwHotSideFlowKgPerS > 0 && row.ccwColdSideFlowKgPerS > 0 && row.rhrHotInletTemperatureC > row.rhrHotOutletTemperatureC && row.ccwHotInletTemperatureC > row.ccwHotOutletTemperatureC, 'published heat-exchanger flow/temperature chain is not achieved')
 }
 requireFact(failedLast.rcsSourceFlowKgPerS > 0 && failedLast.rhrHeatTransferMw > 0, 'failed terminal case does not exercise finite upstream cooling storage')
 requireFact(Math.abs(failedLast.terminalHeatTransferMw) < 1e-6 && failedLast.ccwTemperatureC > failed.samples[0]!.ccwTemperatureC, 'lost service water is not visible as terminal heat loss and warming CCW')
