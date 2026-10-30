@@ -112,7 +112,13 @@ test('an explicit grid drawing accompanies measured values of all four PWR units
   expect(outcome.state.views.flatMap(view => view.kind === 'values' ? view.refs ?? [] : [])).toEqual(signals)
   const view = await compileVignette(run, outcome.state)
   expect(view.sections.find(section => section.kind === 'topology')).toMatchObject({ objectId: 'grid:halden-four-unit', family: 'network' })
-  expect(outcome.rows).toBeLessThanOrEqual(40)
+  // Explicit content retains its measured owner headings beyond a compact
+  // viewport, instead of dropping identity or one of the requested readings.
+  const values = view.sections.find(section => section.kind === 'values')
+  if (values?.kind !== 'values') throw Error('Expected the requested values')
+  expect(values.rows).toBe(signals.length + subjects.length)
+  expect(values.blocks?.map(block => block.kind === 'owner' ? block.objectId : null)).toEqual(subjects)
+  expect(values.blocks?.map(block => block.kind === 'owner' ? block.label : null)).toEqual(subjects.map(id => run.objects.find(object => object.id === id)!.label))
 })
 
 test('explicit process drawings from two units and their grid are all honored or explicitly refused by fit', async () => {
