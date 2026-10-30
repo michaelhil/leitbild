@@ -1,0 +1,119 @@
+{
+  "purpose": "Pre-release authoring correction before R10/R12 deployment, preserving published R9 and unrelated geometry.",
+  "previousUndeployedTrial": {
+    "unitDesignDigest": "d09e1c7cfd7aac937807a635080f1ce518a7f8b16c562c06117eef2f9ff31df3",
+    "campusDesignDigest": "3e3aef1dfaaa7caad475779387a5831ad4221d70617c1b9264814c5957343744"
+  },
+  "current": {
+    "unit": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261030-r10",
+      "digest": "4b8af3935685d2e7fdc4a77cb7542477a175cfcde4fed4ea7c833ca134762d30"
+    },
+    "campus": {
+      "id": "pwr-campus",
+      "revision": "pwr-campus-20261030-r12",
+      "digest": "b6e2a22af2fe383bde8ddfdbe82b416ee9c7e02c98da86e276b9557dcffe106e"
+    },
+    "modelRequirement": {
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    }
+  },
+  "basis": "Axially align each new series pair along X in the available injection-cell bay at Y54.1. The retained header row is occupied by existing RWST/sump valves; all existing machinery and accepted utility routes remain fixed. Native obstacle and bend constraints are retained. No renderer repair, runtime search, artificial clipping or bypass of physical source validation.",
+  "changedElementIds": [
+    "equipment/rhrShutdownSuctionValveA1",
+    "equipment/rhrShutdownSuctionValveA2",
+    "equipment/rhrShutdownSuctionValveB1",
+    "equipment/rhrShutdownSuctionValveB2"
+  ],
+  "routes": [
+    {
+      "id": "safety-bus-a-to-rhr-shutdown-suction-a1",
+      "oldControlPoints": 6,
+      "newControlPoints": 6,
+      "oldControlPolylineLengthM": 105.7895,
+      "newControlPolylineLengthM": 105.68950000000001
+    },
+    {
+      "id": "safety-bus-a-to-rhr-shutdown-suction-a2",
+      "oldControlPoints": 6,
+      "newControlPoints": 6,
+      "oldControlPolylineLengthM": 102.7895,
+      "newControlPolylineLengthM": 101.18950000000001
+    },
+    {
+      "id": "safety-bus-b-to-rhr-shutdown-suction-b1",
+      "oldControlPoints": 6,
+      "newControlPoints": 8,
+      "oldControlPolylineLengthM": 87.7895,
+      "newControlPolylineLengthM": 87.68950000000001
+    },
+    {
+      "id": "safety-bus-b-to-rhr-shutdown-suction-b2",
+      "oldControlPoints": 7,
+      "newControlPoints": 6,
+      "oldControlPolylineLengthM": 84.7895,
+      "newControlPolylineLengthM": 83.18950000000001
+    },
+    {
+      "id": "rcs-to-rhr-shutdown-suction-a",
+      "oldControlPoints": 10,
+      "newControlPoints": 10,
+      "oldControlPolylineLengthM": 97.81,
+      "newControlPolylineLengthM": 97.91000000000001
+    },
+    {
+      "id": "rhr-shutdown-suction-a-inner-to-outer",
+      "oldControlPoints": 7,
+      "newControlPoints": 2,
+      "oldControlPolylineLengthM": 15.72000000000001,
+      "newControlPolylineLengthM": 2.700000000000003
+    },
+    {
+      "id": "rhr-shutdown-suction-a-to-header",
+      "oldControlPoints": 7,
+      "newControlPoints": 7,
+      "oldControlPolylineLengthM": 26.730000000000015,
+      "newControlPolylineLengthM": 19.330000000000016
+    },
+    {
+      "id": "rcs-to-rhr-shutdown-suction-b",
+      "oldControlPoints": 10,
+      "newControlPoints": 10,
+      "oldControlPolylineLengthM": 112.89000000000003,
+      "newControlPolylineLengthM": 112.99000000000004
+    },
+    {
+      "id": "rhr-shutdown-suction-b-inner-to-outer",
+      "oldControlPoints": 7,
+      "newControlPoints": 2,
+      "oldControlPolylineLengthM": 15.720000000000038,
+      "newControlPolylineLengthM": 2.700000000000003
+    },
+    {
+      "id": "rhr-shutdown-suction-b-to-header",
+      "oldControlPoints": 7,
+      "newControlPoints": 7,
+      "oldControlPolylineLengthM": 26.730000000000008,
+      "newControlPolylineLengthM": 19.33000000000001
+    }
+  ],
+  "qualityEvidence": {
+    "command": "bun test tests/physical-shutdown-cooling-admission.test.ts tests/physical-rhr-live.test.ts tests/scenario-authoring-regressions.test.ts",
+    "passedTests": 9,
+    "assertions": 13996,
+    "barrierTerminalCount": 12,
+    "checks": [
+      "Every new fluid and power terminal lies on an actual rendered non-foundation valve-body triangle.",
+      "Every accepted route centerline endpoint equals its exact authored terminal.",
+      "Both inner-to-outer fluid runs are straight two-point connections.",
+      "All published R9 geometry, materials, annotations, accepted routes and campus geometry are preserved."
+    ]
+  },
+  "actuatorScope": "The retained generic valve family depicts a bonnet/handwheel assembly. Electrical terminals touch its actual bonnet body as an illustrative integrated actuator connection; a separate motor enclosure or qualified motor position is not modeled."
+}

@@ -36,7 +36,7 @@
         "type": "site-layout",
         "id": "layout:halden-2",
         "label": "Halden Unit 2 full plant",
-        "design": { "id": "pwr-full-unit", "revision": "pwr-full-unit-20261030-r10", "digest": "d09e1c7cfd7aac937807a635080f1ce518a7f8b16c562c06117eef2f9ff31df3" },
+        "design": { "id": "pwr-full-unit", "revision": "pwr-full-unit-20261030-r10", "digest": "6c19cdb839f0c03856e9530558eb7b9fca9d63a5c8fa64b6be90ef8951cc4ade" },
         "members": { "unit": "plant:halden-2" },
         "bearing": 0,
         "group": { "id": "halden-pwr-site", "label": "Halden PWR site" }

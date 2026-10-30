@@ -2,9 +2,9 @@
   "design": {
     "id": "pwr-campus",
     "revision": "pwr-campus-20261030-r12",
-    "digest": "3e3aef1dfaaa7caad475779387a5831ad4221d70617c1b9264814c5957343744"
+    "digest": "1ed56594c261cff3f0e9f3dbcb810388b3b51ed5a32f67bd634b6ce1279f7340"
   },
-  "sourceDigest": "28c204ee991ad6af72cc16bca2ed7dd8b63768736fd691b2cddddc63ac732f70",
+  "sourceDigest": "d5716939432a41da347abb61c0fb8d303ce014852c8adbf65d9cc02662e09c57",
   "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
   "modelRequirement": {
     "modelRef": "electric-grid.halden.four-unit",
@@ -44,7 +44,7 @@
         "role": "unit-1",
         "packId": "process-plant",
         "modelRef": "process-plant.pwr.reference",
-        "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5",
+        "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5",
         "anchor": [
           11.47,
           59.087
@@ -52,7 +52,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "bc5a5fedd7a55be90ca7013167774308108706a93153e100b511e25fe943c28a"
+            "digest": "e2cece57e095acfa8c3c655db682569a07be230669a651312c532fbb05c95403"
           },
           "bearing": 0
         }
@@ -61,7 +61,7 @@
         "role": "unit-2",
         "packId": "process-plant",
         "modelRef": "process-plant.pwr.reference",
-        "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5",
+        "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5",
         "anchor": [
           11.477,
           59.085
@@ -69,7 +69,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "bc5a5fedd7a55be90ca7013167774308108706a93153e100b511e25fe943c28a"
+            "digest": "e2cece57e095acfa8c3c655db682569a07be230669a651312c532fbb05c95403"
           },
           "bearing": 0
         }
@@ -78,7 +78,7 @@
         "role": "unit-3",
         "packId": "process-plant",
         "modelRef": "process-plant.pwr.reference",
-        "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5",
+        "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5",
         "anchor": [
           11.484,
           59.083
@@ -86,7 +86,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "bc5a5fedd7a55be90ca7013167774308108706a93153e100b511e25fe943c28a"
+            "digest": "e2cece57e095acfa8c3c655db682569a07be230669a651312c532fbb05c95403"
           },
           "bearing": 0
         }
@@ -95,7 +95,7 @@
         "role": "unit-4",
         "packId": "process-plant",
         "modelRef": "process-plant.pwr.reference",
-        "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5",
+        "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5",
         "anchor": [
           11.491,
           59.081
@@ -103,7 +103,7 @@
         "physicalLayout": {
           "physical": {
             "id": "pwr-full-unit",
-            "digest": "bc5a5fedd7a55be90ca7013167774308108706a93153e100b511e25fe943c28a"
+            "digest": "e2cece57e095acfa8c3c655db682569a07be230669a651312c532fbb05c95403"
           },
           "bearing": 0
         }
@@ -153,9 +153,9 @@
     ]
   },
   "physicalApplicability": {
-    "sourceDigest": "e93b33a3b91e05ce9adaff513d39e0f873375225921f4a8b9fe33a99e8534d26",
+    "sourceDigest": "c9b6a168e279cc424eb0ce4861a631e0fc01d5145fb6ec5321cc0c8470680353",
     "geometryDigest": "9e01b57bc882de0e6b483c3ddc1bc81c639fa56424e1f56b9e1a503381f61c87",
-    "digest": "ef1cab314cf5165c668df1ea9eeb6b4d4077cb000eea9c9eab603b9df8cc6838"
+    "digest": "1e0c31c51d7ce9326ac67815f8804aeafaeaebc36c5181bd2c35606ad217cd9c"
   },
   "presentation": {
     "scopes": [

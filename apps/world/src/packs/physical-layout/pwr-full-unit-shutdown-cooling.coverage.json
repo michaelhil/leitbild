@@ -1,7 +1,7 @@
 {
   "modelRequirement": {
     "modelRef": "process-plant.pwr.reference",
-    "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5"
+    "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5"
   },
   "scope": "owner",
   "dispositions": [

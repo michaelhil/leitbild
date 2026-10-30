@@ -31,11 +31,13 @@ export const createPwrShutdownCoolingUnitArtifacts = () => {
   coverage.modelRequirement = { modelRef: plant.modelRef, modelDigest: plant.modelDigest }
   if (!source.routing || !source.planIntent || !source.planAnnotations) throw Error('Shutdown-cooling installation requires retained architectural drawing and routing intent')
   const network = source.routing, added = new Set(installPwrDcSupportHardware({ source, bindings, coverage, plant }))
-  for (const [train, offset] of [['A', 0], ['B', 47]] as const) for (const [barrier, y] of [[1, 54], [2, 57]] as const) {
+  // Keep both real nozzle axes inline upstream of the retained suction header.
+  // An offset transverse installation forced unnecessary out-and-back routing.
+  for (const [train, offset] of [['A', 0], ['B', 47]] as const) for (const [barrier, x] of [[1, -90.5], [2, -86]] as const) {
     const subject = `rhrShutdownSuctionValve${train}${barrier}`, id = `equipment/${subject}`, label = `RHR ${train} RCS ${barrier === 1 ? 'inner' : 'outer'} isolation`
     if (!graph.components.some(component => component.id === subject)) throw Error(`Missing shutdown-cooling graph component ${subject}`)
     const body: Element = { id, label, kind: 'equipment', equipmentKind: 'valve', typeId: 'type/campus/valve/1.8x1.4x2.5',
-      levelId: 'lower', pose: { position: [-90.5 + offset, y, 0], yaw: 0 }, buildingId: 'building/auxiliary', spaceIds: [`space/aux-${train.toLowerCase()}-si`], disposition: 'installed' }
+      levelId: 'lower', pose: { position: [x + offset, 54.1, 0], yaw: 0 }, buildingId: 'building/auxiliary', spaceIds: [`space/aux-${train.toLowerCase()}-si`], disposition: 'installed' }
     source.elements.push(body); added.add(id)
     bindings.push({ physicalElementId: id, elementId: subject, relation: 'represents' })
     coverage.dispositions.push({ subjectId: subject, disposition: 'direct', reason: 'Exact graph-owned series RCS suction barrier with achieved finite travel and modeled source admission. Hardware envelope, mounting and civil installation are illustrative; this is not a qualified pressure boundary or safety-channel design.', physicalElementIds: [id] })

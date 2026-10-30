@@ -28763,26 +28763,26 @@
     {
       "role": "unit-1",
       "sourceId": "pwr-full-unit",
-      "physicalSourceDigest": "cd1ca9a1c0359c8de896a6d301966e4dcc76aab5885b92047b0eec1c98b660b9",
-      "physicalShapeDigest": "d8196a1919c24cea9a24b9a46531de2e137bcc6ceb7874e55027e8224d9d1745"
+      "physicalSourceDigest": "69beb095f69ba5576e25bd1ccaee8d0f379d4d612a6a43f69a291a2f0883359e",
+      "physicalShapeDigest": "9666d7aaedfe6ca7bc2b2d0f86efb93696a9d777635aac4f61e523dd6f995cb8"
     },
     {
       "role": "unit-2",
       "sourceId": "pwr-full-unit",
-      "physicalSourceDigest": "cd1ca9a1c0359c8de896a6d301966e4dcc76aab5885b92047b0eec1c98b660b9",
-      "physicalShapeDigest": "d8196a1919c24cea9a24b9a46531de2e137bcc6ceb7874e55027e8224d9d1745"
+      "physicalSourceDigest": "69beb095f69ba5576e25bd1ccaee8d0f379d4d612a6a43f69a291a2f0883359e",
+      "physicalShapeDigest": "9666d7aaedfe6ca7bc2b2d0f86efb93696a9d777635aac4f61e523dd6f995cb8"
     },
     {
       "role": "unit-3",
       "sourceId": "pwr-full-unit",
-      "physicalSourceDigest": "cd1ca9a1c0359c8de896a6d301966e4dcc76aab5885b92047b0eec1c98b660b9",
-      "physicalShapeDigest": "d8196a1919c24cea9a24b9a46531de2e137bcc6ceb7874e55027e8224d9d1745"
+      "physicalSourceDigest": "69beb095f69ba5576e25bd1ccaee8d0f379d4d612a6a43f69a291a2f0883359e",
+      "physicalShapeDigest": "9666d7aaedfe6ca7bc2b2d0f86efb93696a9d777635aac4f61e523dd6f995cb8"
     },
     {
       "role": "unit-4",
       "sourceId": "pwr-full-unit",
-      "physicalSourceDigest": "cd1ca9a1c0359c8de896a6d301966e4dcc76aab5885b92047b0eec1c98b660b9",
-      "physicalShapeDigest": "d8196a1919c24cea9a24b9a46531de2e137bcc6ceb7874e55027e8224d9d1745"
+      "physicalSourceDigest": "69beb095f69ba5576e25bd1ccaee8d0f379d4d612a6a43f69a291a2f0883359e",
+      "physicalShapeDigest": "9666d7aaedfe6ca7bc2b2d0f86efb93696a9d777635aac4f61e523dd6f995cb8"
     }
   ]
 }

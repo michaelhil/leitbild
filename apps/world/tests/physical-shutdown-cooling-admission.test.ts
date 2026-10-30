@@ -2,9 +2,10 @@ import { expect, test } from 'bun:test'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { pwrRecirculationUnitPhysicalDesignRef, pwrRecirculationCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef, pwrShutdownCoolingCampusPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
 import { physicalCoverageIssues } from '../src/packs/physical-layout/coverage.ts'
-import { compilePhysicalScene } from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
+import { compilePhysicalScene, compilePhysicalObjects } from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import { createPwrShutdownCoolingUnitArtifacts, createPwrShutdownCoolingCampusArtifacts } from '../src/packs/physical-layout/authoring/pwr-shutdown-cooling.ts'
-import { parameters } from '../src/packs/physical-layout/native/drafting/source.ts'
+import { parameters, elementWorld, type V3 } from '../src/packs/physical-layout/native/drafting/source.ts'
+import { compilePhysicalRoutes } from '../src/packs/physical-layout/native/routing/compile.ts'
 
 const drafting = async (ref: unknown) => { const design = await resolvePhysicalDesign(ref); if (design.profile !== 'drafting') throw Error('Expected exact drafting admission'); return design }
 
@@ -50,6 +51,7 @@ test('RCS barriers, powered motors and housed processing dependencies retain hon
   const current = await drafting(pwrShutdownCoolingUnitPhysicalDesignRef), source = current.source
   const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'shutdown-cooling:ports' }))
   const terminals = new Map(source.routing!.terminals.map(terminal => [terminal.id, terminal]))
+  const bodies = new Map(compilePhysicalObjects({ source, bindings: current.bindings }).map(object => [object.id, object]))
   for (const route of source.routing!.connections) {
     const edge = plant.sourceGraph.connections.find(edge => String(edge.id) === route.graphConnectionId)!, from = terminals.get(route.from)!, to = terminals.get(route.to)!
     expect(edge).toBeDefined(); expect(`${from.subjectId}.${from.port}`).toBe(edge.from); expect(`${to.subjectId}.${to.port}`).toBe(edge.to)
@@ -57,11 +59,11 @@ test('RCS barriers, powered motors and housed processing dependencies retain hon
   }
   for (const train of ['A', 'B']) for (const barrier of [1, 2]) {
     const id = `rhrShutdownSuctionValve${train}${barrier}`, equipment = source.elements.find(element => element.id === `equipment/${id}`)!
-    const size = parameters(source, equipment), room = source.elements.find(element => element.id === equipment.spaceIds![0])!, roomSize = parameters(source, room)
+    const bounds = bodies.get(equipment.id)!.bounds!, room = source.elements.find(element => element.id === equipment.spaceIds![0])!, roomSize = parameters(source, room)
     for (const axis of [0, 1, 2] as const) {
       const dimension = axis === 0 ? 'length' : axis === 1 ? 'width' : 'height'
-      expect(equipment.pose.position[axis]).toBeGreaterThanOrEqual(room.pose.position[axis])
-      expect(equipment.pose.position[axis] + size[dimension]).toBeLessThanOrEqual(room.pose.position[axis] + roomSize[dimension])
+      expect(bounds.min[axis]! + source.origin[axis]!).toBeGreaterThanOrEqual(room.pose.position[axis])
+      expect(bounds.max[axis]! + source.origin[axis]!).toBeLessThanOrEqual(room.pose.position[axis] + roomSize[dimension])
     }
     expect(source.routing!.connections.some(route => terminals.get(route.to)?.subjectId === id && terminals.get(route.to)?.port === 'motorPower')).toBe(true)
   }
@@ -76,5 +78,48 @@ test('RCS barriers, powered motors and housed processing dependencies retain hon
     expect(dependency.disposition).toBe('functional'); expect(dependency.physicalElementIds).toHaveLength(1)
     expect(source.routing!.connections.some(route => route.graphConnectionId === String(power.id))).toBe(false)
     expect(source.routing!.connections.some(route => route.id === dependency.physicalElementIds[0])).toBe(true)
+  }
+})
+
+test('new shutdown barrier nozzle and power anchors touch their actual rendered bodies and continuous accepted routes', async () => {
+  const current = await drafting(pwrShutdownCoolingUnitPhysicalDesignRef), source = current.source
+  const objects = compilePhysicalObjects({ source, bindings: current.bindings }), bodies = new Map(objects.map(object => [object.id, object]))
+  const routes = new Map(compilePhysicalRoutes(source, objects).map(route => [route.object.id, route]))
+  const dot = (a: V3, b: V3) => a.reduce((sum, value, axis) => sum + value * b[axis]!, 0)
+  const sub = (a: V3, b: V3) => a.map((value, axis) => value - b[axis]!) as V3
+  for (const terminal of source.routing!.terminals.filter(terminal => terminal.subjectId.startsWith('rhrShutdownSuctionValve'))) {
+    const element = source.elements.find(element => element.id === terminal.elementId)!, pose = elementWorld(source, element)
+    const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw), [x, y, z] = terminal.local
+    const point: V3 = [pose.position[0] + c * x - s * y - source.origin[0], pose.position[1] + s * x + c * y - source.origin[1], pose.position[2] + z - source.origin[2]]
+    const body = bodies.get(element.id)!, tolerance = 128 * Number.EPSILON * Math.max(1, ...point.map(Math.abs))
+    let onActualTriangle = false
+    for (let index = 0; index < body.positions.length; index += 9) {
+      const a = body.positions.slice(index, index + 3) as V3, u = sub(body.positions.slice(index + 3, index + 6) as V3, a), v = sub(body.positions.slice(index + 6, index + 9) as V3, a), w = sub(point, a)
+      const n: V3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+      const length = Math.hypot(...n), uu = dot(u, u), vv = dot(v, v), uv = dot(u, v), denominator = uu * vv - uv * uv
+      if (!(length > 0 && denominator > 0) || Math.abs(dot(w, n)) > tolerance * length) continue
+      const aWeight = (vv * dot(w, u) - uv * dot(w, v)) / denominator, bWeight = (uu * dot(w, v) - uv * dot(w, u)) / denominator
+      if (aWeight >= -tolerance && bWeight >= -tolerance && aWeight + bWeight <= 1 + tolerance) { onActualTriangle = true; break }
+    }
+    expect(onActualTriangle, terminal.id).toBe(true)
+    for (const connection of source.routing!.connections.filter(connection => connection.from === terminal.id || connection.to === terminal.id)) {
+      const compiled = routes.get(connection.id)!, endpoint = connection.from === terminal.id ? compiled.centerline[0]! : compiled.centerline.at(-1)!
+      expect(Math.hypot(...sub(endpoint as V3, point)), connection.id).toBeLessThanOrEqual(tolerance)
+    }
+  }
+  for (const train of ['a', 'b']) {
+    const series = source.routing!.connections.find(route => route.graphConnectionId === `rhr-shutdown-suction-${train}-inner-to-outer`)!
+    expect(series.solution).toHaveLength(2)
+    expect(series.solution![0]![1]).toBe(series.solution![1]![1]); expect(series.solution![0]![2]).toBe(series.solution![1]![2])
+    expect(series.solution![1]![0]).toBeGreaterThan(series.solution![0]![0])
+  }
+})
+
+test('all current Halden Scenarios pin the exact semantic-model physical admissions', async () => {
+  for (const name of ['halden-normal-operation', 'halden-power-complex', 'halden-offsite-power-restoration', 'halden-rhr-cooling-chain', 'halden-cold-leg-recirculation', 'halden-station-blackout']) {
+    const scenario = await Bun.file(new URL(`../src/scenarios/${name}.scenario.json`, import.meta.url)).json()
+    const layouts = scenario.packs.find((pack: { id: string }) => pack.id === 'physical-layout').items
+    expect(layouts.length, name).toBeGreaterThan(0)
+    for (const layout of layouts) expect(layout.design, `${name}/${layout.id}`).toEqual(layout.design.id === 'pwr-campus' ? pwrShutdownCoolingCampusPhysicalDesignRef : pwrShutdownCoolingUnitPhysicalDesignRef)
   }
 })
