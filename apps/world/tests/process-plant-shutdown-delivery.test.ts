@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { compileProcessPlant, createProcessPlantRuntime, createPwrReferencePlantDefinition, type VariablePath } from '../src/packs/process-plant/index.ts'
+import { compileProcessPlant, createProcessPlantRuntime, createPwrReferencePlantDefinition, createProcessPlantProtectionRunner, type VariablePath } from '../src/packs/process-plant/index.ts'
 import { closedPrimaryCircuitDemandOpen, directedFluidDeliveryFlow, prepareDirectedFluidDelivery } from '../src/packs/process-plant/runtime/directed-fluid-delivery.ts'
 import type { ProcessPlantBehaviorContext } from '../src/packs/process-plant/runtime/behavior-contract.ts'
 import { shutdownCoolingWithdrawalLinks } from '../src/packs/process-plant/runtime/shutdown-cooling.ts'
@@ -104,5 +104,24 @@ describe('finite closed-primary RHR delivery', () => {
     expect(flow('rcs-to-rhr-shutdown-suction-b')).toBe(0)
     expect(flow('rhr-injection-valve-a-to-cold-leg-a')).toBe(0)
     expect(flow('rhr-injection-valve-b-to-cold-leg-b')).toBe(0)
+  })
+
+  test('actual high-temperature/full-pressure protection holds both finite barriers despite open demands', () => {
+    const runtime = createProcessPlantRuntime({ system })
+    const protection = createProcessPlantProtectionRunner({ system, protection: system.automation })
+    protection.evaluate({ runtime, elapsedMs: 0, simulationRunId: 'run:sdc-barriers' as never, sourceRuntimeId: 'process-plant.local' })
+    for (const train of ['A', 'B']) for (const barrier of [1, 2]) runtime.writeCommand({ type: 'setVariable', path: `rhrShutdownSuctionValve${train}${barrier}.positionFraction` as VariablePath, value: 1 })
+    for (let second = 0; second < 10; second++) {
+      runtime.tick(1000)
+      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run:sdc-barriers' as never, sourceRuntimeId: 'process-plant.local' })
+    }
+    for (const train of ['A', 'B']) {
+      for (const barrier of [1, 2]) {
+        expect(runtime.readVariable(`rhrShutdownSuctionValve${train}${barrier}.positionFraction` as VariablePath)).toBe(1)
+        expect(runtime.readVariable(`rhrShutdownSuctionValve${train}${barrier}.isolationSignal` as VariablePath)).toBe(true)
+        expect(runtime.readVariable(`rhrShutdownSuctionValve${train}${barrier}.effectivePositionFraction` as VariablePath)).toBe(0)
+      }
+      expect(runtime.readVariable(`rcs-to-rhr-shutdown-suction-${train.toLowerCase()}.flowKgPerS` as VariablePath)).toBe(0)
+    }
   })
 })

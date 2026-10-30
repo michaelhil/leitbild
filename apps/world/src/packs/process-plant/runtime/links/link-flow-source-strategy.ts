@@ -14,7 +14,6 @@ import {
 import { topologyAwareMainSteamDemandForSourceLink, topologyAwareMainSteamReleaseAvailabilityForSourceLink } from './main-steam-demand.ts'
 import { processPlantServices, serviceUsesDownstreamDemand } from '../service-profiles.ts'
 import { clamp, optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
-import { steamGeneratorMinimumSteamMassKg } from '../behaviors/steam-generator-behaviors.ts'
 import { primarySystemPressurizer, primarySystemReactorVessel } from '../system-topology.ts'
 
 const atmosphericPressureMPa = 0.101325
@@ -41,9 +40,7 @@ const generatorSteamThroughValve = (fromComponent: CompiledComponent, valve: Com
   const pressure = context.readNumber(componentVariablePath(fromComponent, 'pressureMPa'))
   const opening = clamp(context.readNumber(componentVariablePath(valve, 'effectivePositionFraction')), 0, 1)
   const valveFlow = parameterNumber(valve, 'cvKgPerSPerSqrtMPa') * opening * Math.sqrt(Math.max(0, pressure - atmosphericPressureMPa))
-  // While the generator's dome holds stored steam the valve can pass more than it boils; its stored steam spent, no more.
-  const stored = context.readNumber(componentVariablePath(fromComponent, 'steamMassKg')) > steamGeneratorMinimumSteamMassKg(fromComponent)
-  return stored ? valveFlow : Math.min(valveFlow, context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS')))
+  return valveFlow
 }
 
 export interface ProcessLinkFlowSource {
@@ -51,6 +48,41 @@ export interface ProcessLinkFlowSource {
   readonly alreadyIncludesPathAvailability: boolean
   readonly alreadyIncludesTargetValveDemand: boolean
   readonly bypassTargetPumpLimit: boolean
+}
+
+/** Requested flow at one actual SG outlet, before its shared finite steam
+ * budget is spent. No outlet gets its own copy of the stored dome inventory. */
+const generatorSteamRequest = (system: CompiledProcessPlant, link: CompiledProcessLink, context: LinkBehaviorReadContext): ProcessLinkFlowSource => {
+  const source = system.graph.components[link.fromComponentIndex]!, target = system.graph.components[link.toComponentIndex]
+  const drivenPump = drivenPumpOf(system, target)
+  // A steam dump can discharge stored dome steam as well as current boiling.
+  // Its reduced rated outlet capacity scales with upstream absolute pressure,
+  // as the existing choked-steam relief model does; finite stock is shared
+  // below. Restricting a dump to current boiling prevented depressurization.
+  const ratedSteamCapacity = optionalParameterNumber(source, 'nominalSteamFlowKgPerS', 760)
+    * Math.max(0, context.readNumber(componentVariablePath(source, 'pressureMPa'))) / parameterNumber(source, 'nominalPressureMPa')
+  const flow = isReliefValve(target) ? generatorSteamThroughValve(source, target, context)
+    : drivenPump !== null && target !== undefined ? context.readBoolean(componentVariablePath(drivenPump, 'running')) ? generatorSteamThroughValve(source, target, context) : 0
+      : Math.min(topologyAwareMainSteamDemandForSourceLink(system, link, context)
+        + ratedSteamCapacity * topologyAwareMainSteamReleaseAvailabilityForSourceLink(system, link, context), ratedSteamCapacity)
+  return { flowKgPerS: flow, alreadyIncludesPathAvailability: true,
+    alreadyIncludesTargetValveDemand: isReliefValve(target) || drivenPump !== null, bypassTargetPumpLimit: false }
+}
+
+const generatorSteamSource = (system: CompiledProcessPlant, link: CompiledProcessLink, context: LinkBehaviorReadContext & { readonly dtSeconds: number }): ProcessLinkFlowSource => {
+  const request = generatorSteamRequest(system, link, context)
+  if (context.dtSeconds === 0) return request
+  const source = system.graph.components[link.fromComponentIndex]!
+  let totalRequested = 0
+  for (const index of system.graph.outgoingLinksByComponent[source.index] ?? []) {
+    const outlet = system.graph.links[index]!
+    if (outlet.kind === 'fluidFlow' && outlet.service === processPlantServices.mainSteam) totalRequested += generatorSteamRequest(system, outlet, context).flowKgPerS
+  }
+  // The following thermal phase makes this step's steam. Spending only the
+  // steam already present keeps the causal split and exact mass balance; a
+  // depleted dome cannot discharge its future boiling several times at once.
+  const budget = Math.max(0, context.readNumber(componentVariablePath(source, 'steamMassKg'))) / context.dtSeconds
+  return { ...request, flowKgPerS: request.flowKgPerS * (totalRequested > 0 ? Math.min(1, budget / totalRequested) : 0) }
 }
 
 export const processLinkFlowSourceFor = (config: {
@@ -171,32 +203,7 @@ export const processLinkFlowSourceFor = (config: {
       bypassTargetPumpLimit: false,
     }
   }
-  if (fromComponent.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam && isReliefValve(toComponent)) {
-    // A generator's atmospheric relief valve, or its line's bank of safety
-    // valves, passes what its opening and the generator's pressure drive
-    // through it. While the generator's dome holds
-    // stored steam it can pass more than the generator boils, so the pressure
-    // falls until the valve's controller closes it down to the boil-off; its
-    // stored steam spent, it passes no more than the generator boils.
-    return {
-      flowKgPerS: generatorSteamThroughValve(fromComponent, toComponent, context),
-      alreadyIncludesPathAvailability: true,
-      alreadyIncludesTargetValveDemand: true,
-      bypassTargetPumpLimit: false,
-    }
-  }
-  const drivenPump = fromComponent.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam ? drivenPumpOf(system, toComponent) : null
-  if (drivenPump !== null && toComponent !== undefined) {
-    // A steam supply valve to a pump's drive turbine passes what its opening
-    // and the generator's pressure drive through it, while the turbine's trip
-    // and throttle valve admits steam: while the pump is commanded to run.
-    return {
-      flowKgPerS: context.readBoolean(componentVariablePath(drivenPump, 'running')) ? generatorSteamThroughValve(fromComponent, toComponent, context) : 0,
-      alreadyIncludesPathAvailability: true,
-      alreadyIncludesTargetValveDemand: true,
-      bypassTargetPumpLimit: false,
-    }
-  }
+  if (fromComponent.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam) return generatorSteamSource(system, link, context)
   if (toComponent?.kind === 'centrifugalPump' && String(link.toPortName) === pumpDriveSteamPorts.inlet) {
     // The drive turbine takes what its supply valve passes, whatever water the pump moves.
     return {
@@ -204,19 +211,6 @@ export const processLinkFlowSourceFor = (config: {
       alreadyIncludesPathAvailability: true,
       alreadyIncludesTargetValveDemand: true,
       bypassTargetPumpLimit: true,
-    }
-  }
-  if (fromComponent.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam) {
-    const availableSteamFlow = context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
-    return {
-      flowKgPerS: Math.min(
-        topologyAwareMainSteamDemandForSourceLink(system, link, context)
-        + availableSteamFlow * topologyAwareMainSteamReleaseAvailabilityForSourceLink(system, link, context),
-        availableSteamFlow,
-      ),
-      alreadyIncludesPathAvailability: true,
-      alreadyIncludesTargetValveDemand: false,
-      bypassTargetPumpLimit: false,
     }
   }
   if (fromComponent.kind === 'turbineLoadSink') {

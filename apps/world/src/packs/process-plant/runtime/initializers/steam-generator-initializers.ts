@@ -1,6 +1,7 @@
 import { optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
 import type { ComponentInitialValueDefinition } from './model.ts'
 import { steamGeneratorFeedToSteamEnthalpyMjPerKg, steamGeneratorLevelOnSpanPercent, steamGeneratorOperatingLevel, steamGeneratorWideRange } from '../../steam-generator-operating-level.ts'
+import { steamGeneratorDomeState } from '../steam-generator-dome.ts'
 
 export const steamGeneratorInitialValueDefinitions: ReadonlyArray<ComponentInitialValueDefinition> = [
   {
@@ -35,9 +36,14 @@ export const steamGeneratorInitialValueDefinitions: ReadonlyArray<ComponentIniti
       if (localPath === 'availableHeatTransferFraction') return 1
       if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
       if (localPath === 'pressureTargetMPa') return parameterNumber(component, 'nominalPressureMPa')
-      if (localPath === 'steamMassPressureBiasMPa') return 0
-      if (localPath === 'temperaturePressureBiasMPa') return 0
-      if (localPath === 'inventoryPressureBiasMPa') return 0
+      if (localPath === 'steamSpaceVolumeM3') {
+        const dome = steamGeneratorDomeState(component, {
+          liquidInventoryKg: optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * level.collapsed / 100,
+          liquidTemperatureC: optionalParameterNumber(component, 'initialSecondaryTemperatureC', 285),
+          steamMassKg: optionalParameterNumber(component, 'nominalSteamMassKg', 12_000), pressureMPa: parameterNumber(component, 'nominalPressureMPa'),
+        })
+        return dome[localPath]
+      }
       if (localPath === 'secondaryInventoryBalanceResidualKg') return 0
       if (localPath === 'steamMassBalanceResidualKg') return 0
       if (localPath === 'boilingEnergyResidualMw') return 0
