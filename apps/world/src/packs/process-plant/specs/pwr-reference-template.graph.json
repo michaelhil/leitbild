@@ -367,7 +367,8 @@
           "externalRefs": [
             "rcs.subcooling_margin"
           ]
-        }
+        },
+        { "path": "shutdownCoolingWithdrawalFlowKgPerS", "tagId": "RHR-SDC-SUCTION-FLOW", "equipmentId": "vessel", "description": "Actual total RCS liquid withdrawn into the closed shutdown-cooling circuit; returned water is not external makeup" }
       ],
       "metadata": {
         "presentation": {
@@ -3647,6 +3648,54 @@
           "shortNames": { "outletFlowKgPerS": "CS flow" }
         }
       }
+    },
+    {
+      "id": "rhrShutdownSuctionValveA1",
+      "kind": "processValve",
+      "label": "RHR A RCS Suction Inner Isolation",
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "variables": [
+        { "path": "positionFraction", "tagId": "RHR-SDC-A1", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation demand; the modeled pressure/temperature protection can hold it shut" },
+        { "path": "effectivePositionFraction", "tagId": "RHR-SDC-A1-POS", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation achieved position" },
+        { "path": "isolationSignal", "tagId": "RHR-SDC-A1-HOLD", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
+      ],
+      "metadata": { "presentation": { "shortLabel": "RHR A RCS inner" } }
+    },
+    {
+      "id": "rhrShutdownSuctionValveA2",
+      "kind": "processValve",
+      "label": "RHR A RCS Suction Outer Isolation",
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "variables": [
+        { "path": "positionFraction", "tagId": "RHR-SDC-A2", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation demand; the modeled pressure/temperature protection can hold it shut" },
+        { "path": "effectivePositionFraction", "tagId": "RHR-SDC-A2-POS", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation achieved position" },
+        { "path": "isolationSignal", "tagId": "RHR-SDC-A2-HOLD", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
+      ],
+      "metadata": { "presentation": { "shortLabel": "RHR A RCS outer" } }
+    },
+    {
+      "id": "rhrShutdownSuctionValveB1",
+      "kind": "processValve",
+      "label": "RHR B RCS Suction Inner Isolation",
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "variables": [
+        { "path": "positionFraction", "tagId": "RHR-SDC-B1", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation demand; the modeled pressure/temperature protection can hold it shut" },
+        { "path": "effectivePositionFraction", "tagId": "RHR-SDC-B1-POS", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation achieved position" },
+        { "path": "isolationSignal", "tagId": "RHR-SDC-B1-HOLD", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
+      ],
+      "metadata": { "presentation": { "shortLabel": "RHR B RCS inner" } }
+    },
+    {
+      "id": "rhrShutdownSuctionValveB2",
+      "kind": "processValve",
+      "label": "RHR B RCS Suction Outer Isolation",
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "variables": [
+        { "path": "positionFraction", "tagId": "RHR-SDC-B2", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation demand; the modeled pressure/temperature protection can hold it shut" },
+        { "path": "effectivePositionFraction", "tagId": "RHR-SDC-B2-POS", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation achieved position" },
+        { "path": "isolationSignal", "tagId": "RHR-SDC-B2-HOLD", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
+      ],
+      "metadata": { "presentation": { "shortLabel": "RHR B RCS outer" } }
     },
     {
       "id": "rhrPumpA",
@@ -7236,6 +7285,66 @@
     { "id": "safety-bus-b-to-integrated-charger-b", "from": "safetyBusB.outlet", "to": "vitalBatteryB.chargerPower", "connectionKind": "electricalPower" },
     { "id": "inverter-a-to-discretionary-load-a", "from": "dcInverterA.acOutlet", "to": "dcNonessentialLoadA.power", "connectionKind": "electricalPower" },
     { "id": "inverter-b-to-discretionary-load-b", "from": "dcInverterB.acOutlet", "to": "dcNonessentialLoadB.power", "connectionKind": "electricalPower" },
+    {
+      "id": "rcs-to-rhr-shutdown-suction-a", "from": "vessel.shutdownCoolingOutlet", "to": "rhrShutdownSuctionValveA1.inlet",
+      "connectionKind": "fluidFlow", "service": "residualHeatRemoval", "nominalFluid": "water", "designPhase": "liquid", "solverModel": "incompressibleLiquid", "physical": { "diameterM": 0.32 },
+      "variables": [
+        { "path": "flowKgPerS", "label": "RHR A RCS withdrawal flow", "tagId": "RHR-SDC-A-FLOW", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "flowRate", "unit": "kg/s", "initialValue": 0 },
+        { "path": "temperatureC", "label": "RHR A RCS withdrawal temperature", "tagId": "RHR-SDC-A-TEMP", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 325 },
+        { "path": "pressureMPa", "label": "RHR A RCS withdrawal pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 15.5 },
+        { "path": "soluteConcentrationPpm", "label": "RHR A RCS withdrawal boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
+      ], "metadata": { "presentation": { "shortNames": { "flowKgPerS": "RHR A RCS flow", "temperatureC": "RHR A RCS temp", "pressureMPa": "RCS pressure", "soluteConcentrationPpm": "RHR A RCS boron" } } }
+    },
+    {
+      "id": "rhr-shutdown-suction-a-inner-to-outer", "from": "rhrShutdownSuctionValveA1.outlet", "to": "rhrShutdownSuctionValveA2.inlet",
+      "connectionKind": "fluidFlow", "service": "residualHeatRemoval", "nominalFluid": "water", "designPhase": "liquid", "solverModel": "incompressibleLiquid", "physical": { "diameterM": 0.32 },
+      "variables": [
+        { "path": "flowKgPerS", "label": "RHR A series suction flow", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "flowRate", "unit": "kg/s", "initialValue": 0 },
+        { "path": "temperatureC", "label": "RHR A series suction temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
+        { "path": "pressureMPa", "label": "RHR A series suction pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
+        { "path": "soluteConcentrationPpm", "label": "RHR A series suction boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
+      ]
+    },
+    {
+      "id": "rhr-shutdown-suction-a-to-header", "from": "rhrShutdownSuctionValveA2.outlet", "to": "rhrSuctionHeaderA.inletC",
+      "connectionKind": "fluidFlow", "service": "residualHeatRemoval", "nominalFluid": "water", "designPhase": "liquid", "solverModel": "incompressibleLiquid", "physical": { "diameterM": 0.32 },
+      "variables": [
+        { "path": "flowKgPerS", "label": "RHR A shutdown suction header delivery", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "flowRate", "unit": "kg/s", "initialValue": 0 },
+        { "path": "temperatureC", "label": "RHR A shutdown suction header temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
+        { "path": "pressureMPa", "label": "RHR A shutdown suction header pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
+        { "path": "soluteConcentrationPpm", "label": "RHR A shutdown suction header boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
+      ]
+    },
+    {
+      "id": "rcs-to-rhr-shutdown-suction-b", "from": "vessel.shutdownCoolingOutlet", "to": "rhrShutdownSuctionValveB1.inlet",
+      "connectionKind": "fluidFlow", "service": "residualHeatRemoval", "nominalFluid": "water", "designPhase": "liquid", "solverModel": "incompressibleLiquid", "physical": { "diameterM": 0.32 },
+      "variables": [
+        { "path": "flowKgPerS", "label": "RHR B RCS withdrawal flow", "tagId": "RHR-SDC-B-FLOW", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "flowRate", "unit": "kg/s", "initialValue": 0 },
+        { "path": "temperatureC", "label": "RHR B RCS withdrawal temperature", "tagId": "RHR-SDC-B-TEMP", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 325 },
+        { "path": "pressureMPa", "label": "RHR B RCS withdrawal pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 15.5 },
+        { "path": "soluteConcentrationPpm", "label": "RHR B RCS withdrawal boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
+      ], "metadata": { "presentation": { "shortNames": { "flowKgPerS": "RHR B RCS flow", "temperatureC": "RHR B RCS temp", "pressureMPa": "RCS pressure", "soluteConcentrationPpm": "RHR B RCS boron" } } }
+    },
+    {
+      "id": "rhr-shutdown-suction-b-inner-to-outer", "from": "rhrShutdownSuctionValveB1.outlet", "to": "rhrShutdownSuctionValveB2.inlet",
+      "connectionKind": "fluidFlow", "service": "residualHeatRemoval", "nominalFluid": "water", "designPhase": "liquid", "solverModel": "incompressibleLiquid", "physical": { "diameterM": 0.32 },
+      "variables": [
+        { "path": "flowKgPerS", "label": "RHR B series suction flow", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "flowRate", "unit": "kg/s", "initialValue": 0 },
+        { "path": "temperatureC", "label": "RHR B series suction temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
+        { "path": "pressureMPa", "label": "RHR B series suction pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
+        { "path": "soluteConcentrationPpm", "label": "RHR B series suction boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
+      ]
+    },
+    {
+      "id": "rhr-shutdown-suction-b-to-header", "from": "rhrShutdownSuctionValveB2.outlet", "to": "rhrSuctionHeaderB.inletC",
+      "connectionKind": "fluidFlow", "service": "residualHeatRemoval", "nominalFluid": "water", "designPhase": "liquid", "solverModel": "incompressibleLiquid", "physical": { "diameterM": 0.32 },
+      "variables": [
+        { "path": "flowKgPerS", "label": "RHR B shutdown suction header delivery", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "flowRate", "unit": "kg/s", "initialValue": 0 },
+        { "path": "temperatureC", "label": "RHR B shutdown suction header temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
+        { "path": "pressureMPa", "label": "RHR B shutdown suction header pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
+        { "path": "soluteConcentrationPpm", "label": "RHR B shutdown suction header boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
+      ]
+    },
     {
       "id": "core-to-vessel-thermal",
       "from": "core.vesselThermal",
@@ -18365,6 +18474,17 @@
     "rwst-to-containment-spray-pump-b.soluteConcentrationPpm",
     "containment-spray-pump-a-to-header.soluteConcentrationPpm",
     "containment-spray-pump-b-to-header.soluteConcentrationPpm",
-    "containment-spray-header-to-containment.soluteConcentrationPpm"
+    "containment-spray-header-to-containment.soluteConcentrationPpm",
+    "vessel.shutdownCoolingWithdrawalFlowKgPerS",
+    "rhrShutdownSuctionValveA1.positionFraction", "rhrShutdownSuctionValveA1.effectivePositionFraction", "rhrShutdownSuctionValveA1.isolationSignal",
+    "rhrShutdownSuctionValveA2.positionFraction", "rhrShutdownSuctionValveA2.effectivePositionFraction", "rhrShutdownSuctionValveA2.isolationSignal",
+    "rhrShutdownSuctionValveB1.positionFraction", "rhrShutdownSuctionValveB1.effectivePositionFraction", "rhrShutdownSuctionValveB1.isolationSignal",
+    "rhrShutdownSuctionValveB2.positionFraction", "rhrShutdownSuctionValveB2.effectivePositionFraction", "rhrShutdownSuctionValveB2.isolationSignal",
+    "rcs-to-rhr-shutdown-suction-a.flowKgPerS", "rcs-to-rhr-shutdown-suction-a.temperatureC", "rcs-to-rhr-shutdown-suction-a.pressureMPa", "rcs-to-rhr-shutdown-suction-a.soluteConcentrationPpm",
+    "rhr-shutdown-suction-a-inner-to-outer.flowKgPerS", "rhr-shutdown-suction-a-inner-to-outer.temperatureC", "rhr-shutdown-suction-a-inner-to-outer.pressureMPa", "rhr-shutdown-suction-a-inner-to-outer.soluteConcentrationPpm",
+    "rhr-shutdown-suction-a-to-header.flowKgPerS", "rhr-shutdown-suction-a-to-header.temperatureC", "rhr-shutdown-suction-a-to-header.pressureMPa", "rhr-shutdown-suction-a-to-header.soluteConcentrationPpm",
+    "rcs-to-rhr-shutdown-suction-b.flowKgPerS", "rcs-to-rhr-shutdown-suction-b.temperatureC", "rcs-to-rhr-shutdown-suction-b.pressureMPa", "rcs-to-rhr-shutdown-suction-b.soluteConcentrationPpm",
+    "rhr-shutdown-suction-b-inner-to-outer.flowKgPerS", "rhr-shutdown-suction-b-inner-to-outer.temperatureC", "rhr-shutdown-suction-b-inner-to-outer.pressureMPa", "rhr-shutdown-suction-b-inner-to-outer.soluteConcentrationPpm",
+    "rhr-shutdown-suction-b-to-header.flowKgPerS", "rhr-shutdown-suction-b-to-header.temperatureC", "rhr-shutdown-suction-b-to-header.pressureMPa", "rhr-shutdown-suction-b-to-header.soluteConcentrationPpm"
   ]
 }

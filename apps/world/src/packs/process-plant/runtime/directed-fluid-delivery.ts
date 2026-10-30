@@ -4,6 +4,7 @@ import { componentVariablePath, processLinkVariablePath, type ProcessPlantBehavi
 import { clamp, optionalParameterNumber, parameterNumber } from './component-helpers.ts'
 import { primarySystemPressurizer } from './system-topology.ts'
 import { physicalFlowCapacityKgPerS } from './links/process-link-physical.ts'
+import { isShutdownCoolingSource } from './shutdown-cooling.ts'
 
 // Explicitly selected, directed liquid delivery. This is a finite-capacity
 // demand model, not a pressure-equilibrium or reverse-flow solver. Inventories
@@ -33,7 +34,7 @@ const networkFor = (graph: CompiledPlantGraph): Network | null => {
   const nodes: Node[] = [], edges: Edge[] = [], byKey = new Map<string, number>()
   const nodeFor = (component: CompiledComponent, port: string, from: boolean): number => {
     const stored = component.kind === 'processTank' || component.kind === 'containmentVolume'
-    const kind: Node['kind'] = stored ? from ? 'source' : 'receiver'
+    const kind: Node['kind'] = stored || isShutdownCoolingSource(component, port) ? from ? 'source' : 'receiver'
       : component.kind === 'centrifugalPump' ? 'pump' : passiveKinds.has(String(component.kind)) ? 'passive' : from ? 'source' : 'receiver'
     const circuit = component.ports[port]?.circuit
     const boundary = kind === 'source' || kind === 'receiver'
@@ -78,7 +79,7 @@ const networkFor = (graph: CompiledPlantGraph): Network | null => {
     node.incoming.splice(0, node.incoming.length); node.outgoing.splice(0, node.outgoing.length)
     if (component.kind === 'processHeader' && (component.parameters as Readonly<Record<string, unknown>>).distributionMode === 'pressureBalance') throw new Error(`directed delivery cannot also own pressure-balanced header ${component.id}`)
     if (node.kind === 'pump' && (component.parameters as Readonly<Record<string, unknown>>).primaryLoopId !== undefined) throw new Error(`directed delivery cannot own primary-loop pump ${component.id}`)
-    if (node.kind === 'source' && component.kind !== 'processTank' && !(component.kind === 'containmentVolume' && node.port === 'sumpOut')) throw new Error(`directed delivery requires a finite liquid source at ${component.id}.${node.port}`)
+    if (node.kind === 'source' && component.kind !== 'processTank' && !(component.kind === 'containmentVolume' && node.port === 'sumpOut') && !isShutdownCoolingSource(component, node.port)) throw new Error(`directed delivery requires a finite liquid source at ${component.id}.${node.port}`)
     if (node.kind === 'receiver' && component.kind !== 'processTank' && component.kind !== 'containmentVolume' && !receivers.has(String(component.kind))) throw new Error(`directed delivery does not support receiver ${component.id}`)
   }
   chosen.forEach((edge, index) => { nodes[edge.from]!.outgoing.push(index); nodes[edge.to]!.incoming.push(index) })
@@ -105,6 +106,11 @@ export const assertDirectedFluidDeliveryValid = (graph: CompiledPlantGraph): voi
 type ReadContext = Pick<ProcessPlantBehaviorContext, 'has' | 'readNumber'>
 const pumpFlow = (component: CompiledComponent, context: ReadContext): number => Math.max(0, context.readNumber(componentVariablePath(component, 'flowKgPerS')))
 const sourceCapacity = (node: Node, context: ReadContext, dtSeconds: number): number => {
+  if (isShutdownCoolingSource(node.component, node.port)) {
+    const liquid = Math.max(0, context.readNumber(componentVariablePath(node.component, 'primaryCoolantInventoryKg'))
+      - context.readNumber(componentVariablePath(node.component, 'loopSteamMassKg')))
+    return dtSeconds > 0 ? liquid / dtSeconds : liquid > 0 ? Number.POSITIVE_INFINITY : 0
+  }
   const sump = node.component.kind === 'containmentVolume'
   const inventory = context.readNumber(componentVariablePath(node.component, sump ? 'sumpInventoryKg' : 'inventoryKg'))
   const flow = sump ? optionalParameterNumber(node.component, 'maxSumpOutflowKgPerS', 0) : context.readNumber(componentVariablePath(node.component, 'availableOutletFlowKgPerS'))
@@ -128,7 +134,7 @@ const receiverCurveCapacity = (system: CompiledProcessPlant, pump: CompiledCompo
 }
 const directPumpFlow = (system: CompiledProcessPlant, pump: CompiledComponent, context: ReadContext): number => Math.min(pumpFlow(pump, context), receiverCurveCapacity(system, pump, context))
 
-type Solution = { readonly graph: CompiledPlantGraph; readonly potential: Float64Array; readonly requests: Float64Array; readonly flows: Float64Array; readonly nodePotential: Float64Array }
+type Solution = { readonly graph: CompiledPlantGraph; readonly potential: Float64Array; readonly requests: Float64Array; readonly flows: Float64Array; readonly passFlows: Float64Array; readonly nodePotential: Float64Array; readonly spentNode: Float64Array }
 const solutions = new WeakMap<object, Solution>()
 
 /** One solve per existing fluid-link phase. Reused numeric buffers are derived
@@ -138,17 +144,24 @@ export const prepareDirectedFluidDelivery = (system: CompiledProcessPlant, conte
   if (network === null) return
   let state = solutions.get(context)
   if (state?.graph !== system.graph) {
-    state = { graph: system.graph, potential: new Float64Array(network.edges.length), requests: new Float64Array(network.edges.length), flows: new Float64Array(network.edges.length), nodePotential: new Float64Array(network.nodes.length) }
+    state = { graph: system.graph, potential: new Float64Array(network.edges.length), requests: new Float64Array(network.edges.length), flows: new Float64Array(network.edges.length), passFlows: new Float64Array(network.edges.length), nodePotential: new Float64Array(network.nodes.length), spentNode: new Float64Array(network.nodes.length) }
     solutions.set(context, state)
   }
-  const { potential, requests, flows, nodePotential } = state
-  potential.fill(0); requests.fill(0); flows.fill(0); nodePotential.fill(0)
+  const { potential, requests, flows, passFlows, nodePotential, spentNode } = state
+  flows.fill(0); spentNode.fill(0)
+  // Closed-loop RCS water already starts at the receiver's static pressure.
+  // Allocate that finite source first, then external water against the ordinary
+  // injection curve with only the unspent pump/valve/pipe capacity. This is a
+  // reduced forward-delivery assumption, not a mixed-source/backflow pressure
+  // solution; source isolation is still required for a qualified SDC lineup.
+  const solve = (primary: boolean): void => {
+  potential.fill(0); requests.fill(0); passFlows.fill(0); nodePotential.fill(0)
   // First establish finite available supply without yet spending it at splits.
   for (const index of network.order) {
     const node = network.nodes[index]!
     const incoming = node.incoming.reduce((total, edge) => total + potential[edge]!, 0)
-    const available = node.kind === 'source' ? sourceCapacity(node, context, dtSeconds)
-      : node.kind === 'pump' ? Math.min(incoming, pumpFlow(node.component, context)) : incoming
+    const available = node.kind === 'source' ? isShutdownCoolingSource(node.component, node.port) === primary ? sourceCapacity(node, context, dtSeconds) : 0
+      : node.kind === 'pump' ? Math.min(incoming, Math.max(0, pumpFlow(node.component, context) - spentNode[index]!)) : incoming
     const valveCv = node.component.kind === 'processValve' ? optionalParameterNumber(node.component, 'cvKgPerSPerSqrtMPa', Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY
     const upstreamPressure = node.incoming.reduce((highest, edge) => {
       const reading = processLinkVariablePath(network.edges[edge]!.link, 'pressureMPa')
@@ -157,10 +170,12 @@ export const prepareDirectedFluidDelivery = (system: CompiledProcessPlant, conte
     // Retain the ordinary reduced valve capacity law. Its pressure input is
     // the declared upstream reading, not a newly solved suction equilibrium.
     const valveCapacity = Number.isFinite(valveCv) ? valveCv * Math.sqrt(Math.max(0, upstreamPressure)) : Number.POSITIVE_INFINITY
-    nodePotential[index] = Math.min(available, valveCapacity) * nodeOpening(node, context)
+    const opening = nodeOpening(node, context)
+    nodePotential[index] = spentNode[index] === 0 ? Math.min(available, valveCapacity) * opening
+      : Math.min(available * opening, Math.max(0, valveCapacity * opening - spentNode[index]!))
     for (const edgeIndex of node.outgoing) {
       const edge = network.edges[edgeIndex]!
-      potential[edgeIndex] = Math.min(nodePotential[index]!, physicalFlowCapacityKgPerS(edge.link))
+      potential[edgeIndex] = Math.min(nodePotential[index]!, Math.max(0, physicalFlowCapacityKgPerS(edge.link) - flows[edgeIndex]!))
     }
   }
   // Demand stops at an intervening pump. Merges divide the request by their
@@ -173,7 +188,7 @@ export const prepareDirectedFluidDelivery = (system: CompiledProcessPlant, conte
     for (const edgeIndex of node.incoming) {
       const edge = network.edges[edgeIndex]!
       const receiverDemand = node.kind !== 'receiver' ? needed
-        : network.nearestPumps[edge.from]!.length > 0 ? network.nearestPumps[edge.from]!.reduce((total, pump) => total + (node.component.kind === 'reactorCore' ? directPumpFlow(system, pump, context) : pumpFlow(pump, context)), 0)
+        : network.nearestPumps[edge.from]!.length > 0 ? network.nearestPumps[edge.from]!.reduce((total, pump) => total + (!primary && node.component.kind === 'reactorCore' ? directPumpFlow(system, pump, context) : pumpFlow(pump, context)), 0)
           : potential[edgeIndex]!
       requests[edgeIndex] = node.kind === 'receiver' ? Math.min(potential[edgeIndex]!, receiverDemand)
         : totalPotential > 0 ? needed * potential[edgeIndex]! / totalPotential : 0
@@ -184,12 +199,45 @@ export const prepareDirectedFluidDelivery = (system: CompiledProcessPlant, conte
   // by a stale pump flow or duplicated onto another outlet.
   for (const index of network.order) {
     const node = network.nodes[index]!
-    const arrived = node.incoming.reduce((total, edge) => total + flows[edge]!, 0)
+    const arrived = node.incoming.reduce((total, edge) => total + passFlows[edge]!, 0)
     const available = node.kind === 'source' ? nodePotential[index]! : Math.min(arrived, nodePotential[index]!)
     const demand = node.outgoing.reduce((total, edge) => total + requests[edge]!, 0)
     const supplied = Math.min(available, demand)
-    for (const edge of node.outgoing) flows[edge] = demand > 0 ? supplied * requests[edge]! / demand : 0
+    for (const edge of node.outgoing) passFlows[edge] = demand > 0 ? supplied * requests[edge]! / demand : 0
+    spentNode[index] = spentNode[index]! + supplied
   }
+  for (let edge = 0; edge < flows.length; edge++) flows[edge] = flows[edge]! + passFlows[edge]!
+  }
+  const openPrimarySource = network.order.some(index => {
+    const node = network.nodes[index]!
+    return node.kind === 'source' && isShutdownCoolingSource(node.component, node.port)
+      && node.outgoing.some(edge => nodeOpening(network.nodes[network.edges[edge]!.to]!, context) > 0)
+  })
+  if (openPrimarySource) solve(true)
+  solve(false)
+}
+
+/** A connected return to the same primary inventory needs pump differential
+ * head, not a second climb from a storage tank to absolute RCS pressure. The
+ * delivery solve still admits only actual RCS-source water on that basis. */
+export const closedPrimaryCircuitDemandOpen = (system: CompiledProcessPlant, pump: CompiledComponent, context: ReadContext): boolean => {
+  const network = networkFor(system.graph), start = network?.pumpNodes.get(pump.index)
+  if (network === null || start === undefined) return false
+  const reaches = (upstream: boolean): boolean => {
+    const queue = [start], visited = new Set<number>()
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const index = queue[cursor]!
+      if (visited.has(index)) continue
+      visited.add(index)
+      const node = network.nodes[index]!
+      if (upstream && node.kind === 'source' && isShutdownCoolingSource(node.component, node.port)) return true
+      if (!upstream && node.kind === 'receiver' && node.component.kind === 'reactorCore') return true
+      if (nodeOpening(node, context) <= 0 || node.kind === 'source' || node.kind === 'receiver') continue
+      queue.push(...(upstream ? node.incoming.map(edge => network.edges[edge]!.from) : node.outgoing.map(edge => network.edges[edge]!.to)))
+    }
+    return false
+  }
+  return reaches(true) && reaches(false)
 }
 
 export const directedFluidDeliveryFlow = (system: CompiledProcessPlant, link: CompiledProcessLink, context: ProcessPlantBehaviorContext): number | null => {

@@ -336,6 +336,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional', circuit: 'coolant' },
       releaseOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
       letdownOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'coolant' },
+      shutdownCoolingOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'shutdownCoolingSupply' },
     },
     parametersSchema: z.object({
       /** Loop coolant at the operating point's temperatures and pressure: the reference inventory deviations are read from. */
@@ -380,6 +381,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'surgeFlowKgPerS', label: 'Pressurizer surge flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s', simulatorOnly: true }),
       variable({ path: 'chargingFlowKgPerS', label: 'Primary charging flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'safetyInjectionFlowKgPerS', label: 'Primary safety injection flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'shutdownCoolingWithdrawalFlowKgPerS', label: 'RCS shutdown-cooling withdrawal flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'letdownFlowKgPerS', label: 'Primary letdown flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'reliefOutflowKgPerS', label: 'Primary relief outflow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true }),
       variable({ path: 'primaryLeakFlowKgPerS', label: 'Primary coolant boundary leak flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s', simulatorOnly: true, faultTruth: true }),

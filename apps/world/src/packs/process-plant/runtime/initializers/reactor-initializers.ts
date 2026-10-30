@@ -94,6 +94,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'surgeFlowKgPerS') return 0
       if (localPath === 'chargingFlowKgPerS') return 0
       if (localPath === 'safetyInjectionFlowKgPerS') return 0
+      if (localPath === 'shutdownCoolingWithdrawalFlowKgPerS') return 0
       if (localPath === 'letdownFlowKgPerS') return optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
       if (localPath === 'reliefOutflowKgPerS') return 0
       if (localPath === 'primaryLeakFlowKgPerS') return 0

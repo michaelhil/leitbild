@@ -7,6 +7,7 @@ import { primaryLoopLegReversed, reactorCoreNetInflowKgPerS } from '../primary-l
 import { primarySystemContainment, primarySystemReactorCore } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa } from '../thermophysics.ts'
 import { flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
+import { isShutdownCoolingSource } from '../shutdown-cooling.ts'
 
 /** The upper plenum's water, which the forward-running hot legs carry: the
  * core's outlet flow mixed with what loops driven backwards bring into it. */
@@ -105,6 +106,9 @@ export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLin
         const tailpipe = reliefTailpipe(system, link, context)
         target = tailpipe.temperatureC
         timeConstantS = tailpipe.timeConstantS
+      } else if (isShutdownCoolingSource(fromComponent, String(link.fromPortName))) {
+        if (core === null) throw new Error(`shutdown-cooling withdrawal ${link.id} requires its primary core temperature`)
+        target = upperPlenumTemperatureC(system, core, context)
       } else if (fromComponent.kind === 'reactorVessel' && link.service === 'letdown') {
         // Letdown leaves from a cold leg. Its regenerative and letdown heat
         // exchangers are not modelled, so it carries cold-leg temperature to
