@@ -110,7 +110,7 @@ test('source-specific flow tags are read-only native quantities and every observ
 test('authored transfer readings retain full descriptions and compact operator names without changing numerical identity', () => {
   const plant = plantOf(), recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
   const declaration = plantDeclaration(plant.id as never, plant, recording)
-  expect(plant.modelDigest).toBe('01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5')
+  expect(plant.modelDigest).toBe('b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5')
   expect(processPlantAutomationDigest(plant.automation)).toBe('51ba771b09e0ebad4282fd98b4f06968fde83b19f2907bfadc96835ad9b0c0fa')
   const short = (path: string) => declaration.observables.find(observable => observable.ref === `${plant.id}#${path}`)!
   for (const train of ['A', 'B']) {

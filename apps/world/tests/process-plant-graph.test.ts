@@ -37,7 +37,7 @@ describe('process plant model composition', () => {
     // Resolved component variables, ports and semantics remain in identity.
     // Fresh sandbox Runs only; old checkpoints and proof are never rewritten.
     // Scope and operating semantics: wiki world/packs/process-plant/signals-and-actions.md.
-    expect(system.modelDigest).toBe('01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5')
+    expect(system.modelDigest).toBe('b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))

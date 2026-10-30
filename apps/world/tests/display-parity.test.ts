@@ -248,7 +248,16 @@ describe('T39 plant swap parity', () => {
 
       test('P2: the latched actuations and their resets read the same, each reached from an item it holds', () => {
         const listed = ask<{ readonly resets: ReadonlyArray<any> }>('world.process-plant.controls.list', { plantId: PLANT_ID }).resets
-        expect(listed.map(reset => ({ ruleId: reset.ruleId, label: reset.label, offered: reset.offered, ...(reset.reason === undefined ? {} : { reason: reset.reason }) }))).toEqual(recorded.resets)
+        // Listed difference: an actuation whose declared operating-mode scope
+        // has ended can be reset even if its numerical condition persists.
+        // T01 remains immutable; non-mode-scoped AFW holds must still refuse.
+        const released = state.id === 'loss-main-feedwater+120s' ? new Set([
+          ...['a', 'b', 'c', 'd'].map(loop => `sg-${loop}-level-low-low-reactor-trip`),
+          'main-feedwater-pumps-tripped-afw-start',
+        ]) : new Set<string>()
+        const expected = recorded.resets.map((reset: { ruleId: string; label: string }) => released.has(reset.ruleId)
+          ? { ruleId: reset.ruleId, label: reset.label, offered: true } : reset)
+        expect(listed.map(reset => ({ ruleId: reset.ruleId, label: reset.label, offered: reset.offered, ...(reset.reason === undefined ? {} : { reason: reset.reason }) }))).toEqual(expected)
         // Listed difference: a reset is offered in the element panel of an item it holds; one that holds no item is offered on none.
         expect(listed.filter(reset => reset.items.length === 0).map(reset => reset.ruleId)).toEqual([...UNREACHED_RESETS[state.id] ?? []])
       })

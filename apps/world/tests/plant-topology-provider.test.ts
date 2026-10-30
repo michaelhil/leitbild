@@ -157,8 +157,18 @@ describe('plant topology provider (P5)', () => {
   test('an edge carries its own loop where it has one, apart from its ends\' (the charging line into cold leg A)', () => {
     const groupOf = (id: string) => node(id).group
     const own = graph.edges.filter(edge => edge.group !== undefined && edge.group !== (groupOf(edge.from.node) ?? groupOf(edge.to.node)))
-    // Independent low-head returns add a second loop-owned injection edge.
-    expect(own).toHaveLength(14)
+    // A link owns its circuit independently of either endpoint. This includes
+    // the inverter-fed steam-valve motors: electrical train A supplies the
+    // loop-C valve, so inheriting the source node's group would be wrong.
+    expect(own.map(edge => [edge.id, edge.group])).toEqual([
+      ['inverter-b-to-auxFeedwaterTurbineSteamValveB-motor', 'B'],
+      ['inverter-a-to-auxFeedwaterTurbineSteamValveC-motor', 'C'],
+      ['charging-pump-to-cold-leg-a', 'A'], ['charging-pump-b-to-cold-leg-b', 'B'],
+      ...['a', 'b', 'c', 'd'].map(loop => [`safety-injection-header-to-cold-leg-${loop}`, loop.toUpperCase()]),
+      ...['b', 'c'].map(loop => [`turbine-afw-steam-valve-${loop}-to-pump-turbine`, loop.toUpperCase()]),
+      ...['a', 'b', 'c', 'd'].map(loop => [`main-steam-safety-valves-${loop}-to-atmosphere`, loop.toUpperCase()]),
+      ...['a', 'b'].map(loop => [`rhr-injection-valve-${loop}-to-cold-leg-${loop}`, loop.toUpperCase()]),
+    ])
     expect(graph.edges.find(edge => edge.id === 'charging-pump-to-cold-leg-a')).toMatchObject({ group: 'A', medium: 'charging', from: { node: 'chargingPump' }, to: { node: 'core', port: 'coldLegA' } })
   })
 

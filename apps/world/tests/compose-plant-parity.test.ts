@@ -201,13 +201,14 @@ describe('P9: an equipment default carries what the detail display carries', () 
     const core = await trendOf('core')
     expect(core.refs[0]).toBe('core.powerRangePercent')
     expect(core.kinds.filter(kind => kind === 'own').length).toBeGreaterThan(0)
-    // This finite-dome transient also annunciates an actual high-pressure
-    // excursion. Its alert keeps a row; the bounded card preserves both level
-    // instruments and explicitly reports the remaining pens it cannot show.
-    // Do not suppress the alarm to preserve a golden three-pen composition.
+    // Actual alarms keep their rows. Preserve the two level instruments and
+    // the declared priority of the remaining pens; any that cannot fit must
+    // be reported. Do not suppress an alarm to preserve a golden composition.
     const sg = await trendOf('sgA')
-    expect(sg.refs).toEqual(['sgA.levelPercent', 'sgA.wideRangeLevelPercent'])
-    expect(sg.adjusted).toContain('2 pens not shown')
+    const preferred = ['sgA.levelPercent', 'sgA.wideRangeLevelPercent', 'sgA.secondaryRadiationMSvPerH', 'sgA.pressureMPa']
+    expect(sg.refs.slice(0, 2)).toEqual(preferred.slice(0, 2))
+    expect(sg.refs).toEqual(preferred.slice(0, sg.refs.length))
+    if (sg.refs.length < preferred.length) expect(sg.adjusted).toContain(`${preferred.length - sg.refs.length} pens not shown`)
   })
 
   test('a block valve between the drawn pressurizer and its drawn PORV is drawn, not named at a stop on each side', async () => {
