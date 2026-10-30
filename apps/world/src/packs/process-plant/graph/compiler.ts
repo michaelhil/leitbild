@@ -716,10 +716,42 @@ const validateElectricalSupportComponent = (component: CompiledComponent, links:
   }
 }
 
+/** Forward finite storage delivery represents branching, not source-sharing
+ * dispatch or reconvergent supply paths. Ordinary upstream AC source merges
+ * remain valid; a battery's charger is a separate energy boundary. */
+const validateFiniteStorageSupplies = (components: ReadonlyArray<CompiledComponent>, links: ReadonlyArray<CompiledProcessLink>): void => {
+  const feeds = new Map<number, CompiledProcessLink[]>()
+  for (const link of links) if (link.kind === 'electricalPower') feeds.set(link.toComponentIndex, [...feeds.get(link.toComponentIndex) ?? [], link])
+  const memo = new Map<number, ReadonlySet<string>>()
+  const visiting = new Set<number>()
+  const origins = (index: number): ReadonlySet<string> => {
+    const retained = memo.get(index)
+    if (retained) return retained
+    const component = components[index]!
+    if (component.kind === 'battery') return new Set([String(component.id)])
+    if (visiting.has(index)) throw Error('Process Plant electrical supply graph contains a directed cycle')
+    visiting.add(index)
+    const found = new Set((feeds.get(index) ?? []).flatMap(link => [...origins(link.fromComponentIndex)]))
+    visiting.delete(index)
+    memo.set(index, found)
+    return found
+  }
+  for (const [index, incoming] of feeds) {
+    const ports = new Map<string, CompiledProcessLink[]>()
+    for (const link of incoming) ports.set(String(link.toPortName), [...ports.get(String(link.toPortName)) ?? [], link])
+    for (const [port, supplies] of ports) {
+      if (supplies.length === 1) continue
+      const storage = new Set(supplies.flatMap(link => [...origins(link.fromComponentIndex)]))
+      if (storage.size > 0) throw Error(`component ${components[index]!.id}.${port} merges finite-storage supply paths from ${[...storage].join(', ')}; source-sharing dispatch and reconvergent storage supplies are not represented`)
+    }
+  }
+}
+
 const validateStrongComponentContracts = (
   components: ReadonlyArray<CompiledComponent>,
   links: ReadonlyArray<CompiledProcessLink>,
 ): void => {
+  validateFiniteStorageSupplies(components, links)
   for (const component of components) {
     validateValveComponent(component)
     validateHeatExchangerComponent(component, links)

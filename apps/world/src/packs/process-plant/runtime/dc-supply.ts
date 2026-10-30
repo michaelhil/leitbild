@@ -26,5 +26,9 @@ export const dcSupplyStep = (input: {
   const nextEnergyMj = Math.max(0, Math.min(capacityMj, energy + (chargePowerMw - dischargePowerMw) * dtSeconds))
   return { energyMj: nextEnergyMj, dischargePowerMw, chargePowerMw, chargerInputMw, chargerOutputMw, conversionLossMw,
     unservedLoadMw: Math.max(0, shortage - dischargePowerMw),
-    availablePowerMw: chargerAvailableMw + (nextEnergyMj > 0 ? batteryPowerMw : 0) }
+    // Supply and served-power values represent the integration interval.
+    // A partly depleted last interval still delivers its finite remaining
+    // energy; the next interval has none. Never debit energy while reporting
+    // zero delivered power solely because its endpoint store reached zero.
+    availablePowerMw: chargerAvailableMw + (dtSeconds > 0 ? Math.min(batteryPowerMw, energy / dtSeconds) : energy > 0 ? batteryPowerMw : 0) }
 }

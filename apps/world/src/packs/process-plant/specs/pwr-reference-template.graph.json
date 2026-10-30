@@ -5455,9 +5455,9 @@
     {
       "id": "loadCentresA",
       "kind": "electricalLoad",
-      "label": "Safety Train A Load Centres",
+      "label": "Safety Train A Residual Low-Voltage Auxiliaries",
       "parameters": {
-        "nominalLoadMw": 1.2,
+        "nominalLoadMw": 0.31357340720221594,
         "essential": true
       },
       "variables": [
@@ -5465,7 +5465,7 @@
           "path": "energized",
           "tagId": "LC-A-ENERGIZED",
           "equipmentId": "loadCentresA",
-          "description": "Safety train A low-voltage load centres energized: battery chargers, valve motors and ventilation, never shed"
+          "description": "Residual train A low-voltage ventilation and auxiliaries, excluding the explicitly supplied vital charger; its nominal load retains the former 1.2 MW total less 0.8 MW UPS load divided by inverter and charger efficiencies"
         }
       ],
       "metadata": {
@@ -5613,9 +5613,9 @@
     {
       "id": "loadCentresB",
       "kind": "electricalLoad",
-      "label": "Safety Train B Load Centres",
+      "label": "Safety Train B Residual Low-Voltage Auxiliaries",
       "parameters": {
-        "nominalLoadMw": 1.2,
+        "nominalLoadMw": 0.31357340720221594,
         "essential": true
       },
       "variables": [
@@ -5623,7 +5623,7 @@
           "path": "energized",
           "tagId": "LC-B-ENERGIZED",
           "equipmentId": "loadCentresB",
-          "description": "Safety train B low-voltage load centres energized: battery chargers, valve motors and ventilation, never shed"
+          "description": "Residual train B low-voltage ventilation and auxiliaries, excluding the explicitly supplied vital charger; its nominal load retains the former 1.2 MW total less 0.8 MW UPS load divided by inverter and charger efficiencies"
         }
       ],
       "metadata": {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { component, connect, plantGraph, compileResolvedProcessPlant, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, type PlantGraphSpec, type VariablePath } from '../src/packs/process-plant/index.ts'
+import { component, connect, plantGraph, compileResolvedProcessPlant, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, createProcessPlantProtectionRunner, commandsForProcessPlantAction, type PlantGraphSpec, type VariablePath } from '../src/packs/process-plant/index.ts'
 import { dcSupplyStep } from '../src/packs/process-plant/runtime/dc-supply.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -35,6 +35,13 @@ describe('finite DC supply and actual support dependencies', () => {
     expect(() => runtimeFor({ ...original, connections: original.connections.filter(link => String(link.id) !== 'charger-feed') })).toThrow('chargerPower supply')
     expect(() => runtimeFor({ ...original, components: original.components.map(c => String(c.id) === 'valve' ? { ...c, parameters: { initialPositionFraction: 0 } } : c) })).toThrow('powerLossBehavior')
     expect(() => runtimeFor({ ...original, connections: original.connections.filter(link => String(link.id) !== 'motor-feed') })).toThrow('powerLossBehavior')
+    const extra = component('otherBattery', 'battery', 'A second finite source', { nominalPowerMw: 1, dischargeTimeS: 10 })
+    expect(() => runtimeFor({ ...original, components: [...original.components, extra], connections: [...original.connections,
+      connect('merged-storage', 'otherBattery.outlet', 'inverter.dcInlet', { connectionKind: 'electricalPower' })] })).toThrow('source-sharing dispatch')
+    // This differs from ordinary AC source sharing upstream of a charger.
+    const secondAc = component('otherGrid', 'electricalGridSource', 'Independent AC source', { nominalPowerMw: 4 })
+    expect(() => runtimeFor({ ...original, components: [...original.components, secondAc], connections: [...original.connections,
+      connect('merged-ac', 'otherGrid.outlet', 'battery.chargerPower', { connectionKind: 'electricalPower' })] })).not.toThrow()
   })
   test('initial reconciliation serves loads from the charger without inventing battery discharge', () => {
     const r = runtimeFor(graph())
@@ -85,13 +92,13 @@ describe('finite DC supply and actual support dependencies', () => {
     run(r, 2.1)
     expect(read(r, 'valve.effectivePositionFraction')).toBe(1)
     write(r, 'grid.available', false)
-    run(r, 10.2)
+    run(r, 10.4)
     expect(read(r, 'battery.storedEnergyMj')).toBe(0)
     expect(r.readVariable(path('valve.motorPowerAvailable'))).toBe(false)
     expect(read(r, 'essential.servedMw')).toBe(0)
     write(r, 'valve.positionFraction', 0)
     write(r, 'valve.isolationSignal', true)
-    run(r, 3)
+    run(r, 3.2)
     expect(read(r, 'valve.demandPositionFraction')).toBe(0)
     expect(read(r, 'valve.effectivePositionFraction')).toBe(1)
     write(r, 'grid.available', true)
@@ -105,7 +112,7 @@ describe('finite DC supply and actual support dependencies', () => {
     write(r, 'valve.positionFraction', 1)
     run(r, 2.1)
     write(r, 'grid.available', false)
-    run(r, 3)
+    run(r, 3.2)
     expect(read(r, 'valve.positionFraction')).toBe(1)
     expect(read(r, 'valve.effectivePositionFraction')).toBe(0)
   })
@@ -121,6 +128,39 @@ describe('finite DC supply and actual support dependencies', () => {
     }
   })
 
+  test('last partial storage interval reports delivered load instead of losing energy at the endpoint', () => {
+    const r = runtimeFor(graph('hold', .025))
+    write(r, 'grid.available', false)
+    let deliveredMj = 0
+    for (let i = 0; i < 5; i++) {
+      const before = read(r, 'battery.storedEnergyMj')
+      r.tick(100)
+      const served = read(r, 'essential.servedMw') + read(r, 'discretionary.servedMw')
+      deliveredMj += served * .1
+      expect(before - read(r, 'battery.storedEnergyMj')).toBeCloseTo(served / .8 * .1, 12)
+    }
+    expect(deliveredMj).toBeCloseTo(.25 * .8, 12)
+    expect(read(r, 'battery.unservedLoadMw')).toBeCloseTo(1, 12)
+    expect(read(r, 'battery.storedEnergyMj')).toBe(0)
+  })
+
+  test('parallel inverter branches share one finite battery power budget under overload', () => {
+    const r = runtimeFor(plantGraph({ id: 'shared-dc', title: 'One battery, parallel consumers', fixedStepMs: 100,
+      components: [component('battery', 'battery', 'Finite source', { nominalPowerMw: 1, dischargeTimeS: 10 }),
+        ...['A', 'B'].flatMap(train => [component(`inverter${train}`, 'inverter', `Inverter ${train}`, { nominalPowerMw: 1, efficiencyFraction: .8 }), component(`load${train}`, 'electricalLoad', `Load ${train}`, { nominalLoadMw: 1 })])],
+      connections: ['A', 'B'].flatMap(train => [connect(`supply${train}`, 'battery.outlet', `inverter${train}.dcInlet`, { connectionKind: 'electricalPower' }), connect(`load-feed${train}`, `inverter${train}.acOutlet`, `load${train}.power`, { connectionKind: 'electricalPower' })]),
+    }))
+    for (let i = 0; i < 105; i++) {
+      const before = read(r, 'battery.storedEnergyMj')
+      r.tick(100)
+      const served = read(r, 'loadA.servedMw') + read(r, 'loadB.servedMw')
+      expect(served).toBeLessThanOrEqual(.8)
+      expect(before - read(r, 'battery.storedEnergyMj')).toBeCloseTo(served / .8 * .1, 11)
+    }
+    expect(read(r, 'loadA.servedMw')).toBe(0)
+    expect(read(r, 'loadB.servedMw')).toBe(0)
+  })
+
   test('current PWR preserves the total .8 MW support abstraction per train and adds actual charger/selected valve dependencies', () => {
     const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'current-dc' }))
     const r = createProcessPlantRuntime({ system })
@@ -128,6 +168,7 @@ describe('finite DC supply and actual support dependencies', () => {
       expect(read(r, `vitalBattery${train}.stateOfChargeFraction`)).toBe(1)
       expect(read(r, `vitalBattery${train}.chargerInputMw`)).toBeGreaterThan(0)
       expect(read(r, `plantControlsLoad${train}.servedMw`) + read(r, `dcNonessentialLoad${train}.servedMw`)).toBeCloseTo(.8, 12)
+      expect(read(r, `loadCentres${train}.servedMw`) + read(r, `vitalBattery${train}.chargerInputMw`)).toBeCloseTo(1.2, 12)
     }
     write(r, 'offsiteGrid.available', false)
     write(r, 'offsiteBreakerA.closed', false)
@@ -140,5 +181,30 @@ describe('finite DC supply and actual support dependencies', () => {
     run(r, 1)
     expect(read(r, 'vitalBatteryA.dischargePowerMw')).toBeCloseTo(.4 / .95, 10)
     expect(read(r, 'vitalBatteryB.dischargePowerMw')).toBeCloseTo(.8 / .95, 10)
+  })
+
+  test('a full-power PWR with standard protection retains actual turbine AFW on finite DC during a real AC blackout', () => {
+    const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'current-blackout' }))
+    const r = createProcessPlantRuntime({ system })
+    const protection = createProcessPlantProtectionRunner({ system, protection: system.automation })
+    for (const command of commandsForProcessPlantAction({ actionId: 'loss-offsite-power', parameters: {}, graph: system.graph })) write(r, command.path, command.value)
+    write(r, 'dieselGeneratorA.available', false)
+    write(r, 'dieselGeneratorB.available', false)
+    write(r, 'manualReactorTrip.pushbutton', true)
+    for (let second = 0; second < 120; second++) {
+      r.tick(1000)
+      protection.evaluate({ runtime: r, elapsedMs: r.elapsedMs(), simulationRunId: 'dc-blackout-test' as never, sourceRuntimeId: 'process-plant.local' })
+    }
+    for (const train of ['A', 'B']) {
+      expect(r.readVariable(path(`safetyBus${train}.energized`))).toBe(false)
+      expect(r.readVariable(path(`dieselGenerator${train}.running`))).toBe(false)
+      expect(r.readVariable(path(`vitalBattery${train}.chargerAvailable`))).toBe(false)
+      expect(read(r, `vitalBattery${train}.storedEnergyMj`)).toBeCloseTo(28_800 - 120 * .8 / .95, 7)
+      expect(read(r, `plantControlsLoad${train}.servedMw`)).toBe(.4)
+    }
+    expect(r.readVariable(path('auxFeedwaterPumpTurbine.runningState'))).toBe(true)
+    expect(read(r, 'auxFeedwaterPumpTurbine.flowKgPerS')).toBeGreaterThan(0)
+    expect(read(r, 'auxFeedwaterHeader.outletFlowKgPerS')).toBeGreaterThan(0)
+    expect(read(r, 'auxFeedwaterTurbineSteamValveB.effectivePositionFraction') + read(r, 'auxFeedwaterTurbineSteamValveC.effectivePositionFraction')).toBeGreaterThan(0)
   })
 })

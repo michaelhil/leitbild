@@ -12,6 +12,7 @@ import { dcSupplyStep } from '../dc-supply.ts'
 
 /** What reading a supply's state takes: link behaviors read it as component behaviors do. */
 export type ElectricalReadContext = Pick<ProcessPlantBehaviorContext, 'has' | 'readNumber' | 'readBoolean'>
+type ElectricalSolveContext = ElectricalReadContext & Pick<ProcessPlantBehaviorContext, 'dtSeconds'>
 
 /** The power a component puts out, as its own solved state reads: a breaker only while its contacts are closed. */
 export const sourcePowerForComponent = (
@@ -42,7 +43,7 @@ export const sourcePowerForComponent = (
 export const incomingElectricalPower = (
   system: CompiledProcessPlant,
   component: CompiledComponent,
-  context: ElectricalReadContext,
+  context: ElectricalSolveContext,
   port?: string,
 ): { readonly energized: boolean; readonly availablePowerMw: number; readonly voltageFraction: number } => {
   let availablePowerMw = 0
@@ -55,7 +56,11 @@ export const incomingElectricalPower = (
     if (!source) continue
     const sourcePower = sourcePowerForComponent(source, context)
     if (!sourcePower.energized) continue
-    availablePowerMw += sourcePower.availablePowerMw
+    const totalDemand = storageBackedSupply(system, source) ? outgoingLoadDemand(system, source, context) : 0
+    const branchDemand = totalDemand > 0 ? demandOnElectricalLink(system, link, context) : 0
+    // Finite storage supplies share one actual power budget between their
+    // branches. Idle control-supply terminals retain voltage but draw no power.
+    availablePowerMw += branchDemand > 0 ? sourcePower.availablePowerMw * branchDemand / totalDemand : sourcePower.availablePowerMw
     voltageFraction = Math.max(voltageFraction, sourcePower.voltageFraction)
   }
   return {
@@ -89,54 +94,57 @@ export const componentHasElectricalPower = (
   port?: string,
 ): boolean => {
   if (!hasIncomingElectricalPowerPort(system, component, port)) return true
-  const incoming = incomingElectricalPower(system, component, context, port)
-  return incoming.energized && incoming.voltageFraction >= 0.7
+  return (system.graph.incomingLinksByComponent[component.index] ?? []).some(index => {
+    const link = system.graph.links[index]!
+    if (link.kind !== 'electricalPower' || (port !== undefined && String(link.toPortName) !== port)) return false
+    const supply = sourcePowerForComponent(system.graph.components[link.fromComponentIndex]!, context)
+    return supply.energized && supply.availablePowerMw > 0 && supply.voltageFraction >= .7
+  })
+}
+
+const storageBacked = new WeakMap<CompiledComponent, boolean>()
+const storageBackedSupply = (system: CompiledProcessPlant, component: CompiledComponent): boolean => {
+  const retained = storageBacked.get(component)
+  if (retained !== undefined) return retained
+  const result = component.kind === 'battery' || (system.graph.incomingLinksByComponent[component.index] ?? []).some(index => {
+    const link = system.graph.links[index]!
+    return link.kind === 'electricalPower' && storageBackedSupply(system, system.graph.components[link.fromComponentIndex]!)
+  })
+  storageBacked.set(component, result)
+  return result
+}
+
+const demandOnElectricalLink = (system: CompiledProcessPlant, link: CompiledProcessPlant['graph']['links'][number], context: ElectricalSolveContext): number => {
+  const target = system.graph.components[link.toComponentIndex]!
+  if (target.kind === 'electricalLoad') return context.readBoolean(componentVariablePath(target, 'connected')) ? parameterNumber(target, 'nominalLoadMw') : 0
+  if (target.kind === 'electricalBreaker') return context.readBoolean(componentVariablePath(target, 'closedState')) ? outgoingLoadDemand(system, target, context) : 0
+  if (target.kind === 'inverter' || target.kind === 'electricalTransformer' || target.kind === 'electricalBus') {
+    const efficiency = target.kind === 'inverter' ? optionalParameterNumber(target, 'efficiencyFraction', .95)
+      : target.kind === 'electricalTransformer' ? optionalParameterNumber(target, 'efficiencyFraction', .99) : 1
+    return Math.min(parameterNumber(target, 'nominalPowerMw'), outgoingLoadDemand(system, target, context)) / efficiency
+  }
+  if (target.kind === 'battery' && String(link.toPortName) === 'chargerPower') {
+    const charger = chargerOf(target)
+    if (charger === undefined || !context.readBoolean(componentVariablePath(target, 'chargerEnabled'))) return 0
+    const charge = context.readNumber(componentVariablePath(target, 'stateOfChargeFraction'))
+    const capacity = parameterNumber(target, 'nominalPowerMw') * parameterNumber(target, 'dischargeTimeS')
+    const headroomMw = context.dtSeconds > 0 ? (1 - charge) * capacity / (context.dtSeconds * charger.chargeEfficiencyFraction) : charge < 1 ? charger.nominalPowerMw : 0
+    return Math.min(charger.nominalPowerMw, outgoingLoadDemand(system, target, context) + headroomMw) / charger.efficiencyFraction
+  }
+  const drawn = target.ports[String(link.toPortName)]?.demand
+  return drawn === undefined ? 0 : context.readNumber(componentVariablePath(target, drawn))
 }
 
 const outgoingLoadDemand = (
   system: CompiledProcessPlant,
   component: CompiledComponent,
-  context: ProcessPlantBehaviorContext,
+  context: ElectricalSolveContext,
 ): number => {
   let demand = 0
   for (const linkIndex of system.graph.outgoingLinksByComponent[component.index] ?? []) {
     const link = system.graph.links[linkIndex]
     if (!link || link.kind !== 'electricalPower') continue
-    const target = system.graph.components[link.toComponentIndex]
-    if (!target) continue
-    if (target.kind === 'electricalLoad') {
-      if (context.readBoolean(componentVariablePath(target, 'connected'))) demand += parameterNumber(target, 'nominalLoadMw')
-      continue
-    }
-    // A closed breaker passes on what is drawn beyond it, so a bus carries the loads it feeds through their own
-    // breakers (a pressurizer's backup heaters); an open one carries none.
-    if (target.kind === 'electricalBreaker') {
-      if (context.readBoolean(componentVariablePath(target, 'closedState'))) demand += outgoingLoadDemand(system, target, context)
-      continue
-    }
-    // Supply graph compilation rejects directed cycles. Follow actual loads
-    // through passive distribution and conversion rather than treating an
-    // inverter as a free-energy endpoint. Losses belong to its input demand.
-    if (target.kind === 'inverter' || target.kind === 'electricalTransformer' || target.kind === 'electricalBus') {
-      const efficiency = target.kind === 'inverter' ? optionalParameterNumber(target, 'efficiencyFraction', .95)
-        : target.kind === 'electricalTransformer' ? optionalParameterNumber(target, 'efficiencyFraction', .99) : 1
-      demand += Math.min(parameterNumber(target, 'nominalPowerMw'), outgoingLoadDemand(system, target, context)) / efficiency
-      continue
-    }
-    if (target.kind === 'battery' && String(link.toPortName) === 'chargerPower') {
-      const charger = chargerOf(target)
-      if (charger !== undefined && context.readBoolean(componentVariablePath(target, 'chargerEnabled'))) {
-        const charge = context.readNumber(componentVariablePath(target, 'stateOfChargeFraction'))
-        const capacity = parameterNumber(target, 'nominalPowerMw') * parameterNumber(target, 'dischargeTimeS')
-        const headroomMw = context.dtSeconds > 0 ? (1 - charge) * capacity / (context.dtSeconds * charger.chargeEfficiencyFraction) : charge < 1 ? charger.nominalPowerMw : 0
-        demand += Math.min(charger.nominalPowerMw, outgoingLoadDemand(system, target, context) + headroomMw) / charger.efficiencyFraction
-      }
-      continue
-    }
-    // What the target draws through the port this line feeds: a pressurizer's heater load is its heater bus's, not the
-    // bus that feeds its block valve's motor.
-    const drawn = target.ports[String(link.toPortName)]?.demand
-    if (drawn !== undefined) demand += context.readNumber(componentVariablePath(target, drawn))
+    demand += demandOnElectricalLink(system, link, context)
   }
   return demand
 }
