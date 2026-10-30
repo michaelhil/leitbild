@@ -1,10 +1,10 @@
 {
   "id": "halden-station-blackout",
   "title": "Halden: station blackout and vital DC",
-  "description": "A bounded station-blackout exercise on the fictional current four-loop PWR. Unit 2 starts at its standard full-power operating point. At +10 seconds the offsite supply is lost and both emergency diesels fail to start. The ordinary protection and turbine-driven auxiliary feedwater systems must respond. Run the model-scoped ECA-0.0 task to verify actual cooling delivery, shed discretionary UPS loads and inspect finite battery support. A battery storage isolator can demonstrate why an energized charger during normal AC does not prove backup storage is connected. This exercise does not qualify full station-blackout endurance, FLEX recovery or real-plant operation.",
+  "description": "A bounded station-blackout exercise on the fictional current four-loop PWR. Unit 2 starts at its standard full-power operating point. At +10 seconds the offsite supply is lost and both emergency diesels fail to start. The ordinary protection and turbine-driven auxiliary feedwater systems must respond. Run the model-scoped ECA-0.0 task to verify actual feedwater delivery, shed discretionary UPS loads and inspect finite battery support. A battery storage isolator can demonstrate why an energized charger during normal AC does not prove backup storage is connected. This exercise does not qualify full station-blackout endurance, FLEX recovery or real-plant operation.",
   "objectives": [
     "Advance past the loss of AC power and inspect actual bus, reactor-trip, turbine-driven AFW and battery feedback.",
-    "Ask the Assistant to run ECA-0.0 on Unit 2. Follow achieved cooling and actual load-shedding evidence, then assign the next continuing duty.",
+    "Ask the Assistant to run ECA-0.0 on Unit 2. Follow actual feedwater delivery and load-shedding evidence, then assign the next continuing duty.",
     "Compare an isolated storage battery, a closed motive-steam path and actual restoration of an available AC source with the normal response."
   ],
   "world": {
