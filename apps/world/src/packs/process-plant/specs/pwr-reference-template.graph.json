@@ -3773,9 +3773,17 @@
         },
         {
           "path": "mixedPressureMPa",
-          "tagId": "RHR-A-SUCTION-PRESSURE",
           "equipmentId": "rhrSuctionHeaderA",
-          "description": "RHR A Suction Header pressure"
+          "description": "Static reduced header pressure state; not a solved suction pressure or a qualified plant instrument.",
+          "capabilities": {
+            "readable": false,
+            "writable": false,
+            "trendable": false,
+            "alarmable": false,
+            "operatorFacing": false,
+            "aiVisible": false,
+            "procedureRelevant": false
+          }
         },
         {
           "path": "mixedTemperatureC",
@@ -3789,7 +3797,6 @@
           "shortLabel": "RHR A suction",
           "shortNames": {
             "outletFlowKgPerS": "RHR A suction flow",
-            "mixedPressureMPa": "RHR A suction pressure",
             "mixedTemperatureC": "RHR A suction temp"
           }
         }
@@ -3814,9 +3821,17 @@
         },
         {
           "path": "mixedPressureMPa",
-          "tagId": "RHR-A-DISCHARGE-PRESSURE",
           "equipmentId": "rhrDischargeHeaderA",
-          "description": "RHR A Cooled Discharge Header pressure"
+          "description": "Static reduced header pressure state; not a solved suction pressure or a qualified plant instrument.",
+          "capabilities": {
+            "readable": false,
+            "writable": false,
+            "trendable": false,
+            "alarmable": false,
+            "operatorFacing": false,
+            "aiVisible": false,
+            "procedureRelevant": false
+          }
         },
         {
           "path": "mixedTemperatureC",
@@ -3830,7 +3845,6 @@
           "shortLabel": "RHR A discharge",
           "shortNames": {
             "outletFlowKgPerS": "RHR A discharge flow",
-            "mixedPressureMPa": "RHR A discharge pressure",
             "mixedTemperatureC": "RHR A discharge temp"
           }
         }
@@ -3945,9 +3959,17 @@
         },
         {
           "path": "mixedPressureMPa",
-          "tagId": "SI-A-SUCTION-PRESSURE",
           "equipmentId": "siSuctionHeaderA",
-          "description": "High-Head SI A Suction Header pressure"
+          "description": "Static reduced header pressure state; not a solved suction pressure or a qualified plant instrument.",
+          "capabilities": {
+            "readable": false,
+            "writable": false,
+            "trendable": false,
+            "alarmable": false,
+            "operatorFacing": false,
+            "aiVisible": false,
+            "procedureRelevant": false
+          }
         },
         {
           "path": "mixedTemperatureC",
@@ -3961,7 +3983,6 @@
           "shortLabel": "SI A suction",
           "shortNames": {
             "outletFlowKgPerS": "SI A suction flow",
-            "mixedPressureMPa": "SI A suction pressure",
             "mixedTemperatureC": "SI A suction temp"
           }
         }
@@ -4046,9 +4067,17 @@
         },
         {
           "path": "mixedPressureMPa",
-          "tagId": "RHR-B-SUCTION-PRESSURE",
           "equipmentId": "rhrSuctionHeaderB",
-          "description": "RHR B Suction Header pressure"
+          "description": "Static reduced header pressure state; not a solved suction pressure or a qualified plant instrument.",
+          "capabilities": {
+            "readable": false,
+            "writable": false,
+            "trendable": false,
+            "alarmable": false,
+            "operatorFacing": false,
+            "aiVisible": false,
+            "procedureRelevant": false
+          }
         },
         {
           "path": "mixedTemperatureC",
@@ -4062,7 +4091,6 @@
           "shortLabel": "RHR B suction",
           "shortNames": {
             "outletFlowKgPerS": "RHR B suction flow",
-            "mixedPressureMPa": "RHR B suction pressure",
             "mixedTemperatureC": "RHR B suction temp"
           }
         }
@@ -4087,9 +4115,17 @@
         },
         {
           "path": "mixedPressureMPa",
-          "tagId": "RHR-B-DISCHARGE-PRESSURE",
           "equipmentId": "rhrDischargeHeaderB",
-          "description": "RHR B Cooled Discharge Header pressure"
+          "description": "Static reduced header pressure state; not a solved suction pressure or a qualified plant instrument.",
+          "capabilities": {
+            "readable": false,
+            "writable": false,
+            "trendable": false,
+            "alarmable": false,
+            "operatorFacing": false,
+            "aiVisible": false,
+            "procedureRelevant": false
+          }
         },
         {
           "path": "mixedTemperatureC",
@@ -4103,7 +4139,6 @@
           "shortLabel": "RHR B discharge",
           "shortNames": {
             "outletFlowKgPerS": "RHR B discharge flow",
-            "mixedPressureMPa": "RHR B discharge pressure",
             "mixedTemperatureC": "RHR B discharge temp"
           }
         }
@@ -4218,9 +4253,17 @@
         },
         {
           "path": "mixedPressureMPa",
-          "tagId": "SI-B-SUCTION-PRESSURE",
           "equipmentId": "siSuctionHeaderB",
-          "description": "High-Head SI B Suction Header pressure"
+          "description": "Static reduced header pressure state; not a solved suction pressure or a qualified plant instrument.",
+          "capabilities": {
+            "readable": false,
+            "writable": false,
+            "trendable": false,
+            "alarmable": false,
+            "operatorFacing": false,
+            "aiVisible": false,
+            "procedureRelevant": false
+          }
         },
         {
           "path": "mixedTemperatureC",
@@ -4234,7 +4277,6 @@
           "shortLabel": "SI B suction",
           "shortNames": {
             "outletFlowKgPerS": "SI B suction flow",
-            "mixedPressureMPa": "SI B suction pressure",
             "mixedTemperatureC": "SI B suction temp"
           }
         }
@@ -17999,10 +18041,8 @@
     "rhrSumpSuctionValveA.positionFraction",
     "rhrSumpSuctionValveA.effectivePositionFraction",
     "rhrSuctionHeaderA.outletFlowKgPerS",
-    "rhrSuctionHeaderA.mixedPressureMPa",
     "rhrSuctionHeaderA.mixedTemperatureC",
     "rhrDischargeHeaderA.outletFlowKgPerS",
-    "rhrDischargeHeaderA.mixedPressureMPa",
     "rhrDischargeHeaderA.mixedTemperatureC",
     "rhrInjectionValveA.positionFraction",
     "rhrInjectionValveA.effectivePositionFraction",
@@ -18011,7 +18051,6 @@
     "siRwstSuctionValveA.positionFraction",
     "siRwstSuctionValveA.effectivePositionFraction",
     "siSuctionHeaderA.outletFlowKgPerS",
-    "siSuctionHeaderA.mixedPressureMPa",
     "siSuctionHeaderA.mixedTemperatureC",
     "rwst-to-rhr-rwst-suction-valve-a.flowKgPerS",
     "rwst-to-rhr-rwst-suction-valve-a.temperatureC",
@@ -18057,10 +18096,8 @@
     "rhrSumpSuctionValveB.positionFraction",
     "rhrSumpSuctionValveB.effectivePositionFraction",
     "rhrSuctionHeaderB.outletFlowKgPerS",
-    "rhrSuctionHeaderB.mixedPressureMPa",
     "rhrSuctionHeaderB.mixedTemperatureC",
     "rhrDischargeHeaderB.outletFlowKgPerS",
-    "rhrDischargeHeaderB.mixedPressureMPa",
     "rhrDischargeHeaderB.mixedTemperatureC",
     "rhrInjectionValveB.positionFraction",
     "rhrInjectionValveB.effectivePositionFraction",
@@ -18069,7 +18106,6 @@
     "siRwstSuctionValveB.positionFraction",
     "siRwstSuctionValveB.effectivePositionFraction",
     "siSuctionHeaderB.outletFlowKgPerS",
-    "siSuctionHeaderB.mixedPressureMPa",
     "siSuctionHeaderB.mixedTemperatureC",
     "rwst-to-rhr-rwst-suction-valve-b.flowKgPerS",
     "rwst-to-rhr-rwst-suction-valve-b.temperatureC",

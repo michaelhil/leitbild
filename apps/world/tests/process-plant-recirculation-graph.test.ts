@@ -90,6 +90,11 @@ test('source-specific flow tags are read-only native quantities and every observ
       expect(signal).toMatchObject({ tagId: tag, unit: 'kg/s', quantity: 'flowRate', published: true, writable: false })
       expect(declaration.observables.find(observable => observable.ref === `${plant.id}#${edge}.flowKgPerS`)).toMatchObject({ unit: 'kg/s', valueType: 'number' })
     }
+    for (const header of ['rhrSuctionHeader', 'rhrDischargeHeader', 'siSuctionHeader']) {
+      const pressure = `${header}${train}.mixedPressureMPa`
+      expect(plant.graph.signalBindingByPath.get(pressure as never)).toMatchObject({ capabilities: { readable: false, operatorFacing: false, aiVisible: false, procedureRelevant: false }, published: false })
+      expect(declaration.observables.some(observable => observable.ref === `${plant.id}#${pressure}`)).toBe(false)
+    }
   }
   expect(plant.graph.signalBindings.some(signal => ['LO-HEAD-FLOW', 'RHR-ISOL', 'RHR-ISOL-POS'].includes(signal.tagId ?? ''))).toBe(false)
   for (const id of ['vessel-release-to-containment', 'rwst-to-containment-spray-pump-a', 'rwst-to-containment-spray-pump-b', 'containment-spray-pump-a-to-header', 'containment-spray-pump-b-to-header', 'containment-spray-header-to-containment']) {
