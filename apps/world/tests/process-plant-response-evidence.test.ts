@@ -45,7 +45,7 @@ describe('explicitly sampled Plant response', () => {
     const response = evaluateProcessPlantResponse(config())
     expect(response.status).toBe('satisfied')
     expect(response.interpretation).toContain('no uninterrupted hold')
-    expect(response.evidence[0]).toMatchObject({ storedSampleCount: 3, sampleTimes: [at(0), at(60), at(120)], maximumGapMs: 60_000,
+    expect(response.recordings[0]).toMatchObject({ storedSampleCount: 3, sampleTimes: [at(0), at(60), at(120)], maximumGapMs: 60_000,
       minimum: value, maximum: value, change: 0, elapsedSeconds: 120, endpointRatePerSecond: 0, recordingRelativeDeadband: 1e-5,
       first: { simulationTime: at(0), elapsedMs: 0, value }, current: { simulationTime: at(120), elapsedMs: 120_000, value } })
     expect(response.current.status).toBe('satisfied')
@@ -58,7 +58,8 @@ describe('explicitly sampled Plant response', () => {
     const changed = { ...input, comparisons: [{ ...input.comparisons[0]!, statistic: 'change' as const, operator: '>' as const, value: 0 }] }
     const response = evaluateProcessPlantResponse({ ...config([sample(0, value - 1), sample(60), sample(120)]), input: changed })
     expect(response.status).toBe('satisfied')
-    expect(response.evidence[0]).toMatchObject({ actual: 1, change: 1, endpointRatePerSecond: 1 / 120 })
+    expect(response.evidence[0]).toMatchObject({ actual: 1 })
+    expect(response.recordings[0]).toMatchObject({ change: 1, endpointRatePerSecond: 1 / 120 })
   })
 
   test('a fresh paused sample does not accumulate duration or make a missing recording into evidence', () => {
@@ -74,7 +75,7 @@ describe('explicitly sampled Plant response', () => {
     const rows = [{ ...sample(0), simulationTime: at(0.011) }, { ...sample(60), simulationTime: at(60.057) }, { ...sample(120), simulationTime: at(120.043) }]
     const response = evaluateProcessPlantResponse({ ...config(rows), plant: partial, simulationTime: at(120.043) })
     expect(response.status).toBe('satisfied')
-    expect(response.evidence[0]).toMatchObject({ integratedSpanSeconds: 120, first: { simulationTime: at(0.011) }, current: { simulationTime: at(120.043), elapsedMs: 120_000 } })
+    expect(response.recordings[0]).toMatchObject({ integratedSpanSeconds: 120, first: { simulationTime: at(0.011) }, current: { simulationTime: at(120.043), elapsedMs: 120_000 } })
     const bad = rows.map(row => ({ ...row, simulationTime: at((row.elapsedMs! + compiled.graph.timestep.fixedStepMs + 1000) / 1000) }))
     expect(evaluateProcessPlantResponse({ ...config(bad), plant: partial, simulationTime: at(120.043) }).status).toBe('unknown')
   })
@@ -84,7 +85,7 @@ describe('explicitly sampled Plant response', () => {
     expect(evaluateProcessPlantResponse(config([sample(0), sample(120)]))).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('unresolved response gap') }] })
     const retainedBefore = evaluateProcessPlantResponse({ ...config([sample(0), sample(60), sample(120)]), input: { ...input, windowSeconds: 100 } })
     expect(retainedBefore.status).toBe('satisfied')
-    expect(retainedBefore.evidence[0]).toMatchObject({ requestedFrom: at(20), first: { simulationTime: at(0) }, elapsedSeconds: 120 })
+    expect(retainedBefore.recordings[0]).toMatchObject({ requestedFrom: at(20), first: { simulationTime: at(0) }, elapsedSeconds: 120 })
   })
 
   test('bad quality, mixed runtime identity, wrong series, reversed time and foreign elapsed epoch are not a sampled trajectory', () => {
@@ -113,7 +114,9 @@ describe('explicitly sampled Plant response', () => {
     expect(evaluateProcessPlantResponse({ ...config(beforeActionOnly), plant: { ...plant, operations }, input: anchored })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('left boundary') }] })
     const afterAction = evaluateProcessPlantResponse({ ...config([sample(0, value - 1), sample(60, value - 0.25), sample(120)]), plant: { ...plant, operations }, input: anchored })
     expect(afterAction.status).toBe('satisfied')
-    expect(afterAction.evidence[0]).toMatchObject({ first: { simulationTime: at(60) }, notBeforeSimulationTime: at(30), actual: 0.25, afterOperations: [{ receipt: { commandId: receipt.commandId, origin: 'person' } }] })
+    expect(afterAction.evidence[0]).toMatchObject({ actual: 0.25 })
+    expect(afterAction.recordings[0]).toMatchObject({ first: { simulationTime: at(60) }, notBeforeSimulationTime: at(30) })
+    expect(afterAction.afterOperations).toMatchObject([{ receipt: { commandId: receipt.commandId, origin: 'person' } }])
     expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations }, input: { ...anchored, windowSeconds: 120 } })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('after all required') })
   })
 
@@ -147,6 +150,19 @@ describe('explicitly sampled Plant response', () => {
     expect(capability.output.parse(evaluateProcessPlantResponse(config([sample(60)])))).toMatchObject({ status: 'unknown' })
   })
 
+  test('many authored comparisons share one retained signal window without a comparison quota or repeated sample payload', () => {
+    let reads = 0
+    const repeated = processPlantResponseQuerySchema.parse({ ...input, comparisons: Array.from({ length: 300 }, () => input.comparisons[0]!) })
+    const response = evaluateProcessPlantResponse({ ...config(), input: repeated, recordedHistory: { read: () => { reads++; return [sample(0), sample(60), sample(120)] } } })
+    expect(response.status).toBe('satisfied')
+    expect(response.evidence).toHaveLength(300)
+    expect(response.recordings).toHaveLength(1)
+    expect(reads).toBe(1)
+    const expanded = { ...response, recordings: undefined, afterOperations: undefined,
+      evidence: response.evidence.map(row => ({ ...response.recordings[Number(row.recordingIndex)], ...row, afterOperations: response.afterOperations })) }
+    expect(JSON.stringify(response).length).toBeLessThan(JSON.stringify(expanded).length)
+  })
+
   test('actual operations-profile samples survive historian restoration and remain explicitly sampled', () => {
     const live = instance()
     const history = createRunHistorian(':memory:')
@@ -162,7 +178,7 @@ describe('explicitly sampled Plant response', () => {
       const restored = { ...live, runtime: restoredRuntime }
       const response = evaluateProcessPlantResponse({ ...config(), plant: restored, recordedSeriesIds: new Set(history.listSeries().map(series => series.id)), recordedHistory: recordedHistoryOf(history, processPlantSimRuntimeId) })
       expect(response.status).toBe('satisfied')
-      expect(response.evidence[0]).toMatchObject({ first: { simulationTime: at(0) }, current: { simulationTime: at(120) } })
+      expect(response.recordings[0]).toMatchObject({ first: { simulationTime: at(0) }, current: { simulationTime: at(120) } })
       expect(restoredRuntime.checkpoint()).toEqual(checkpoint)
     } finally { history.close() }
   })

@@ -179,6 +179,7 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     simTimeMs: z.number().nonnegative(), simulationTime: z.string().optional(),
     evidenceKind: z.literal('engineering-diagnostic'), provenance: z.literal('runtime-model'),
     basis: recordSchema, automaticCsfQualified: z.literal(false), interpretation: z.string(), current: recordSchema, evidence: recordArraySchema,
+    recordings: recordArraySchema, afterOperations: recordArraySchema,
   }).strict(),
   'world.process-plant.assessments.evaluate': z.object({ plantId: plantIdSchema, assessments: recordArraySchema }).strict(),
   'world.process-plant.control.validate': z.object({

@@ -51,7 +51,9 @@ export const evaluateProcessPlantResponse = (config: {
     interpretation: 'Stored-sample envelope and endpoint change only; no uninterrupted hold, instrument qualification, future capacity or recovery claim.' }
   const current = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }) })
   const evidence: Array<Record<string, unknown>> = []
-  const failure = (reason: string) => ({ ...identity, status: 'unknown' as const, reason, current, evidence })
+  const recordings: Array<Record<string, unknown>> = []
+  const anchors: Array<Record<string, unknown>> = []
+  const failure = (reason: string) => ({ ...identity, status: 'unknown' as const, reason, current, evidence, recordings, afterOperations: anchors })
   if (input.targetObjectId !== plant.plant.id) return failure('Response target does not match the answering Plant.')
   if (input.basis.modelRef !== plant.plant.modelRef || input.basis.modelDigest !== plant.plant.modelDigest) return failure('Response basis does not match the current Plant model and digest.')
   const now = config.simulationTime === undefined ? Number.NaN : Date.parse(config.simulationTime)
@@ -65,7 +67,6 @@ export const evaluateProcessPlantResponse = (config: {
   const limit = Math.ceil((durationMs + recordedHoldMs + interval) / interval) + 2
   if (!Number.isSafeInteger(Math.ceil(durationMs)) || !Number.isSafeInteger(limit) || !Number.isFinite(new Date(fromMs).getTime())) return failure('The requested response window cannot be represented in simulation time.')
   if (durationMs > plant.runtime.elapsedMs()) return failure('The Plant has not accumulated the requested elapsed simulation-time response window.')
-  const anchors: Array<Record<string, unknown>> = []
   let notBeforeElapsedMs = 0
   for (const anchor of input.afterOperations ?? []) {
     const binding = readableProcessPlantSignalBinding(plant.plant.graph, anchor.signal)
@@ -83,7 +84,7 @@ export const evaluateProcessPlantResponse = (config: {
   const fixedStepMs = plant.plant.graph.timestep.fixedStepMs
   const from = new Date(fromMs).toISOString() as IsoTimestamp
   const to = config.simulationTime!
-  const summaries = new Map<string, { readonly status: Status; readonly summary: Record<string, unknown>; readonly minimum: number | undefined; readonly maximum: number | undefined; readonly change: number | undefined }>()
+  const summaries = new Map<string, { readonly status: Status; readonly recordingIndex: number; readonly reason: string | undefined; readonly minimum: number | undefined; readonly maximum: number | undefined; readonly change: number | undefined }>()
   for (const comparison of input.comparisons) {
     // This resolver also rejects hidden injected-fault truth, rather than
     // converting a privileged fault knob into procedure evidence.
@@ -143,7 +144,7 @@ export const evaluateProcessPlantResponse = (config: {
       const elapsedSeconds = first?.simulationTime === undefined ? undefined : (now - Date.parse(first.simulationTime)) / 1000
       const integratedSpanSeconds = first?.elapsedMs === undefined ? undefined : (plant.runtime.elapsedMs() - first.elapsedMs) / 1000
       if (reason === undefined && (integratedSpanSeconds === undefined || integratedSpanSeconds < input.windowSeconds)) reason = 'The retained samples do not cover the required integrated physical response duration.'
-      const summary = { ...base, ...(input.afterOperations === undefined ? {} : { afterOperations: anchors, notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
+      const summary = { ...base, ...(input.afterOperations === undefined ? {} : { notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
         status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
         storedSampleCount: selected.length, sampleTimes: selected.flatMap(sample => sample.simulationTime ?? []), maximumGapMs,
         ...(first === undefined ? {} : { first: { ...(first.simulationTime === undefined ? {} : { simulationTime: first.simulationTime }), ...(first.elapsedMs === undefined ? {} : { elapsedMs: first.elapsedMs }), value: first.value } }),
@@ -151,14 +152,15 @@ export const evaluateProcessPlantResponse = (config: {
         ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(change === undefined ? {} : { change }),
         ...(integratedSpanSeconds === undefined ? {} : { integratedSpanSeconds }),
         ...(elapsedSeconds === undefined ? {} : { elapsedSeconds, ...(elapsedSeconds > 0 && change !== undefined ? { endpointRatePerSecond: change / elapsedSeconds } : {}) }) }
-      cached = { status: reason === undefined ? 'satisfied' : 'unknown', summary, minimum, maximum, change }
+      cached = { status: reason === undefined ? 'satisfied' : 'unknown', recordingIndex: recordings.length, reason, minimum, maximum, change }
+      recordings.push(summary)
       summaries.set(key, cached)
     }
     const actual = cached[comparison.statistic]
-    const reason = binding.unit !== comparison.unit ? `Response unit ${comparison.unit} does not match the native signal unit ${binding.unit}.` : undefined
+    const reason = binding.unit !== comparison.unit ? `Response unit ${comparison.unit} does not match the native signal unit ${binding.unit}.` : cached.reason
     const status: Status = reason !== undefined || cached.status === 'unknown' || actual === undefined ? 'unknown' : compare(actual, comparison.operator, comparison.value) ? 'satisfied' : 'challenged'
-    evidence.push({ ...cached.summary, comparison, ...(actual === undefined ? {} : { actual }), status, ...(reason === undefined ? {} : { reason }) })
+    evidence.push({ recordingIndex: cached.recordingIndex, comparison, ...(actual === undefined ? {} : { actual }), status, ...(reason === undefined ? {} : { reason }) })
   }
   const status = combine([current.status, ...evidence.map(row => row.status as Status)])
-  return { ...identity, status, ...(status === 'unknown' ? { reason: 'The current prerequisites or explicitly sampled response cannot be established from the retained evidence.' } : {}), current, evidence }
+  return { ...identity, status, ...(status === 'unknown' ? { reason: 'The current prerequisites or explicitly sampled response cannot be established from the retained evidence.' } : {}), current, evidence, recordings, afterOperations: anchors }
 }
