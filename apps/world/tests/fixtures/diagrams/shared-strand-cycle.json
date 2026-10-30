@@ -1,0 +1,2282 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "core",
+        "rank": "hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core",
+        "role": "common",
+        "cells": {
+          "width": 2,
+          "height": 4
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 32,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 111,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 111,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 126,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 72,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 60,
+              "height": 24,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ends": {
+          "top": 48,
+          "bottom": 24
+        },
+        "ports": [
+          {
+            "id": "coldLegA",
+            "direction": "in",
+            "rank": "coldLegA"
+          },
+          {
+            "id": "coldLegB",
+            "direction": "in",
+            "rank": "coldLegB"
+          },
+          {
+            "id": "coldLegC",
+            "direction": "in",
+            "rank": "coldLegC"
+          },
+          {
+            "id": "coldLegD",
+            "direction": "in",
+            "rank": "coldLegD"
+          },
+          {
+            "id": "hotLegA",
+            "direction": "out",
+            "rank": "hotLegA"
+          },
+          {
+            "id": "hotLegB",
+            "direction": "out",
+            "rank": "hotLegB"
+          },
+          {
+            "id": "hotLegC",
+            "direction": "out",
+            "rank": "hotLegC"
+          },
+          {
+            "id": "hotLegD",
+            "direction": "out",
+            "rank": "hotLegD"
+          }
+        ]
+      },
+      {
+        "id": "pressurizer",
+        "rank": "device|pressurizer|pressurizer|pressure-control|surgeLine|PZR",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 4
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 27,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 88,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 99,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 60,
+              "height": 24,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "surgeLine",
+            "direction": "both",
+            "rank": "surgeLine"
+          }
+        ]
+      },
+      {
+        "id": "sgA",
+        "rank": "device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG A",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 31,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 99,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 88,
+              "height": 20,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "primaryInlet",
+            "direction": "in",
+            "rank": "primaryInlet"
+          },
+          {
+            "id": "primaryOutlet",
+            "direction": "out",
+            "rank": "primaryOutlet"
+          }
+        ],
+        "partition": {
+          "key": "A",
+          "order": 0
+        }
+      },
+      {
+        "id": "sgB",
+        "rank": "device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG B",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 31,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 99,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 88,
+              "height": 20,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "primaryInlet",
+            "direction": "in",
+            "rank": "primaryInlet"
+          },
+          {
+            "id": "primaryOutlet",
+            "direction": "out",
+            "rank": "primaryOutlet"
+          }
+        ],
+        "partition": {
+          "key": "B",
+          "order": 1
+        }
+      },
+      {
+        "id": "sgC",
+        "rank": "device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG C",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 31,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 99,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 88,
+              "height": 20,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "primaryInlet",
+            "direction": "in",
+            "rank": "primaryInlet"
+          },
+          {
+            "id": "primaryOutlet",
+            "direction": "out",
+            "rank": "primaryOutlet"
+          }
+        ],
+        "partition": {
+          "key": "C",
+          "order": 2
+        }
+      },
+      {
+        "id": "sgD",
+        "rank": "device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG D",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 32,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 99,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 88,
+              "height": 20,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "primaryInlet",
+            "direction": "in",
+            "rank": "primaryInlet"
+          },
+          {
+            "id": "primaryOutlet",
+            "direction": "out",
+            "rank": "primaryOutlet"
+          }
+        ],
+        "partition": {
+          "key": "D",
+          "order": 3
+        }
+      },
+      {
+        "id": "rcpA",
+        "rank": "device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP A",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "A",
+          "order": 0
+        }
+      },
+      {
+        "id": "rcpB",
+        "rank": "device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP B",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "B",
+          "order": 1
+        }
+      },
+      {
+        "id": "rcpC",
+        "rank": "device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP C",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 38,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "C",
+          "order": 2
+        }
+      },
+      {
+        "id": "rcpD",
+        "rank": "device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP D",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 40,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "D",
+          "order": 3
+        }
+      },
+      {
+        "id": "volumeControlTank",
+        "rank": "device|processTank|||outlet|VCT",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 4
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 27,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "boricAcidTank",
+        "rank": "device|processTank|||outlet|BAT",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 4
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 28,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 99,
+              "height": 20,
+              "required": false
+            },
+            {
+              "width": 60,
+              "height": 24,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "chargingPump",
+        "rank": "device|centrifugalPump|||inlet,outlet|CHG A",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 41,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "chargingPumpB",
+        "rank": "device|centrifugalPump|||inlet,outlet|CHG B",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 41,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "boricAcidInjectionValve",
+        "rank": "device|processValve|||inlet,outlet|BA valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 56,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 81,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "safetyInjectionPumpA",
+        "rank": "device|centrifugalPump|||inlet,outlet|HHSI A",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 46,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "safetyInjectionPumpB",
+        "rank": "device|centrifugalPump|||inlet,outlet|HHSI B",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 45,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 76,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "safetyInjectionHeader",
+        "rank": "bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header",
+        "role": "bar",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 61,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inletA",
+            "direction": "in",
+            "rank": "inletA"
+          },
+          {
+            "id": "inletB",
+            "direction": "in",
+            "rank": "inletB"
+          },
+          {
+            "id": "outletA",
+            "direction": "out",
+            "rank": "outletA"
+          },
+          {
+            "id": "outletB",
+            "direction": "out",
+            "rank": "outletB"
+          },
+          {
+            "id": "outletC",
+            "direction": "out",
+            "rank": "outletC"
+          },
+          {
+            "id": "outletD",
+            "direction": "out",
+            "rank": "outletD"
+          }
+        ]
+      },
+      {
+        "id": "rhrDischargeHeaderA",
+        "rank": "bar|processHeader|||inletA,outletA,outletB|RHR A discharge",
+        "role": "bar",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 103,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inletA",
+            "direction": "in",
+            "rank": "inletA"
+          },
+          {
+            "id": "outletA",
+            "direction": "out",
+            "rank": "outletA"
+          },
+          {
+            "id": "outletB",
+            "direction": "out",
+            "rank": "outletB"
+          }
+        ]
+      },
+      {
+        "id": "rhrInjectionValveA",
+        "rank": "device|processValve|||inlet,outlet|RHR A injection iso",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 117,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 81,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "rhrDischargeHeaderB",
+        "rank": "bar|processHeader|||inletA,outletA,outletB|RHR B discharge",
+        "role": "bar",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 102,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inletA",
+            "direction": "in",
+            "rank": "inletA"
+          },
+          {
+            "id": "outletA",
+            "direction": "out",
+            "rank": "outletA"
+          },
+          {
+            "id": "outletB",
+            "direction": "out",
+            "rank": "outletB"
+          }
+        ]
+      },
+      {
+        "id": "rhrInjectionValveB",
+        "rank": "device|processValve|||inlet,outlet|RHR B injection iso",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 117,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 81,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "inlet",
+            "direction": "in",
+            "rank": "inlet"
+          },
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ]
+      },
+      {
+        "id": "safetyAccumulatorA",
+        "rank": "device|accumulator|accumulator|safety-injection-source|outlet|ACC A",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 78,
+              "height": 16,
+              "required": false
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "A",
+          "order": 0
+        }
+      },
+      {
+        "id": "safetyAccumulatorB",
+        "rank": "device|accumulator|accumulator|safety-injection-source|outlet|ACC B",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 78,
+              "height": 16,
+              "required": false
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "B",
+          "order": 1
+        }
+      },
+      {
+        "id": "safetyAccumulatorC",
+        "rank": "device|accumulator|accumulator|safety-injection-source|outlet|ACC C",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 39,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 78,
+              "height": 16,
+              "required": false
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "C",
+          "order": 2
+        }
+      },
+      {
+        "id": "safetyAccumulatorD",
+        "rank": "device|accumulator|accumulator|safety-injection-source|outlet|ACC D",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 40,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 78,
+              "height": 16,
+              "required": false
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "outlet",
+            "direction": "out",
+            "rank": "outlet"
+          }
+        ],
+        "partition": {
+          "key": "D",
+          "order": 3
+        }
+      },
+      {
+        "id": "safetyAccumulatorA.dischargeIsolationValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC A discharge isolation valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 191,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 42,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "A",
+          "order": 0
+        }
+      },
+      {
+        "id": "safetyAccumulatorA.checkValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC A check valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 112,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "A",
+          "order": 0
+        }
+      },
+      {
+        "id": "safetyAccumulatorB.dischargeIsolationValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC B discharge isolation valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 191,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 42,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "B",
+          "order": 1
+        }
+      },
+      {
+        "id": "safetyAccumulatorB.checkValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC B check valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 112,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "B",
+          "order": 1
+        }
+      },
+      {
+        "id": "safetyAccumulatorC.dischargeIsolationValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC C discharge isolation valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 191,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 42,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "C",
+          "order": 2
+        }
+      },
+      {
+        "id": "safetyAccumulatorC.checkValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC C check valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 111,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "C",
+          "order": 2
+        }
+      },
+      {
+        "id": "safetyAccumulatorD.dischargeIsolationValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC D discharge isolation valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 192,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 42,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 77,
+              "height": 16,
+              "required": false
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "D",
+          "order": 3
+        }
+      },
+      {
+        "id": "safetyAccumulatorD.checkValve",
+        "rank": "device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC D check valve",
+        "role": "device",
+        "cells": {
+          "width": 2,
+          "height": 2
+        },
+        "portInset": 0,
+        "text": {
+          "lines": [
+            {
+              "width": 113,
+              "height": 16,
+              "required": true
+            },
+            {
+              "width": 69,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false,
+        "ports": [
+          {
+            "id": "in",
+            "direction": "in",
+            "rank": "in"
+          },
+          {
+            "id": "out",
+            "direction": "out",
+            "rank": "out"
+          }
+        ],
+        "partition": {
+          "key": "D",
+          "order": 3
+        }
+      },
+      {
+        "id": "s0",
+        "rank": "stub|device|centrifugalPump|||inlet,outlet|HHSI A|inlet|in",
+        "role": "stub",
+        "cells": {
+          "width": 1,
+          "height": 1
+        },
+        "portInset": 0,
+        "ports": [
+          {
+            "id": "end",
+            "direction": "out",
+            "rank": "end"
+          }
+        ],
+        "text": {
+          "lines": [
+            {
+              "width": 107,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false
+      },
+      {
+        "id": "s1",
+        "rank": "stub|device|centrifugalPump|||inlet,outlet|HHSI B|inlet|in",
+        "role": "stub",
+        "cells": {
+          "width": 1,
+          "height": 1
+        },
+        "portInset": 0,
+        "ports": [
+          {
+            "id": "end",
+            "direction": "out",
+            "rank": "end"
+          }
+        ],
+        "text": {
+          "lines": [
+            {
+              "width": 107,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false
+      },
+      {
+        "id": "s2",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR A discharge|inletA|in",
+        "role": "stub",
+        "cells": {
+          "width": 1,
+          "height": 1
+        },
+        "portInset": 0,
+        "ports": [
+          {
+            "id": "end",
+            "direction": "out",
+            "rank": "end"
+          }
+        ],
+        "text": {
+          "lines": [
+            {
+              "width": 94,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false
+      },
+      {
+        "id": "s3",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR A discharge|outletB|out",
+        "role": "stub",
+        "cells": {
+          "width": 1,
+          "height": 1
+        },
+        "portInset": 0,
+        "ports": [
+          {
+            "id": "end",
+            "direction": "in",
+            "rank": "end"
+          }
+        ],
+        "text": {
+          "lines": [
+            {
+              "width": 91,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false
+      },
+      {
+        "id": "s4",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR B discharge|inletA|in",
+        "role": "stub",
+        "cells": {
+          "width": 1,
+          "height": 1
+        },
+        "portInset": 0,
+        "ports": [
+          {
+            "id": "end",
+            "direction": "out",
+            "rank": "end"
+          }
+        ],
+        "text": {
+          "lines": [
+            {
+              "width": 94,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false
+      },
+      {
+        "id": "s5",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR B discharge|outletB|out",
+        "role": "stub",
+        "cells": {
+          "width": 1,
+          "height": 1
+        },
+        "portInset": 0,
+        "ports": [
+          {
+            "id": "end",
+            "direction": "in",
+            "rank": "end"
+          }
+        ],
+        "text": {
+          "lines": [
+            {
+              "width": 91,
+              "height": 16,
+              "required": true
+            }
+          ]
+        },
+        "frameable": false
+      }
+    ],
+    "edges": [
+      {
+        "id": "safety-accumulator-a-to-cold-leg-a.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC A check valve|out|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegA|0",
+        "from": {
+          "node": "safetyAccumulatorA.checkValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegA"
+        }
+      },
+      {
+        "id": "safetyAccumulatorA.dischargeIsolationValve>safetyAccumulatorA.checkValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC A discharge isolation valve|out|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC A check valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorA.dischargeIsolationValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "safetyAccumulatorA.checkValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safetyAccumulatorA>safetyAccumulatorA.dischargeIsolationValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|outlet|ACC A|outlet|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC A discharge isolation valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorA",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "safetyAccumulatorA.dischargeIsolationValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safety-accumulator-b-to-cold-leg-b.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC B check valve|out|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegB|0",
+        "from": {
+          "node": "safetyAccumulatorB.checkValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegB"
+        }
+      },
+      {
+        "id": "safetyAccumulatorB.dischargeIsolationValve>safetyAccumulatorB.checkValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC B discharge isolation valve|out|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC B check valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorB.dischargeIsolationValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "safetyAccumulatorB.checkValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safetyAccumulatorB>safetyAccumulatorB.dischargeIsolationValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|outlet|ACC B|outlet|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC B discharge isolation valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorB",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "safetyAccumulatorB.dischargeIsolationValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safety-accumulator-c-to-cold-leg-c.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC C check valve|out|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegC|0",
+        "from": {
+          "node": "safetyAccumulatorC.checkValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegC"
+        }
+      },
+      {
+        "id": "safetyAccumulatorC.dischargeIsolationValve>safetyAccumulatorC.checkValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC C discharge isolation valve|out|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC C check valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorC.dischargeIsolationValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "safetyAccumulatorC.checkValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safetyAccumulatorC>safetyAccumulatorC.dischargeIsolationValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|outlet|ACC C|outlet|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC C discharge isolation valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorC",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "safetyAccumulatorC.dischargeIsolationValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safety-accumulator-d-to-cold-leg-d.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC D check valve|out|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegD|0",
+        "from": {
+          "node": "safetyAccumulatorD.checkValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegD"
+        }
+      },
+      {
+        "id": "safetyAccumulatorD.dischargeIsolationValve>safetyAccumulatorD.checkValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC D discharge isolation valve|out|device|accumulator|accumulator|safety-injection-source|checkValve|in,out|ACC D check valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorD.dischargeIsolationValve",
+          "port": "out"
+        },
+        "to": {
+          "node": "safetyAccumulatorD.checkValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "safetyAccumulatorD>safetyAccumulatorD.dischargeIsolationValve:primaryInjection.0",
+        "rank": "primaryInjection|device|accumulator|accumulator|safety-injection-source|outlet|ACC D|outlet|device|accumulator|accumulator|safety-injection-source|dischargeIsolationValve|in,out|ACC D discharge isolation valve|in|0",
+        "from": {
+          "node": "safetyAccumulatorD",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "safetyAccumulatorD.dischargeIsolationValve",
+          "port": "in"
+        }
+      },
+      {
+        "id": "boric-acid-injection-to-charging-pump.0",
+        "rank": "charging|device|processValve|||inlet,outlet|BA valve|outlet|device|centrifugalPump|||inlet,outlet|CHG A|inlet|0",
+        "from": {
+          "node": "boricAcidInjectionValve",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "chargingPump",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "boric-acid-tank-to-injection-valve.0",
+        "rank": "charging|device|processTank|||outlet|BAT|outlet|device|processValve|||inlet,outlet|BA valve|inlet|0",
+        "from": {
+          "node": "boricAcidTank",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "boricAcidInjectionValve",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "charging-pump-to-cold-leg-a.0",
+        "rank": "charging|device|centrifugalPump|||inlet,outlet|CHG A|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegA|0",
+        "from": {
+          "node": "chargingPump",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegA"
+        }
+      },
+      {
+        "id": "charging-pump-b-to-cold-leg-b.0",
+        "rank": "charging|device|centrifugalPump|||inlet,outlet|CHG B|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegB|0",
+        "from": {
+          "node": "chargingPumpB",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegB"
+        }
+      },
+      {
+        "id": "pressurizer-surge-line.0",
+        "rank": "primaryCoolant|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|hotLegA|device|pressurizer|pressurizer|pressure-control|surgeLine|PZR|surgeLine|0",
+        "from": {
+          "node": "core",
+          "port": "hotLegA"
+        },
+        "to": {
+          "node": "pressurizer",
+          "port": "surgeLine"
+        }
+      },
+      {
+        "id": "rcs-hot-leg-a.0",
+        "rank": "primaryCoolant|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|hotLegA|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG A|primaryInlet|0",
+        "from": {
+          "node": "core",
+          "port": "hotLegA"
+        },
+        "to": {
+          "node": "sgA",
+          "port": "primaryInlet"
+        }
+      },
+      {
+        "id": "rcs-hot-leg-b.0",
+        "rank": "primaryCoolant|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|hotLegB|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG B|primaryInlet|0",
+        "from": {
+          "node": "core",
+          "port": "hotLegB"
+        },
+        "to": {
+          "node": "sgB",
+          "port": "primaryInlet"
+        }
+      },
+      {
+        "id": "rcs-hot-leg-c.0",
+        "rank": "primaryCoolant|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|hotLegC|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG C|primaryInlet|0",
+        "from": {
+          "node": "core",
+          "port": "hotLegC"
+        },
+        "to": {
+          "node": "sgC",
+          "port": "primaryInlet"
+        }
+      },
+      {
+        "id": "rcs-hot-leg-d.0",
+        "rank": "primaryCoolant|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|hotLegD|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG D|primaryInlet|0",
+        "from": {
+          "node": "core",
+          "port": "hotLegD"
+        },
+        "to": {
+          "node": "sgD",
+          "port": "primaryInlet"
+        }
+      },
+      {
+        "id": "safety-injection-pump-a-to-header.0",
+        "rank": "safetyInjection|device|centrifugalPump|||inlet,outlet|HHSI A|outlet|bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header|inletA|0",
+        "from": {
+          "node": "safetyInjectionPumpA",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "safetyInjectionHeader",
+          "port": "inletA"
+        }
+      },
+      {
+        "id": "safety-injection-pump-b-to-header.0",
+        "rank": "safetyInjection|device|centrifugalPump|||inlet,outlet|HHSI B|outlet|bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header|inletB|0",
+        "from": {
+          "node": "safetyInjectionPumpB",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "safetyInjectionHeader",
+          "port": "inletB"
+        }
+      },
+      {
+        "id": "rcp-a-to-core.0",
+        "rank": "primaryCoolant|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP A|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegA|0",
+        "from": {
+          "node": "rcpA",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegA"
+        }
+      },
+      {
+        "id": "rcp-b-to-core.0",
+        "rank": "primaryCoolant|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP B|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegB|0",
+        "from": {
+          "node": "rcpB",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegB"
+        }
+      },
+      {
+        "id": "rcp-c-to-core.0",
+        "rank": "primaryCoolant|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP C|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegC|0",
+        "from": {
+          "node": "rcpC",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegC"
+        }
+      },
+      {
+        "id": "rcp-d-to-core.0",
+        "rank": "primaryCoolant|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP D|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegD|0",
+        "from": {
+          "node": "rcpD",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegD"
+        }
+      },
+      {
+        "id": "rhr-discharge-header-a-to-injection-valve.0",
+        "rank": "residualHeatRemoval|bar|processHeader|||inletA,outletA,outletB|RHR A discharge|outletA|device|processValve|||inlet,outlet|RHR A injection iso|inlet|0",
+        "from": {
+          "node": "rhrDischargeHeaderA",
+          "port": "outletA"
+        },
+        "to": {
+          "node": "rhrInjectionValveA",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "rhr-injection-valve-a-to-cold-leg-a.0",
+        "rank": "residualHeatRemoval|device|processValve|||inlet,outlet|RHR A injection iso|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegA|0",
+        "from": {
+          "node": "rhrInjectionValveA",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegA"
+        }
+      },
+      {
+        "id": "rhr-discharge-header-b-to-injection-valve.0",
+        "rank": "residualHeatRemoval|bar|processHeader|||inletA,outletA,outletB|RHR B discharge|outletA|device|processValve|||inlet,outlet|RHR B injection iso|inlet|0",
+        "from": {
+          "node": "rhrDischargeHeaderB",
+          "port": "outletA"
+        },
+        "to": {
+          "node": "rhrInjectionValveB",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "rhr-injection-valve-b-to-cold-leg-b.0",
+        "rank": "residualHeatRemoval|device|processValve|||inlet,outlet|RHR B injection iso|outlet|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegB|0",
+        "from": {
+          "node": "rhrInjectionValveB",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegB"
+        }
+      },
+      {
+        "id": "rcs-cold-leg-a.0",
+        "rank": "primaryCoolant|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG A|primaryOutlet|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP A|inlet|0",
+        "from": {
+          "node": "sgA",
+          "port": "primaryOutlet"
+        },
+        "to": {
+          "node": "rcpA",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "rcs-cold-leg-b.0",
+        "rank": "primaryCoolant|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG B|primaryOutlet|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP B|inlet|0",
+        "from": {
+          "node": "sgB",
+          "port": "primaryOutlet"
+        },
+        "to": {
+          "node": "rcpB",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "rcs-cold-leg-c.0",
+        "rank": "primaryCoolant|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG C|primaryOutlet|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP C|inlet|0",
+        "from": {
+          "node": "sgC",
+          "port": "primaryOutlet"
+        },
+        "to": {
+          "node": "rcpC",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "rcs-cold-leg-d.0",
+        "rank": "primaryCoolant|device|steamGenerator|steam-generator|heat-sink|primaryInlet,primaryOutlet|SG D|primaryOutlet|device|centrifugalPump|reactor-coolant-pump|primary-pump|inlet,outlet|RCP D|inlet|0",
+        "from": {
+          "node": "sgD",
+          "port": "primaryOutlet"
+        },
+        "to": {
+          "node": "rcpD",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "safety-injection-header-to-cold-leg-a.0",
+        "rank": "safetyInjection|bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header|outletA|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegA|0",
+        "from": {
+          "node": "safetyInjectionHeader",
+          "port": "outletA"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegA"
+        }
+      },
+      {
+        "id": "safety-injection-header-to-cold-leg-b.0",
+        "rank": "safetyInjection|bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header|outletB|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegB|0",
+        "from": {
+          "node": "safetyInjectionHeader",
+          "port": "outletB"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegB"
+        }
+      },
+      {
+        "id": "safety-injection-header-to-cold-leg-c.0",
+        "rank": "safetyInjection|bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header|outletC|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegC|0",
+        "from": {
+          "node": "safetyInjectionHeader",
+          "port": "outletC"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegC"
+        }
+      },
+      {
+        "id": "safety-injection-header-to-cold-leg-d.0",
+        "rank": "safetyInjection|bar|processHeader|||inletA,inletB,outletA,outletB,outletC,outletD|SI header|outletD|hub|reactorCore|||coldLegA,coldLegB,coldLegC,coldLegD,hotLegA,hotLegB,hotLegC,hotLegD|Core|coldLegD|0",
+        "from": {
+          "node": "safetyInjectionHeader",
+          "port": "outletD"
+        },
+        "to": {
+          "node": "core",
+          "port": "coldLegD"
+        }
+      },
+      {
+        "id": "vct-to-charging-pump.0",
+        "rank": "charging|device|processTank|||outlet|VCT|outlet|device|centrifugalPump|||inlet,outlet|CHG A|inlet|0",
+        "from": {
+          "node": "volumeControlTank",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "chargingPump",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "vct-to-charging-pump-b.0",
+        "rank": "charging|device|processTank|||outlet|VCT|outlet|device|centrifugalPump|||inlet,outlet|CHG B|inlet|0",
+        "from": {
+          "node": "volumeControlTank",
+          "port": "outlet"
+        },
+        "to": {
+          "node": "chargingPumpB",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "s0.edge",
+        "rank": "stub|device|centrifugalPump|||inlet,outlet|HHSI A|inlet|in",
+        "from": {
+          "node": "s0",
+          "port": "end"
+        },
+        "to": {
+          "node": "safetyInjectionPumpA",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "s1.edge",
+        "rank": "stub|device|centrifugalPump|||inlet,outlet|HHSI B|inlet|in",
+        "from": {
+          "node": "s1",
+          "port": "end"
+        },
+        "to": {
+          "node": "safetyInjectionPumpB",
+          "port": "inlet"
+        }
+      },
+      {
+        "id": "s2.edge",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR A discharge|inletA|in",
+        "from": {
+          "node": "s2",
+          "port": "end"
+        },
+        "to": {
+          "node": "rhrDischargeHeaderA",
+          "port": "inletA"
+        }
+      },
+      {
+        "id": "s3.edge",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR A discharge|outletB|out",
+        "from": {
+          "node": "rhrDischargeHeaderA",
+          "port": "outletB"
+        },
+        "to": {
+          "node": "s3",
+          "port": "end"
+        }
+      },
+      {
+        "id": "s4.edge",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR B discharge|inletA|in",
+        "from": {
+          "node": "s4",
+          "port": "end"
+        },
+        "to": {
+          "node": "rhrDischargeHeaderB",
+          "port": "inletA"
+        }
+      },
+      {
+        "id": "s5.edge",
+        "rank": "stub|bar|processHeader|||inletA,outletA,outletB|RHR B discharge|outletB|out",
+        "from": {
+          "node": "rhrDischargeHeaderB",
+          "port": "outletB"
+        },
+        "to": {
+          "node": "s5",
+          "port": "end"
+        }
+      }
+    ]
+  },
+  "profile": {
+    "grid": 24,
+    "cell": 24,
+    "pipe": {
+      "outline": 6,
+      "cornerRadius": 8,
+      "crossingHalfGap": 5,
+      "trackGap": 4
+    },
+    "textClearance": 9,
+    "frameMargin": 1,
+    "flapHeight": 0,
+    "flapLabelPadding": 0,
+    "limits": {
+      "symbols": 60,
+      "symbolsPerPartition": 12,
+      "sharedSymbols": 30,
+      "partitions": 8,
+      "crossings": 12,
+      "bendsPerEdge": 3
+    },
+    "fit": [
+      {
+        "detail": "full",
+        "text": "right"
+      },
+      {
+        "detail": "full",
+        "text": "partitionsBelow"
+      },
+      {
+        "detail": "full",
+        "text": "allBelow"
+      }
+    ]
+  }
+}

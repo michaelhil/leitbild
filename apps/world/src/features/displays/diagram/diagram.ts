@@ -13,7 +13,7 @@
 // keys (`rank`, partition `order`), never on ids, so renaming ids changes no
 // geometry. Input the engine cannot order that way is rejected (it throws).
 
-export const DIAGRAM_ENGINE_VERSION = 8
+export const DIAGRAM_ENGINE_VERSION = 9
 
 export type Face = 'top' | 'right' | 'bottom' | 'left'
 

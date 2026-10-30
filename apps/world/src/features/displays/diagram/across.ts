@@ -159,8 +159,28 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
         const waiting = [...members.keys()].filter(unit => !done.has(unit))
         const next = waiting.filter(ready).sort((a, b) => (meanIndex(a) - meanIndex(b)) || (a - b))[0]
         if (next === undefined) {
-          // Only a unit in several layers can close a cycle: a strand.
-          const blocking = waiting.filter(unit => unit < 0).sort((a, b) => b - a)[0]
+          // A waiting strand may only be downstream of the conflict. Find
+          // an actual cycle before choosing which strand leaves the prefix.
+          const pending = new Set(waiting), visited = new Set<number>(), active = new Set<number>(), path: number[] = []
+          const cycleFrom = (unit: number): number[] | null => {
+            if (active.has(unit)) return path.slice(path.indexOf(unit))
+            if (visited.has(unit)) return null
+            visited.add(unit); active.add(unit); path.push(unit)
+            const previous = new Set(members.get(unit)!.flatMap(item => before(item).map(unitOf)).filter(other => pending.has(other)))
+            for (const other of previous) {
+              const cycle = cycleFrom(other)
+              if (cycle !== null) return cycle
+            }
+            path.pop(); active.delete(unit)
+            return null
+          }
+          let cycle: number[] | null = null
+          for (const unit of waiting) {
+            cycle = cycleFrom(unit)
+            if (cycle !== null) break
+          }
+          // Symbols occur in one layer only; a cross-layer cycle needs a strand.
+          const blocking = cycle?.filter(unit => unit < 0).sort((a, b) => b - a)[0]
           if (blocking === undefined) throw new Error('shared items of partition layers cannot be ordered')
           return { blocking }
         }
@@ -171,12 +191,16 @@ export const placeAcross = (input: AcrossInput): AcrossPlacement => {
     }
     let members = membersOf()
     let ordered = sequenceOf(members)
+    // Conflicting strands form an outer suffix in one consistent order.
+    // Each retry permanently removes a strand from the conflicting prefix;
+    // moving an arbitrary waiting strand repeatedly need not make progress.
+    const outer = new Map<number, number>()
     while ('blocking' in ordered) {
-      for (const item of members.get(ordered.blocking)!) {
-        const list = lists[items[item]!.layer]!
-        list.splice(list.indexOf(item), 1)
-        list.push(item)
-      }
+      outer.set(ordered.blocking, outer.size)
+      for (const list of lists) list.sort((a, b) => {
+        const first = outer.get(unitOf(a)), second = outer.get(unitOf(b))
+        return first === undefined ? second === undefined ? 0 : -1 : second === undefined ? 1 : first - second
+      })
       members = membersOf()
       ordered = sequenceOf(members)
     }
