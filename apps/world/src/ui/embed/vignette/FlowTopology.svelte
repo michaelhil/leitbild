@@ -79,7 +79,9 @@
   const scale = $derived(drawnScale(section, zoom) * fit)
   // Taller than its rows hold at its text floor (all but its key's, as a chat scales them): it scrolls down within them.
   const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)
-  const tall = $derived(drawing.height * scale > held + 0.5)
+  // A display window scrolls the whole article; a second, row-limited drawing
+  // scroller otherwise hides the last lanes when the operator zooms out.
+  const tall = $derived(opening !== 'window' && drawing.height * scale > held + 0.5)
   let more = $state<ScrollEnds>(NO_SCROLL_ENDS)
   /** Where a faceplate may stand: the part of the frame the window shows, else the page. */
   const room = $derived(visibleRoom(presentation, viewport))

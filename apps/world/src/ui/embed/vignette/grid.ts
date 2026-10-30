@@ -1,4 +1,4 @@
-import { drawingScale } from '../../../features/displays/compose/model.ts'
+import { drawingScale, type VignetteView } from '../../../features/displays/compose/model.ts'
 
 // One vignette row in px: the OpenBridge grid. The composer counts rows; the display Capability sizes a frame from them.
 export const VIGNETTE_ROW_PX = 24
@@ -10,6 +10,18 @@ export const standsBeside = (view: { readonly beside?: true; readonly sections: 
 /** A window frame's column beside its drawing, and the gap between them, in px. */
 export const COLUMN_PX = 360
 export const BESIDE_GAP_PX = 16
+export const VIGNETTE_INSET_PX = 8
+
+/** A flow overview's useful canvas, including its value/alert column. Its header
+ * and footer share this width rather than spreading across W/zoom empty space.
+ * The window scales and scrolls this complete canvas; chat and network views
+ * keep frameLayout's responsive band/fit behavior. */
+export const flowFrameWidth = (view: VignetteView, zoom: number): number | null => {
+  if (!standsBeside(view)) return null
+  const topology = view.sections.find(section => section.kind === 'topology')
+  if (topology?.kind !== 'topology' || topology.family !== 'flow') return null
+  return topology.layout.width * VIGNETTE_ROW_PX * drawnScale(topology, zoom) + BESIDE_GAP_PX + COLUMN_PX + 2 * VIGNETTE_INSET_PX
+}
 /** A flow drawing's text, and the smallest it is ever scaled to on screen (the window's Fit floor, display-zoom.ts; the composer's DRAWING_SCALE_FLOOR). */
 export const DRAWING_TEXT_PX = 12
 export const TEXT_FLOOR_PX = 11

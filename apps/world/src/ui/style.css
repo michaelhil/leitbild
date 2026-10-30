@@ -3,6 +3,8 @@
   --bg: #eef1f4;
   --panel: #ffffff;
   --panel-strong: #f3f5f7;
+  /* Embedded OpenBridge day/dusk canvas, kept outside its isolated CSS bundle. */
+  --display-canvas-background: #f7f7f7;
   --text: #17202a;
   --muted: #667085;
   --border: #d7dce3;
@@ -20,6 +22,7 @@
   --bg: #0e1521;
   --panel: #111b2a;
   --panel-strong: #1a2636;
+  --display-canvas-background: #141414;
   --text: #e7edf5;
   --muted: #9aa8ba;
   --border: #2c3a4d;
@@ -1791,7 +1794,7 @@ body.rail-resizing {
   position: relative;
   min-height: 0;
   overflow: hidden;
-  background: var(--panel);
+  background: var(--display-canvas-background);
 }
 
 /* Every mounted display keeps its size; hidden ones stay laid out so showing one again is instant. */

@@ -70,7 +70,7 @@ describe('the part of a display a person sees', () => {
     // It fills the part of the frame a person sees, which follows the window's body: never its own height, which the
     // window's frame height (at least the content's) would feed back so the frame could never shrink. It is that tall,
     // no taller, so the full alerts view's list scrolls in it and the window does not zoom it out.
-    expect(vignette).toContain('const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })')
+    expect(vignette).toContain('room = next.visible?.height ?? null; zoom = next.zoom')
     expect(vignette).toContain('style:height={fills && room !== null ? `${room}px` : undefined}')
     expect(vignette).toContain('.vignette.fill > :global(.sections) { grid-row: 4; min-height: 0; }')
     const fillRules = [...vignette.matchAll(/\.vignette\.fill[^{}]*\{([^}]*)\}/g)].map(match => match[1]!)
@@ -80,7 +80,8 @@ describe('the part of a display a person sees', () => {
     // wrapper may use the viewport to provide its single native scroller.
     expect(fillRules.join('\n')).not.toMatch(/(?:min-|max-)?height\s*:\s*[^;}]*(?:\d+(?:d|s|l)?vh\b|100%)/)
     const sections = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette/Sections.svelte'), 'utf8')
-    expect(sections).toContain("style:height={rows === null || fills || section.kind === 'topology' && section.heading !== undefined ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}")
+    expect(sections).toContain("style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}")
+    expect(sections).toContain("section.family === 'flow' && opening?.where === 'window'")
   })
 
   test('an optional inline preview owns one keyboard-reachable scroller outside the intrinsic article', () => {

@@ -9,7 +9,7 @@
   import { alertsTarget, worstChip } from './alerts.ts'
   import { clockText, provenanceMark, provenanceMarks } from './format.ts'
   import { firstFitting, wholeWords } from './fit-words.ts'
-  import { fillsWindow, VIGNETTE_ROW_PX } from './grid.ts'
+  import { fillsWindow, flowFrameWidth, VIGNETTE_INSET_PX, VIGNETTE_ROW_PX } from './grid.ts'
   import { toneOf } from './readout.ts'
   import { chipOrder, stateChipLook } from './state-chip.ts'
   import { createVignetteSession, sampleStale, vignetteRoutes, type VignetteSnapshot } from './vignette-client.ts'
@@ -45,6 +45,7 @@
   let wallNow = $state(Date.now())
   /** The height of the frame a person sees in a display window (its presentation's `visible`), which an alerts-only display fills. */
   let room = $state<number | null>(null)
+  let zoom = $state(1)
   /** Why the last chip press opened nothing. */
   let unopened = $state<string | null>(null)
 
@@ -69,7 +70,7 @@
       presented: () => {},
     })
     // The room it fills follows the window's body, never its own height: the window gives the frame no less (W2.5).
-    const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })
+    const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null; zoom = next.zoom })
     session.start()
     // Staleness is judged on the wall clock, so it shows even while no sample arrives: a quarter-second tick freezes
     // the display within 5.25 s of its last sample (W8.1), not up to a second later.
@@ -101,6 +102,7 @@
   // Optional inline previews keep one native document scroller. A World
   // display window instead owns scrolling from the full article extent.
   const preview = $derived(board === undefined && opening.where !== 'window')
+  const canvasWidth = $derived(opening.where === 'window' && view !== undefined ? flowFrameWidth(view, zoom) : null)
 
   /**
    * A chip inspects what decides its state through the drawing's existing faceplate;
@@ -119,7 +121,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex (A scrollable document region needs native keyboard focus.) -->
 <div class:preview tabindex={preview ? 0 : undefined} role={preview ? 'region' : undefined} aria-label={preview ? 'Scrollable live display preview' : undefined}>
-<article class="vignette" class:fill={fills} style:height={fills && room !== null ? `${room}px` : undefined} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
+<article class="vignette" class:fill={fills} style:width={canvasWidth === null ? undefined : `${canvasWidth}px`} style:height={fills && room !== null ? `${room}px` : undefined} style:--inset={`${VIGNETTE_INSET_PX}px`} style:--row={`${VIGNETTE_ROW_PX}px`} aria-label={view?.title ?? envelope.title}>
   <header>
     <h1 title={view?.title ?? envelope.title} use:wholeWords={view?.title ?? envelope.title}></h1>
     {#if view?.by === 'assistant'}<span class="ai" title="Composed by the Assistant from what the Run declares"><obi-ai></obi-ai>Assistant</span>{/if}
@@ -168,7 +170,7 @@
 
 <style>
   .preview { max-height: 100vh; overflow-y: auto; overscroll-behavior-y: contain; }
-  .vignette { --muted: var(--element-neutral-color); --text: var(--element-active-color); padding: 0 8px; font-size: 13px; }
+  .vignette { --muted: var(--element-neutral-color); --text: var(--element-active-color); padding: 0 var(--inset); font-size: 13px; }
   /* Alerts only: as tall as the frame a person sees, its sections' row taking what the title, a status, the trip line and
      the footer leave, no less than their composed rows; a grid, so that row's height is definite for the list, which
      fits it or scrolls in it (the full alerts view), and the window need not zoom the display out. */

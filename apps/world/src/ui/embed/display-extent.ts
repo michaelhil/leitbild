@@ -89,8 +89,10 @@ export const drawingMeasurable = (sighting: DrawingSighting, viewport: ViewportT
 
 // A generated display's scrollers: its panels and the drawing's viewport.
 const GENERATED_SCROLLERS = '.panels, .mimic-panel .viewport'
-// An advice drawing at its natural size (MimicPanel scales it inside, by transform).
-const ADVICE_DRAWINGS = '.mimic-panel .drawing'
+// A drawing's occupied size, including a flow overview's value/alert column.
+// Flow's .fit already accounts for the drawing transform; measuring .drawing
+// there would instead report unscaled coordinates and omit the side column.
+const ADVICE_DRAWINGS = '.mimic-panel .drawing, .flow .fit, .sections > .beside'
 
 /**
  * Measures the card whenever its content or size changes and reports the
