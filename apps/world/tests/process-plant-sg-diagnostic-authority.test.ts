@@ -25,8 +25,8 @@ describe('SG heat diagnostic authority is authored data', () => {
     }
     // UI visibility and tag identity are orthogonal to this authority.
     const level = plant.graph.signalBindingByPath.get('sgA.levelPercent' as never)!
-    expect(level.capabilities.operatorFacing).toBe(false)
-    expect(level.tagId).toBe('SG-A-LVL-NR')
+    expect(level.capabilities?.operatorFacing).toBe(false)
+    expect(String(level.tagId)).toBe('SG-A-LVL-NR')
     expect(level.simulatorOnly).toBeUndefined()
   })
 
