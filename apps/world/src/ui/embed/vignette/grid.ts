@@ -20,7 +20,9 @@ export const flowFrameWidth = (view: VignetteView, zoom: number): number | null 
   if (!standsBeside(view)) return null
   const topology = view.sections.find(section => section.kind === 'topology')
   if (topology?.kind !== 'topology' || topology.family !== 'flow') return null
-  return topology.layout.width * VIGNETTE_ROW_PX * drawnScale(topology, zoom) + BESIDE_GAP_PX + COLUMN_PX + 2 * VIGNETTE_INSET_PX
+  // clientWidth is integer-valued; round the envelope outward so a fractional
+  // drawing width cannot spuriously push a complete canvas into the band.
+  return Math.ceil(topology.layout.width * VIGNETTE_ROW_PX * drawnScale(topology, zoom) + BESIDE_GAP_PX + COLUMN_PX + 2 * VIGNETTE_INSET_PX)
 }
 /** A flow drawing's text, and the smallest it is ever scaled to on screen (the window's Fit floor, display-zoom.ts; the composer's DRAWING_SCALE_FLOOR). */
 export const DRAWING_TEXT_PX = 12

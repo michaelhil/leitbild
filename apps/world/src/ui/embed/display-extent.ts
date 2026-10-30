@@ -92,7 +92,7 @@ const GENERATED_SCROLLERS = '.panels, .mimic-panel .viewport'
 // A drawing's occupied size, including a flow overview's value/alert column.
 // Flow's .fit already accounts for the drawing transform; measuring .drawing
 // there would instead report unscaled coordinates and omit the side column.
-const ADVICE_DRAWINGS = '.mimic-panel .drawing, .flow .fit, .sections > .beside'
+const ADVICE_DRAWINGS = '.mimic-panel .drawing, .flow .fit, .sections > .beside.flow-canvas'
 
 /**
  * Measures the card whenever its content or size changes and reports the

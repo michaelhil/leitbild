@@ -168,7 +168,7 @@
     {/each}
   {:else if layout?.kind === 'beside'}
     <!-- A window frame (Q20): the drawing at its own width (a network drawing at most the room the column leaves), every other view in a column beside it. -->
-    <div class="beside">
+    <div class="beside" class:flow-canvas={!toRoom}>
       <div class="drawing" class:to-room={toRoom}>{@render one(view.sections[drawing]!, drawing)}</div>
       <div class="column">
         {#each view.sections as section, index (index)}{#if index !== drawing}{@render one(section, index)}{/if}{/each}
