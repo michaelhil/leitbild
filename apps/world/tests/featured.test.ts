@@ -181,6 +181,7 @@ describe('World featured Scenarios', () => {
       'nordic-frequency-event',
       'supply-run',
       'halden-rhr-cooling-chain',
+      'halden-cold-leg-recirculation',
     ] as never)
     for (const listed of builtinFeaturedScenarioDefinitions.listed) {
       const scenario = builtinScenarioDefinitions.find(candidate => candidate.id === listed.definition.id)!

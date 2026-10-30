@@ -9,6 +9,7 @@ describe('bundled scenario discovery', () => {
     expect(builtinScenarioDefinitions.map(source => source.id)).toEqual([
       'halden-border-human-red',
       'halden-border',
+      'halden-cold-leg-recirculation',
       'halden-dispatch',
       'halden-emergency',
       'halden-normal-operation',
