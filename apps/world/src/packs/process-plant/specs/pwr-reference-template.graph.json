@@ -679,7 +679,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG A",
-          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" , "collapsedLevelPercent": "SG A collapsed level", "primaryInletTemperatureC": "SG A primary inlet", "primaryOutletTemperatureC": "SG A primary outlet" }
+          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" , "collapsedLevelPercent": "SG A collapsed level", "primaryInletTemperatureC": "SG A primary inlet", "primaryOutletTemperatureC": "SG A primary outlet", "heatTransferMw": "SG A primary heat" }
         }
       }
     },
@@ -761,7 +761,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG B",
-          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" , "collapsedLevelPercent": "SG B collapsed level", "primaryInletTemperatureC": "SG B primary inlet", "primaryOutletTemperatureC": "SG B primary outlet" }
+          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" , "collapsedLevelPercent": "SG B collapsed level", "primaryInletTemperatureC": "SG B primary inlet", "primaryOutletTemperatureC": "SG B primary outlet", "heatTransferMw": "SG B primary heat" }
         }
       }
     },
@@ -843,7 +843,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG C",
-          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" , "collapsedLevelPercent": "SG C collapsed level", "primaryInletTemperatureC": "SG C primary inlet", "primaryOutletTemperatureC": "SG C primary outlet" }
+          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" , "collapsedLevelPercent": "SG C collapsed level", "primaryInletTemperatureC": "SG C primary inlet", "primaryOutletTemperatureC": "SG C primary outlet", "heatTransferMw": "SG C primary heat" }
         }
       }
     },
@@ -925,7 +925,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG D",
-          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" , "collapsedLevelPercent": "SG D collapsed level", "primaryInletTemperatureC": "SG D primary inlet", "primaryOutletTemperatureC": "SG D primary outlet" }
+          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" , "collapsedLevelPercent": "SG D collapsed level", "primaryInletTemperatureC": "SG D primary inlet", "primaryOutletTemperatureC": "SG D primary outlet", "heatTransferMw": "SG D primary heat" }
         }
       }
     },
@@ -7330,7 +7330,7 @@
         { "path": "temperatureC", "label": "RHR A series suction temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
         { "path": "pressureMPa", "label": "RHR A series suction pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
         { "path": "soluteConcentrationPpm", "label": "RHR A series suction boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
-      ]
+      ], "metadata": { "presentation": { "names": { "flowKgPerS": "RHR A inner → outer flow", "temperatureC": "RHR A inner → outer temperature", "pressureMPa": "RHR A inner → outer pressure", "soluteConcentrationPpm": "RHR A inner → outer boron" }, "shortNames": { "flowKgPerS": "RHR A series flow", "temperatureC": "RHR A series temp", "pressureMPa": "RHR A series press", "soluteConcentrationPpm": "RHR A series boron" } } }
     },
     {
       "id": "rhr-shutdown-suction-a-to-header", "from": "rhrShutdownSuctionValveA2.outlet", "to": "rhrSuctionHeaderA.inletC",
@@ -7340,7 +7340,7 @@
         { "path": "temperatureC", "label": "RHR A shutdown suction header temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
         { "path": "pressureMPa", "label": "RHR A shutdown suction header pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
         { "path": "soluteConcentrationPpm", "label": "RHR A shutdown suction header boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
-      ]
+      ], "metadata": { "presentation": { "names": { "flowKgPerS": "RHR A outer → suction header flow", "temperatureC": "RHR A outer → suction header temperature", "pressureMPa": "RHR A outer → suction header pressure", "soluteConcentrationPpm": "RHR A outer → suction header boron" }, "shortNames": { "flowKgPerS": "RHR A shutdown flow", "temperatureC": "RHR A shutdown temp", "pressureMPa": "RHR A shutdown press", "soluteConcentrationPpm": "RHR A shutdown boron" } } }
     },
     {
       "id": "rcs-to-rhr-shutdown-suction-b", "from": "vessel.shutdownCoolingOutlet", "to": "rhrShutdownSuctionValveB1.inlet",
@@ -7360,7 +7360,7 @@
         { "path": "temperatureC", "label": "RHR B series suction temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
         { "path": "pressureMPa", "label": "RHR B series suction pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
         { "path": "soluteConcentrationPpm", "label": "RHR B series suction boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
-      ]
+      ], "metadata": { "presentation": { "names": { "flowKgPerS": "RHR B inner → outer flow", "temperatureC": "RHR B inner → outer temperature", "pressureMPa": "RHR B inner → outer pressure", "soluteConcentrationPpm": "RHR B inner → outer boron" }, "shortNames": { "flowKgPerS": "RHR B series flow", "temperatureC": "RHR B series temp", "pressureMPa": "RHR B series press", "soluteConcentrationPpm": "RHR B series boron" } } }
     },
     {
       "id": "rhr-shutdown-suction-b-to-header", "from": "rhrShutdownSuctionValveB2.outlet", "to": "rhrSuctionHeaderB.inletC",
@@ -7370,7 +7370,7 @@
         { "path": "temperatureC", "label": "RHR B shutdown suction header temperature", "kind": "derived", "discipline": "thermal", "writable": false, "publish": "telemetry", "quantity": "temperature", "unit": "degC", "initialValue": 25 },
         { "path": "pressureMPa", "label": "RHR B shutdown suction header pressure", "kind": "derived", "discipline": "hydraulic", "writable": false, "publish": "telemetry", "quantity": "pressure", "unit": "MPa", "initialValue": 0.101325 },
         { "path": "soluteConcentrationPpm", "label": "RHR B shutdown suction header boron", "kind": "derived", "discipline": "chemical", "writable": false, "publish": "telemetry", "quantity": "concentration", "unit": "ppm", "initialValue": 1000 }
-      ]
+      ], "metadata": { "presentation": { "names": { "flowKgPerS": "RHR B outer → suction header flow", "temperatureC": "RHR B outer → suction header temperature", "pressureMPa": "RHR B outer → suction header pressure", "soluteConcentrationPpm": "RHR B outer → suction header boron" }, "shortNames": { "flowKgPerS": "RHR B shutdown flow", "temperatureC": "RHR B shutdown temp", "pressureMPa": "RHR B shutdown press", "soluteConcentrationPpm": "RHR B shutdown boron" } } }
     },
     {
       "id": "core-to-vessel-thermal",

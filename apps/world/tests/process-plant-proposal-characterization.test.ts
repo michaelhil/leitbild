@@ -296,6 +296,9 @@ describe('proposal characterization on the old path', () => {
     expect(cardFacts(facts.beforeTrip.isolate)).toMatchObject({ ...pending({ at: '10:07:06', inMs: 120_000 }, 'SHUT MSIV-A MSIV A'), consequence: MSIV_CONSEQUENCE })
     expect(cardFacts(facts.afterTrip.isolate)).toMatchObject({
       ...pending({ at: '10:07:06', inMs: 110_000 }, 'SHUT MSIV-A MSIV A'), consequence: MSIV_CONSEQUENCE, checked: { permitted: true, text: 'I&C allows this command now' },
+      // The actual SG indication has moved during the finite trip transient.
+      // Permission still stands, while the reviewer sees changed evidence.
+      approve: { confirm: 'button', enabled: true, label: 'Approve anyway, plant changed: SHUT MSIV-A MSIV A' },
     })
     expect(facts.approval).toBe('accepted')
     expect(lifecycle(facts.approved.isolate)).toEqual({ status: 'approved' as const, expires: null, extendable: false, approve: null, closed: 'Approved by an operator at 10:05:16' })

@@ -17,13 +17,14 @@ const valves = [
   ['siPiggybackValve', 'SI-PIGGYBACK', 0],
 ] as const
 
-test('each RHR train has two isolated suction sources and independent direct and same-train SI delivery paths', () => {
+test('each RHR train has independent RWST, sump and dual-barrier RCS sources with direct and same-train SI delivery', () => {
   for (const loopCount of [2, 4, 6]) {
     const plant = plantOf(loopCount), graph = plant.sourceGraph
     expect(graph.components.some(component => ['rhrHeader', 'rhrIsolationValve'].includes(component.id))).toBe(false)
     const incident = (id: string, direction: 'from' | 'to') => graph.connections.filter(edge => edge[direction].startsWith(`${id}.`)).map(edge => [String(edge.from), String(edge.to), edge.service === undefined ? undefined : String(edge.service)])
     for (const train of ['A', 'B']) {
       expect(incident(`rhrSuctionHeader${train}`, 'to')).toEqual([
+        [`rhrShutdownSuctionValve${train}2.outlet`, `rhrSuctionHeader${train}.inletC`, 'residualHeatRemoval'],
         [`rhrRwstSuctionValve${train}.outlet`, `rhrSuctionHeader${train}.inletA`, 'residualHeatRemoval'],
         [`rhrSumpSuctionValve${train}.outlet`, `rhrSuctionHeader${train}.inletB`, 'residualHeatRemoval'],
       ])
@@ -109,8 +110,8 @@ test('source-specific flow tags are read-only native quantities and every observ
 test('authored transfer readings retain full descriptions and compact operator names without changing numerical identity', () => {
   const plant = plantOf(), recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
   const declaration = plantDeclaration(plant.id as never, plant, recording)
-  expect(plant.modelDigest).toBe('b85fc4e566d0d2f1c6b903801806799d5bb4cb573276214d64255cca08a26838')
-  expect(processPlantAutomationDigest(plant.automation)).toBe('364b61b013eb21135c9071465d8050fb8e918549d95bff0c83fbb73b98369d95')
+  expect(plant.modelDigest).toBe('01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5')
+  expect(processPlantAutomationDigest(plant.automation)).toBe('51ba771b09e0ebad4282fd98b4f06968fde83b19f2907bfadc96835ad9b0c0fa')
   const short = (path: string) => declaration.observables.find(observable => observable.ref === `${plant.id}#${path}`)!
   for (const train of ['A', 'B']) {
     expect(short(`rhrInjectionValve${train}.effectivePositionFraction`).shortLabel).toBe(`RHR ${train} injection pos`)

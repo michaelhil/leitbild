@@ -201,9 +201,13 @@ describe('P9: an equipment default carries what the detail display carries', () 
     const core = await trendOf('core')
     expect(core.refs[0]).toBe('core.powerRangePercent')
     expect(core.kinds.filter(kind => kind === 'own').length).toBeGreaterThan(0)
-    // The steam generator keeps its third strip: its list's empty line gives way before the pen does (its pressure,
-    // fourth, needs six rows more than the frame has; the column's row carries its 10-min sparkline).
-    expect((await trendOf('sgA')).refs).toEqual(['sgA.levelPercent', 'sgA.wideRangeLevelPercent', 'sgA.secondaryRadiationMSvPerH'])
+    // This finite-dome transient also annunciates an actual high-pressure
+    // excursion. Its alert keeps a row; the bounded card preserves both level
+    // instruments and explicitly reports the remaining pens it cannot show.
+    // Do not suppress the alarm to preserve a golden three-pen composition.
+    const sg = await trendOf('sgA')
+    expect(sg.refs).toEqual(['sgA.levelPercent', 'sgA.wideRangeLevelPercent'])
+    expect(sg.adjusted).toContain('2 pens not shown')
   })
 
   test('a block valve between the drawn pressurizer and its drawn PORV is drawn, not named at a stop on each side', async () => {
