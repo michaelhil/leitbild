@@ -3635,7 +3635,7 @@
       "id": "rhrShutdownSuctionValveA1",
       "kind": "processValve",
       "label": "RHR A RCS Suction Inner Isolation",
-      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900, "powerLossBehavior": "hold" },
       "variables": [
         { "path": "positionFraction", "tagId": "RHR-SDC-A1", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation demand; the modeled pressure/temperature protection can hold it shut" },
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-A1-POS", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation achieved position" },
@@ -3647,7 +3647,7 @@
       "id": "rhrShutdownSuctionValveA2",
       "kind": "processValve",
       "label": "RHR A RCS Suction Outer Isolation",
-      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900, "powerLossBehavior": "hold" },
       "variables": [
         { "path": "positionFraction", "tagId": "RHR-SDC-A2", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation demand; the modeled pressure/temperature protection can hold it shut" },
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-A2-POS", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation achieved position" },
@@ -3659,7 +3659,7 @@
       "id": "rhrShutdownSuctionValveB1",
       "kind": "processValve",
       "label": "RHR B RCS Suction Inner Isolation",
-      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900, "powerLossBehavior": "hold" },
       "variables": [
         { "path": "positionFraction", "tagId": "RHR-SDC-B1", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation demand; the modeled pressure/temperature protection can hold it shut" },
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-B1-POS", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation achieved position" },
@@ -3671,7 +3671,7 @@
       "id": "rhrShutdownSuctionValveB2",
       "kind": "processValve",
       "label": "RHR B RCS Suction Outer Isolation",
-      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900 },
+      "parameters": { "valveMode": "isolation", "initialPositionFraction": 0, "strokeOpenTimeS": 8, "strokeCloseTimeS": 8, "cvKgPerSPerSqrtMPa": 900, "powerLossBehavior": "hold" },
       "variables": [
         { "path": "positionFraction", "tagId": "RHR-SDC-B2", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation demand; the modeled pressure/temperature protection can hold it shut" },
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-B2-POS", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation achieved position" },
@@ -7284,6 +7284,10 @@
     }
   ],
   "connections": [
+    { "id": "safety-bus-a-to-rhr-shutdown-suction-a1", "from": "safetyBusA.outlet", "to": "rhrShutdownSuctionValveA1.motorPower", "connectionKind": "electricalPower" },
+    { "id": "safety-bus-a-to-rhr-shutdown-suction-a2", "from": "safetyBusA.outlet", "to": "rhrShutdownSuctionValveA2.motorPower", "connectionKind": "electricalPower" },
+    { "id": "safety-bus-b-to-rhr-shutdown-suction-b1", "from": "safetyBusB.outlet", "to": "rhrShutdownSuctionValveB1.motorPower", "connectionKind": "electricalPower" },
+    { "id": "safety-bus-b-to-rhr-shutdown-suction-b2", "from": "safetyBusB.outlet", "to": "rhrShutdownSuctionValveB2.motorPower", "connectionKind": "electricalPower" },
     { "id": "inverter-a-to-delta-t-channel-a", "from": "dcInverterA.acOutlet", "to": "deltaTChannelA.power", "connectionKind": "electricalPower" },
     { "id": "inverter-b-to-delta-t-channel-b", "from": "dcInverterB.acOutlet", "to": "deltaTChannelB.power", "connectionKind": "electricalPower" },
     { "id": "inverter-a-to-delta-t-channel-c", "from": "dcInverterA.acOutlet", "to": "deltaTChannelC.power", "connectionKind": "electricalPower" },
@@ -18505,6 +18509,10 @@
     "containment-spray-pump-b-to-header.soluteConcentrationPpm",
     "containment-spray-header-to-containment.soluteConcentrationPpm",
     "vessel.shutdownCoolingWithdrawalFlowKgPerS",
+    "rhrShutdownSuctionValveA1.motorPowerAvailable",
+    "rhrShutdownSuctionValveA2.motorPowerAvailable",
+    "rhrShutdownSuctionValveB1.motorPowerAvailable",
+    "rhrShutdownSuctionValveB2.motorPowerAvailable",
     "rhrShutdownSuctionValveA1.positionFraction", "rhrShutdownSuctionValveA1.effectivePositionFraction", "rhrShutdownSuctionValveA1.isolationSignal",
     "rhrShutdownSuctionValveA2.positionFraction", "rhrShutdownSuctionValveA2.effectivePositionFraction", "rhrShutdownSuctionValveA2.isolationSignal",
     "rhrShutdownSuctionValveB1.positionFraction", "rhrShutdownSuctionValveB1.effectivePositionFraction", "rhrShutdownSuctionValveB1.isolationSignal",

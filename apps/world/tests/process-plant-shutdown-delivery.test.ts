@@ -3,6 +3,7 @@ import { compileProcessPlant, createProcessPlantRuntime, createPwrReferencePlant
 import { closedPrimaryCircuitDemandOpen, directedFluidDeliveryFlow, prepareDirectedFluidDelivery } from '../src/packs/process-plant/runtime/directed-fluid-delivery.ts'
 import type { ProcessPlantBehaviorContext } from '../src/packs/process-plant/runtime/behavior-contract.ts'
 import { shutdownCoolingWithdrawalLinks } from '../src/packs/process-plant/runtime/shutdown-cooling.ts'
+import { valveBehaviorDefinitions } from '../src/packs/process-plant/runtime/behaviors/junction/valve-behaviors.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -24,7 +25,10 @@ const frame = (overrides: Record<string, number | boolean> = {}) => {
     values.set(`rhrPump${train}.flowKgPerS`, 520)
     values.set(`rhrPump${train}.runningState`, true)
   }
-  for (const [key, value] of Object.entries(overrides)) values.set(key, value)
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!values.has(key)) throw Error(`Unknown solver frame override ${key}`)
+    values.set(key, value)
+  }
   const read = (path: VariablePath) => {
     const value = values.get(path)
     if (value === undefined) throw Error(`Unknown test solver input ${path}`)
@@ -123,5 +127,28 @@ describe('finite closed-primary RHR delivery', () => {
       }
       expect(runtime.readVariable(`rcs-to-rhr-shutdown-suction-${train.toLowerCase()}.flowKgPerS` as VariablePath)).toBe(0)
     }
+  })
+
+  test('a source barrier needs its real train motor supply to travel and holds its position on loss of power', () => {
+    const valve = system.graph.components.find(component => String(component.id) === 'rhrShutdownSuctionValveA1')!
+    const actuator = valveBehaviorDefinitions.find(behavior => behavior.id === 'processValve-effective-position')!
+    const { context } = frame({ 'rhrShutdownSuctionValveA1.positionFraction': 1, 'rhrShutdownSuctionValveA1.effectivePositionFraction': .5,
+      'safetyBusA.energized': false, 'safetyBusA.voltageFraction': 0 })
+    actuator.update({ system, component: valve, context })
+    expect(context.readNumber('rhrShutdownSuctionValveA1.effectivePositionFraction' as VariablePath)).toBe(.5)
+    expect(context.readBoolean('rhrShutdownSuctionValveA1.motorPowerAvailable' as VariablePath)).toBe(false)
+    context.write('rhrShutdownSuctionValveA1.isolationSignal' as VariablePath, true)
+    actuator.update({ system, component: valve, context })
+    // An out-of-envelope interlock is an electrical close demand, not magic
+    // mechanical motion from a de-energized motor.
+    expect(context.readNumber('rhrShutdownSuctionValveA1.effectivePositionFraction' as VariablePath)).toBe(.5)
+    context.write('safetyBusA.energized' as VariablePath, true)
+    context.write('safetyBusA.voltageFraction' as VariablePath, 1)
+    actuator.update({ system, component: valve, context })
+    expect(context.readBoolean('rhrShutdownSuctionValveA1.motorPowerAvailable' as VariablePath)).toBe(true)
+    expect(context.readNumber('rhrShutdownSuctionValveA1.effectivePositionFraction' as VariablePath)).toBeCloseTo(.5 - .1 / 8, 12)
+    context.write('rhrShutdownSuctionValveA1.isolationSignal' as VariablePath, false)
+    actuator.update({ system, component: valve, context })
+    expect(context.readNumber('rhrShutdownSuctionValveA1.effectivePositionFraction' as VariablePath)).toBeCloseTo(.5, 12)
   })
 })
