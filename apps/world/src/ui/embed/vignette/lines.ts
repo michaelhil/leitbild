@@ -3,7 +3,8 @@
 // the display window paints at. Where the open line fades into the background
 // more than an empty one does (day), it is drawn in its outline colour, as the
 // mimic draws its pipes, so a live line never reads lighter than a dead one.
-import { renderSegments, themeFromCss, type Segment } from '@oicl/connector-diagram'
+import { renderSegments, type Segment } from '@oicl/connector-diagram'
+import { lineTheme } from './line-theme.ts'
 
 // The largest canvas every browser allocates (iOS Safari: 4096 x 4096).
 const MAX_CANVAS_PIXELS = 4096 * 4096
@@ -31,7 +32,7 @@ export const paintLines = (canvas: HTMLCanvasElement, size: { readonly width: nu
   context.setTransform(ratio, 0, 0, ratio, 0, 0)
   const root = document.documentElement
   const styles = getComputedStyle(root)
-  const palette = themeFromCss(name => styles.getPropertyValue(name), root.dataset.obcTheme)
+  const palette = lineTheme(name => styles.getPropertyValue(name), root.dataset.obcTheme)
   const background = styles.getPropertyValue('--container-background-color').trim()
   const theme = contrast(palette.pipeFillColor, background) < contrast(palette.pipeFillInverted, background) ? { ...palette, pipeFillColor: palette.pipeOutlineColor } : palette
   renderSegments(context, [...segments], { theme })

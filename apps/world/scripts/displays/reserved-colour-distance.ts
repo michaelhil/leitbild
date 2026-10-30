@@ -1,7 +1,7 @@
 /**
  * Reserved-colour distance (plan v3.1 §2.7, tests T04a and T04b): how far
  * each colour a Pack or a World-drawn view supplies sits from the five
- * colours OpenBridge 2.0.0 reserves for alerts — alarm, warning, caution,
+ * colours OpenBridge 2.1.0 reserves for alerts — alarm, warning, caution,
  * critical magenta and notification blue — in the day, dusk and night
  * palettes, as CIEDE2000 ΔE. T04b's bar is ΔE ≥ 15 from all five.
  *

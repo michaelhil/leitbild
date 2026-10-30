@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { customShapes, deviations, internals, surfaces, type CustomShape, type Deviation, type Internal, type Surface } from './openbridge-register.ts'
+import { definedIn } from './openbridge-elements.ts'
 
 // The OpenBridge policy's register (§2, §5; apps/world/AGENTS.md): every SVG
 // and drawing canvas an operator display draws, in the embed and in the main
@@ -84,10 +85,10 @@ const stale = (registered: ReadonlyArray<Registered>, sources: Sources, sites: R
   return []
 })
 
-/** OpenBridge's elements as the installed package defines them: tags in its manifest, icons by file. */
+/** OpenBridge's elements as the installed package defines them: manifest tags and actual icon registrations. */
 const manifestTags = new Set((JSON.parse(readFileSync(join(openBridge, 'custom-elements.json'), 'utf8')) as { readonly modules: ReadonlyArray<{ readonly declarations?: ReadonlyArray<{ readonly tagName?: string }> }> })
   .modules.flatMap(module => (module.declarations ?? []).flatMap(declaration => declaration.tagName === undefined ? [] : [declaration.tagName])))
-const isOpenBridgeElement = (tag: string): boolean => tag.startsWith('obi-') ? existsSync(join(openBridge, `dist/icons/icon-${tag.slice(4)}.js`)) : manifestTags.has(tag)
+const isOpenBridgeElement = (tag: string): boolean => tag.startsWith('obi-') ? definedIn.has(tag) : manifestTags.has(tag)
 
 /** Deviations whose site no longer holds its mark, that name no OpenBridge element, or that end with no plan item or stand on no evidence. */
 const deviationBreaks = (listed: ReadonlyArray<Deviation>, sources: Sources): ReadonlyArray<string> => [

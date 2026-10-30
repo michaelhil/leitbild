@@ -105,7 +105,7 @@ export const barOf = (box: Box): Box => box.width >= box.height
   : { x: box.x + box.width / 2 - BAR_PX / 2, y: box.y, width: BAR_PX, height: box.height }
 
 /**
- * How far inside the box it fills OpenBridge's tile draws its silhouette, per face, in px (OpenBridge 2.0.0, measured
+ * How far inside the box it fills OpenBridge's tile draws its silhouette, per face, in px (OpenBridge 2.1.0, measured
  * in the drawing): a compact tank's and an exchanger's state container is padded 4 px within a 1 px border
  * (--automation-components-tanks-state-container-padding); below a tank's frame its empty readout cell keeps a 4 px
  * gap; an exchanger's domed caps stand 2 px inside its frame. A pipe runs on to it, so it meets the vessel (W6.4).

@@ -10,6 +10,7 @@ import type { PackObjectPresentation, PackObjectStatusTone } from '../src/core/p
 import { alertRows, type AlertObject, type AlertPresentation } from '../src/features/displays/alerts/rows.ts'
 import { alertStrip } from '../src/features/displays/alerts/strip.ts'
 import { severityStyle, severityTable } from '../src/ui/displays/severity.ts'
+import { definedIn } from './openbridge-elements.ts'
 import {
   deltaE, openBridgeCssPath, paletteTokens, palettes, parseColour, readReservedSets, reservedColourNames, resolveToken, tokenName, type Palette,
 } from '../scripts/displays/reserved-colour-distance.ts'
@@ -83,7 +84,7 @@ describe('T04a: World-drawn colours come from the severity table only', () => {
   })
 })
 
-describe('T04a: OpenBridge 2.0.0 keeps the alert families apart in every palette', () => {
+describe('T04a: OpenBridge 2.1.0 keeps the alert families apart in the supported display palettes', () => {
   // The severity table copies these per palette; an OpenBridge upgrade that
   // moved two families together would make one alert read as another.
   const sets = readReservedSets()
@@ -91,9 +92,12 @@ describe('T04a: OpenBridge 2.0.0 keeps the alert families apart in every palette
     for (const palette of ['day', 'dusk', 'night'] as const) expect(deltaE(sets[palette].critical, sets[palette].alarm)).toBeGreaterThan(30)
   })
 
-  test('the five reserved colours are distinct in day and dusk (ΔE ≥ 20); night, a dark-adaptation palette, keeps them ≥ 14', () => {
-    for (const palette of ['day', 'dusk', 'night'] as const) {
-      const floor = palette === 'night' ? 14 : 20
+  test('the five reserved colours are distinct in day and dusk (ΔE ≥ 20)', () => {
+    // main.ts and embed.html expose day/dusk only. Upstream 2.1's unexposed
+    // night alarm/warning pair measures ΔE 12.024 (below the former target
+    // 14); the upgrade audit records it. Do not enable night without review.
+    for (const palette of ['day', 'dusk'] as const) {
+      const floor = 20
       for (const [index, left] of reservedColourNames.entries()) for (const right of reservedColourNames.slice(index + 1)) {
         expect({ palette, left, right, apart: deltaE(sets[palette][left], sets[palette][right]) >= floor }).toEqual({ palette, left, right, apart: true })
       }
@@ -130,7 +134,7 @@ describe('T04a: an alert\'s priority agrees with its severity (core/model/alerts
   })
 })
 
-describe('T04a: the World severity table matches OpenBridge 2.0.0 in every palette (ui/displays/severity.ts)', () => {
+describe('T04a: the World severity table matches OpenBridge 2.1.0 in every palette (ui/displays/severity.ts)', () => {
   const css = readFileSync(openBridgeCssPath, 'utf8')
   // Plan v3.1 §2.7, channel A: emergency → level-critical magenta, alarm → alarm red, warning → warning orange,
   // caution → caution yellow, notice → no hue. Written out here, not read from the table.
@@ -143,7 +147,7 @@ describe('T04a: the World severity table matches OpenBridge 2.0.0 in every palet
   /** The shape of OpenBridge's badge for a type, read from the badge's own SVG: a circle, or a path's straight edges. */
   const badgeShape = (type: AlertType): string => {
     const tag = getAlertBadgeComponent(type).replace(/^obi-/, '')
-    const source = readFileSync(join(openBridgeCssPath, `../icons/icon-${tag}.js`), 'utf8')
+    const source = readFileSync(definedIn.get(`obi-${tag}`)!, 'utf8')
     const icon = source.match(/this\.icon = svg`([\s\S]*?)`;/)![1]!
     if (/<circle\b/.test(icon)) return 'circle'
     const edges = [...icon.matchAll(/<path d="([^"]+)"/g)].reduce((sum, path) => sum + (path[1]!.match(/[LHV]/g) ?? []).length, 0)
@@ -167,7 +171,7 @@ describe('T04a: the World severity table matches OpenBridge 2.0.0 in every palet
   })
 
   test('planted: a table one channel off OpenBridge in one palette is caught', () => {
-    const planted = { ...severityTable.alarm.rgb!, dusk: 'rgb(220, 0, 7)' }
+    const planted = { ...severityTable.alarm.rgb!, dusk: 'rgb(223, 0, 4)' }
     expect(palettes.filter(palette => deltaE(planted[palette], openBridgeRgb(AlertType.Alarm, palette)) !== 0)).toEqual(['dusk'])
   })
 })

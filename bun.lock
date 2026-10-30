@@ -86,7 +86,7 @@
       },
       "devDependencies": {
         "@oicl/connector-diagram": "1.0.0",
-        "@oicl/openbridge-webcomponents": "2.0.0",
+        "@oicl/openbridge-webcomponents": "2.1.0",
         "@types/bun": "1.4.0",
         "harfbuzzjs": "1.6.1",
         "polygon-clipping": "0.15.7",
@@ -277,7 +277,7 @@
 
     "@oicl/connector-diagram": ["@oicl/connector-diagram@1.0.0", "", {}, "sha512-/nKCPNE+dWmJs3bZkqIjbkswsHO389P+alZBW12r4QGaarfAmDkQ7f2VUFXBFnP8r9rZtlRkMMyYMEgXika/gw=="],
 
-    "@oicl/openbridge-webcomponents": ["@oicl/openbridge-webcomponents@2.0.0", "", { "dependencies": { "@lit-labs/observers": "^2.1.0", "@lit/localize": "^0.12.2", "chart.js": "^4.5.1", "lit": "^3.3.3", "uplot": "^1.6.32" } }, "sha512-Mf1PdjgAdvS3JA850/3JlIxRA41MrM13PEgGKwG91wZHenpzha7mH8FxvmzxT/mXCztpLcSfQNjXv5kbV+kazg=="],
+    "@oicl/openbridge-webcomponents": ["@oicl/openbridge-webcomponents@2.1.0", "", { "dependencies": { "@lit-labs/observers": "^2.1.0", "@lit/localize": "^0.12.2", "chart.js": "^4.5.1", "lit": "^3.3.3", "uplot": "^1.6.32" } }, "sha512-ri4SD9UBftlgKwtWJi5WtEvwKdxrcQuNNs9xDnxRkou9Z6PW0N+/VkGiICRSEMiseY8L18C4Zz6x8ZDa5QzmBQ=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.147.0", "", {}, "sha512-IJ3s6ltHLp45S0bh7phkX+gJO7A1Wuz2EaqpAhb8WjqDwbzMiWKHhyyT42tskaWjEYXtHtVCPpnBJVT9+dcRLg=="],
 

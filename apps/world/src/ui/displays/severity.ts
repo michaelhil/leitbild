@@ -1,7 +1,7 @@
 import type { AlertSeverity, Priority } from '../../core/model/alerts.ts'
 
 // The one World severity table (plan v3.1 §2.7, V15), shared by the main app
-// and the embed. It imports no OpenBridge: the colours are OpenBridge 2.0.0's
+// and the embed. It imports no OpenBridge: the colours are OpenBridge 2.1.0's
 // alert colours as dist/openbridge.css resolves them in each palette (later
 // declarations win), and each glyph is the shape of OpenBridge's badge for that
 // family. Notice has no hue (bold, neutral bar). An alert without a priority
@@ -21,9 +21,9 @@ export interface SeverityStyle {
 }
 
 const openBridge: Readonly<Record<SeverityFamily, Readonly<Record<Palette, string>>>> = {
-  alarm: { day: 'rgb(227, 0, 25)', dusk: 'rgb(219, 0, 7)', night: 'rgb(185, 0, 0)' },
-  warning: { day: 'rgb(254, 148, 19)', dusk: 'rgb(250, 125, 0)', night: 'rgb(147, 68, 0)' },
-  caution: { day: 'rgb(255, 219, 66)', dusk: 'rgb(215, 164, 0)', night: 'rgb(107, 89, 0)' },
+  alarm: { day: 'rgb(224, 0, 18)', dusk: 'rgb(222, 0, 4)', night: 'rgb(183, 0, 0)' },
+  warning: { day: 'rgb(245, 132, 2)', dusk: 'rgb(250, 125, 0)', night: 'rgb(150, 63, 0)' },
+  caution: { day: 'rgb(255, 219, 66)', dusk: 'rgb(214, 169, 21)', night: 'rgb(117, 83, 0)' },
   critical: { day: 'rgb(196, 36, 183)', dusk: 'rgb(189, 40, 190)', night: 'rgb(195, 48, 196)' },
 }
 

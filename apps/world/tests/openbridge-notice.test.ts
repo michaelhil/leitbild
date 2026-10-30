@@ -5,7 +5,7 @@ import { fromOpenBridge, LEITBILD_SOURCE_URL, openBridgeNotice } from '../src/ui
 import { worldUiConfig } from '../vite.config.ts'
 
 const packages = [
-  { name: '@oicl/openbridge-webcomponents', version: '2.0.0' },
+  { name: '@oicl/openbridge-webcomponents', version: '2.1.0' },
   { name: '@oicl/connector-diagram', version: '1.0.0' },
 ]
 
@@ -14,7 +14,7 @@ describe('the OpenBridge licence notice', () => {
     const notice = openBridgeNotice(packages)
     expect(notice.startsWith('/*!')).toBe(true)
     expect(notice.endsWith('*/')).toBe(true)
-    expect(notice).toContain('@oicl/openbridge-webcomponents 2.0.0, @oicl/connector-diagram 1.0.0')
+    expect(notice).toContain('@oicl/openbridge-webcomponents 2.1.0, @oicl/connector-diagram 1.0.0')
     expect(notice).toContain('AGPL-3.0-only')
     expect(notice).toContain(LEITBILD_SOURCE_URL)
     expect(notice.slice(3, -2)).not.toContain('*/')
@@ -58,14 +58,14 @@ describe('the OpenBridge licence notice', () => {
         .map(file => [file.fileName, file.type === 'chunk' ? file.code : String(file.source)] as const))
     }
     const before = await embedBuild(packages)
-    const after = await embedBuild([{ ...packages[0]!, version: '2.0.1' }, packages[1]!])
-    const noticed = [...before].filter(([, text]) => text.includes('@oicl/openbridge-webcomponents 2.0.0')).map(([name]) => name)
+    const after = await embedBuild([{ ...packages[0]!, version: '2.1.1' }, packages[1]!])
+    const noticed = [...before].filter(([, text]) => text.includes('@oicl/openbridge-webcomponents 2.1.0')).map(([name]) => name)
     expect(noticed.some(name => name.endsWith('.js'))).toBe(true)
     expect(noticed.some(name => name.endsWith('.css'))).toBe(true)
     expect(noticed.filter(name => after.has(name))).toEqual([])
     expect([...before].filter(([name, text]) => name !== 'embed.html' && after.has(name) && after.get(name) !== text).map(([name]) => name)).toEqual([])
     // The page, which revalidates, links each stylesheet under its headed name; every file it links is built.
-    for (const [files, version] of [[before, '2.0.0'], [after, '2.0.1']] as const) {
+    for (const [files, version] of [[before, '2.1.0'], [after, '2.1.1']] as const) {
       const linked = [...files.get('embed.html')!.matchAll(/(?:href|src)="\/(assets\/world\/[^"]+)"/g)].map(match => match[1]!)
       expect(linked.filter(name => !files.has(name))).toEqual([])
       const stylesheets = linked.filter(name => name.endsWith('.css'))

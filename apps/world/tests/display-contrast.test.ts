@@ -5,7 +5,7 @@ import { join, relative } from 'node:path'
 // Every text/background pair the embedded displays draw with, read from the
 // OpenBridge palettes and the display tokens in embed.css, at 4.5:1 or more
 // (WCAG AA) in day, dusk and night (hmi audit: caution text read 1.27:1 and
-// orange chips 2.07:1 in day); the column's chips, SIM badge, rates and margin
+// orange chips 2.40:1 in day); the column's chips, SIM badge, rates and margin
 // lines use these pairs (W8.4); its sparklines' lines read 3:1 on their frame.
 
 const root = join(import.meta.dir, '..')
@@ -120,7 +120,7 @@ describe('display text contrast', () => {
     // And why a sparkline never takes an alert colour: caution on the mini graph frame in day.
     expect(contrast(resolve(day, '--alert-caution-color'), resolve(day, '--instrument-frame-primary-color'))).toBeLessThan(3)
     expect(contrast(resolve(day, '--alert-caution-color'), resolve(day, '--container-background-color'))).toBeCloseTo(1.27, 2)
-    expect(contrast(resolve(day, '--container-background-color'), resolve(day, '--alert-warning-color'))).toBeCloseTo(2.07, 2)
+    expect(contrast(resolve(day, '--container-background-color'), resolve(day, '--alert-warning-color'))).toBeCloseTo(2.40, 2)
   })
 })
 
