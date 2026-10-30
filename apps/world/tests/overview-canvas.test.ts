@@ -29,7 +29,8 @@ test('every overview canvas follows its topology and side column at each manual 
     expect(frame.frameWidth).toBeGreaterThanOrEqual(canvas)
     expect(extent.minWidth).toBe(Math.ceil(canvas))
   }
-  expect(flowFrameWidth({ ...overview(62, 38), beside: undefined }, 0.67)).toBeNull()
+  const stacked = overview(62, 38)
+  expect(flowFrameWidth({ title: stacked.title, sections: stacked.sections }, 0.67)).toBeNull()
   expect(flowFrameWidth({ title: 'Values only', sections: [] }, 0.67)).toBeNull()
 })
 

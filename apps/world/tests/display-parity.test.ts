@@ -67,6 +67,10 @@ const VALUE_WORDS = /^(level |carrying flow$|no flow$|no state drawn$)/
  * the model does not solve, still reads "position not measured".
  */
 const NOW_MEASURED = /\.checkValve$/
+// The immutable old drawing captured the former common RHR header/valve.
+// Source transfer deliberately replaces those two subjects with independently
+// tested per-train paths; compare historical words only for surviving items.
+const RETIRED_RHR_ITEMS = new Set(['rhrHeader', 'rhrIsolationValve'])
 
 /** controls.list's items as T01 recorded them. */
 const listedFacts = (items: ReadonlyArray<any>) => items.map(item => ({
@@ -221,7 +225,7 @@ describe('T39 plant swap parity', () => {
 
       test('P1b: each item the overview and the details drew with a state word declares its state in that word, the command it does not follow as its why, bound on its node', () => {
         const words = itemWords.states[state.id]!
-        const worded = Object.entries({ ...words.details, ...words.overview }).filter(([, word]) => !VALUE_WORDS.test(word))
+        const worded = Object.entries({ ...words.details, ...words.overview }).filter(([id, word]) => !RETIRED_RHR_ITEMS.has(id) && !VALUE_WORDS.test(word))
         expect(worded.filter(([id]) => !declared.has(ref(`${id}.state`))).map(([id]) => id)).toEqual([])
         const observed = read(instance, worded.map(([id]) => ref(`${id}.state`)))
         const reads = (id: string): string => {
