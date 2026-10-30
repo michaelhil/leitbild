@@ -50,6 +50,7 @@ const valveInitialValueFor = (
   const initialPosition = optionalParameterNumber(component, 'initialPositionFraction', 1)
   const failedPosition = optionalParameterNumber(component, 'failPositionFraction', initialPosition)
   if (localPath === 'positionFraction') return initialPosition
+  if (localPath === 'motorPowerAvailable') return true
   if (localPath === 'positionFailureActive') return false
   if (localPath === 'isolationSignal') return false
   if (localPath === 'failedPositionFraction') return failedPosition

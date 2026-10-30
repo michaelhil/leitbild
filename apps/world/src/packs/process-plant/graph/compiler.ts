@@ -705,6 +705,17 @@ const validateContainmentComponent = (component: CompiledComponent, links: Reado
   assertPortConnected(component, links, 'massEnergyIn', 'incoming')
 }
 
+const validateElectricalSupportComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {
+  const params = parameterRecord(component)
+  const incomingPort = (port: string) => links.some(link => link.kind === 'electricalPower' && link.toComponentIndex === component.index && String(link.toPortName) === port)
+  if (component.kind === 'battery' && (params.charger !== undefined) !== incomingPort('chargerPower')) {
+    throw Error(`component ${component.id}: an integrated charger declaration and its actual chargerPower supply must be provided together`)
+  }
+  if ((component.kind === 'processValve' || component.kind === 'steamValve') && (params.powerLossBehavior !== undefined) !== incomingPort('motorPower')) {
+    throw Error(`component ${component.id}: a motorPower supply and its authored powerLossBehavior must be provided together`)
+  }
+}
+
 const validateStrongComponentContracts = (
   components: ReadonlyArray<CompiledComponent>,
   links: ReadonlyArray<CompiledProcessLink>,
@@ -714,6 +725,7 @@ const validateStrongComponentContracts = (
     validateHeatExchangerComponent(component, links)
     validateAccumulatorComponent(component, links)
     validateContainmentComponent(component, links)
+    validateElectricalSupportComponent(component, links)
   }
 }
 

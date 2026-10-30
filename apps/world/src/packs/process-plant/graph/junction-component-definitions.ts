@@ -112,9 +112,11 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       inlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
       outlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
       demand: { kind: 'controlSignal', direction: 'in' },
+      motorPower: { kind: 'electricalAc', direction: 'in' },
     },
     parametersSchema: z.object({
       initialPositionFraction: z.number().finite().min(0).max(1).optional(),
+      powerLossBehavior: z.enum(['hold', 'close']).optional(),
       strokeTimeConstantS: z.number().finite().positive().optional(),
       strokeOpenTimeS: z.number().finite().positive().optional(),
       strokeCloseTimeS: z.number().finite().positive().optional(),
@@ -169,9 +171,11 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       inlet: { kind: 'steam', direction: 'in', circuit: 'flow' },
       outlet: { kind: 'steam', direction: 'out', circuit: 'flow' },
       demand: { kind: 'controlSignal', direction: 'in' },
+      motorPower: { kind: 'electricalAc', direction: 'in' },
     },
     parametersSchema: z.object({
       initialPositionFraction: z.number().finite().min(0).max(1).optional(),
+      powerLossBehavior: z.enum(['hold', 'close']).optional(),
       strokeTimeConstantS: z.number().finite().positive().optional(),
       strokeOpenTimeS: z.number().finite().positive().optional(),
       strokeCloseTimeS: z.number().finite().positive().optional(),

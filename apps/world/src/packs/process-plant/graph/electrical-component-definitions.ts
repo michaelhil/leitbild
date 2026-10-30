@@ -241,11 +241,32 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
       nominalVoltageVdc: z.number().finite().positive().optional(),
       dischargeTimeS: z.number().finite().positive(),
       initialStateOfChargeFraction: normalized.optional(),
+      /** An explicitly represented integrated AC charger, not an unlimited battery source. */
+      charger: z.object({
+        nominalPowerMw: positivePower,
+        efficiencyFraction: z.number().finite().positive().max(1),
+        chargeEfficiencyFraction: z.number().finite().positive().max(1),
+      }).strict().optional(),
     }).strict(),
+    resolveAdditionalPorts: ({ parameters }) => (parameters as { readonly charger?: unknown }).charger === undefined ? {} : {
+      chargerPower: { kind: 'electricalAc', direction: 'in', demand: 'chargerInputMw' },
+    },
+    resolveAdditionalVariables: ({ parameters }) => (parameters as { readonly charger?: unknown }).charger === undefined ? [] : [
+      variable({ path: 'chargerEnabled', label: 'Integrated charger enable command', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'boolean', unit: 'boolean' }),
+    ],
     semantics: fixedSemantics({ aspects: [aspect('energized', { variable: 'energized', reading: 'true' })] }),
     variables: [
       variable({ path: 'stateOfChargeFraction', label: 'Battery state of charge', kind: 'state', discipline: 'electrical', writable: false, publish: 'telemetry', measurand: 'charge', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'voltageVdc', label: 'Battery DC voltage', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'voltage', unit: 'volts_dc' }),
+      variable({ path: 'chargerAvailable', label: 'Integrated charger AC supply available', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'chargerInputMw', label: 'Integrated charger AC input', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'chargerOutputMw', label: 'Integrated charger DC output', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'chargePowerMw', label: 'Power stored in battery', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'dischargePowerMw', label: 'Power drawn from battery', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'conversionLossMw', label: 'Integrated charger and charging losses', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW', simulatorOnly: true }),
+      variable({ path: 'loadDemandMw', label: 'Downstream DC demand including inverter losses', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'unservedLoadMw', label: 'Unserved downstream DC demand', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW', simulatorOnly: true }),
+      variable({ path: 'storedEnergyMj', label: 'Battery stored energy', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'energy', unit: 'MJ', simulatorOnly: true }),
       ...energizedVariables('Battery'),
     ],
   }),

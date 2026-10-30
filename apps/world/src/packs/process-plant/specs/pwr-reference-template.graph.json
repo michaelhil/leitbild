@@ -2133,10 +2133,12 @@
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve A",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "cvKgPerSPerSqrtMPa": 22.5
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "AFW-FCV-A-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "AFW-A-CV",
@@ -2164,10 +2166,12 @@
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve B",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "cvKgPerSPerSqrtMPa": 22.5
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "AFW-FCV-B-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "AFW-B-CV",
@@ -2195,10 +2199,12 @@
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve C",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "cvKgPerSPerSqrtMPa": 22.5
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "AFW-FCV-C-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "AFW-C-CV",
@@ -2226,10 +2232,12 @@
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve D",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "cvKgPerSPerSqrtMPa": 22.5
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "AFW-FCV-D-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "AFW-D-CV",
@@ -2257,10 +2265,12 @@
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve E",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "cvKgPerSPerSqrtMPa": 22.5
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "AFW-FCV-E-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "AFW-E-CV",
@@ -2288,10 +2298,12 @@
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve F",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "cvKgPerSPerSqrtMPa": 22.5
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "AFW-FCV-F-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "AFW-F-CV",
@@ -2505,6 +2517,7 @@
       "kind": "steamValve",
       "label": "Steam Generator A Atmospheric Relief Valve",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "relief",
         "cvKgPerSPerSqrtMPa": 21,
@@ -2533,6 +2546,7 @@
         }
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "SG-A-ARV-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "SG-A-ARV",
@@ -2569,6 +2583,7 @@
       "kind": "steamValve",
       "label": "Steam Generator B Atmospheric Relief Valve",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "relief",
         "cvKgPerSPerSqrtMPa": 21,
@@ -2597,6 +2612,7 @@
         }
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "SG-B-ARV-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "SG-B-ARV",
@@ -2633,6 +2649,7 @@
       "kind": "steamValve",
       "label": "Steam Generator C Atmospheric Relief Valve",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "relief",
         "cvKgPerSPerSqrtMPa": 21,
@@ -2661,6 +2678,7 @@
         }
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "SG-C-ARV-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "SG-C-ARV",
@@ -2697,6 +2715,7 @@
       "kind": "steamValve",
       "label": "Steam Generator D Atmospheric Relief Valve",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "relief",
         "cvKgPerSPerSqrtMPa": 21,
@@ -2725,6 +2744,7 @@
         }
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "SG-D-ARV-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "SG-D-ARV",
@@ -2761,6 +2781,7 @@
       "kind": "steamValve",
       "label": "Steam Generator E Atmospheric Relief Valve",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "relief",
         "cvKgPerSPerSqrtMPa": 21,
@@ -2789,6 +2810,7 @@
         }
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "SG-E-ARV-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "SG-E-ARV",
@@ -2825,6 +2847,7 @@
       "kind": "steamValve",
       "label": "Steam Generator F Atmospheric Relief Valve",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "relief",
         "cvKgPerSPerSqrtMPa": 21,
@@ -2853,6 +2876,7 @@
         }
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "SG-F-ARV-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "SG-F-ARV",
@@ -5206,12 +5230,13 @@
     {
       "id": "vitalBatteryA",
       "kind": "battery",
-      "label": "Vital Battery A",
+      "label": "Vital DC Supply A — Battery and Charger",
       "parameters": {
         "nominalPowerMw": 2,
         "nominalVoltageVdc": 125,
         "dischargeTimeS": 14400,
-        "initialStateOfChargeFraction": 1
+        "initialStateOfChargeFraction": 1,
+        "charger": { "nominalPowerMw": 1.2, "efficiencyFraction": 0.95, "chargeEfficiencyFraction": 0.9 }
       },
       "variables": [
         {
@@ -5226,24 +5251,27 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "Battery A"
+          "shortLabel": "DC supply A",
+          "shortNames": { "chargerEnabled": "Charger A enable", "chargerAvailable": "Charger A supplied", "chargerInputMw": "Charger A AC input", "chargerOutputMw": "Charger A DC output", "chargePowerMw": "Battery A charging", "dischargePowerMw": "Battery A discharge", "loadDemandMw": "DC A demand", "storedEnergyMj": "Battery A energy", "unservedLoadMw": "DC A unmet load" }
         }
       }
     },
     {
       "id": "vitalBatteryB",
       "kind": "battery",
-      "label": "Vital Battery B",
+      "label": "Vital DC Supply B — Battery and Charger",
       "parameters": {
         "nominalPowerMw": 2,
         "nominalVoltageVdc": 125,
         "dischargeTimeS": 14400,
-        "initialStateOfChargeFraction": 1
+        "initialStateOfChargeFraction": 1,
+        "charger": { "nominalPowerMw": 1.2, "efficiencyFraction": 0.95, "chargeEfficiencyFraction": 0.9 }
       },
       "variables": [],
       "metadata": {
         "presentation": {
-          "shortLabel": "Battery B"
+          "shortLabel": "DC supply B",
+          "shortNames": { "chargerEnabled": "Charger B enable", "chargerAvailable": "Charger B supplied", "chargerInputMw": "Charger B AC input", "chargerOutputMw": "Charger B DC output", "chargePowerMw": "Battery B charging", "dischargePowerMw": "Battery B discharge", "loadDemandMw": "DC B demand", "storedEnergyMj": "Battery B energy", "unservedLoadMw": "DC B unmet load" }
         }
       }
     },
@@ -5284,7 +5312,8 @@
       "kind": "electricalLoad",
       "label": "Plant Controls Load A",
       "parameters": {
-        "nominalLoadMw": 0.8
+        "nominalLoadMw": 0.4,
+        "essential": true
       },
       "variables": [
         {
@@ -5305,7 +5334,8 @@
       "kind": "electricalLoad",
       "label": "Plant Controls Load B",
       "parameters": {
-        "nominalLoadMw": 0.8
+        "nominalLoadMw": 0.4,
+        "essential": true
       },
       "variables": [
         {
@@ -5320,6 +5350,28 @@
           "shortLabel": "Controls B"
         }
       }
+    },
+    {
+      "id": "dcNonessentialLoadA",
+      "kind": "electricalLoad",
+      "label": "Train A Discretionary UPS Loads",
+      "parameters": { "nominalLoadMw": 0.4, "essential": false },
+      "variables": [
+        { "path": "connected", "tagId": "DC-A-DISCRETIONARY-CONNECTED", "description": "Train A discretionary UPS load feeder; open to shed actual load" },
+        { "path": "servedMw", "tagId": "DC-A-DISCRETIONARY-MW", "description": "Actual train A discretionary UPS served load" }
+      ],
+      "metadata": { "presentation": { "shortLabel": "UPS discretionary A" } }
+    },
+    {
+      "id": "dcNonessentialLoadB",
+      "kind": "electricalLoad",
+      "label": "Train B Discretionary UPS Loads",
+      "parameters": { "nominalLoadMw": 0.4, "essential": false },
+      "variables": [
+        { "path": "connected", "tagId": "DC-B-DISCRETIONARY-CONNECTED", "description": "Train B discretionary UPS load feeder; open to shed actual load" },
+        { "path": "servedMw", "tagId": "DC-B-DISCRETIONARY-MW", "description": "Actual train B discretionary UPS served load" }
+      ],
+      "metadata": { "presentation": { "shortLabel": "UPS discretionary B" } }
     },
     {
       "id": "loadSequencerA",
@@ -6421,6 +6473,7 @@
       "kind": "steamValve",
       "label": "TD AFW Pump Steam Supply Valve B",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "isolation",
         "cvKgPerSPerSqrtMPa": 0.9,
@@ -6429,6 +6482,7 @@
         "reverseFlowAllowed": false
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "TDAFW-STEAM-B-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "TDAFW-STM-B",
@@ -6453,6 +6507,7 @@
       "kind": "steamValve",
       "label": "TD AFW Pump Steam Supply Valve C",
       "parameters": {
+        "powerLossBehavior": "hold",
         "initialPositionFraction": 0,
         "valveMode": "isolation",
         "cvKgPerSPerSqrtMPa": 0.9,
@@ -6461,6 +6516,7 @@
         "reverseFlowAllowed": false
       },
       "variables": [
+        { "path": "motorPowerAvailable", "tagId": "TDAFW-STEAM-C-MOTOR-POWER", "description": "Actual modeled vital actuator supply available" },
         {
           "path": "positionFraction",
           "tagId": "TDAFW-STM-C",
@@ -7162,6 +7218,24 @@
     }
   ],
   "connections": [
+    { "id": "inverter-a-to-steamGeneratorReliefValveA-motor", "from": "dcInverterA.acOutlet", "to": "steamGeneratorReliefValveA.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-steamGeneratorReliefValveB-motor", "from": "dcInverterB.acOutlet", "to": "steamGeneratorReliefValveB.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-steamGeneratorReliefValveC-motor", "from": "dcInverterA.acOutlet", "to": "steamGeneratorReliefValveC.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-steamGeneratorReliefValveD-motor", "from": "dcInverterB.acOutlet", "to": "steamGeneratorReliefValveD.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-steamGeneratorReliefValveE-motor", "from": "dcInverterA.acOutlet", "to": "steamGeneratorReliefValveE.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-steamGeneratorReliefValveF-motor", "from": "dcInverterB.acOutlet", "to": "steamGeneratorReliefValveF.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-auxFeedwaterValveA-motor", "from": "dcInverterA.acOutlet", "to": "auxFeedwaterValveA.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-auxFeedwaterValveB-motor", "from": "dcInverterB.acOutlet", "to": "auxFeedwaterValveB.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-auxFeedwaterValveC-motor", "from": "dcInverterA.acOutlet", "to": "auxFeedwaterValveC.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-auxFeedwaterValveD-motor", "from": "dcInverterB.acOutlet", "to": "auxFeedwaterValveD.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-auxFeedwaterValveE-motor", "from": "dcInverterA.acOutlet", "to": "auxFeedwaterValveE.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-auxFeedwaterValveF-motor", "from": "dcInverterB.acOutlet", "to": "auxFeedwaterValveF.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-auxFeedwaterTurbineSteamValveB-motor", "from": "dcInverterB.acOutlet", "to": "auxFeedwaterTurbineSteamValveB.motorPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-auxFeedwaterTurbineSteamValveC-motor", "from": "dcInverterA.acOutlet", "to": "auxFeedwaterTurbineSteamValveC.motorPower", "connectionKind": "electricalPower" },
+    { "id": "safety-bus-a-to-integrated-charger-a", "from": "safetyBusA.outlet", "to": "vitalBatteryA.chargerPower", "connectionKind": "electricalPower" },
+    { "id": "safety-bus-b-to-integrated-charger-b", "from": "safetyBusB.outlet", "to": "vitalBatteryB.chargerPower", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-discretionary-load-a", "from": "dcInverterA.acOutlet", "to": "dcNonessentialLoadA.power", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-discretionary-load-b", "from": "dcInverterB.acOutlet", "to": "dcNonessentialLoadB.power", "connectionKind": "electricalPower" },
     {
       "id": "core-to-vessel-thermal",
       "from": "core.vesselThermal",

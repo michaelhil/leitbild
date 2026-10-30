@@ -10,6 +10,7 @@ import {
 } from '../../component-link-helpers.ts'
 import { approach, clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../../component-helpers.ts'
 import { balancedBranchPressures } from './header-pressure-balance.ts'
+import { componentHasElectricalPower } from '../electrical-behaviors.ts'
 
 type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle' | 'bypass'
 
@@ -126,7 +127,7 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
   phase: 'solveFluidFlowComponents',
   componentKind,
   reads: ['positionFraction', 'positionFailureActive', 'failedPositionFraction', 'isolationSignal', 'incoming:pressureMPa', 'availablePressureDropMPa', 'autoOpenActive'],
-  writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive'],
+  writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive', 'motorPowerAvailable'],
   update: ({ system, component, context }): void => {
     // An isolation signal shuts the valve whatever its demand; a failed actuator or a self-acting relief still decides.
     const manualTarget = context.readBoolean(componentVariablePath(component, 'isolationSignal'))
@@ -152,8 +153,16 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
     // (fullLiftMPa); a single relief or safety valve pops fully open at its set pressure and reseats below it.
     const lift = bankLift(component, mode, setpoint, automaticPressure)
     const autoOpen = lift !== null ? lift > 0 : (mode === 'relief' || mode === 'safety') && (automaticPressure >= setpoint || (wasAutoOpen && automaticPressure > reseat))
-    const target = failureActive ? failedPosition : autoOpen ? lift ?? 1 : manualTarget
+    const requested = failureActive ? failedPosition : autoOpen ? lift ?? 1 : manualTarget
     const current = context.readNumber(componentVariablePath(component, 'effectivePositionFraction'))
+    const powered = componentHasElectricalPower(system, component, context, 'motorPower')
+    const powerLossBehavior = (component.parameters as { readonly powerLossBehavior?: 'hold' | 'close' }).powerLossBehavior
+    const hasMotorSupply = incomingLinks.some(link => link.kind === 'electricalPower' && String(link.toPortName) === 'motorPower')
+    if (hasMotorSupply && powerLossBehavior === undefined) throw Error(`Valve ${component.id} has motor power but no authored powerLossBehavior`)
+    // An accepted command/protection demand cannot move a powerless motor.
+    // An explicitly spring-return actuator may still close mechanically.
+    // A spring safety valve without an electric feed keeps self-acting lift.
+    const target = powered ? requested : powerLossBehavior === 'close' ? 0 : current
     const timeConstant = target >= current
       ? optionalParameterNumber(component, 'strokeOpenTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
       : optionalParameterNumber(component, 'strokeCloseTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
@@ -168,7 +177,8 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
       componentVariablePath(component, 'effectivePositionFraction'),
       clamp(Math.max(nextPosition, minimumPosition), 0, 1),
     )
-    context.write(componentVariablePath(component, 'demandPositionFraction'), target)
+    context.write(componentVariablePath(component, 'demandPositionFraction'), requested)
+    context.write(componentVariablePath(component, 'motorPowerAvailable'), powered)
     context.write(componentVariablePath(component, 'autoOpenActive'), autoOpen)
   },
 })
@@ -201,6 +211,12 @@ const valveDiagnosticsReconciliation = (componentKind: 'processValve' | 'steamVa
 })
 
 export const valveInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
+  ...(['processValve', 'steamValve'] as const).map(componentKind => ({
+    id: `${componentKind}-initial-motor-power`, componentKind, reads: ['motorPower electrical supply'], writes: ['motorPowerAvailable'],
+    reconcile: ({ system, component, context }: Parameters<ComponentInitialReconciliationDefinition['reconcile']>[0]) => {
+      context.write(componentVariablePath(component, 'motorPowerAvailable'), componentHasElectricalPower(system, component, context, 'motorPower'))
+    },
+  })),
   valveDiagnosticsReconciliation('processValve'),
   valveDiagnosticsReconciliation('steamValve'),
 ]

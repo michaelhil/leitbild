@@ -27,6 +27,7 @@ export const headerVariables = (labelPrefix: string): ReadonlyArray<ComponentVar
 ]
 
 export const valveVariables = (labelPrefix: string): ReadonlyArray<ComponentVariableDescriptor> => [
+  variable({ path: 'motorPowerAvailable', label: `${labelPrefix} modeled actuator supply available`, kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
   variable({ path: 'positionFraction', label: `${labelPrefix} position demand`, kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', measurand: 'position', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
   variable({ path: 'positionFailureActive', label: `${labelPrefix} position failure active`, kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', quantity: 'boolean', unit: 'boolean' }),
   variable({ path: 'failedPositionFraction', label: `${labelPrefix} failed position`, kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'faultInjection', measurand: 'position', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
