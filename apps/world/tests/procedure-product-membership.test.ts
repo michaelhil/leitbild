@@ -20,6 +20,7 @@ describe('product procedure content ownership', () => {
         'world/packs/process-plant/procedures/ES-0.1.md',
         'world/packs/process-plant/procedures/ES-1.3.md',
         'world/packs/process-plant/procedures/RHR-1.md',
+        'world/packs/process-plant/procedures/FR-H.4.md',
       ])
       expect(selected.some(path => path.includes('/ld-01/'))).toBe(false)
       const archivedPath = 'archive/pwr-reference-model/procedures/ES-0.1.md'
@@ -43,6 +44,7 @@ describe('product procedure content ownership', () => {
       expect((await current.readDocument({ procedureId: 'ES-0.1' })).title).toBe('Finite model task ES-0.1')
       expect((await current.readDocument({ procedureId: 'RHR-1' })).title).toBe('Finite model task RHR-1')
       expect((await current.readDocument({ procedureId: 'ES-1.3' })).sourcePath).toBe('world/packs/process-plant/procedures/ES-1.3.md')
+      expect((await current.readDocument({ procedureId: 'FR-H.4' })).sourcePath).toBe('world/packs/process-plant/procedures/FR-H.4.md')
       const retained = await current.readDocument({ procedureId: 'ES-0.1', sourceRevision: pinned.source.revision, sourcePath: archivedPath })
       expect(retained.rawMarkdown).toBe(original)
       expect(retained.sourcePath).toBe(archivedPath)
