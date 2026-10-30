@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
-import type { CompiledComponent, ComponentDefinition, ComponentKind } from './model.ts'
+import type { CompiledComponent, ComponentDefinition, ComponentKind, PortDefinition } from './model.ts'
 import { defineComponent, normalized, variable } from './component-definition-helpers.ts'
 import { aspect, fixedSemantics } from './semantics.ts'
 
@@ -248,7 +248,7 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
         chargeEfficiencyFraction: z.number().finite().positive().max(1),
       }).strict().optional(),
     }).strict(),
-    resolveAdditionalPorts: ({ parameters }) => (parameters as { readonly charger?: unknown }).charger === undefined ? {} : {
+    resolveAdditionalPorts: ({ parameters }): Readonly<Record<string, PortDefinition>> => (parameters as { readonly charger?: unknown }).charger === undefined ? {} : {
       chargerPower: { kind: 'electricalAc', direction: 'in', demand: 'chargerInputMw' },
     },
     resolveAdditionalVariables: ({ parameters }) => (parameters as { readonly charger?: unknown }).charger === undefined ? [] : [
