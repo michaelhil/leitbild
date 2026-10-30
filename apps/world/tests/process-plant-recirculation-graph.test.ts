@@ -92,4 +92,8 @@ test('source-specific flow tags are read-only native quantities and every observ
     }
   }
   expect(plant.graph.signalBindings.some(signal => ['LO-HEAD-FLOW', 'RHR-ISOL', 'RHR-ISOL-POS'].includes(signal.tagId ?? ''))).toBe(false)
+  for (const id of ['vessel-release-to-containment', 'rwst-to-containment-spray-pump-a', 'rwst-to-containment-spray-pump-b', 'containment-spray-pump-a-to-header', 'containment-spray-pump-b-to-header', 'containment-spray-header-to-containment']) {
+    expect(plant.graph.signalBindingByPath.get(`${id}.soluteConcentrationPpm` as never)).toMatchObject({ unit: 'ppm', quantity: 'concentration', published: true, writable: false })
+    expect(declaration.observables.find(observable => observable.ref === `${plant.id}#${id}.soluteConcentrationPpm`)).toMatchObject({ unit: 'ppm', valueType: 'number' })
+  }
 })

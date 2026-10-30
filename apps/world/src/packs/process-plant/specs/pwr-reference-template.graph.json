@@ -12129,8 +12129,29 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Spray A inlet boron",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "soluteConcentrationPpm": "Spray A inlet boron"
+          },
+          "shortNames": {
+            "soluteConcentrationPpm": "Spray A inlet boron"
+          }
+        }
+      }
     },
     {
       "id": "rwst-to-containment-spray-pump-b",
@@ -12163,8 +12184,29 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Spray B inlet boron",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "soluteConcentrationPpm": "Spray B inlet boron"
+          },
+          "shortNames": {
+            "soluteConcentrationPpm": "Spray B inlet boron"
+          }
+        }
+      }
     },
     {
       "id": "containment-spray-pump-a-to-header",
@@ -12197,8 +12239,29 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Spray A outlet boron",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "soluteConcentrationPpm": "Spray A outlet boron"
+          },
+          "shortNames": {
+            "soluteConcentrationPpm": "Spray A outlet boron"
+          }
+        }
+      }
     },
     {
       "id": "containment-spray-pump-b-to-header",
@@ -12231,8 +12294,29 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Spray B outlet boron",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "soluteConcentrationPpm": "Spray B outlet boron"
+          },
+          "shortNames": {
+            "soluteConcentrationPpm": "Spray B outlet boron"
+          }
+        }
+      }
     },
     {
       "id": "containment-spray-header-to-containment",
@@ -12265,8 +12349,29 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Spray delivery boron",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "soluteConcentrationPpm": "Spray delivery boron"
+          },
+          "shortNames": {
+            "soluteConcentrationPpm": "Spray delivery boron"
+          }
+        }
+      }
     },
     {
       "id": "rhr-pump-a-to-heat-exchanger",
@@ -12401,8 +12506,29 @@
           "quantity": "radiationDoseRate",
           "unit": "mSv/h",
           "initialValue": 0.02
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Primary release boron",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1200
         }
-      ]
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "soluteConcentrationPpm": "Primary release boron"
+          },
+          "shortNames": {
+            "soluteConcentrationPpm": "Primary release boron"
+          }
+        }
+      }
     },
     {
       "id": "safety-accumulator-a-to-cold-leg-a",
@@ -17971,6 +18097,12 @@
     "si-rwst-suction-valve-b-to-suction-header.soluteConcentrationPpm",
     "si-suction-header-b-to-pump.flowKgPerS",
     "si-suction-header-b-to-pump.temperatureC",
-    "si-suction-header-b-to-pump.soluteConcentrationPpm"
+    "si-suction-header-b-to-pump.soluteConcentrationPpm",
+    "vessel-release-to-containment.soluteConcentrationPpm",
+    "rwst-to-containment-spray-pump-a.soluteConcentrationPpm",
+    "rwst-to-containment-spray-pump-b.soluteConcentrationPpm",
+    "containment-spray-pump-a-to-header.soluteConcentrationPpm",
+    "containment-spray-pump-b-to-header.soluteConcentrationPpm",
+    "containment-spray-header-to-containment.soluteConcentrationPpm"
   ]
 }
