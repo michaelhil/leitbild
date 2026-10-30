@@ -5270,6 +5270,8 @@
         "charger": { "nominalPowerMw": 1.2, "efficiencyFraction": 0.95, "chargeEfficiencyFraction": 0.9 }
       },
       "variables": [
+        { "path": "batteryConnected", "tagId": "DC-A-ISOLATOR-CLOSE", "description": "Close the storage battery isolator; does not isolate the separate AC charger from the DC rail" },
+        { "path": "batteryConnectionClosed", "tagId": "DC-A-ISOLATOR-POS", "description": "Actual storage battery isolator contact state" },
         { "path": "stateOfChargeFraction", "tagId": "DC-A-SOC", "description": "Finite battery state of charge" },
         { "path": "storedEnergyMj", "tagId": "DC-A-ENERGY-MJ", "description": "Finite stored battery energy, a simulator diagnostic" },
         { "path": "chargerAvailable", "tagId": "DC-A-CHARGER-AVAILABLE", "description": "Actual integrated charger AC supply available" },
@@ -5288,7 +5290,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "DC supply A",
-          "shortNames": { "chargerEnabled": "Charger A enable", "chargerAvailable": "Charger A supplied", "chargerInputMw": "Charger A AC input", "chargerOutputMw": "Charger A DC output", "chargePowerMw": "Battery A charging", "dischargePowerMw": "Battery A discharge", "loadDemandMw": "DC A demand", "storedEnergyMj": "Battery A energy", "unservedLoadMw": "DC A unmet load" }
+          "shortNames": { "batteryConnected": "Storage isolator close", "batteryConnectionClosed": "Storage isolator closed", "energized": "DC rail live", "chargerEnabled": "Charger A enable", "chargerAvailable": "Charger A supplied", "chargerInputMw": "Charger A AC input", "chargerOutputMw": "Charger A DC output", "chargePowerMw": "Battery A charging", "dischargePowerMw": "Battery A discharge", "loadDemandMw": "DC A demand", "storedEnergyMj": "Battery A energy", "unservedLoadMw": "DC A unmet load" }
         }
       }
     },
@@ -5304,6 +5306,8 @@
         "charger": { "nominalPowerMw": 1.2, "efficiencyFraction": 0.95, "chargeEfficiencyFraction": 0.9 }
       },
       "variables": [
+        { "path": "batteryConnected", "tagId": "DC-B-ISOLATOR-CLOSE", "description": "Close the storage battery isolator; does not isolate the separate AC charger from the DC rail" },
+        { "path": "batteryConnectionClosed", "tagId": "DC-B-ISOLATOR-POS", "description": "Actual storage battery isolator contact state" },
         { "path": "stateOfChargeFraction", "tagId": "DC-B-SOC", "description": "Finite battery state of charge" },
         { "path": "storedEnergyMj", "tagId": "DC-B-ENERGY-MJ", "description": "Finite stored battery energy, a simulator diagnostic" },
         { "path": "chargerAvailable", "tagId": "DC-B-CHARGER-AVAILABLE", "description": "Actual integrated charger AC supply available" },
@@ -5313,7 +5317,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "DC supply B",
-          "shortNames": { "chargerEnabled": "Charger B enable", "chargerAvailable": "Charger B supplied", "chargerInputMw": "Charger B AC input", "chargerOutputMw": "Charger B DC output", "chargePowerMw": "Battery B charging", "dischargePowerMw": "Battery B discharge", "loadDemandMw": "DC B demand", "storedEnergyMj": "Battery B energy", "unservedLoadMw": "DC B unmet load" }
+          "shortNames": { "batteryConnected": "Storage isolator close", "batteryConnectionClosed": "Storage isolator closed", "energized": "DC rail live", "chargerEnabled": "Charger B enable", "chargerAvailable": "Charger B supplied", "chargerInputMw": "Charger B AC input", "chargerOutputMw": "Charger B DC output", "chargePowerMw": "Battery B charging", "dischargePowerMw": "Battery B discharge", "loadDemandMw": "DC B demand", "storedEnergyMj": "Battery B energy", "unservedLoadMw": "DC B unmet load" }
         }
       }
     },

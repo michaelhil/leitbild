@@ -128,7 +128,8 @@ const demandOnElectricalLink = (system: CompiledProcessPlant, link: CompiledProc
     if (charger === undefined || !context.readBoolean(componentVariablePath(target, 'chargerEnabled'))) return 0
     const charge = context.readNumber(componentVariablePath(target, 'stateOfChargeFraction'))
     const capacity = parameterNumber(target, 'nominalPowerMw') * parameterNumber(target, 'dischargeTimeS')
-    const headroomMw = context.dtSeconds > 0 ? (1 - charge) * capacity / (context.dtSeconds * charger.chargeEfficiencyFraction) : charge < 1 ? charger.nominalPowerMw : 0
+    const headroomMw = !context.readBoolean(componentVariablePath(target, 'batteryConnected')) ? 0
+      : context.dtSeconds > 0 ? (1 - charge) * capacity / (context.dtSeconds * charger.chargeEfficiencyFraction) : charge < 1 ? charger.nominalPowerMw : 0
     return Math.min(charger.nominalPowerMw, outgoingLoadDemand(system, target, context) + headroomMw) / charger.efficiencyFraction
   }
   const drawn = target.ports[String(link.toPortName)]?.demand
@@ -376,8 +377,8 @@ const batteryBehavior: ComponentBehaviorDefinition = {
   id: 'battery-discharge',
   phase: 'solveElectrical',
   componentKind: 'battery',
-  reads: ['stateOfChargeFraction', 'chargerEnabled?', 'chargerPower electrical supply', 'outgoing electrical demand'],
-  writes: ['stateOfChargeFraction', 'energized', 'availablePowerMw', 'voltageFraction', 'voltageVdc', 'chargerAvailable', 'chargerInputMw', 'chargerOutputMw', 'chargePowerMw', 'dischargePowerMw', 'conversionLossMw', 'loadDemandMw', 'unservedLoadMw', 'storedEnergyMj'],
+  reads: ['stateOfChargeFraction', 'batteryConnected', 'chargerEnabled?', 'chargerPower electrical supply', 'outgoing electrical demand'],
+  writes: ['stateOfChargeFraction', 'energized', 'availablePowerMw', 'voltageFraction', 'voltageVdc', 'batteryConnectionClosed', 'chargerAvailable', 'chargerInputMw', 'chargerOutputMw', 'chargePowerMw', 'dischargePowerMw', 'conversionLossMw', 'loadDemandMw', 'unservedLoadMw', 'storedEnergyMj'],
   update: ({ system, component, context }): void => {
     const demand = outgoingLoadDemand(system, component, context)
     const dischargeTime = parameterNumber(component, 'dischargeTimeS')
@@ -388,7 +389,8 @@ const batteryBehavior: ComponentBehaviorDefinition = {
     const chargerAvailable = charger !== undefined && context.readBoolean(componentVariablePath(component, 'chargerEnabled')) && incoming.energized && incoming.voltageFraction >= .7
     const chargerAvailableMw = chargerAvailable ? Math.min(charger.nominalPowerMw, incoming.availablePowerMw * charger.efficiencyFraction) : 0
     const capacityMj = nominalPower * dischargeTime
-    const result = dcSupplyStep({ energyMj: currentCharge * capacityMj, capacityMj, batteryPowerMw: nominalPower, loadMw: demand,
+    const batteryConnected = context.readBoolean(componentVariablePath(component, 'batteryConnected'))
+    const result = dcSupplyStep({ energyMj: currentCharge * capacityMj, capacityMj, batteryPowerMw: nominalPower, batteryConnected, loadMw: demand,
       chargerAvailableMw, chargerEfficiency: charger?.efficiencyFraction ?? 1, chargeEfficiency: charger?.chargeEfficiencyFraction ?? 1, dtSeconds: context.dtSeconds })
     const nextCharge = result.energyMj / capacityMj
     context.write(componentVariablePath(component, 'stateOfChargeFraction'), nextCharge)
@@ -397,6 +399,7 @@ const batteryBehavior: ComponentBehaviorDefinition = {
     context.write(componentVariablePath(component, 'voltageFraction'), result.availablePowerMw > 0 ? 1 : 0)
     context.write(componentVariablePath(component, 'voltageVdc'), result.availablePowerMw > 0 ? optionalParameterNumber(component, 'nominalVoltageVdc', 125) : 0)
     context.write(componentVariablePath(component, 'chargerAvailable'), chargerAvailable)
+    context.write(componentVariablePath(component, 'batteryConnectionClosed'), batteryConnected)
     context.write(componentVariablePath(component, 'storedEnergyMj'), result.energyMj)
     context.write(componentVariablePath(component, 'loadDemandMw'), demand)
     for (const local of ['chargerInputMw', 'chargerOutputMw', 'chargePowerMw', 'dischargePowerMw', 'conversionLossMw', 'unservedLoadMw'] as const) context.write(componentVariablePath(component, local), result[local])

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { component, connect, plantGraphSpecSchema, compileResolvedProcessPlant, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, createProcessPlantProtectionRunner, createProcessPlantRampRunner, answerProcessPlantQuery, type VariablePath } from '../src/packs/process-plant/index.ts'
+import { component, connect, plantGraphSpecSchema, compileResolvedProcessPlant, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, createProcessPlantProtectionRunner, createProcessPlantRampRunner, answerProcessPlantQuery, commandsForProcessPlantAction, type VariablePath } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { processPlantSignalQuality } from '../src/packs/process-plant/signals.ts'
 import { evaluateProcessPlantProcedureCondition, type ProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
@@ -101,5 +101,31 @@ describe('powered delta-T indications and common evidence validity', () => {
     run(1)
     expect(processPlantSignalQuality(runtime.readVariableSnapshot(path('deltaTChannelA.deltaTPowerPercent')), { system: plant, runtime }).status).toBe('unavailable')
     expect(processPlantSignalQuality(runtime.readVariableSnapshot(path('deltaTChannelA.deltaTC')), { system: plant, runtime }).status).toBe('good')
+  })
+
+  test('the actual two-train model loses only isolated train A indications and actuators when AC is lost', () => {
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'actual-storage-isolation' }))
+    const runtime = createProcessPlantRuntime({ system: plant })
+    const set = (p: string, value: boolean) => runtime.writeCommand({ type: 'setVariable', path: path(p), value })
+    set('vitalBatteryA.batteryConnected', false)
+    runtime.tick(1000)
+    expect(runtime.readVariable(path('deltaTChannelA.supplyAvailable'))).toBe(true)
+    expect(runtime.readVariable(path('deltaTChannelC.supplyAvailable'))).toBe(true)
+    for (const command of commandsForProcessPlantAction({ actionId: 'loss-offsite-power', parameters: {}, graph: plant.graph })) set(command.path, command.value as boolean)
+    runtime.tick(1000)
+    runtime.tick(1000)
+    expect(runtime.readVariable(path('deltaTChannelA.supplyAvailable'))).toBe(false)
+    expect(runtime.readVariable(path('deltaTChannelC.supplyAvailable'))).toBe(false)
+    expect(runtime.readVariable(path('deltaTChannelB.supplyAvailable'))).toBe(true)
+    expect(runtime.readVariable(path('deltaTChannelD.supplyAvailable'))).toBe(true)
+    expect(runtime.readVariable(path('steamGeneratorReliefValveA.motorPowerAvailable'))).toBe(false)
+    expect(runtime.readVariable(path('steamGeneratorReliefValveB.motorPowerAvailable'))).toBe(true)
+    expect(runtime.readVariable(path('vitalBatteryA.storedEnergyMj'))).toBe(28_800)
+    expect(processPlantSignalQuality(runtime.readVariableSnapshot(path('deltaTChannelA.deltaTC')), { system: plant, runtime }).status).toBe('unavailable')
+    set('vitalBatteryA.batteryConnected', true)
+    runtime.tick(1000)
+    expect(runtime.readVariable(path('deltaTChannelA.supplyAvailable'))).toBe(true)
+    expect(processPlantSignalQuality(runtime.readVariableSnapshot(path('deltaTChannelA.deltaTC')), { system: plant, runtime }).status).toBe('good')
+    expect(Number(runtime.readVariable(path('vitalBatteryA.storedEnergyMj')))).toBeLessThan(28_800)
   })
 })

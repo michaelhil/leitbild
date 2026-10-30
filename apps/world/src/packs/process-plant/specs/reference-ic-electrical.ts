@@ -182,6 +182,21 @@ const lossOfOffsitePowerAuxiliaryFeedwater = (loops: ReadonlyArray<ProcessPlantR
 })
 
 export const electricalReferenceIcRules = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ReadonlyArray<ProcessPlantIcRule> => [
+  ...(['A', 'B'] as const).map(train => rule({
+    id: `dc-${train.toLowerCase()}-storage-isolated`,
+    label: `Vital battery ${train} storage isolated`,
+    ruleClass: 'alarm',
+    condition: comparison({ tagId: `DC-${train}-ISOLATOR-POS` }, '==', false),
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: `dc-${train.toLowerCase()}-storage-isolated`,
+      title: `Vital battery ${train} storage isolated`,
+      message: `The storage isolator is open. The separate AC charger may still energize the DC rail, but this battery cannot supply or receive energy.`,
+      severity: 'warning',
+      annunciator: annunciator({ ...electricalAlarm, equipmentId: `vitalBattery${train}`, role: 'symptom' }),
+    })],
+  })),
   rule({
     id: 'safety-bus-a-loss-alarm',
     label: 'Safety bus A loss of power',

@@ -86,6 +86,30 @@ describe('finite DC supply and actual support dependencies', () => {
     expect(read(r, 'battery.chargePowerMw')).toBe(0)
   })
 
+  test('the storage isolator preserves cell energy while the independent charger can still feed the DC rail', () => {
+    const r = runtimeFor(graph('hold', .5))
+    write(r, 'battery.batteryConnected', false)
+    run(r, 1)
+    expect(r.readVariable(path('battery.batteryConnectionClosed'))).toBe(false)
+    expect(read(r, 'battery.storedEnergyMj')).toBe(5)
+    expect(read(r, 'battery.chargePowerMw')).toBe(0)
+    expect(read(r, 'essential.servedMw')).toBe(.4)
+    write(r, 'grid.available', false)
+    run(r, 1)
+    expect(read(r, 'battery.storedEnergyMj')).toBe(5)
+    expect(read(r, 'battery.dischargePowerMw')).toBe(0)
+    expect(read(r, 'essential.servedMw')).toBe(0)
+    expect(r.readVariable(path('valve.motorPowerAvailable'))).toBe(false)
+    write(r, 'battery.batteryConnected', true)
+    run(r, 1)
+    expect(read(r, 'battery.storedEnergyMj')).toBeCloseTo(4, 12)
+    expect(read(r, 'essential.servedMw')).toBe(.4)
+    write(r, 'grid.available', true)
+    run(r, 1)
+    expect(read(r, 'battery.storedEnergyMj')).toBeCloseTo(4.4, 12)
+    expect(read(r, 'battery.dischargePowerMw')).toBe(0)
+  })
+
   test('exhaustion removes inverter load service and freezes motor demand; protection cannot bypass dead motor power', () => {
     const r = runtimeFor(graph('hold'))
     write(r, 'valve.positionFraction', 1)
@@ -119,7 +143,7 @@ describe('finite DC supply and actual support dependencies', () => {
 
   test('finite storage power balance remains conservative at partial depletion and partial recharge steps', () => {
     for (const energy of [0, .03, 4.5, 9.99, 10]) for (const charger of [0, .2, 1.5]) for (const load of [0, .4, 2]) for (const dtSeconds of [.1, 2, 20]) {
-      const r = dcSupplyStep({ energyMj: energy, capacityMj: 10, batteryPowerMw: 1, loadMw: load, chargerAvailableMw: charger, chargerEfficiency: .9, chargeEfficiency: .8, dtSeconds })
+      const r = dcSupplyStep({ energyMj: energy, capacityMj: 10, batteryPowerMw: 1, batteryConnected: true, loadMw: load, chargerAvailableMw: charger, chargerEfficiency: .9, chargeEfficiency: .8, dtSeconds })
       expect(r.energyMj).toBeGreaterThanOrEqual(0)
       expect(r.energyMj).toBeLessThanOrEqual(10)
       expect(r.energyMj - energy).toBeCloseTo((r.chargePowerMw - r.dischargePowerMw) * dtSeconds, 10)

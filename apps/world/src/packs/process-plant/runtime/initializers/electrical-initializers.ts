@@ -86,6 +86,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
     initialValueFor: (component, localPath) => {
       const charge = optionalParameterNumber(component, 'initialStateOfChargeFraction', 1)
       if (localPath === 'stateOfChargeFraction') return charge
+      if (localPath === 'batteryConnected' || localPath === 'batteryConnectionClosed') return true
       if (localPath === 'chargerEnabled') return (component.parameters as Record<string, unknown>).charger !== undefined
       if (localPath === 'storedEnergyMj') return charge * parameterNumber(component, 'nominalPowerMw') * parameterNumber(component, 'dischargeTimeS')
       if (localPath === 'chargerAvailable') return false

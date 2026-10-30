@@ -257,7 +257,9 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     semantics: fixedSemantics({ aspects: [aspect('energized', { variable: 'energized', reading: 'true' })] }),
     variables: [
       variable({ path: 'stateOfChargeFraction', label: 'Battery state of charge', kind: 'state', discipline: 'electrical', writable: false, publish: 'telemetry', measurand: 'charge', quantity: 'ratio', unit: 'fraction' }),
-      variable({ path: 'voltageVdc', label: 'Battery DC voltage', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'voltage', unit: 'volts_dc' }),
+      variable({ path: 'voltageVdc', label: 'DC supply rail voltage', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'voltage', unit: 'volts_dc' }),
+      variable({ path: 'batteryConnected', label: 'Storage battery isolator close command', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', actuation: 'command', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'batteryConnectionClosed', label: 'Storage battery isolator closed', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'chargerAvailable', label: 'Integrated charger AC supply available', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'chargerInputMw', label: 'Integrated charger AC input', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'chargerOutputMw', label: 'Integrated charger DC output', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
