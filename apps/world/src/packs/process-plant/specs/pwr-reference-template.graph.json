@@ -374,7 +374,7 @@
         "presentation": {
           "shortLabel": "RV",
           "names": { "meanPrimaryCoolantTemperatureC": "Tavg" },
-          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" , "safetyInjectionFlowKgPerS": "RCS SI flow", "boronConcentrationPpm": "RCS boron" }
+          "shortNames": { "subcoolingMarginC": "Subcooling", "collapsedLiquidLevelPercent": "RVLIS level" , "safetyInjectionFlowKgPerS": "RCS SI flow", "boronConcentrationPpm": "RCS boron", "shutdownCoolingWithdrawalFlowKgPerS": "RCS RHR withdrawal" }
         }
       }
     },
@@ -679,7 +679,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG A",
-          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" , "collapsedLevelPercent": "SG A collapsed level", "primaryInletTemperatureC": "SG A primary inlet", "primaryOutletTemperatureC": "SG A primary outlet", "heatTransferMw": "SG A primary heat" }
+          "shortNames": { "levelPercent": "SG A NR level", "wideRangeLevelPercent": "SG A WR level", "secondaryRadiationMSvPerH": "SG A N-16", "feedwaterFlowKgPerS": "SG A feed flow" , "collapsedLevelPercent": "SG A collapsed level", "primaryInletTemperatureC": "SG A primary inlet", "primaryOutletTemperatureC": "SG A primary outlet", "heatTransferMw": "SG A primary tube heat" }
         }
       }
     },
@@ -761,7 +761,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG B",
-          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" , "collapsedLevelPercent": "SG B collapsed level", "primaryInletTemperatureC": "SG B primary inlet", "primaryOutletTemperatureC": "SG B primary outlet", "heatTransferMw": "SG B primary heat" }
+          "shortNames": { "levelPercent": "SG B NR level", "wideRangeLevelPercent": "SG B WR level", "secondaryRadiationMSvPerH": "SG B N-16", "feedwaterFlowKgPerS": "SG B feed flow" , "collapsedLevelPercent": "SG B collapsed level", "primaryInletTemperatureC": "SG B primary inlet", "primaryOutletTemperatureC": "SG B primary outlet", "heatTransferMw": "SG B primary tube heat" }
         }
       }
     },
@@ -843,7 +843,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG C",
-          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" , "collapsedLevelPercent": "SG C collapsed level", "primaryInletTemperatureC": "SG C primary inlet", "primaryOutletTemperatureC": "SG C primary outlet", "heatTransferMw": "SG C primary heat" }
+          "shortNames": { "levelPercent": "SG C NR level", "wideRangeLevelPercent": "SG C WR level", "secondaryRadiationMSvPerH": "SG C N-16", "feedwaterFlowKgPerS": "SG C feed flow" , "collapsedLevelPercent": "SG C collapsed level", "primaryInletTemperatureC": "SG C primary inlet", "primaryOutletTemperatureC": "SG C primary outlet", "heatTransferMw": "SG C primary tube heat" }
         }
       }
     },
@@ -925,7 +925,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG D",
-          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" , "collapsedLevelPercent": "SG D collapsed level", "primaryInletTemperatureC": "SG D primary inlet", "primaryOutletTemperatureC": "SG D primary outlet", "heatTransferMw": "SG D primary heat" }
+          "shortNames": { "levelPercent": "SG D NR level", "wideRangeLevelPercent": "SG D WR level", "secondaryRadiationMSvPerH": "SG D N-16", "feedwaterFlowKgPerS": "SG D feed flow" , "collapsedLevelPercent": "SG D collapsed level", "primaryInletTemperatureC": "SG D primary inlet", "primaryOutletTemperatureC": "SG D primary outlet", "heatTransferMw": "SG D primary tube heat" }
         }
       }
     },
@@ -1007,7 +1007,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG E",
-          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" , "collapsedLevelPercent": "SG E collapsed level", "primaryInletTemperatureC": "SG E primary inlet", "primaryOutletTemperatureC": "SG E primary outlet" }
+          "shortNames": { "levelPercent": "SG E NR level", "wideRangeLevelPercent": "SG E WR level", "secondaryRadiationMSvPerH": "SG E N-16", "feedwaterFlowKgPerS": "SG E feed flow" , "collapsedLevelPercent": "SG E collapsed level", "primaryInletTemperatureC": "SG E primary inlet", "primaryOutletTemperatureC": "SG E primary outlet", "heatTransferMw": "SG E primary tube heat" }
         }
       }
     },
@@ -1089,7 +1089,7 @@
       "metadata": {
         "presentation": {
           "shortLabel": "SG F",
-          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" , "collapsedLevelPercent": "SG F collapsed level", "primaryInletTemperatureC": "SG F primary inlet", "primaryOutletTemperatureC": "SG F primary outlet" }
+          "shortNames": { "levelPercent": "SG F NR level", "wideRangeLevelPercent": "SG F WR level", "secondaryRadiationMSvPerH": "SG F N-16", "feedwaterFlowKgPerS": "SG F feed flow" , "collapsedLevelPercent": "SG F collapsed level", "primaryInletTemperatureC": "SG F primary inlet", "primaryOutletTemperatureC": "SG F primary outlet", "heatTransferMw": "SG F primary tube heat" }
         }
       }
     },
@@ -2140,7 +2140,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW valve A"
+          "shortLabel": "AFW valve A", "shortNames": { "motorPowerAvailable": "AFW valve A motor supply" }
         }
       }
     },
@@ -2173,7 +2173,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW valve B"
+          "shortLabel": "AFW valve B", "shortNames": { "motorPowerAvailable": "AFW valve B motor supply" }
         }
       }
     },
@@ -2206,7 +2206,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW valve C"
+          "shortLabel": "AFW valve C", "shortNames": { "motorPowerAvailable": "AFW valve C motor supply" }
         }
       }
     },
@@ -2239,7 +2239,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW valve D"
+          "shortLabel": "AFW valve D", "shortNames": { "motorPowerAvailable": "AFW valve D motor supply" }
         }
       }
     },
@@ -2272,7 +2272,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW valve E"
+          "shortLabel": "AFW valve E", "shortNames": { "motorPowerAvailable": "AFW valve E motor supply" }
         }
       }
     },
@@ -2305,7 +2305,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "AFW valve F"
+          "shortLabel": "AFW valve F", "shortNames": { "motorPowerAvailable": "AFW valve F motor supply" }
         }
       }
     },
@@ -2557,7 +2557,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "ARV A"
+          "shortLabel": "ARV A", "shortNames": { "motorPowerAvailable": "ARV A motor supply" }
         }
       }
     },
@@ -2623,7 +2623,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "ARV B"
+          "shortLabel": "ARV B", "shortNames": { "motorPowerAvailable": "ARV B motor supply" }
         }
       }
     },
@@ -2689,7 +2689,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "ARV C"
+          "shortLabel": "ARV C", "shortNames": { "motorPowerAvailable": "ARV C motor supply" }
         }
       }
     },
@@ -2755,7 +2755,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "ARV D"
+          "shortLabel": "ARV D", "shortNames": { "motorPowerAvailable": "ARV D motor supply" }
         }
       }
     },
@@ -2821,7 +2821,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "ARV E"
+          "shortLabel": "ARV E", "shortNames": { "motorPowerAvailable": "ARV E motor supply" }
         }
       }
     },
@@ -2887,7 +2887,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "ARV F"
+          "shortLabel": "ARV F", "shortNames": { "motorPowerAvailable": "ARV F motor supply" }
         }
       }
     },
@@ -3641,7 +3641,7 @@
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-A1-POS", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation achieved position" },
         { "path": "isolationSignal", "tagId": "RHR-SDC-A1-HOLD", "equipmentId": "rhrShutdownSuctionValveA1", "description": "RHR A RCS suction inner isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
       ],
-      "metadata": { "presentation": { "shortLabel": "RHR A RCS inner" } }
+      "metadata": { "presentation": { "shortLabel": "RHR A RCS inner", "shortNames": { "motorPowerAvailable": "RHR A inner motor supply", "autoOpenActive": "RHR A inner auto-open" } } }
     },
     {
       "id": "rhrShutdownSuctionValveA2",
@@ -3653,7 +3653,7 @@
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-A2-POS", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation achieved position" },
         { "path": "isolationSignal", "tagId": "RHR-SDC-A2-HOLD", "equipmentId": "rhrShutdownSuctionValveA2", "description": "RHR A RCS suction outer isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
       ],
-      "metadata": { "presentation": { "shortLabel": "RHR A RCS outer" } }
+      "metadata": { "presentation": { "shortLabel": "RHR A RCS outer", "shortNames": { "motorPowerAvailable": "RHR A outer motor supply", "autoOpenActive": "RHR A outer auto-open" } } }
     },
     {
       "id": "rhrShutdownSuctionValveB1",
@@ -3665,7 +3665,7 @@
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-B1-POS", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation achieved position" },
         { "path": "isolationSignal", "tagId": "RHR-SDC-B1-HOLD", "equipmentId": "rhrShutdownSuctionValveB1", "description": "RHR B RCS suction inner isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
       ],
-      "metadata": { "presentation": { "shortLabel": "RHR B RCS inner" } }
+      "metadata": { "presentation": { "shortLabel": "RHR B RCS inner", "shortNames": { "motorPowerAvailable": "RHR B inner motor supply", "autoOpenActive": "RHR B inner auto-open" } } }
     },
     {
       "id": "rhrShutdownSuctionValveB2",
@@ -3677,7 +3677,7 @@
         { "path": "effectivePositionFraction", "tagId": "RHR-SDC-B2-POS", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation achieved position" },
         { "path": "isolationSignal", "tagId": "RHR-SDC-B2-HOLD", "equipmentId": "rhrShutdownSuctionValveB2", "description": "RHR B RCS suction outer isolation pressure/temperature hold", "capabilities": { "readable": true, "writable": false } }
       ],
-      "metadata": { "presentation": { "shortLabel": "RHR B RCS outer" } }
+      "metadata": { "presentation": { "shortLabel": "RHR B RCS outer", "shortNames": { "motorPowerAvailable": "RHR B outer motor supply", "autoOpenActive": "RHR B outer auto-open" } } }
     },
     {
       "id": "rhrPumpA",
@@ -5885,7 +5885,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "overtemperatureMarginC": "OTΔT margin A", "overtemperatureSetpointC": "OTΔT setpoint A", "overpowerSetpointC": "OPΔT setpoint A" },
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin A", "overtemperatureSetpointC": "OTΔT setpoint A", "overpowerSetpointC": "OPΔT setpoint A", "supplyAvailable": "dT A instrument supply" },
           "shortLabel": "dT channel A",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -5972,7 +5972,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "overtemperatureMarginC": "OTΔT margin B", "overtemperatureSetpointC": "OTΔT setpoint B", "overpowerSetpointC": "OPΔT setpoint B" },
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin B", "overtemperatureSetpointC": "OTΔT setpoint B", "overpowerSetpointC": "OPΔT setpoint B", "supplyAvailable": "dT B instrument supply" },
           "shortLabel": "dT channel B",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -6059,7 +6059,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "overtemperatureMarginC": "OTΔT margin C", "overtemperatureSetpointC": "OTΔT setpoint C", "overpowerSetpointC": "OPΔT setpoint C" },
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin C", "overtemperatureSetpointC": "OTΔT setpoint C", "overpowerSetpointC": "OPΔT setpoint C", "supplyAvailable": "dT C instrument supply" },
           "shortLabel": "dT channel C",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -6146,7 +6146,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "overtemperatureMarginC": "OTΔT margin D", "overtemperatureSetpointC": "OTΔT setpoint D", "overpowerSetpointC": "OPΔT setpoint D" },
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin D", "overtemperatureSetpointC": "OTΔT setpoint D", "overpowerSetpointC": "OPΔT setpoint D", "supplyAvailable": "dT D instrument supply" },
           "shortLabel": "dT channel D",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -6233,7 +6233,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "overtemperatureMarginC": "OTΔT margin E", "overtemperatureSetpointC": "OTΔT setpoint E", "overpowerSetpointC": "OPΔT setpoint E" },
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin E", "overtemperatureSetpointC": "OTΔT setpoint E", "overpowerSetpointC": "OPΔT setpoint E", "supplyAvailable": "dT E instrument supply" },
           "shortLabel": "dT channel E",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -6320,7 +6320,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortNames": { "overtemperatureMarginC": "OTΔT margin F", "overtemperatureSetpointC": "OTΔT setpoint F", "overpowerSetpointC": "OPΔT setpoint F" },
+          "shortNames": { "overtemperatureMarginC": "OTΔT margin F", "overtemperatureSetpointC": "OTΔT setpoint F", "overpowerSetpointC": "OPΔT setpoint F", "supplyAvailable": "dT F instrument supply" },
           "shortLabel": "dT channel F",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
@@ -6564,7 +6564,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "TD AFW steam B"
+          "shortLabel": "TD AFW steam B", "shortNames": { "motorPowerAvailable": "TD AFW B motor supply" }
         }
       }
     },
@@ -6598,7 +6598,7 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "TD AFW steam C"
+          "shortLabel": "TD AFW steam C", "shortNames": { "motorPowerAvailable": "TD AFW C motor supply" }
         }
       }
     },
