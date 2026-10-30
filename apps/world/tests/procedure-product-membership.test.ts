@@ -14,12 +14,13 @@ describe('product procedure content ownership', () => {
     try {
       const source = procedureSources[0]!
       const selected = source.documentPaths!
-      expect(selected).toHaveLength(40)
+      expect(selected).toHaveLength(41)
       expect(selected.filter(path => path.startsWith('world/'))).toEqual([
         'world/packs/process-plant/procedures/E-0.md',
         'world/packs/process-plant/procedures/ES-0.1.md',
         'world/packs/process-plant/procedures/ES-1.3.md',
         'world/packs/process-plant/procedures/RHR-1.md',
+        'world/packs/process-plant/procedures/RHR-2.md',
         'world/packs/process-plant/procedures/ECA-0.0.md',
         'world/packs/process-plant/procedures/FR-H.3.md',
         'world/packs/process-plant/procedures/FR-H.4.md',
@@ -43,7 +44,7 @@ describe('product procedure content ownership', () => {
       })
       const current = createProcedureSourceService({ sources: procedureSources, retentionDirectory: directory,
         loadKnowledge: async () => createKnowledge({ revision: 'b'.repeat(40), documents: [...documents, ...archivedDocuments] }) })
-      expect((await current.readCatalog()).procedures).toHaveLength(40)
+      expect((await current.readCatalog()).procedures).toHaveLength(41)
       expect((await current.readDocument({ procedureId: 'ES-0.1' })).title).toBe('Finite model task ES-0.1')
       expect((await current.readDocument({ procedureId: 'RHR-1' })).title).toBe('Finite model task RHR-1')
       expect((await current.readDocument({ procedureId: 'ES-1.3' })).sourcePath).toBe('world/packs/process-plant/procedures/ES-1.3.md')

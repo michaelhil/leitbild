@@ -21,6 +21,7 @@ export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
     'world/packs/process-plant/procedures/ES-0.1.md',
     'world/packs/process-plant/procedures/ES-1.3.md',
     'world/packs/process-plant/procedures/RHR-1.md',
+    'world/packs/process-plant/procedures/RHR-2.md',
     'world/packs/process-plant/procedures/ECA-0.0.md',
     'world/packs/process-plant/procedures/FR-H.3.md',
     'world/packs/process-plant/procedures/FR-H.4.md',
