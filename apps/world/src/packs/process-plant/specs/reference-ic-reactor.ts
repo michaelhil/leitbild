@@ -99,6 +99,21 @@ const averageTemperatureDeviationRules = (): ReadonlyArray<ProcessPlantIcRule> =
 export const reactorReferenceIcRules = (
   loops: ReadonlyArray<ProcessPlantReferenceLoop>,
 ): ReadonlyArray<ProcessPlantIcRule> => [
+  ...loops.map(loop => rule({
+    id: `delta-t-channel-${loop.toLowerCase()}-supply-lost`,
+    label: `Delta-T channel ${loop} supply lost`,
+    ruleClass: 'alarm',
+    condition: comparison({ path: `deltaTChannel${loop}.supplyAvailable` }, '==', false),
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: `delta-t-channel-${loop.toLowerCase()}-supply-lost`,
+      title: `Delta-T channel ${loop} instrument supply lost`,
+      message: `The indicated values from channel ${loop} are unavailable. This channel contributes a fail-safe vote to the existing delta-T protection voter; private thermal calculations are not live instrument evidence.`,
+      severity: 'warning',
+      annunciator: { ...reactorAlarm, equipmentId: `deltaTChannel${loop}` },
+    })],
+  })),
   rule({
     id: 'reactor-power-high',
     label: 'Reactor power high',
@@ -137,13 +152,18 @@ export const reactorReferenceIcRules = (
     label: 'Reactor overtemperature delta-T trip',
     ruleClass: 'protection',
     modes: ['powerOperation'],
-    condition: vote(deltaTTripVoteFor(loops), loops.map(loop => comparison({ path: `deltaTChannel${loop}.overtemperatureMarginC` }, '<', 0))),
+    // Explicit model fail-safe policy: a dead channel contributes a trip
+    // vote within this existing voter; it is never a good zero indication.
+    condition: vote(deltaTTripVoteFor(loops), loops.map(loop => any([
+      comparison({ path: `deltaTChannel${loop}.supplyAvailable` }, '==', false),
+      comparison({ path: `deltaTChannel${loop}.overtemperatureMarginC` }, '<', 0),
+    ]))),
     delayMs: 1_000,
     effects: [
       trip({
         id: 'overtemperature-delta-t-trip',
         title: 'Reactor overtemperature delta-T trip',
-        message: `${deltaTTripVoteFor(loops)} or more loops' delta-T is above its overtemperature setpoint, which falls as loop Tavg rises and pressurizer pressure falls.`,
+        message: `${deltaTTripVoteFor(loops)} or more delta-T channels demand trip: overtemperature margin exceeded or channel instrument supply unavailable. Loss-of-power voting is the simulator's explicit fail-safe policy.`,
         annunciator: reactorAction,
       }),
       ...reactorTripBreakerWrites('overtemperature-delta-t-trip'),
@@ -155,13 +175,16 @@ export const reactorReferenceIcRules = (
     label: 'Reactor overpower delta-T trip',
     ruleClass: 'protection',
     modes: ['powerOperation'],
-    condition: vote(deltaTTripVoteFor(loops), loops.map(loop => comparison({ path: `deltaTChannel${loop}.overpowerMarginC` }, '<', 0))),
+    condition: vote(deltaTTripVoteFor(loops), loops.map(loop => any([
+      comparison({ path: `deltaTChannel${loop}.supplyAvailable` }, '==', false),
+      comparison({ path: `deltaTChannel${loop}.overpowerMarginC` }, '<', 0),
+    ]))),
     delayMs: 1_000,
     effects: [
       trip({
         id: 'overpower-delta-t-trip',
         title: 'Reactor overpower delta-T trip',
-        message: `${deltaTTripVoteFor(loops)} or more loops' delta-T is above its overpower setpoint, which falls as loop Tavg rises above its rated value.`,
+        message: `${deltaTTripVoteFor(loops)} or more delta-T channels demand trip: overpower margin exceeded or channel instrument supply unavailable. Loss-of-power voting is the simulator's explicit fail-safe policy.`,
         annunciator: reactorAction,
       }),
       ...reactorTripBreakerWrites('overpower-delta-t-trip'),

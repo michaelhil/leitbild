@@ -9,7 +9,7 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantSignalQuality } from '../signals.ts'
 import type { ProcessPlantIcSafetyFunction } from '../runtime/index.ts'
 import { evaluateSafetyFunction, evaluateSafetyFunctions, type SafetyFunctionEvaluation } from '../safety-functions.ts'
-import { declaredObservable, qualifiedReadings, type PlantRecording } from './declarations.ts'
+import { declaredObservable, type PlantRecording } from './declarations.ts'
 import { readCriterion } from './criteria.ts'
 import { readDerived } from './derived.ts'
 
@@ -112,12 +112,9 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
     const criterion = binding === undefined ? readCriterion(plant, path, safetyFunction) : null
     if (criterion !== null) return { ref: declared.ref, ...criterion, at: context.simulationTime, clock: 'simulation' }
     if (binding === undefined) return { ref: declared.ref, ...readDerived(system, path, safetyFunctions), at: context.simulationTime, clock: 'simulation' }
-    // A reading the model qualifies measures nothing while its flag is off: no value, not applicable, never a colour.
-    const qualified = qualifiedReadings(plant).get(path)
-    if (qualified !== undefined && system.runtime.readVariableSnapshot(qualified.flag).value !== true) {
-      return { ref: declared.ref, value: null, quality: 'not-applicable', at: context.simulationTime, clock: 'simulation', priority: 'none', why: `measures nothing unless ${qualified.words}` }
-    }
     const variable = system.runtime.readVariableSnapshot(binding.path)
+    const quality = processPlantSignalQuality(variable, { system: plant, runtime: system.runtime })
+    if (quality.status === 'unavailable') return { ref: declared.ref, value: null, quality: 'not-applicable', at: context.simulationTime, clock: 'simulation', priority: 'none', why: quality.reason }
     // Only a rule that sets a limit on it can colour it (colours): the rest are not asked.
     const limits = limitsOf(declared)
     const ruled = (ruleId: string): ReadonlyArray<Limit> => limits.get(ruleId) ?? []
@@ -139,7 +136,7 @@ export const readPlant = (context: PlantReadContext, paths: ReadonlyArray<string
     return {
       ref: declared.ref,
       value,
-      quality: value === null || processPlantSignalQuality(variable).status === 'outside-hard-range' ? 'bad' : 'good',
+      quality: value === null || quality.status === 'outside-hard-range' ? 'bad' : 'good',
       at: context.simulationTime,
       clock: 'simulation',
       priority,

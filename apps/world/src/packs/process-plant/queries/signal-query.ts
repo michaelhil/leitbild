@@ -199,7 +199,7 @@ export const answerProcessPlantSignalQuery = (config: {
         return {
           signal: processPlantSignalView(binding),
           variable,
-          quality: processPlantSignalQuality(variable),
+          quality: processPlantSignalQuality(variable, { system: system.plant, runtime: system.runtime }),
           ...(payload.evidence !== true || config.simulationTime === undefined ? {} : { evidence: {
             kind: 'engineering-diagnostic' as const, sampledAt: config.simulationTime, ...processPlantEvidenceFrame(system, config.simulationTime),
           } }),

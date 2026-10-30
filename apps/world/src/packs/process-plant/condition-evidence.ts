@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../core/model/index.ts'
 import { processPlantEvidenceFrame } from './evidence-frame.ts'
 import { processUnitSchema, type ProcessUnit, type VariablePath } from './graph/index.ts'
-import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalView } from './signals.ts'
+import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalView, processPlantSignalQuality } from './signals.ts'
 import type { ProcessPlantSignalReference, ProcessPlantSignalView } from './signals.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
@@ -139,10 +139,12 @@ export const evaluateProcessPlantProcedureCondition = (config: {
         }
       }
       const hardRange = variable.limits?.hardRange
-      const rangeValidity = typeof variable.value === 'number' && hardRange !== undefined
+      const quality = processPlantSignalQuality(variable, { system: plant.plant, runtime: plant.runtime })
+      const rangeValidity = quality.status === 'unavailable' ? 'unavailable' as const : typeof variable.value === 'number' && hardRange !== undefined
         ? variable.value < hardRange.min || variable.value > hardRange.max ? 'outside-declared-range' as const : 'within-declared-range' as const
         : 'no-declared-range' as const
-      const reason = binding.writable !== false || variable.writable !== false ? 'Writable commands/demands cannot establish physical response; use read-only feedback.'
+      const reason = quality.status === 'unavailable' ? quality.reason
+        : binding.writable !== false || variable.writable !== false ? 'Writable commands/demands cannot establish physical response; use read-only feedback.'
         : variable.unit !== condition.unit ? `Condition unit ${condition.unit} does not match native signal unit ${variable.unit}.`
         : typeof variable.value !== typeof condition.value ? 'Condition value type does not match the signal value type.'
           : typeof variable.value === 'number' && !Number.isFinite(variable.value) ? 'Signal value is not finite.'

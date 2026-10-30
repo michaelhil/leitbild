@@ -8,7 +8,7 @@ import type {
   ProcessPlantRuntime,
 } from './runtime/index.ts'
 import type { VariablePath } from './graph/index.ts'
-import { findProcessPlantSignalBinding, type ProcessPlantSignalReference } from './signals.ts'
+import { findProcessPlantSignalBinding, processPlantSignalQuality, type ProcessPlantSignalReference } from './signals.ts'
 
 // Critical safety function status: each function the Plant's I&C declares
 // (control-protection-model.ts) is judged by walking its status tree on the
@@ -114,6 +114,8 @@ export const evaluateSafetyFunction = (config: {
       }
       try {
         const variable = runtime.readVariableSnapshot(binding.path)
+        const quality = processPlantSignalQuality(variable, { system, runtime })
+        if (quality.status === 'unavailable') return { reason: quality.reason! }
         const range = variable.limits?.hardRange
         if (typeof variable.value === 'number' && (!Number.isFinite(variable.value) || (range !== undefined && (variable.value < range.min || variable.value > range.max)))) {
           return { reason: `${key} reads outside its declared range` }

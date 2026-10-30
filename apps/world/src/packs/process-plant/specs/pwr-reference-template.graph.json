@@ -5288,6 +5288,11 @@
         "charger": { "nominalPowerMw": 1.2, "efficiencyFraction": 0.95, "chargeEfficiencyFraction": 0.9 }
       },
       "variables": [
+        { "path": "stateOfChargeFraction", "tagId": "DC-A-SOC", "description": "Finite battery state of charge" },
+        { "path": "storedEnergyMj", "tagId": "DC-A-ENERGY-MJ", "description": "Finite stored battery energy, a simulator diagnostic" },
+        { "path": "chargerAvailable", "tagId": "DC-A-CHARGER-AVAILABLE", "description": "Actual integrated charger AC supply available" },
+        { "path": "chargerInputMw", "tagId": "DC-A-CHARGER-IN-MW", "description": "Actual integrated charger AC input" },
+        { "path": "dischargePowerMw", "tagId": "DC-A-DISCHARGE-MW", "description": "Actual interval-mean battery discharge" },
         {
           "path": "voltageVdc",
           "tagId": "DC-BUS-LVL",
@@ -5316,7 +5321,13 @@
         "initialStateOfChargeFraction": 1,
         "charger": { "nominalPowerMw": 1.2, "efficiencyFraction": 0.95, "chargeEfficiencyFraction": 0.9 }
       },
-      "variables": [],
+      "variables": [
+        { "path": "stateOfChargeFraction", "tagId": "DC-B-SOC", "description": "Finite battery state of charge" },
+        { "path": "storedEnergyMj", "tagId": "DC-B-ENERGY-MJ", "description": "Finite stored battery energy, a simulator diagnostic" },
+        { "path": "chargerAvailable", "tagId": "DC-B-CHARGER-AVAILABLE", "description": "Actual integrated charger AC supply available" },
+        { "path": "chargerInputMw", "tagId": "DC-B-CHARGER-IN-MW", "description": "Actual integrated charger AC input" },
+        { "path": "dischargePowerMw", "tagId": "DC-B-DISCHARGE-MW", "description": "Actual interval-mean battery discharge" }
+      ],
       "metadata": {
         "presentation": {
           "shortLabel": "DC supply B",
@@ -5365,6 +5376,7 @@
         "essential": true
       },
       "variables": [
+        { "path": "servedMw", "tagId": "CTRL-A-SERVED-MW", "description": "Actual served essential UPS support load" },
         {
           "path": "energized",
           "tagId": "CTRL-A-ENERGIZED",
@@ -5387,6 +5399,7 @@
         "essential": true
       },
       "variables": [
+        { "path": "servedMw", "tagId": "CTRL-B-SERVED-MW", "description": "Actual served essential UPS support load" },
         {
           "path": "energized",
           "tagId": "CTRL-B-ENERGIZED",
@@ -5822,6 +5835,7 @@
         "overpowerK6PerC": 0.0029
       },
       "variables": [
+        { "path": "supplyAvailable", "tagId": "DT-A-POWER", "description": "Actual vital supply to delta-T channel A processing electronics" },
         {
           "path": "deltaTC",
           "tagId": "TDI-411",
@@ -5889,7 +5903,9 @@
           "shortLabel": "dT channel A",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
-            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
+            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" },
+            "supplyAvailable": { "on": "Instrument supply live", "off": "Instrument supply lost" },
+            "powerIndicationAvailable": { "on": "Supply live and forced flow", "off": "No powered forced-flow indication" }
           }
         }
       }
@@ -5906,6 +5922,7 @@
         "overpowerK6PerC": 0.0029
       },
       "variables": [
+        { "path": "supplyAvailable", "tagId": "DT-B-POWER", "description": "Actual vital supply to delta-T channel B processing electronics" },
         {
           "path": "deltaTC",
           "tagId": "TDI-421",
@@ -5973,7 +5990,9 @@
           "shortLabel": "dT channel B",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
-            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
+            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" },
+            "supplyAvailable": { "on": "Instrument supply live", "off": "Instrument supply lost" },
+            "powerIndicationAvailable": { "on": "Supply live and forced flow", "off": "No powered forced-flow indication" }
           }
         }
       }
@@ -5990,6 +6009,7 @@
         "overpowerK6PerC": 0.0029
       },
       "variables": [
+        { "path": "supplyAvailable", "tagId": "DT-C-POWER", "description": "Actual vital supply to delta-T channel C processing electronics" },
         {
           "path": "deltaTC",
           "tagId": "TDI-431",
@@ -6057,7 +6077,9 @@
           "shortLabel": "dT channel C",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
-            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
+            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" },
+            "supplyAvailable": { "on": "Instrument supply live", "off": "Instrument supply lost" },
+            "powerIndicationAvailable": { "on": "Supply live and forced flow", "off": "No powered forced-flow indication" }
           }
         }
       }
@@ -6074,6 +6096,7 @@
         "overpowerK6PerC": 0.0029
       },
       "variables": [
+        { "path": "supplyAvailable", "tagId": "DT-D-POWER", "description": "Actual vital supply to delta-T channel D processing electronics" },
         {
           "path": "deltaTC",
           "tagId": "TDI-441",
@@ -6141,7 +6164,9 @@
           "shortLabel": "dT channel D",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
-            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
+            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" },
+            "supplyAvailable": { "on": "Instrument supply live", "off": "Instrument supply lost" },
+            "powerIndicationAvailable": { "on": "Supply live and forced flow", "off": "No powered forced-flow indication" }
           }
         }
       }
@@ -6158,6 +6183,7 @@
         "overpowerK6PerC": 0.0029
       },
       "variables": [
+        { "path": "supplyAvailable", "tagId": "DT-E-POWER", "description": "Actual vital supply to delta-T channel E processing electronics" },
         {
           "path": "deltaTC",
           "tagId": "TDI-451",
@@ -6225,7 +6251,9 @@
           "shortLabel": "dT channel E",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
-            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
+            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" },
+            "supplyAvailable": { "on": "Instrument supply live", "off": "Instrument supply lost" },
+            "powerIndicationAvailable": { "on": "Supply live and forced flow", "off": "No powered forced-flow indication" }
           }
         }
       }
@@ -6242,6 +6270,7 @@
         "overpowerK6PerC": 0.0029
       },
       "variables": [
+        { "path": "supplyAvailable", "tagId": "DT-F-POWER", "description": "Actual vital supply to delta-T channel F processing electronics" },
         {
           "path": "deltaTC",
           "tagId": "TDI-461",
@@ -6309,7 +6338,9 @@
           "shortLabel": "dT channel F",
           "names": { "averageTemperatureC": "Tavg" },
           "states": {
-            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" }
+            "forcedFlow": { "on": "Forced flow", "off": "No forced flow" },
+            "supplyAvailable": { "on": "Instrument supply live", "off": "Instrument supply lost" },
+            "powerIndicationAvailable": { "on": "Supply live and forced flow", "off": "No powered forced-flow indication" }
           }
         }
       }
@@ -7267,6 +7298,12 @@
     }
   ],
   "connections": [
+    { "id": "inverter-a-to-delta-t-channel-a", "from": "dcInverterA.acOutlet", "to": "deltaTChannelA.power", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-delta-t-channel-b", "from": "dcInverterB.acOutlet", "to": "deltaTChannelB.power", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-delta-t-channel-c", "from": "dcInverterA.acOutlet", "to": "deltaTChannelC.power", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-delta-t-channel-d", "from": "dcInverterB.acOutlet", "to": "deltaTChannelD.power", "connectionKind": "electricalPower" },
+    { "id": "inverter-a-to-delta-t-channel-e", "from": "dcInverterA.acOutlet", "to": "deltaTChannelE.power", "connectionKind": "electricalPower" },
+    { "id": "inverter-b-to-delta-t-channel-f", "from": "dcInverterB.acOutlet", "to": "deltaTChannelF.power", "connectionKind": "electricalPower" },
     { "id": "inverter-a-to-steamGeneratorReliefValveA-motor", "from": "dcInverterA.acOutlet", "to": "steamGeneratorReliefValveA.motorPower", "connectionKind": "electricalPower" },
     { "id": "inverter-b-to-steamGeneratorReliefValveB-motor", "from": "dcInverterB.acOutlet", "to": "steamGeneratorReliefValveB.motorPower", "connectionKind": "electricalPower" },
     { "id": "inverter-a-to-steamGeneratorReliefValveC-motor", "from": "dcInverterA.acOutlet", "to": "steamGeneratorReliefValveC.motorPower", "connectionKind": "electricalPower" },

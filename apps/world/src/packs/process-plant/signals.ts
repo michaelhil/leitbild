@@ -11,7 +11,8 @@ import type {
 } from './graph/index.ts'
 import type { ProcessQuantity, ProcessUnit, VariableDiscipline, VariableKind } from './graph/index.ts'
 import { processSignalTagIdSchema, variablePathSchema } from './graph/index.ts'
-import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
+import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
+import type { CompiledProcessPlant } from './plant-compiler.ts'
 import { rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
 export const processPlantSignalReferenceSchema = z.object({
@@ -151,7 +152,7 @@ export interface ProcessPlantSignalView {
 }
 
 export interface ProcessPlantSignalQuality {
-  readonly status: 'good' | 'outside-hard-range'
+  readonly status: 'good' | 'outside-hard-range' | 'unavailable'
   readonly reason?: string
 }
 
@@ -176,8 +177,22 @@ export const processPlantSignalView = (binding: ProcessSignalBinding): ProcessPl
 
 export const processPlantSignalQuality = (
   variable: ProcessPlantVariableSnapshot,
+  context: { readonly system: CompiledProcessPlant; readonly runtime: Pick<ProcessPlantRuntime, 'readVariableSnapshot'> },
 ): ProcessPlantSignalQuality => {
+  for (const flag of meaningfulFlags(context.system.graph).get(variable.path) ?? []) {
+    let available: boolean
+    try { available = context.runtime.readVariableSnapshot(flag).value === true }
+    catch (error) { return { status: 'unavailable', reason: `${variable.path} qualification ${flag} cannot be read: ${error instanceof Error ? error.message : String(error)}` } }
+    if (!available) {
+      const binding = context.system.graph.signalBindingByPath.get(flag)
+      const component = binding?.owner.type === 'component' ? context.system.graph.components[binding.owner.componentIndex] : undefined
+      const local = component === undefined ? '' : String(flag).slice(String(component.id).length + 1)
+      const label = component?.metadata?.presentation?.states?.[local]?.on ?? binding?.label ?? String(flag)
+      return { status: 'unavailable', reason: `measures nothing unless ${label}` }
+    }
+  }
   if (typeof variable.value !== 'number') return { status: 'good' }
+  if (!Number.isFinite(variable.value)) return { status: 'outside-hard-range', reason: `${variable.path} is not finite` }
   const hardRange = variable.limits?.hardRange
   if (hardRange === undefined) return { status: 'good' }
   if (variable.value < hardRange.min || variable.value > hardRange.max) {
@@ -187,4 +202,18 @@ export const processPlantSignalQuality = (
     }
   }
   return { status: 'good' }
+}
+
+const meaningfulFlagCache = new WeakMap<CompiledPlantGraph, ReadonlyMap<VariablePath, ReadonlyArray<VariablePath>>>()
+/** One canonical model declaration governs indicated-value validity in live
+ * signals, recording, display observations, procedures and response evidence. */
+const meaningfulFlags = (graph: CompiledPlantGraph): ReadonlyMap<VariablePath, ReadonlyArray<VariablePath>> => {
+  const retained = meaningfulFlagCache.get(graph)
+  if (retained) return retained
+  const result = new Map<VariablePath, VariablePath[]>()
+  for (const component of graph.components) for (const rule of component.semantics.meaningfulWhile) {
+    for (const variable of rule.variables) result.set(variable, [...result.get(variable) ?? [], rule.flag])
+  }
+  meaningfulFlagCache.set(graph, result)
+  return result
 }

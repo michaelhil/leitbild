@@ -12,6 +12,7 @@ import { deltaTChannelSpans } from '../../graph/instrumentation-component-defini
 import { clamp, parameterNumber, relaxToward } from '../component-helpers.ts'
 import { primaryLoopLegReversed } from '../primary-loop-hydraulics.ts'
 import { primarySystemPressurizer, primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
+import { componentHasElectricalPower } from './electrical-behaviors.ts'
 
 interface LoopLegs {
   readonly hotLeg: CompiledProcessLink
@@ -94,7 +95,7 @@ const deltaTChannelReadings = (system: CompiledProcessPlant, channel: CompiledCo
   }
 }
 
-const deltaTChannelWrites = ['deltaTC', 'averageTemperatureC', 'overtemperatureSetpointC', 'overpowerSetpointC', 'overtemperatureMarginC', 'overpowerMarginC', 'deltaTPowerPercent', 'forcedFlow', 'hotLegTemperatureRateCPerS', 'loopFlowFraction']
+const deltaTChannelWrites = ['deltaTC', 'averageTemperatureC', 'overtemperatureSetpointC', 'overpowerSetpointC', 'overtemperatureMarginC', 'overpowerMarginC', 'deltaTPowerPercent', 'forcedFlow', 'supplyAvailable', 'powerIndicationAvailable', 'hotLegTemperatureRateCPerS', 'loopFlowFraction']
 
 // The hot leg the channel read last, from its own delta-T and average temperature.
 const previousHotLegC = (channel: CompiledComponent, context: ProcessPlantBehaviorContext): number =>
@@ -102,6 +103,8 @@ const previousHotLegC = (channel: CompiledComponent, context: ProcessPlantBehavi
 
 const writeDeltaTChannel = (system: CompiledProcessPlant, channel: CompiledComponent, context: ProcessPlantBehaviorContext, hotLegRateCPerS: (hotLegC: number) => number): void => {
   const reading = deltaTChannelReadings(system, channel, context)
+  const powered = componentHasElectricalPower(system, channel, context, 'power')
+  context.write(componentVariablePath(channel, 'supplyAvailable'), powered)
   context.write(componentVariablePath(channel, 'hotLegTemperatureRateCPerS'), hotLegRateCPerS(reading.averageTemperature + reading.deltaT / 2))
   context.write(componentVariablePath(channel, 'deltaTC'), reading.deltaT)
   context.write(componentVariablePath(channel, 'averageTemperatureC'), reading.averageTemperature)
@@ -110,7 +113,10 @@ const writeDeltaTChannel = (system: CompiledProcessPlant, channel: CompiledCompo
   context.write(componentVariablePath(channel, 'overtemperatureMarginC'), reading.overtemperatureSetpoint - reading.deltaT)
   context.write(componentVariablePath(channel, 'overpowerMarginC'), reading.overpowerSetpoint - reading.deltaT)
   context.write(componentVariablePath(channel, 'deltaTPowerPercent'), reading.deltaTPowerPercent)
+  // This flag qualifies the indicated delta-T power. Physical loop flow and
+  // private thermal calculations continue independently of instrument power.
   context.write(componentVariablePath(channel, 'forcedFlow'), reading.forcedFlow)
+  context.write(componentVariablePath(channel, 'powerIndicationAvailable'), powered && reading.forcedFlow)
   context.write(componentVariablePath(channel, 'loopFlowFraction'), reading.loopFlowFraction)
 }
 

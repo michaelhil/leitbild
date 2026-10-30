@@ -20,13 +20,13 @@ export const recordedPlantVariables = (plant: CompiledProcessPlant, profileId: s
 export const processPlantRecordingProfiles: ReadonlyArray<RecordingProfileDescriptor> = [{
   id: 'operations',
   title: 'Operations',
-  description: 'State, operator controls, discrete states, tagged instruments and power balances. Other derived engineering diagnostics are excluded. Unchanged values are recorded at most once per minute. Quality describes declared hard-range consistency, not qualified instrumentation.',
+  description: 'State, operator controls, discrete states, tagged instruments and power balances. Other derived engineering diagnostics are excluded. Unchanged values and quality are recorded at most once per minute; quality transitions are retained immediately. Quality checks model-declared availability and hard ranges, not qualified instrumentation.',
   defaultIntervalMs: 1_000,
   minimumIntervalMs: 250,
 }, {
   id: 'engineering',
   title: 'Engineering detail',
-  description: 'Every declared Plant variable for detailed analysis; intentionally slower and opt-in. Quality describes declared hard-range consistency, not qualified instrumentation.',
+  description: 'Every declared Plant variable for detailed analysis; intentionally slower and opt-in. Quality checks model-declared availability and hard ranges, not qualified instrumentation.',
   defaultIntervalMs: 5_000,
   minimumIntervalMs: 1_000,
 }]
@@ -114,7 +114,7 @@ export const createProcessPlantRecordingPlan = (config: {
       }))
   })
   const descriptors = series.map(item => item.descriptor)
-  const lastRecorded = new Map<string, { value: number | boolean; at: number }>()
+  const lastRecorded = new Map<string, { value: number | boolean; quality: 'good' | 'bad'; at: number }>()
   return {
     profile,
     intervalMs,
@@ -124,17 +124,18 @@ export const createProcessPlantRecordingPlan = (config: {
       samples: series.flatMap(item => {
         const variable = item.plant.runtime.readVariableSnapshotHandle(item.handle)
         const value = variable.value
+        const quality = processPlantSignalQuality(variable, { system: item.plant.plant, runtime: item.plant.runtime }).status === 'good' ? 'good' as const : 'bad' as const
         const at = Date.parse(simulationTime)
         const previous = lastRecorded.get(item.descriptor.id)
-        if (previous && previous.value === value && at >= previous.at && at - previous.at < 60_000) return []
-        lastRecorded.set(item.descriptor.id, { value, at })
+        if (previous && previous.value === value && previous.quality === quality && at >= previous.at && at - previous.at < 60_000) return []
+        lastRecorded.set(item.descriptor.id, { value, quality, at })
         return [{
           seriesId: item.descriptor.id,
           observedAt,
           simulationTime,
           elapsedMs: item.plant.runtime.elapsedMs(),
           value,
-          quality: processPlantSignalQuality(variable).status === 'outside-hard-range' ? 'bad' as const : 'good' as const,
+          quality,
         }]
       }),
     }),

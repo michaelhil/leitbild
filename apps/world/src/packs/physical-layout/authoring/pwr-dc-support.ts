@@ -25,6 +25,18 @@ export const installPwrDcSupportHardware = (input: {
     const retained = coverage.dispositions.find(row => row.subjectId === `vitalBattery${train}`)
     if (!retained) throw Error(`DC installation has no battery coverage for train ${train}`)
     retained.reason = 'Exact graph-owned finite battery and integrated AC charger assembly. Retained battery-rack geometry represents the bounded assembly abstraction; charging supply, actual energy, losses and downstream load are native model observations, not geometry-derived capacities.'
+    // The graph channel is its processing function. Its explicitly authored
+    // cabinet housing anchors the power cable, without inventing field RTD
+    // positions or drawing overlapping duplicate cabinets for each channel.
+    const cabinet = source.elements.find(element => element.id === `equipment/plantControlsLoad${train}`)
+    if (!cabinet) throw Error(`No retained train ${train} processing cabinet`)
+    for (const channel of plant.sourceGraph.components.filter(component => component.kind === 'deltaTProtectionChannel' && plant.sourceGraph.connections.some(edge => edge.from === `dcInverter${train}.acOutlet` && edge.to === `${component.id}.power`))) {
+      const subjectId = String(channel.id), row = coverage.dispositions.find(entry => entry.subjectId === subjectId)
+      if (!row) throw Error(`No retained instrument coverage ${subjectId}`)
+      row.physicalElementIds = [cabinet.id]
+      row.reason = 'Graph-owned delta-T processing function with actual vital inverter power. The retained controls cabinet explicitly houses its illustrative electronics and anchors its exact power-port route; individual field temperature/flow sensor locations remain unprovided.'
+      bindings.push({ physicalElementId: cabinet.id, elementId: subjectId, relation: 'houses' })
+    }
     const subject = `dcNonessentialLoad${train}`, id = `equipment/${subject}`, label = `UPS discretionary loads ${train}`
     if (!plant.sourceGraph.components.some(component => String(component.id) === subject)) throw Error(`DC installation has no graph subject ${subject}`)
     if (source.elements.some(element => element.id === id)) throw Error(`Duplicate DC installation ${id}`)
