@@ -8,6 +8,9 @@ import { processPlantCapabilities } from '../src/packs/process-plant/capabilitie
 import { answerProcessPlantQuery } from '../src/packs/process-plant/query.ts'
 import { recordingSeriesIdFor, type IsoTimestamp, type RecordedSample } from '../src/core/model/index.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
+import { processPlantSimRuntimeId } from '../src/packs/process-plant/sim/constants.ts'
+import { createPlantOperations } from '../src/packs/process-plant/operations/plant-operations.ts'
+import { processSignalTagIdSchema } from '../src/packs/process-plant/graph/index.ts'
 
 guardPlantTests()
 const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:sampled-response', loopCount: 2 }))
@@ -19,7 +22,7 @@ const instance = (): ProcessPlantRuntimeInstance => {
 }
 const plant = instance()
 plant.runtime.tick(120_000)
-const path = compiled.graph.signalBindingByTagId.get('SG-A-PRESS')!.path
+const path = compiled.graph.signalBindingByTagId.get(processSignalTagIdSchema.parse('SG-A-PRESS'))!.path
 const value = Number(plant.runtime.readVariable(path))
 const seriesId = recordingSeriesIdFor(compiled.id, path)
 const input = processPlantResponseQuerySchema.parse({
@@ -30,7 +33,7 @@ const input = processPlantResponseQuerySchema.parse({
   comparisons: [{ signal: { tagId: 'SG-A-PRESS' }, statistic: 'minimum', operator: '>', value: 0, unit: 'MPa' }],
 })
 const sample = (seconds: number, measured = value, sequence = seconds + 1): RecordedSample => ({
-  runtimeId: 'plant-runtime', seriesId, sequence, observedAt: at(seconds), simulationTime: at(seconds), elapsedMs: seconds * 1000, value: measured, quality: 'good',
+  runtimeId: processPlantSimRuntimeId, seriesId, sequence, observedAt: at(seconds), simulationTime: at(seconds), elapsedMs: seconds * 1000, value: measured, quality: 'good',
 })
 const config = (samples: ReadonlyArray<RecordedSample> = [sample(0), sample(60), sample(120)]) => ({
   plant, input, simulationTime: at(120), recordingIntervalMs: 1000, recordedSeriesIds: new Set([seriesId]), recordedHistory: { read: () => samples },
@@ -77,12 +80,43 @@ describe('explicitly sampled Plant response', () => {
     const variants = [
       [sample(0), { ...sample(60), quality: 'bad' as const }, sample(120)],
       [sample(0), { ...sample(60), runtimeId: 'other-runtime' }, sample(120)],
+      [sample(0), sample(60), sample(120)].map(row => ({ ...row, runtimeId: 'wrong-only-runtime' })),
       [sample(0), { ...sample(60), seriesId: 'series:other' }, sample(120)],
       [sample(0), sample(80, value, 61), sample(60, value, 81), sample(120)],
       [sample(0), { ...sample(60), elapsedMs: 10_000 }, sample(120)],
     ]
     for (const rows of variants) expect(evaluateProcessPlantResponse(config(rows)).status).toBe('unknown')
     expect(evaluateProcessPlantResponse({ ...config(), input: { ...input, basis: { ...input.basis, modelDigest: 'a'.repeat(64) } } })).toMatchObject({ status: 'unknown', evidence: [] })
+  })
+
+  test('command-relative response cannot borrow an improvement before the required accepted operation', () => {
+    const control = compiled.graph.signalBindingByTagId.get(processSignalTagIdSchema.parse('SG-A-ARV-SP'))!
+    const demand = Number(plant.runtime.readVariable(control.path))
+    const receipt = { commandId: 'command:human-before-handoff', path: control.path, value: demand, origin: 'person' as const, actorId: 'person:operator', elapsedMs: 30_000, kind: 'write' as const }
+    const operations = createPlantOperations({ log: [receipt], proposals: [] })
+    const anchored = { ...input, windowSeconds: 60, afterOperations: [{ signal: { tagId: control.tagId! }, value: demand, unit: control.unit }],
+      comparisons: [{ ...input.comparisons[0]!, statistic: 'change' as const, operator: '>' as const, value: 0 }] }
+    const beforeActionOnly = [sample(0, value - 1), sample(90), sample(120)]
+    const { afterOperations: _anchors, ...unanchored } = anchored
+    expect(evaluateProcessPlantResponse({ ...config(beforeActionOnly), input: unanchored }).status).toBe('satisfied')
+    expect(evaluateProcessPlantResponse({ ...config(beforeActionOnly), plant: { ...plant, operations }, input: anchored })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('left boundary') }] })
+    const afterAction = evaluateProcessPlantResponse({ ...config([sample(0, value - 1), sample(60, value - 0.25), sample(120)]), plant: { ...plant, operations }, input: anchored })
+    expect(afterAction.status).toBe('satisfied')
+    expect(afterAction.evidence[0]).toMatchObject({ first: { simulationTime: at(60) }, notBeforeSimulationTime: at(30), actual: 0.25, afterOperations: [{ receipt: { commandId: receipt.commandId, origin: 'person' } }] })
+    expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations }, input: { ...anchored, windowSeconds: 120 } })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('after all required') })
+  })
+
+  test('every latest required control receipt must match; an older matching write, unavailable log or ramp target is not an anchor', () => {
+    const control = compiled.graph.signalBindingByTagId.get(processSignalTagIdSchema.parse('SG-A-ARV-SP'))!
+    const demand = Number(plant.runtime.readVariable(control.path))
+    const receipt = { commandId: 'command:target', path: control.path, value: demand, origin: 'ai' as const, actorId: 'agent:operator', elapsedMs: 0, kind: 'write' as const }
+    const anchored = { ...input, afterOperations: [{ signal: { tagId: control.tagId! }, value: demand, unit: control.unit }] }
+    for (const operations of [undefined, createPlantOperations({ log: [receipt, { ...receipt, value: demand + 1, elapsedMs: 10_000 }], proposals: [] }), createPlantOperations({ log: [{ ...receipt, kind: 'ramp' }], proposals: [] })]) {
+      expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, ...(operations === undefined ? {} : { operations }) }, input: anchored })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('latest retained accepted') })
+    }
+    const operations = createPlantOperations({ log: [receipt], proposals: [] })
+    const two = processPlantResponseQuerySchema.parse({ ...anchored, afterOperations: [...anchored.afterOperations, { signal: { tagId: 'SG-B-ARV-SP' }, value: demand, unit: control.unit }] })
+    expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations }, input: two }).status).toBe('unknown')
   })
 
   test('commands and nonnative units cannot qualify response; hidden fault truth is refused', () => {
@@ -96,7 +130,7 @@ describe('explicitly sampled Plant response', () => {
 
   test('public discovery, target inspection and strict output validation preserve the sampled proof', () => {
     const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.response.evaluate')!
-    expect(capability.inspectObjectIds?.(input)).toEqual([compiled.id])
+    expect(capability.inspectObjectIds?.(input).map(String)).toEqual([String(compiled.id)])
     expect(capability.input.safeParse({ ...input, extra: true }).success).toBe(false)
     expect(capability.output.parse(answerProcessPlantQuery({ ...config(), request: { capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() }))).toMatchObject({ status: 'satisfied', targetObjectId: compiled.id })
     expect(capability.output.parse(evaluateProcessPlantResponse(config([sample(60)])))).toMatchObject({ status: 'unknown' })
@@ -107,15 +141,15 @@ describe('explicitly sampled Plant response', () => {
     const history = createRunHistorian(':memory:')
     try {
       const plan = createProcessPlantRecordingPlan({ selection: { packId: 'process-plant', profileId: 'operations' }, plants: new Map([[compiled.id, live]]), unitLabels: new Map([[compiled.id, 'Recorded test unit']]) })
-      history.record('plant-runtime', { descriptors: plan.descriptors, samples: [] })
+      history.record(processPlantSimRuntimeId, { descriptors: [...plan.descriptors], samples: [] })
       for (const seconds of [0, 60, 120]) {
         if (seconds > live.runtime.elapsedMs() / 1000) live.runtime.tick(seconds * 1000 - live.runtime.elapsedMs())
-        history.record('plant-runtime', plan.sample({ observedAt: at(seconds), simulationTime: at(seconds) }))
+        history.record(processPlantSimRuntimeId, plan.sample({ observedAt: at(seconds), simulationTime: at(seconds) }))
       }
       const checkpoint = live.runtime.checkpoint()
       const restoredRuntime = createProcessPlantRuntime({ system: compiled, restoredCheckpoint: checkpoint })
       const restored = { ...live, runtime: restoredRuntime }
-      const response = evaluateProcessPlantResponse({ ...config(), plant: restored, recordedSeriesIds: new Set(history.listSeries().map(series => series.id)), recordedHistory: recordedHistoryOf(history, 'plant-runtime') })
+      const response = evaluateProcessPlantResponse({ ...config(), plant: restored, recordedSeriesIds: new Set(history.listSeries().map(series => series.id)), recordedHistory: recordedHistoryOf(history, processPlantSimRuntimeId) })
       expect(response.status).toBe('satisfied')
       expect(response.evidence[0]).toMatchObject({ first: { simulationTime: at(0) }, current: { simulationTime: at(120) } })
       expect(restoredRuntime.checkpoint()).toEqual(checkpoint)

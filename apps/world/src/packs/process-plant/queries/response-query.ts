@@ -20,5 +20,6 @@ export const answerProcessPlantResponseQuery = (config: {
   const plant = requirePlant(config.plants, input.targetObjectId)
   refuseInjectedFaultsIn(plant.plant.graph, input.condition)
   refuseInjectedFaultsIn(plant.plant.graph, input.comparisons)
+  refuseInjectedFaultsIn(plant.plant.graph, input.afterOperations)
   return evaluateProcessPlantResponse({ ...config, plant, input })
 }

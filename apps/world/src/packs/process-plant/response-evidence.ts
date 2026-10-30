@@ -7,6 +7,7 @@ import { processPlantEvidenceFrame } from './evidence-frame.ts'
 import { evaluateProcessPlantProcedureCondition, processPlantProcedureBasisSchema, processPlantProcedureConditionSchema } from './condition-evidence.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import { processPlantSignalQuality, processPlantSignalReferenceSchema, readableProcessPlantSignalBinding, processPlantSignalView } from './signals.ts'
+import { processPlantSimRuntimeId } from './sim/constants.ts'
 
 const numericOperator = z.enum(['<', '<=', '==', '!=', '>=', '>'])
 export const processPlantResponseQuerySchema = z.object({
@@ -14,13 +15,15 @@ export const processPlantResponseQuerySchema = z.object({
   basis: processPlantProcedureBasisSchema,
   condition: processPlantProcedureConditionSchema.describe('Current read-only prerequisites, reacquired with this response. A recorded response never replaces current physical feedback.'),
   windowSeconds: z.number().finite().positive().describe('Required elapsed simulation-time observation window. Its engineering source must justify the exercise window; pause does not accumulate it.'),
+  afterOperations: z.array(z.object({ signal: processPlantSignalReferenceSchema, value: z.union([z.number().finite(), z.boolean()]), unit: processUnitSchema }).strict()).min(1).optional()
+    .describe('Optional command-relative response: the latest retained accepted operation on EACH exact control must match this value/unit and the current control value. Historical samples before the latest required receipt cannot qualify. Accepted commands do not prove achieved response.'),
   comparisons: z.array(z.object({
     signal: processPlantSignalReferenceSchema,
     statistic: z.enum(['minimum', 'maximum', 'change']).describe('Stored numeric sample minimum/maximum, including current acquisition, or current minus the retained left-boundary sample. No interpolation or uninterrupted-hold claim.'),
     operator: numericOperator,
     value: z.number().finite(),
     unit: processUnitSchema,
-  }).strict()).min(1).max(128),
+  }).strict()).min(1),
 }).strict()
 
 type Status = 'satisfied' | 'challenged' | 'unknown'
@@ -62,6 +65,20 @@ export const evaluateProcessPlantResponse = (config: {
   const limit = Math.ceil((durationMs + recordedHoldMs + interval) / interval) + 2
   if (!Number.isSafeInteger(Math.ceil(durationMs)) || !Number.isSafeInteger(limit) || !Number.isFinite(new Date(fromMs).getTime())) return failure('The requested response window cannot be represented in simulation time.')
   if (durationMs > plant.runtime.elapsedMs()) return failure('The Plant has not accumulated the requested elapsed simulation-time response window.')
+  const anchors: Array<Record<string, unknown>> = []
+  let notBeforeElapsedMs = 0
+  for (const anchor of input.afterOperations ?? []) {
+    const binding = readableProcessPlantSignalBinding(plant.plant.graph, anchor.signal)
+    const latest = plant.operations?.log().filter(operation => operation.path === binding.path).at(-1)
+    if (!binding.writable || binding.unit !== anchor.unit || latest === undefined || latest.value !== anchor.value || latest.kind === 'ramp'
+      || plant.runtime.readVariableSnapshot(binding.path).value !== anchor.value || latest.elapsedMs > plant.runtime.elapsedMs()) {
+      return failure('The latest retained accepted control operation does not establish every required command anchor; do not recreate missing history from current demands.')
+    }
+    notBeforeElapsedMs = Math.max(notBeforeElapsedMs, latest.elapsedMs)
+    anchors.push({ signal: processPlantSignalView(binding), receipt: latest })
+  }
+  if (input.afterOperations !== undefined && plant.runtime.elapsedMs() - notBeforeElapsedMs < durationMs) return failure('The requested response duration has not elapsed after all required accepted control operations.')
+  const anchoredAt = now - plant.runtime.elapsedMs() + notBeforeElapsedMs
   const from = new Date(fromMs).toISOString() as IsoTimestamp
   const to = config.simulationTime!
   const summaries = new Map<string, { readonly status: Status; readonly summary: Record<string, unknown>; readonly minimum: number | undefined; readonly maximum: number | undefined; readonly change: number | undefined }>()
@@ -94,7 +111,7 @@ export const evaluateProcessPlantResponse = (config: {
             const sample = samples[index]!
             const at = sample.simulationTime === undefined ? Number.NaN : Date.parse(sample.simulationTime)
             const previous = samples[index - 1]
-            if (sample.seriesId !== seriesId || !Number.isFinite(at) || at < fromMs || at > now || sample.elapsedMs === undefined || sample.elapsedMs > plant.runtime.elapsedMs()
+            if (sample.runtimeId !== processPlantSimRuntimeId || sample.seriesId !== seriesId || !Number.isFinite(at) || at < fromMs || at > now || sample.elapsedMs === undefined || sample.elapsedMs > plant.runtime.elapsedMs()
               || Math.abs((at - sample.elapsedMs) - (now - plant.runtime.elapsedMs())) > 1) reason = 'A retained sample does not establish this signal and simulation-time frame.'
             else if (sample.quality !== 'good' || typeof sample.value !== 'number' || !Number.isFinite(sample.value)) reason = 'A retained response sample is unavailable or not good quality.'
             else if (previous !== undefined && (at < Date.parse(previous.simulationTime!) || sample.elapsedMs < previous.elapsedMs!)) reason = 'Retained response time reverses; the window is not one advancing simulation trajectory.'
@@ -102,7 +119,7 @@ export const evaluateProcessPlantResponse = (config: {
         }
       } catch (error) { reason = error instanceof Error ? error.message : String(error) }
       let left = -1
-      samples.forEach((sample, index) => { if (Date.parse(sample.simulationTime ?? '') <= start) left = index })
+      samples.forEach((sample, index) => { const at = Date.parse(sample.simulationTime ?? ''); if (at <= start && at >= anchoredAt) left = index })
       const selected = left < 0 ? samples : samples.slice(left)
       const first = selected[0]
       if (reason === undefined && (left < 0 || first === undefined)) reason = 'The retained record does not cover the left boundary of the requested response window.'
@@ -115,7 +132,8 @@ export const evaluateProcessPlantResponse = (config: {
       const maximum = value === undefined ? undefined : values.reduce((maximum, measured) => Math.max(maximum, measured), value)
       const change = value === undefined || typeof first?.value !== 'number' ? undefined : value - first.value
       const elapsedSeconds = first?.simulationTime === undefined ? undefined : (now - Date.parse(first.simulationTime)) / 1000
-      const summary = { ...base, status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
+      const summary = { ...base, ...(input.afterOperations === undefined ? {} : { afterOperations: anchors, notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
+        status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
         storedSampleCount: selected.length, sampleTimes: selected.flatMap(sample => sample.simulationTime ?? []), maximumGapMs,
         ...(first === undefined ? {} : { first: { ...(first.simulationTime === undefined ? {} : { simulationTime: first.simulationTime }), ...(first.elapsedMs === undefined ? {} : { elapsedMs: first.elapsedMs }), value: first.value } }),
         ...(value === undefined ? {} : { current: { simulationTime: to, elapsedMs: plant.runtime.elapsedMs(), value } }),
