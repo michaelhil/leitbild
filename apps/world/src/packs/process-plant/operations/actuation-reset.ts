@@ -4,6 +4,7 @@ import type { ProcessPlantIcCondition, ProcessPlantIcRule, ProcessPlantIcSnapsho
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
 import { actionOf, conditionText, icRuleKind } from '../ic/thresholds.ts'
 import { ruleStatesFrom } from './control-standing.ts'
+import { selectProcessPlantOperatingMode } from '../runtime/ic/control-protection.ts'
 
 // A person resets a latched protection actuation (C2b R1): every one that
 // stands sealed in is listed with a RESET, offered once its initiating
@@ -50,12 +51,21 @@ const resettableKind = (rule: ProcessPlantIcRule): boolean => rule.enabled && ru
  */
 export const actuationResets = (plant: CompiledProcessPlant, snapshot: ProcessPlantIcSnapshot, context: ResetContext): ReadonlyArray<ActuationReset> => {
   const states = ruleStatesFrom(snapshot)
+  let mode: { readonly id: string | null } | undefined
   return plant.automation.rules.flatMap((rule): ReadonlyArray<ActuationReset> => {
     const state = states.get(rule.id)
     if (!resettableKind(rule) || state === undefined || !state.latched) return []
     if (state.actedAtElapsedMs === undefined) throw new Error(`I&C rule ${rule.id} stands sealed in without the time it acted`)
     const why = (() => {
-      if (context.holds(rule.condition)) {
+      // The initiating condition includes the rule's operating-mode scope,
+      // just as it does when I&C actuates it. A raw true predicate from power
+      // operation cannot hold equipment forever after the Plant leaves that
+      // mode. Unknown mode is not proof that the initiating condition cleared.
+      const current = rule.modes === undefined ? undefined
+        : (mode ??= { id: selectProcessPlantOperatingMode(plant.automation.operatingModes, context.holds)?.id ?? null }).id
+      if (current === null) return 'current operating mode is unavailable; the mode-qualified initiating condition cannot be judged'
+      const applicable = current === undefined || rule.modes!.includes(current)
+      if (applicable && context.holds(rule.condition)) {
         const words = conditionText(plant, rule.condition)
         return `condition still present${words === null ? '' : `: ${words}`}`
       }

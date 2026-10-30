@@ -129,12 +129,17 @@ const assignFirstOut = (
  * The Plant's operating mode: the first declared mode whose condition holds;
  * null where it declares none, or none holds.
  */
+export const selectProcessPlantOperatingMode = (
+  modes: ReadonlyArray<ProcessPlantIcOperatingMode>,
+  matches: (condition: ProcessPlantIcCondition) => boolean,
+): ProcessPlantIcOperatingMode | null => modes.find(mode => matches(mode.condition)) ?? null
+
 export const processPlantOperatingMode = (config: {
   readonly system: CompiledProcessPlant
   readonly runtime: ProcessPlantRuntime
   readonly modes: ReadonlyArray<ProcessPlantIcOperatingMode>
 }): ProcessPlantIcOperatingMode | null =>
-  config.modes.find(mode => evaluateProcessPlantIcCondition({ system: config.system, runtime: config.runtime, condition: mode.condition }).matches) ?? null
+  selectProcessPlantOperatingMode(config.modes, condition => evaluateProcessPlantIcCondition({ system: config.system, runtime: config.runtime, condition }).matches)
 
 // A rule qualified by modes acts only while the Plant is in one of them.
 const inRuleModes = (rule: ProcessPlantIcRule, mode: () => string | null): boolean => {

@@ -11,6 +11,7 @@ import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/sig
 import { actuationResets, resetRefusal, type ResetContext } from '../src/packs/process-plant/operations/actuation-reset.ts'
 import { validateOperatorWrite } from '../src/packs/process-plant/operations/command-guard.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
+import { processPlantOperatingMode } from '../src/packs/process-plant/runtime/ic/control-protection.ts'
 
 guardPlantTests()
 
@@ -110,5 +111,46 @@ describe('the RESET of a latched actuation', () => {
     const declared = plant.automation.rules.filter(rule => rule.resetAfterMs !== undefined)
     expect(declared.map(rule => rule.id).sort()).toEqual(['safety-injection-containment-pressure-high-1', 'safety-injection-low-pzr-pressure', 'safety-injection-manual'])
     for (const rule of declared) expect(rule).toMatchObject({ ruleClass: 'protection', latch: true, resetAfterMs: 60_000 })
+  })
+
+  test('leaving an initiating operating mode releases reset eligibility without changing the equipment', () => {
+    const run = started()
+    run.step(3)
+    for (const tag of ['MFW-PUMP-A-RUN', 'MFW-PUMP-B-RUN']) run.runtime.writeCommand({ type: 'setVariable', path: path(tag), value: false })
+    run.step(1)
+    const id = 'main-feedwater-pumps-tripped-afw-start'
+    const rule = plant.automation.rules.find(row => row.id === id)!
+    expect(run.context().holds(rule.condition)).toBe(true)
+    expect(run.resets().find(row => row.ruleId === id)?.offered).toBe(false)
+    run.runtime.writeCommand({ type: 'setVariable', path: path('RX-TRIP-MAN'), value: true })
+    run.step(60)
+    const mode = processPlantOperatingMode({ system: plant, runtime: run.runtime, modes: plant.automation.operatingModes })
+    expect(mode).not.toBeNull()
+    expect(rule.modes!.includes(mode!.id)).toBe(false)
+    expect(run.context().holds(rule.condition)).toBe(true)
+    expect(run.resets().find(row => row.ruleId === id)?.offered).toBe(true)
+    const position = run.runtime.readVariable(path('AFW-A-CV'))
+    run.reset(id)
+    expect(run.runtime.readVariable(path('AFW-A-CV'))).toBe(position)
+    expect(run.protection.snapshot().rules.find(row => row.ruleId === id)?.latched).toBe(false)
+  })
+
+  test('an unknown mode cannot release a mode-qualified latch or waive an authored reset timer', () => {
+    const run = started()
+    run.step(3)
+    for (const tag of ['MFW-PUMP-A-RUN', 'MFW-PUMP-B-RUN']) run.runtime.writeCommand({ type: 'setVariable', path: path(tag), value: false })
+    run.step(1)
+    const id = 'main-feedwater-pumps-tripped-afw-start'
+    const rule = plant.automation.rules.find(row => row.id === id)!
+    const unknown = actuationResets(plant, run.protection.snapshot(), { elapsedMs: run.runtime.elapsedMs(), holds: condition => condition === rule.condition })
+      .find(row => row.ruleId === id)!
+    expect(unknown.offered).toBe(false)
+    expect(unknown.reason).toContain('current operating mode is unavailable')
+    run.runtime.writeCommand({ type: 'setVariable', path: path('RX-TRIP-MAN'), value: true })
+    run.step(60)
+    const delayed = { ...plant, automation: { ...plant.automation, rules: plant.automation.rules.map(row => row.id === id ? { ...row, resetAfterMs: 120_000 } : row) } }
+    const timer = actuationResets(delayed, run.protection.snapshot(), run.context()).find(row => row.ruleId === id)!
+    expect(timer.offered).toBe(false)
+    expect(timer.reason).toMatch(/^it may be reset 120 s after it acted:/)
   })
 })
