@@ -15,6 +15,7 @@ import {
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
 import { steamGeneratorDomeState } from '../src/packs/process-plant/runtime/steam-generator-dome.ts'
 import { compressedWaterState, saturatedWaterSteam } from '../src/packs/process-plant/runtime/water-properties.ts'
+import { parameterNumber } from '../src/packs/process-plant/runtime/component-helpers.ts'
 import { processPlantElectricalPortsAt } from '../src/packs/process-plant/electrical-ports.ts'
 import { icThresholdsForSignal } from '../src/packs/process-plant/ic/thresholds.ts'
 import { formatQuantity } from '../src/packs/process-plant/quantity-text.ts'
@@ -719,7 +720,7 @@ describe('a turbine trip', () => {
     expect(Number(plantRun.tag('SG-A-LVL-NR'))).toBeLessThan(levelBefore - 20)
     // The dumps open to the condenser and the safety valves stay shut.
     expect(dumpOpening).toBeGreaterThan(0.3)
-    const safetySetpoint = Number(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!.parameters.setpointMPa)
+    const safetySetpoint = parameterNumber(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!, 'setpointMPa')
     expect(highestPressure).toBeLessThan(safetySetpoint)
     expect(safetyValveOpening).toBe(0)
   })
@@ -928,7 +929,7 @@ describe('main steam safety valves', () => {
     // The first step establishes containment's algebraic gas pressure. Keep
     // that baseline and include the safety-valve response from this very step.
     runtime.tick(1_000)
-    expect(read('sgA.pressureMPa')).toBeGreaterThan(Number(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!.parameters.fullLiftMPa))
+    expect(read('sgA.pressureMPa')).toBeGreaterThan(parameterNumber(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!, 'fullLiftMPa'))
     const containmentPressure = read('containment.pressureMPa')
     let lift = read('mainSteamSafetyValveA.effectivePositionFraction')
     let containmentInflow = read('containment.incomingMassKgPerS')
