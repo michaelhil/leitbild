@@ -103,6 +103,11 @@ const networkFor = (graph: CompiledPlantGraph): Network | null => {
 /** Compile-time boundary validation; no state, flow or command is changed. */
 export const assertDirectedFluidDeliveryValid = (graph: CompiledPlantGraph): void => { networkFor(graph) }
 
+/** Allocated link flows already share their finite source/pump budgets. A
+ * downstream observer must not cap them again with a lagged device readout. */
+export const isDirectedFluidDeliveryLink = (graph: CompiledPlantGraph, link: CompiledProcessLink): boolean =>
+  networkFor(graph)?.edgeByLink.has(link.index) === true
+
 type ReadContext = Pick<ProcessPlantBehaviorContext, 'has' | 'readNumber'>
 const pumpFlow = (component: CompiledComponent, context: ReadContext): number => Math.max(0, context.readNumber(componentVariablePath(component, 'flowKgPerS')))
 const sourceCapacity = (node: Node, context: ReadContext, dtSeconds: number): number => {
