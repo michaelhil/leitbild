@@ -20,7 +20,9 @@ describe('product procedure content ownership', () => {
         'world/packs/process-plant/procedures/ES-0.1.md',
         'world/packs/process-plant/procedures/ES-1.3.md',
         'world/packs/process-plant/procedures/RHR-1.md',
+        'world/packs/process-plant/procedures/FR-H.3.md',
         'world/packs/process-plant/procedures/FR-H.4.md',
+        'world/packs/process-plant/procedures/FR-H.5.md',
       ])
       expect(selected.some(path => path.includes('/ld-01/'))).toBe(false)
       const archivedPath = 'archive/pwr-reference-model/procedures/ES-0.1.md'
