@@ -36,12 +36,12 @@ describe('finite DC supply and actual support dependencies', () => {
     expect(() => runtimeFor({ ...original, components: original.components.map(c => String(c.id) === 'valve' ? { ...c, parameters: { initialPositionFraction: 0 } } : c) })).toThrow('powerLossBehavior')
     expect(() => runtimeFor({ ...original, connections: original.connections.filter(link => String(link.id) !== 'motor-feed') })).toThrow('powerLossBehavior')
     const extra = component('otherBattery', 'battery', 'A second finite source', { nominalPowerMw: 1, dischargeTimeS: 10 })
-    expect(() => runtimeFor({ ...original, components: [...original.components, extra], connections: [...original.connections,
-      connect('merged-storage', 'otherBattery.outlet', 'inverter.dcInlet', { connectionKind: 'electricalPower' })] })).toThrow('source-sharing dispatch')
+    expect(() => runtimeFor(plantGraph({ ...original, components: [...original.components, extra], connections: [...original.connections,
+      connect('merged-storage', 'otherBattery.outlet', 'inverter.dcInlet', { connectionKind: 'electricalPower' })] }))).toThrow('source-sharing dispatch')
     // This differs from ordinary AC source sharing upstream of a charger.
     const secondAc = component('otherGrid', 'electricalGridSource', 'Independent AC source', { nominalPowerMw: 4 })
-    expect(() => runtimeFor({ ...original, components: [...original.components, secondAc], connections: [...original.connections,
-      connect('merged-ac', 'otherGrid.outlet', 'battery.chargerPower', { connectionKind: 'electricalPower' })] })).not.toThrow()
+    expect(() => runtimeFor(plantGraph({ ...original, components: [...original.components, secondAc], connections: [...original.connections,
+      connect('merged-ac', 'otherGrid.outlet', 'battery.chargerPower', { connectionKind: 'electricalPower' })] }))).not.toThrow()
   })
   test('initial reconciliation serves loads from the charger without inventing battery discharge', () => {
     const r = runtimeFor(graph())
