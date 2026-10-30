@@ -3876,7 +3876,11 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RHR A injection iso"
+          "shortLabel": "RHR A injection iso",
+          "shortNames": {
+            "effectivePositionFraction": "RHR A injection pos",
+            "autoOpenActive": "RHR A inj auto-open"
+          }
         }
       }
     },
@@ -4170,7 +4174,11 @@
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RHR B injection iso"
+          "shortLabel": "RHR B injection iso",
+          "shortNames": {
+            "effectivePositionFraction": "RHR B injection pos",
+            "autoOpenActive": "RHR B inj auto-open"
+          }
         }
       }
     },
@@ -15685,6 +15693,11 @@
             "flowKgPerS": "Flow · RWST → RHR A RWST iso",
             "temperatureC": "Temperature · RWST → RHR A RWST iso",
             "soluteConcentrationPpm": "Boron concentration · RWST → RHR A RWST iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A RWST inlet flow",
+            "temperatureC": "RHR A RWST inlet temp",
+            "soluteConcentrationPpm": "RHR A RWST inlet boron"
           }
         }
       }
@@ -15740,6 +15753,11 @@
             "flowKgPerS": "Flow · RHR A RWST iso → RHR A suction",
             "temperatureC": "Temperature · RHR A RWST iso → RHR A suction",
             "soluteConcentrationPpm": "Boron concentration · RHR A RWST iso → RHR A suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A RWST flow",
+            "temperatureC": "RHR A RWST temp",
+            "soluteConcentrationPpm": "RHR A RWST boron"
           }
         }
       }
@@ -15794,6 +15812,11 @@
             "flowKgPerS": "Flow · CTMT sump → RHR A sump iso",
             "temperatureC": "Temperature · CTMT sump → RHR A sump iso",
             "soluteConcentrationPpm": "Boron concentration · CTMT sump → RHR A sump iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A sump inlet flow",
+            "temperatureC": "RHR A sump inlet temp",
+            "soluteConcentrationPpm": "RHR A sump inlet boron"
           }
         }
       }
@@ -15849,6 +15872,11 @@
             "flowKgPerS": "Flow · RHR A sump iso → RHR A suction",
             "temperatureC": "Temperature · RHR A sump iso → RHR A suction",
             "soluteConcentrationPpm": "Boron concentration · RHR A sump iso → RHR A suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A sump flow",
+            "temperatureC": "RHR A sump temp",
+            "soluteConcentrationPpm": "RHR A sump boron"
           }
         }
       }
@@ -15903,6 +15931,11 @@
             "flowKgPerS": "Flow · RHR A suction → RHR A",
             "temperatureC": "Temperature · RHR A suction → RHR A",
             "soluteConcentrationPpm": "Boron concentration · RHR A suction → RHR A"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A suction flow",
+            "temperatureC": "RHR A suction temp",
+            "soluteConcentrationPpm": "RHR A suction boron"
           }
         }
       }
@@ -15957,6 +15990,11 @@
             "flowKgPerS": "Flow · RHR-HX A → RHR A discharge",
             "temperatureC": "Temperature · RHR-HX A → RHR A discharge",
             "soluteConcentrationPpm": "Boron concentration · RHR-HX A → RHR A discharge"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A discharge flow",
+            "temperatureC": "RHR A discharge temp",
+            "soluteConcentrationPpm": "RHR A discharge boron"
           }
         }
       }
@@ -16011,6 +16049,11 @@
             "flowKgPerS": "Flow · RHR A discharge → RHR A injection iso",
             "temperatureC": "Temperature · RHR A discharge → RHR A injection iso",
             "soluteConcentrationPpm": "Boron concentration · RHR A discharge → RHR A injection iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A inj inlet flow",
+            "temperatureC": "RHR A inj inlet temp",
+            "soluteConcentrationPpm": "RHR A inj inlet boron"
           }
         }
       }
@@ -16066,6 +16109,11 @@
             "flowKgPerS": "Flow · RHR A injection iso → Cold leg A",
             "temperatureC": "Temperature · RHR A injection iso → Cold leg A",
             "soluteConcentrationPpm": "Boron concentration · RHR A injection iso → Cold leg A"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR A injection flow",
+            "temperatureC": "RHR A injection temp",
+            "soluteConcentrationPpm": "RHR A injection boron"
           }
         }
       }
@@ -16120,6 +16168,11 @@
             "flowKgPerS": "Flow · RHR A discharge → SI A RHR iso",
             "temperatureC": "Temperature · RHR A discharge → SI A RHR iso",
             "soluteConcentrationPpm": "Boron concentration · RHR A discharge → SI A RHR iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI A piggy inlet flow",
+            "temperatureC": "SI A piggy inlet temp",
+            "soluteConcentrationPpm": "SI A piggy inlet boron"
           }
         }
       }
@@ -16175,6 +16228,11 @@
             "flowKgPerS": "Flow · SI A RHR iso → SI A suction",
             "temperatureC": "Temperature · SI A RHR iso → SI A suction",
             "soluteConcentrationPpm": "Boron concentration · SI A RHR iso → SI A suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI A piggyback flow",
+            "temperatureC": "SI A piggyback temp",
+            "soluteConcentrationPpm": "SI A piggyback boron"
           }
         }
       }
@@ -16229,6 +16287,11 @@
             "flowKgPerS": "Flow · RWST → SI A RWST iso",
             "temperatureC": "Temperature · RWST → SI A RWST iso",
             "soluteConcentrationPpm": "Boron concentration · RWST → SI A RWST iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI A RWST inlet flow",
+            "temperatureC": "SI A RWST inlet temp",
+            "soluteConcentrationPpm": "SI A RWST inlet boron"
           }
         }
       }
@@ -16284,6 +16347,11 @@
             "flowKgPerS": "Flow · SI A RWST iso → SI A suction",
             "temperatureC": "Temperature · SI A RWST iso → SI A suction",
             "soluteConcentrationPpm": "Boron concentration · SI A RWST iso → SI A suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI A RWST flow",
+            "temperatureC": "SI A RWST temp",
+            "soluteConcentrationPpm": "SI A RWST boron"
           }
         }
       }
@@ -16338,6 +16406,11 @@
             "flowKgPerS": "Flow · SI A suction → HHSI A",
             "temperatureC": "Temperature · SI A suction → HHSI A",
             "soluteConcentrationPpm": "Boron concentration · SI A suction → HHSI A"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI A suction flow",
+            "temperatureC": "SI A suction temp",
+            "soluteConcentrationPpm": "SI A suction boron"
           }
         }
       }
@@ -16392,6 +16465,11 @@
             "flowKgPerS": "Flow · RWST → RHR B RWST iso",
             "temperatureC": "Temperature · RWST → RHR B RWST iso",
             "soluteConcentrationPpm": "Boron concentration · RWST → RHR B RWST iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B RWST inlet flow",
+            "temperatureC": "RHR B RWST inlet temp",
+            "soluteConcentrationPpm": "RHR B RWST inlet boron"
           }
         }
       }
@@ -16447,6 +16525,11 @@
             "flowKgPerS": "Flow · RHR B RWST iso → RHR B suction",
             "temperatureC": "Temperature · RHR B RWST iso → RHR B suction",
             "soluteConcentrationPpm": "Boron concentration · RHR B RWST iso → RHR B suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B RWST flow",
+            "temperatureC": "RHR B RWST temp",
+            "soluteConcentrationPpm": "RHR B RWST boron"
           }
         }
       }
@@ -16501,6 +16584,11 @@
             "flowKgPerS": "Flow · CTMT sump → RHR B sump iso",
             "temperatureC": "Temperature · CTMT sump → RHR B sump iso",
             "soluteConcentrationPpm": "Boron concentration · CTMT sump → RHR B sump iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B sump inlet flow",
+            "temperatureC": "RHR B sump inlet temp",
+            "soluteConcentrationPpm": "RHR B sump inlet boron"
           }
         }
       }
@@ -16556,6 +16644,11 @@
             "flowKgPerS": "Flow · RHR B sump iso → RHR B suction",
             "temperatureC": "Temperature · RHR B sump iso → RHR B suction",
             "soluteConcentrationPpm": "Boron concentration · RHR B sump iso → RHR B suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B sump flow",
+            "temperatureC": "RHR B sump temp",
+            "soluteConcentrationPpm": "RHR B sump boron"
           }
         }
       }
@@ -16610,6 +16703,11 @@
             "flowKgPerS": "Flow · RHR B suction → RHR B",
             "temperatureC": "Temperature · RHR B suction → RHR B",
             "soluteConcentrationPpm": "Boron concentration · RHR B suction → RHR B"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B suction flow",
+            "temperatureC": "RHR B suction temp",
+            "soluteConcentrationPpm": "RHR B suction boron"
           }
         }
       }
@@ -16664,6 +16762,11 @@
             "flowKgPerS": "Flow · RHR-HX B → RHR B discharge",
             "temperatureC": "Temperature · RHR-HX B → RHR B discharge",
             "soluteConcentrationPpm": "Boron concentration · RHR-HX B → RHR B discharge"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B discharge flow",
+            "temperatureC": "RHR B discharge temp",
+            "soluteConcentrationPpm": "RHR B discharge boron"
           }
         }
       }
@@ -16718,6 +16821,11 @@
             "flowKgPerS": "Flow · RHR B discharge → RHR B injection iso",
             "temperatureC": "Temperature · RHR B discharge → RHR B injection iso",
             "soluteConcentrationPpm": "Boron concentration · RHR B discharge → RHR B injection iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B inj inlet flow",
+            "temperatureC": "RHR B inj inlet temp",
+            "soluteConcentrationPpm": "RHR B inj inlet boron"
           }
         }
       }
@@ -16773,6 +16881,11 @@
             "flowKgPerS": "Flow · RHR B injection iso → Cold leg B",
             "temperatureC": "Temperature · RHR B injection iso → Cold leg B",
             "soluteConcentrationPpm": "Boron concentration · RHR B injection iso → Cold leg B"
+          },
+          "shortNames": {
+            "flowKgPerS": "RHR B injection flow",
+            "temperatureC": "RHR B injection temp",
+            "soluteConcentrationPpm": "RHR B injection boron"
           }
         }
       }
@@ -16827,6 +16940,11 @@
             "flowKgPerS": "Flow · RHR B discharge → SI B RHR iso",
             "temperatureC": "Temperature · RHR B discharge → SI B RHR iso",
             "soluteConcentrationPpm": "Boron concentration · RHR B discharge → SI B RHR iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI B piggy inlet flow",
+            "temperatureC": "SI B piggy inlet temp",
+            "soluteConcentrationPpm": "SI B piggy inlet boron"
           }
         }
       }
@@ -16882,6 +17000,11 @@
             "flowKgPerS": "Flow · SI B RHR iso → SI B suction",
             "temperatureC": "Temperature · SI B RHR iso → SI B suction",
             "soluteConcentrationPpm": "Boron concentration · SI B RHR iso → SI B suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI B piggyback flow",
+            "temperatureC": "SI B piggyback temp",
+            "soluteConcentrationPpm": "SI B piggyback boron"
           }
         }
       }
@@ -16936,6 +17059,11 @@
             "flowKgPerS": "Flow · RWST → SI B RWST iso",
             "temperatureC": "Temperature · RWST → SI B RWST iso",
             "soluteConcentrationPpm": "Boron concentration · RWST → SI B RWST iso"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI B RWST inlet flow",
+            "temperatureC": "SI B RWST inlet temp",
+            "soluteConcentrationPpm": "SI B RWST inlet boron"
           }
         }
       }
@@ -16991,6 +17119,11 @@
             "flowKgPerS": "Flow · SI B RWST iso → SI B suction",
             "temperatureC": "Temperature · SI B RWST iso → SI B suction",
             "soluteConcentrationPpm": "Boron concentration · SI B RWST iso → SI B suction"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI B RWST flow",
+            "temperatureC": "SI B RWST temp",
+            "soluteConcentrationPpm": "SI B RWST boron"
           }
         }
       }
@@ -17045,6 +17178,11 @@
             "flowKgPerS": "Flow · SI B suction → HHSI B",
             "temperatureC": "Temperature · SI B suction → HHSI B",
             "soluteConcentrationPpm": "Boron concentration · SI B suction → HHSI B"
+          },
+          "shortNames": {
+            "flowKgPerS": "SI B suction flow",
+            "temperatureC": "SI B suction temp",
+            "soluteConcentrationPpm": "SI B suction boron"
           }
         }
       }

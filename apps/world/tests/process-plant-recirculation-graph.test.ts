@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import { recordingSeriesIdFor } from '../src/core/model/index.ts'
+import { processPlantAutomationDigest } from '../src/packs/process-plant/evidence-frame.ts'
+import { recordedPlantVariables } from '../src/packs/process-plant/recording.ts'
 import { observableSchema } from '../src/core/observation/model.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { plantControlsFor } from '../src/packs/process-plant/operations/controls.ts'
@@ -100,5 +103,26 @@ test('source-specific flow tags are read-only native quantities and every observ
   for (const id of ['vessel-release-to-containment', 'rwst-to-containment-spray-pump-a', 'rwst-to-containment-spray-pump-b', 'containment-spray-pump-a-to-header', 'containment-spray-pump-b-to-header', 'containment-spray-header-to-containment']) {
     expect(plant.graph.signalBindingByPath.get(`${id}.soluteConcentrationPpm` as never)).toMatchObject({ unit: 'ppm', quantity: 'concentration', published: true, writable: false, simulatorOnly: true })
     expect(declaration.observables.find(observable => observable.ref === `${plant.id}#${id}.soluteConcentrationPpm`)).toMatchObject({ unit: 'ppm', valueType: 'number', basis: 'model' })
+  }
+})
+
+test('authored transfer readings retain full descriptions and compact operator names without changing numerical identity', () => {
+  const plant = plantOf(), recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
+  const declaration = plantDeclaration(plant.id as never, plant, recording)
+  expect(plant.modelDigest).toBe('b85fc4e566d0d2f1c6b903801806799d5bb4cb573276214d64255cca08a26838')
+  expect(processPlantAutomationDigest(plant.automation)).toBe('364b61b013eb21135c9071465d8050fb8e918549d95bff0c83fbb73b98369d95')
+  const short = (path: string) => declaration.observables.find(observable => observable.ref === `${plant.id}#${path}`)!
+  for (const train of ['A', 'B']) {
+    expect(short(`rhrInjectionValve${train}.effectivePositionFraction`).shortLabel).toBe(`RHR ${train} injection pos`)
+    expect(short(`rhrInjectionValve${train}.autoOpenActive`).shortLabel).toBe(`RHR ${train} inj auto-open`)
+    const hardware = new Set([...valves.map(([prefix]) => `${prefix}${train}`), ...['rhrSuctionHeader', 'rhrDischargeHeader', 'siSuctionHeader'].map(prefix => `${prefix}${train}`)])
+    for (const link of plant.graph.links.filter(link => link.kind === 'fluidFlow' && [link.fromComponentIndex, link.toComponentIndex].some(index => hardware.has(String(plant.graph.components[index]!.id))))) {
+      for (const path of ['flowKgPerS', 'temperatureC', 'soluteConcentrationPpm']) {
+        const observable = short(`${link.id}.${path}`)
+        expect(observable.shortLabel).toBe(link.metadata!.presentation!.shortNames![path]!)
+        expect(observable.shortLabel!.length).toBeLessThanOrEqual(24)
+        expect(observable.label).toContain('→')
+      }
+    }
   }
 })
