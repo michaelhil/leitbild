@@ -91,11 +91,21 @@ describe('Plant graph read', () => {
   test('without components, pages through every link of the Plant exactly once', () => {
     const first = connections({})
     expect(first).toMatchObject({ total: plant.graph.links.length, offset: 0, returned: 100, hasMore: true, continues: [] })
-    const second = connections({ offset: first.offset + first.returned })
-    expect(second).toMatchObject({ returned: plant.graph.links.length - 100, hasMore: false })
-    expect([...linkIds(first), ...linkIds(second)]).toEqual(plant.graph.links.map(link => String(link.id)))
-    const ends = new Set(second.links.flatMap(link => [link.from, link.to]))
-    expect(second.components.map(component => component.id).sort()).toEqual([...ends].sort())
+    const pages = [first]
+    while (pages.at(-1)!.hasMore) {
+      const previous = pages.at(-1)!, offset = previous.offset + previous.returned
+      const page = connections({ offset })
+      expect(page.offset).toBe(offset)
+      expect(page.total).toBe(plant.graph.links.length)
+      expect(page.returned).toBe(page.links.length)
+      expect(page.returned).toBeGreaterThan(0)
+      const ends = new Set(page.links.flatMap(link => [link.from, link.to]))
+      expect(page.components.map(component => component.id).sort()).toEqual([...ends].sort())
+      pages.push(page)
+    }
+    expect(pages.flatMap(linkIds)).toEqual(plant.graph.links.map(link => String(link.id)))
+    expect(new Set(pages.flatMap(linkIds)).size).toBe(plant.graph.links.length)
+    expect(pages.at(-1)!.offset + pages.at(-1)!.returned).toBe(plant.graph.links.length)
     const afw = connections({ services: ['auxFeedwater'] })
     expect(afw.total).toBe(plant.graph.linksByService.get('auxFeedwater' as never)!.length)
     expect(afw.links.every(link => link.service === 'auxFeedwater')).toBe(true)
