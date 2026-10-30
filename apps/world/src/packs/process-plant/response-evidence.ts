@@ -100,9 +100,10 @@ export const evaluateProcessPlantResponse = (config: {
       let value: number | undefined
       try {
         const variable = plant.runtime.readVariableSnapshot(binding.path)
+        const quality = processPlantSignalQuality(variable, { system: plant.plant, runtime: plant.runtime })
         reason = binding.writable || variable.writable ? 'Writable commands/demands cannot establish a physical response.'
           : typeof variable.value !== 'number' || !Number.isFinite(variable.value) ? 'A finite numeric response reading is required.'
-            : processPlantSignalQuality(variable).status !== 'good' ? 'The current physical reading is outside its declared hard range.'
+            : quality.status !== 'good' ? quality.reason
               : !config.recordedSeriesIds.has(seriesId) ? 'This physical signal is not selected for recording in the Run.' : undefined
         if (reason === undefined) {
           value = variable.value as number
