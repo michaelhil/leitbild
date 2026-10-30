@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
+import retainedRhrTargets from './fixtures/physical-layout/rhr-targets-20261030.json'
 import { resolvePhysicalDesign, pwrOperatorUnitPhysicalDesignRef, pwrOperatorCampusPhysicalDesignRef, pwrRhrUnitPhysicalDesignRef, pwrRhrCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { compilePhysicalScene } from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import { physicalCoverageIssues } from '../src/packs/physical-layout/coverage.ts'
@@ -8,13 +8,14 @@ import { parameters } from '../src/packs/physical-layout/native/drafting/source.
 const drafting = async (reference: unknown) => { const value = await resolvePhysicalDesign(reference); if (value.profile !== 'drafting') throw Error('Expected exact drafting admission'); return value }
 const equipment = ['A', 'B'].flatMap(train => ['rhrHeatExchanger', 'componentCoolingHeatExchanger', 'componentCoolingTank', 'componentCoolingWaterPumpBreaker', 'serviceWaterPumpBreaker'].map(prefix => `${prefix}${train}`))
 
-test('RHR admission covers the actual current graph with exact terminals, room placement and preserved original architecture', async () => {
+test('retained RHR admission covers its exact captured graph with original terminals, room placement and architecture', async () => {
   const [before, after, oldCampus, campus] = await Promise.all([drafting(pwrOperatorUnitPhysicalDesignRef), drafting(pwrRhrUnitPhysicalDesignRef), drafting(pwrOperatorCampusPhysicalDesignRef), drafting(pwrRhrCampusPhysicalDesignRef)])
-  const model = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'rhr:admission-test' }))
+  expect(retainedRhrTargets.sourceCommit).toBe('81e0233fff15a4723073f8d6cdb7d4ff375a893c')
+  const model = retainedRhrTargets.description
   expect(after.modelRequirement).toEqual({ modelRef: model.modelRef, modelDigest: model.modelDigest })
   expect(after.modelRequirement).not.toEqual(before.modelRequirement)
   expect(after.compiler).toEqual(before.compiler)
-  const subjects = [...model.graph.components.map(component => String(component.id)), ...model.graph.links.map(link => String(link.id))]
+  const subjects = [...model.subjects.map(component => component.id), ...model.connections.map(link => link.id)]
   expect(physicalCoverageIssues({ evidence: after.coverageEvidence, physicalIds: [...after.source.elements.map(element => element.id), ...after.source.routing!.connections.map(route => route.id)], ownerSubjectIds: subjects, bindings: after.bindings })).toEqual([])
   expect(after.coverageEvidence.dispositions.map(row => row.subjectId).sort()).toEqual(subjects.sort())
   expect(after.coverageEvidence.dispositions.some(row => row.disposition === 'unresolved')).toBe(false)
@@ -43,10 +44,10 @@ test('RHR admission covers the actual current graph with exact terminals, room p
   }
   const terminals = new Map(after.source.routing!.terminals.map(terminal => [terminal.id, terminal]))
   for (const route of after.source.routing!.connections) {
-    const edge = model.sourceGraph.connections.find(edge => edge.id === route.graphConnectionId)!, from = terminals.get(route.from)!, to = terminals.get(route.to)!
+    const edge = model.connections.find(edge => edge.id === route.graphConnectionId)!, from = terminals.get(route.from)!, to = terminals.get(route.to)!
     expect(edge).toBeDefined()
-    expect(`${from.subjectId}.${from.port}`).toBe(edge.from)
-    expect(`${to.subjectId}.${to.port}`).toBe(edge.to)
+    expect({ subjectId: from.subjectId, port: from.port }).toEqual(edge.from)
+    expect({ subjectId: to.subjectId, port: to.port }).toEqual(edge.to)
     expect(route.solution!.length).toBeGreaterThanOrEqual(2)
   }
   for (const train of ['A', 'B']) for (const prefix of ['rhrHeatExchanger', 'componentCoolingHeatExchanger']) {
