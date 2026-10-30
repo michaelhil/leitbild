@@ -9,6 +9,7 @@ import { layoutSubjectTopologies, layoutTopologyRefs } from '../src/features/dis
 import { topologyGraphSchema } from '../src/core/observation/topology.ts'
 import { physicalOperationContext, physicalOperationBadgeWord, physicalOperationWord } from '../src/ui/physical-layout/operation-presentation.ts'
 import { layoutLiveResponseSchema } from '../src/ui/physical-layout/read-model.ts'
+import { physicalSubjectStatus } from '../src/ui/physical-layout/status.ts'
 
 const at = isoTimestampSchema.parse('2026-10-28T00:00:00Z')
 const value = (ref: string, patch: Partial<VignetteValue> = {}): VignetteValue => ({ ref: `plant:one#${ref}`, label: ref, quantity: 'flow', unit: 'kg/s', valueType: 'number', thresholds: [], series: null, ...patch })
@@ -17,6 +18,29 @@ const binding = (role: TopologyBinding['role'], declaration: VignetteValue, patc
 const subject = (bindings: TopologyBinding[], values: VignetteValue[], node = false): LayoutOperationalSubject => ({ elementId: node ? 'pump' : 'pipe', label: node ? 'Pump' : 'Pump to valve', topology: {
   bindings, values, ...(node ? { kind: 'node', class: 'mover', equipmentKind: 'centrifugal-pump' } : { kind: 'connection', from: { elementId: 'pump', label: 'Pump', port: 'outlet' }, to: { elementId: 'valve', label: 'Valve', port: 'inlet' }, medium: { id: 'feedwater', label: 'Feedwater', kind: 'fluid' }, directed: true }),
 } as LayoutSubjectTopology })
+
+test('layout status uses actual owner conduction before a false degraded flag, preserving unknown and frozen state', () => {
+  const degradation = value('bus.degraded', { quantity: 'boolean', unit: '', valueType: 'boolean', states: [{ value: 'true', label: 'Voltage degraded' }, { value: 'false', label: 'Voltage normal' }] })
+  const conducting = value('bus.state', { quantity: 'state', unit: '', valueType: 'enum', states: [{ value: 'on', label: 'LIVE', active: true }, { value: 'off', label: 'DEAD' }] })
+  const bus = subject([binding('conducting', conducting)], [conducting], true)
+  const owner = { packId: 'process-plant', objectId: 'plant:one', elementId: bus.elementId, label: bus.label }
+  for (const [raw, word] of [['on', 'LIVE'], ['off', 'DEAD']] as const) {
+    const observations = [observation(degradation, false), observation(conducting, raw)]
+    const operation = resolvePhysicalSubjectOperation(bus, observations, false)
+    expect(physicalSubjectStatus({ subject: owner, values: [degradation], observations, operation }, [], false).word).toBe(word)
+  }
+  for (const quality of ['bad', 'uncertain', 'stale', 'not-applicable'] as const) {
+    const observations = [observation(degradation, false), observation(conducting, 'off', quality)]
+    const operation = resolvePhysicalSubjectOperation(bus, observations, false)
+    const status = physicalSubjectStatus({ subject: owner, values: [degradation], observations, operation }, [], false)
+    expect(status.word).toBeNull()
+    if (quality !== 'not-applicable') expect(status.quality).toBe(quality)
+  }
+  const observations = [observation(degradation, false)]
+  const operation = resolvePhysicalSubjectOperation(bus, observations, false)
+  expect(physicalSubjectStatus({ subject: owner, values: [degradation], observations, operation }, [], false)).toMatchObject({ word: null, quality: 'bad' })
+  expect(physicalSubjectStatus({ subject: owner, values: [degradation], observations, operation }, [], true)).toMatchObject({ word: null, quality: 'stale' })
+})
 
 test('default state words follow actuating topology classes while repeated converter labels remain opt-in', () => {
   const run = value('running', { quantity: 'state', unit: '', valueType: 'boolean' }), source = subject([binding('running', run)], [run], true)

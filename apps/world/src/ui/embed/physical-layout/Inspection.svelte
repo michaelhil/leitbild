@@ -48,6 +48,7 @@
   const word = $derived(subject === undefined || parsed === null || snapshot.latest === null ? null : physicalSubjectStatus({
     subject: { packId: parsed.state.packId, objectId: parsed.state.objectId, elementId: subject.elementId, label: subject.label },
     values: subject.values, observations: snapshot.latest.sample.observations,
+    operation: resolvePhysicalSubjectOperation(subject, snapshot.latest.sample.observations, frozen),
   }, snapshot.latest.sample.alerts, frozen).word)
   const { opening, stop } = provideOpening({ runId: () => runId, envelope: () => envelope, at: () => snapshot.latest?.sample.at })
 

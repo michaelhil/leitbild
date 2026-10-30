@@ -5,6 +5,7 @@ import type { VignetteValue } from '../../features/displays/compose/model.ts'
 import { alertCensus, countedAs, type AlertCensus } from '../../features/displays/alerts/census.ts'
 import { priorityRank, subjectOf, type AlertRow } from '../../features/displays/alerts/rows.ts'
 import { severityTable, type Palette } from '../displays/severity.ts'
+import type { PhysicalSubjectOperation, PhysicalStateOperation } from './operation.ts'
 
 /** The physical occurrence never substitutes its own id for an owner's element. */
 export interface PhysicalLayoutSubject {
@@ -22,6 +23,8 @@ export interface PhysicalSubjectReading {
   /** The owner's declarations in its lead order, never a map-specific threshold table. */
   readonly values: ReadonlyArray<VignetteValue>
   readonly observations: ReadonlyArray<Observation>
+  /** Owner-declared running/conducting semantics, already resolved for drawing. */
+  readonly operation?: PhysicalSubjectOperation
 }
 
 export interface PhysicalSubjectStatus {
@@ -77,9 +80,10 @@ const selectedObservations = (values: ReadonlyArray<VignetteValue>, observations
   return selected.map(entry => entry.observation)
 }
 
-const worstQuality = (values: ReadonlyArray<VignetteValue>, observations: ReadonlyArray<Observation>): PhysicalSubjectStatus['quality'] => {
-  if (values.length === 0) return 'not-observed'
+const worstQuality = (values: ReadonlyArray<VignetteValue>, observations: ReadonlyArray<Observation>, state?: PhysicalStateOperation | null): PhysicalSubjectStatus['quality'] => {
+  if (values.length === 0 && !state) return 'not-observed'
   const qualities = values.map(value => observations.find(observation => observation.ref === value.ref)?.quality ?? 'bad')
+  if (state) qualities.push(state.quality === 'not-observed' ? 'bad' : state.quality)
   if (qualities.every(quality => quality === 'not-applicable')) return 'not-applicable'
   return (['bad', 'stale', 'uncertain', 'good'] as const).find(quality => qualities.includes(quality)) ?? 'not-applicable'
 }
@@ -89,7 +93,8 @@ export const physicalSubjectStatus = (reading: PhysicalSubjectReading, rows: Rea
   const observations = selectedObservations(reading.values, reading.observations)
   if (reading.values.some(value => refObjectId(value.ref) !== reading.subject.objectId)
     || observations.some(observation => refObjectId(observation.ref) !== reading.subject.objectId)) throw new Error('Layout readings belong to another operational owner')
-  const quality = worstQuality(reading.values, observations)
+  const state = reading.operation?.equipment?.running ?? reading.operation?.equipment?.conducting ?? reading.operation?.conducting
+  const quality = worstQuality(reading.values, observations, state)
   // Expected, standing and advisory populations remain counted and labelled;
   // they do not create a second alarm colour through this view.
   const priorities = [
@@ -97,8 +102,10 @@ export const physicalSubjectStatus = (reading: PhysicalSubjectReading, rows: Rea
     ...own.filter(row => countedAs(row) === 'news').map(row => row.priority),
   ]
   const priority = priorities.reduce<Priority | null>((best, value) => priorityRank(value) > priorityRank(best) ? value : best, 'none')
-  let word: string | null = null
-  for (const value of reading.values) {
+  // An equipment state is stronger evidence than an unrelated labelled flag
+  // such as "not degraded". Missing state must not become a normal flag.
+  let word: string | null = state?.quality === 'good' && state.active !== null ? state.word : null
+  for (const value of state ? [] : reading.values) {
     if (value.valueType !== 'boolean' && value.valueType !== 'enum' && value.quantity !== 'state') continue
     const observation = observations.find(observation => observation.ref === value.ref)
     const raw = observation?.quality === 'good' ? observation.value : null

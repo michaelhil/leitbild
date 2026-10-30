@@ -134,7 +134,8 @@
     if (!cached) { cached = new Map(); statusCache.set(reading, cached) }
     const previous = cached.get(stale)
     if (previous) return previous
-    const next = new Map(reading.subjects.map(subject => [subject.elementId, physicalSubjectStatus({ subject: { packId: reading.scope.packId, objectId: reading.scope.objectId, elementId: subject.elementId, label: subject.label }, values: subject.values, observations: reading.sample.observations }, reading.sample.alerts, stale)]))
+    const operations = operationsFor(reading, stale)
+    const next = new Map(reading.subjects.map(subject => [subject.elementId, physicalSubjectStatus({ subject: { packId: reading.scope.packId, objectId: reading.scope.objectId, elementId: subject.elementId, label: subject.label }, values: subject.values, observations: reading.sample.observations, operation: operations.get(subject.elementId) }, reading.sample.alerts, stale)]))
     cached.set(stale, next); return next
   }
   let overviewLayer = $state.raw<ReturnType<typeof createPhysicalSceneOverview> | null>(null)
