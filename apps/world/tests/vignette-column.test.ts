@@ -412,7 +412,21 @@ describe('no word is cut (plan v5 §2 rule 2)', () => {
     expect(owner).not.toMatch(/(?:^|;)\s*height\s*:/)
     expect(owner).not.toContain('white-space: nowrap')
     expect(owner).not.toContain('overflow: hidden')
-    expect(sections).toContain("section.kind === 'topology' && section.heading !== undefined ? undefined")
+    const expression = sections.match(/style:height=\{(.+?)\} style:min-height/)?.[1]
+    expect(expression).toBeDefined()
+    const height = new Function('rows', 'fills', 'section', 'opening', 'VIGNETTE_ROW_PX', `return ${expression}`) as (rows: number | null, fills: boolean, section: object, opening: { where: string } | undefined, row: number) => string | undefined
+    // Full owner identities and whole window flows grow naturally; network
+    // and preview rows keep their own scroll room rather than becoming a
+    // second whole-flow canvas.
+    for (const where of ['window', 'relay']) {
+      expect(height(12, false, { kind: 'topology', family: 'network', heading: 'A long owner identity' }, { where }, 24)).toBeUndefined()
+      expect(height(12, false, { kind: 'topology', family: 'network' }, { where }, 24)).toBe('288px')
+      expect(height(12, false, { kind: 'topology', family: 'flow' }, { where }, 24)).toBe(where === 'window' ? undefined : '288px')
+      expect(height(12, false, { kind: 'values', blocks: [{ kind: 'owner' }] }, { where }, 24)).toBeUndefined()
+      expect(height(12, false, { kind: 'values', blocks: [{ kind: 'element' }] }, { where }, 24)).toBe('288px')
+    }
+    expect(height(null, false, { kind: 'values' }, undefined, 24)).toBeUndefined()
+    expect(height(12, true, { kind: 'alerts' }, undefined, 24)).toBeUndefined()
     expect(sections).toContain('aria-label={section.heading}')
   })
 

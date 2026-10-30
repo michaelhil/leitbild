@@ -28,9 +28,9 @@ describe('the live map\'s alert badges take the severity table\'s colours, never
   }).points[0]!
 
   test('the worst alert asking for attention badges the object in its priority\'s colour, per palette', () => {
-    expect(alertBadge(unit([alert('lo', 'caution'), alert('trip', 'alarm')]), 'day')).toEqual({ priority: 'alarm', color: [227, 0, 25, 255] })
-    expect(alertBadge(unit([alert('lo', 'caution')]), 'dusk')).toEqual({ priority: 'caution', color: [215, 164, 0, 255] })
-    expect(severityTable.caution.rgb?.dusk).toBe('rgb(215, 164, 0)')
+    expect(alertBadge(unit([alert('lo', 'caution'), alert('trip', 'alarm')]), 'day')).toEqual({ priority: 'alarm', color: [224, 0, 18, 255] })
+    expect(alertBadge(unit([alert('lo', 'caution')]), 'dusk')).toEqual({ priority: 'caution', color: [214, 169, 21, 255] })
+    expect(severityTable.caution.rgb?.dusk).toBe('rgb(214, 169, 21)')
     // A standing alarm asks no attention; a notice has no hue; none, no badge.
     expect(alertBadge(unit([alert('stand', 'alarm', { standing: true })]), 'day')).toBeNull()
     expect(alertBadge(unit([alert('note', 'notice')]), 'day')).toBeNull()

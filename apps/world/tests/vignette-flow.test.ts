@@ -389,11 +389,22 @@ describe('scaled drawings', () => {
     expect(style).not.toMatch(/\.text\.[a-z]+ \.name[^{]*\{[^}]*background-color/)
   })
 
-  test('the drawing scrolls down within its rows where they do not hold it at its floor, and says it continues, clear of its scrollbars', () => {
+  test('chat and preview drawings scroll within their rows; a window flow uses the complete outer canvas', () => {
     for (const file of ['FlowTopology.svelte', 'NetworkTopology.svelte']) {
       const drawn = readFileSync(join(import.meta.dir, '../src/ui/embed/vignette', file), 'utf8')
       expect(drawn).toContain('const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)')
-      expect(drawn).toContain('const tall = $derived(drawing.height * scale > held + 0.5)')
+      // Exercise the actual binding, allowing its condition to be reorganised
+      // without coupling this check to its complete source spelling.
+      const expression = drawn.match(/const tall = \$derived\((.*)\)/)?.[1]
+      expect(expression).toBeDefined()
+      const isTall = new Function('opening', 'drawing', 'scale', 'held', `return ${expression}`) as (opening: string | null, drawing: { height: number }, scale: number, held: number) => boolean
+      for (const opening of [null, 'relay', 'window']) {
+        const wholeCanvas = file === 'FlowTopology.svelte' && opening === 'window'
+        expect(isTall(opening, { height: 100 }, 1, 50)).toBe(!wholeCanvas)
+        expect(isTall(opening, { height: 100 }, 0.5, 50)).toBe(false)
+        expect(isTall(opening, { height: 100 }, 0.505, 50)).toBe(false)
+        expect(isTall(opening, { height: 100 }, 0.506, 50)).toBe(!wholeCanvas)
+      }
       expect(drawn).toMatch(/class:tall style:max-height=\{tall \? `\$\{held\}px` : undefined\}[^>]*use:scrollEnds=\{ends => \{ more = ends \}\}/)
       expect(drawn).toMatch(/\.(flow|network)\.tall \{ overflow-y: auto; \}/)
       expect(drawn).toContain('<Continues ends={more} />')
