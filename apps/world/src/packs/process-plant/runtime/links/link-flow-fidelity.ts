@@ -1,7 +1,8 @@
 import { primaryLoopPumpForLink } from '../../graph/index.ts'
-import type { CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
 import { processPlantServices } from '../service-profiles.ts'
 import { sameComponentFluidCircuit } from '../fluid-circuits.ts'
+import { isShutdownCoolingSource } from '../shutdown-cooling.ts'
 
 /**
  * How far a link's solved flow can be trusted, read from where the runtime
@@ -16,12 +17,13 @@ import { sameComponentFluidCircuit } from '../fluid-circuits.ts'
  */
 export type ProcessLinkFlowFidelity = 'solved' | 'magnitudeOnly' | 'unverified'
 
-const drivenSources: ReadonlyArray<(source: { readonly kind: string }, link: CompiledProcessLink) => boolean> = [
+const drivenSources: ReadonlyArray<(source: CompiledComponent, link: CompiledProcessLink) => boolean> = [
   source => source.kind === 'centrifugalPump',
   source => source.kind === 'processTank',
   (source, link) => source.kind === 'condenserSink' && (link.service === processPlantServices.condensate || link.service === 'coolingWater'),
   (source, link) => source.kind === 'pressurizer' && link.service === 'primaryRelief',
   (source, link) => source.kind === 'reactorVessel' && (link.service === 'primaryRelease' || link.service === 'letdown'),
+  (source, link) => isShutdownCoolingSource(source, String(link.fromPortName)),
   (source, link) => source.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam,
   source => source.kind === 'turbineLoadSink',
   (source, link) => source.kind === 'containmentVolume' && (String(link.fromPortName) === 'sumpOut' || String(link.fromPortName) === 'ventOut'),

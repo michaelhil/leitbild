@@ -3,6 +3,7 @@ import { compileProcessPlant, createProcessPlantRuntime, createPwrReferencePlant
 import { closedPrimaryCircuitDemandOpen, directedFluidDeliveryFlow, prepareDirectedFluidDelivery } from '../src/packs/process-plant/runtime/directed-fluid-delivery.ts'
 import type { ProcessPlantBehaviorContext } from '../src/packs/process-plant/runtime/behavior-contract.ts'
 import { shutdownCoolingWithdrawalLinks } from '../src/packs/process-plant/runtime/shutdown-cooling.ts'
+import { processLinkFlowFidelityFor } from '../src/packs/process-plant/runtime/links/link-flow-fidelity.ts'
 import { valveBehaviorDefinitions } from '../src/packs/process-plant/runtime/behaviors/junction/valve-behaviors.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
@@ -58,6 +59,7 @@ describe('finite closed-primary RHR delivery', () => {
     for (const train of ['a', 'b']) {
       const drawn = flow(`rcs-to-rhr-shutdown-suction-${train}`)
       expect(drawn).toBeGreaterThan(400)
+      expect(processLinkFlowFidelityFor(system.graph, system.graph.links.find(link => String(link.id) === `rcs-to-rhr-shutdown-suction-${train}`)!)).toBe('solved')
       expect(flow(`rhr-shutdown-suction-${train}-inner-to-outer`)).toBeCloseTo(drawn, 10)
       expect(flow(`rhr-shutdown-suction-${train}-to-header`)).toBeCloseTo(drawn, 10)
       expect(flow(`rhr-injection-valve-${train}-to-cold-leg-${train}`)).toBeCloseTo(drawn, 10)

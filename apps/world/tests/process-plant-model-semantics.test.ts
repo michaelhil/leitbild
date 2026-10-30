@@ -349,6 +349,23 @@ describe('link flow', () => {
     expect(processLinkFlowFidelityFor(incompatible, incompatible.links.find(link => String(link.id) === 'receipt')!)).toBe('unverified')
   })
 
+  test('RCS withdrawal fidelity follows its declared finite source port under renamed component and connection identities', () => {
+    const changed = JSON.parse(JSON.stringify(plant.sourceGraph).replaceAll('"vessel"', '"renamedRcsInventory"').replaceAll('"vessel.', '"renamedRcsInventory.'))
+    for (const connection of changed.connections) if (connection.from === 'renamedRcsInventory.shutdownCoolingOutlet') {
+      const originalId = connection.id
+      connection.id = `different-${originalId}`
+      changed.publishedVariables = changed.publishedVariables.map((path: string) => path.startsWith(`${originalId}.`) ? `different-${path}` : path)
+    }
+    const renamed = compilePlantGraph(changed, processPlantComponentRegistry)
+    const withdrawals = renamed.links.filter(link => renamed.components[link.fromComponentIndex]!.id === 'renamedRcsInventory' && String(link.fromPortName) === 'shutdownCoolingOutlet')
+    expect(withdrawals).toHaveLength(2)
+    for (const link of withdrawals) expect(processLinkFlowFidelityFor(renamed, link)).toBe('solved')
+    // Recognizing that distinct source does not relabel primary circulation's
+    // existing unsigned-size diagnostics as signed, verified direction.
+    expect(processLinkFlowFidelityFor(renamed, renamed.links.find(link => String(link.id) === 'pressurizer-surge-line')!)).toBe('magnitudeOnly')
+    expect(processLinkFlowFidelityFor(renamed, renamed.links.find(link => String(link.id) === 'rcs-hot-leg-a')!)).toBe('magnitudeOnly')
+  })
+
   test('a link is rated by its own nominal flow or by the equipment that drives it', () => {
     expect(ratedFlowForLink(graph, linkById('rcs-hot-leg-a'))).toBe(4250)
     // Through the MFW header and FCV B, back to one MFW pump: half the feed
