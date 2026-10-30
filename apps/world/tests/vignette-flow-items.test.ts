@@ -60,8 +60,8 @@ describe('what a press on a drawn item opens (W6.1)', () => {
     // The overview's stops each open the equipment they name; its groups their members; the bundled PORV its own element.
     const overview = flowDrawing(sectionOf('overview'), [], [], false)
     // Its loops' stops write "from" on a line over what they name (W6.5).
-    expect(overview.texts.find(text => text.lines.map(line => line.text).join(' ') === 'from ACC check valve ×4 +4 more')!.targets.map(target => target.element)).toEqual([
-      'safetyAccumulatorA.checkValve', 'safetyAccumulatorB.checkValve', 'safetyAccumulatorC.checkValve', 'safetyAccumulatorD.checkValve', 'chargingPump', 'chargingPumpB', 'rhrIsolationValve', 'safetyInjectionHeader',
+    expect(overview.texts.find(text => text.lines.map(line => line.text).join(' ') === 'from ACC check valve ×4 +5 more')!.targets.map(target => target.element)).toEqual([
+      'safetyAccumulatorA.checkValve', 'safetyAccumulatorB.checkValve', 'safetyAccumulatorC.checkValve', 'safetyAccumulatorD.checkValve', 'chargingPump', 'chargingPumpB', 'rhrInjectionValveA', 'rhrInjectionValveB', 'safetyInjectionHeader',
     ])
     expect(overview.texts.find(text => text.lines[0]!.text === 'MFW A/B')!.targets.map(target => target.element)).toEqual(['mainFeedwaterPumpA', 'mainFeedwaterPumpB'])
     expect(flowDrawing(sectionOf({ around: ['pressurizer'], reach: 1 }), [], [], false).texts.find(text => text.id === 'pressurizer.blockValve')?.targets).toEqual([{ element: 'pressurizer.blockValve', label: 'PORV block' }])

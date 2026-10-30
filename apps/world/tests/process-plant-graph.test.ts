@@ -32,12 +32,12 @@ guardPlantTests()
 describe('process plant model composition', () => {
   test('the deployed PWR checkpoint identity changes only by decision', () => {
     const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:checkpoint', loopCount: 4 }))
-    // Owner-approved RHR tranche: real exchangers, finite CCW/sump thermal
-    // state, shared source budgets and coherent unloaded initial feedback.
+    // Owner-approved source-transfer tranche: independent per-train RWST/sump
+    // suction, RHR-cooled SI piggyback and finite sump tracer transport.
     // Resolved component variables, ports and semantics remain in identity.
     // Fresh sandbox Runs only; old checkpoints and proof are never rewritten.
     // Scope and operating semantics: wiki world/packs/process-plant/signals-and-actions.md.
-    expect(system.modelDigest).toBe('7e7cc130a90d78f8705f06d47dbb613d3fd3b018297f767c79bd695805d27908')
+    expect(system.modelDigest).toBe('b85fc4e566d0d2f1c6b903801806799d5bb4cb573276214d64255cca08a26838')
     const running = createProcessPlantRuntime({ system })
     running.tick(1_300)
     const persisted = JSON.parse(JSON.stringify(running.checkpoint()))

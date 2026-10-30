@@ -10,7 +10,7 @@ import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { currentPwrPhysicalDesignRef, pwrRhrUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { currentPwrPhysicalDesignRef, pwrRecirculationUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { historicalPhysicalProcessPlantPack } from './fixtures/physical-layout/historical-targets.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
@@ -51,12 +51,12 @@ const errorCode = (body: unknown): string | undefined => (body as { error?: { co
 
 describe('Real PWR layout display boundary', () => {
   test('current full connected layout acquires exact route endpoints, flow and equipment roles in one owner sample',async()=>{
-    const source=scenarioDefinitionSchema.parse({...definition,packs:definition.packs.map(selection=>selection.id!=='physical-layout'?selection:{...selection,items:[{type:'site-layout',id:'layout:proof',label:'Full connected unit',design:pwrRhrUnitPhysicalDesignRef,members:{unit:'plant:proof'},bearing:0}]})})
+    const source=scenarioDefinitionSchema.parse({...definition,packs:definition.packs.map(selection=>selection.id!=='physical-layout'?selection:{...selection,items:[{type:'site-layout',id:'layout:proof',label:'Full connected unit',design:pwrRecirculationUnitPhysicalDesignRef,members:{unit:'plant:proof'},bearing:0}]})})
     await withRun(async(registry,run)=>{
       let reads=0
       const spy=wrapObservations(run,original=>({...original,read:async request=>{reads++;return original.read(request)}}))
       try{
-        const response=await route(registry,run.id,{...input,expectedRevision:pwrRhrUnitPhysicalDesignRef.digest})
+        const response=await route(registry,run.id,{...input,expectedRevision:pwrRecirculationUnitPhysicalDesignRef.digest})
         if(response.status!==200)throw Error(JSON.stringify(response.body))
         expect(response.status).toBe(200)
         const parsed=layoutLiveResponseSchema.parse(response.body),routeSubject=parsed.subjects.find(subject=>subject.elementId==='main-feedwater-pump-a-to-header')!
@@ -80,7 +80,11 @@ describe('Real PWR layout display boundary', () => {
           auxFeedwaterHeader: ['motor-afw-pump-to-header','turbine-afw-pump-to-header','motor-afw-pump-b-to-header',...['a','b','c','d'].map(loop=>`aux-feedwater-header-to-valve-${loop}`)],
           safetyInjectionHeader: ['safety-injection-pump-a-to-header','safety-injection-pump-b-to-header',...['a','b','c','d'].map(loop=>`safety-injection-header-to-cold-leg-${loop}`)],
           containmentSprayHeader: ['containment-spray-pump-a-to-header','containment-spray-pump-b-to-header','containment-spray-header-to-containment'],
-          rhrHeader: ['rhr-heat-exchanger-a-to-header','rhr-heat-exchanger-b-to-header','rhr-header-to-isolation-valve'],
+          ...Object.fromEntries(['a','b'].flatMap(t => { const train=t.toUpperCase(); return [
+            [`rhrSuctionHeader${train}`, [`rhr-rwst-suction-valve-${t}-to-suction-header`,`rhr-sump-suction-valve-${t}-to-suction-header`,`rhr-suction-header-${t}-to-pump`]],
+            [`rhrDischargeHeader${train}`, [`rhr-heat-exchanger-${t}-to-discharge-header`,`rhr-discharge-header-${t}-to-injection-valve`,`rhr-discharge-header-${t}-to-si-piggyback-valve`]],
+            [`siSuctionHeader${train}`, [`si-rwst-suction-valve-${t}-to-suction-header`,`si-piggyback-valve-${t}-to-suction-header`,`si-suction-header-${t}-to-pump`]],
+          ] })),
           pressurizerReliefHeader: ['pressurizer-relief-to-tank','pressurizer-safety-valves-to-tank','pressurizer-relief-header-to-tank'],
           turbine: ['turbine-stop-valve-to-turbine','turbine-exhaust-to-condenser','turbine-generator-to-unit-aux-transformer'],
         }

@@ -15,7 +15,7 @@ import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { pwrRhrUnitPhysicalDesignRef, pwrOperatorUnitPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
+import { pwrRecirculationUnitPhysicalDesignRef, pwrRhrUnitPhysicalDesignRef, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { layoutLiveResponseSchema, type LayoutLiveResponse } from '../src/ui/physical-layout/read-model.ts'
 import { resolvePhysicalSubjectOperation } from '../src/ui/physical-layout/operation.ts'
@@ -25,20 +25,20 @@ const actor = { id: actorIdSchema.parse('actor:rhr-live'), label: 'RHR live insp
 const packs = [processPlantPack, physicalLayoutPack]
 const definition = scenarioDefinitionSchema.parse({ id: 'rhr-live-proof', title: 'Actual RHR layout inspection', view: { map: { center: [11.477, 59.085], zoom: 16 } }, world: { startsAt: '2026-10-29T04:00:00.000Z' }, packs: [
   { id: 'process-plant', config: {}, items: [{ type: 'plant', id: plantId, label: 'Current four-loop PWR', location: [11.477, 59.085], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] },
-  { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: layoutId, label: 'Current RHR unit', design: pwrRhrUnitPhysicalDesignRef, members: { unit: plantId }, bearing: 0 }] },
+  { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: layoutId, label: 'Current RHR unit', design: pwrRecirculationUnitPhysicalDesignRef, members: { unit: plantId }, bearing: 0 }] },
 ], timeline: { cues: [{ id: 'primary-release', at: { kind: 'after_scenario_start', seconds: 10 }, title: 'Actual primary release', actions: [{ type: 'invoke_capability', capabilityId: 'world.process-plant.control.write', input: { plantId, path: 'rcp-a-to-core.leak.areaFraction', value: .5 } }] }] } })
 
 // The actual World/Pack admission, numerical runtime, shared owner observation
 // reader and people-facing map API are exercised together. Nothing supplies a
 // fabricated physical-target description, process observation or topology.
-test('current R8 live map reads one fresh owner sample for graph-exact RHR machines, routes and physical feedback', async () => {
+test('current R9 live map reads one fresh owner sample for graph-exact source-transfer machines, routes and physical feedback', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-rhr-live-'))
   const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: [definition],
     compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }),
     scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs }), runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter()] })
   try {
     const run = await registry.create({ scenarioId: definition.id }); await run.setClock({ paused: true })
-    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: plantId, loopCount: 4 })), design = await resolvePhysicalDesign(pwrRhrUnitPhysicalDesignRef)
+    const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: plantId, loopCount: 4 })), design = await resolvePhysicalDesign(pwrRecirculationUnitPhysicalDesignRef)
     if (design.profile !== 'drafting') throw Error('Expected current RHR drafting admission')
     expect(design.modelRequirement).toEqual({ modelRef: plant.modelRef, modelDigest: plant.modelDigest })
     const observations = run.observations.bind(run)
@@ -50,7 +50,7 @@ test('current R8 live map reads one fresh owner sample for graph-exact RHR machi
     const read = async () => {
       const before = ownerReads
       const request = new Request(`http://leitbild.test/api/workspaces/${registry.workspaceId}/world/simulation-runs/${run.id}/displays/layout`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layoutObjectId: layoutId, expectedRevision: pwrRhrUnitPhysicalDesignRef.digest }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layoutObjectId: layoutId, expectedRevision: pwrRecirculationUnitPhysicalDesignRef.digest }),
       })
       const response = await handleSimulationRunApi(request, new URL(request.url), { registry,
         accessContext: accessContextSchema.parse({ workspaceId: registry.workspaceId, requestId: newRequestId(), actor: { kind: 'anonymous' } }), roleHolders: () => ({}) })
@@ -89,14 +89,28 @@ test('current R8 live map reads one fresh owner sample for graph-exact RHR machi
     try {
       const before = await read()
       await advance(120)
-      await write('rhrIsolationValve.positionFraction', 1)
-      await write('rhrPumpA.running', true); await write('rhrPumpB.running', true)
-      await advance(180)
+      for (const train of ['A', 'B']) {
+        for (const prefix of ['rhrSumpSuctionValve', 'rhrInjectionValve', 'siPiggybackValve']) await write(`${prefix}${train}.positionFraction`, 1)
+        await write(`rhrPump${train}.running`, true); await write(`safetyInjectionPump${train}.running`, true)
+      }
+      await advance(12)
+      const established = await read()
+      for (const train of ['A', 'B']) {
+        const suffix = train.toLowerCase()
+        expect(observation(established, `rhrSumpSuctionValve${train}.effectivePositionFraction`).value).toBe(1)
+        expect(observation(established, `siPiggybackValve${train}.effectivePositionFraction`).value).toBe(1)
+        for (const prefix of ['rhrRwstSuctionValve', 'siRwstSuctionValve']) expect(observation(established, `${prefix}${train}.effectivePositionFraction`).value).toBe(1)
+        for (const id of [`rhr-sump-suction-valve-${suffix}-to-suction-header`, `si-piggyback-valve-${suffix}-to-suction-header`, `safety-injection-pump-${suffix}-to-header`]) expect(observation(established, `${id}.flowKgPerS`).value).toBeGreaterThan(0)
+      }
+      // This validates the aligned map state, not the separately qualified
+      // seven-step procedure's operator order or unobserved history.
+      for (const train of ['A', 'B']) for (const prefix of ['rhrRwstSuctionValve', 'siRwstSuctionValve']) await write(`${prefix}${train}.positionFraction`, 0)
+      await advance(168)
       const loaded = await read()
       expect(loaded.scope.epoch).toBe(before.scope.epoch)
       expect(loaded.scope.sequence).toBeGreaterThan(before.scope.sequence)
       expect(Date.parse(loaded.sample.at.at)).toBeGreaterThan(Date.parse(before.sample.at.at))
-      const machines = ['A', 'B'].flatMap(train => ['rhrHeatExchanger', 'componentCoolingHeatExchanger', 'componentCoolingTank', 'componentCoolingWaterPumpBreaker', 'serviceWaterPumpBreaker'].map(prefix => `${prefix}${train}`))
+      const machines = ['A', 'B'].flatMap(train => ['rhrHeatExchanger', 'componentCoolingHeatExchanger', 'componentCoolingTank', 'componentCoolingWaterPumpBreaker', 'serviceWaterPumpBreaker', 'rhrRwstSuctionValve', 'rhrSumpSuctionValve', 'rhrInjectionValve', 'siPiggybackValve', 'siRwstSuctionValve', 'rhrSuctionHeader', 'rhrDischargeHeader', 'siSuctionHeader'].map(prefix => `${prefix}${train}`))
       const subjects = new Map(loaded.subjects.map(subject => [subject.elementId, subject]))
       for (const id of machines) {
         const subject = subjects.get(id)!
@@ -119,7 +133,7 @@ test('current R8 live map reads one fresh owner sample for graph-exact RHR machi
         expect(observation(loaded, `${id}.heatTransferMw`).value).toBeGreaterThan(0)
         expect(subjects.get(id)!.values.find(value => value.ref === `${plantId}#${id}.heatTransferMw`)?.unit).toBe('MW')
       }
-      const historical = await resolvePhysicalDesign(pwrOperatorUnitPhysicalDesignRef)
+      const historical = await resolvePhysicalDesign(pwrRhrUnitPhysicalDesignRef)
       if (historical.profile !== 'drafting') throw Error('Expected exact previous physical admission')
       const retainedRoutes = new Map(historical.source.routing!.connections.map(route => [route.graphConnectionId, route]))
       const newRouteIds = design.source.routing!.connections.filter(route => JSON.stringify(route) !== JSON.stringify(retainedRoutes.get(route.graphConnectionId))).map(route => route.graphConnectionId)
@@ -133,10 +147,19 @@ test('current R8 live map reads one fresh owner sample for graph-exact RHR machi
         const operation = resolvePhysicalSubjectOperation(subject, loaded.sample.observations, false)
         if (edge.connectionKind === 'fluidFlow') {
           const flow = observation(loaded, `${id}.flowKgPerS`)
-          expect(flow.value).toBeGreaterThan(0)
+          const isolatedSource = /^(rwst-to-(rhr|si)-rwst-suction-valve-|rhr-rwst-suction-valve-|si-rwst-suction-valve-)/.test(id)
+          if (isolatedSource) expect(flow.value).toBe(0)
+          else expect(flow.value).toBeGreaterThan(0)
           expect(subject.topology.values.find(value => value.ref === flow.ref)?.unit).toBe('kg/s')
           expect(operation.flows.some(value => value.value === flow.value && value.quality === 'good')).toBe(true)
         } else expect(operation.conducting).not.toBeNull()
+      }
+      for (const train of ['A', 'B']) {
+        const suffix=train.toLowerCase()
+        for (const prefix of ['rhrRwstSuctionValve', 'siRwstSuctionValve']) expect(observation(loaded, `${prefix}${train}.effectivePositionFraction`).value).toBe(0)
+        for (const prefix of ['rhrSumpSuctionValve', 'siPiggybackValve']) expect(observation(loaded, `${prefix}${train}.effectivePositionFraction`).value).toBe(1)
+        expect(observation(loaded, `rhrPump${train}.flowKgPerS`).value).toBe(observation(loaded, `rhr-pump-${suffix}-to-heat-exchanger.flowKgPerS`).value)
+        expect(observation(loaded, `safetyInjectionPump${train}.flowKgPerS`).value).toBe(observation(loaded, `safety-injection-pump-${suffix}-to-header.flowKgPerS`).value)
       }
       for (const train of ['A', 'B']) for (const prefix of ['componentCoolingWaterPump', 'serviceWaterPump']) {
         const subject = subjects.get(`${prefix}${train}`)!

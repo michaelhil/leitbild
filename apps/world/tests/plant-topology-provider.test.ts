@@ -148,7 +148,7 @@ describe('plant topology provider (P5)', () => {
         ['coldIn', 'cold', ['serviceWater']], ['coldOut', 'cold', ['serviceWater']],
       ])
     }
-    expect(graph.edges.find(edge => edge.id === 'rhr-isolation-valve-to-cold-leg-a')).toMatchObject({ medium: 'residualHeatRemoval', from: { node: 'rhrIsolationValve', port: 'outlet' }, to: { node: 'core', port: 'coldLegA' } })
+    for (const [train, loop] of [['A', 'a'], ['B', 'b']]) expect(graph.edges.find(edge => edge.id === `rhr-injection-valve-${loop}-to-cold-leg-${loop}`)).toMatchObject({ medium: 'residualHeatRemoval', from: { node: `rhrInjectionValve${train}`, port: 'outlet' }, to: { node: 'core', port: `coldLeg${train}` } })
     expect(graph.media.find(medium => medium.id === 'electricalPower')?.kind).toBe('electric-ac')
     expect(graph.media.find(medium => medium.id === 'mainSteam')?.kind).toBe('steam')
     expect(graph.media.find(medium => medium.id === 'feedwater')).toEqual({ id: 'feedwater', label: 'Feedwater', kind: 'fluid' })
@@ -157,7 +157,8 @@ describe('plant topology provider (P5)', () => {
   test('an edge carries its own loop where it has one, apart from its ends\' (the charging line into cold leg A)', () => {
     const groupOf = (id: string) => node(id).group
     const own = graph.edges.filter(edge => edge.group !== undefined && edge.group !== (groupOf(edge.from.node) ?? groupOf(edge.to.node)))
-    expect(own).toHaveLength(13)
+    // Independent low-head returns add a second loop-owned injection edge.
+    expect(own).toHaveLength(14)
     expect(graph.edges.find(edge => edge.id === 'charging-pump-to-cold-leg-a')).toMatchObject({ group: 'A', medium: 'charging', from: { node: 'chargingPump' }, to: { node: 'core', port: 'coldLegA' } })
   })
 
