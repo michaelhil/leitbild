@@ -35,6 +35,9 @@ export interface PwrTransientKernel {
     readonly steamGeneratorTubeUncoveredFraction: ReadonlyArray<NumberHandle>
     readonly steamGeneratorVoidFraction: ReadonlyArray<NumberHandle>
     readonly steamGeneratorHeatTransferMw: ReadonlyArray<NumberHandle>
+    readonly steamGeneratorSecondaryHeatTransferMw: ReadonlyArray<NumberHandle>
+    readonly steamGeneratorMetalStoredEnergyRateMw: ReadonlyArray<NumberHandle>
+    readonly steamGeneratorMetalEnergyResidualMw: ReadonlyArray<NumberHandle>
     readonly steamGeneratorSteamOutflowKgPerS: ReadonlyArray<NumberHandle>
     readonly steamGeneratorFeedwaterFlowKgPerS: ReadonlyArray<NumberHandle>
     readonly feedwaterTankInventoryKg: NumberHandle | null
@@ -115,7 +118,9 @@ export interface PwrTransientDiagnostics {
     readonly maxVoidFraction: number | null
     readonly drySteamGeneratorCount: number
     readonly tubeBundleUncoveredSteamGeneratorCount: number
-    readonly heatTransferMw: number
+    readonly primaryHeatTransferMw: number
+    readonly boilingHeatTransferMw: number
+    readonly metalStoredEnergyRateMw: number
     readonly steamOutflowKgPerS: number
     readonly feedwaterFlowKgPerS: number
     readonly feedwaterTankInventoryKg: number | null
@@ -174,6 +179,7 @@ export interface PwrTransientDiagnostics {
     readonly maxSteamGeneratorLiquidResidualKg: number
     readonly maxSteamGeneratorSteamResidualKg: number
     readonly maxSteamGeneratorBoilingResidualMw: number
+    readonly maxSteamGeneratorMetalEnergyResidualMw: number
     readonly primaryInventoryResidualKg: number | null
     readonly pressurizerWaterResidualKg: number | null
     readonly pressurizerSteamResidualKg: number | null
@@ -344,6 +350,9 @@ export const compilePwrTransientKernel = (
       steamGeneratorTubeUncoveredFraction: handlesFor(table, steamGenerators, 'tubeUncoveredFraction'),
       steamGeneratorVoidFraction: handlesFor(table, steamGenerators, 'voidFraction'),
       steamGeneratorHeatTransferMw: handlesFor(table, steamGenerators, 'heatTransferMw'),
+      steamGeneratorSecondaryHeatTransferMw: handlesFor(table, steamGenerators, 'secondaryHeatTransferMw'),
+      steamGeneratorMetalStoredEnergyRateMw: handlesFor(table, steamGenerators, 'metalStoredEnergyRateMw'),
+      steamGeneratorMetalEnergyResidualMw: handlesFor(table, steamGenerators, 'metalEnergyBalanceResidualMw'),
       steamGeneratorSteamOutflowKgPerS: handlesFor(table, steamGenerators, 'steamOutflowKgPerS'),
       steamGeneratorFeedwaterFlowKgPerS: handlesFor(table, steamGenerators, 'feedwaterFlowKgPerS'),
       feedwaterTankInventoryKg: handleFor(table, feedwaterTank, 'inventoryKg'),
@@ -435,7 +444,9 @@ export const evaluatePwrTransientKernel = (
       maxVoidFraction: maximum(table, handles.steamGeneratorVoidFraction),
       drySteamGeneratorCount: countNumbers(table, handles.steamGeneratorLevelPercent, level => level <= 5),
       tubeBundleUncoveredSteamGeneratorCount: countNumbers(table, handles.steamGeneratorTubeUncoveredFraction, uncovered => uncovered > 0.05),
-      heatTransferMw: heatTransfer,
+      primaryHeatTransferMw: heatTransfer,
+      boilingHeatTransferMw: sumNumbers(table, handles.steamGeneratorSecondaryHeatTransferMw),
+      metalStoredEnergyRateMw: sumNumbers(table, handles.steamGeneratorMetalStoredEnergyRateMw),
       steamOutflowKgPerS: sumNumbers(table, handles.steamGeneratorSteamOutflowKgPerS),
       feedwaterFlowKgPerS: sumNumbers(table, handles.steamGeneratorFeedwaterFlowKgPerS),
       feedwaterTankInventoryKg: readOptionalNumber(table, handles.feedwaterTankInventoryKg),
@@ -494,6 +505,7 @@ export const evaluatePwrTransientKernel = (
       maxSteamGeneratorLiquidResidualKg: maxAbs(table, handles.steamGeneratorLiquidResidualKg),
       maxSteamGeneratorSteamResidualKg: maxAbs(table, handles.steamGeneratorSteamResidualKg),
       maxSteamGeneratorBoilingResidualMw: maxAbs(table, handles.steamGeneratorBoilingResidualMw),
+      maxSteamGeneratorMetalEnergyResidualMw: maxAbs(table, handles.steamGeneratorMetalEnergyResidualMw),
       primaryInventoryResidualKg: readOptionalNumber(table, handles.primaryInventoryResidualKg),
       pressurizerWaterResidualKg: readOptionalNumber(table, handles.pressurizerWaterResidualKg),
       pressurizerSteamResidualKg: readOptionalNumber(table, handles.pressurizerSteamResidualKg),

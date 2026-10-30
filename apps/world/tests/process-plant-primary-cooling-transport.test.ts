@@ -61,4 +61,19 @@ describe('primary cooling transport diagnostics', () => {
       expect(system.graph.signalBindingByPath.get(path('core.primaryNetHeatLoadMw'))!.simulatorOnly).toBe(true)
     }
   })
+
+  test('SG extraction, boiling and retained tube heat remain distinct through a power transient', () => {
+    const runtime = createProcessPlantRuntime({ system })
+    runtime.writeCommand({ type: 'setVariable', path: path('core.rodInsertionFraction'), value: 1 })
+    let storedHeatObserved = false
+    for (let step = 0; step < 30; step++) {
+      runtime.tick(100)
+      const diagnostics = runtime.pwrTransientDiagnostics()
+      const { primaryHeatTransferMw, boilingHeatTransferMw, metalStoredEnergyRateMw } = diagnostics.secondary
+      expect(primaryHeatTransferMw - boilingHeatTransferMw).toBeCloseTo(metalStoredEnergyRateMw, 7)
+      expect(diagnostics.conservation.maxSteamGeneratorMetalEnergyResidualMw).toBeLessThan(1e-5)
+      storedHeatObserved ||= Math.abs(metalStoredEnergyRateMw) > 1e-3
+    }
+    expect(storedHeatObserved).toBe(true)
+  })
 })
