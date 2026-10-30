@@ -260,6 +260,16 @@ export const runProcessPlantInitialReconciliation = (config: {
   })
   // Values derived from link flows and pressures read true before the first step.
   reconcile(true)
+  // Directed delivery has now reconciled actual pump demand. Reacquire the
+  // upstream electrical load from that demand without advancing time or
+  // battery energy. The earlier pass remains necessary to power the pumps.
+  runProcessPlantExecutionPhase({
+    system: config.system,
+    plan: config.plan,
+    context,
+    phase: 'solveElectrical',
+    dtSeconds: 0,
+  })
 }
 
 export const runProcessPlantExecutionPhase = (config: {

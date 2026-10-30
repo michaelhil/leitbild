@@ -55,6 +55,18 @@ describe('finite DC supply and actual support dependencies', () => {
     expect(read(r, 'battery.stateOfChargeFraction')).toBe(1)
   })
 
+  test('zero-time electrical reconciliation never spends or charges stored energy', () => {
+    for (const charge of [0, .5, 1]) {
+      const r = runtimeFor(graph('hold', charge))
+      expect(r.elapsedMs()).toBe(0)
+      expect(read(r, 'battery.storedEnergyMj')).toBe(10 * charge)
+      expect(read(r, 'battery.stateOfChargeFraction')).toBe(charge)
+      expect(read(r, 'essential.servedMw')).toBe(.4)
+      expect(read(r, 'discretionary.servedMw')).toBe(.4)
+      expect(read(r, 'battery.dischargePowerMw')).toBe(0)
+    }
+  })
+
   test('actual AC loss debits downstream loads through inverter efficiency; shedding halves energy use', () => {
     const r = runtimeFor(graph())
     write(r, 'grid.available', false)
