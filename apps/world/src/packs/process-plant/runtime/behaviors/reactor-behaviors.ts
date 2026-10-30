@@ -15,8 +15,9 @@ import {
   sumOutgoingComponentLinkValue,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
-import { flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
-import { primaryLoopLegReversed, reactorCoreNetInflowKgPerS } from '../primary-loop-hydraulics.ts'
+import { reactorCoreNetInflowKgPerS } from '../primary-loop-hydraulics.ts'
+import { reactorCoreCoolantInlet } from '../core-coolant-inlet.ts'
+import { primaryLiquidBoundaryCoolingMw } from '../primary-liquid-cooling.ts'
 import { decayHeatGroupStep, reactorKineticsPowerStep } from '../physics.ts'
 import { primarySystemPressurizer, primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa } from '../thermophysics.ts'
@@ -329,6 +330,8 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'pumpHeatMw',
       'incoming:flowKgPerS',
       'steamGenerator.heatTransferMw',
+      'primary liquid-boundary flowKgPerS and temperatureC',
+      'pressurizer.pressureMPa',
       'reactorVessel.boronConcentrationPpm',
       'reactorVessel.loopVoidFraction',
       'intermediateRangeCurrentAmps',
@@ -350,6 +353,8 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'fuelStoredEnergyMj',
       'coreCoolingAvailabilityFraction',
       'coreHeatRemovalDeficitMw',
+      'primaryLiquidBoundaryCoolingMw',
+      'primaryNetHeatLoadMw',
       'fuelHeatupRateCPerS',
       'decayHeatMw',
       ...delayedNeutronGroupLocalPaths,
@@ -440,10 +445,13 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       // natural circulation of a few percent cools a tripped core in full.
       const flowFraction = Math.max(0, primaryFlow) / Math.max(1, nominalPrimaryFlow)
       const creditedCooling = thermalFraction <= 0 ? 1 : clamp(flowFraction / thermalFraction, 0, 1)
-      // What of the heat the coolant takes from the core and the pumps the
-      // steam generators do not take out heats the coolant.
-      const heatRemovalDeficit = Math.max(0, totalThermalPower + context.readNumber(componentVariablePath(component, 'pumpHeatMw'))
-        - sumComponentValueByKind(system, 'steamGenerator', 'heatTransferMw', context))
+      // A closed RHR return removes heat through actual transported water.
+      // Adding RHR/CCW/SW exchanger readings here would count the same heat
+      // more than once, and would credit cooling a sump with no RCS delivery.
+      const liquidBoundaryCooling = primaryLiquidBoundaryCoolingMw(system, component, context, coolantPressureMPa(system, component, context))
+      const netHeatLoad = totalThermalPower + context.readNumber(componentVariablePath(component, 'pumpHeatMw'))
+        - sumComponentValueByKind(system, 'steamGenerator', 'heatTransferMw', context) - liquidBoundaryCooling
+      const heatRemovalDeficit = Math.max(0, netHeatLoad)
       const fuelRise = optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140)
         * thermalFraction
         / Math.sqrt(Math.max(0.05, coolingMargin))
@@ -459,6 +467,8 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'fuelStoredEnergyMj'), Math.max(0, nextAverageFuelTemperature - coolantOutlet) * parameterNumber(component, 'fuelThermalCapacityMjPerC'))
       context.write(componentVariablePath(component, 'coreCoolingAvailabilityFraction'), creditedCooling)
       context.write(componentVariablePath(component, 'coreHeatRemovalDeficitMw'), heatRemovalDeficit)
+      context.write(componentVariablePath(component, 'primaryLiquidBoundaryCoolingMw'), liquidBoundaryCooling)
+      context.write(componentVariablePath(component, 'primaryNetHeatLoadMw'), netHeatLoad)
       context.write(componentVariablePath(component, 'fuelHeatupRateCPerS'), (nextAverageFuelTemperature - currentFuelTemperature) / Math.max(context.dtSeconds, 1e-9))
       const previousIntermediateRangeCurrent = context.readNumber(componentVariablePath(component, 'intermediateRangeCurrentAmps'))
       const previousSourceRange = {
@@ -485,17 +495,11 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
     writes: ['coolantInletTemperatureC', 'coolantOutletTemperatureC', 'coreExitTemperatureC', 'coreExitTemperatureRateCPerS', 'vapourGenerationKgPerS'],
     update: ({ system, component, context }): void => {
       const dt = context.dtSeconds
-      const primaryInletLink = (link: ReactorBehaviorLink): boolean =>
-        (link.service === 'primaryCoolant' && !primaryLoopLegReversed(system, link, context))
-        || link.service === 'charging'
-        || link.service === 'primaryInjection'
-        || link.service === 'safetyInjection'
-        || link.service === 'residualHeatRemoval'
-      const mixedInletTemperature = flowWeightedIncomingLinkValue(system, component.index, 'temperatureC', context, primaryInletLink)
-        ?? averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
-        ?? context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC'))
-      const flow = Math.max(1, reactorCoreNetInflowKgPerS(system, component, context))
       const pressure = coolantPressureMPa(system, component, context)
+      const inletStream = reactorCoreCoolantInlet(system, component, context, pressure)
+      const retainedInletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
+        ?? context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC'))
+      const flow = Math.max(1, inletStream.netFlowKgPerS)
       const saturation = saturatedWaterSteam(pressure)
       const latentHeat = saturation.vapourEnthalpyKjPerKg - saturation.liquidEnthalpyKjPerKg
       // An energy balance on enthalpy at coolant pressure: the pumps heat the
@@ -507,7 +511,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const pumpHeat = context.readNumber(componentVariablePath(component, 'pumpHeatMw'))
       const bypassFraction = optionalParameterNumber(component, 'coreBypassFlowFraction', 0)
       // Cold-leg water arriving hotter than saturation flashes as it comes.
-      const arrivingEnthalpy = liquidEnthalpyKjPerKg(mixedInletTemperature, pressure) + pumpHeat * 1_000 / flow
+      const arrivingEnthalpy = (inletStream.specificEnthalpyKjPerKg ?? liquidEnthalpyKjPerKg(retainedInletTemperature, pressure)) + pumpHeat * 1_000 / flow
       const inletEnthalpy = Math.min(arrivingEnthalpy, saturation.liquidEnthalpyKjPerKg)
       const outletEnthalpy = inletEnthalpy + coreHeat * 1_000 / flow
       const coreExitEnthalpy = outletEnthalpy + coreHeat * 1_000 * bypassFraction / ((1 - bypassFraction) * flow)
@@ -748,6 +752,22 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
 ]
 
 export const reactorInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
+  {
+    id: 'reactor-core-initial-cooling-transport',
+    componentKind: 'reactorCore',
+    afterLinks: true,
+    reads: ['totalThermalPowerMw', 'pumpHeatMw', 'steamGenerator.heatTransferMw', 'primary liquid-boundary flowKgPerS and temperatureC', 'pressurizer.pressureMPa'],
+    writes: ['coreHeatRemovalDeficitMw', 'primaryLiquidBoundaryCoolingMw', 'primaryNetHeatLoadMw'],
+    reconcile: ({ system, component, context }): void => {
+      const cooling = primaryLiquidBoundaryCoolingMw(system, component, context, coolantPressureMPa(system, component, context))
+      const net = context.readNumber(componentVariablePath(component, 'totalThermalPowerMw'))
+        + context.readNumber(componentVariablePath(component, 'pumpHeatMw'))
+        - sumComponentValueByKind(system, 'steamGenerator', 'heatTransferMw', context) - cooling
+      context.write(componentVariablePath(component, 'primaryLiquidBoundaryCoolingMw'), cooling)
+      context.write(componentVariablePath(component, 'primaryNetHeatLoadMw'), net)
+      context.write(componentVariablePath(component, 'coreHeatRemovalDeficitMw'), Math.max(0, net))
+    },
+  },
   {
     id: 'reactor-core-rod-position-initial-state',
     componentKind: 'reactorCore',

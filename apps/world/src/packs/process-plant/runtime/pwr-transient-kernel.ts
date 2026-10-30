@@ -60,6 +60,8 @@ export interface PwrTransientKernel {
     readonly coreDecayHeatMw: NumberHandle | null
     readonly coreTotalThermalPowerMw: NumberHandle | null
     readonly coreHeatRemovalDeficitMw: NumberHandle | null
+    readonly primaryLiquidBoundaryCoolingMw: NumberHandle | null
+    readonly primaryNetHeatLoadMw: NumberHandle | null
     readonly coreCoolingAvailabilityFraction: NumberHandle | null
     readonly fuelHeatupRateCPerS: NumberHandle | null
     readonly accumulatorInventoryKg: ReadonlyArray<NumberHandle>
@@ -145,6 +147,8 @@ export interface PwrTransientDiagnostics {
     readonly decayHeatMw: number | null
     readonly totalThermalPowerMw: number | null
     readonly heatRemovalDeficitMw: number | null
+    readonly liquidBoundaryCoolingMw: number | null
+    readonly netHeatLoadMw: number | null
     readonly coolingAvailabilityFraction: number | null
     readonly fuelHeatupRateCPerS: number | null
   }
@@ -365,6 +369,8 @@ export const compilePwrTransientKernel = (
       coreDecayHeatMw: handleFor(table, core, 'decayHeatMw'),
       coreTotalThermalPowerMw: handleFor(table, core, 'totalThermalPowerMw'),
       coreHeatRemovalDeficitMw: handleFor(table, core, 'coreHeatRemovalDeficitMw'),
+      primaryLiquidBoundaryCoolingMw: handleFor(table, core, 'primaryLiquidBoundaryCoolingMw'),
+      primaryNetHeatLoadMw: handleFor(table, core, 'primaryNetHeatLoadMw'),
       coreCoolingAvailabilityFraction: handleFor(table, core, 'coreCoolingAvailabilityFraction'),
       fuelHeatupRateCPerS: handleFor(table, core, 'fuelHeatupRateCPerS'),
       accumulatorInventoryKg: handlesFor(table, accumulators, 'liquidInventoryKg'),
@@ -460,8 +466,9 @@ export const evaluatePwrTransientKernel = (
       fissionPowerMw: readOptionalNumber(table, handles.coreFissionPowerMw),
       decayHeatMw: readOptionalNumber(table, handles.coreDecayHeatMw),
       totalThermalPowerMw: totalThermalPower,
-      heatRemovalDeficitMw: explicitHeatRemovalDeficit
-        ?? (totalThermalPower === null ? null : Math.max(0, totalThermalPower - heatTransfer)),
+      heatRemovalDeficitMw: explicitHeatRemovalDeficit,
+      liquidBoundaryCoolingMw: readOptionalNumber(table, handles.primaryLiquidBoundaryCoolingMw),
+      netHeatLoadMw: readOptionalNumber(table, handles.primaryNetHeatLoadMw),
       coolingAvailabilityFraction: readOptionalNumber(table, handles.coreCoolingAvailabilityFraction),
       fuelHeatupRateCPerS: readOptionalNumber(table, handles.fuelHeatupRateCPerS),
     },

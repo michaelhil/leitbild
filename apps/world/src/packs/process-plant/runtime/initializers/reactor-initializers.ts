@@ -69,6 +69,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'fuelStoredEnergyMj') return Math.max(0, initialFuelAverage - initialCoolantOutlet) * parameterNumber(component, 'fuelThermalCapacityMjPerC')
       if (localPath === 'coreCoolingAvailabilityFraction') return 1
       if (localPath === 'coreHeatRemovalDeficitMw') return 0
+      if (localPath === 'primaryLiquidBoundaryCoolingMw' || localPath === 'primaryNetHeatLoadMw') return 0
       if (localPath === 'fuelHeatupRateCPerS') return 0
       if (localPath === 'decayHeatMw') return initialDecayHeat
       if (localPath === 'pumpHeatMw') return initialPumpHeat

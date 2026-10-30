@@ -17213,6 +17213,8 @@
     "core.fuelStoredEnergyMj",
     "core.coreCoolingAvailabilityFraction",
     "core.coreHeatRemovalDeficitMw",
+    "core.primaryLiquidBoundaryCoolingMw",
+    "core.primaryNetHeatLoadMw",
     "core.fuelHeatupRateCPerS",
     "core.decayHeatMw",
     "core.coolantInletTemperatureC",
