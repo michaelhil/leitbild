@@ -232,6 +232,17 @@ export const runProcessPlantInitialReconciliation = (config: {
       })
     }
   }
+  // Propagate initialized source state before component algebraic solves.
+  // In particular, primary-loop buoyancy must see the initialized SG outlet,
+  // not a pipe's authored construction temperature. At dt=0 these link
+  // behaviors propagate derived state without advancing heat, mass or time.
+  runProcessPlantExecutionPhase({
+    system: config.system,
+    plan: config.plan,
+    context,
+    phase: 'updateProcessLinkState',
+    dtSeconds: 0,
+  })
   reconcile(false)
   runProcessPlantExecutionPhase({
     system: config.system,

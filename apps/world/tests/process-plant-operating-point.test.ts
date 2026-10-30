@@ -44,12 +44,19 @@ describe('authoritative PWR full-power operating point', () => {
         expect(read(`${component.id}.steamFlowKgPerS`)).toBeCloseTo(steamGeneratorHeat / enthalpyRise / loopCount, 8)
         steamFlow += read(`${component.id}.steamFlowKgPerS`)
       }
+      // Zero-time link propagation must precede the buoyancy solve. A pipe's
+      // construction temperature must not create a spurious startup flow ramp.
+      expect(read('rcs-hot-leg-a.flowKgPerS')).toBeCloseTo(17_000 / loopCount, 6)
+      const initialMetalTemperature = read('sgA.tubeMetalTemperatureC')
+      expect(runtime.elapsedMs()).toBe(0)
       expect(steamFlow).toBeGreaterThan(1_890)
       expect(steamFlow).toBeLessThan(1_910)
       runtime.tick(100)
       expect(read('core.temperatureFeedbackPcm')).toBeCloseTo(0, 6)
       expect(read('core.powerMw')).toBeCloseTo(3400, 6)
       expect(read('sgA.heatTransferMw')).toBeCloseTo(steamGeneratorHeat / loopCount, 4)
+      expect(read('sgA.tubeMetalTemperatureC')).toBeCloseTo(initialMetalTemperature, 6)
+      expect(read('vessel.primaryCoolantInventoryKg')).toBeCloseTo(initialInventory, 6)
       expect(runtime.readVariable('safetyBusA.energized' as VariablePath)).toBe(true)
       for (let step = 1; step < 600; step++) runtime.tick(100)
       // Normal CVCS heat exchange is a small transient, not a 15–50% collapse.

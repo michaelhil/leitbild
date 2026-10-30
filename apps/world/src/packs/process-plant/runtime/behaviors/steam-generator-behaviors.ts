@@ -13,7 +13,7 @@ import {
 } from '../component-link-helpers.ts'
 import { primaryLoopLegReversed } from '../primary-loop-hydraulics.ts'
 import { inventoryBalanceStep } from '../physics.ts'
-import { primarySystemReactorCore } from '../system-topology.ts'
+import { primarySystemPressurizer, primarySystemReactorCore } from '../system-topology.ts'
 import { steamGeneratorFeedToSteamEnthalpyMjPerKg, steamGeneratorLevelOnSpanPercent, steamGeneratorNarrowRange, steamGeneratorWideRange } from '../../steam-generator-operating-level.ts'
 import {
   heatMwFromWaterFlowAndDeltaT,
@@ -25,9 +25,17 @@ import { finiteSteamGeneratorMetalRates } from '../steam-generator-thermal.ts'
 
 type SteamGeneratorBehaviorInput = Parameters<ComponentBehaviorDefinition['update']>[0]
 
-const primaryCoolantPressureMPa = ({ system, component, context }: SteamGeneratorBehaviorInput): number =>
-  averageIncomingLinkValue(system, component, 'pressureMPa', context, link => link.service === 'primaryCoolant')
-  ?? parameterNumber(component, 'nominalPressureMPa')
+const primaryCoolantPressureMPa = ({ system, component, context }: SteamGeneratorBehaviorInput): number => {
+  // The reduced primary thermal balance and its initialized enthalpies use
+  // one bulk pressure. Local hydraulic pressure drops remain in the links;
+  // mixing those local pressures into only the SG's h(T,p) would introduce
+  // an unaccounted thermal reference change at an otherwise steady point.
+  const pressurizer = primarySystemPressurizer(system)
+  if (pressurizer !== null) return context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
+  const inlet = averageIncomingLinkValue(system, component, 'pressureMPa', context, link => link.service === 'primaryCoolant')
+  if (inlet === null) throw new Error(`steam generator ${component.id} requires a primary thermodynamic pressure from its bulk pressurizer or declared primary inlet`)
+  return inlet
+}
 
 /** The temperature of the reactor coolant entering a generator's tubes: from
  * its hot leg, or, while the other loops drive its loop backwards, from its
