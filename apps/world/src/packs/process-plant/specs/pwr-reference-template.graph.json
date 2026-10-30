@@ -3695,36 +3695,39 @@
       }
     },
     {
-      "id": "rhrHeader",
-      "kind": "processHeader",
-      "label": "Residual Heat Removal Header",
+      "id": "rhrRwstSuctionValveA",
+      "kind": "processValve",
+      "label": "RHR A RWST Suction Isolation Valve",
       "parameters": {
-        "initialTemperatureC": 45,
-        "initialPressureMPa": 0.9,
-        "headerVolumeM3": 10,
-        "distributionMode": "pressureWeighted"
+        "initialPositionFraction": 1,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
       },
       "variables": [
         {
-          "path": "outletFlowKgPerS",
-          "tagId": "LO-HEAD-FLOW",
-          "equipmentId": "rhrHeader",
-          "description": "Low-head SI / RHR header flow",
-          "externalRefs": [
-            "ess.lo_head.header_flow"
-          ]
+          "path": "positionFraction",
+          "tagId": "RHR-RWST-A",
+          "equipmentId": "rhrRwstSuctionValveA",
+          "description": "RHR A RWST Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "RHR-RWST-A-POS",
+          "equipmentId": "rhrRwstSuctionValveA",
+          "description": "RHR A RWST Suction Isolation Valve achieved position"
         }
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RHR header"
+          "shortLabel": "RHR A RWST iso"
         }
       }
     },
     {
-      "id": "rhrIsolationValve",
+      "id": "rhrSumpSuctionValveA",
       "kind": "processValve",
-      "label": "RHR Isolation Valve",
+      "label": "RHR A Sump Suction Isolation Valve",
       "parameters": {
         "initialPositionFraction": 0,
         "valveMode": "isolation",
@@ -3734,23 +3737,506 @@
       "variables": [
         {
           "path": "positionFraction",
-          "tagId": "RHR-ISOL",
-          "equipmentId": "rhrIsolationValve",
-          "description": "Residual heat removal isolation valve position demand",
-          "externalRefs": [
-            "ess.rhr.isolation_valve"
-          ]
+          "tagId": "RHR-SUMP-A",
+          "equipmentId": "rhrSumpSuctionValveA",
+          "description": "RHR A Sump Suction Isolation Valve position demand"
         },
         {
           "path": "effectivePositionFraction",
-          "tagId": "RHR-ISOL-POS",
-          "equipmentId": "rhrIsolationValve",
-          "description": "Residual heat removal isolation valve position feedback"
+          "tagId": "RHR-SUMP-A-POS",
+          "equipmentId": "rhrSumpSuctionValveA",
+          "description": "RHR A Sump Suction Isolation Valve achieved position"
         }
       ],
       "metadata": {
         "presentation": {
-          "shortLabel": "RHR iso"
+          "shortLabel": "RHR A sump iso"
+        }
+      }
+    },
+    {
+      "id": "rhrSuctionHeaderA",
+      "kind": "processHeader",
+      "label": "RHR A Suction Header",
+      "parameters": {
+        "initialTemperatureC": 25,
+        "initialPressureMPa": 0.101325,
+        "headerVolumeM3": 1,
+        "distributionMode": "demandWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "RHR-A-SUCTION-FLOW",
+          "equipmentId": "rhrSuctionHeaderA",
+          "description": "RHR A Suction Header actual outlet flow"
+        },
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "RHR-A-SUCTION-PRESSURE",
+          "equipmentId": "rhrSuctionHeaderA",
+          "description": "RHR A Suction Header pressure"
+        },
+        {
+          "path": "mixedTemperatureC",
+          "tagId": "RHR-A-SUCTION-TEMP",
+          "equipmentId": "rhrSuctionHeaderA",
+          "description": "RHR A Suction Header water temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR A suction",
+          "shortNames": {
+            "outletFlowKgPerS": "RHR A suction flow",
+            "mixedPressureMPa": "RHR A suction pressure",
+            "mixedTemperatureC": "RHR A suction temp"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhrDischargeHeaderA",
+      "kind": "processHeader",
+      "label": "RHR A Cooled Discharge Header",
+      "parameters": {
+        "initialTemperatureC": 45,
+        "initialPressureMPa": 0.101325,
+        "headerVolumeM3": 1,
+        "distributionMode": "demandWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "RHR-A-DISCHARGE-FLOW",
+          "equipmentId": "rhrDischargeHeaderA",
+          "description": "RHR A Cooled Discharge Header actual outlet flow"
+        },
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "RHR-A-DISCHARGE-PRESSURE",
+          "equipmentId": "rhrDischargeHeaderA",
+          "description": "RHR A Cooled Discharge Header pressure"
+        },
+        {
+          "path": "mixedTemperatureC",
+          "tagId": "RHR-A-DISCHARGE-TEMP",
+          "equipmentId": "rhrDischargeHeaderA",
+          "description": "RHR A Cooled Discharge Header water temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR A discharge",
+          "shortNames": {
+            "outletFlowKgPerS": "RHR A discharge flow",
+            "mixedPressureMPa": "RHR A discharge pressure",
+            "mixedTemperatureC": "RHR A discharge temp"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhrInjectionValveA",
+      "kind": "processValve",
+      "label": "RHR A Cold-Leg Injection Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "RHR-INJ-A",
+          "equipmentId": "rhrInjectionValveA",
+          "description": "RHR A Cold-Leg Injection Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "RHR-INJ-A-POS",
+          "equipmentId": "rhrInjectionValveA",
+          "description": "RHR A Cold-Leg Injection Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR A injection iso"
+        }
+      }
+    },
+    {
+      "id": "siPiggybackValveA",
+      "kind": "processValve",
+      "label": "High-Head SI A RHR Suction Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "SI-PIGGYBACK-A",
+          "equipmentId": "siPiggybackValveA",
+          "description": "High-Head SI A RHR Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "SI-PIGGYBACK-A-POS",
+          "equipmentId": "siPiggybackValveA",
+          "description": "High-Head SI A RHR Suction Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI A RHR iso"
+        }
+      }
+    },
+    {
+      "id": "siRwstSuctionValveA",
+      "kind": "processValve",
+      "label": "High-Head SI A RWST Suction Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 1,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "SI-RWST-A",
+          "equipmentId": "siRwstSuctionValveA",
+          "description": "High-Head SI A RWST Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "SI-RWST-A-POS",
+          "equipmentId": "siRwstSuctionValveA",
+          "description": "High-Head SI A RWST Suction Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI A RWST iso"
+        }
+      }
+    },
+    {
+      "id": "siSuctionHeaderA",
+      "kind": "processHeader",
+      "label": "High-Head SI A Suction Header",
+      "parameters": {
+        "initialTemperatureC": 25,
+        "initialPressureMPa": 0.101325,
+        "headerVolumeM3": 1,
+        "distributionMode": "demandWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "SI-A-SUCTION-FLOW",
+          "equipmentId": "siSuctionHeaderA",
+          "description": "High-Head SI A Suction Header actual outlet flow"
+        },
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "SI-A-SUCTION-PRESSURE",
+          "equipmentId": "siSuctionHeaderA",
+          "description": "High-Head SI A Suction Header pressure"
+        },
+        {
+          "path": "mixedTemperatureC",
+          "tagId": "SI-A-SUCTION-TEMP",
+          "equipmentId": "siSuctionHeaderA",
+          "description": "High-Head SI A Suction Header water temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI A suction",
+          "shortNames": {
+            "outletFlowKgPerS": "SI A suction flow",
+            "mixedPressureMPa": "SI A suction pressure",
+            "mixedTemperatureC": "SI A suction temp"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhrRwstSuctionValveB",
+      "kind": "processValve",
+      "label": "RHR B RWST Suction Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 1,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "RHR-RWST-B",
+          "equipmentId": "rhrRwstSuctionValveB",
+          "description": "RHR B RWST Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "RHR-RWST-B-POS",
+          "equipmentId": "rhrRwstSuctionValveB",
+          "description": "RHR B RWST Suction Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR B RWST iso"
+        }
+      }
+    },
+    {
+      "id": "rhrSumpSuctionValveB",
+      "kind": "processValve",
+      "label": "RHR B Sump Suction Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "RHR-SUMP-B",
+          "equipmentId": "rhrSumpSuctionValveB",
+          "description": "RHR B Sump Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "RHR-SUMP-B-POS",
+          "equipmentId": "rhrSumpSuctionValveB",
+          "description": "RHR B Sump Suction Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR B sump iso"
+        }
+      }
+    },
+    {
+      "id": "rhrSuctionHeaderB",
+      "kind": "processHeader",
+      "label": "RHR B Suction Header",
+      "parameters": {
+        "initialTemperatureC": 25,
+        "initialPressureMPa": 0.101325,
+        "headerVolumeM3": 1,
+        "distributionMode": "demandWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "RHR-B-SUCTION-FLOW",
+          "equipmentId": "rhrSuctionHeaderB",
+          "description": "RHR B Suction Header actual outlet flow"
+        },
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "RHR-B-SUCTION-PRESSURE",
+          "equipmentId": "rhrSuctionHeaderB",
+          "description": "RHR B Suction Header pressure"
+        },
+        {
+          "path": "mixedTemperatureC",
+          "tagId": "RHR-B-SUCTION-TEMP",
+          "equipmentId": "rhrSuctionHeaderB",
+          "description": "RHR B Suction Header water temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR B suction",
+          "shortNames": {
+            "outletFlowKgPerS": "RHR B suction flow",
+            "mixedPressureMPa": "RHR B suction pressure",
+            "mixedTemperatureC": "RHR B suction temp"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhrDischargeHeaderB",
+      "kind": "processHeader",
+      "label": "RHR B Cooled Discharge Header",
+      "parameters": {
+        "initialTemperatureC": 45,
+        "initialPressureMPa": 0.101325,
+        "headerVolumeM3": 1,
+        "distributionMode": "demandWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "RHR-B-DISCHARGE-FLOW",
+          "equipmentId": "rhrDischargeHeaderB",
+          "description": "RHR B Cooled Discharge Header actual outlet flow"
+        },
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "RHR-B-DISCHARGE-PRESSURE",
+          "equipmentId": "rhrDischargeHeaderB",
+          "description": "RHR B Cooled Discharge Header pressure"
+        },
+        {
+          "path": "mixedTemperatureC",
+          "tagId": "RHR-B-DISCHARGE-TEMP",
+          "equipmentId": "rhrDischargeHeaderB",
+          "description": "RHR B Cooled Discharge Header water temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR B discharge",
+          "shortNames": {
+            "outletFlowKgPerS": "RHR B discharge flow",
+            "mixedPressureMPa": "RHR B discharge pressure",
+            "mixedTemperatureC": "RHR B discharge temp"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhrInjectionValveB",
+      "kind": "processValve",
+      "label": "RHR B Cold-Leg Injection Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "RHR-INJ-B",
+          "equipmentId": "rhrInjectionValveB",
+          "description": "RHR B Cold-Leg Injection Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "RHR-INJ-B-POS",
+          "equipmentId": "rhrInjectionValveB",
+          "description": "RHR B Cold-Leg Injection Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "RHR B injection iso"
+        }
+      }
+    },
+    {
+      "id": "siPiggybackValveB",
+      "kind": "processValve",
+      "label": "High-Head SI B RHR Suction Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "SI-PIGGYBACK-B",
+          "equipmentId": "siPiggybackValveB",
+          "description": "High-Head SI B RHR Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "SI-PIGGYBACK-B-POS",
+          "equipmentId": "siPiggybackValveB",
+          "description": "High-Head SI B RHR Suction Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI B RHR iso"
+        }
+      }
+    },
+    {
+      "id": "siRwstSuctionValveB",
+      "kind": "processValve",
+      "label": "High-Head SI B RWST Suction Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 1,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "SI-RWST-B",
+          "equipmentId": "siRwstSuctionValveB",
+          "description": "High-Head SI B RWST Suction Isolation Valve position demand"
+        },
+        {
+          "path": "effectivePositionFraction",
+          "tagId": "SI-RWST-B-POS",
+          "equipmentId": "siRwstSuctionValveB",
+          "description": "High-Head SI B RWST Suction Isolation Valve achieved position"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI B RWST iso"
+        }
+      }
+    },
+    {
+      "id": "siSuctionHeaderB",
+      "kind": "processHeader",
+      "label": "High-Head SI B Suction Header",
+      "parameters": {
+        "initialTemperatureC": 25,
+        "initialPressureMPa": 0.101325,
+        "headerVolumeM3": 1,
+        "distributionMode": "demandWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "SI-B-SUCTION-FLOW",
+          "equipmentId": "siSuctionHeaderB",
+          "description": "High-Head SI B Suction Header actual outlet flow"
+        },
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "SI-B-SUCTION-PRESSURE",
+          "equipmentId": "siSuctionHeaderB",
+          "description": "High-Head SI B Suction Header pressure"
+        },
+        {
+          "path": "mixedTemperatureC",
+          "tagId": "SI-B-SUCTION-TEMP",
+          "equipmentId": "siSuctionHeaderB",
+          "description": "High-Head SI B Suction Header water temperature"
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "shortLabel": "SI B suction",
+          "shortNames": {
+            "outletFlowKgPerS": "SI B suction flow",
+            "mixedPressureMPa": "SI B suction pressure",
+            "mixedTemperatureC": "SI B suction temp"
+          }
         }
       }
     },
@@ -11253,96 +11739,6 @@
       ]
     },
     {
-      "id": "rwst-to-safety-injection-pump-a",
-      "from": "rwst.outlet",
-      "to": "safetyInjectionPumpA.inlet",
-      "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "sourceSink",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "Safety injection pump A suction flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "Safety injection pump A suction temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 25
-        },
-        {
-          "path": "soluteConcentrationPpm",
-          "label": "Safety injection pump A boron concentration",
-          "kind": "derived",
-          "discipline": "chemical",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "concentration",
-          "unit": "ppm",
-          "initialValue": 2200
-        }
-      ]
-    },
-    {
-      "id": "rwst-to-safety-injection-pump-b",
-      "from": "rwst.outlet",
-      "to": "safetyInjectionPumpB.inlet",
-      "connectionKind": "fluidFlow",
-      "service": "safetyInjection",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "sourceSink",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "Safety injection pump B suction flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "Safety injection pump B suction temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 25
-        },
-        {
-          "path": "soluteConcentrationPpm",
-          "label": "Safety injection pump B boron concentration",
-          "kind": "derived",
-          "discipline": "chemical",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "concentration",
-          "unit": "ppm",
-          "initialValue": 2200
-        }
-      ]
-    },
-    {
       "id": "safety-injection-pump-a-to-header",
       "from": "safetyInjectionPumpA.outlet",
       "to": "safetyInjectionHeader.inletA",
@@ -11873,74 +12269,6 @@
       ]
     },
     {
-      "id": "containment-sump-to-rhr-pump-a",
-      "from": "containment.sumpOut",
-      "to": "rhrPumpA.inlet",
-      "connectionKind": "fluidFlow",
-      "service": "residualHeatRemoval",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "sourceSink",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "RHR pump A sump suction flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "RHR pump A sump suction temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 45
-        }
-      ]
-    },
-    {
-      "id": "containment-sump-to-rhr-pump-b",
-      "from": "containment.sumpOut",
-      "to": "rhrPumpB.inlet",
-      "connectionKind": "fluidFlow",
-      "service": "residualHeatRemoval",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "sourceSink",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "RHR pump B sump suction flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "RHR pump B sump suction temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 45
-        }
-      ]
-    },
-    {
       "id": "rhr-pump-a-to-heat-exchanger",
       "from": "rhrPumpA.outlet",
       "to": "rhrHeatExchangerA.hotIn",
@@ -12029,74 +12357,6 @@
           }
         }
       }
-    },
-    {
-      "id": "rhr-header-to-isolation-valve",
-      "from": "rhrHeader.outletA",
-      "to": "rhrIsolationValve.inlet",
-      "connectionKind": "fluidFlow",
-      "service": "residualHeatRemoval",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "incompressibleLiquid",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "RHR isolation valve inlet flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "RHR isolation valve inlet temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 45
-        }
-      ]
-    },
-    {
-      "id": "rhr-isolation-valve-to-cold-leg-a",
-      "from": "rhrIsolationValve.outlet",
-      "to": "core.coldLegA",
-      "connectionKind": "fluidFlow",
-      "service": "residualHeatRemoval",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "incompressibleLiquid",
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "label": "RHR injection to cold leg A flow",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "label": "RHR injection to cold leg A temperature",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 45
-        }
-      ]
     },
     {
       "id": "vessel-release-to-containment",
@@ -14398,60 +14658,6 @@
       "connectionKind": "electricalPower"
     },
     {
-      "id": "rhr-heat-exchanger-a-to-header",
-      "from": "rhrHeatExchangerA.hotOut",
-      "to": "rhrHeader.inletA",
-      "connectionKind": "fluidFlow",
-      "service": "residualHeatRemoval",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "incompressibleLiquid",
-      "physical": {
-        "diameterM": 0.32
-      },
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 45
-        },
-        {
-          "path": "soluteConcentrationPpm",
-          "kind": "derived",
-          "discipline": "chemical",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "concentration",
-          "unit": "ppm",
-          "initialValue": 0
-        }
-      ],
-      "metadata": {
-        "presentation": {
-          "names": {
-            "flowKgPerS": "Flow · RHR-HX A → RHR header",
-            "temperatureC": "Temperature · RHR-HX A → RHR header",
-            "soluteConcentrationPpm": "Boron concentration · RHR-HX A → RHR header"
-          }
-        }
-      }
-    },
-    {
       "id": "ccw-inventory-a-to-pump",
       "from": "componentCoolingTankA.outlet",
       "to": "componentCoolingWaterPumpA.inlet",
@@ -14857,60 +15063,6 @@
       "connectionKind": "electricalPower"
     },
     {
-      "id": "rhr-heat-exchanger-b-to-header",
-      "from": "rhrHeatExchangerB.hotOut",
-      "to": "rhrHeader.inletB",
-      "connectionKind": "fluidFlow",
-      "service": "residualHeatRemoval",
-      "nominalFluid": "water",
-      "designPhase": "liquid",
-      "solverModel": "incompressibleLiquid",
-      "physical": {
-        "diameterM": 0.32
-      },
-      "variables": [
-        {
-          "path": "flowKgPerS",
-          "kind": "derived",
-          "discipline": "hydraulic",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "flowRate",
-          "unit": "kg/s",
-          "initialValue": 0
-        },
-        {
-          "path": "temperatureC",
-          "kind": "derived",
-          "discipline": "thermal",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "temperature",
-          "unit": "degC",
-          "initialValue": 45
-        },
-        {
-          "path": "soluteConcentrationPpm",
-          "kind": "derived",
-          "discipline": "chemical",
-          "writable": false,
-          "publish": "telemetry",
-          "quantity": "concentration",
-          "unit": "ppm",
-          "initialValue": 0
-        }
-      ],
-      "metadata": {
-        "presentation": {
-          "names": {
-            "flowKgPerS": "Flow · RHR-HX B → RHR header",
-            "temperatureC": "Temperature · RHR-HX B → RHR header",
-            "soluteConcentrationPpm": "Boron concentration · RHR-HX B → RHR header"
-          }
-        }
-      }
-    },
-    {
       "id": "ccw-inventory-b-to-pump",
       "from": "componentCoolingTankB.outlet",
       "to": "componentCoolingWaterPumpB.inlet",
@@ -15299,6 +15451,1420 @@
           },
           "shortNames": {
             "temperatureC": "CCW-HX B SW out temp"
+          }
+        }
+      }
+    },
+    {
+      "id": "rwst-to-rhr-rwst-suction-valve-a",
+      "from": "rwst.outlet",
+      "to": "rhrRwstSuctionValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RWST to RHR A RWST iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RWST to RHR A RWST iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RWST to RHR A RWST iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RWST → RHR A RWST iso",
+            "temperatureC": "Temperature · RWST → RHR A RWST iso",
+            "soluteConcentrationPpm": "Boron concentration · RWST → RHR A RWST iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-rwst-suction-valve-a-to-suction-header",
+      "from": "rhrRwstSuctionValveA.outlet",
+      "to": "rhrSuctionHeaderA.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR A RWST iso to RHR A suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "RHR-RWST-A-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR A RWST iso to RHR A suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR A RWST iso to RHR A suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A RWST iso → RHR A suction",
+            "temperatureC": "Temperature · RHR A RWST iso → RHR A suction",
+            "soluteConcentrationPpm": "Boron concentration · RHR A RWST iso → RHR A suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "containment-sump-to-rhr-sump-suction-valve-a",
+      "from": "containment.sumpOut",
+      "to": "rhrSumpSuctionValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "CTMT sump to RHR A sump iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "CTMT sump to RHR A sump iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "CTMT sump to RHR A sump iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CTMT sump → RHR A sump iso",
+            "temperatureC": "Temperature · CTMT sump → RHR A sump iso",
+            "soluteConcentrationPpm": "Boron concentration · CTMT sump → RHR A sump iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-sump-suction-valve-a-to-suction-header",
+      "from": "rhrSumpSuctionValveA.outlet",
+      "to": "rhrSuctionHeaderA.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR A sump iso to RHR A suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "RHR-SUMP-A-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR A sump iso to RHR A suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR A sump iso to RHR A suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A sump iso → RHR A suction",
+            "temperatureC": "Temperature · RHR A sump iso → RHR A suction",
+            "soluteConcentrationPpm": "Boron concentration · RHR A sump iso → RHR A suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-suction-header-a-to-pump",
+      "from": "rhrSuctionHeaderA.outletA",
+      "to": "rhrPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR A suction to RHR A actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR A suction to RHR A water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR A suction to RHR A boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A suction → RHR A",
+            "temperatureC": "Temperature · RHR A suction → RHR A",
+            "soluteConcentrationPpm": "Boron concentration · RHR A suction → RHR A"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-heat-exchanger-a-to-discharge-header",
+      "from": "rhrHeatExchangerA.hotOut",
+      "to": "rhrDischargeHeaderA.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR-HX A to RHR A discharge actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR-HX A to RHR A discharge water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR-HX A to RHR A discharge boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR-HX A → RHR A discharge",
+            "temperatureC": "Temperature · RHR-HX A → RHR A discharge",
+            "soluteConcentrationPpm": "Boron concentration · RHR-HX A → RHR A discharge"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-discharge-header-a-to-injection-valve",
+      "from": "rhrDischargeHeaderA.outletA",
+      "to": "rhrInjectionValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR A discharge to RHR A injection iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR A discharge to RHR A injection iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR A discharge to RHR A injection iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A discharge → RHR A injection iso",
+            "temperatureC": "Temperature · RHR A discharge → RHR A injection iso",
+            "soluteConcentrationPpm": "Boron concentration · RHR A discharge → RHR A injection iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-injection-valve-a-to-cold-leg-a",
+      "from": "rhrInjectionValveA.outlet",
+      "to": "core.coldLegA",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR A injection iso to Cold leg A actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "RHR-INJ-A-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR A injection iso to Cold leg A water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR A injection iso to Cold leg A boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A injection iso → Cold leg A",
+            "temperatureC": "Temperature · RHR A injection iso → Cold leg A",
+            "soluteConcentrationPpm": "Boron concentration · RHR A injection iso → Cold leg A"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-discharge-header-a-to-si-piggyback-valve",
+      "from": "rhrDischargeHeaderA.outletB",
+      "to": "siPiggybackValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR A discharge to SI A RHR iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR A discharge to SI A RHR iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR A discharge to SI A RHR iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR A discharge → SI A RHR iso",
+            "temperatureC": "Temperature · RHR A discharge → SI A RHR iso",
+            "soluteConcentrationPpm": "Boron concentration · RHR A discharge → SI A RHR iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "si-piggyback-valve-a-to-suction-header",
+      "from": "siPiggybackValveA.outlet",
+      "to": "siSuctionHeaderA.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "SI A RHR iso to SI A suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "SI-PIGGYBACK-A-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "SI A RHR iso to SI A suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "SI A RHR iso to SI A suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SI A RHR iso → SI A suction",
+            "temperatureC": "Temperature · SI A RHR iso → SI A suction",
+            "soluteConcentrationPpm": "Boron concentration · SI A RHR iso → SI A suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "rwst-to-si-rwst-suction-valve-a",
+      "from": "rwst.outlet",
+      "to": "siRwstSuctionValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RWST to SI A RWST iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RWST to SI A RWST iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RWST to SI A RWST iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RWST → SI A RWST iso",
+            "temperatureC": "Temperature · RWST → SI A RWST iso",
+            "soluteConcentrationPpm": "Boron concentration · RWST → SI A RWST iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "si-rwst-suction-valve-a-to-suction-header",
+      "from": "siRwstSuctionValveA.outlet",
+      "to": "siSuctionHeaderA.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "SI A RWST iso to SI A suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "SI-RWST-A-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "SI A RWST iso to SI A suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "SI A RWST iso to SI A suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SI A RWST iso → SI A suction",
+            "temperatureC": "Temperature · SI A RWST iso → SI A suction",
+            "soluteConcentrationPpm": "Boron concentration · SI A RWST iso → SI A suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "si-suction-header-a-to-pump",
+      "from": "siSuctionHeaderA.outletA",
+      "to": "safetyInjectionPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "SI A suction to HHSI A actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "SI A suction to HHSI A water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "SI A suction to HHSI A boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SI A suction → HHSI A",
+            "temperatureC": "Temperature · SI A suction → HHSI A",
+            "soluteConcentrationPpm": "Boron concentration · SI A suction → HHSI A"
+          }
+        }
+      }
+    },
+    {
+      "id": "rwst-to-rhr-rwst-suction-valve-b",
+      "from": "rwst.outlet",
+      "to": "rhrRwstSuctionValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RWST to RHR B RWST iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RWST to RHR B RWST iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RWST to RHR B RWST iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RWST → RHR B RWST iso",
+            "temperatureC": "Temperature · RWST → RHR B RWST iso",
+            "soluteConcentrationPpm": "Boron concentration · RWST → RHR B RWST iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-rwst-suction-valve-b-to-suction-header",
+      "from": "rhrRwstSuctionValveB.outlet",
+      "to": "rhrSuctionHeaderB.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR B RWST iso to RHR B suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "RHR-RWST-B-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR B RWST iso to RHR B suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR B RWST iso to RHR B suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B RWST iso → RHR B suction",
+            "temperatureC": "Temperature · RHR B RWST iso → RHR B suction",
+            "soluteConcentrationPpm": "Boron concentration · RHR B RWST iso → RHR B suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "containment-sump-to-rhr-sump-suction-valve-b",
+      "from": "containment.sumpOut",
+      "to": "rhrSumpSuctionValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "CTMT sump to RHR B sump iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "CTMT sump to RHR B sump iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "CTMT sump to RHR B sump iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · CTMT sump → RHR B sump iso",
+            "temperatureC": "Temperature · CTMT sump → RHR B sump iso",
+            "soluteConcentrationPpm": "Boron concentration · CTMT sump → RHR B sump iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-sump-suction-valve-b-to-suction-header",
+      "from": "rhrSumpSuctionValveB.outlet",
+      "to": "rhrSuctionHeaderB.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR B sump iso to RHR B suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "RHR-SUMP-B-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR B sump iso to RHR B suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR B sump iso to RHR B suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B sump iso → RHR B suction",
+            "temperatureC": "Temperature · RHR B sump iso → RHR B suction",
+            "soluteConcentrationPpm": "Boron concentration · RHR B sump iso → RHR B suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-suction-header-b-to-pump",
+      "from": "rhrSuctionHeaderB.outletA",
+      "to": "rhrPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR B suction to RHR B actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR B suction to RHR B water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR B suction to RHR B boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B suction → RHR B",
+            "temperatureC": "Temperature · RHR B suction → RHR B",
+            "soluteConcentrationPpm": "Boron concentration · RHR B suction → RHR B"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-heat-exchanger-b-to-discharge-header",
+      "from": "rhrHeatExchangerB.hotOut",
+      "to": "rhrDischargeHeaderB.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR-HX B to RHR B discharge actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR-HX B to RHR B discharge water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR-HX B to RHR B discharge boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR-HX B → RHR B discharge",
+            "temperatureC": "Temperature · RHR-HX B → RHR B discharge",
+            "soluteConcentrationPpm": "Boron concentration · RHR-HX B → RHR B discharge"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-discharge-header-b-to-injection-valve",
+      "from": "rhrDischargeHeaderB.outletA",
+      "to": "rhrInjectionValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR B discharge to RHR B injection iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR B discharge to RHR B injection iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR B discharge to RHR B injection iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B discharge → RHR B injection iso",
+            "temperatureC": "Temperature · RHR B discharge → RHR B injection iso",
+            "soluteConcentrationPpm": "Boron concentration · RHR B discharge → RHR B injection iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-injection-valve-b-to-cold-leg-b",
+      "from": "rhrInjectionValveB.outlet",
+      "to": "core.coldLegB",
+      "connectionKind": "fluidFlow",
+      "service": "residualHeatRemoval",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR B injection iso to Cold leg B actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "RHR-INJ-B-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR B injection iso to Cold leg B water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR B injection iso to Cold leg B boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B injection iso → Cold leg B",
+            "temperatureC": "Temperature · RHR B injection iso → Cold leg B",
+            "soluteConcentrationPpm": "Boron concentration · RHR B injection iso → Cold leg B"
+          }
+        }
+      }
+    },
+    {
+      "id": "rhr-discharge-header-b-to-si-piggyback-valve",
+      "from": "rhrDischargeHeaderB.outletB",
+      "to": "siPiggybackValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR B discharge to SI B RHR iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR B discharge to SI B RHR iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RHR B discharge to SI B RHR iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RHR B discharge → SI B RHR iso",
+            "temperatureC": "Temperature · RHR B discharge → SI B RHR iso",
+            "soluteConcentrationPpm": "Boron concentration · RHR B discharge → SI B RHR iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "si-piggyback-valve-b-to-suction-header",
+      "from": "siPiggybackValveB.outlet",
+      "to": "siSuctionHeaderB.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "SI B RHR iso to SI B suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "SI-PIGGYBACK-B-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "SI B RHR iso to SI B suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "SI B RHR iso to SI B suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 0
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SI B RHR iso → SI B suction",
+            "temperatureC": "Temperature · SI B RHR iso → SI B suction",
+            "soluteConcentrationPpm": "Boron concentration · SI B RHR iso → SI B suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "rwst-to-si-rwst-suction-valve-b",
+      "from": "rwst.outlet",
+      "to": "siRwstSuctionValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RWST to SI B RWST iso actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RWST to SI B RWST iso water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "RWST to SI B RWST iso boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · RWST → SI B RWST iso",
+            "temperatureC": "Temperature · RWST → SI B RWST iso",
+            "soluteConcentrationPpm": "Boron concentration · RWST → SI B RWST iso"
+          }
+        }
+      }
+    },
+    {
+      "id": "si-rwst-suction-valve-b-to-suction-header",
+      "from": "siRwstSuctionValveB.outlet",
+      "to": "siSuctionHeaderB.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "SI B RWST iso to SI B suction actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "tagId": "SI-RWST-B-FLOW"
+        },
+        {
+          "path": "temperatureC",
+          "label": "SI B RWST iso to SI B suction water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "SI B RWST iso to SI B suction boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SI B RWST iso → SI B suction",
+            "temperatureC": "Temperature · SI B RWST iso → SI B suction",
+            "soluteConcentrationPpm": "Boron concentration · SI B RWST iso → SI B suction"
+          }
+        }
+      }
+    },
+    {
+      "id": "si-suction-header-b-to-pump",
+      "from": "siSuctionHeaderB.outletA",
+      "to": "safetyInjectionPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "SI B suction to HHSI B actual flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "SI B suction to HHSI B water temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "SI B suction to HHSI B boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ],
+      "metadata": {
+        "presentation": {
+          "names": {
+            "flowKgPerS": "Flow · SI B suction → HHSI B",
+            "temperatureC": "Temperature · SI B suction → HHSI B",
+            "soluteConcentrationPpm": "Boron concentration · SI B suction → HHSI B"
           }
         }
       }
@@ -15792,9 +17358,6 @@
     "rhrPumpB.running",
     "rhrPumpB.runningState",
     "rhrPumpB.flowKgPerS",
-    "rhrHeader.outletFlowKgPerS",
-    "rhrIsolationValve.positionFraction",
-    "rhrIsolationValve.effectivePositionFraction",
     "boricAcidInjectionValve.positionFraction",
     "boricAcidInjectionValve.effectivePositionFraction",
     "containment.pressureMPa",
@@ -16233,8 +17796,6 @@
     "componentCoolingTankA.inventoryKg",
     "componentCoolingTankA.temperatureC",
     "componentCoolingTankA.levelPercent",
-    "rhr-heat-exchanger-a-to-header.flowKgPerS",
-    "rhr-heat-exchanger-a-to-header.temperatureC",
     "ccw-inventory-a-to-pump.flowKgPerS",
     "ccw-inventory-a-to-pump.temperatureC",
     "ccw-pump-a-to-rhr-heat-exchanger.flowKgPerS",
@@ -16280,8 +17841,6 @@
     "componentCoolingTankB.inventoryKg",
     "componentCoolingTankB.temperatureC",
     "componentCoolingTankB.levelPercent",
-    "rhr-heat-exchanger-b-to-header.flowKgPerS",
-    "rhr-heat-exchanger-b-to-header.temperatureC",
     "ccw-inventory-b-to-pump.flowKgPerS",
     "ccw-inventory-b-to-pump.temperatureC",
     "ccw-pump-b-to-rhr-heat-exchanger.flowKgPerS",
@@ -16296,6 +17855,122 @@
     "service-water-pump-b-to-ccw-heat-exchanger.temperatureC",
     "ccw-heat-exchanger-b-to-discharge.flowKgPerS",
     "ccw-heat-exchanger-b-to-discharge.temperatureC",
-    "containment.sumpTemperatureC"
+    "containment.sumpTemperatureC",
+    "rhrRwstSuctionValveA.positionFraction",
+    "rhrRwstSuctionValveA.effectivePositionFraction",
+    "rhrSumpSuctionValveA.positionFraction",
+    "rhrSumpSuctionValveA.effectivePositionFraction",
+    "rhrSuctionHeaderA.outletFlowKgPerS",
+    "rhrSuctionHeaderA.mixedPressureMPa",
+    "rhrSuctionHeaderA.mixedTemperatureC",
+    "rhrDischargeHeaderA.outletFlowKgPerS",
+    "rhrDischargeHeaderA.mixedPressureMPa",
+    "rhrDischargeHeaderA.mixedTemperatureC",
+    "rhrInjectionValveA.positionFraction",
+    "rhrInjectionValveA.effectivePositionFraction",
+    "siPiggybackValveA.positionFraction",
+    "siPiggybackValveA.effectivePositionFraction",
+    "siRwstSuctionValveA.positionFraction",
+    "siRwstSuctionValveA.effectivePositionFraction",
+    "siSuctionHeaderA.outletFlowKgPerS",
+    "siSuctionHeaderA.mixedPressureMPa",
+    "siSuctionHeaderA.mixedTemperatureC",
+    "rwst-to-rhr-rwst-suction-valve-a.flowKgPerS",
+    "rwst-to-rhr-rwst-suction-valve-a.temperatureC",
+    "rwst-to-rhr-rwst-suction-valve-a.soluteConcentrationPpm",
+    "rhr-rwst-suction-valve-a-to-suction-header.flowKgPerS",
+    "rhr-rwst-suction-valve-a-to-suction-header.temperatureC",
+    "rhr-rwst-suction-valve-a-to-suction-header.soluteConcentrationPpm",
+    "containment-sump-to-rhr-sump-suction-valve-a.flowKgPerS",
+    "containment-sump-to-rhr-sump-suction-valve-a.temperatureC",
+    "containment-sump-to-rhr-sump-suction-valve-a.soluteConcentrationPpm",
+    "rhr-sump-suction-valve-a-to-suction-header.flowKgPerS",
+    "rhr-sump-suction-valve-a-to-suction-header.temperatureC",
+    "rhr-sump-suction-valve-a-to-suction-header.soluteConcentrationPpm",
+    "rhr-suction-header-a-to-pump.flowKgPerS",
+    "rhr-suction-header-a-to-pump.temperatureC",
+    "rhr-suction-header-a-to-pump.soluteConcentrationPpm",
+    "rhr-heat-exchanger-a-to-discharge-header.flowKgPerS",
+    "rhr-heat-exchanger-a-to-discharge-header.temperatureC",
+    "rhr-heat-exchanger-a-to-discharge-header.soluteConcentrationPpm",
+    "rhr-discharge-header-a-to-injection-valve.flowKgPerS",
+    "rhr-discharge-header-a-to-injection-valve.temperatureC",
+    "rhr-discharge-header-a-to-injection-valve.soluteConcentrationPpm",
+    "rhr-injection-valve-a-to-cold-leg-a.flowKgPerS",
+    "rhr-injection-valve-a-to-cold-leg-a.temperatureC",
+    "rhr-injection-valve-a-to-cold-leg-a.soluteConcentrationPpm",
+    "rhr-discharge-header-a-to-si-piggyback-valve.flowKgPerS",
+    "rhr-discharge-header-a-to-si-piggyback-valve.temperatureC",
+    "rhr-discharge-header-a-to-si-piggyback-valve.soluteConcentrationPpm",
+    "si-piggyback-valve-a-to-suction-header.flowKgPerS",
+    "si-piggyback-valve-a-to-suction-header.temperatureC",
+    "si-piggyback-valve-a-to-suction-header.soluteConcentrationPpm",
+    "rwst-to-si-rwst-suction-valve-a.flowKgPerS",
+    "rwst-to-si-rwst-suction-valve-a.temperatureC",
+    "rwst-to-si-rwst-suction-valve-a.soluteConcentrationPpm",
+    "si-rwst-suction-valve-a-to-suction-header.flowKgPerS",
+    "si-rwst-suction-valve-a-to-suction-header.temperatureC",
+    "si-rwst-suction-valve-a-to-suction-header.soluteConcentrationPpm",
+    "si-suction-header-a-to-pump.flowKgPerS",
+    "si-suction-header-a-to-pump.temperatureC",
+    "si-suction-header-a-to-pump.soluteConcentrationPpm",
+    "rhrRwstSuctionValveB.positionFraction",
+    "rhrRwstSuctionValveB.effectivePositionFraction",
+    "rhrSumpSuctionValveB.positionFraction",
+    "rhrSumpSuctionValveB.effectivePositionFraction",
+    "rhrSuctionHeaderB.outletFlowKgPerS",
+    "rhrSuctionHeaderB.mixedPressureMPa",
+    "rhrSuctionHeaderB.mixedTemperatureC",
+    "rhrDischargeHeaderB.outletFlowKgPerS",
+    "rhrDischargeHeaderB.mixedPressureMPa",
+    "rhrDischargeHeaderB.mixedTemperatureC",
+    "rhrInjectionValveB.positionFraction",
+    "rhrInjectionValveB.effectivePositionFraction",
+    "siPiggybackValveB.positionFraction",
+    "siPiggybackValveB.effectivePositionFraction",
+    "siRwstSuctionValveB.positionFraction",
+    "siRwstSuctionValveB.effectivePositionFraction",
+    "siSuctionHeaderB.outletFlowKgPerS",
+    "siSuctionHeaderB.mixedPressureMPa",
+    "siSuctionHeaderB.mixedTemperatureC",
+    "rwst-to-rhr-rwst-suction-valve-b.flowKgPerS",
+    "rwst-to-rhr-rwst-suction-valve-b.temperatureC",
+    "rwst-to-rhr-rwst-suction-valve-b.soluteConcentrationPpm",
+    "rhr-rwst-suction-valve-b-to-suction-header.flowKgPerS",
+    "rhr-rwst-suction-valve-b-to-suction-header.temperatureC",
+    "rhr-rwst-suction-valve-b-to-suction-header.soluteConcentrationPpm",
+    "containment-sump-to-rhr-sump-suction-valve-b.flowKgPerS",
+    "containment-sump-to-rhr-sump-suction-valve-b.temperatureC",
+    "containment-sump-to-rhr-sump-suction-valve-b.soluteConcentrationPpm",
+    "rhr-sump-suction-valve-b-to-suction-header.flowKgPerS",
+    "rhr-sump-suction-valve-b-to-suction-header.temperatureC",
+    "rhr-sump-suction-valve-b-to-suction-header.soluteConcentrationPpm",
+    "rhr-suction-header-b-to-pump.flowKgPerS",
+    "rhr-suction-header-b-to-pump.temperatureC",
+    "rhr-suction-header-b-to-pump.soluteConcentrationPpm",
+    "rhr-heat-exchanger-b-to-discharge-header.flowKgPerS",
+    "rhr-heat-exchanger-b-to-discharge-header.temperatureC",
+    "rhr-heat-exchanger-b-to-discharge-header.soluteConcentrationPpm",
+    "rhr-discharge-header-b-to-injection-valve.flowKgPerS",
+    "rhr-discharge-header-b-to-injection-valve.temperatureC",
+    "rhr-discharge-header-b-to-injection-valve.soluteConcentrationPpm",
+    "rhr-injection-valve-b-to-cold-leg-b.flowKgPerS",
+    "rhr-injection-valve-b-to-cold-leg-b.temperatureC",
+    "rhr-injection-valve-b-to-cold-leg-b.soluteConcentrationPpm",
+    "rhr-discharge-header-b-to-si-piggyback-valve.flowKgPerS",
+    "rhr-discharge-header-b-to-si-piggyback-valve.temperatureC",
+    "rhr-discharge-header-b-to-si-piggyback-valve.soluteConcentrationPpm",
+    "si-piggyback-valve-b-to-suction-header.flowKgPerS",
+    "si-piggyback-valve-b-to-suction-header.temperatureC",
+    "si-piggyback-valve-b-to-suction-header.soluteConcentrationPpm",
+    "rwst-to-si-rwst-suction-valve-b.flowKgPerS",
+    "rwst-to-si-rwst-suction-valve-b.temperatureC",
+    "rwst-to-si-rwst-suction-valve-b.soluteConcentrationPpm",
+    "si-rwst-suction-valve-b-to-suction-header.flowKgPerS",
+    "si-rwst-suction-valve-b-to-suction-header.temperatureC",
+    "si-rwst-suction-valve-b-to-suction-header.soluteConcentrationPpm",
+    "si-suction-header-b-to-pump.flowKgPerS",
+    "si-suction-header-b-to-pump.temperatureC",
+    "si-suction-header-b-to-pump.soluteConcentrationPpm"
   ]
 }
