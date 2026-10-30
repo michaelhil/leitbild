@@ -6271,7 +6271,7 @@
         "presentation": {
           "shortLabel": "RHR-HX A",
           "shortNames": {
-            "hotOutletTemperatureC": "RHR-HX A outlet temp",
+            "hotOutletTemperatureC": "RHR-HX A hot out temp",
             "hotInletTemperatureC": "RHR-HX A hot in temp",
             "coldInletTemperatureC": "RHR-HX A cold in temp",
             "coldOutletTemperatureC": "RHR-HX A cold out temp",
@@ -6341,7 +6341,7 @@
         "presentation": {
           "shortLabel": "CCW-HX A",
           "shortNames": {
-            "hotOutletTemperatureC": "CCW-HX A outlet temp",
+            "hotOutletTemperatureC": "CCW-HX A hot out temp",
             "hotInletTemperatureC": "CCW-HX A hot in temp",
             "coldInletTemperatureC": "CCW-HX A cold in temp",
             "coldOutletTemperatureC": "CCW-HX A cold out temp",
@@ -6512,7 +6512,7 @@
         "presentation": {
           "shortLabel": "RHR-HX B",
           "shortNames": {
-            "hotOutletTemperatureC": "RHR-HX B outlet temp",
+            "hotOutletTemperatureC": "RHR-HX B hot out temp",
             "hotInletTemperatureC": "RHR-HX B hot in temp",
             "coldInletTemperatureC": "RHR-HX B cold in temp",
             "coldOutletTemperatureC": "RHR-HX B cold out temp",
@@ -6582,7 +6582,7 @@
         "presentation": {
           "shortLabel": "CCW-HX B",
           "shortNames": {
-            "hotOutletTemperatureC": "CCW-HX B outlet temp",
+            "hotOutletTemperatureC": "CCW-HX B hot out temp",
             "hotInletTemperatureC": "CCW-HX B hot in temp",
             "coldInletTemperatureC": "CCW-HX B cold in temp",
             "coldOutletTemperatureC": "CCW-HX B cold out temp",
