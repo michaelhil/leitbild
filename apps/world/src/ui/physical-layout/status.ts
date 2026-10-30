@@ -24,7 +24,7 @@ export interface PhysicalSubjectReading {
   readonly values: ReadonlyArray<VignetteValue>
   readonly observations: ReadonlyArray<Observation>
   /** Owner-declared running/conducting semantics, already resolved for drawing. */
-  readonly operation?: PhysicalSubjectOperation
+  readonly operation?: PhysicalSubjectOperation | undefined
 }
 
 export interface PhysicalSubjectStatus {
@@ -94,7 +94,9 @@ export const physicalSubjectStatus = (reading: PhysicalSubjectReading, rows: Rea
   if (reading.values.some(value => refObjectId(value.ref) !== reading.subject.objectId)
     || observations.some(observation => refObjectId(observation.ref) !== reading.subject.objectId)) throw new Error('Layout readings belong to another operational owner')
   const state = reading.operation?.equipment?.running ?? reading.operation?.equipment?.conducting ?? reading.operation?.conducting
-  const quality = worstQuality(reading.values, observations, state)
+  const quality = state?.quality === 'not-applicable' ? 'not-applicable'
+    : state?.quality === 'good' && state.active === null ? 'uncertain'
+    : worstQuality(reading.values, observations, state)
   // Expected, standing and advisory populations remain counted and labelled;
   // they do not create a second alarm colour through this view.
   const priorities = [

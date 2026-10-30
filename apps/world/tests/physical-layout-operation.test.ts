@@ -34,7 +34,7 @@ test('layout status uses actual owner conduction before a false degraded flag, p
     const operation = resolvePhysicalSubjectOperation(bus, observations, false)
     const status = physicalSubjectStatus({ subject: owner, values: [degradation], observations, operation }, [], false)
     expect(status.word).toBeNull()
-    if (quality !== 'not-applicable') expect(status.quality).toBe(quality)
+    expect(status.quality).toBe(quality)
   }
   const observations = [observation(degradation, false)]
   const operation = resolvePhysicalSubjectOperation(bus, observations, false)
