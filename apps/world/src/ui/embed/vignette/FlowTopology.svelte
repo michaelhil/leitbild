@@ -53,7 +53,7 @@
   // stay, by the item they were opened on, for the browser session
   // (popover.ts readPins). One sample a second reads every faceplate's
   // readings (faceplate.ts).
-  let { section, observations, alerts, series, now, palette, frozen, runId, from, fit = 1 }: {
+  let { section, observations, alerts, series, now, palette, frozen, runId, from, fit = 1, complete = false }: {
     section: Extract<VignetteSection, { kind: 'topology' }>
     observations: ReadonlyArray<Observation>
     alerts: ReadonlyArray<AlertRow>
@@ -68,6 +68,8 @@
     from: OpenedFrom
     /** Scaled further to its frame's width (Sections.svelte, grid.ts frameLayout). */
     fit?: number
+    /** A complete window canvas uses native geometry and one outer zoom. */
+    complete?: boolean
   } = $props()
 
   let topologyRoot = $state<HTMLElement | null>(null)
@@ -76,7 +78,7 @@
   let opening = $state<DisplayOpening | null>(null)
   let viewport = $state.raw({ width: window.innerWidth, height: window.innerHeight })
   const zoom = $derived(presentation.zoom)
-  const scale = $derived(drawnScale(section, zoom) * fit)
+  const scale = $derived((complete ? 1 : drawnScale(section, zoom)) * fit)
   // Taller than its rows hold at its text floor (all but its key's, as a chat scales them): it scrolls down within them.
   const held = $derived((section.rows - 1) * VIGNETTE_ROW_PX * fit)
   // A display window scrolls the whole article; a second, row-limited drawing
@@ -482,7 +484,7 @@
 {/snippet}
 
 <div class="frame" bind:this={topologyRoot}>
-<div class="flow" class:tall style:max-height={tall ? `${held}px` : undefined} use:scrollEnds={ends => { more = ends }}>
+<div class="flow" class:complete class:tall style:max-height={tall ? `${held}px` : undefined} use:scrollEnds={ends => { more = ends }}>
   <div class="fit" style:width={`${drawing.width * scale}px`} style:height={`${drawing.height * scale}px`}>
   <div class="drawing" style:width={`${drawing.width}px`} style:height={`${drawing.height}px`} style:transform={scale < 1 ? `scale(${scale})` : undefined} style:--unscale={1 / scale} role="group" aria-label="Flow topology">
     <canvas use:lines={{ segments: drawing.segments, width: drawing.width, height: drawing.height, palette, zoom }}></canvas>
@@ -570,6 +572,7 @@
   .frame { position: relative; }
   .flow { overflow-x: auto; overflow-y: hidden; }
   .flow.tall { overflow-y: auto; }
+  .flow.complete { overflow: visible; }
   .drawing { position: relative; transform-origin: 0 0; }
   canvas { position: absolute; left: 0; top: 0; }
   .placed { position: absolute; }

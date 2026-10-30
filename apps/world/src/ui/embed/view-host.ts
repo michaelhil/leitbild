@@ -149,10 +149,10 @@ export const createViewHost = (ports: ViewHostPorts) => {
     /** Tells the framing window the room the content needs, when it changed. */
     reportExtent: (extent: DisplayExtent): void => {
       if (ports.parent === null || !presentedByWindow) return
-      const key = `${extent.kind} ${extent.minWidth} ${extent.width} ${extent.height}`
+      const key = `${extent.kind} ${extent.minWidth} ${extent.width} ${extent.height} ${extent.fit ?? ''}`
       if (key === reported) return
       reported = key
-      post({ type: 'world:display-extent', kind: extent.kind, minWidth: extent.minWidth, width: extent.width, height: extent.height })
+      post({ type: 'world:display-extent', kind: extent.kind, minWidth: extent.minWidth, width: extent.width, height: extent.height, ...(extent.fit === undefined ? {} : { fit: extent.fit }) })
     },
     requestZoom: (request: { readonly step: ZoomStep } | { readonly factor: number }): void => {
       if (!presentedByWindow) return

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { embeddedViewHeightMessageSchema, type EmbeddedViewHeightMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage } from '@leitbild/contracts'
-import { parseDisplayFrameMessage, type DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
+import { parseDisplayFrameMessage, parseDisplayFramePresentation, type DisplayFrameMessage } from '../src/ui/embed/display-frame-protocol.ts'
 import {
   ADVICE_MIN_WIDTH,
   EXTENT_SETTLE_MS,
@@ -135,6 +135,28 @@ describe('a view framed by the display window', () => {
       { type: 'world:display-extent', ...extent },
       { type: 'world:display-extent', ...extent, height: 530 },
     ])
+  })
+
+  test('reports a complete canvas fit intent even when its geometry is unchanged, and preserves positive fits below the ordinary slider', () => {
+    const page = presented()
+    const extent = { kind: 'advice', minWidth: 1880, width: 1880, height: 1008 } as const
+    page.host.reportExtent(extent)
+    page.host.reportExtent({ ...extent, fit: 'complete' })
+    page.host.reportExtent({ ...extent, fit: 'complete' })
+    expect(page.posted.map(post => post.message)).toEqual([
+      { type: 'world:display-extent', ...extent },
+      { type: 'world:display-extent', ...extent, fit: 'complete' },
+    ])
+    for (const { message } of page.posted) expect(parseDisplayFrameMessage(message)).toEqual(message as DisplayFrameMessage)
+    expect(parseDisplayFrameMessage({ type: 'world:display-extent', ...extent, fit: 'other' })).toBeNull()
+    expect(parseDisplayFrameMessage({ type: 'world:display-extent', ...extent, kind: 'generated', fit: 'complete' })).toBeNull()
+    for (const zoom of [0.3, 0.00001]) {
+      const presentation = { type: 'world:display-frame', shown: true, zoom } as const
+      expect(parseDisplayFramePresentation(presentation)).toEqual(presentation)
+      page.fromWindow(presentation)
+      expect(page.host.current()).toEqual({ shown: true, zoom })
+    }
+    for (const zoom of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(parseDisplayFramePresentation({ type: 'world:display-frame', shown: true, zoom })).toBeNull()
   })
 
   test('sends zoom gestures as messages the window reads', () => {

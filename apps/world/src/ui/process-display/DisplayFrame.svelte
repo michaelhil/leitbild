@@ -151,6 +151,7 @@
     minWidth: message.minWidth,
     width: message.width,
     height: message.height,
+    ...(message.fit === undefined ? {} : { fit: message.fit }),
   })
 
   runOnMount(() => {

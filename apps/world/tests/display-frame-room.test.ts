@@ -70,7 +70,7 @@ describe('the part of a display a person sees', () => {
     // It fills the part of the frame a person sees, which follows the window's body: never its own height, which the
     // window's frame height (at least the content's) would feed back so the frame could never shrink. It is that tall,
     // no taller, so the full alerts view's list scrolls in it and the window does not zoom it out.
-    expect(vignette).toContain('room = next.visible?.height ?? null; zoom = next.zoom')
+    expect(vignette).toContain('room = next.visible?.height ?? null')
     expect(vignette).toContain('style:height={fills && room !== null ? `${room}px` : undefined}')
     expect(vignette).toContain('.vignette.fill > :global(.sections) { grid-row: 4; min-height: 0; }')
     const fillRules = [...vignette.matchAll(/\.vignette\.fill[^{}]*\{([^}]*)\}/g)].map(match => match[1]!)

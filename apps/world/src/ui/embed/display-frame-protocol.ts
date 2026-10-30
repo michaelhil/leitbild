@@ -50,6 +50,8 @@ export interface DisplayFrameExtent {
   readonly minWidth: number
   readonly width: number
   readonly height: number
+  /** A measured complete canvas: explicit Fit scales its whole occupied extent. */
+  readonly fit?: 'complete'
 }
 
 /** Frame -> window: a zoom gesture made inside the frame (keys or Ctrl/pinch wheel). */
@@ -137,7 +139,7 @@ export const parseDisplayFramePresentation = (value: unknown): DisplayFramePrese
   const optional = ['back', 'visible'].filter(key => key in value)
   if (!hasKeys(value, ['type', 'shown', 'zoom', ...optional])) return null
   if (typeof value.shown !== 'boolean' || !finitePositive(value.zoom)) return null
-  if (value.zoom < DISPLAY_ZOOM_MIN || value.zoom > DISPLAY_ZOOM_MAX) return null
+  if (value.zoom > DISPLAY_ZOOM_MAX) return null
   if ('back' in value && !text(value.back, OPEN_TITLE_MAX)) return null
   if ('visible' in value && !room(value.visible)) return null
   return {
@@ -151,10 +153,11 @@ export const parseDisplayFrameMessage = (value: unknown): DisplayFrameMessage | 
   if (!isRecord(value)) return null
   if (value.type === 'world:display-frame-ready') return hasKeys(value, ['type']) ? { type: 'world:display-frame-ready' } : null
   if (value.type === 'world:display-extent') {
-    if (!hasKeys(value, ['type', 'kind', 'minWidth', 'width', 'height'])) return null
+    if (!hasKeys(value, ['type', 'kind', 'minWidth', 'width', 'height', ...('fit' in value ? ['fit'] : [])])) return null
     if (value.kind !== 'advice' && value.kind !== 'generated') return null
+    if ('fit' in value && (value.fit !== 'complete' || value.kind !== 'advice')) return null
     if (!finitePositive(value.minWidth) || !finitePositive(value.width) || !finitePositive(value.height)) return null
-    return { type: 'world:display-extent', kind: value.kind, minWidth: value.minWidth, width: value.width, height: value.height }
+    return { type: 'world:display-extent', kind: value.kind, minWidth: value.minWidth, width: value.width, height: value.height, ...(value.fit === 'complete' ? { fit: 'complete' as const } : {}) }
   }
   if (value.type === 'world:display-zoom') {
     if (hasKeys(value, ['type', 'step']) && (value.step === 'in' || value.step === 'out' || value.step === 'reset')) {

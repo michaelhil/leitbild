@@ -12,17 +12,24 @@ export const COLUMN_PX = 360
 export const BESIDE_GAP_PX = 16
 export const VIGNETTE_INSET_PX = 8
 
-/** A flow overview's useful canvas, including its value/alert column. Its header
- * and footer share this width rather than spreading across W/zoom empty space.
- * The window scales and scrolls this complete canvas; chat and network views
- * keep frameLayout's responsive band/fit behavior. */
-export const flowFrameWidth = (view: VignetteView, zoom: number): number | null => {
+/** Other native flow topologies use the existing right column; readouts retain
+ * its usual width and networks keep their own responsive width fit. */
+export const flowColumnWidth = (view: VignetteView): number => {
+  const first = view.sections.find(section => section.kind === 'topology')
+  return Math.max(COLUMN_PX, ...view.sections.flatMap(section => section !== first && section.kind === 'topology' && section.family === 'flow' ? [section.layout.width * VIGNETTE_ROW_PX] : []))
+}
+
+/** A flow overview's native useful canvas, including its value/alert column.
+ * Header and footer share this width rather than spreading across W/zoom
+ * empty space. The window alone scales and scrolls this complete canvas;
+ * chat and network views keep frameLayout's responsive band/fit behavior. */
+export const flowFrameWidth = (view: VignetteView): number | null => {
   if (!standsBeside(view)) return null
   const topology = view.sections.find(section => section.kind === 'topology')
   if (topology?.kind !== 'topology' || topology.family !== 'flow') return null
   // clientWidth is integer-valued; round the envelope outward so a fractional
   // drawing width cannot spuriously push a complete canvas into the band.
-  return Math.ceil(topology.layout.width * VIGNETTE_ROW_PX * drawnScale(topology, zoom) + BESIDE_GAP_PX + COLUMN_PX + 2 * VIGNETTE_INSET_PX)
+  return Math.ceil(topology.layout.width * VIGNETTE_ROW_PX + BESIDE_GAP_PX + flowColumnWidth(view) + 2 * VIGNETTE_INSET_PX)
 }
 /** A flow drawing's text, and the smallest it is ever scaled to on screen (the window's Fit floor, display-zoom.ts; the composer's DRAWING_SCALE_FLOOR). */
 export const DRAWING_TEXT_PX = 12

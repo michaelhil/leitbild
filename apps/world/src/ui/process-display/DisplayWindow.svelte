@@ -71,6 +71,7 @@
     displayZoomPercent,
     initialDisplayZoom,
     isActualSize,
+    minimumDisplayZoom,
     overviewZoomKey,
     overviewZoomStore,
     reduceDisplayZoom,
@@ -324,6 +325,7 @@
       envelopeHeight: envelopeFor(entry)?.height ?? (entry.source === 'answer' ? entry.listing.envelope.height : 0),
     }
   }
+  const zoomMinimum = $derived(current === null ? DISPLAY_ZOOM_MIN : minimumDisplayZoom(zoomContextFor(current), currentZoom === null || currentZoom.fit || currentZoom.auto ? undefined : currentZoom.zoom))
 
   const zoomStoreFor = (entry: DeckEntry) => entry.source === 'answer' ? answerZooms : overviewZooms
 
@@ -387,7 +389,7 @@
 
   const receiveExtent = (key: string, extent: DisplayExtent): void => {
     const previous = extents.get(key)
-    if (previous && previous.kind === extent.kind && previous.minWidth === extent.minWidth && previous.width === extent.width && previous.height === extent.height) return
+    if (previous && previous.kind === extent.kind && previous.minWidth === extent.minWidth && previous.width === extent.width && previous.height === extent.height && previous.fit === extent.fit) return
     extents = withValue(extents, key, extent)
     // A hidden frame keeps its size, so only the shown display's zoom follows; a hidden one refits when shown.
     const entry = current
@@ -915,7 +917,7 @@
             class="display-window-button"
             aria-label="Zoom out"
             title="Zoom out"
-            disabled={currentZoom === null || currentZoom.zoom <= DISPLAY_ZOOM_MIN}
+            disabled={currentZoom === null || currentZoom.zoom <= zoomMinimum}
             onclick={() => changeZoom({ type: 'step', step: 'out' })}
           >
             <Minus size={16} aria-hidden="true" />
@@ -925,14 +927,14 @@
           <input
             class="display-window-slider"
             type="range"
-            min={DISPLAY_ZOOM_SLIDER.min}
+            min={displayZoomPercent(zoomMinimum)}
             max={DISPLAY_ZOOM_SLIDER.max}
             step={DISPLAY_ZOOM_SLIDER.step}
-            value={sliderPercentForZoom(currentZoom?.zoom ?? 1)}
+            value={sliderPercentForZoom(currentZoom?.zoom ?? 1, zoomMinimum)}
             disabled={currentZoom === null}
             aria-label="Zoom"
             aria-valuetext="{zoomPercent} %"
-            oninput={(event) => changeZoom({ type: 'set', zoom: displayZoomFromSlider(Number(event.currentTarget.value)) })}
+            oninput={(event) => changeZoom({ type: 'set', zoom: displayZoomFromSlider(Number(event.currentTarget.value), zoomMinimum) })}
           />
         {/if}
         {#if tier !== 'tiny'}
@@ -1138,21 +1140,21 @@
     {:else if popover === 'zoom'}
       <div bind:this={popoverElement} class="display-window-popover zoom" role="dialog" aria-label="Zoom">
         {#if tier === 'tiny'}
-          <button type="button" class="display-window-button" aria-label="Zoom out" disabled={currentZoom === null || currentZoom.zoom <= DISPLAY_ZOOM_MIN} onclick={() => changeZoom({ type: 'step', step: 'out' })}>
+          <button type="button" class="display-window-button" aria-label="Zoom out" disabled={currentZoom === null || currentZoom.zoom <= zoomMinimum} onclick={() => changeZoom({ type: 'step', step: 'out' })}>
             <Minus size={16} aria-hidden="true" />
           </button>
         {/if}
         <input
           class="display-window-slider"
           type="range"
-          min={DISPLAY_ZOOM_SLIDER.min}
+          min={displayZoomPercent(zoomMinimum)}
           max={DISPLAY_ZOOM_SLIDER.max}
           step={DISPLAY_ZOOM_SLIDER.step}
-          value={sliderPercentForZoom(currentZoom?.zoom ?? 1)}
+          value={sliderPercentForZoom(currentZoom?.zoom ?? 1, zoomMinimum)}
           disabled={currentZoom === null}
           aria-label="Zoom"
           aria-valuetext="{zoomPercent} %"
-          oninput={(event) => changeZoom({ type: 'set', zoom: displayZoomFromSlider(Number(event.currentTarget.value)) })}
+          oninput={(event) => changeZoom({ type: 'set', zoom: displayZoomFromSlider(Number(event.currentTarget.value), zoomMinimum) })}
         />
         {#if tier === 'tiny'}
           <button type="button" class="display-window-button" aria-label="Zoom in" disabled={currentZoom === null || currentZoom.zoom >= DISPLAY_ZOOM_MAX} onclick={() => changeZoom({ type: 'step', step: 'in' })}>

@@ -45,7 +45,6 @@
   let wallNow = $state(Date.now())
   /** The height of the frame a person sees in a display window (its presentation's `visible`), which an alerts-only display fills. */
   let room = $state<number | null>(null)
-  let zoom = $state(1)
   /** Why the last chip press opened nothing. */
   let unopened = $state<string | null>(null)
 
@@ -70,7 +69,7 @@
       presented: () => {},
     })
     // The room it fills follows the window's body, never its own height: the window gives the frame no less (W2.5).
-    const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null; zoom = next.zoom })
+    const unroom = board !== undefined ? () => {} : embeddedDisplayFrame().subscribe(next => { room = next.visible?.height ?? null })
     session.start()
     // Staleness is judged on the wall clock, so it shows even while no sample arrives: a quarter-second tick freezes
     // the display within 5.25 s of its last sample (W8.1), not up to a second later.
@@ -102,7 +101,7 @@
   // Optional inline previews keep one native document scroller. A World
   // display window instead owns scrolling from the full article extent.
   const preview = $derived(board === undefined && opening.where !== 'window')
-  const canvasWidth = $derived(opening.where === 'window' && view !== undefined ? flowFrameWidth(view, zoom) : null)
+  const canvasWidth = $derived(opening.where === 'window' && view !== undefined ? flowFrameWidth(view) : null)
 
   /**
    * A chip inspects what decides its state through the drawing's existing faceplate;

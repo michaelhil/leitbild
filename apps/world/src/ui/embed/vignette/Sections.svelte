@@ -8,7 +8,7 @@
   import type { OpenedFrom } from './popover.ts'
   import { underTitle } from './format.ts'
   import { NO_SCROLL_ENDS, scrollEnds, type ScrollEnds } from './scroll-ends.ts'
-  import { drawnScale, frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
+  import { drawnScale, flowColumnWidth, frameLayout, standsBeside, VIGNETTE_ROW_PX } from './grid.ts'
   import { nameAtLeast, nameFloor, wholeParts } from './fit-words.ts'
   import { marginLines, valueRows } from './value-rows.ts'
   import { vignetteOpening } from './opening.svelte.ts'
@@ -67,7 +67,7 @@
   const layout = $derived.by(() => {
     if (!standsBeside(view)) return null
     const drawn = view.sections[drawing] as Extract<VignetteSection, { kind: 'topology' }>
-    const scale = drawnScale(drawn, zoom)
+    const scale = drawn.family === 'flow' && opening?.where === 'window' ? 1 : drawnScale(drawn, zoom)
     return frameLayout({ width, drawingWidth: drawn.layout.width * VIGNETTE_ROW_PX * scale, drawn: scale, zoom, ...(toRoom ? { toRoom: true as const } : {}) })
   })
   /** The band's alerts: their head, three rows, the count of the rest and the expected aggregate (§5.5 viewport: 3 alert rows). */
@@ -89,7 +89,7 @@
 </script>
 
 {#snippet one(section: VignetteSection, index: number, rows: number | null = section.rows, fit: number = 1)}
-    <div class="section" class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills || section.kind === 'values' && section.blocks?.some(block => block.kind === 'owner') || section.kind === 'topology' && (section.heading !== undefined || section.family === 'flow' && opening?.where === 'window') ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
+    <div class="section" class:complete-flow={layout?.kind === 'beside' && !toRoom && section.kind === 'topology' && section.family === 'flow' && opening?.where === 'window'} class:frozen={frozen && (section.kind === 'alerts' || section.kind === 'entity')} style:height={rows === null || fills || section.kind === 'values' && section.blocks?.some(block => block.kind === 'owner') || section.kind === 'topology' && (section.heading !== undefined || section.family === 'flow' && opening?.where === 'window') ? undefined : `${rows * VIGNETTE_ROW_PX}px`} style:min-height={rows !== null && fills ? `${rows * VIGNETTE_ROW_PX}px` : undefined}>
       {#if section.kind === 'values' && section.blocks !== undefined}
         <!-- An answer's values of several elements, grouped by element (W7.4), in the column's rows. -->
         <div class="values"><ElementBlocks blocks={section.blocks} {view} {observations} series={snapshot.series} {now} {frozen} /></div>
@@ -136,7 +136,7 @@
         {@const drawingSection = section.heading === undefined ? section : { ...section, rows: section.rows - 1 }}
         {#if section.heading !== undefined}<h2 class="owner-heading" title={section.heading} aria-label={section.heading}>{section.heading}</h2>{/if}
         {#if section.family === 'flow'}
-          <FlowTopology section={drawingSection} {observations} alerts={latest?.alerts ?? []} series={snapshot.series} {now} {palette} {frozen} {runId} {from} {fit} />
+          <FlowTopology section={drawingSection} {observations} alerts={latest?.alerts ?? []} series={snapshot.series} {now} {palette} {frozen} {runId} {from} {fit} complete={layout?.kind === 'beside' && !toRoom && opening?.where === 'window'} />
         {:else}
           {#key JSON.stringify([runId, section.objectId, section.packId])}<NetworkTopology section={drawingSection} {observations} alerts={latest?.alerts ?? []} {runId} {from} {palette} {frozen} {fit} />{/key}
         {/if}
@@ -170,7 +170,7 @@
     <!-- A window frame (Q20): the drawing at its own width (a network drawing at most the room the column leaves), every other view in a column beside it. -->
     <div class="beside" class:flow-canvas={!toRoom}>
       <div class="drawing" class:to-room={toRoom}>{@render one(view.sections[drawing]!, drawing)}</div>
-      <div class="column">
+      <div class="column" style:flex-basis={!toRoom && opening?.where === 'window' ? `${flowColumnWidth(view)}px` : undefined}>
         {#each view.sections as section, index (index)}{#if index !== drawing}{@render one(section, index)}{/if}{/each}
       </div>
     </div>
@@ -197,6 +197,7 @@
 <style>
   .owner-heading { margin: 0; min-height: var(--row); line-height: var(--row); color: var(--element-active-color); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
   .section { overflow: hidden; }
+  .section.complete-flow { overflow: visible; }
   /* Alerts only: the sections take the frame's height left under the title (Vignette), the alerts their share of it. */
   .sections.fill { display: flex; flex-direction: column; }
   .sections.fill > .section { flex: 1 1 auto; }

@@ -24,11 +24,20 @@ export const adviceExtent = (content: {
   readonly widestDrawing: number
   /** The card's horizontal padding around its panels. */
   readonly padding: number
+  readonly fit?: 'complete'
 }): DisplayExtent => ({
   kind: 'advice',
   minWidth: Math.ceil(Math.max(ADVICE_MIN_WIDTH, content.widestDrawing === 0 ? 0 : content.widestDrawing + content.padding)),
   width: Math.ceil(content.width),
   height: Math.ceil(content.height),
+  ...(content.fit === 'complete' ? { fit: 'complete' as const } : {}),
+})
+
+/** All occupied edges of a complete canvas, including a drawing offset in a
+ * second column and content extending beyond the card's border box. */
+export const occupiedCanvas = (card: { readonly width: number; readonly height: number; readonly scrollWidth: number; readonly scrollHeight: number }, drawings: ReadonlyArray<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number }>): { readonly width: number; readonly height: number } => ({
+  width: Math.ceil(Math.max(card.width, card.scrollWidth, ...drawings.map(drawing => drawing.x + drawing.width))),
+  height: Math.ceil(Math.max(card.height, card.scrollHeight, ...drawings.map(drawing => drawing.y + drawing.height))),
 })
 
 /** The frame plus the largest overflow of any scroller; a generated display needs no less than that to show without scrolling. */
@@ -132,11 +141,20 @@ export const observeDisplayExtent = (config: {
     if (config.kind === 'advice') {
       const style = getComputedStyle(card)
       const box = card.getBoundingClientRect()
+      const drawings = [...card.querySelectorAll<HTMLElement>(ADVICE_DRAWINGS)]
+      const complete = card.querySelector('.sections > .beside.flow-canvas') !== null
+      const occupied = complete ? occupiedCanvas({ width: box.width, height: box.height, scrollWidth: card.scrollWidth, scrollHeight: card.scrollHeight }, drawings.map(element => {
+        const rect = element.getBoundingClientRect()
+        let scrollX = 0, scrollY = 0
+        for (let parent = element.parentElement; parent !== null && parent !== card; parent = parent.parentElement) { scrollX += parent.scrollLeft; scrollY += parent.scrollTop }
+        return { x: rect.left - box.left + scrollX, y: rect.top - box.top + scrollY, width: rect.width, height: rect.height }
+      })) : box
       return adviceExtent({
-        width: box.width,
-        height: box.height,
-        widestDrawing: Math.max(0, ...[...card.querySelectorAll<HTMLElement>(ADVICE_DRAWINGS)].map(element => element.offsetWidth)),
+        width: occupied.width,
+        height: occupied.height,
+        widestDrawing: complete ? occupied.width - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight) : Math.max(0, ...drawings.map(element => element.offsetWidth)),
         padding: Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight),
+        ...(complete ? { fit: 'complete' as const } : {}),
       })
     }
     if (sighting === null || !drawingMeasurable(sighting, viewport)) return null
