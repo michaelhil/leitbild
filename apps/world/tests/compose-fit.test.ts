@@ -1,7 +1,7 @@
 import { DISPLAY_CARD_MAX_TEXT, displayCardTextLength } from '@leitbild/contracts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { vignetteHeight } from '../src/core/api/display-capabilities.ts'
-import type { AlertState } from '../src/core/model/alerts.ts'
+import { refObjectId, type AlertState } from '../src/core/model/alerts.ts'
 import type { OperationalObject } from '../src/core/model/index.ts'
 import { observableSchema } from '../src/core/observation/model.ts'
 import { topologyGraphSchema } from '../src/core/observation/topology.ts'
@@ -128,7 +128,9 @@ describe('fit caps and invariants', () => {
     expect(values?.kind === 'values' && values.refs?.length).toBe(16)
     expect(values?.kind === 'values' && values.refs).toContain('unit:u9#speed')
     expect(outcome.card.adjusted).toContainEqual({ kind: 'layout', text: '4 values not shown' })
-    expect(values?.rows).toBe(16)
+    if (values?.kind !== 'values') throw Error('Expected the requested values')
+    const refs = values.refs ?? []
+    expect(values.rows).toBe(refs.length + new Set(refs.map(refObjectId)).size)
   })
 
   test('a named signal without a record refuses a trend; recorded states fill bands of four, never a numeric axis', async () => {

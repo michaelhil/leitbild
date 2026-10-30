@@ -39,14 +39,13 @@ describe('CIEDE2000', () => {
   })
 })
 
-describe('OpenBridge 2.0.0 reserved set', () => {
+describe('OpenBridge 2.1.0 reserved set', () => {
   const sets = readReservedSets()
   test('is the alarm, warning, caution, level-critical and diagnostic background in each palette, later declarations winning', () => {
-    expect(sets.day).toEqual({ alarm: 'rgb(227, 0, 25)', warning: 'rgb(254, 148, 19)', caution: 'rgb(255, 219, 66)', critical: 'rgb(196, 36, 183)', notification: 'rgb(45, 84, 139)' })
+    expect(sets.day).toEqual({ alarm: 'rgb(224, 0, 18)', warning: 'rgb(245, 132, 2)', caution: 'rgb(255, 219, 66)', critical: 'rgb(196, 36, 183)', notification: 'rgb(40, 83, 136)' })
     // Dusk and night declare --alert-critical-color twice; the later block points it at --critical-enabled-background-color.
-    expect(sets.dusk.critical).toBe('rgb(189, 40, 190)')
-    expect(sets.night.critical).toBe('rgb(195, 48, 196)')
-    expect(sets.night.notification).toBe('rgb(40, 101, 80)')
+    expect(sets.dusk).toEqual({ alarm: 'rgb(222, 0, 4)', warning: 'rgb(250, 125, 0)', caution: 'rgb(214, 169, 21)', critical: 'rgb(189, 40, 190)', notification: 'rgb(131, 178, 237)' })
+    expect(sets.night).toEqual({ alarm: 'rgb(183, 0, 0)', warning: 'rgb(150, 63, 0)', caution: 'rgb(117, 83, 0)', critical: 'rgb(195, 48, 196)', notification: 'rgb(54, 97, 79)' })
   })
 
   test('names the nearest reserved colour per palette', () => {
