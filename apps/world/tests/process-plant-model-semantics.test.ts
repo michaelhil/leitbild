@@ -111,7 +111,7 @@ describe('model semantics declared per component kind', () => {
     const functionOf = (id: string) => componentById(graph, id).semantics.function
     // The behaviour treats a valve without a mode (a feed regulating valve) as a control valve, and so do its semantics.
     expect(functionOf('feedwaterControlValveB')).toBe('modulating')
-    expect(functionOf('rhrIsolationValve')).toBe('isolating')
+    for (const train of ['A', 'B']) for (const prefix of ['rhrRwstSuctionValve', 'rhrSumpSuctionValve', 'rhrInjectionValve', 'siRwstSuctionValve', 'siPiggybackValve']) expect(functionOf(`${prefix}${train}`)).toBe('isolating')
     expect(functionOf('mainSteamSafetyValveA')).toBe('relieving')
     // The main steam isolation valves are trip valves, read open or shut.
     expect(functionOf('mainSteamIsolationValveA')).toBe('isolating')
@@ -331,6 +331,22 @@ describe('link flow', () => {
       [...['a', 'b', 'c', 'd'].flatMap(loop => [`rcp-${loop}-to-core`, `rcs-cold-leg-${loop}`, `rcs-hot-leg-${loop}`]), 'pressurizer-surge-line'].sort(),
     )
     expect(fidelity.get('feedwater-control-valve-b-to-sg-b')).toBe('solved')
+  })
+
+  test('solved-flow fidelity follows compatible fluid and exact circuits across functional service boundaries', () => {
+    const water = { connectionKind: 'fluidFlow' as const, nominalFluid: 'water' as const, designPhase: 'liquid' as const, solverModel: 'incompressibleLiquid' as const,
+      variables: [{ path: 'flowKgPerS', label: 'Flow', kind: 'derived' as const, discipline: 'hydraulic' as const, writable: false, publish: 'telemetry' as const, quantity: 'flowRate' as const, unit: 'kg/s' as const, initialValue: 0 }, { path: 'temperatureC', label: 'Temperature', kind: 'derived' as const, discipline: 'thermal' as const, writable: false, publish: 'telemetry' as const, quantity: 'temperature' as const, unit: 'degC' as const, initialValue: 20 }] as never }
+    const components = [component('pump', 'centrifugalPump', 'Pump', { nominalFlowKgPerS: 40, nominalHeadPa: 1e5 }), component('header', 'processHeader', 'Header', {}), component('hx', 'heatExchanger', 'Exchanger', { uaMwPerC: 1, hotSideDesignFlowKgPerS: 40, coldSideDesignFlowKgPerS: 40 }), component('tank', 'processTank', 'Tank', { nominalInventoryKg: 100, initialInventoryFraction: 0.5, initialTemperatureC: 20, makeupFlowKgPerS: 0, maxOutletFlowKgPerS: 0 })]
+    const compile = (connections: PlantGraphSpec['connections'], includeHx = false) => compilePlantGraph(plantGraph({ id: 'fidelity.circuits', title: 'Circuit fidelity', fixedStepMs: 100, components: components.filter(component => includeHx || String(component.id) !== 'hx'), connections }), processPlantComponentRegistry)
+    const shared = compile([connect('feed', 'pump.outlet', 'header.inletA', { ...water, service: 'residualHeatRemoval' }), connect('receipt', 'header.outletA', 'tank.inlet', { ...water, service: 'safetyInjection' })])
+    expect(processLinkFlowFidelityFor(shared, shared.links.find(link => String(link.id) === 'receipt')!)).toBe('solved')
+    const exchanger = compile([connect('coldFeed', 'pump.outlet', 'hx.coldIn', { ...water, service: 'water' }), connect('coldReceipt', 'hx.coldOut', 'tank.inlet', { ...water, service: 'water' }), connect('hotFeed', 'pump.outlet', 'hx.hotIn', { ...water, service: 'water' }), connect('hotReceipt', 'hx.hotOut', 'tank.inlet', { ...water, service: 'water' })], true)
+    // Unit-test the classifier with only the cold feed exposed. The actual
+    // compiler separately requires all four HX ports connected in an admission.
+    const separated = { ...exchanger, incomingLinksByComponent: exchanger.incomingLinksByComponent.map(indices => indices.filter(index => String(exchanger.links[index]!.id) !== 'hotFeed')) }
+    expect(processLinkFlowFidelityFor(separated, separated.links.find(link => String(link.id) === 'hotReceipt')!)).toBe('unverified')
+    const incompatible = compile([connect('feed', 'pump.outlet', 'header.inletA', { ...water, nominalFluid: 'oil', service: 'water' }), connect('receipt', 'header.outletA', 'tank.inlet', { ...water, service: 'water' })])
+    expect(processLinkFlowFidelityFor(incompatible, incompatible.links.find(link => String(link.id) === 'receipt')!)).toBe('unverified')
   })
 
   test('a link is rated by its own nominal flow or by the equipment that drives it', () => {
