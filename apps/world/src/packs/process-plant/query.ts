@@ -11,6 +11,7 @@ import { answerProcessPlantRuntimeQuery, processPlantRuntimeQueryKinds } from '.
 import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './queries/signal-query.ts'
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 import { answerProcessPlantObservationQuery } from './observation/query.ts'
+import { answerProcessPlantResponseQuery, processPlantResponseQueryKinds } from './queries/response-query.ts'
 
 export { processPlantCredibilityEvidenceForGraph } from './queries/credibility-query.ts'
 
@@ -23,6 +24,7 @@ export const processPlantQueryKinds = [
   ...processPlantControlQueryKinds,
   ...processPlantRuntimeQueryKinds,
   ...processPlantIcQueryKinds,
+  ...processPlantResponseQueryKinds,
 ] as const
 
 export const answerProcessPlantQuery = (config: {
@@ -45,6 +47,7 @@ export const answerProcessPlantQuery = (config: {
   ?? answerProcessPlantSignalQuery(config)
   ?? answerProcessPlantControlQuery(config)
   ?? answerProcessPlantRuntimeQuery(config)
+  ?? answerProcessPlantResponseQuery(config)
   ?? answerProcessPlantObservationQuery({
     ...config,
     recording: config.recordedSeriesIds === undefined || config.recordingIntervalMs === undefined ? null : { seriesIds: config.recordedSeriesIds, intervalMs: config.recordingIntervalMs },

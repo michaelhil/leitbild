@@ -51,6 +51,7 @@ import {
   signalsSearchQuerySchema,
 } from './queries/signal-query.ts'
 import { variablesReadQuerySchema, variablesSearchQuerySchema } from './queries/variable-query.ts'
+import { processPlantResponseQuerySchema } from './response-evidence.ts'
 
 const recordSchema = z.record(z.string(), z.json())
 const recordArraySchema = z.array(recordSchema)
@@ -169,6 +170,16 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     automaticCsfQualified: z.literal(false),
     evidence: recordArraySchema,
   }).strict(),
+  'world.process-plant.response.evaluate': z.object({
+    targetObjectId: objectIdSchema,
+    status: z.enum(['satisfied', 'challenged', 'unknown']),
+    reason: z.string().optional(),
+    modelRef: z.string().min(1), modelDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    automationRef: z.string().min(1), automationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    simTimeMs: z.number().nonnegative(), simulationTime: z.string().optional(),
+    evidenceKind: z.literal('engineering-diagnostic'), provenance: z.literal('runtime-model'),
+    basis: recordSchema, automaticCsfQualified: z.literal(false), interpretation: z.string(), current: recordSchema, evidence: recordArraySchema,
+  }).strict(),
   'world.process-plant.assessments.evaluate': z.object({ plantId: plantIdSchema, assessments: recordArraySchema }).strict(),
   'world.process-plant.control.validate': z.object({
     accepted: z.boolean(),
@@ -231,6 +242,7 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.procedure-tags.validate': procedureTagsValidateQuerySchema,
   'world.process-plant.conditions.evaluate': conditionsEvaluateQuerySchema,
   'world.process-plant.procedure-condition.evaluate': procedureConditionEvaluateQuerySchema,
+  'world.process-plant.response.evaluate': processPlantResponseQuerySchema,
   'world.process-plant.assessments.evaluate': assessmentsEvaluateQuerySchema,
   'world.process-plant.control.validate': processPlantControlWritePayloadSchema,
   'world.process-plant.control.proposals': controlProposalsQuerySchema,
@@ -264,6 +276,7 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals. Comparison values must use the resolved signal\'s native unit and value type. Requested-unit views do not change condition thresholds; no procedure-unit conversion is performed.',
   'world.process-plant.assessments.evaluate': 'Judge each critical safety function the Plant\'s I&C declares by its status tree, now: per function the status (green, yellow, orange, red; unknown where a signal a branch needs is not published or readable; not-monitored where it is judged only after a reactor trip), the function restoration procedure its colour sends operators to, what it means, the branch path with every value read against its threshold, the further checks that apply (such as natural circulation with no coolant pump running, or makeup at its maximum at power) and the trends the tree treats as expected. Omit assessmentIds for every function; catalog.list names them. Judge the plant by these, not by one value off its normal: a trend the tree expects is no challenge. The trees are reference-model criteria after the generic Westinghouse ERG status trees, not qualified plant procedures; values are runtime model evidence that do not establish instrument validity or safety-function adequacy at a real plant.',
   'world.process-plant.procedure-condition.evaluate': 'Read-only evaluation of an authored, model-digest-pinned condition with explicit native units. Returns satisfied, challenged or unknown and every comparison observation at one simulation time. Values are runtime model evidence, not qualified instrumentation or automatic CSF restoration; authored source citations are retained, not independently verified. No equipment command, protection change or procedure transition is performed.',
+  'world.process-plant.response.evaluate': 'Evaluate an explicitly sampled physical response over an authored simulation-time window from this Plant\'s existing retained recording, alongside fresh current prerequisites. Compare stored numeric minimum/maximum or endpoint change in native units; returns exact retained sample timestamps, count, gaps, endpoints and endpoint rate. Missing left-boundary coverage, recording, good quality or advancing time stays unknown. Exception recording has a deadband and silent intervals: this never proves an uninterrupted hold, instrument validity, future capacity or recovery. Uses exact model-digest-pinned source/basis and performs no equipment action or procedure transition. Use only an authored model-scoped response objective; do not invent a reference duration.',
   'world.process-plant.control.validate': 'Validate a proposed Process Plant control write without applying it.',
   'world.process-plant.control.proposals': 'Read a Plant\'s operation proposals: pending ones with World\'s review now (whether the I&C allows the stored write, and how each cited reading moved since it was proposed), and the last closed ones with who closed them, when and why (approved, rejected, expired, superseded, withdrawn). Read it before saying what became of a proposal.',
   'world.process-plant.controls.list': 'List what a person may operate on a Plant\'s drawn items, derived from its model: each offered control with its options (words, values written, the state each leads to), the trips each option would set going and the automation writing against it, where those stand now (armed; acted; a protection actuation holding it, which refuses the option), and how long the equipment takes to follow; what each option that stops, shuts or disconnects takes away now (the flow, where it goes, its share, the mode, the protection that may actuate); a modulating valve\'s demand with the span and step it is set in (OPEN to or THROTTLE to any setting there), where it stands now, and the floor a standing actuation lets it be throttled to; each valve\'s position; and each withheld command with why (held by its controller as AUTO, a demand or set point, an isolation input, declared not offered); and, under resets, every latched actuation standing with its RESET, offered or why not. Name items by their element ids (a component id, or "<component>.<device>" for a device it bundles), or omit them for all.',
@@ -291,7 +304,7 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
       ? {}
       : {
           inspectObjectIds: (rawInput: unknown) => {
-            const plantId = id === 'world.process-plant.procedure-condition.evaluate'
+            const plantId = id === 'world.process-plant.procedure-condition.evaluate' || id === 'world.process-plant.response.evaluate'
               ? (rawInput as { targetObjectId?: unknown }).targetObjectId
               : (rawInput as { plantId?: unknown }).plantId
             return typeof plantId === 'string' ? [objectIdSchema.parse(plantId)] : []
