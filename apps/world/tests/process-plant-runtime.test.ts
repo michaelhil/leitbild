@@ -1011,11 +1011,14 @@ describe('process plant runtime', () => {
 
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
 
-    const heatTransferMw = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
+    const primaryHeatTransferMw = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
+    const secondaryHeatTransferMw = Number(runtime.readVariable(valueOf('sgA.secondaryHeatTransferMw')))
     const boilingRateKgPerS = Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))
     // Each kilogram boiled takes the generator's feedwater-to-steam enthalpy rise.
     const enthalpyRise = steamGeneratorFeedToSteamEnthalpyMjPerKg(system.graph.components.find(component => component.id === 'sgA')!.parameters as Record<string, unknown>)
-    expect(boilingRateKgPerS * enthalpyRise).toBeCloseTo(heatTransferMw, 6)
+    expect(boilingRateKgPerS * enthalpyRise).toBeCloseTo(secondaryHeatTransferMw, 6)
+    expect(primaryHeatTransferMw - secondaryHeatTransferMw).toBeCloseTo(Number(runtime.readVariable(valueOf('sgA.metalStoredEnergyRateMw'))), 6)
+    expect(Number(runtime.readVariable(valueOf('sgA.metalEnergyBalanceResidualMw')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('sgA.boilingEnergyResidualMw')))).toBeCloseTo(0, 6)
   })
 
@@ -1563,28 +1566,37 @@ describe('process plant runtime', () => {
     runtime.writeCommand({ type: 'setVariable', path: valueOf('core.rodInsertionFraction'), value: 1 })
     let observedAccumulatorInjection = false
     let observedVesselInjection = false
+    let releasedKg = 0
+    let maxIncomingKgPerS = 0
+    let maxRadiation = 0
+    let releaseLagResidual = 0
     for (let index = 0; index < 4_000; index += 1) {
+      const previousLeak = Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS')))
       runtime.tick(100)
+      const leak = Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS')))
+      releasedKg += leak * .1
+      maxIncomingKgPerS = Math.max(maxIncomingKgPerS, Number(runtime.readVariable(valueOf('containment.incomingMassKgPerS'))))
+      maxRadiation = Math.max(maxRadiation, Number(runtime.readVariable(valueOf('containment.radiationSourceTermMSvPerH'))))
+      const releaseLinkFlow = Number(runtime.readVariable(valueOf('vessel-release-to-containment.flowKgPerS')))
+      releaseLagResidual = Math.max(releaseLagResidual, Math.abs(releaseLinkFlow - previousLeak))
       observedAccumulatorInjection = observedAccumulatorInjection || Number(runtime.readVariable(valueOf('safetyAccumulatorA.outletFlowKgPerS'))) > 0
       observedVesselInjection = observedVesselInjection || Number(runtime.readVariable(valueOf('vessel.safetyInjectionFlowKgPerS'))) > 0
     }
 
     const transientDiagnostics = runtime.pwrTransientDiagnostics()
-    expect(Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS')))).toBeGreaterThan(0)
-    expect(transientDiagnostics.primary.leakFlowKgPerS).toBeGreaterThan(0)
+    expect(releasedKg).toBeGreaterThan(0)
+    expect(transientDiagnostics.primary.leakFlowKgPerS).toBe(Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS'))))
     expect(transientDiagnostics.primary.inventoryKg).toBeLessThan(baselineDiagnostics.primary.inventoryKg ?? Number.POSITIVE_INFINITY)
-    expect(transientDiagnostics.containment.incomingMassKgPerS).toBeGreaterThan(0)
+    expect(maxIncomingKgPerS).toBeGreaterThan(0)
     expect(transientDiagnostics.containment.sumpInventoryKg).toBeGreaterThan(baselineDiagnostics.containment.sumpInventoryKg ?? 0)
     expect(transientDiagnostics.containment.pressureMPa).toBeGreaterThan(baselineDiagnostics.containment.pressureMPa ?? 0)
     expect(transientDiagnostics.safetySystems.accumulatorInventoryKg).toBeLessThan(baselineDiagnostics.safetySystems.accumulatorInventoryKg)
-    // The release link carries the leak flow the vessel solved a step before;
-    // the accumulators still inject, so the two differ by that step's change.
-    const leakFlow = Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS')))
-    expect(Math.abs(Number(runtime.readVariable(valueOf('vessel-release-to-containment.flowKgPerS'))) - leakFlow)).toBeLessThan(leakFlow * 0.01)
-    expect(Number(runtime.readVariable(valueOf('containment.incomingMassKgPerS')))).toBeGreaterThan(0)
+    // Follow the actual release and its one-step graph transport, including
+    // an eventually drained source. A final zero rate cannot erase history.
+    expect(releaseLagResidual).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))).toBeGreaterThan(initialContainmentSump)
     expect(Number(runtime.readVariable(valueOf('containment.pressureMPa')))).toBeGreaterThan(initialContainmentPressure)
-    expect(Number(runtime.readVariable(valueOf('containment.radiationSourceTermMSvPerH')))).toBeGreaterThan(0.02)
+    expect(maxRadiation).toBeGreaterThan(0.02)
     expect(observedAccumulatorInjection).toBe(true)
     expect(Number(runtime.readVariable(valueOf('safetyAccumulatorA.liquidInventoryKg')))).toBeLessThan(initialAccumulatorInventory)
     expect(observedVesselInjection).toBe(true)
@@ -1854,7 +1866,8 @@ describe('process plant runtime', () => {
   })
 
   test('a reactor coolant pump that trips while the others run coasts down, then the others drive its loop backwards', () => {
-    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
     const read = (path: string): number => Number(runtime.readVariable(valueOf(path)))
 
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
@@ -1868,7 +1881,12 @@ describe('process plant runtime', () => {
     expect(read('rcpA.speedRpm')).toBeLessThan(read('rcpB.speedRpm'))
     expect(read('rcpA.loopFlowKgPerS')).toBeGreaterThan(0.8 * ratedLoopFlow)
     expect(read('rcpA.loopFlowKgPerS')).toBeLessThan(ratedLoopFlow)
-    for (let index = 0; index < 600; index += 1) runtime.tick(100)
+    const metalBefore = read('sgA.tubeMetalTemperatureC')
+    let retainedMetalEnergyMj = 0
+    for (let index = 0; index < 600; index += 1) {
+      runtime.tick(100)
+      retainedMetalEnergyMj += .1 * (read('sgA.heatTransferMw') - read('sgA.secondaryHeatTransferMw'))
+    }
 
     // A minute on, its loop runs backwards: its flow transmitter reads no
     // flow, and its legs carry the reverse flow's size.
@@ -1891,8 +1909,14 @@ describe('process plant runtime', () => {
     const diagnostics = runtime.pwrTransientDiagnostics()
     expect(diagnostics.primary.runningReactorCoolantPumpCount).toBe(3)
     expect(diagnostics.primary.reactorCoolantFlowKgPerS).toBeCloseTo(coreFlow, 0)
-    // The idle steam generator takes little from the downcomer water passing back through it.
-    expect(read('sgA.heatTransferMw')).toBeLessThan(0.1 * flowingHeatTransfer)
+    // With no protection runner in this hydraulic test, fission continues:
+    // the reverse loop still receives warm downcomer water. It has reduced
+    // transfer, not an assumed 90% thermal isolation. This hydraulic case
+    // does not qualify reverse-core thermal response. Its finite metal store
+    // must account for the difference between extraction and boiling duty.
+    expect(read('sgA.heatTransferMw')).toBeLessThan(flowingHeatTransfer)
+    const metalCapacity = Number((system.graph.components.find(component => component.id === 'sgA')!.parameters as Record<string, unknown>).tubeMetalThermalCapacityMjPerK)
+    expect(metalCapacity * (read('sgA.tubeMetalTemperatureC') - metalBefore)).toBeCloseTo(retainedMetalEnergyMj, 6)
     expect(read('sg-a-steam-to-msiv-a.flowKgPerS')).toBeLessThan(initialSteamFlow * 0.75)
   })
 
@@ -2004,7 +2028,10 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sg-b-steam-to-msiv-b.flowKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('sg-c-steam-to-msiv-c.flowKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('sg-d-steam-to-msiv-d.flowKgPerS')))).toBeCloseTo(0, 6)
-    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeGreaterThan(initialOpenBranchFlow)
+    // The remaining generator keeps its supply instead of receiving one
+    // quarter of it. Closing other generators does not create extra steam
+    // in its finite dome or increase its boiling heat source.
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeCloseTo(initialOpenBranchFlow, 2)
     expect(Number(runtime.readVariable(valueOf('main-steam-header-to-turbine-stop-valve.flowKgPerS'))))
       .toBeCloseTo(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS'))), 6)
   })

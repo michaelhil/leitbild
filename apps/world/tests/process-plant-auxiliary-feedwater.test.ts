@@ -140,18 +140,22 @@ describe('auxiliary feedwater', () => {
     const { tag, read } = plantRun
     expect(tag('SG-B-LVL-NR')).toBeLessThan(20)
     for (const loop of ['A', 'C', 'D']) expect(tag(`SG-${loop}-LVL-NR`)).toBeGreaterThan(20)
-    // Ten seconds on, the two motor-driven pumps, running out along their curves, feed all four lines; the
+    // Ten seconds on, the two motor-driven pumps feed all four lines at the
+    // actual header pressure, not an assumed low-pressure runout rate; the
     // turbine-driven pump, started as the trip shrinks a second generator below its low-low level, is still running up.
     plantRun.run(10)
     expect(read('auxFeedwaterPumpMotorB.runningState')).toBe(1)
     expect(read('auxFeedwaterPumpTurbine.flowKgPerS')).toBe(0)
-    expect(tag('AFW-FLOW')).toBeGreaterThan(60)
+    expect(tag('AFW-FLOW')).toBeGreaterThan(ratedFlowKgPerS.auxFeedwaterPumpMotor + ratedFlowKgPerS.auxFeedwaterPumpMotorB)
+    expect(tag('AFW-FLOW')).toBeCloseTo(loops.reduce((sum, loop) => sum + tag(`AFW-${loop}-FLOW`), 0), 6)
     expect(tag('AFW-FLOW')).toBeLessThan(75)
-    // About a quarter each; generator B, at slightly lower pressure, a little more.
+    // Every branch receives real water. Compare each share with this actual
+    // header delivery, rather than assuming a 60 kg/s runout at ten seconds.
     const others = ['A', 'C', 'D'].map(loop => tag(`AFW-${loop}-FLOW`))
+    const equalShare = tag('AFW-FLOW') / loops.length
     for (const flow of [...others, tag('AFW-B-FLOW')]) {
-      expect(flow).toBeGreaterThan(14)
-      expect(flow).toBeLessThan(20)
+      expect(flow).toBeGreaterThan(equalShare / 1.15)
+      expect(flow).toBeLessThan(equalShare * 1.15)
     }
     expect(tag('AFW-B-FLOW') / (others.reduce((sum, flow) => sum + flow, 0) / others.length)).toBeLessThan(1.15)
     // Feedwater isolation on the trip has shut every feed regulating valve, so the other generators shrink to their
@@ -338,6 +342,13 @@ describe('condensate storage tank', () => {
     const drawnDown = compileProcessPlant(createPwrReferencePlantDefinition({
       id: 'plant:afw-cst',
       loopCount: 4,
+      // Isolate this finite-reserve alarm test from transient hotwell return.
+      // Otherwise the real condensate inflow can refill the drawn-down CST
+      // before AFW later depletes it; that is not a missing reserve alarm.
+      parameterOverrides: { hotwellRejectValve: { controller: {
+        ...(plant.graph.components.find(component => component.id === 'hotwellRejectValve')!.parameters as { controller: Record<string, unknown> }).controller,
+        maxPositionFraction: 0,
+      } } },
       valueOverrides: { 'auxFeedwaterTank.inventoryKg': 0.63 * 1_690_000, 'auxFeedwaterTank.levelPercent': 63 },
     }))
     const plantRun = started(true, drawnDown)
@@ -350,6 +361,7 @@ describe('condensate storage tank', () => {
       if (plantRun.active().includes('alarm:condensate-storage-tank-level-low:level-low')) alarmedAt = second
     }
     expect(alarmedAt).not.toBeNull()
+    expect(plantRun.tag('HOTWELL-REJECT-FLOW')).toBe(0)
     expect(plantRun.tag('CST-LVL')).toBeLessThan(62)
     expect(plantRun.tag('CST-LVL')).toBeGreaterThan(61.5)
   })
