@@ -13,7 +13,8 @@ export const steamGeneratorInitialValueDefinitions: ReadonlyArray<ComponentIniti
       if (localPath === 'levelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
       if (localPath === 'wideRangeLevelPercent') return steamGeneratorLevelOnSpanPercent(steamGeneratorWideRange(component.parameters as Record<string, unknown>), level.collapsed + level.swell)
       if (localPath === 'pressureMPa') return parameterNumber(component, 'nominalPressureMPa')
-      if (localPath === 'heatTransferMw') return initialSteamFlow * steamGeneratorFeedToSteamEnthalpyMjPerKg(component.parameters as Record<string, unknown>)
+      if (localPath === 'heatTransferMw' || localPath === 'secondaryHeatTransferMw') return initialSteamFlow * steamGeneratorFeedToSteamEnthalpyMjPerKg(component.parameters as Record<string, unknown>)
+      if (localPath === 'metalStoredEnergyRateMw' || localPath === 'metalEnergyBalanceResidualMw') return 0
       if (localPath === 'primaryInletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322)
       if (localPath === 'primaryOutletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryOutletTemperatureC', 290)
       if (localPath === 'tubeMetalTemperatureC') {

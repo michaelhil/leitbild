@@ -16,12 +16,12 @@ import { inventoryBalanceStep } from '../physics.ts'
 import { primarySystemReactorCore } from '../system-topology.ts'
 import { steamGeneratorFeedToSteamEnthalpyMjPerKg, steamGeneratorLevelOnSpanPercent, steamGeneratorNarrowRange, steamGeneratorWideRange } from '../../steam-generator-operating-level.ts'
 import {
-  energyBalanceTemperatureStep,
   heatMwFromWaterFlowAndDeltaT,
   saturationTemperatureCFromPressureMPa,
 } from '../thermophysics.ts'
 import { liquidEnthalpyKjPerKg, liquidTemperatureCFromEnthalpy } from '../water-properties.ts'
 import { steamGeneratorDomeState } from '../steam-generator-dome.ts'
+import { finiteSteamGeneratorMetalRates } from '../steam-generator-thermal.ts'
 
 type SteamGeneratorBehaviorInput = Parameters<ComponentBehaviorDefinition['update']>[0]
 
@@ -52,7 +52,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     phase: 'solveThermalTransfer',
     componentKind: 'steamGenerator',
     reads: ['tubeMetalTemperatureC', 'secondaryTemperatureC', 'secondaryInventoryKg', 'collapsedLevelPercent', 'swellLevelPercent', 'voidFraction', 'incoming:primaryCoolant.temperatureC', 'incoming:primaryCoolant.flowKgPerS'],
-    writes: ['heatTransferMw', 'steamFlowKgPerS', 'boilingRateKgPerS', 'tubeCoverageFraction', 'tubeUncoveredFraction', 'availableHeatTransferFraction'],
+    writes: ['heatTransferMw', 'secondaryHeatTransferMw', 'steamFlowKgPerS', 'boilingRateKgPerS', 'tubeCoverageFraction', 'tubeUncoveredFraction', 'availableHeatTransferFraction'],
     update: (input): void => {
       const { system, component, context } = input
       const primaryWaterTemperature = enteringPrimaryCoolantTemperatureC(input)
@@ -79,28 +79,30 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const availableHeatTransferFraction = clamp(minimumHeatTransferFraction + (1 - minimumHeatTransferFraction) * tubeCoverage, minimumHeatTransferFraction, 1)
       const recirculationRatio = optionalParameterNumber(component, 'recirculationRatio', 4)
       const recirculationHeatTransferFactor = clamp(0.65 + recirculationRatio * 0.09, 0.8, 1.35)
-      const transferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK')
+      const secondaryTransferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK')
         * recirculationHeatTransferFactor
         * Math.max(0, tubeMetalTemperature - secondaryTemperature)
       // The coolant cannot give more than cooling it to the secondary
       // temperature. Cold water's specific heat is the least any liquid water
       // has, so while the tubes take less than that bound, they limit and the
       // coolant's enthalpy need not be evaluated.
-      const coldWaterFlowCapacity = heatMwFromWaterFlowAndDeltaT(primaryWaterFlow, Math.max(0, primaryWaterTemperature - secondaryTemperature))
-      const flowCapacity = transferCapacity <= coldWaterFlowCapacity
-        ? coldWaterFlowCapacity
-        : primaryCoolantHeatMw(primaryWaterFlow, primaryWaterTemperature, secondaryTemperature, primaryCoolantPressureMPa(input))
+      const primaryTransferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK') * Math.max(0, primaryWaterTemperature - tubeMetalTemperature)
+      const coldWaterFlowCapacity = heatMwFromWaterFlowAndDeltaT(primaryWaterFlow, Math.max(0, primaryWaterTemperature - tubeMetalTemperature))
+      const primaryRequested = primaryTransferCapacity <= coldWaterFlowCapacity ? primaryTransferCapacity
+        : Math.min(primaryTransferCapacity, primaryCoolantHeatMw(primaryWaterFlow, primaryWaterTemperature, tubeMetalTemperature, primaryCoolantPressureMPa(input)))
       const feedToSteamEnthalpy = steamGeneratorFeedToSteamEnthalpyMjPerKg(component.parameters as Record<string, unknown>)
       const liquidInventory = Math.max(0, context.readNumber(componentVariablePath(component, 'secondaryInventoryKg')))
       const finiteBoilingCapacity = context.dtSeconds > 0 ? liquidInventory / context.dtSeconds : liquidInventory > 0 ? Number.POSITIVE_INFINITY : 0
-      // An uncovered dry generator cannot make steam from absent liquid.
-      // Excess primary heat remains in the existing finite tube-metal state.
-      const heatTransfer = Math.max(0, Math.min(Math.min(transferCapacity, flowCapacity) * availableHeatTransferFraction, finiteBoilingCapacity * feedToSteamEnthalpy))
+      const rates = finiteSteamGeneratorMetalRates({ metalTemperatureC: tubeMetalTemperature, primaryTemperatureC: primaryWaterTemperature,
+        secondaryTemperatureC: secondaryTemperature, capacityMjPerC: optionalParameterNumber(component, 'tubeMetalThermalCapacityMjPerK', 8_000),
+        primaryRequestedMw: primaryRequested, secondaryRequestedMw: secondaryTransferCapacity * availableHeatTransferFraction,
+        evaporationCapacityMw: finiteBoilingCapacity * feedToSteamEnthalpy, dtSeconds: context.dtSeconds })
       // This retains the declared design-feed enthalpy approximation; the
       // saturated-dome pressure closure does not establish a two-phase energy
       // equation of state or calibrated off-design feedwater sensible energy.
-      const boilingRate = heatTransfer / feedToSteamEnthalpy
-      context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
+      const boilingRate = rates.secondaryMw / feedToSteamEnthalpy
+      context.write(componentVariablePath(component, 'heatTransferMw'), rates.primaryMw)
+      context.write(componentVariablePath(component, 'secondaryHeatTransferMw'), rates.secondaryMw)
       context.write(componentVariablePath(component, 'boilingRateKgPerS'), boilingRate)
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), Math.min(boilingRate, optionalParameterNumber(component, 'nominalSteamFlowKgPerS', 760) * 1.25))
       context.write(componentVariablePath(component, 'tubeCoverageFraction'), tubeCoverage)
@@ -154,6 +156,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       'swellLevelPercent',
       'steamMassKg',
       'heatTransferMw',
+      'secondaryHeatTransferMw',
       'steamFlowKgPerS',
       'boilingRateKgPerS',
       'feedwaterFlowKgPerS',
@@ -169,6 +172,8 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       'secondaryInventoryBalanceResidualKg',
       'steamMassBalanceResidualKg',
       'boilingEnergyResidualMw',
+      'metalStoredEnergyRateMw',
+      'metalEnergyBalanceResidualMw',
       'incoming:primaryCoolant.temperatureC',
       'incoming:primaryCoolant.flowKgPerS',
     ],
@@ -193,6 +198,8 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       'secondaryInventoryBalanceResidualKg',
       'steamMassBalanceResidualKg',
       'boilingEnergyResidualMw',
+      'metalStoredEnergyRateMw',
+      'metalEnergyBalanceResidualMw',
       'saturationTemperatureRateCPerS',
     ],
     update: (input): void => {
@@ -208,6 +215,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const pressurePath = componentVariablePath(component, 'pressureMPa')
       const levelPath = componentVariablePath(component, 'levelPercent')
       const heatTransfer = context.readNumber(componentVariablePath(component, 'heatTransferMw'))
+      const secondaryHeatTransfer = context.readNumber(componentVariablePath(component, 'secondaryHeatTransferMw'))
       const primaryInletTemperature = enteringPrimaryCoolantTemperatureC(input)
         ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
       const primaryFlow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'primaryCoolant') ?? 1)
@@ -221,27 +229,19 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       context.write(componentVariablePath(component, 'primaryInletTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC')), primaryInletTemperature, context.dtSeconds, primaryTimeConstantSeconds))
       context.write(componentVariablePath(component, 'primaryOutletTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'primaryOutletTemperatureC')), primaryOutletTarget, context.dtSeconds, primaryTimeConstantSeconds))
       const tubeMetalTemperature = context.readNumber(componentVariablePath(component, 'tubeMetalTemperatureC'))
-      const primaryToTubeHeat = Math.min(
-        tubeMetalTemperature >= primaryInletTemperature
-          ? 0
-          : primaryFlow * (primaryInletEnthalpy - liquidEnthalpyKjPerKg(tubeMetalTemperature, primaryPressure)) / 1_000,
-        parameterNumber(component, 'heatTransferCoefficientMwPerK') * Math.max(0, primaryInletTemperature - tubeMetalTemperature),
-      )
-      context.write(componentVariablePath(component, 'tubeMetalTemperatureC'), energyBalanceTemperatureStep({
-        currentTemperatureC: tubeMetalTemperature,
-        heatInMw: primaryToTubeHeat,
-        heatOutMw: heatTransfer,
-        dtSeconds: context.dtSeconds,
-        thermalCapacityMjPerK: optionalParameterNumber(component, 'tubeMetalThermalCapacityMjPerK', 8_000),
-        minTemperatureC: 0,
-        maxTemperatureC: 370,
-      }))
+      const metalCapacity = optionalParameterNumber(component, 'tubeMetalThermalCapacityMjPerK', 8_000)
+      const storedEnergyRate = heatTransfer - secondaryHeatTransfer
+      const nextMetalTemperature = tubeMetalTemperature + storedEnergyRate * context.dtSeconds / metalCapacity
+      context.write(componentVariablePath(component, 'tubeMetalTemperatureC'), nextMetalTemperature)
+      context.write(componentVariablePath(component, 'metalStoredEnergyRateMw'), storedEnergyRate)
+      context.write(componentVariablePath(component, 'metalEnergyBalanceResidualMw'),
+        metalCapacity * (nextMetalTemperature - tubeMetalTemperature) / context.dtSeconds - storedEnergyRate)
 
       const secondaryTemperatureTarget = saturationTemperatureCFromPressureMPa(context.readNumber(pressurePath))
       context.write(componentVariablePath(component, 'secondaryTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')), secondaryTemperatureTarget, context.dtSeconds, optionalParameterNumber(component, 'secondaryThermalTimeConstantS', 25)))
       const currentPressure = context.readNumber(pressurePath)
       const boilingRate = context.readNumber(componentVariablePath(component, 'boilingRateKgPerS'))
-      context.write(componentVariablePath(component, 'boilingEnergyResidualMw'), boilingRate * steamGeneratorFeedToSteamEnthalpyMjPerKg(component.parameters as Record<string, unknown>) - heatTransfer)
+      context.write(componentVariablePath(component, 'boilingEnergyResidualMw'), boilingRate * steamGeneratorFeedToSteamEnthalpyMjPerKg(component.parameters as Record<string, unknown>) - secondaryHeatTransfer)
       const secondaryTemperature = context.readNumber(componentVariablePath(component, 'secondaryTemperatureC'))
       const currentSteamMass = context.readNumber(componentVariablePath(component, 'steamMassKg'))
       const steamMassTarget = inventoryBalanceStep({

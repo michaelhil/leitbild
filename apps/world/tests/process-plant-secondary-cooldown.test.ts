@@ -6,6 +6,7 @@ import type { ProcessPlantBehaviorContext } from '../src/packs/process-plant/run
 import { guardPlantTests } from './plant-hang-guard.ts'
 import { steamGeneratorDomeState } from '../src/packs/process-plant/runtime/steam-generator-dome.ts'
 import { steamGeneratorOperatingLevel } from '../src/packs/process-plant/steam-generator-operating-level.ts'
+import { finiteSteamGeneratorMetalRates } from '../src/packs/process-plant/runtime/steam-generator-thermal.ts'
 
 guardPlantTests()
 const system = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:secondary-cooldown' }))
@@ -114,9 +115,36 @@ describe('secondary cooldown physical boundaries', () => {
       steamGeneratorBehaviorDefinitions.find(behavior => behavior.id === 'steam-generator-heat-transfer')!.update({ system, component: sg, context: updates.context })
       expect(updates.value('sgA.boilingRateKgPerS')).toBeLessThanOrEqual(liquid)
       if (liquid === 0) {
-        expect(updates.value('sgA.heatTransferMw')).toBe(0)
+        expect(updates.value('sgA.secondaryHeatTransferMw')).toBe(0)
         expect(updates.value('sgA.steamFlowKgPerS')).toBe(0)
       }
     }
+  })
+
+  test('finite metal stores/rejects actual energy without an absolute temperature clip', () => {
+    for (const [primaryRequestedMw, secondaryRequestedMw, evaporationCapacityMw] of [[1000, 10, 1000], [0, 1000, 1000], [1000, 1000, 0]]) {
+      const metalTemperatureC = 200, primaryTemperatureC = 300, secondaryTemperatureC = 100, capacityMjPerC = .5, dtSeconds = 10
+      const rates = finiteSteamGeneratorMetalRates({ metalTemperatureC, primaryTemperatureC, secondaryTemperatureC, capacityMjPerC,
+        primaryRequestedMw: primaryRequestedMw!, secondaryRequestedMw: secondaryRequestedMw!, evaporationCapacityMw: evaporationCapacityMw!, dtSeconds })
+      const after = metalTemperatureC + (rates.primaryMw - rates.secondaryMw) * dtSeconds / capacityMjPerC
+      expect(after).toBeGreaterThanOrEqual(secondaryTemperatureC)
+      expect(after).toBeLessThanOrEqual(primaryTemperatureC)
+      expect(capacityMjPerC * (after - metalTemperatureC)).toBeCloseTo((rates.primaryMw - rates.secondaryMw) * dtSeconds, 12)
+      if (evaporationCapacityMw === 0) expect(rates.secondaryMw).toBe(0)
+    }
+  })
+
+  test('primary removal, secondary boiling and tube storage remain distinct in a real component step', () => {
+    const sg = system.graph.components.find(component => String(component.id) === 'sgA')!
+    const updates = frame({ 'sgA.tubeMetalTemperatureC': 300 }, .1)
+    const before = updates.value('sgA.tubeMetalTemperatureC')
+    steamGeneratorBehaviorDefinitions.find(behavior => behavior.id === 'steam-generator-heat-transfer')!.update({ system, component: sg, context: updates.context })
+    const primary = updates.value('sgA.heatTransferMw'), secondary = updates.value('sgA.secondaryHeatTransferMw')
+    expect(Math.abs(primary - secondary)).toBeGreaterThan(1)
+    steamGeneratorBehaviorDefinitions.find(behavior => behavior.id === 'steam-generator-inventory-pressure-state')!.update({ system, component: sg, context: updates.context })
+    const capacity = (sg.parameters as Record<string, number>).tubeMetalThermalCapacityMjPerK!
+    expect(capacity * (updates.value('sgA.tubeMetalTemperatureC') - before) / .1).toBeCloseTo(primary - secondary, 8)
+    expect(updates.value('sgA.metalEnergyBalanceResidualMw')).toBeCloseTo(0, 8)
+    expect(updates.value('sgA.boilingEnergyResidualMw')).toBeCloseTo(0, 8)
   })
 })
