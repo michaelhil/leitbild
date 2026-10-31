@@ -1,6 +1,8 @@
 // Plan r4 X4.2 (lane NUC): the CVCS owner's zero-time judge, over one dump of tests/cvcs_t0.rs.
 // Usage: bun ld01-cvcs-t0.ts <dump.json> <out.json>
 //
+// RULE v3 (R4-CVCS-PI: 16 coordinates; the level integrals start at zero, their rate the integral action on
+// the state's level error, so R2 reports them and judges the other controller rates; otherwise v2).
 // RULE v2 (fixed before the second judged dump; this file's sha256 goes in the output). v1 (sha256 9e69c71f...,
 // dump t0-1) probed G10's exact-absence coordinates (each leg cell's vapor mass at exactly zero), which have
 // no difference derivative on either side, and failed R4 on them alone: a judge defect, recorded.
@@ -34,10 +36,12 @@ const r1 = {
   singles: L.multiplicity.every((m: number) => m === 1),
   rowScales: L.scales.every((s: number, i: number) => s === L.row_scales[i]),
 };
-const R1 = r1.count === 14 && r1.differential && r1.singles && r1.rowScales;
+const R1 = r1.count === 16 && r1.differential && r1.singles && r1.rowScales;
 
 const control = d.coordinates_and_rates.slice(6);
-const r2 = control.map((c: any[], k: number) => ({ label: c[0], value: c[1], solver_rate: c[2] / L.scales[6 + k] }));
+const all2 = control.map((c: any[], k: number) => ({ label: c[0], value: c[1], solver_rate: c[2] / L.scales[6 + k] }));
+const r2 = all2.filter((c: any) => !c.label.endsWith(".IL"));
+const levelIntegrals = all2.filter((c: any) => c.label.endsWith(".IL"));
 const r2max = Math.max(...r2.map((c: any) => Math.abs(c.solver_rate)));
 const R2 = r2max <= 1e-9;
 
@@ -67,7 +71,7 @@ const out = {
   kind: "plan r4 X4.2 CVCS zero-time judgement", judge_sha256: await sha(import.meta.path), dump: dumpPath, dump_sha256: await sha(dumpPath),
   state: d.state, packet: d.packet, t_s: d.t_s,
   R1: { pass: R1, ...r1 },
-  R2: { pass: R2, max_solver_rate: r2max, rates: r2 },
+  R2: { pass: R2, max_solver_rate: r2max, rates: r2, level_integrals_reported: levelIntegrals },
   R3: { pass: R3, ...r3, all_entries: d.assembly.all },
   R4: { pass: R4, columns: r4.length, failed: r4.filter((c: any) => !c.pass), worst: worst4,
     exact_absence: { columns: absent.map((c: any) => [c.label, c.column]), all_refused_both_sides: absentRefused } },
