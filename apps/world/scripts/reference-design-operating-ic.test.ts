@@ -17,12 +17,15 @@ const prhrActuation = '{"onAcceptedReactorTrip":false,"onCmtActuation":true,"cau
 const underspeed = '{"underspeedFractionOfNominal":0.9,"qualification_s":0.5,"speedLag_s":0.067,"spanFractionOfNominal":[0,1.5],"armingProxyFraction":0.1,"supply":{"A":"I1","B":"I2"},"resetFractionOfNominal":0.97,"resetDuration_s":5,"totalDelay_s":0.767}'
 const cmtBlock = '{"sPressure_Pa":12477415,"sQualification_s":0.5,"low2Level_m":0.0,"low2Qualification_s":0.5}'
 const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
+const bankChannels = '{"position":{"lag_s":0.1,"span":[0,1],"quantum":null,"supply":"I1"},"inserted":{"supply":"I1"},"sample_s":0.1,"transport_s":0.1}'
+const valveChannels = '{"lag_s":0.1,"span_percent":[0,100],"quantum_percent":1,"sample_s":0.1,"transport_s":0.1,"supply":"I1","compiled":["LD01.TG.STOP.POS"]}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
   'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
     + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock),
   'systems/instrumentation/operational-observations.md': fence('reference-pzr-pressure-channel', channel)
-    + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths),
+    + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths)
+    + fence('ld01-bank-channels', bankChannels) + fence('ld01-steam-valve-position-channels', valveChannels),
   'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock),
   'safety/reactor-trip-and-hold.md': fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}')
     + fence('ld01-turbine-state-report', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3,"recovery_s":1}'),
@@ -161,4 +164,20 @@ test('with the packet\'s CVCS (plan r4 X4.2) the two normal-inventory FTs are ob
   expect(ft[1]!.channel).toMatchObject({ lag_s: 0.25, min: -7.5, max: 7.5, quantum: null, sample_s: 0.1 })
   // Without the CVCS the section is unchanged.
   expect(compileOperatingIcFrom(pages(), packet).families.map(f => f.id)).not.toContain('LD01.INV.CHARGE.FT')
+})
+
+test('with the packet\'s rods and steam admission (plan r4 tag map) the bank position, STOP position and bank inserted report are observed on I1', () => {
+  const s = compileOperatingIcFrom(pages(), { ...packet, rods: { normal_travel_m: 4 },
+    secondary: { ...packet.secondary, steamAdmission: { stopTravel_s: 0.3 } } })
+  const ids = s.families.map(f => f.id)
+  expect(ids.slice(-2)).toEqual(['LD01.CORE.BANK.POS', 'LD01.TG.STOP.POS'])
+  expect(s.families.at(-2)!.quantity).toEqual({ bank_position: { normal_travel_m: 4 } })
+  expect(s.families.at(-1)!.quantity).toEqual({ stop_valve_position: { stop_travel_s: 0.3 } })
+  expect(s.families.at(-1)!.channel).toMatchObject({ lag_s: 0.1, min: 0, max: 100, quantum: 1, sample_s: 0.1, transport_s: 0.1 })
+  expect(s.reports.map(r => [r.id, r.source, r.supply])).toEqual([['LD01.TG.TRIP.REPORT', 'turbine_retained_trip', 'ACT.B'],
+    ['LD01.CORE.BANK.INSERTED', 'bank_inserted', 'I1']])
+  // Without them the section is unchanged.
+  const plain = compileOperatingIcFrom(pages(), packet)
+  expect(plain.families.map(f => f.id)).not.toContain('LD01.CORE.BANK.POS')
+  expect(plain.reports).toHaveLength(1)
 })

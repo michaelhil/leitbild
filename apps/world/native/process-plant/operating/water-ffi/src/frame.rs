@@ -235,6 +235,12 @@ pub trait Client<S> {
     fn command(&mut self, _t: f64, _command: Command) -> Result<Vec<Change<S>>, String> {
         Ok(Vec::new())
     }
+    /// HOOK (PHYS, plan r4 X4.2): the system right after the restart at `t`
+    /// (its discrete changes applied), before the next step is observed: a
+    /// client whose readings depend on an owner's modes takes them here.
+    fn restarted(&mut self, _t: f64, _system: &S) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// HOOK (S3GATES, gate observation; KERN to reconcile): which side of the
@@ -1194,6 +1200,9 @@ impl<S: JoinedSystem> Driver<S> {
             f(ida.system_mut())?;
         }
         let restarted = self.restart(ida, t, roots.as_deref(), &commands, y, yp, setup)?;
+        for client in clients.iter_mut() {
+            client.restarted(t, ida.system())?;
+        }
         if let Some(o) = observer {
             self.gate_point(ida, o, t, y, yp, Side::AfterRestart)?;
             self.gate_observed_to = self.gate_observed_to.max(t);

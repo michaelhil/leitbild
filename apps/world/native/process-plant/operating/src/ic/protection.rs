@@ -77,6 +77,9 @@ pub struct Protection {
     holding_lost_frame: Option<u64>,
     /// The frame the interlock requested the turbine trip at.
     turbine_trip_requested: Option<u64>,
+    /// Every cluster seated (the `BankInserted` report's contact chain), as
+    /// the client last read the rods owner.
+    bank_seated: bool,
     /// The last decided frame.
     decided: Option<u64>,
     /// Events in order: accepted causes, contact changes, holding loss.
@@ -251,6 +254,7 @@ impl Protection {
             turbine_on_trip,
             holding_lost_frame: None,
             turbine_trip_requested: None,
+            bank_seated: false,
             decided: None,
             log: Vec::new(),
         })
@@ -288,6 +292,10 @@ impl Protection {
         Ok(())
     }
     /// The declared `LD01.TG` TRIP at `t`: the turbine controls retain it.
+    /// The rods owner's all-seated state, for the `BankInserted` report.
+    pub fn set_bank_seated(&mut self, seated: bool) {
+        self.bank_seated = seated;
+    }
     pub fn turbine_trip(&mut self, t: f64) {
         self.turbine_trip_s.get_or_insert(t);
     }
@@ -364,6 +372,7 @@ impl Protection {
             "turbine_trip_s": crate::joined::block::snapshot_time(self.turbine_trip_s),
             "holding_lost_frame": self.holding_lost_frame,
             "turbine_trip_requested": self.turbine_trip_requested,
+            "bank_seated": self.bank_seated,
             "decided": self.decided,
         }))
     }
@@ -382,6 +391,7 @@ impl Protection {
                 "turbine_trip_s",
                 "holding_lost_frame",
                 "turbine_trip_requested",
+                "bank_seated",
                 "decided",
             ],
         )?;
@@ -421,6 +431,8 @@ impl Protection {
             restored_frame_option(&o["holding_lost_frame"], "holding loss frame")?;
         self.turbine_trip_requested =
             restored_frame_option(&o["turbine_trip_requested"], "interlock request frame")?;
+        self.bank_seated =
+            super::acquisition::restored_bool(&o["bank_seated"], "bank seated chain")?;
         self.decided = restored_frame_option(&o["decided"], "last decided frame")?;
         Ok(())
     }
@@ -447,6 +459,7 @@ impl Protection {
         for r in &mut self.reports {
             match r.spec.source {
                 ReportSource::TurbineRetainedTrip => r.channel.acquire(k, tripped),
+                ReportSource::BankInserted => r.channel.acquire(k, self.bank_seated),
             }
         }
         Ok(lost.or(self.decide(k + 1)?))
