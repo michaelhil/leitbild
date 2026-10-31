@@ -84,6 +84,12 @@ impl From<&packet::Segment> for Segment {
 #[derive(Clone, Copy, Debug)]
 pub struct Tube {
     law: WallLaw,
+    /// X4.5 (`ld01-sg-contact`): primary over outer area `ID/OD`, the outside
+    /// diameter of the secondary contact, and the wall plus fouling
+    /// resistance per primary area in series with the primary film.
+    inner_fraction: f64,
+    outside_diameter_m: f64,
+    series_m2k_w: f64,
     /// The tube wetting's two-zone contact coordinate (S3-D26).
     contact_map: thermal::ContactMap,
 }
@@ -114,6 +120,12 @@ impl Tube {
         exposure: &packet::Exposure,
     ) -> Result<Self, Failure> {
         let contact_map = exposure.contact_map().map_err(fatal)?;
+        c.check(exposure.fold.developed_length_m).map_err(fatal)?;
+        if thermal_diameter_m.to_bits() != c.tube_inside_diameter_m.to_bits() {
+            return Err(fatal(
+                "SG tube thermal diameter is not the bundle's inside diameter",
+            ));
+        }
         if ![
             thermal_diameter_m,
             c.exchange_area_m2,
@@ -129,6 +141,9 @@ impl Tube {
         }
         Ok(Self {
             contact_map,
+            inner_fraction: c.inner_fraction(),
+            outside_diameter_m: c.tube_outside_diameter_m,
+            series_m2k_w: c.primary_series_m2k_w(),
             law: WallLaw {
                 diameter_m: thermal_diameter_m,
                 film: Film::Tube,
@@ -156,7 +171,7 @@ impl Tube {
         wall_k: Scalar,
         segment: &Segment,
     ) -> Result<(Scalar, Scalar), Failure> {
-        let primary = thermal::liquid_wall_current(
+        let primary = thermal::tube_series_current(
             props,
             port.pressure,
             port.temperature,
@@ -165,6 +180,7 @@ impl Tube {
             self.law,
             port.saturation,
             port.bulk,
+            self.series_m2k_w,
         )
         .map_err(|e| recoverable(format!("SG tube primary film: {e}")))?;
         if primary.vapor_mass.value != 0. || primary.vapor_mass.direction != 0. {
@@ -181,7 +197,7 @@ impl Tube {
             segment.start_m,
             segment.end_m,
             segment.area_m2,
-            self.law.diameter_m,
+            self.outside_diameter_m,
             thermal::SteelContact {
                 emissivity: self.law.emissivity,
                 material: self.law.material,
@@ -190,7 +206,10 @@ impl Tube {
             self.contact_map,
         )
         .map_err(|e| recoverable(format!("SG tube secondary contact: {e}")))?;
-        Ok((-primary.heat * s(segment.area_m2), secondary))
+        Ok((
+            -primary.heat * s(segment.area_m2 * self.inner_fraction),
+            secondary,
+        ))
     }
 
     /// Solve the stationary local wall balance of one segment by safeguarded
@@ -233,7 +252,7 @@ impl Tube {
             let converged = f.abs() <= 1e-12 * qs.abs() || hi.next_down() <= lo;
             if converged {
                 let (qp, qs) = self.segment_heat(props, port, &view, s(tw), segment)?;
-                let primary = thermal::liquid_wall_current(
+                let primary = thermal::tube_series_current(
                     props,
                     port.pressure,
                     port.temperature,
@@ -242,6 +261,7 @@ impl Tube {
                     self.law,
                     port.saturation,
                     port.bulk,
+                    self.series_m2k_w,
                 )
                 .map_err(|e| recoverable(e.to_string()))?;
                 let secondary = thermal::liquid_wall(
@@ -252,6 +272,7 @@ impl Tube {
                     s(0.),
                     WallLaw {
                         film: Film::External,
+                        diameter_m: self.outside_diameter_m,
                         ..self.law
                     },
                 )

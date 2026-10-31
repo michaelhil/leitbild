@@ -586,9 +586,15 @@ async function compileOperatingSpinePass(wiki: string, if97: string, solids: Sol
   const packetHydraulics = { ...hydraulics, sections: [...hydraulics.sections, ...faceLosses],
     passiveLossScope: operatingPassiveLossScope(mechanics.lossScope, faceLosses) }
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
+  const sgFilmArea = (cell: number) => {
+    const areas = [...new Set(thermal.sg_segments.filter(g => g.primary === cell).map(g => g.primary_flow_area_m2))]
+    if (areas.length > 1) throw Error(`SG primary cell ${cell} needs one film flow area`)
+    return areas[0]
+  }
   const packet = { identity: 'LD01-HOT-SPINE-1', thermal, hot: { ...hot.nativeInput, fluid: nativeFluid },
     feedback_metadata: operatingSourceNativeMetadata(hot.compiledSource), feedback_reference: hot.compiledSource.reference.conditions,
-    edges: carved.edges, source_water, water_flow_area_m2: carved.regions.map(r => r.mainFlowArea_m2),
+    // X4.5: an SG primary cell's wall flux is over its tube film's flow area.
+    edges: carved.edges, source_water, water_flow_area_m2: carved.regions.map((r, i) => sgFilmArea(i) ?? r.mainFlowArea_m2),
     water_boron_amount_kg_eq: carved.regions.map(r => r.absorberTracer_kgEq), hydraulics: packetHydraulics, pzr: { ...pzr, cell }, mechanics,
     external_ports: {
       surge_stock: carved.surgeStock,

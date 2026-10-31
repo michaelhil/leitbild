@@ -79,9 +79,17 @@ struct Segment {
     secondary: usize,
     start: f64,
     end: f64,
+    /// Outer (secondary) area, m2.
     area: f64,
+    /// Tube inside diameter: the primary film's thermal diameter.
     diameter: f64,
     capacity: f64,
+    /// X4.5 R2.6, R2.9: the primary (inner) area `area ID/OD`, the tube
+    /// outside diameter of the secondary contact, and the wall plus fouling
+    /// resistance per primary area in series with the primary film.
+    primary_area: f64,
+    outside_diameter: f64,
+    series_m2k_w: f64,
 }
 
 /// The current water a wall contact sees, from the network's same call.
@@ -509,8 +517,19 @@ impl Solids {
             }
             plenum.push(p);
         }
+        // The tube bundle of `ld01-sg-contact` (X4.5): every segment's inside
+        // diameter is the bundle's, its primary face `ID/OD` of its area.
+        let c = &packet.secondary.contact;
+        c.check(packet.secondary.exposure.fold.developed_length_m)
+            .map_err(fatal)?;
         let mut segments = Vec::with_capacity(t.sg_segments.len());
         for g in &t.sg_segments {
+            if g.thermal_diameter_m.to_bits() != c.tube_inside_diameter_m.to_bits() {
+                return Err(fatal(format!(
+                    "SG segment {}: thermal diameter {} m is not the bundle's inside diameter {} m",
+                    g.id, g.thermal_diameter_m, c.tube_inside_diameter_m
+                )));
+            }
             let segment = Segment {
                 primary: g.primary,
                 secondary: g.secondary,
@@ -519,6 +538,9 @@ impl Solids {
                 area: g.area_m2,
                 diameter: g.thermal_diameter_m,
                 capacity: g.capacity_j_k,
+                primary_area: g.area_m2 * c.inner_fraction(),
+                outside_diameter: c.tube_outside_diameter_m,
+                series_m2k_w: c.primary_series_m2k_w(),
             };
             if segment.primary >= water_cells
                 || segment.secondary >= t.secondaries.len()
@@ -534,7 +556,6 @@ impl Solids {
         }
         // The tube steel and exchange area of `ld01-sg-contact`: every SG's
         // segments tile its exchange area.
-        let c = &packet.secondary.contact;
         if ![
             c.exchange_area_m2,
             c.steel_conductivity_w_mk,
@@ -1955,7 +1976,7 @@ impl Solids {
                 Some((k, q)) if *k == key => *q,
                 _ => {
                     let water = self.wall_at(g.primary)?;
-                    let q = thermal::liquid_wall_current(
+                    let q = thermal::tube_series_current(
                         properties,
                         water.pressure,
                         water.temperature,
@@ -1969,6 +1990,7 @@ impl Solids {
                         },
                         water.saturation,
                         water.bulk,
+                        g.series_m2k_w,
                     )
                     .map_err(trial)?;
                     if undirected_bits(&key[1..]) && undirected_water(&water) {
@@ -1982,7 +2004,7 @@ impl Solids {
                     "SG primary wall vapor departure needs its transaction",
                 ));
             }
-            let primary_to_metal = -q.heat * s(g.area);
+            let primary_to_metal = -q.heat * s(g.primary_area);
             let view = secondary[g.secondary];
             let out = thermal::secondary_wall(
                 properties,
@@ -1993,7 +2015,7 @@ impl Solids {
                 g.start,
                 g.end,
                 g.area,
-                g.diameter,
+                g.outside_diameter,
                 self.steel,
                 view.steam_present,
                 self.contact_map,

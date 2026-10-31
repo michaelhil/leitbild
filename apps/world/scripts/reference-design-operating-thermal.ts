@@ -10,8 +10,7 @@ import type { prepareOperatingEnergy } from './reference-design-operating-energy
 import type { parseTransferThermal } from './reference-design-fuel-transfer-thermal'
 import type { parseOperatingFuelGap } from './reference-design-fuel-cooling'
 
-const schema = z.object({identity:z.literal('LD01-HOT-THERMAL-1'),guideEmissivity:z.number().finite().positive().max(1),
-  sgThermalDiameter_m:z.number().finite().positive()}).strict()
+const schema = z.object({identity:z.literal('LD01-HOT-THERMAL-1'),guideEmissivity:z.number().finite().positive().max(1)}).strict()
 export type OperatingThermalCoefficients = z.infer<typeof schema>
 export function parseOperatingThermal(document:string) {
   const blocks=[...document.matchAll(/^```reference-operating-thermal\s*\n([\s\S]*?)^```\s*$/gm)]
@@ -137,7 +136,9 @@ export function compileOperatingThermal(f:Fuel,h:Handling,control:ControlAbsorbe
   const sg_segments=fluid.steamGenerators.flatMap((sg,secondary)=>sg.metal.map(metal=>({
     id:metal.id,primary:index(`SG.${sg.id}.PRIMARY`),secondary,developed_start_m:metal.developedStart_m,
     developed_end_m:metal.developedEnd_m,area_m2:metal.exchangeArea_m2,
-    thermal_diameter_m:coefficients.sgThermalDiameter_m,primary_flow_area_m2:regions[index(`SG.${sg.id}.PRIMARY`)]!.mainFlowArea_m2,
+    // X4.5: the tube bundle's inside diameter and film flow area
+    // (`ld01-sg-contact`), not the momentum channel's volume over length.
+    thermal_diameter_m:metal.thermalDiameter_m,primary_flow_area_m2:metal.primaryFlowArea_m2,
     temperature_k:metal.temperature_K,energy_j:metal.energy_J,capacity_j_k:metal.capacity_J_K})))
   if(fluid.steamGenerators.length!==2||new Set(fluid.steamGenerators.map(sg=>sg.id)).size!==2||
     fluid.steamGenerators.some(sg=>!['A','B'].includes(sg.id)||sg.metal.length!==4||sg.metal.some((m,i)=>
