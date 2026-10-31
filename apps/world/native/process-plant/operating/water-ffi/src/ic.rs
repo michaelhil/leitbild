@@ -518,11 +518,33 @@ impl ProtectionClient {
     }
     /// The current value of every observed quantity at `y` (receipts).
     pub fn values(&self, y: &[f64]) -> Result<Value, String> {
-        let mut out = serde_json::Map::new();
-        for (q, o) in &self.observed {
-            out.insert(format!("{q:?}"), json!(o.value(y)?));
+        values_of(&self.observed, y)
+    }
+    /// The observed quantities apart from the protection, read at any state.
+    pub fn readings(&self) -> Readings {
+        Readings {
+            observed: self.observed.clone(),
         }
-        Ok(Value::Object(out))
+    }
+}
+fn values_of(observed: &[(Quantity, Observation)], y: &[f64]) -> Result<Value, String> {
+    let mut out = serde_json::Map::new();
+    for (q, o) in observed {
+        out.insert(format!("{q:?}"), json!(o.value(y)?));
+    }
+    Ok(Value::Object(out))
+}
+
+/// The protection's observed quantities (plant values, before any channel
+/// response), for an observer that reads them at frame instants.
+#[derive(Clone, Debug)]
+pub struct Readings {
+    observed: Vec<(Quantity, Observation)>,
+}
+impl Readings {
+    /// The value of every observed quantity at `y`.
+    pub fn values(&self, y: &[f64]) -> Result<Value, String> {
+        values_of(&self.observed, y)
     }
 }
 impl<S> Client<S> for ProtectionClient {

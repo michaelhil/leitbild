@@ -526,6 +526,10 @@ struct Recorder {
     /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
     profile: Option<Vec<ProfileFrame>>,
+    /// HOOK (PHYS X1): the protection's observed quantities at each frame
+    /// of a gated run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
+    /// The observed quantities and their references ride along once.
+    operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
 }
 impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     fn name(&self) -> &str {
@@ -555,6 +559,9 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
         }
         dense.derivative(t, 0, &mut self.scratch)?;
         let y = &self.scratch;
+        if let Some((readings, _, rows)) = self.operator.as_mut() {
+            rows.push(json!({"t_s": t, "values": readings.values(y)?}));
+        }
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
         self.rows.push(json!({"t_s": t, "pzr_roof_pa": y[self.roof.0] * self.roof.1,
             "sg_pressure_pa": self.sg.iter().map(|(l, i, s)| json!([l, y[*i] * s])).collect::<Vec<_>>(),
@@ -1609,6 +1616,9 @@ fn drive(
         rows: Vec::new(),
         cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
         profile: leitbild_operating_plant::cost::active().then(Vec::new),
+        operator: (gate.is_some()
+            && std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
+        .then(|| (protection.readings(), protection.observed(), Vec::new())),
     };
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
@@ -2786,6 +2796,7 @@ fn drive(
             "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
+        "phys_operator_frames": recorder.operator.as_ref().map(|(_, observed, rows)| json!({"observed": observed, "frames": rows})),
         "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
         "perf_profile": recorder.profile.as_ref().map(|p| json!({
             "rule": "HOOK (PERF E-PROF): per frame [t, counter reads so far, per path [closed calls, exclusive instructions] so far]; paths in key order, pieces>* inclusive outside the tree",
