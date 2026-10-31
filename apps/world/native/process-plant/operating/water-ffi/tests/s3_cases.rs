@@ -507,6 +507,10 @@ fn c2s_level_line_is_judged_on_the_sections_recorded_vote() {
 
 // ------------------------------------------------------------ the case run
 
+/// PERF E-PROF: one frame of the cost profile: `t`, the counter reads so
+/// far and per path `[closed calls, exclusive instructions]` so far.
+type ProfileFrame = (f64, u64, Vec<(u64, u64)>);
+
 /// The PZR roof pressure, SG pressures and rod travel range at each frame's
 /// left limit, from the dense output (observation only).
 struct Recorder {
@@ -521,7 +525,7 @@ struct Recorder {
     cost: Option<Vec<(f64, u64)>>,
     /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
-    profile: Option<Vec<(f64, u64, Vec<(u64, u64)>)>>,
+    profile: Option<Vec<ProfileFrame>>,
 }
 impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     fn name(&self) -> &str {
