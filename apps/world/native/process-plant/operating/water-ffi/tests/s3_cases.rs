@@ -2588,6 +2588,7 @@ fn drive(
         "composition": composition,
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
+            "weights": ida.weight_rule_kind(),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
             "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
