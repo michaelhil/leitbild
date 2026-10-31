@@ -86,6 +86,13 @@ describe('explicitly sampled Plant response', () => {
     expect(evaluateProcessPlantResponse({ ...config(), recordedSeriesIds: new Set() })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('not selected') }] })
   })
 
+  test('a failed history read withholds response proof without misreporting current physical quality', () => {
+    const response = evaluateProcessPlantResponse({ ...config(), recordedHistory: { read: () => { throw new Error('Historian acquisition failed') } } })
+    expect(response).toMatchObject({ status: 'unknown', current: { status: 'satisfied' },
+      recordings: [{ status: 'unknown', reason: 'Historian acquisition failed', storedSampleCount: 0, quality: { status: 'good' }, current: { path, value } }],
+      evidence: [{ status: 'unknown', reason: 'Historian acquisition failed' }] })
+  })
+
   test('known current failure remains challenged while a healthy incomplete response stays unknown', () => {
     const incomplete = processPlantResponseQuerySchema.parse({ ...input, windowSeconds: 180 })
     const challenged = processPlantResponseQuerySchema.parse({ ...incomplete, condition: { type: 'comparison', signal: { tagId: 'SG-A-PRESS' }, operator: '<', value: 0, unit: 'MPa' } })

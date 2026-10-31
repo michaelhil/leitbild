@@ -108,10 +108,12 @@ export const evaluateProcessPlantResponse = (config: {
       let value: number | undefined
       let acquiredVariable: ProcessPlantEvidenceVariable | undefined
       let quality: ProcessPlantSignalQuality = { status: 'unavailable', reason: 'Signal acquisition is unavailable.' }
+      let acquiredQuality = false
       try {
         const variable = plant.runtime.readVariableSnapshot(binding.path)
         acquiredVariable = processPlantEvidenceVariable(variable)
         quality = processPlantSignalQuality(variable, { system: plant.plant, runtime: plant.runtime })
+        acquiredQuality = true
         reason = binding.writable || variable.writable ? 'Writable commands/demands cannot establish a physical response.'
           : typeof variable.value !== 'number' || !Number.isFinite(variable.value) ? 'A finite numeric response reading is required.'
             : quality.status !== 'good' ? quality.reason
@@ -135,7 +137,12 @@ export const evaluateProcessPlantResponse = (config: {
             else if (previous !== undefined && (at < Date.parse(previous.simulationTime!) || sample.elapsedMs < previous.elapsedMs!)) reason = 'Retained response time reverses; the window is not one advancing simulation trajectory.'
           }
         }
-      } catch (error) { reason = error instanceof Error ? error.message : String(error); quality = { status: 'unavailable', reason } }
+      } catch (error) {
+        reason = error instanceof Error ? error.message : String(error)
+        // A history failure withholds temporal proof; it must not rewrite an
+        // independently acquired physical indication as unavailable.
+        if (!acquiredQuality) quality = { status: 'unavailable', reason }
+      }
       let left = -1
       samples.forEach((sample, index) => {
         const at = Date.parse(sample.simulationTime ?? '')
