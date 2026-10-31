@@ -43,6 +43,10 @@ fn fail(e: String) -> Failure {
     Failure::Fatal(e)
 }
 impl System for Sys {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         N
     }

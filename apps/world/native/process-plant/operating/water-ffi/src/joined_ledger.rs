@@ -93,6 +93,9 @@ impl<P: Properties + WaterProperties> System for Ledgered<P> {
     fn klu_ordering(&self) -> KluOrdering {
         self.integrated.klu_ordering()
     }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.integrated.multiplicities()
+    }
     fn residual(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         self.integrated.residual(t, y, yp, out)
     }

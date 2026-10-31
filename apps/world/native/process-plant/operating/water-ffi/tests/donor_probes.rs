@@ -1932,6 +1932,10 @@ fn donor_quiet_cost_probe() {
 /// One scalar decay, y' = -y, for the setter's own checks.
 struct Decay;
 impl System for Decay {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         1
     }

@@ -2359,6 +2359,10 @@ fn s1_settled_energy_identity() {
 /// for the observation clock.
 struct Decay;
 impl System for Decay {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }
@@ -3117,6 +3121,10 @@ fn the_water_build_is_carried_verbatim_and_refused_unless_it_matches() {
 /// with its exact pencil: a stock-IDA fixture for H1's restart.
 struct Cubic;
 impl System for Cubic {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }

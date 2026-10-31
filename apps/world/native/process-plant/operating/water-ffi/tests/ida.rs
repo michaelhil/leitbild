@@ -6,6 +6,10 @@ struct Decay {
     fatal: bool,
 }
 impl System for Decay {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }
@@ -670,6 +674,10 @@ fn removing_the_step_bound_continues_the_active_history_unbounded() {
 /// rising time crossing t = 0.3 and an algebraic function that never crosses.
 struct Crossings(Decay);
 impl System for Crossings {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.0.dimension()
     }
@@ -863,6 +871,10 @@ fn reinitialization_after_an_imposed_discontinuity_retains_options_and_constrain
 /// Root-function failure modes: recoverable, non-finite, panic and fatal.
 struct BrokenRoots(u8);
 impl System for BrokenRoots {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }
@@ -931,6 +943,10 @@ struct Rotor {
     seized: bool,
 }
 impl System for Rotor {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         3
     }
@@ -1045,6 +1061,10 @@ fn an_explicit_first_step_is_admitted_before_a_segment_and_refused_after() {
 struct Ledgered(Decay);
 #[cfg(feature = "quadratures")]
 impl System for Ledgered {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.0.dimension()
     }
