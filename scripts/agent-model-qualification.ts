@@ -83,15 +83,20 @@ export const runQualification = async (options: QualificationOptions): Promise<a
     record.cancellationReason = reason
     await save()
     record.cancellation = await request(agentPath + '/cancel', {})
+    record.cancellationAcknowledgedAt = Date.now()
     const deadline = Date.now() + options.patienceMs
     for (;;) {
       const turns = await captureCurrent()
-      if (turns.length && turns.every(turn => turn.status !== 'running')) {
+      if (turns.length && turns.every(turn => turn.status !== 'running') && qualificationBilling(Object.values(record.capture.models)).runningCalls === 0) {
         record.cancellationSettledAt = Date.now()
         const identities = Object.keys(record.capture.models).sort()
+        const toolIdentities = Object.keys(record.capture.calls).sort()
         await Bun.sleep(2_000)
         await captureCurrent()
-        record.noLaterModelDispatch = JSON.stringify(identities) === JSON.stringify(Object.keys(record.capture.models).sort())
+        record.quietWindowNoNewDispatch = JSON.stringify(identities) === JSON.stringify(Object.keys(record.capture.models).sort())
+          && JSON.stringify(toolIdentities) === JSON.stringify(Object.keys(record.capture.calls).sort())
+        record.dispatchesAfterCancellationAck = [...Object.values(record.capture.models), ...Object.values(record.capture.calls)]
+          .filter((call: any) => call.startedAt > record.cancellationAcknowledgedAt).map((call: any) => ({ id: call.id, startedAt: call.startedAt }))
         await save()
         paidStarted = false
         return
@@ -149,6 +154,7 @@ export const runQualification = async (options: QualificationOptions): Promise<a
     record.human = members.find((member: any) => member.kind === 'human')
     if (!record.agent || !record.human) throw Error('Missing Assistant participants')
     agentPath = `${wp}/agents/agents/${record.agent.id}`
+    record.profileBefore = await request(agentPath)
     const routedModel = model.startsWith('openrouter:') ? model : `openrouter:${model}`
     await request(agentPath, { model: routedModel, reasoningEffort: options.effort }, 'PATCH')
     record.profile = await request(agentPath)
