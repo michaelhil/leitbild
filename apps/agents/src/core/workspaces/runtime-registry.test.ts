@@ -219,7 +219,9 @@ describe('WorkspaceRuntimeRegistry', () => {
       const reload = createWorkspaceRuntimeRegistry({ moduleState, deployment: createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(provider) }) })
       try {
         const reopened = await reload.getOrLoad(id)
-        expect(reopened.executionStore.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toEqual({ success: true, data: { completedAfterCancellation: true } })
+        expect(reopened.executionStore.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toEqual({ success: true, data: { completedAfterCancellation: true },
+          effects: [{ kind: 'unknown', outcome: 'returned' }], recall: { turnId: turn.id, toolCallId: 'call_0_0', part: 'result' },
+        })
         expect(reopened.executionStore.getTurn(room.profile.id, turn.id)?.status).toBe('interrupted')
       } finally { await reload.shutdown() }
     } finally { release(); await actual.shutdown() }
