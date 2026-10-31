@@ -11,7 +11,10 @@
 //!   current proxy): evaluated from the coordinates at the step's
 //!   Chebyshev–Lobatto nodes (as many as the step's order plus one, at
 //!   least two) and continued under that interpolant, the same degree as the
-//!   integrator's own polynomial. The lag is exact for the interpolant.
+//!   integrator's own polynomial. The lag is exact for the interpolant. The
+//!   nodes lie in the step's own coordinate `s = t - from`, their states
+//!   taken from the step polynomial's Taylor coefficients at its start, so
+//!   a step of a few ulps keeps distinct nodes.
 //!
 //! The loop flow is the cold-return face's phase-0 path, from the network's
 //! own law: `Q = I / Σ M_s w_s / V_s` over the face's momentum supports and
@@ -134,6 +137,29 @@ impl Observation {
     fn linear(&self) -> bool {
         matches!(self, Observation::Linear(_))
     }
+    /// Every solver coordinate `value` reads.
+    fn coordinates(&self) -> Vec<usize> {
+        match self {
+            Observation::Linear(terms) => terms.iter().map(|(i, _)| *i).collect(),
+            Observation::LoopFlow {
+                impulse,
+                from,
+                to,
+                supports,
+                ..
+            } => [impulse.0, from.0, to.0]
+                .into_iter()
+                .chain(supports.iter().map(|(i, _, _)| *i))
+                .collect(),
+            Observation::Proxy { regions, .. } => regions
+                .iter()
+                .flat_map(|(n, _, _, supports)| {
+                    std::iter::once(*n).chain(supports.iter().map(|(x, _, _)| *x))
+                })
+                .collect(),
+            Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
+        }
+    }
 }
 /// The direction an LT device's indication moves past the one computed
 /// from interfaces held at their span limits: the bottom (LT.LOW) interface
@@ -183,6 +209,32 @@ fn events(y: &[f64], regions: &[ProxyRegion]) -> f64 {
         .sum()
 }
 
+/// Chebyshev–Lobatto nodes of degree `p` on `[0, dt]`, the step's own
+/// coordinate: distinct for every `dt > 0` an accepted step can have.
+fn lobatto_offsets(dt: f64, p: usize) -> Vec<f64> {
+    (0..=p)
+        .map(|j| match j {
+            0 => 0.,
+            j if j == p => dt,
+            j => dt * (1. - (std::f64::consts::PI * j as f64 / p as f64).cos()) / 2.,
+        })
+        .collect()
+}
+
+/// The coordinates `read` of the state at `from + s` from the step
+/// polynomial's Taylor coefficients `taylor[j] = y^(j)(from)` (exact for a
+/// polynomial of their degree); the others are left as they are.
+fn state_at_offset(taylor: &[Vec<f64>], s: f64, read: &[usize], out: &mut [f64]) {
+    let m = taylor.len() - 1;
+    for &i in read {
+        let mut o = taylor[m][i];
+        for k in (0..m).rev() {
+            o = taylor[k][i] + o * (s / (k + 1) as f64);
+        }
+        out[i] = o;
+    }
+}
+
 /// Taylor derivatives at the first node of the polynomial through
 /// `(nodes, values)` (Newton form expanded about `nodes[0]`).
 fn derivatives_at_start(nodes: &[f64], values: &[f64], out: &mut Vec<f64>) {
@@ -221,6 +273,10 @@ pub struct ProtectionClient {
     references: Value,
     scratch: Vec<f64>,
     states: Vec<Vec<f64>>,
+    /// The step polynomial's Taylor coefficients at the step start.
+    taylor: Vec<Vec<f64>>,
+    /// The coordinates the nonlinear observations read (sorted, distinct).
+    nonlinear_read: Vec<usize>,
     derivatives: Vec<Vec<f64>>,
 }
 impl ProtectionClient {
@@ -422,6 +478,13 @@ impl ProtectionClient {
                 .value(y)
         })?;
         let n = y.len();
+        let mut nonlinear_read: Vec<usize> = observed
+            .iter()
+            .filter(|(_, o)| !o.linear())
+            .flat_map(|(_, o)| o.coordinates())
+            .collect();
+        nonlinear_read.sort_unstable();
+        nonlinear_read.dedup();
         Ok(Self {
             derivatives: vec![Vec::new(); observed.len()],
             protection,
@@ -429,6 +492,8 @@ impl ProtectionClient {
             references: Value::Object(references),
             scratch: vec![0.; n],
             states: Vec::new(),
+            taylor: Vec::new(),
+            nonlinear_read,
         })
     }
     /// HOOK (GATE, S3 case harness; KERN to reconcile): the dense-output
@@ -468,45 +533,37 @@ impl<S> Client<S> for ProtectionClient {
         // The step polynomial's order bounds both readings (at most 5, the
         // lag continuation's limit); a node set has at least two nodes.
         let order = dense.order().min(5);
-        if self.observed.iter().any(|(_, o)| o.linear()) {
-            for d in &mut self.derivatives {
+        // Its Taylor coefficients at the step start: the linear readings
+        // directly, the nonlinear ones' node states in the step's own
+        // coordinate (an absolute node rounds onto an end of a step of a
+        // few ulps, LT1's C3 refusal at 294.5 s).
+        self.taylor.resize(order + 1, Vec::new());
+        for (j, c) in self.taylor.iter_mut().enumerate() {
+            c.resize(self.scratch.len(), 0.);
+            dense.derivative(from, j, c)?;
+        }
+        for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
+            if o.linear() {
                 d.clear();
-            }
-            for j in 0..=order {
-                dense.derivative(from, j, &mut self.scratch)?;
-                for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
-                    if o.linear() {
-                        d.push(o.value(&self.scratch)?);
-                    }
+                for c in &self.taylor {
+                    d.push(o.value(c)?);
                 }
             }
         }
         if self.observed.iter().any(|(_, o)| !o.linear()) {
-            let p = order.max(1);
-            let nodes: Vec<f64> = (0..=p)
-                .map(|j| {
-                    let c = (std::f64::consts::PI * j as f64 / p as f64).cos();
-                    if j == 0 {
-                        from
-                    } else if j == p {
-                        to
-                    } else {
-                        from + (to - from) * (1. - c) / 2.
-                    }
-                })
-                .collect();
-            self.states.resize(nodes.len(), Vec::new());
-            for (state, t) in self.states.iter_mut().zip(&nodes) {
+            let offsets = lobatto_offsets(to - from, order.max(1));
+            self.states.resize(offsets.len(), Vec::new());
+            for (state, s) in self.states.iter_mut().zip(&offsets) {
                 state.resize(self.scratch.len(), 0.);
-                dense.derivative(*t, 0, state)?;
+                state_at_offset(&self.taylor, *s, &self.nonlinear_read, state);
             }
-            let mut values = vec![0.; nodes.len()];
+            let mut values = vec![0.; offsets.len()];
             for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
                 if !o.linear() {
                     for (v, state) in values.iter_mut().zip(&self.states) {
                         *v = o.value(state)?;
                     }
-                    derivatives_at_start(&nodes, &values, d);
+                    derivatives_at_start(&offsets, &values, d);
                 }
             }
         }
@@ -605,5 +662,94 @@ mod tests {
         // Two nodes: the chord.
         derivatives_at_start(&[0., 0.5], &[1., 2.], &mut d);
         assert_eq!(d, vec![1., 2.]);
+    }
+
+    /// C3's LT1 refusal (stock, 294.5 s): an accepted step of one ulp with a
+    /// second-order polynomial. Absolute Chebyshev–Lobatto nodes round onto
+    /// the step's ends; the step's own coordinate keeps them distinct, and
+    /// a nonlinear reading continues the lag with finite derivatives.
+    #[test]
+    fn a_one_ulp_step_keeps_distinct_nodes_and_a_finite_nonlinear_reading() {
+        use super::{lobatto_offsets, state_at_offset};
+        use leitbild_operating_plant::ic::acquisition::lag_continuation;
+        let from = 294.5_f64;
+        let to = f64::from_bits(from.to_bits() + 1);
+        let dt = to - from;
+        assert_eq!(dt, 2f64.powi(-44));
+        let absolute = from + dt * (1. - (std::f64::consts::PI / 2.).cos()) / 2.;
+        assert!(absolute == from || absolute == to, "the defect's premise");
+        let offsets = lobatto_offsets(dt, 2);
+        assert!(offsets.windows(2).all(|w| w[1] > w[0]), "{offsets:?}");
+        // y(from + s) = 3.1 + 0.4 s - 2 s^2; observed q = y^2.
+        let taylor = vec![vec![3.1], vec![0.4], vec![-4.]];
+        let mut state = [0.];
+        let values: Vec<f64> = offsets
+            .iter()
+            .map(|s| {
+                state_at_offset(&taylor, *s, &[0], &mut state);
+                state[0] * state[0]
+            })
+            .collect();
+        let mut d = Vec::new();
+        derivatives_at_start(&offsets, &values, &mut d);
+        assert!(d.iter().all(|v| v.is_finite()), "{d:?}");
+        let r = lag_continuation(5.287, 0.5, dt, &d).unwrap();
+        assert!((r - 5.287).abs() < 1e-12, "{r}");
+    }
+
+    /// A nonlinear reading needs only the coordinates it declares: with
+    /// every other coordinate NaN it reads the same value.
+    #[test]
+    fn nonlinear_readings_read_only_their_declared_coordinates() {
+        use super::Observation;
+        let observations = [
+            Observation::LoopFlow {
+                impulse: (1, 2.),
+                from: (3, 1.5, 4.),
+                to: (5, 1., 2.),
+                supports: vec![(7, 1., 0.5), (8, 2., 0.25)],
+                nominal: 10.,
+            },
+            Observation::Proxy {
+                regions: vec![
+                    (2, 1., 0.5, vec![(4, 2., 3.)]),
+                    (6, 1., 0.5, vec![(9, 1., 1.)]),
+                ],
+                factor: 1.5,
+            },
+        ];
+        let full: Vec<f64> = (0..10).map(|i| 1. + i as f64).collect();
+        for o in &observations {
+            let mut sparse = vec![f64::NAN; full.len()];
+            for i in o.coordinates() {
+                sparse[i] = full[i];
+            }
+            assert_eq!(o.value(&sparse).unwrap(), o.value(&full).unwrap());
+        }
+    }
+
+    #[test]
+    fn node_states_from_taylor_coefficients_recover_the_step_polynomial() {
+        use super::{lobatto_offsets, state_at_offset};
+        // y(1 + s) = 2 - 3 s + 0.25 s^2 + 0.5 s^3 on a 0.02 s step; q = y^2.
+        let y = |s: f64| 2. - 3. * s + 0.25 * s * s + 0.5 * s * s * s;
+        let taylor = vec![vec![2.], vec![-3.], vec![0.5], vec![3.]];
+        let offsets = lobatto_offsets(0.02, 3);
+        let mut state = [0.];
+        let mut values = Vec::new();
+        for s in &offsets {
+            state_at_offset(&taylor, *s, &[0], &mut state);
+            assert!((state[0] - y(*s)).abs() < 1e-14, "{s}");
+            values.push(state[0] * state[0]);
+        }
+        let mut d = Vec::new();
+        derivatives_at_start(&offsets, &values, &mut d);
+        // q(0) = 4, q'(0) = 2 y y' = -12, q''(0) = 2 (y'^2 + y y'') = 20.
+        // The cubic interpolates the sixth-degree q: its own error, not rounding.
+        assert!(
+            (d[0] - 4.).abs() < 1e-12 && (d[1] + 12.).abs() < 1e-5,
+            "{d:?}"
+        );
+        assert!((d[2] - 20.).abs() < 0.2, "{d:?}");
     }
 }
