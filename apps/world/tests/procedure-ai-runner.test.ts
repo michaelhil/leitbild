@@ -78,10 +78,10 @@ Check: plant stable
 - Stable [outcome: normal] → END
 `
 
-const setup = async (sourceCount = 1, scenarioId = 'test-plant') => {
+const setup = async (sourceCount = 1, scenarioId = 'test-plant', secondarySource = es01) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'world-procedure-ai-runner-'))
   directories.push(dataDir)
-  const knowledge = createKnowledge({ revision, documents: [{ path: 'procedures/E-0.md', content: e0 }, { path: 'procedures/ES-0.1.md', content: es01 }, { path: 'basis.md', content: '# Basis\n## Runner fixture\nRepresentative positive pressure diagnostic for framework tests, not an E-0 operating criterion.' }] })
+  const knowledge = createKnowledge({ revision, documents: [{ path: 'procedures/E-0.md', content: e0 }, { path: 'procedures/ES-0.1.md', content: secondarySource }, { path: 'basis.md', content: '# Basis\n## Runner fixture\nRepresentative positive pressure diagnostic for framework tests, not an E-0 operating criterion.' }] })
   const registry = createWorldWorkspaceRuntimeRegistry({
     dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(),
     runtimeAdapters: createTestPackRuntimeAdapters(),
@@ -114,6 +114,93 @@ const invoker = (registry: WorldWorkspaceRuntimeRegistry, workspaceId: Workspace
   }
 
 describe('the AI procedure runner through the World Module API', () => {
+  test('state-only transition acknowledgement leaves admission, canonical proof and command payload unchanged without post-commit Pack reads', async () => {
+    const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    expect(started.status, JSON.stringify(started.body)).toBe(200)
+    const runId = started.body.result.pinned.runId
+    const rejectedInput = { runId, stepId: 'verify-reactor-trip', branchIndex: 1, basis: 'An unestablished manual branch must remain refused.' }
+    const defaultRefusal = await invoke('world.procedure.run.transition', rejectedInput, ai)
+    const refused = await invoke('world.procedure.run.transition', { ...rejectedInput, nextDetail: 'state' }, ai)
+    expect(refused.status).toBe(409)
+    expect(refused.body.error).toEqual(defaultRefusal.body.error)
+    let committed = false, afterCommitReads = 0
+    const originalInvoke = run.invokeCapability.bind(run), originalObservations = run.procedureObservations.bind(run)
+    const observations = spyOn(run, 'procedureObservations').mockImplementation((actor, ownerId) => {
+      if (committed) afterCommitReads++
+      return originalObservations(actor, ownerId)
+    })
+    const commit = spyOn(run, 'invokeCapability').mockImplementationOnce(async (actor, request) => {
+      const result = await originalInvoke(actor, request); committed = true; return result
+    })
+    try {
+      const selected = await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+        basis: 'Current positive framework pressure.', nextDetail: 'state' }, ai)
+      expect(selected.status).toBe(200)
+      const result = selected.body.result
+      expect(procedureRunReadViewSchema.parse(result.next)).toMatchObject({ observationsAcquired: false,
+        run: { runId, currentStepId: 'verify-turbine-trip' }, step: { id: 'verify-turbine-trip' } })
+      expect(afterCommitReads).toBe(0)
+      const command = run.events().find(event => event.type === 'command.issued' && event.command.id === result.commandId)
+      expect(command?.type).toBe('command.issued')
+      if (command?.type === 'command.issued') expect(command.command.payload).not.toHaveProperty('nextDetail')
+      const proof = await invoke('world.procedure.decision.read', JSON.parse(result.view.state), ai)
+      expect(proof.body.result.event.id).toBe(result.decision.event.id)
+      expect(proof.body.result.event.criterion.status).toBe('supported')
+      expect(proof.body.result.event.criterion.readings).toEqual(expect.arrayContaining([expect.objectContaining({ tagId: 'PT-455', unit: 'MPa', quality: 'good', status: 'supported' })]))
+      const stored = run.snapshot().procedures!.runs.find(row => row.runId === runId)!.stepStates.find(row => row.stepId === 'verify-reactor-trip')!.decision!
+      expect(stored.criterion).toEqual(proof.body.result.event.criterion)
+      const listed = moduleCapabilityCollectionSchema.parse(await (await handleWorldModuleApi(new Request(`http://world.test/internal/workspaces/${workspaceId}/capabilities`), new URL(`http://world.test/internal/workspaces/${workspaceId}/capabilities`), registry))!.json())
+      const descriptor = listed.capabilities.find(row => row.id === 'world.procedure.run.transition')!
+      expect(descriptor.inputSchema).toHaveProperty('properties.nextDetail')
+      expect(JSON.stringify(descriptor.outputSchema)).toContain('observationsAcquired')
+    } finally { commit.mockRestore(); observations.mockRestore() }
+    const full = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Default next remains full.' }, ai)).body.result
+    expect(full.next.step.blocks.length).toBeGreaterThan(0)
+    expect(full.next).not.toHaveProperty('observationsAcquired')
+  })
+
+  test('state-only transition acknowledgement follows transfers and END with exact current identities', async () => {
+    const endSource = `${es01}\n\`\`\`procedure-decisions\n${JSON.stringify([{ branchIndex: 0, condition: frameworkCriterion }])}\n\`\`\`\n\n## Tags\n\n- id: PT-455\n  units: MPa\n`
+    const { registry, workspaceId, run, plantId } = await setup(1, 'test-plant', endSource), invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
+    let result = (await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)).body.result
+    const runId = result.pinned.runId
+    result = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Framework criterion.', nextDetail: 'state' }, ai)).body.result
+    result = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Framework transfer.', nextDetail: 'state' }, ai)).body.result
+    expect(result.next).toMatchObject({ observationsAcquired: false, run: { procedureId: 'ES-0.1', sourcePath: 'procedures/ES-0.1.md' }, step: { id: 'monitor' } })
+    const destinationId = result.next.run.runId
+    result = (await invoke('world.procedure.run.transition', { runId: destinationId, stepId: 'monitor', branchIndex: 0, basis: 'Framework END criterion.', nextDetail: 'state' }, ai)).body.result
+    expect(result.next).toMatchObject({ observationsAcquired: false, run: { runId: destinationId, status: 'completed' } })
+    expect((await invoke('world.procedure.decision.read', JSON.parse(result.view.state), ai)).body.result.event.targetKind).toBe('end')
+  })
+
+  test('state-only acknowledgement reports post-commit takeover or removal without rewriting accepted proof', async () => {
+    for (const remove of [false, true]) {
+      const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
+      const ai = access(workspaceId, { kind: 'ai', id: 'assistant' }), human = access(workspaceId, { kind: 'human' })
+      const runId = (await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)).body.result.pinned.runId
+      const original = run.invokeCapability.bind(run)
+      const afterCommit = spyOn(run, 'invokeCapability').mockImplementationOnce(async (actor, request) => {
+        const result = await original(actor, request)
+        if (remove) await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId } }, human)
+        else await invoke('world.procedure.run.drive', { runId, action: 'claim' }, human)
+        return result
+      })
+      try {
+        const result = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0,
+          basis: 'Current framework criterion before concurrent Human action.', nextDetail: 'state' }, ai)).body.result
+        expect(result.ok).toBe(true)
+        if (remove) {
+          expect(result.next).toBeUndefined()
+          expect(result.nextUnavailable).toContain('No procedure run')
+        } else expect(result.next.run.driver.kind).toBe('person')
+        expect((await invoke('world.procedure.decision.read', JSON.parse(result.view.state), ai)).body.result.event.selectedBy).toBe('actor:ai:assistant')
+      } finally { afterCommit.mockRestore() }
+    }
+  })
+
   test('current procedure state reads notes, authority and exact source/proof references without Pack acquisition', async () => {
     const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
     const ai = access(workspaceId, { kind: 'ai', id: 'assistant' }), human = access(workspaceId, { kind: 'human' })

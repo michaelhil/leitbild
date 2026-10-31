@@ -25,6 +25,7 @@ import { createModuleCapabilityRegistry } from '@leitbild/module-runtime'
 import { mapSymbolsInput, mapSymbolsOutput, searchMapSymbols } from '../map-symbols/catalog.ts'
 import { z } from 'zod'
 import { capabilityJsonSchema, isPublicCapability } from '../../simulation/capabilities.ts'
+import { procedureTransitionResultSchema } from '../../simulation/core-capabilities.ts'
 import { assembleRunContext } from '../../features/displays/context/run-context.ts'
 import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
@@ -86,6 +87,7 @@ import {
   procedureStepNotFoundCode,
   procedureStepReadViewSchema,
   procedureRunReadViewSchema,
+  procedureStepViewSchema,
   type ProcedureStepView,
   type ProcedureRunReadView,
   type ProcedureStepViewPorts,
@@ -203,6 +205,15 @@ const procedureStepReadInputSchema = z.object({
   includeGuidance: z.boolean().optional().describe('False omits repeated static instructions, branch definitions and tag descriptions. All current facts and the exact pinned step.definition reference remain; default true. Use only after reading that exact step/source guidance.'),
 }).strict()
 const procedureRunReadInputSchema = procedureStepReadInputSchema.pick({ runId: true })
+// Response preference belongs to this API, never the canonical transition command.
+const procedureTransitionInputSchema = procedureRunTransitionPayloadSchema.extend({
+  nextDetail: z.enum(['full', 'state']).optional().describe('Default full. State returns the same canonical control-state view as procedure.run.read, with observationsAcquired:false and no post-commit Pack observation. Read full guidance on a new step/source and acquire physical evidence separately.'),
+}).strict()
+const procedureTransitionAnswerSchema = z.discriminatedUnion('ok', [
+  procedureTransitionResultSchema.options[0].extend({ next: z.union([procedureStepViewSchema, procedureRunReadViewSchema]).optional() }),
+  procedureTransitionResultSchema.options[1],
+])
+const procedureTransitionApiDescription = 'Input {runId, stepId, branchIndex, basis, evidenceTagIds?, nextDetail?}. Atomically follows an exact authored local-step, transfer, retry, END or ABORT branch from the pinned procedure. AI selects only its current step on a Run it drives; World reacquires the complete authored criterion at commit and refuses unknown, inapplicable or contradicted evidence. Read step.branchAssessments before selecting. Optional citations name readable step tags; World retains full criterion proof independently. A person selecting off the current step of an AI-driven Run takes over. Transfers preserve source placekeeping and hand the driver to the destination; they are not completed recovery. An accepted result has a compact exact decision/event receipt and view for world.procedure.decision.read to retrieve immutable full proof. For AI, next normally carries the full next step, or the Run after END. nextDetail:"state" instead returns the same canonical control-state view as world.procedure.run.read: source, driver, current step, complete current note and proof/definition references, with observationsAcquired:false and no second Pack acquisition. State is not current physical evidence. Read full guidance when step/source changes and acquire physical facts separately. The response preference changes neither admission nor the canonical command, decision or proof. An unavailable post-commit view is reported as nextUnavailable; the accepted decision still stands.'
 const procedureEvidenceInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   sourceRevision: sourceRevisionSchema,
@@ -562,15 +573,16 @@ const runtimeCapabilityDescriptorsFor = (
       kind: capability.kind,
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: capability.title,
-      description: capability.description,
+      description: capability.id === procedureRunTransitionCommandKind
+        ? procedureTransitionApiDescription : capability.description,
       ...(capability.searchTerms === undefined ? {} : { searchTerms: capability.searchTerms }),
       risk: capability.risk,
       idempotent: capability.idempotent,
       ...(capability.kind === 'command' ? { acceptsIdempotencyKey: true as const } : {}),
       ...(capability.schedulable === undefined ? {} : { schedulable: capability.schedulable }),
       ...(capability.publishes === undefined ? {} : { publishes: [...capability.publishes] }),
-      inputSchema: capabilityJsonSchema(capability.input),
-      outputSchema: capabilityJsonSchema(capability.output),
+      inputSchema: capabilityJsonSchema(capability.id === procedureRunTransitionCommandKind ? procedureTransitionInputSchema : capability.input),
+      outputSchema: capabilityJsonSchema(capability.id === procedureRunTransitionCommandKind ? procedureTransitionAnswerSchema : capability.output),
     }] }).capabilities[0]!
     runtimeDescriptorCache.set(capability, descriptor)
     const existing = byId.get(descriptor.id)
@@ -768,6 +780,14 @@ const nextProcedureStep = async (registry: SimulationRunRegistry, runtime: ApiRu
     return { next: await procedureStepViewFor(registry, runtime, invocation, { runId: procedureRunWorkedAfter(runtime, invocation, runId) }, 'next') }
   } catch (error) {
     return { nextUnavailable: `${after}; reading the run's current step failed: ${error instanceof Error ? error.message : String(error)}. Read it with world.procedure.run.step.read.` }
+  }
+}
+
+const nextProcedureState = async (registry: SimulationRunRegistry, runtime: ApiRunRuntime, invocation: ApiInvocation, runId: string, after: string): Promise<{ readonly next: ProcedureRunReadView } | { readonly nextUnavailable: string }> => {
+  try {
+    return { next: await procedureRunReadViewFor(registry, runtime, invocation, { runId: procedureRunWorkedAfter(runtime, invocation, runId) }) }
+  } catch (error) {
+    return { nextUnavailable: `${after}; reading canonical procedure state failed: ${error instanceof Error ? error.message : String(error)}. Read it with world.procedure.run.read.` }
   }
 }
 
@@ -1907,11 +1927,16 @@ const invokeCapability = async (
       return apiError(409, 'capability_not_active', `Capability is not active in this Simulation Run: ${capabilityId}`)
     }
     const actor = buildSimulationRunActorForAccess(invocation.access)
+    const transitionRequest = capabilityId === procedureRunTransitionCommandKind ? procedureTransitionInputSchema.parse(invocation.input) : undefined
+    const transitionPayload = transitionRequest === undefined ? undefined : (() => {
+      const { nextDetail: _nextDetail, ...canonical } = transitionRequest
+      return canonical
+    })()
     let outcome
     try {
       outcome = await runtime.invokeCapability(actor, {
         capabilityId,
-        input: invocation.input,
+        input: transitionPayload === undefined ? invocation.input : transitionPayload,
         ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
         ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
       })
@@ -1925,8 +1950,11 @@ const invokeCapability = async (
       return apiError(409, outcome.result.code ?? 'simulation_command_rejected', outcome.result.reason, outcome.result.details)
     }
     if (outcome.kind === 'command' && capabilityId === procedureRunTransitionCommandKind && invocation.access.actor.kind === 'ai') {
-      const { runId } = procedureRunTransitionPayloadSchema.parse(invocation.input)
-      return json({ result: { ...outcome.result, ...(await nextProcedureStep(registry, runtime, invocation, runId, 'The transition was accepted')) } })
+      const { runId } = procedureRunTransitionPayloadSchema.parse(transitionPayload)
+      const next = transitionRequest?.nextDetail === 'state'
+        ? await nextProcedureState(registry, runtime, invocation, runId, 'The transition was accepted')
+        : await nextProcedureStep(registry, runtime, invocation, runId, 'The transition was accepted')
+      return json({ result: { ...outcome.result, ...next } })
     }
     if (outcome.kind === 'command' && invocation.access.actor.kind === 'ai') {
       if (capabilityId === procedureRunDriveCommandKind) {

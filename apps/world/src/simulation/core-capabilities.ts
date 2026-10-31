@@ -68,7 +68,7 @@ const procedureStepResultSchema = z.discriminatedUnion('ok', [
   commandResultSchema.options[1],
 ])
 
-const procedureTransitionResultSchema = z.discriminatedUnion('ok', [
+export const procedureTransitionResultSchema = z.discriminatedUnion('ok', [
   commandResultSchema.options[0].extend({ decision: procedureTransitionReceiptSchema, view: embeddedViewPublicationSchema,
     next: procedureStepViewSchema.optional(), nextUnavailable: z.string().optional() }),
   commandResultSchema.options[1],
