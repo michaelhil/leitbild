@@ -125,6 +125,7 @@ const continuationModel = (messages: ChatRequest['messages'], preferred: string)
 
 const assertCompleteOutput = (finishReason?: string): void => {
   if (finishReason === 'length') throw new Error('incomplete_output: model reached its output limit; this is not a complete answer and no tool calls from this incomplete response were executed')
+  if (finishReason === 'error' || finishReason === 'content_filter') throw new Error(`incomplete_output: provider ended the response with ${finishReason}; no tool calls from this unsuccessful response were executed`)
 }
 
 export const fitToolEvidence = (

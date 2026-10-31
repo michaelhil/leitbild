@@ -373,6 +373,45 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.response.action).toBe('error')
     expect(JSON.stringify(result.decision.response)).toContain('incomplete_output')
   })
+  for (const finishReason of ['error', 'content_filter']) {
+    for (const streaming of [false, true]) {
+      test(`${finishReason} ${streaming ? 'stream' : 'chat'} output cannot execute complete-looking tool arguments`, async () => {
+        const toolCalls = [{ id: 'native001', function: { name: 'mutate', arguments: { target: 'plant' } } }]
+        const { provider: chatProvider } = makeScriptedProvider([{ content: 'provisional', finishReason, toolCalls }])
+        const provider: LLMProvider = streaming ? {
+          ...chatProvider,
+          stream: () => asyncIterFromArray([{ delta: 'provisional', done: false }, { delta: '', done: true, finishReason, toolCalls }]),
+        } : chatProvider
+        let executed = 0
+        const result = await evaluate(baseContextResult(), baseConfig, provider, async () => { executed++; return [] }, 5, 'room-1', { toolDefinitions: [] })
+        expect(executed).toBe(0)
+        expect(result.decision.response.action).toBe('error')
+        expect(JSON.stringify(result.decision.response)).toContain(`provider ended the response with ${finishReason}`)
+        await expect(callLLM(chatProvider, { model: 'm', messages: [] })).rejects.toThrow('incomplete_output')
+        await expect(Array.fromAsync(streamLLM(provider, { model: 'm', messages: [] }))).rejects.toThrow('incomplete_output')
+      })
+    }
+  }
+  test('a later unsuccessful completion retains accepted tool history and does not replay or execute another mutation', async () => {
+    const toolCalls = [{ id: 'accepted001', function: { name: 'mutate', arguments: { target: 'plant' } } }]
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls },
+      { content: 'provisional', finishReason: 'error', toolCalls: [{ ...toolCalls[0]!, id: 'failed002' }] },
+    ])
+    let executed = 0
+    const result = await evaluate(baseContextResult(), baseConfig, provider, async () => {
+      executed++
+      return [{ success: true, data: { receipt: 'accepted-once', achieved: 2.000001 } }]
+    }, 5, 'room-1', { toolDefinitions: [] })
+    expect(executed).toBe(1)
+    expect(calls).toHaveLength(2)
+    expect(result.decision.response.action).toBe('error')
+    const retained = calls[1]!.messages.filter(message => message.role === 'tool')
+    expect(retained).toHaveLength(1)
+    expect(retained[0]!.toolCallId).toBe('accepted001')
+    expect(retained[0]!.content).toContain('accepted-once')
+    expect(retained[0]!.content).toContain('2.000001')
+  })
   test('plain content → respond decision', async () => {
     const provider = makeStaticProvider({ content: 'hello world' })
     const result = await evaluate(
