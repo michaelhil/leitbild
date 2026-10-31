@@ -69,6 +69,35 @@ test('refuse unseen, incomplete, forged protocol groups and foreign or finished 
   expect(() => prepare([a])).toThrow('no longer running')
 })
 
+test('one runtime selector retains its entire native group and workspace batch; operation keys are not execution selectors', () => {
+  const { store, archive } = fixture(), old = group(store, 'old'), peer = group(store, 'peer')
+  const call = { callId: 'call_1_0', providerCallId: 'provider_read', tool: 'workspace_call', arguments: { calls: [
+    { key: 'live', operationId: 'signals.read', input: { signal: 'output' } },
+    { key: 'definition', operationId: 'signals.resolve', input: { signal: 'output' } },
+  ] } }
+  const result = { success: true, data: { results: [
+    { key: 'live', success: true, data: { value: 1162.1683122501233, unit: 'MW' } },
+    { key: 'definition', success: true, data: { description: 'Exact authored definition' } },
+  ] }, effects: [{ kind: 'read' as const, outcome: 'returned' as const }],
+  recall: { turnId: 'turn', toolCallId: call.callId, part: 'result' as const } }
+  store.recordAttempt('turn', { id: call.callId, tool: call.tool, providerCallId: call.providerCallId, arguments: call.arguments, startedAt: 2 })
+  store.recordOutcome('turn', call.callId, result, 3)
+  const batch: WorkingContextGroup = { groupId: 'one_native_response', calls: [{ call, result }, ...peer.calls], messages: [
+    { role: 'assistant', content: '', toolCalls: [{ id: call.providerCallId, function: { name: call.tool, arguments: call.arguments } }, ...peer.messages[0]!.toolCalls!] },
+    { role: 'tool', name: call.tool, toolCallId: call.providerCallId, content: JSON.stringify(result) }, peer.messages[1]!,
+  ] }
+  const checkpoint = (toolCallId: string) => prepareWorkingContextCheckpoint({
+    input: { reason: 'Definition remains needed', retain: [{ toolCallId, reason: 'Exact definition source' }] }, groups: [old, batch], archive,
+    checkpointCallId: 'checkpoint', precedingModelId: 'model_2', ordinal: 1,
+  })
+  for (const wrong of ['live', 'definition', 'call_1_1']) expect(() => checkpoint(wrong)).toThrow('unseen or foreign-turn')
+  const prepared = checkpoint(result.recall.toolCallId), receipt = contextCheckpointReceiptForModel(prepared.manifest)
+  expect(receipt.retainedGroups.map(entry => entry.callIds)).toEqual([['call_1_0', 'peer'], ['checkpoint']])
+  expect(receipt.archivedGroups.map(entry => entry.callIds)).toEqual([['old']])
+  expect(projectWorkingContextMessages([...old.messages, ...batch.messages], [old, batch], prepared.retainedGroupIds)).toEqual([...batch.messages])
+  expect(store.getCall('room', 'turn', 'call_1_0')!.result).toEqual(result)
+})
+
 test('delayed archival preserves original invocation order and exact ledger recall without dropping absent prior identities', () => {
   const { store, archive } = fixture()
   // IDs deliberately sort opposite to invocation order; fixture timestamps are
