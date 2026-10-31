@@ -663,7 +663,8 @@ impl Unit {
             plant::Config {
                 field: Some(&field_parameters),
                 diagnostic: Diagnostic::None,
-                matrix_rebuild: MatrixRebuild::Packet,
+                // The r4 baseline: stock matrix management (MR-1 off).
+                matrix_rebuild: MatrixRebuild::Stock,
                 clock: clock::thread_cpu_s,
             },
         )?;
@@ -671,6 +672,7 @@ impl Unit {
             "t0": bits(plant.t0), "dimension": plant.y.len(), "operator": plant.n,
             "rtol": bits(plant.rtol), "atol_sha256": sha256(vector_bits(&plant.atol).as_bytes()),
             "derived_rows": plant.derived.rows.len(), "frame_s": bits(plant.frame.period_s()),
+            "matrix_rebuild": "stock (r4 baseline: MR-1 off)",
         });
         let mut identity = files;
         identity["composition"] = composition;
