@@ -111,6 +111,7 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('Missing/manual/unestablished criteria remain unknown, not normal')
     expect(runner.body).toContain('An authored unknown outcome also needs its own supported criterion')
     expect(runner.body).toContain('onComplete: "pause"')
+    expect(runner.body).toContain("Follow the step's pause/review instructions; otherwise, playing: wait")
     expect(runner.body).toContain('shared Run advances')
     expect(runner.body).toContain('Never start unlimited execution')
     expect(runner.body).toContain('world.procedure.run.request-input')
