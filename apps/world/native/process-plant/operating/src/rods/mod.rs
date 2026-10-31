@@ -232,11 +232,17 @@ struct Cluster {
     id: String,
     fuel_assembly: String,
     group: usize,
+    /// Its sector shares, bitwise: the static carve's, and the key of the
+    /// packet layout's bore groups ([`RodBlock::reduce_packet_state`]).
+    shares: [u64; 4],
 }
 #[derive(Clone, Debug)]
 struct Group {
     members: Vec<usize>,
     single: bool,
+    /// EVT-RODS-BANK: the packet layout's sector-share bore groups whose
+    /// water this class's region holds, its water coordinates' multiplicity.
+    regions: usize,
 }
 /// One network plenum the bodies and spider move through above the bores:
 /// index and axial span.
@@ -606,10 +612,17 @@ impl RodBlock {
         if singles.iter().any(|c| *c >= n) {
             return Err(fatal("rods: a single cluster outside the block"));
         }
-        // Bore groups: equal sector shares (bitwise), first appearance first;
-        // a declared single in its own group.
+        // EVT-RODS-BANK (plan r4): one motion class, with one bores' water
+        // region, for every cluster not declared single. Nothing in the rods'
+        // laws distinguishes the sector-share bore groups: the shares enter
+        // only the static carve, and every group's water starts as LOWER's
+        // at the same reference and per-member volume. So all of them fall
+        // identically by construction. Each declared single (a stuck
+        // cluster) is its own class. `regions` counts the packet layout's
+        // bore groups a region merges.
         let mut groups: Vec<Group> = Vec::new();
-        let mut shares_of: Vec<Option<[u64; 4]>> = Vec::new();
+        let mut keys: Vec<Vec<[u64; 4]>> = Vec::new();
+        let mut bank: Option<usize> = None;
         let mut clusters = Vec::with_capacity(n);
         for (c, cs) in section.clusters.iter().enumerate() {
             if cs.sector_shares.iter().any(|w| !(0. ..=1.).contains(w))
@@ -621,21 +634,24 @@ impl RodBlock {
                 )));
             }
             let key = cs.sector_shares.map(f64::to_bits);
-            let single = singles.contains(&c);
-            let group = match (!single)
-                .then(|| shares_of.iter().position(|k| *k == Some(key)))
-                .flatten()
-            {
-                Some(k) => {
+            let group = match (singles.contains(&c), bank) {
+                (false, Some(k)) => {
                     groups[k].members.push(c);
+                    if !keys[k].contains(&key) {
+                        keys[k].push(key);
+                    }
                     k
                 }
-                None => {
+                (single, _) => {
                     groups.push(Group {
                         members: vec![c],
                         single,
+                        regions: 1,
                     });
-                    shares_of.push((!single).then_some(key));
+                    keys.push(vec![key]);
+                    if !single {
+                        bank = Some(groups.len() - 1);
+                    }
                     groups.len() - 1
                 }
             };
@@ -643,7 +659,11 @@ impl RodBlock {
                 id: cs.id.clone(),
                 fuel_assembly: cs.fuel_assembly.clone(),
                 group,
+                shares: key,
             });
+        }
+        for (grp, k) in groups.iter_mut().zip(&keys) {
+            grp.regions = k.len();
         }
         let cl = &section.cells;
         let plenum = |span: &Span| -> Result<Plenum, Failure> {
@@ -744,28 +764,32 @@ impl RodBlock {
             let energy = mass * bore_water.internal_energy_j_kg;
             let boron = mass * lower_water.boron_concentration;
             let label = format!("bore{k}[{}]", clusters[grp.members[0]].id);
-            layout.push(format!("M_{label}"), Class::PhaseMass, true, mass, mass);
-            layout.push(
+            let r = grp.regions;
+            layout.push_replicated(format!("M_{label}"), Class::PhaseMass, true, mass, mass, r);
+            layout.push_replicated(
                 format!("U_{label}"),
                 Class::PhaseEnergy,
                 true,
                 energy.abs(),
                 energy.abs(),
+                r,
             );
             let boron_scale = if boron == 0. { mass * 0.001 } else { boron };
-            layout.push(
+            layout.push_replicated(
                 format!("B_{label}"),
                 Class::Tracer,
                 true,
                 boron_scale,
                 boron_scale,
+                r,
             );
-            layout.push(
+            layout.push_replicated(
                 format!("p_{label}"),
                 Class::CellPressure,
                 false,
                 bore_pressure,
                 volume,
+                r,
             );
             prepared.extend([mass, energy, boron, bore_pressure]);
         }
@@ -1010,16 +1034,36 @@ impl RodBlock {
     /// over the members is returned with the reduced state.
     pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
         let n = self.clusters.len();
-        let groups = GROUP_COORDINATES * self.groups.len();
-        if full.len() != CLUSTER_COORDINATES * n + groups {
+        // The packet layout's bore groups: equal sector shares, a declared
+        // single its own, first appearance first.
+        let mut keys: Vec<Option<[u64; 4]>> = Vec::new();
+        let old: Vec<usize> = (0..n)
+            .map(|c| {
+                let key = (!self.groups[self.clusters[c].group].single)
+                    .then_some(self.clusters[c].shares);
+                match keys.iter().position(|k| key.is_some() && *k == key) {
+                    Some(k) => k,
+                    None => {
+                        keys.push(key);
+                        keys.len() - 1
+                    }
+                }
+            })
+            .collect();
+        let expected = CLUSTER_COORDINATES * n + GROUP_COORDINATES * keys.len();
+        if full.len() != expected {
             return Err(format!(
-                "a packet-layout rod state has {} coordinates, not {}",
-                full.len(),
-                CLUSTER_COORDINATES * n + groups
+                "a packet-layout rod state has {} coordinates, not {expected}",
+                full.len()
             ));
         }
         let mut out = Vec::with_capacity(self.layout.len());
         let mut spread = 0f64;
+        let mut note = |w: f64, v: f64| {
+            if w != v {
+                spread = spread.max((w - v).abs() / v.abs().max(w.abs()));
+            }
+        };
         for grp in &self.groups {
             let first = CLUSTER_COORDINATES * grp.members[0];
             for k in 0..CLUSTER_COORDINATES {
@@ -1033,14 +1077,42 @@ impl RodBlock {
                                 self.clusters[c].id, self.clusters[grp.members[0]].id
                             ));
                         }
-                    } else if w != v {
-                        spread = spread.max((w - v).abs() / v.abs().max(w.abs()));
+                    } else {
+                        note(w, v);
                     }
                 }
                 out.push(v);
             }
         }
-        out.extend_from_slice(&full[CLUSTER_COORDINATES * n..]);
+        // EVT-RODS-BANK: a class's water region holds its packet groups'
+        // water. The stocks M, U, B are summed (each group's solver scale is
+        // its members' share of the region's, so the region's solver value is
+        // the member-weighted sum, exactly conserving); the algebraic
+        // pressure takes the first group's, which the exact start re-solves,
+        // and the groups' spread is recorded.
+        let water = CLUSTER_COORDINATES * n;
+        for grp in &self.groups {
+            let mut groups: Vec<(usize, f64)> = Vec::new();
+            for &c in &grp.members {
+                match groups.iter_mut().find(|(o, _)| *o == old[c]) {
+                    Some((_, m)) => *m += 1.,
+                    None => groups.push((old[c], 1.)),
+                }
+            }
+            let total: f64 = groups.iter().map(|(_, m)| m).sum();
+            for k in 0..GROUP_COORDINATES {
+                let at = |o: usize| full[water + GROUP_COORDINATES * o + k];
+                let v = at(groups[0].0);
+                for (o, _) in &groups {
+                    note(at(*o), v);
+                }
+                out.push(if k == BORE_PRESSURE {
+                    v
+                } else {
+                    groups.iter().map(|(o, m)| at(*o) * m).sum::<f64>() / total
+                });
+            }
+        }
         Ok((out, spread))
     }
     /// Index of bore group `g`'s coordinate `offset` in the block's layout.

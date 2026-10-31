@@ -456,19 +456,21 @@ fn held(b: &mut RodBlock, water: &[Water1], travel: f64, current: f64) -> Vec<f6
 }
 
 #[test]
-fn bore_groups_are_the_equal_sector_shares_and_the_declared_singles() {
+fn one_motion_class_holds_every_cluster_but_the_declared_singles() {
     let b = grouped_block(SpiderDrag::Omitted);
     let groups = b.bore_groups();
-    // The fixture's shares: c % 13 == 0 is split, the rest by c % 4.
-    assert_eq!(groups.len(), 8);
-    assert_eq!(groups.iter().map(Vec::len).sum::<usize>(), N);
-    for members in &groups {
-        assert!(members.iter().all(|c| shares(*c) == shares(members[0])));
-    }
-    // E-NUC: one motion class per bore group.
-    assert_eq!(layout(&b).len(), CLUSTER_COORDINATES * 8 + 4 * 8);
+    // EVT-RODS-BANK: one class of all 52, its water region merging the
+    // fixture's 8 sector-share bore groups (c % 13 == 0 split, the rest by
+    // c % 4): its water coordinates stand for 8 regions, its motion for 52.
+    assert_eq!(groups, vec![(0..N).collect::<Vec<_>>()]);
+    assert_eq!(layout(&b).len(), CLUSTER_COORDINATES + 4);
+    assert_eq!(
+        layout(&b).multiplicity,
+        [vec![N; CLUSTER_COORDINATES], vec![8; 4]].concat()
+    );
     let single = block_with(SpiderDrag::Omitted, &[5, 7]);
-    assert_eq!(single.bore_groups().len(), 10);
+    assert_eq!(single.bore_groups().len(), 3);
+    assert_eq!(single.bore_groups()[single.group_of(0)].len(), N - 2);
     assert_eq!(single.bore_groups()[single.group_of(5)], vec![5]);
     assert_eq!(single.bore_groups()[single.group_of(7)], vec![7]);
     // The prepared bore water is LOWER's at the bores' mid-height (+0.075 m)
@@ -1436,4 +1438,39 @@ fn a_seated_lower_balance_keeps_a_laminar_slope_at_rest() {
             assert!(((p.lower_annulus + p.upper_annulus).value - (2.4 - tip)).abs() < 1e-12);
         }
     }
+}
+
+#[test]
+fn a_packet_layout_state_reduces_to_the_bank_exactly_or_is_refused() {
+    // EVT-RODS-BANK: 52 clusters x 4, then the 8 sector-share groups x 4.
+    let b = grouped_block(SpiderDrag::Omitted);
+    let mut keys: Vec<[f64; 4]> = Vec::new();
+    let old: Vec<usize> = (0..N)
+        .map(|c| match keys.iter().position(|k| *k == shares(c)) {
+            Some(k) => k,
+            None => {
+                keys.push(shares(c));
+                keys.len() - 1
+            }
+        })
+        .collect();
+    assert_eq!(keys.len(), 8);
+    let mut full: Vec<f64> = (0..N).flat_map(|_| [0.7, 0., 0.31, 0.29]).collect();
+    full[CLUSTER_COORDINATES * 3 + LOWER_CURRENT] = 0.31 * (1. + 4e-16);
+    for g in 0..8 {
+        full.extend([1. + 1e-16 * g as f64, 0.9, 0.8, 0.99]);
+    }
+    let (y, spread) = b.reduce_packet_state(&full).unwrap();
+    assert_eq!(y.len(), CLUSTER_COORDINATES + 4);
+    assert_eq!(&y[..4], &[0.7, 0., 0.31, 0.29]);
+    assert!(spread > 0. && spread < 1e-15);
+    // The region's stock is its groups' member-weighted sum.
+    let members = |g: usize| old.iter().filter(|o| **o == g).count() as f64;
+    let m: f64 = (0..8).map(|g| (1. + 1e-16 * g as f64) * members(g)).sum::<f64>() / N as f64;
+    assert_eq!(y[CLUSTER_COORDINATES + BORE_MASS], m);
+    assert_eq!(y[CLUSTER_COORDINATES + BORE_PRESSURE], 0.99);
+    // A member whose travel differs is not a replica: refused.
+    full[CLUSTER_COORDINATES * 7 + TRAVEL] = 0.7000000000000001;
+    assert!(b.reduce_packet_state(&full).is_err());
+    assert!(b.reduce_packet_state(&full[..10]).is_err());
 }
