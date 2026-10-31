@@ -76,6 +76,7 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
 
   const search: Tool = {
     name: 'product_search',
+    contextEffect: 'read',
     description: 'Search the unified Leitbild wiki, executable skill guidance and deployed source. Knowledge explains models and assumptions; source establishes implemented behavior. Both are revision identified.',
     usage: 'Use before explaining Leitbild internals; then read the most relevant exact paths.',
     returns: 'Revision-tagged matches with path, line, and a bounded source snippet. Partial coverage explicitly identifies unavailable corpora; retry after they recover.',
@@ -166,6 +167,7 @@ export const createProductKnowledgeTools = (options: { readonly repoRoot?: strin
 
   const read: Tool = {
     name: 'product_read',
+    contextEffect: 'read',
     description: 'Read selected lines or a wiki section from exact discovered paths. Supply requests to retrieve several independent pieces together; each result reports its own revision and coverage.',
     usage: 'Use exact search-result paths. Runtime data, deployment configuration, secrets, generated output, and arbitrary filesystem paths are inaccessible.',
     returns: 'Revision-tagged numbered lines and explicit range metadata.',

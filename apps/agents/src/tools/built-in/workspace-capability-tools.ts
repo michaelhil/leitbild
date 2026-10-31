@@ -23,7 +23,7 @@ import {
   type WorkspaceResourceReference,
   type WorkspaceRoomScope,
 } from '@leitbild/contracts'
-import type { Tool, ToolContext, ToolResult } from '../../core/types/tool.ts'
+import type { Tool, ToolContext, ToolResult, ToolExecutionEffect } from '../../core/types/tool.ts'
 import { isPeopleCapabilityId } from '../../core/people/people-capability-ids.ts'
 import { cardLines, entryCard, type TurnCards } from '../../agents/answer-cards.ts'
 
@@ -549,6 +549,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const explore: Tool = {
     name: 'workspace_explore',
+    contextEffect: 'read',
     description: 'Discover scoped Resources and Definitions, or search their available read/change operations. Request input schemas directly with a focused search; reuse known targets and operations without mandatory rediscovery.',
     usage: 'Choose scope for exact targets or operations for callable behavior. Focused operation searches can include input schemas in the same call; schemas are omitted unless requested. Focus indicates attention and never expands Room Scope.',
     returns: 'The current Room Scope, focused subjects, exact targets, compact metadata, and/or matching operations. Returned targets can be passed unchanged to workspace_call.',
@@ -709,7 +710,15 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         if (prepared.length > 1 && prepared.some(entry => entry.operation?.risk !== 'read')) {
           return failure('batch_requires_read_operations', 'Only read operations may be batched')
         }
-        const results = await Promise.all(prepared.map(async entry => {
+        // The validated owning Module catalog supplies risk; neither the model
+        // nor an operation-name heuristic classifies a possible side effect.
+        const effect = (entry: typeof prepared[number], outcome: ToolExecutionEffect['outcome']): ToolExecutionEffect => ({
+          kind: entry.operation === undefined ? 'unknown' : entry.operation.risk === 'read' ? 'read' : 'change',
+          outcome, operationId: entry.operationId,
+          ...(entry.target === undefined ? {} : { target: entry.target }),
+        })
+        const effects = prepared.map(entry => effect(entry, 'not-dispatched'))
+        const results = await Promise.all(prepared.map(async (entry, index) => {
           const issue = applicabilityFailure(entry.operation, entry.target, catalogs.resources.resources, catalogs.definitions.definitions)
             ?? targetInScope(entry.target, resolved)
           if (issue) return { key: entry.key, operationId: entry.operationId, success: false, error: issue.error, details: issue.data }
@@ -733,6 +742,9 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             }
           }
           try {
+            // After dispatch begins, an HTTP, transport or response-contract
+            // failure cannot establish that a requested change did not happen.
+            effects[index] = effect(entry, 'unknown')
             const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(entry.operationId)}/invoke`, {
               method: 'POST',
               signal: requestSignal(context.signal),
@@ -753,6 +765,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             }
             const body = await response.json() as { result?: unknown }
             if (!Object.hasOwn(body, 'result')) return { key: entry.key, operationId: entry.operationId, success: false, error: 'workspace_host_contract_invalid: Workspace Host response omitted result' }
+            effects[index] = effect(entry, 'returned')
             // A Module may publish a view of its result. The envelope is
             // completed with the exact Resource this call targeted and kept as
             // execution evidence; the model presents it by reference only.
@@ -774,13 +787,14 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
               } : {}),
             }
           } catch (error) {
+            effects[index] = effect(entry, 'unknown')
             return { key: entry.key, operationId: entry.operationId, success: false, error: `workspace_outcome_unknown: ${error instanceof Error ? error.message : String(error)}` }
           }
         }))
         // The line of each call that succeeded, in request order; a refused
         // or unknown outcome posts nothing. It needs no execution evidence.
         const progress = prepared.flatMap((entry, index) => entry.say !== undefined && results[index]!.success ? [{ content: entry.say, operationKey: entry.key }] : [])
-        return { success: true, data: { results }, ...(progress.length === 0 ? {} : { progress }) }
+        return { success: true, data: { results }, effects, ...(progress.length === 0 ? {} : { progress }) }
       } catch (error) {
         if (error && typeof error === 'object' && 'success' in error) return error as ToolResult
         return failure('invalid_tool_input', error instanceof Error ? error.message : String(error))

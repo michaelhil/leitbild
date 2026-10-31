@@ -76,6 +76,49 @@ const comparisonContext = {
 }
 
 describe('Workspace progressive-discovery tools', () => {
+  test('trusted invocation effects use published risk and exact resolved targets, without claiming attainment', async () => {
+    const [, call] = makeTools({ kind: 'resource', resource: run })
+    const read = await call!.execute({ calls: [{ key: 'r', operationId: readId, input: {} }] }, context)
+    const write = await call!.execute({ calls: [{ key: 'w', operationId: writeId, input: { demand: 42 } }] }, context)
+    expect(read.effects).toEqual([{ kind: 'read', outcome: 'returned', operationId: readId, target: runTarget }])
+    expect(write.effects).toEqual([{ kind: 'change', outcome: 'returned', operationId: writeId, target: runTarget }])
+    expect(workspaceCallResultForModel(write, createTurnCards()).effects).toEqual(write.effects)
+  })
+
+  test('a successful batch envelope preserves an individually refused invocation as not dispatched', async () => {
+    const requests: Request[] = [], [, call] = makeTools({ kind: 'resource', resource: run }, requests)
+    const result = await call!.execute({ calls: [
+      { key: 'inside', operationId: readId, target: runTarget, input: {} },
+      { key: 'outside', operationId: readId, target: { kind: 'resource', ref: otherRun }, input: {} },
+    ] }, context)
+    expect(result.success).toBe(true)
+    expect(result.effects).toEqual([
+      { kind: 'read', outcome: 'returned', operationId: readId, target: runTarget },
+      { kind: 'read', outcome: 'not-dispatched', operationId: readId, target: { kind: 'resource', ref: otherRun } },
+    ])
+    expect(requests.filter(request => request.url.endsWith('/invoke'))).toHaveLength(1)
+  })
+
+  for (const mode of ['transport', 'refusal', 'server-error', 'missing-result'] as const) {
+    test(`a dispatched change with ${mode} retains uncertainty rather than claiming no side effect`, async () => {
+      let invocations = 0
+      const base = catalogFetch([])
+      const fetchImpl = (async (input: Request | string | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+        if (!request.url.endsWith('/invoke')) return base(request)
+        invocations++
+        if (mode === 'transport') throw new Error('Connection lost after dispatch')
+        if (mode === 'missing-result') return Response.json({ received: true })
+        return Response.json({ error: { code: 'operation_refused', message: 'No successful result' } }, { status: mode === 'refusal' ? 409 : 502 })
+      }) as typeof fetch
+      const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl })
+      const result = await call!.execute({ calls: [{ key: 'w', operationId: writeId, target: runTarget, input: {}, say: 'Changed.' }] }, context)
+      expect(invocations).toBe(1)
+      expect(result).toMatchObject({ success: true, data: { results: [{ success: false }] }, effects: [{ kind: 'change', outcome: 'unknown', operationId: writeId, target: runTarget }] })
+      expect(result).not.toHaveProperty('progress')
+    })
+  }
+
   test('comparison discovery and invocation stay inside the captured read-only target set', async () => {
     const requests: Request[] = []
     const [explore, call] = makeTools({ kind: 'workspace' }, requests)

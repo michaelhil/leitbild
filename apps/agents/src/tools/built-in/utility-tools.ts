@@ -6,6 +6,7 @@ import { resolveRoom } from './resolve.ts'
 
 export const createSampleChangesTool = (): Tool => ({
   name: 'sample_changes',
+  contextEffect: 'read',
   description: 'Calculate adjacent changes and per-second rates from dated numeric samples. Caller-provided inputs are unverified; this is not acquired physical evidence.',
   usage: 'Use when a needed difference or rate is absent, or a returned historical interval differs from the intended sample interval. Copy actual times and values; never relabel a historian endpoint. Units are labels only. Results use unrounded IEEE-754 binary64 arithmetic.',
   returns: 'Shared intervals give from/to/elapsedMs/elapsedSeconds; each series echoes key/unit/values and gives changes in the same interval order. inputsVerified:false means no source, quality, unit or sample-selection verification.',
@@ -24,6 +25,7 @@ export const createSampleChangesTool = (): Tool => ({
 
 export const createGetTimeTool = (): Tool => ({
   name: 'get_time',
+  contextEffect: 'read',
   description: 'Current ISO-8601 timestamp.',
   usage: 'Call when temporal accuracy matters. Do not guess.',
   returns: 'Object with a "time" field containing the ISO 8601 timestamp, e.g. { "time": "2024-01-15T12:30:00.000Z" }.',
@@ -36,6 +38,7 @@ export const createGetTimeTool = (): Tool => ({
 
 export const createPostToRoomTool = (rooms: RoomDirectory): Tool => ({
   name: 'post_to_room',
+  contextEffect: 'change',
   description: 'Post a message to a specific room. For replies in the current room, just write your response.',
   usage: 'Send to a room other than the current one (e.g. reporting back to a coordinator). For normal replies, just write your response.',
   returns: '{ messageId, roomName }.',
@@ -66,6 +69,7 @@ export const createPostToRoomTool = (rooms: RoomDirectory): Tool => ({
 
 export const createGetRoomHistoryTool = (rooms: RoomDirectory): Tool => ({
   name: 'get_room_history',
+  contextEffect: 'read',
   description: 'Return recent messages from a room. Omit roomName for the current room.',
   usage: 'Catch up on a room or review past decisions. Omit roomName for current room.',
   returns: 'Array of { senderName, content, type, timestamp }.',
