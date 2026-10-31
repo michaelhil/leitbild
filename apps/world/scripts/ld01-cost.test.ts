@@ -21,7 +21,7 @@ test('the judge reads the worst window, steady, restarts and the breakdown',()=>
  const j=judge(receipt())
  expect(j.worst_0_5_s.rate).toBeCloseTo(2.0,9)
  expect(j.worst_0_5_s.from_after_event_s).toBeGreaterThanOrEqual(0)
- expect(j.steady_last_10_s).toBeCloseTo(0.05,9)
+ expect(j.steady).toBeCloseTo(0.05,9)
  expect(j.pre_event).toBeCloseTo(0.05,9)
  expect(j.restarts_per_s_after_10_s).toBeCloseTo(1/5,9)
  expect(j.seat_window.to_after_event_s).toBeCloseTo(1,9)

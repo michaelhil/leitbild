@@ -2869,7 +2869,7 @@ fn drive(
             "derived_tolerances": derived, "relative_tolerance": rtol,
             "integration": if cfg!(feature = "quadratures") { "frame driver: stock IDAS IDA_ONE_STEP (ledgers as quadratures, IDASetQuadErrCon false), observation from IDAGetDky, restarts by discrete_restart" } else { "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart" }},
         "lines": judged,
-        "rule_i": {"evaluated_at": "every accepted stock step (B1: on accepted states), at the solver's state there",
+        "rule_i": {"evaluated_at": "every accepted stock step (B1: on accepted states), at the solver's state there; under P1 (R4-P1-FRAMES, lead 1 Nov) the first accepted state of each 0.1 s frame interval",
             "samples": domain.samples, "stock_steps": driver.totals[0],
             "note": "samples = stock steps less located-root returns and steps a late change rolled back", "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
             "exit": domain.exit, "exit_after_zero_s": exit_after_zero, "information_from_s": exit_after_zero,

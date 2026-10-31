@@ -56,9 +56,9 @@ pub struct HotStandbyRecord {
     pub not_subcritical: Vec<u64>,
     pub below_reference: Vec<u64>,
     pub smallest_margin_dk_k: Vec<Option<(f64, f64)>>,
-    /// R4-MARGIN-FRAMES (plan r4, OU-L4): the margin value is evaluated at
-    /// the first accepted state of each 0.1 s frame interval, not at every
-    /// accepted state; the counts above stay per accepted state.
+    /// R4-P1-FRAMES (plan r4, lead 1 Nov): the whole judgment at the first
+    /// accepted state of each 0.1 s frame interval; the counts above count
+    /// those states.
     pub margin_rule: &'static str,
     /// Accepted states whose margin value was evaluated.
     pub margin_evaluations: u64,
@@ -231,7 +231,33 @@ impl RuleI {
         y: &[f64],
         yp: &[f64],
     ) -> Result<(), String> {
+        // R4-P1-FRAMES (lead 1 Nov: P1 is a judge, not plant physics): the
+        // domain exits (B1's phase absence, the source domains' pressure
+        // floor and P1 bounds) at every accepted state; the admission's
+        // margins at the first accepted state of each 0.1 s frame interval,
+        // and at an exit.
+        let frame = (t / MARGIN_FRAME_S + 1e-9).floor() as i64;
         let phase = self.evaluated(joined, t, y, yp)?;
+        if self
+            .hot_standby
+            .as_ref()
+            .is_some_and(|r| r.margin_frame == Some(frame))
+        {
+            let _cost = leitbild_operating_plant::cost::scope("p1-domain");
+            let exit = post_trip_domain::hot_standby_domain_exit(
+                joined.nuclear(),
+                &phase,
+                record,
+                joined.travel(),
+                t,
+                0.,
+            )
+            .map_err(|e| format!("P1 at {t} s: {e}"))?;
+            if !exit {
+                return Ok(());
+            }
+        }
+        let _cost = leitbild_operating_plant::cost::scope("p1-admission");
         let admitted = post_trip_domain::admit_hot_standby_accepted(
             joined.nuclear(),
             &phase,
@@ -252,12 +278,10 @@ impl RuleI {
             not_subcritical: vec![0; k],
             below_reference: vec![0; k],
             smallest_margin_dk_k: vec![None; k],
-            margin_rule: "R4-MARGIN-FRAMES: the reported margin value (the margin pencil's smallest real mode) at the first accepted state of each 0.1 s frame interval; the subcritical and reference-margin counts, the domain exit and B1's phase absence at every accepted state",
+            margin_rule: "R4-P1-FRAMES (lead 1 Nov: P1 is a judge, off in the unit): the domain exits (B1's phase absence, the pressure floor and P1's domain bounds) at every accepted state; the hot-standby admission's margins (subcritical and reference-margin counts, the margin value) at the first accepted state of each 0.1 s frame interval and at an exit",
             margin_evaluations: 0,
             margin_frame: None,
         });
-        // The frame interval of this accepted state, floor(t / 0.1 s).
-        let frame = (t / MARGIN_FRAME_S + 1e-9).floor() as i64;
         let evaluate_margin = rec.margin_frame != Some(frame);
         match admitted {
             Ok(a) => {

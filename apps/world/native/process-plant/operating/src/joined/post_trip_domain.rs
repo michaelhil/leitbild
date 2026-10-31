@@ -814,6 +814,45 @@ pub fn admit_hot_standby(
     }
 }
 
+/// R4-P1-FRAMES (lead 1 Nov): P1's domain exits alone at one accepted
+/// state, the cheap part a judge checks at every state: the declared record,
+/// the source domains it selects (the pressure floor and the P1 bounds) and
+/// B1's phase absence. `Ok(false)` when the state stays inside, `Ok(true)`
+/// at an exit (the caller then takes [`admit_hot_standby_accepted`] there,
+/// whose result carries the margin with the exit).
+pub fn hot_standby_domain_exit(
+    nuclear: &Nuclear,
+    phase: &[sf::RegionPhase],
+    record: &HotStandby,
+    travel: &[Scalar],
+    t: f64,
+    additional_reference_exposure_s: f64,
+) -> Result<bool, Error> {
+    if phase.len() != nuclear.regions() {
+        return Err(Error::Length("phase"));
+    }
+    let feedback = nuclear.feedback();
+    let original = feedback.domains();
+    record.validate(&original)?;
+    let at = AcceptedConditions::of(nuclear, travel, t);
+    let mut out = sf::Output::new(
+        feedback.region_count(),
+        feedback.material_count(),
+        feedback.support_count(),
+    );
+    match feedback.validate_accepted_within(
+        &at.neutrons,
+        at.conditions(),
+        additional_reference_exposure_s,
+        &mut out,
+        record.domains(original),
+    ) {
+        Ok(()) => Ok(sf::phase_absence(phase).is_err()),
+        Err(sf::Error::OutsideDomain(..)) => Ok(true),
+        Err(e) => Err(Error::Feedback(e)),
+    }
+}
+
 /// P1 at one accepted state of the joined operator, as [`admit_accepted`]:
 /// call it after the joined evaluation AT that state; `phase` is each core
 /// region's coolant phase of the same evaluation (owner answer B1's
