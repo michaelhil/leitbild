@@ -37,7 +37,16 @@ fn convert_a_saved_state_to_the_replica_layout() {
     assert!(!std::path::Path::new(&to).exists(), "never overwritten");
     let mut state: Value = serde_json::from_slice(&std::fs::read(&from).unwrap()).unwrap();
     let state_in = state.clone();
-    let started = spine::started_full_composition();
+    // The same declared singles as the saved state's composition.
+    let singles: Vec<usize> = std::env::var("LD01_NUC_SINGLES").map_or_else(
+        |_| Vec::new(),
+        |v| {
+            v.split(',')
+                .map(|c| c.trim().parse().expect("LD01_NUC_SINGLES: cluster indices"))
+                .collect()
+        },
+    );
+    let started = spine::started_full_composition_with_singles(&singles);
     let joined = &started.joined;
     let o = joined.offsets();
     let nuclear = joined.nuclear();
@@ -143,6 +152,7 @@ fn convert_a_saved_state_to_the_replica_layout() {
         "groups": nuclear.replica_groups(),
         "carriers": nuclear.carriers(),
         "solid_halves": solids.halves(),
+        "singles": singles,
         "rod_motion_classes": rods_len / 8,
         "rods_spreads": {
             "mouth_currents": {"y": spreads.get()[0][0], "yp": spreads.get()[1][0]},

@@ -1871,6 +1871,9 @@ impl<P: Properties> Rods<P> for RodBlock {
     fn packet_coordinates(&self) -> usize {
         RodBlock::packet_coordinates(self)
     }
+    fn packet_groups(&self) -> Vec<usize> {
+        RodBlock::packet_groups(self)
+    }
     fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, [f64; 2]), String> {
         RodBlock::reduce_packet_rates(self, full)
     }
