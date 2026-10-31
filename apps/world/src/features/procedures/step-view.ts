@@ -115,6 +115,35 @@ export const procedureStepViewSchema = z.object({
 }).strict()
 export type ProcedureStepView = z.infer<typeof procedureStepViewSchema>
 
+/** Explicit current-only projection for a caller that already has this exact pinned step's guidance. */
+const procedureStepCurrentViewSchema = procedureStepViewSchema.omit({ step: true, tags: true }).extend({
+  guidanceIncluded: z.literal(false),
+  step: stepSchema.omit({ blocks: true, branches: true }).optional(),
+  tags: z.array(stepTagSchema.omit({ description: true, notes: true })).optional(),
+}).strict()
+
+export const procedureStepReadViewSchema = z.union([procedureStepViewSchema, procedureStepCurrentViewSchema])
+export type ProcedureStepReadView = z.infer<typeof procedureStepReadViewSchema>
+
+/**
+ * Guidance is static source data, discoverable through step.definition. This
+ * projection never removes current Pack facts, tag caveats, current comments or authority.
+ */
+export const projectProcedureStepGuidance = (view: ProcedureStepView, includeGuidance = true): ProcedureStepReadView => {
+  if (includeGuidance) return view
+  const { step, tags, ...current } = view
+  const withoutGuidance = step === undefined ? undefined : (() => {
+    const { blocks: _blocks, branches: _branches, ...facts } = step
+    return facts
+  })()
+  return procedureStepCurrentViewSchema.parse({
+    ...current,
+    guidanceIncluded: false,
+    ...(withoutGuidance === undefined ? {} : { step: withoutGuidance }),
+    ...(tags === undefined ? {} : { tags: tags.map(({ description: _description, notes: _notes, ...facts }) => facts) }),
+  })
+}
+
 export interface ProcedureStepViewPorts {
   readonly sequence: () => number
   readonly clock: () => { readonly currentTime: IsoTimestamp; readonly paused: boolean }

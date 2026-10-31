@@ -67,7 +67,7 @@ import { drivenRunsOf, runWaitInputSchema, runWaitMaxMs, runWaitResultSchema, wa
 
 /** A wait naming a procedure Run also answers with that run's current step. */
 const runWaitAnswerSchema = runWaitResultSchema.extend({
-  next: procedureStepViewSchema.optional(),
+  next: procedureStepReadViewSchema.optional(),
   nextUnavailable: z.string().optional(),
 })
 import { executionAdvanceInputSchema,executionSetInputSchema,runCopyInputSchema,runCopyOriginSchema,runExecutionStateSchema } from '../simulation-runs/execution.ts'
@@ -81,8 +81,9 @@ import {
 import {
   composeProcedureRunView,
   composeProcedureStepView,
+  projectProcedureStepGuidance,
   procedureStepNotFoundCode,
-  procedureStepViewSchema,
+  procedureStepReadViewSchema,
   type ProcedureStepView,
   type ProcedureStepViewPorts,
 } from '../../features/procedures/step-view.ts'
@@ -196,6 +197,7 @@ const procedureCatalogInputSchema = z.object({
 const procedureStepReadInputSchema = z.object({
   runId: procedureRunIdSchema.optional().describe('A procedure Run, as world.procedure.runs.list lists it; omit for the one active Run you drive.'),
   stepId: procedureStepIdSchema.optional().describe('A step of the run\'s procedure; omit for its current step.'),
+  includeGuidance: z.boolean().optional().describe('False omits repeated static instructions, branch definitions and tag descriptions. All current facts and the exact pinned step.definition reference remain; default true. Use only after reading that exact step/source guidance.'),
 }).strict()
 const procedureEvidenceInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
@@ -1559,18 +1561,18 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read procedure run step',
-      description: 'Reads one operational procedure step with its pinned Run, driver, instructions, indexed branches, complete current branch facts and verdicts, tag values/quality, current CSFs and sequence. Omit runId for the one active Run you drive; omit stepId for its current step. The current comment is complete. Historical decision metadata includes proof: an exact immutable decision.read selector where its event/source start remain, otherwise an explicitly current run-state detail reference. Full historical criterion/cited proof is retrieved through that reference; it is not repeated on every operational read. step.definition reads the exact pinned authored step and query definitions through world.procedure.document.read. Current Pack-owned observation facts remain complete; their static authored input is discovered through that definition reference. Select with world.procedure.run.transition; its next and a procedure-scoped wait return this same operational view. Readings are model values, not instrument validation.',
+      description: 'Reads one operational procedure step with its pinned Run, driver, instructions, indexed branches, complete current branch facts and verdicts, tag values/quality, current CSFs and sequence. Omit runId for the one active Run you drive; omit stepId for its current step. The current comment is complete. includeGuidance:false explicitly returns guidanceIncluded:false and omits only static instruction blocks, branch definitions and authored tag descriptions/notes; all current facts and runtime reading caveats remain. Use it only for a known exact step/source; read full guidance when either identity changes. Default true. Historical decision metadata includes proof: an exact immutable decision.read selector where its event/source start remain, otherwise an explicitly current run-state detail reference. Full historical criterion/cited proof is retrieved through that reference. step.definition reads the exact pinned authored step/query through world.procedure.document.read. Current Pack facts remain complete; static authored input is discovered through that reference. Start/transition next retain full guidance; scoped wait accepts the same includeGuidance option. Readings are model values, not instrument validation.',
       searchTerms: ['continue procedure', 'run procedure', 'step through procedure', 'work through procedure', 'next procedure step', 'procedure placekeeping'],
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(procedureStepReadInputSchema, { io: 'input' }),
-      outputSchema: capabilityJsonSchema(procedureStepViewSchema),
+      outputSchema: capabilityJsonSchema(procedureStepReadViewSchema),
     },
     invoke: async (registry, invocation) => {
       const input = procedureStepReadInputSchema.parse(invocation.input)
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       try {
-        return json({ result: await procedureStepViewFor(registry, runtime, invocation, input, 'step') })
+        return json({ result: projectProcedureStepGuidance(await procedureStepViewFor(registry, runtime, invocation, input, 'step'), input.includeGuidance) })
       } catch (error) {
         const failure = error as Error & { status?: number; code?: string }
         if (typeof failure.status === 'number' && typeof failure.code === 'string') return apiError(failure.status, failure.code, failure.message)
@@ -1585,7 +1587,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Wait for a Run change',
-      description: `Waits in your turn, at most ${runWaitMaxMs / 1_000} s of wall time, for the plant to respond or a person to act. Input {afterSequence?, maxWaitMs? (1000-${runWaitMaxMs}), simulationSeconds? (1-600) or untilSimulationTime? (ISO timestamp), events? [{type, procedureRunId?, signalType?}] (up to 8), procedureRunId?}; name a time target, events, or both; simulationSeconds and untilSimulationTime are mutually exclusive. untilSimulationTime uses the exact execution.advance receipt target without adding more time after request latency. With procedureRunId the result also carries next: that run's current step as world.procedure.run.step.read returns it, so decide from it without another read. Returns at the first of: a durable event after afterSequence (a step read's sequence; omitted: from now) matching events, e.g. {"type":"interaction.signal.received","signalType":"process-plant.proposal.approved"}; simulationSeconds of plant time from now; someone else taking over, releasing, closing or resetting a procedure Run you drive (reason driver-changed: stop and report); or maxWaitMs (timeout). At the requested target, simulation-time succeeds even when completion pauses the Run. Before the target, clock-paused means execution is not advancing (including maximum pace): it never plays or advances time. If the Run is deleted, its Workspace removed or World stops, the wait fails at once with simulation_run_closed: stop. Returns reason, fromSequence, sequence, simulationTime, waitedMs, the matching events and driverChanged. Call it alone.`,
+      description: `Waits in your turn, at most ${runWaitMaxMs / 1_000} s of wall time, for the plant to respond or a person to act. Input {afterSequence?, maxWaitMs? (1000-${runWaitMaxMs}), simulationSeconds? (1-600) or untilSimulationTime? (ISO timestamp), events? [{type, procedureRunId?, signalType?}] (up to 8), procedureRunId?, includeGuidance?}; name a time target, events, or both; simulationSeconds and untilSimulationTime are mutually exclusive. untilSimulationTime uses the exact execution.advance receipt target without adding more time after request latency. With procedureRunId the result also carries next: that run's current step as world.procedure.run.step.read returns it, so reuse it. includeGuidance:false omits only static guidance, marked guidanceIncluded:false; current facts and exact step.definition remain. Reload guidance when step/source changes. Returns at the first of: a durable event after afterSequence (a step read's sequence; omitted: from now) matching events, e.g. {"type":"interaction.signal.received","signalType":"process-plant.proposal.approved"}; simulationSeconds of plant time from now; someone else taking over, releasing, closing or resetting a procedure Run you drive (reason driver-changed: stop and report); or maxWaitMs (timeout). At the requested target, simulation-time succeeds even when completion pauses the Run. Before the target, clock-paused means execution is not advancing (including maximum pace): it never plays or advances time. If the Run is deleted, its Workspace removed or World stops, the wait fails at once with simulation_run_closed: stop. Returns reason, fromSequence, sequence, simulationTime, waitedMs, the matching events and driverChanged. Call it alone.`,
       searchTerms: ['wait for plant response', 'wait plant time', 'wait for approval', 'simulation seconds', 'procedure wait'],
       risk: 'read',
       idempotent: true,
@@ -1620,8 +1622,9 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           closed: () => registry.get(simulationRunId) !== runtime || registry.closing(),
         },
       })
-      return json({ result: input.procedureRunId === undefined ? result
-        : { ...result, ...(await nextProcedureStep(registry, runtime, invocation, input.procedureRunId, `The wait ended (${result.reason})`)) } })
+      if (input.procedureRunId === undefined) return json({ result })
+      const next = await nextProcedureStep(registry, runtime, invocation, input.procedureRunId, `The wait ended (${result.reason})`)
+      return json({ result: { ...result, ...('next' in next ? { next: projectProcedureStepGuidance(next.next, input.includeGuidance) } : next) } })
     },
   },
   {

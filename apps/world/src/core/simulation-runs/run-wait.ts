@@ -28,7 +28,12 @@ export const runWaitInputSchema = z.object({
     .describe('Return at the first durable event after afterSequence matching any of these.'),
   procedureRunId: procedureRunIdSchema.optional()
     .describe('A procedure Run whose current step the result carries as next, as world.procedure.run.step.read returns it.'),
+  includeGuidance: z.boolean().optional()
+    .describe('With procedureRunId, false omits repeated static instructions/branch definitions/tag descriptions; all current facts and the exact pinned definition reference remain. Default true.'),
 }).strict().superRefine((input, context) => {
+  if (input.includeGuidance === false && input.procedureRunId === undefined) {
+    context.addIssue({ code: 'custom', path: ['includeGuidance'], message: 'includeGuidance:false requires procedureRunId; a clock-only wait carries no procedure view.' })
+  }
   if (input.simulationSeconds !== undefined && input.untilSimulationTime !== undefined) {
     context.addIssue({ code: 'custom', path: ['untilSimulationTime'], message: 'Name simulationSeconds or untilSimulationTime, not both.' })
   }

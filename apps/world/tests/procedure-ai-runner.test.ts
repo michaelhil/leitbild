@@ -10,6 +10,7 @@ import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
 import { createProcedureSourceService } from '../src/features/procedures/source.ts'
+import { procedureStepReadViewSchema, projectProcedureStepGuidance } from '../src/features/procedures/step-view.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
@@ -113,6 +114,68 @@ const invoker = (registry: WorldWorkspaceRuntimeRegistry, workspaceId: Workspace
   }
 
 describe('the AI procedure runner through the World Module API', () => {
+  test('step reads and scoped waits opt out of static guidance while current evidence, ownership and pinned identity stay complete', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
+    const human = access(workspaceId, { kind: 'human' })
+    const start = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    const runId = start.body.result.pinned.runId
+    expect(start.body.result.next.step.blocks.length).toBeGreaterThan(0)
+    expect(start.body.result.next).not.toHaveProperty('guidanceIncluded')
+    const comment = 'The complete current checkpoint and retained acquisition notes. '.repeat(20)
+    expect((await invoke('world.procedure.step.update', { runId, stepId: 'verify-reactor-trip', comment }, ai)).status).toBe(200)
+    const snapshot = structuredClone(run.snapshot())
+    const full = (await invoke('world.procedure.run.step.read', { runId }, ai)).body.result
+    const current = (await invoke('world.procedure.run.step.read', { runId, includeGuidance: false }, ai)).body.result
+    expect(procedureStepReadViewSchema.parse(current)).toEqual(projectProcedureStepGuidance(full, false))
+    expect(current.step.state.comment).toBe(comment)
+    expect(current.step.branchAssessments).toEqual(full.step.branchAssessments)
+    expect(current.step.definition).toEqual(full.step.definition)
+    expect(current.tags).toEqual(full.tags.map(({ description: _description, notes: _notes, ...tag }: Record<string, unknown>) => tag))
+    expect(current.csfs).toEqual(full.csfs)
+    expect((await invoke('world.procedure.run.step.read', { runId, includeGuidance: true }, ai)).body.result).toEqual(full)
+    const waited = (await invoke('world.simulation-run.wait', { simulationSeconds: 1, procedureRunId: runId, includeGuidance: false }, ai)).body.result
+    expect(waited.reason).toBe('clock-paused')
+    expect(procedureStepReadViewSchema.parse(waited.next)).toEqual(current)
+    expect((await invoke('world.simulation-run.wait', { simulationSeconds: 1, procedureRunId: runId }, ai)).body.result.next).toEqual(full)
+    expect((await invoke('world.simulation-run.wait', { simulationSeconds: 1, includeGuidance: false }, ai)).status).toBe(400)
+    expect(run.snapshot().procedures).toEqual(snapshot.procedures)
+    expect(run.snapshot().objects).toEqual(snapshot.objects)
+    expect(run.snapshot().seq).toBe(snapshot.seq)
+    expect(run.snapshot().clock?.currentTime).toBe(snapshot.clock?.currentTime)
+    expect(run.snapshot().clock?.paused).toBe(true)
+
+    // New-step transition receipts remain full. Opted-out later reads carry the
+    // new source/step reference, never silently reuse the caller's old guidance.
+    const moved = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Current positive pressure supports this framework branch.' }, ai)).body.result
+    expect(moved.next.step.blocks.length).toBeGreaterThan(0)
+    expect(moved.next).not.toHaveProperty('guidanceIncluded')
+    const transfer = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Current positive pressure supports this framework transfer.' }, ai)).body.result
+    expect(transfer.next.step.blocks.length).toBeGreaterThan(0)
+    expect(transfer.next.run.sourcePath).toBe('procedures/ES-0.1.md')
+    const destinationId = transfer.next.run.runId
+    const destination = (await invoke('world.procedure.run.step.read', { runId: destinationId, includeGuidance: false }, ai)).body.result
+    expect(destination.step.definition.input).toMatchObject({ sourceRevision: revision, sourcePath: 'procedures/ES-0.1.md', stepId: 'monitor' })
+    expect(destination.run).toEqual(transfer.next.run)
+    const ownershipWait = invoke('world.simulation-run.wait', { procedureRunId: destinationId, includeGuidance: false,
+      afterSequence: destination.sequence, events: [{ type: 'procedure.run.driver.changed', procedureRunId: destinationId }], maxWaitMs: 1_000 }, ai)
+    expect((await invoke('world.procedure.run.drive', { runId: destinationId, action: 'claim' }, human)).status).toBe(200)
+    const ownershipChanged = (await ownershipWait).body.result
+    expect(ownershipChanged).toMatchObject({ reason: 'driver-changed', next: { guidanceIncluded: false, run: { driver: { kind: 'person' } } } })
+    expect(ownershipChanged.next.step.definition).toEqual(destination.step.definition)
+    const taken = (await invoke('world.procedure.run.step.read', { runId: destinationId, includeGuidance: false }, ai)).body.result
+    expect(taken.run.driver.kind).toBe('person')
+    expect(taken.step.definition).toEqual(destination.step.definition)
+
+    const listed = moduleCapabilityCollectionSchema.parse(await (await handleWorldModuleApi(new Request(`http://world.test/internal/workspaces/${workspaceId}/capabilities`), new URL(`http://world.test/internal/workspaces/${workspaceId}/capabilities`), registry))!.json())
+    for (const id of ['world.procedure.run.step.read', 'world.simulation-run.wait']) {
+      const capability = listed.capabilities.find(row => row.id === id)!
+      expect(capability.inputSchema).toHaveProperty('properties.includeGuidance')
+      expect(JSON.stringify(capability.outputSchema)).toContain('guidanceIncluded')
+    }
+  })
+
   test('a bounded advance is live to step/context/display reads and waiting uses its exact target, including its completion pause', async () => {
     const { registry, workspaceId, run, plantId } = await setup()
     const simulationRuns = registry.getLoaded(workspaceId)!.simulationRuns

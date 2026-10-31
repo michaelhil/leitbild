@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
 import { parseProcedureTagValue, type ProcedureCsfEvaluation, type ProcedureObservationPort, type ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { composeProcedureRunView, composeProcedureStepView, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
+import { composeProcedureRunView, composeProcedureStepView, projectProcedureStepGuidance, procedureStepReadViewSchema, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
 
 const source = {
   sourceId: 'pwr-ops', label: 'PWR operations procedures', repository: 'leitbild-wikis/pwr-ops', ref: 'main',
@@ -99,6 +99,41 @@ const ports = (config: {
 })
 
 describe('procedure step view', () => {
+  test('opted-out guidance omits only authored static fields and preserves all current facts, source and authority', async () => {
+    const doc = document()
+    const comment = 'Complete current checkpoint: '.repeat(40)
+    const current = await composeProcedureStepView({ document: doc, run: run({ stepStates: [{ stepId: 'verify-reactor-trip', assessment: 'blank',
+      favorite: false, comment, updatedAt: plantTime, updatedBy: 'actor:ai:assistant' as ActorId }] }), ports: ports({
+      reads: {
+        'TRIP-BKR-A': value('TRIP-BKR-A', 'true boolean', { value: true, writable: true, quality: 'uncertain', warning: 'A current writable-demand caveat.' }),
+        'TRIP-BKR-B': new Error('Actual feedback unavailable'),
+        'NIS-PR-AVG': value('NIS-PR-AVG', '4 MW', { conversionStatus: 'unavailable', warning: 'No conversion to requested percent.' }),
+      },
+      csfs: new Map([['subcriticality', csf('subcriticality', 'unknown', { reason: 'Missing independent indication.' })]]),
+    }) })
+    const original = structuredClone(current)
+    const projected = projectProcedureStepGuidance(current, false)
+    expect(procedureStepReadViewSchema.parse(projected)).toEqual(projected)
+    expect(projected).toHaveProperty('guidanceIncluded', false)
+    expect(projected.step).not.toHaveProperty('blocks')
+    expect(projected.step).not.toHaveProperty('branches')
+    const { blocks: _blocks, branches: _branches, ...facts } = current.step!
+    expect(projected.step).toEqual(facts)
+    expect(projected.run).toEqual(current.run)
+    expect(projected.csfs).toEqual(current.csfs)
+    expect(projected.tags).toEqual(current.tags!.map(({ description: _description, notes: _notes, ...tag }) => tag))
+    expect(projected.tags![0]!.reading!.note).toContain('Writable command or demand')
+    expect(projected.tags![0]!.reading!.note).toContain('A current writable-demand caveat.')
+    expect(projected.tags![1]).toMatchObject({ binding: 'resolved', unavailable: 'Actual feedback unavailable' })
+    expect(projected.tags![2]).toMatchObject({ warnings: ['requested percent unavailable'], reading: { note: 'No conversion to requested percent.' } })
+    expect(projected.step!.state!.comment).toBe(comment)
+    expect(projected.step!.definition).toEqual(current.step!.definition)
+    expect(current).toEqual(original)
+    expect(projectProcedureStepGuidance(current)).toBe(current)
+    expect(projectProcedureStepGuidance(current, true)).toBe(current)
+    expect(current).not.toHaveProperty('guidanceIncluded')
+  })
+
   test('the step view carries a precise pending human-input request', async () => {
     const inputRequest = { requestId: 'command:input' as CommandId, stepId: 'verify-reactor-trip', issue: 'Confirm local indication.',
       requestedAt: plantTime, requestedBy: 'actor:ai:assistant' as ActorId }
@@ -202,6 +237,7 @@ describe('procedure step view', () => {
       capabilityId: 'world.procedure.runs.list', input: { includeEvidence: true }, runId: decided.runId, stepId: 'verify-reactor-trip' } })
     expect(earlier.step!.state!.decision).not.toHaveProperty('evidence')
     expect(earlier.step!.state!.comment).toHaveLength(600)
+    expect(projectProcedureStepGuidance(earlier, false).step!.state).toEqual(earlier.step!.state)
 
     const current = await composeProcedureStepView({ run: decided, document: document('csfs-monitored: []'), ports: ports() })
     expect(current.step).toMatchObject({ id: 'verify-turbine-trip', observation: { status: 'unknown', reason: 'no binding', simulationTime: '2026-10-13T08:00:50.000Z' } })
