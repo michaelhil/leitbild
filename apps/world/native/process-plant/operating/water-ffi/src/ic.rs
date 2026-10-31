@@ -137,6 +137,29 @@ impl Observation {
     fn linear(&self) -> bool {
         matches!(self, Observation::Linear(_))
     }
+    /// Every solver coordinate `value` reads.
+    fn coordinates(&self) -> Vec<usize> {
+        match self {
+            Observation::Linear(terms) => terms.iter().map(|(i, _)| *i).collect(),
+            Observation::LoopFlow {
+                impulse,
+                from,
+                to,
+                supports,
+                ..
+            } => [impulse.0, from.0, to.0]
+                .into_iter()
+                .chain(supports.iter().map(|(i, _, _)| *i))
+                .collect(),
+            Observation::Proxy { regions, .. } => regions
+                .iter()
+                .flat_map(|(n, _, _, supports)| {
+                    std::iter::once(*n).chain(supports.iter().map(|(x, _, _)| *x))
+                })
+                .collect(),
+            Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
+        }
+    }
 }
 /// The direction an LT device's indication moves past the one computed
 /// from interfaces held at their span limits: the bottom (LT.LOW) interface
@@ -198,16 +221,17 @@ fn lobatto_offsets(dt: f64, p: usize) -> Vec<f64> {
         .collect()
 }
 
-/// The state at `from + s` from the step polynomial's Taylor coefficients
-/// `taylor[j] = y^(j)(from)` (exact for a polynomial of their degree).
-fn state_at_offset(taylor: &[Vec<f64>], s: f64, out: &mut [f64]) {
+/// The coordinates `read` of the state at `from + s` from the step
+/// polynomial's Taylor coefficients `taylor[j] = y^(j)(from)` (exact for a
+/// polynomial of their degree); the others are left as they are.
+fn state_at_offset(taylor: &[Vec<f64>], s: f64, read: &[usize], out: &mut [f64]) {
     let m = taylor.len() - 1;
-    out.copy_from_slice(&taylor[m]);
-    for k in (0..m).rev() {
-        let f = s / (k + 1) as f64;
-        for (o, c) in out.iter_mut().zip(&taylor[k]) {
-            *o = c + *o * f;
+    for &i in read {
+        let mut o = taylor[m][i];
+        for k in (0..m).rev() {
+            o = taylor[k][i] + o * (s / (k + 1) as f64);
         }
+        out[i] = o;
     }
 }
 
@@ -251,6 +275,8 @@ pub struct ProtectionClient {
     states: Vec<Vec<f64>>,
     /// The step polynomial's Taylor coefficients at the step start.
     taylor: Vec<Vec<f64>>,
+    /// The coordinates the nonlinear observations read (sorted, distinct).
+    nonlinear_read: Vec<usize>,
     derivatives: Vec<Vec<f64>>,
 }
 impl ProtectionClient {
@@ -452,6 +478,13 @@ impl ProtectionClient {
                 .value(y)
         })?;
         let n = y.len();
+        let mut nonlinear_read: Vec<usize> = observed
+            .iter()
+            .filter(|(_, o)| !o.linear())
+            .flat_map(|(_, o)| o.coordinates())
+            .collect();
+        nonlinear_read.sort_unstable();
+        nonlinear_read.dedup();
         Ok(Self {
             derivatives: vec![Vec::new(); observed.len()],
             protection,
@@ -460,6 +493,7 @@ impl ProtectionClient {
             scratch: vec![0.; n],
             states: Vec::new(),
             taylor: Vec::new(),
+            nonlinear_read,
         })
     }
     /// HOOK (GATE, S3 case harness; KERN to reconcile): the dense-output
@@ -521,7 +555,7 @@ impl<S> Client<S> for ProtectionClient {
             self.states.resize(offsets.len(), Vec::new());
             for (state, s) in self.states.iter_mut().zip(&offsets) {
                 state.resize(self.scratch.len(), 0.);
-                state_at_offset(&self.taylor, *s, state);
+                state_at_offset(&self.taylor, *s, &self.nonlinear_read, state);
             }
             let mut values = vec![0.; offsets.len()];
             for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
@@ -652,7 +686,7 @@ mod tests {
         let values: Vec<f64> = offsets
             .iter()
             .map(|s| {
-                state_at_offset(&taylor, *s, &mut state);
+                state_at_offset(&taylor, *s, &[0], &mut state);
                 state[0] * state[0]
             })
             .collect();
@@ -661,6 +695,37 @@ mod tests {
         assert!(d.iter().all(|v| v.is_finite()), "{d:?}");
         let r = lag_continuation(5.287, 0.5, dt, &d).unwrap();
         assert!((r - 5.287).abs() < 1e-12, "{r}");
+    }
+
+    /// A nonlinear reading needs only the coordinates it declares: with
+    /// every other coordinate NaN it reads the same value.
+    #[test]
+    fn nonlinear_readings_read_only_their_declared_coordinates() {
+        use super::Observation;
+        let observations = [
+            Observation::LoopFlow {
+                impulse: (1, 2.),
+                from: (3, 1.5, 4.),
+                to: (5, 1., 2.),
+                supports: vec![(7, 1., 0.5), (8, 2., 0.25)],
+                nominal: 10.,
+            },
+            Observation::Proxy {
+                regions: vec![
+                    (2, 1., 0.5, vec![(4, 2., 3.)]),
+                    (6, 1., 0.5, vec![(9, 1., 1.)]),
+                ],
+                factor: 1.5,
+            },
+        ];
+        let full: Vec<f64> = (0..10).map(|i| 1. + i as f64).collect();
+        for o in &observations {
+            let mut sparse = vec![f64::NAN; full.len()];
+            for i in o.coordinates() {
+                sparse[i] = full[i];
+            }
+            assert_eq!(o.value(&sparse).unwrap(), o.value(&full).unwrap());
+        }
     }
 
     #[test]
@@ -673,7 +738,7 @@ mod tests {
         let mut state = [0.];
         let mut values = Vec::new();
         for s in &offsets {
-            state_at_offset(&taylor, *s, &mut state);
+            state_at_offset(&taylor, *s, &[0], &mut state);
             assert!((state[0] - y(*s)).abs() < 1e-14, "{s}");
             values.push(state[0] * state[0]);
         }
