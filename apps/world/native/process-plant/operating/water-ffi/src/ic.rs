@@ -29,6 +29,7 @@
 //! follows it (owner R12-A2) becomes the declared `TurbineTripAcquired` at
 //! its own frame instant.
 use crate::frame::{Action, Change, Class, Client, Dense};
+use crate::joined::JoinedSystem;
 use leitbild_operating_plant::{
     ic::{
         acquisition::Overrange,
@@ -564,7 +565,7 @@ impl Readings {
         values_of(&self.observed, y)
     }
 }
-impl<S> Client<S> for ProtectionClient {
+impl<S: JoinedSystem> Client<S> for ProtectionClient {
     fn name(&self) -> &str {
         "acquired protection"
     }
