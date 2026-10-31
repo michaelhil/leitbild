@@ -16,8 +16,8 @@ import type { CompiledProcessPlant } from './plant-compiler.ts'
 import { rejectCapabilityTarget } from '../../simulation/capability-rejection.ts'
 
 export const processPlantSignalReferenceSchema = z.object({
-  path: variablePathSchema.optional(),
-  tagId: processSignalTagIdSchema.optional(),
+  path: variablePathSchema.optional().describe('Exactly one of path or tagId. Use the Plant-local dotted path returned by signals.search/resolve, without the Plant id or # prefix; omit tagId.'),
+  tagId: processSignalTagIdSchema.optional().describe('Exactly one of tagId or path. Use the exact tagId returned by Plant signal/control discovery, never substitute a variable path or a global objectId#path observable ref for the tagId; omit path.'),
 }).strict().superRefine((reference, ctx) => {
   const referenceCount = Number(reference.path !== undefined) + Number(reference.tagId !== undefined)
   if (referenceCount !== 1) {
