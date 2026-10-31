@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { readFileSync } from 'node:fs'
-import type { SimulationRunId } from '../src/core/model/index.ts'
+import { isoTimestampSchema, type SimulationRunId } from '../src/core/model/index.ts'
 import { evaluateProcedureCsfs, readProcedureCatalog, readProcedureDocument, readProcedureRuns, readProcedureTagValue, readProcedureSourceEvidence, validateProcedureTags } from '../src/ui/procedures/procedure-client.ts'
 import { driveProcedureRun } from '../src/ui/procedures/procedure-client.ts'
 import { processPlantPackView } from '../src/packs/process-plant/ui-pack.ts'
@@ -201,12 +201,13 @@ describe('procedure client', () => {
     type SignalRow = { signal: { path: string; unit: string }; variable: { value: number | boolean }; quality: { status: string }; valueView?: RequestedSignalValueView }
     const requests: unknown[] = []
     const responses: SignalRow[] = []
+    const acquiredAt = isoTimestampSchema.parse('2026-10-31T04:00:21.000Z')
     // Test-only transport delegates to the real Pack query; the browser receives
     // exactly the serialized result exposed through the Capability to Agents.
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const body = JSON.parse(String(init?.body)) as { input: unknown }
       requests.push(body.input)
-      const result = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.signals.read', input: body.input }, plants, objects: new Map() }) as { signals: SignalRow[] }
+      const result = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.signals.read', input: body.input }, plants, objects: new Map(), simulationTime: acquiredAt }) as { signals: SignalRow[] }
       responses.push(result.signals[0]!)
       return Response.json({ kind: 'query', result })
     }) as typeof fetch
@@ -227,6 +228,7 @@ describe('procedure client', () => {
       const row = responses.at(-1)!
       expect(requests.at(-1)).toEqual({ plantId: plant.id, evidence: true, signals: [{ tagId: id, requestedUnit: units }] })
       expect(result).toMatchObject({ value: row.valueView!.value, unit: row.valueView!.unit, conversionStatus: row.valueView!.status, quality: row.quality.status, path: row.signal.path })
+      expect(result.evidence).toMatchObject({ kind: 'engineering-diagnostic', sampledAt: acquiredAt, modelDigest: plant.modelDigest })
       expect(result.formatted).toEndWith(` ${row.valueView!.unit}`)
       if (row.valueView!.status === 'unavailable') {
         expect(result.warning).toBe(row.valueView!.reason)

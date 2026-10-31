@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { processPlantEvidenceFrame } from '../evidence-frame.ts'
-import { idSchema, matchesLiteralSearch, type IsoTimestamp, type ObjectId } from '../../../core/model/index.ts'
+import { idSchema, isoTimestampSchema, matchesLiteralSearch, type IsoTimestamp, type ObjectId } from '../../../core/model/index.ts'
 import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDisciplineSchema } from '../graph/index.ts'
@@ -36,12 +36,23 @@ export const signalsResolveQuerySchema = z.object({
   signals: z.array(processPlantSignalReferenceSchema).min(1),
 }).strict()
 
+/** One synchronous Plant acquisition: this frame applies to every row in signals. */
+export const signalsReadEvidenceSchema = z.object({
+  evidenceKind: z.literal('engineering-diagnostic'),
+  provenance: z.literal('runtime-model'),
+  simulationTime: isoTimestampSchema,
+  modelRef: z.string().min(1),
+  modelDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  automationRef: z.string().min(1),
+  automationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict()
+
 export const signalsReadQuerySchema = z.object({
   plantId: idSchema,
   signals: z.array(processPlantSignalReferenceSchema.safeExtend({
     requestedUnit: z.string().trim().min(1).max(128).optional().describe('Optional presentation unit. Raw variable and quality remain unchanged; unsupported conversion returns the actual value/unit with an explicit unavailable reason.'),
   })).min(1),
-  evidence: z.literal(true).optional().describe('Adds actual engineering diagnostic provenance, acquired Run time and model/I&C configuration identities; does not qualify instrumentation.'),
+  evidence: z.literal(true).optional().describe('Adds one result.evidence frame for this entire synchronous Plant batch: engineering provenance, simulationTime and model/I&C identities; does not qualify instrumentation.'),
   operations: z.literal(true).optional().describe('Adds the commands issued on these signals and the resets of actuations that held them, with the Run and plant time read at.'),
   observed: z.literal(true).optional().describe('Adds each signal\'s observation as World reads it (priority, the limit it is past) and its declared limits.'),
 }).strict()
@@ -189,8 +200,11 @@ export const answerProcessPlantSignalQuery = (config: {
     const payload = signalsReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
     const bindings = payload.signals.map(signal => readableProcessPlantSignalBinding(system.plant.graph, signal))
+    const evidence = payload.evidence === undefined ? undefined : signalsReadEvidenceSchema.parse(processPlantEvidenceFrame(system,
+      config.simulationTime ?? rejectCapabilityTarget('signals.read with evidence needs the Run time the Plant stands at')))
     return {
       plantId: payload.plantId,
+      ...(evidence === undefined ? {} : { evidence }),
       ...(payload.operations === undefined ? {} : { operations: operationsOn(config, system, new Set(bindings.map(binding => String(binding.path)))) }),
       signals: payload.signals.map((signal, index) => {
         const binding = bindings[index]!
@@ -200,9 +214,6 @@ export const answerProcessPlantSignalQuery = (config: {
           signal: processPlantSignalView(binding),
           variable,
           quality: processPlantSignalQuality(variable, { system: system.plant, runtime: system.runtime }),
-          ...(payload.evidence !== true || config.simulationTime === undefined ? {} : { evidence: {
-            kind: 'engineering-diagnostic' as const, sampledAt: config.simulationTime, ...processPlantEvidenceFrame(system, config.simulationTime),
-          } }),
           ...(declared === undefined ? {} : { observed: declared === null ? null : {
             unit: declared.unit, quantity: declared.quantity, thresholds: declared.thresholds,
             observation: readPlant({ objectId: payload.plantId as ObjectId, system, recording: null, simulationTime: config.simulationTime ?? rejectCapabilityTarget('signals.read with observed needs the Run time the Plants stand at'), history: undefined }, [String(binding.path)])[0],

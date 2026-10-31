@@ -794,15 +794,6 @@ export interface PackProcedureQuery {
 export interface PackProcedureSignalObservation {
   readonly signal: { readonly unit: string; readonly tagId?: string; readonly label?: string; readonly path?: string }
   readonly variable: { readonly value: number | boolean; readonly unit?: string; readonly path?: string }
-  readonly evidence?: {
-    readonly kind: 'instrument' | 'engineering-diagnostic'
-    readonly sampledAt: string
-    readonly provenance: string
-    readonly modelRef?: string
-    readonly modelDigest?: string
-    readonly automationRef?: string
-    readonly automationDigest?: string
-  }
   readonly quality?: { readonly status: string }
   readonly valueView?: {
     readonly status: 'native' | 'converted' | 'unavailable'
@@ -815,6 +806,16 @@ export interface PackProcedureSignalObservation {
 }
 
 export interface PackProcedureSignalReadResult {
+  /** One acquisition frame applies to every signal row in this same-scope batch. */
+  readonly evidence?: {
+    readonly evidenceKind: 'instrument' | 'engineering-diagnostic'
+    readonly simulationTime: string
+    readonly provenance: string
+    readonly modelRef?: string
+    readonly modelDigest?: string
+    readonly automationRef?: string
+    readonly automationDigest?: string
+  }
   readonly signals: ReadonlyArray<PackProcedureSignalObservation>
 }
 

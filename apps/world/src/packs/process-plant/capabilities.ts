@@ -46,6 +46,7 @@ import { graphReadQuerySchema, graphReadResultSchema } from './queries/graph-rea
 import { plantQuerySchema } from './queries/common.ts'
 import {
   procedureTagsValidateQuerySchema,
+  signalsReadEvidenceSchema,
   signalsReadQuerySchema,
   signalsResolveQuerySchema,
   signalsSearchQuerySchema,
@@ -148,7 +149,9 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.signals.resolve': z.object({ plantId: plantIdSchema, signals: recordArraySchema }).strict(),
   'world.process-plant.signals.read': z.object({
     plantId: plantIdSchema,
-    signals: recordArraySchema,
+    evidence: signalsReadEvidenceSchema.optional(),
+    signals: z.array(z.object({ signal: recordSchema, variable: recordSchema, quality: recordSchema,
+      observed: recordSchema.nullable().optional(), valueView: recordSchema.optional() }).strict()),
     operations: z.object({ simulationTime: z.string(), plantElapsedMs: z.number(), log: z.array(operationRecordSchema), resets: z.array(resetRecordSchema) }).strict().optional(),
   }).strict(),
   'world.process-plant.signals.search': pagedPlantRecordsSchema('signals', 'signal'),
@@ -277,7 +280,7 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.variables.read': 'Read current values and metadata for exact Plant variable paths returned by variables.search or another discovery view; do not guess paths.',
   'world.process-plant.variables.search': 'Search current Plant variables by text, discipline, quantity, publication state, and Plant; results are paginated.',
   'world.process-plant.signals.resolve': 'Resolve exact signal references to canonical Plant signal bindings.',
-  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references. Optional requestedUnit adds a valueView; native values are unchanged, and unavailable conversions retain actual units with a reason. valueView status describes conversion, not sensor quality. Quality good means only not outside a declared hard range; it does not establish calibrated instrumentation or model validity. operations: true adds the commands people and AI agents issued on these signals and the resets of actuations that held them, with the Run and plant time read at; observed: true adds each signal\'s observation (priority, the limit it is past) and declared limits, null for a signal the Plant does not declare.',
+  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references. Optional requestedUnit adds a valueView; native values are unchanged, and unavailable conversions retain actual units with a reason. valueView status describes conversion, not sensor quality. Quality good means only not outside a declared hard range; it does not establish calibrated instrumentation or model validity. evidence:true adds one result.evidence frame applying to every returned signal in this synchronous same-Plant acquisition: evidenceKind, provenance, simulationTime, modelRef/modelDigest and automationRef/automationDigest. Every row retains its separate value, native/canonical units, metadata and quality. The frame establishes engineering diagnostic acquisition identity, not calibrated instrumentation. operations: true adds the commands people and AI agents issued on these signals and the resets of actuations that held them, with the Run and plant time read at; observed: true adds each signal\'s observation (priority, the limit it is past) and declared limits, null for a signal the Plant does not declare.',
   'world.process-plant.signals.search': 'Search Plant signal bindings by tag, equipment, discipline, quantity, writability, procedure relevance, and text; results are paginated. Text uses literal AND terms across metadata: every term must occur. Empty results do not establish absent equipment; remove extra qualifiers, broaden equipment/system names or use structural filters, then read relevant offered tags. Default summary includes identities, descriptions, units and writability. Request detail full, or use signals.resolve for exact references, to inspect capabilities, limits, ownership and external references. Filtering always uses all metadata. Use signals.read for live values and quality.',
   'world.process-plant.procedure-tags.validate': 'Validate a set of procedure tags against one Plant and report missing or mismatched bindings.',
   'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals. Comparison values must use the resolved signal\'s native unit and value type. Requested-unit views do not change condition thresholds; no procedure-unit conversion is performed.',

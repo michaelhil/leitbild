@@ -160,12 +160,13 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
   }
   if (typeof value !== 'boolean' && (typeof value !== 'number' || !Number.isFinite(value))) throw new Error('procedure signal requires a finite number or boolean value')
   const quality = optionalRecord(first.quality)
-  const rawEvidence = optionalRecord(first.evidence)
+  if (first.evidence !== undefined) throw new Error('procedure signal evidence must describe the complete batch, not an individual signal row')
+  const rawEvidence = result.evidence === undefined ? null : assertRecord(result.evidence, 'procedure signal batch evidence is malformed')
   let evidence: ProcedureTagValue['evidence']
   if (rawEvidence !== null) {
-    if (rawEvidence.kind !== 'instrument' && rawEvidence.kind !== 'engineering-diagnostic') throw new Error('procedure signal evidence kind is unestablished')
-    const sampledAt = isoTimestampSchema.parse(rawEvidence.sampledAt)
-    evidence = { kind: rawEvidence.kind, sampledAt, provenance: assertString(rawEvidence.provenance, 'procedure signal evidence requires provenance'),
+    if (rawEvidence.evidenceKind !== 'instrument' && rawEvidence.evidenceKind !== 'engineering-diagnostic') throw new Error('procedure signal evidence kind is unestablished')
+    const sampledAt = isoTimestampSchema.parse(rawEvidence.simulationTime)
+    evidence = { kind: rawEvidence.evidenceKind, sampledAt, provenance: assertString(rawEvidence.provenance, 'procedure signal evidence requires provenance'),
       ...(typeof rawEvidence.modelRef === 'string' ? { modelRef: rawEvidence.modelRef } : {}), ...(typeof rawEvidence.modelDigest === 'string' ? { modelDigest: rawEvidence.modelDigest } : {}),
       ...(typeof rawEvidence.automationRef === 'string' ? { automationRef: rawEvidence.automationRef } : {}), ...(typeof rawEvidence.automationDigest === 'string' ? { automationDigest: rawEvidence.automationDigest } : {}) }
   }
