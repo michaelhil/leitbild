@@ -7,7 +7,9 @@
  * blocks the steady references name (from the wiki root), and one gated case
  * receipt run with LD01_PHYS_OPERATOR_FRAMES=1. It judges:
  * - held: the span reached with no failure, labelled end or rule-I exit;
- * - numerical: E0 against R2 (R11-3a's converged reference) within the budgets, R1 reported;
+ * - numerical (R11-3a): the converged level of the rtol/10, /30, /100 series (the tightest that
+ *   completes, within a quarter of each budget of the next looser completed level), and the
+ *   run's E0 against it within the budgets;
  * - steady: the last 300 s held at the controller's reference or settled;
  * - directions, sequence and must-nots as the cases block lists them.
  * A line it cannot evaluate fails. Cost is ld01-cost's, not judged here.
@@ -19,7 +21,7 @@ import {join} from 'node:path'
 import {createHash} from 'node:crypto'
 
 export const BUDGETS_PIN = {fence: 'ld01-operator-budgets', pin: 'RP-pin-ogb-r2', sha256: '9def9c2b5bf7d90ea565a8e8d18c077bdb57acda82aa3a997dfc6f4857c736bf'}
-export const CASES_PIN = {fence: 'ld01-r4-x1-cases', pin: 'RP-pin-x1-r1', sha256: '4b54cea339b9289ad70a59703bb8b67c3e023f9a6cf4211bfd7a464c90d14ee3'}
+export const CASES_PIN = {fence: 'ld01-r4-x1-cases', pin: 'RP-pin-x1-r2', sha256: '527de3aeaee308c8e6626d4e344811e6869bc205c9affef4b1e8ecafe131a993'}
 
 type J = any
 /** The harness's canonical JSON (s2_harness::guards::canonical): sorted keys, no spaces. */
@@ -59,28 +61,36 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
  // Held.
  const held = run.failure == null && run.labelled_end == null && run.rule_i?.exit == null && tl.end_s >= cases.held_s - 1e-9
  lines.push({id: 'held', verdict: held ? 'pass' : 'fail', evidence: {failure: run.failure, labelled_end: run.labelled_end, rule_i_exit: run.rule_i?.exit ?? null, end_after_zero_s: tl.end_s, held_s: cases.held_s}})
- // Numerical: E0 against R2, which must complete the span; R1 reported (R4-X1-REF).
- const nb = budgets.numerical, op = run.phys_operator_frames
+ // Numerical (R11-3a): the converged level of the tolerance-proportionality series.
+ const nb = budgets.numerical, op = run.phys_operator_frames, ref = cases.references
  const loopNominals: number[] = op ? Object.values(op.observed?.references ?? {}).map((r: J) => r?.nominal_kg_s).filter((x: J) => typeof x === 'number') : []
- const comparisons = (receipt.families?.E_refinement?.comparisons ?? []) as J[]
- const done = (c: J) => c.reference_failure == null && c.e0?.evaluable === true && c.e0?.to_s >= cases.held_s - 1e-9
- const completed = comparisons.filter(c => done(c))
- const numeric = completed.map(c => {
-  const m = c.e0.metrics, v = (k: string) => m?.[k]?.value
-  const loopBudget = loopNominals.length ? nb.loopFlowFractionOfNominal.budget * Math.min(...loopNominals) : NaN
+ const loopBudget = loopNominals.length ? nb.loopFlowFractionOfNominal.budget * Math.min(...loopNominals) : NaN
+ const budgetRows = (e0: J, fraction: number) => {
+  const m = e0?.metrics, v = (k: string) => m?.[k]?.value
   const checks: [string, number | undefined, number][] = [
-   ['pzr_roof_max_abs_pa', c.e0.pzr_roof_max_abs_pa, nb.pzrPressure_Pa.budget_Pa],
+   ['pzr_roof_max_abs_pa', e0?.pzr_roof_max_abs_pa, nb.pzrPressure_Pa.budget_Pa],
    ['pzr_level_m', v('pzr_level_m'), nb.pzrLevel_m.budget_m],
    ['sg_liquid_m3', v('sg_liquid_m3'), nb.sgNrLevel_m.asLiquidVolume_m3],
    ['sg_pressure_pa', v('sg_pressure_pa'), nb.sgPressure_Pa.budget_Pa],
    ['loop_flow_kg_s', v('loop_flow_kg_s'), loopBudget],
    ['core_power_relative', v('core_power_relative'), nb.corePowerRelative.budget]]
-  const rows = checks.map(([k, x, b]) => ({metric: k, value: x ?? null, budget: b, pass: typeof x === 'number' && Number.isFinite(b) && x <= b}))
-  return {reference: c.reference, rows, pass: rows.every(r => r.pass)}
- })
- const r2 = numeric.find(n => n.reference === 'R2')
- lines.push({id: 'numerical', verdict: r2 ? (r2.pass ? 'pass' : 'fail') : 'not evaluable',
-  evidence: {references_completed: completed.map(c => c.reference), references_failed: comparisons.filter(c => !completed.includes(c)).map(c => ({reference: c.reference, failure: c.reference_failure, to_s: c.e0?.to_s})), numeric}})
+  return checks.map(([k, x, b]) => ({metric: k, value: x ?? null, bound: fraction * b, pass: e0?.evaluable === true && typeof x === 'number' && Number.isFinite(b) && x <= fraction * b}))
+ }
+ const comparisons = (receipt.families?.E_refinement?.comparisons ?? []) as J[]
+ const levels = (ref.levels as number[]).map(k => `rtol/${k}`)
+ const byName = (n: string) => comparisons.find(c => c.reference === n)
+ const done = (n: string) => { const c = byName(n); return c != null && c.reference_failure == null && c.e0?.evaluable === true && c.e0?.to_s >= cases.held_s - 1e-9 }
+ const status = levels.map(n => ({level: n, completed: done(n), failure: byName(n)?.reference_failure ?? (byName(n) ? null : 'not run'), to_s: byName(n)?.e0?.to_s ?? null}))
+ const i = levels.map(done).lastIndexOf(true)
+ let numerical: Line
+ if (i < 1 || !done(levels[i - 1])) numerical = {id: 'numerical', verdict: 'fail', evidence: {rule: ref.noPair, levels: status}}
+ else {
+  const pair = (receipt.families.E_refinement.series ?? []).find((x: J) => x.looser === levels[i - 1] && x.tighter === levels[i])
+  const convergence = budgetRows(pair?.e0, ref.convergenceFraction), run_vs = budgetRows(byName(levels[i]).e0, 1)
+  numerical = {id: 'numerical', verdict: convergence.every(r => r.pass) && run_vs.every(r => r.pass) ? 'pass' : 'fail',
+   evidence: {levels: status, converged: levels[i], against: levels[i - 1], convergence, run_vs_converged: run_vs}}
+ }
+ lines.push(numerical)
  // Steady over the last window.
  const w = budgets.steady.window_s, f = budgets.steady.fraction, end = zero + tl.end_s
  const frames = (run.frames as J[]).filter(r => r.t_s >= end - w - 1e-9)
