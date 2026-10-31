@@ -1926,6 +1926,8 @@ mod integrated {
                 Assembly::Blocks(structure) => {
                     // The operator counts its colored assemblies itself.
                     let started = std::time::Instant::now();
+                    // R4-WATER-PARTIALS: the water basis store for this assembly.
+                    crate::basis_assembly(true);
                     // PERF E-PROF: the pieces in instructions, when profiled.
                     let result = if leitbild_operating_plant::cost::pieces() {
                         let mut profile = Profile::new(leitbild_operating_plant::cost::now_f64);
@@ -1956,6 +1958,7 @@ mod integrated {
                             Classes::ALL,
                         )
                     };
+                    crate::basis_assembly(false);
                     self.joined.counters.jacobians += 1;
                     self.joined.counters.jacobian_wall_s += started.elapsed().as_secs_f64();
                     result

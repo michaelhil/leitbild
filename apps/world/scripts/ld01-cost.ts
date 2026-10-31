@@ -37,7 +37,16 @@
  *   frame instructions include that overhead; cost verdicts read the
  *   unprofiled run of the same trajectory.
  *
- * Usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--table] <receipt.json>...
+ * - accuracy (with --budgets <operator-grade-budgets.md>, gated receipts
+ *   only): each E0 comparison's metrics against the pinned
+ *   `ld01-operator-budgets` block, as value / budget: PZR pressure
+ *   (pzr_roof_bias_pa), PZR level (pzr_level_m), SG NR level as liquid
+ *   volume (sg_liquid_m3), SG pressure (sg_pressure_pa), loop flow
+ *   (loop_flow_kg_s, budget x nominal flow), core power
+ *   (core_power_relative). Metrics the block does not judge are left out.
+ *   Pass: every judged ratio <= 1 in every comparison.
+ *
+ * Usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--budgets page.md] [--table] <receipt.json>...
  * Prints one JSON object per receipt (with --table, a short text table). */
 import {readFileSync} from 'node:fs'
 import {basename} from 'node:path'
@@ -50,6 +59,15 @@ type ProfileFrame=[number,number,[number,number][]]
 export type Profile={paths:string[],read_instructions:number,frames:ProfileFrame[]}
 type Window={rate:number,from_after_event_s:number|null}
 
+/** Element `k` of `xs`; an absent one is a defect of the receipt or judge. */
+function get<T>(xs:readonly T[],k:number):T{
+ const x=xs[k]
+ if(x===undefined)throw new Error(`index ${k} outside ${xs.length}`)
+ return x
+}
+const tOf=(f:Frames,k:number)=>get(f,k)[0]
+const iOf=(f:Frames,k:number)=>get(f,k)[1]
+
 /** The frame trace, event time, R instants and profile of a receipt. */
 export function traceOf(receipt:any){
  const run=receipt.run??receipt
@@ -57,7 +75,7 @@ export function traceOf(receipt:any){
  if(!frames||frames.length<2)throw new Error('the receipt has no frame instructions (LD01_OU_FRAME_COST=1)')
  const restarts:number[]=(run.instants??[]).filter((e:any)=>e.class==='R').map((e:any)=>e.t_s)
  const zero=receipt.timeline?.zero_s??run.timeline?.zero_s
- const event:number=typeof zero==='number'?zero:(restarts[0]??frames[0][0])
+ const event:number=typeof zero==='number'?zero:(restarts[0]??tOf(frames,0))
  const seat=receipt.timeline?.last_seat_s??run.timeline?.last_seat_s
  const lastSeat:number|null=typeof seat==='number'?seat:null
  const profile:Profile|undefined=run.perf_profile??undefined
@@ -69,14 +87,14 @@ export function traceOf(receipt:any){
 function rates(frames:Frames,ratio:number){
  const out:number[]=[]
  for(let k=1;k<frames.length;k++){
-  const dt=frames[k][0]-frames[k-1][0]
-  if(!(dt>0))throw new Error(`frames out of order at ${frames[k][0]} s`)
-  out.push((frames[k][1]-frames[k-1][1])/ratio/dt)
+  const dt=tOf(frames,k)-tOf(frames,k-1)
+  if(!(dt>0))throw new Error(`frames out of order at ${tOf(frames,k)} s`)
+  out.push((iOf(frames,k)-iOf(frames,k-1))/ratio/dt)
  }
  return out
 }
 function meanRate(frames:Frames,a:number,b:number,ratio:number){
- return (frames[b][1]-frames[a][1])/ratio/(frames[b][0]-frames[a][0])
+ return (iOf(frames,b)-iOf(frames,a))/ratio/(tOf(frames,b)-tOf(frames,a))
 }
 /** Highest mean rate over `n` consecutive intervals: [rate, first frame]. */
 function worst(frames:Frames,n:number,ratio:number):[number,number]{
@@ -92,7 +110,7 @@ const firstAtOrAfter=(frames:Frames,t:number)=>{const k=frames.findIndex(f=>f[0]
 /** Kind of one profile path (exclusive instructions). */
 export function kindOf(path:string):string|null{
  if(path.startsWith('pieces>'))return null
- const parts=path.split('>'),leaf=parts[parts.length-1]
+ const leaf=get(path.split('>'),path.split('>').length-1)
  if(leaf==='klu-setup')return 'KLU factor'
  if(leaf==='klu-solve')return 'KLU solve'
  if(leaf==='nuclear')return 'nuclear rows'
@@ -114,24 +132,25 @@ export function kindOf(path:string):string|null{
 /** Phase of one profile path: its outermost scope. */
 export function phaseOf(path:string):string|null{
  if(path.startsWith('pieces>'))return null
- const root=path.split('>')[0]
+ const root=get(path.split('>'),0)
  if(root==='apply')return 'event handling (incl. reinit, IC)'
  if(root.startsWith('step['))return `steps ${root.slice(4)} after segment start`
  if(root==='observe'||root==='step-state'||root==='gate')return 'observers'
  return `other: ${root}`
 }
 
+type Counts={steps:number,residuals:number,jacobians:number,klu_setups:number,klu_solves:number,restarts:number,ic:number}
 type Split={total_g:number,rate:number,by_kind:Record<string,number>,by_phase:Record<string,number>,
- jacobian_pieces_g:Record<string,number>,counts:Record<string,number>,overhead_share:number}
+ jacobian_pieces_g:Record<string,number>,counts:Counts,overhead_share:number}
 
 /** The profile's breakdown between frame times `ta` and `tb`. */
 export function breakdown(profile:Profile,frames:Frames,ta:number,tb:number,ratio:number):Split{
- const at=(t:number)=>{const k=profile.frames.findIndex(f=>Math.abs(f[0]-t)<1e-9);if(k<0)throw new Error(`no profile frame at ${t} s`);return profile.frames[k]}
+ const at=(t:number)=>{const k=profile.frames.findIndex(f=>Math.abs(f[0]-t)<1e-9);if(k<0)throw new Error(`no profile frame at ${t} s`);return get(profile.frames,k)}
  const fa=at(ta),fb=at(tb)
  const ia=frames.find(f=>Math.abs(f[0]-ta)<1e-9)![1],ib=frames.find(f=>Math.abs(f[0]-tb)<1e-9)![1]
  const total=ib-ia,dt=tb-ta
  const byKind:Record<string,number>={},byPhase:Record<string,number>={},pieces:Record<string,number>={}
- const counts:Record<string,number>={steps:0,residuals:0,jacobians:0,klu_setups:0,klu_solves:0,restarts:0,ic:0}
+ const counts={steps:0,residuals:0,jacobians:0,klu_setups:0,klu_solves:0,restarts:0,ic:0}
  let scoped=0
  profile.paths.forEach((p,k)=>{
   const [ca,xa]=fa[2][k]??[0,0],[cb,xb]=fb[2][k]??[0,0]
@@ -158,12 +177,45 @@ export function breakdown(profile:Profile,frames:Frames,ta:number,tb:number,rati
   counts,overhead_share:(fb[1]-fa[1])*profile.read_instructions/total}
 }
 
+/** The pinned operator-grade block of a wiki page. */
+export function operatorBudgets(page:string){
+ const m=page.match(/```ld01-operator-budgets\n([\s\S]*?)\n```/)
+ if(!m||m[1]===undefined)throw new Error('no ld01-operator-budgets block on the page')
+ return JSON.parse(m[1])
+}
+/** Nominal loop flow, kg/s, the block's loop-flow fraction refers to. */
+export const NOMINAL_LOOP_FLOW_KG_S=9165
+/** E0 metric -> budget in the metric's own unit. */
+export function e0Budgets(block:any):Record<string,number>{
+ const n=block.numerical
+ return {pzr_roof_bias_pa:n.pzrPressure_Pa.budget_Pa,pzr_level_m:n.pzrLevel_m.budget_m,
+  sg_liquid_m3:n.sgNrLevel_m.asLiquidVolume_m3,sg_pressure_pa:n.sgPressure_Pa.budget_Pa,
+  loop_flow_kg_s:n.loopFlowFractionOfNominal.budget*NOMINAL_LOOP_FLOW_KG_S,
+  core_power_relative:n.corePowerRelative.budget}
+}
+/** Every E0 comparison's judged ratios (value / budget). */
+export function accuracy(receipt:any,block:any){
+ const budgets=e0Budgets(block)
+ const comparisons=receipt.families?.E_refinement?.comparisons
+ if(!comparisons)throw new Error('accuracy needs a gated receipt (families.E_refinement)')
+ const out=comparisons.map((c:any)=>{
+  const ratios:Record<string,number|null>={}
+  for(const [k,b] of Object.entries(budgets)){
+   const v=c.e0?.metrics?.[k]?.value
+   ratios[k]=typeof v==='number'?v/b:null
+  }
+  return {reference:c.reference,span_after_zero_s:c.span_after_zero_s,failure:c.reference_failure??null,ratios}
+ })
+ const pass=out.every((c:any)=>!c.failure&&Object.values(c.ratios).every(r=>r!==null&&(r as number)<=1))
+ return {revision:block.revision,pass,comparisons:out}
+}
+
 /** The judge's result for one receipt. */
 export function judge(receipt:any,ratio=QUIET_RATIO){
  const {frames,runFrames,event,restarts,lastSeat,profile,case:c}=traceOf(receipt)
  const r=rates(frames,ratio)
- const t0=frames[0][0],tEnd=frames[frames.length-1][0]
- const win=(n:number):Window=>{const [rate,k]=worst(frames,n,ratio);return {rate,from_after_event_s:frames[k][0]-event}}
+ const t0=tOf(frames,0),tEnd=tOf(frames,frames.length-1)
+ const win=(n:number):Window=>{const [rate,k]=worst(frames,n,ratio);return {rate,from_after_event_s:tOf(frames,k)-event}}
  const w5=win(5)
  const kSteady=firstAtOrAfter(frames,tEnd-10)
  const steady=meanRate(frames,kSteady,frames.length-1,ratio)
@@ -173,10 +225,10 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
  const late=restarts.filter(t=>t>=after10-1e-9).length
  const restartsPerS=tEnd>after10?late/(tEnd-after10):null
  let lag=0,peak=0,peakAt:number|null=null
- for(let k=1;k<frames.length;k++){lag=Math.max(0,lag+(r[k-1]-1)*(frames[k][0]-frames[k-1][0]));if(lag>peak){peak=lag;peakAt=frames[k][0]-event}}
+ for(let k=1;k<frames.length;k++){lag=Math.max(0,lag+(get(r,k-1)-1)*(tOf(frames,k)-tOf(frames,k-1)));if(lag>peak){peak=lag;peakAt=tOf(frames,k)-event}}
  const out:any={case:c,quiet_ratio:ratio,event_s:event,span_after_event_s:tEnd-event,
   worst_0_5_s:w5,worst_frame:win(1),worst_2_5_s:win(5*5),steady_last_10_s:steady,pre_event:preEvent,
-  seat_window:lastSeat===null?null:(()=>{const a=firstAtOrAfter(frames,event),b=Math.max(a+1,firstAtOrAfter(frames,event+lastSeat));return {last_seat_after_event_s:lastSeat,to_after_event_s:frames[b][0]-event,rate:meanRate(frames,a,b,ratio)}})(),
+  seat_window:lastSeat===null?null:(()=>{const a=firstAtOrAfter(frames,event),b=Math.max(a+1,firstAtOrAfter(frames,event+lastSeat));return {last_seat_after_event_s:lastSeat,to_after_event_s:tOf(frames,b)-event,rate:meanRate(frames,a,b,ratio)}})(),
   average:meanRate(frames,0,frames.length-1,ratio),restarts:restarts.length,
   restarts_per_s_after_10_s:restartsPerS,peak_lag_s:peak,peak_lag_after_event_s:peakAt,
   budget:{dedicated:w5.rate<=BUDGET.dedicated.worst&&steady<=BUDGET.dedicated.steady,
@@ -186,8 +238,8 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
   if(!runFrames)throw new Error('a profile without the run drive frames')
   const [,k5]=worst(runFrames,5,ratio)
   const k10=firstAtOrAfter(runFrames,event+10),ke=firstAtOrAfter(runFrames,event)
-  const ks=firstAtOrAfter(runFrames,runFrames[runFrames.length-1][0]-10)
-  const tf=(k:number)=>runFrames[k][0]
+  const ks=firstAtOrAfter(runFrames,tOf(runFrames,runFrames.length-1)-10)
+  const tf=(k:number)=>tOf(runFrames,k)
   out.breakdown={worst_0_5_s:breakdown(profile,runFrames,tf(k5),tf(k5+5),ratio),
    seat_window:lastSeat===null?null:breakdown(profile,runFrames,tf(ke),tf(Math.max(ke+1,firstAtOrAfter(runFrames,event+lastSeat))),ratio),
    first_10_s:ke<k10?breakdown(profile,runFrames,tf(ke),tf(k10),ratio):null,
@@ -210,14 +262,18 @@ function table(name:string,j:any){
 
 if(import.meta.main){
  const args=process.argv.slice(2)
- let ratio=QUIET_RATIO,asTable=false
+ let ratio=QUIET_RATIO,asTable=false,block:any=null
  const i=args.indexOf('--quiet-ratio')
  if(i>=0){ratio=Number(args[i+1]);args.splice(i,2)}
+ const bi=args.indexOf('--budgets')
+ if(bi>=0){block=operatorBudgets(readFileSync(get(args,bi+1),'utf8'));args.splice(bi,2)}
  const t=args.indexOf('--table')
  if(t>=0){asTable=true;args.splice(t,1)}
- if(!args.length||!(ratio>0)){console.error('usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--table] <receipt.json>...');process.exit(2)}
+ if(!args.length||!(ratio>0)){console.error('usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--budgets page.md] [--table] <receipt.json>...');process.exit(2)}
  for(const file of args){
-  const j=judge(JSON.parse(readFileSync(file,'utf8')),ratio)
-  console.log(asTable?table(basename(file),j):JSON.stringify({receipt:basename(file),...j}))
+  const receipt=JSON.parse(readFileSync(file,'utf8'))
+  const j:any=judge(receipt,ratio)
+  if(block)j.accuracy=accuracy(receipt,block)
+  console.log(asTable?table(basename(file),j)+(j.accuracy?`\n  accuracy r${j.accuracy.revision} ${j.accuracy.pass?'pass':'FAIL'}: `+j.accuracy.comparisons.map((c:any)=>`${c.reference} `+Object.entries(c.ratios).map(([k,v])=>`${k} ${v===null?'-':(v as number).toFixed(3)}`).join(', ')).join('; '):''):JSON.stringify({receipt:basename(file),...j}))
  }
 }
