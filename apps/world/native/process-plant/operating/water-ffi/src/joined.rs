@@ -1036,8 +1036,9 @@ mod integrated {
         restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, false)
     }
 
-    /// E-EVT (plan r4): [`discrete_restart`], or, when the owners' changes
-    /// leave everything the integrator reads bitwise as it was
+    /// E-EVT (plan r4): [`discrete_restart`], or, for a command or an owner
+    /// time event whose owners' changes leave everything the integrator
+    /// reads bitwise as it was
     /// ([`Restarted::noop`]), no consistent start and no IDAReInit. Only a
     /// driver whose instant carries no client change of its own (such as an
     /// H1 window-end restart, which must reconfigure the segment) calls it.
@@ -1067,6 +1068,9 @@ mod integrated {
         restart: &Restart,
         allow_noop: bool,
     ) -> Result<Restarted, String> {
+        // E-EVT (plan r4, lead): only a command or an owner time event may be
+        // a no-op; a located root (a kink root among them) keeps its restart.
+        let allow_noop = allow_noop && !matches!(discrete, Discrete::Roots(_));
         if absolute_all.len() != y_all.len() {
             return Err("restart tolerances layout".into());
         }
