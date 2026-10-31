@@ -93,13 +93,33 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
  if (!op) lines.push({id: 'steady.settled', verdict: 'not evaluable', evidence: 'no phys_operator_frames (LD01_PHYS_OPERATOR_FRAMES=1)'})
  else {
   const of = (op.frames as J[]).filter(r => r.t_s >= end - w - 1e-9), first = of.filter(r => r.t_s <= of[0].t_s + 60 + 1e-9), last = of.filter(r => r.t_s >= end - 60 - 1e-9)
-  const scale = (q: string) => q.startsWith('PzrLevel') ? 14 : q.startsWith('SgCollapsedLevel') ? 5 : q.startsWith('LoopFlow') || q.startsWith('Proxy') ? 1 : null
+  const scale = (q: string) => q.startsWith('PzrLevel') ? 14 : q.startsWith('SgCollapsedLevel') ? 5 : q.startsWith('LoopFlow') || q.startsWith('CurrentProxy') ? 1 : null
   for (const q of Object.keys(of[0]?.values ?? {})) {
    const s = scale(q); if (s == null) continue
    const d = mean(last.map(r => r.values[q])) - mean(first.map(r => r.values[q]))
    lines.push({id: `steady.settled ${q}`, verdict: Math.abs(d) <= f * s ? 'pass' : 'fail', evidence: {change: d, bound: f * s}})
   }
  }
+ // Directions (budgets block `transient.cases`), on the case clock.
+ const dirs = budgets.transient?.cases?.[key]?.directions ?? {}
+ const holdAbs = tl.holding_lost_s == null ? null : zero + tl.holding_lost_s
+ const opAt = (t: number) => op ? (op.frames as J[]).reduce((b: J, r: J) => Math.abs(r.t_s - t) < Math.abs(b.t_s - t) ? r : b) : null
+ const keys = (prefix: string) => op ? Object.keys(op.frames[0].values).filter(q => q.startsWith(prefix)) : []
+ const val = (t: number, q: string) => opAt(t)?.values?.[q] as number
+ const sgAt = (t: number) => (run.frames as J[]).reduce((b: J, r: J) => Math.abs(r.t_s - t) < Math.abs(b.t_s - t) ? r : b).sg_pressure_pa.map((x: J) => x[1] as number)
+ const direction: Record<string, () => Line> = {
+  sgPressure_Pa: () => { const after = (run.frames as J[]).filter(r => r.t_s >= zero), max = Math.max(...after.flatMap(r => r.sg_pressure_pa.map((x: J) => x[1])))
+   const rose = sgAt(zero + 5).every((p: number, i: number) => p > sgAt(zero)[i]); return {id: 'direction.sgPressure', verdict: rose && max < 7947559 ? 'pass' : 'fail', evidence: {at_zero: sgAt(zero), at_5_s: sgAt(zero + 5), max_after: max, below: 7947559}} },
+  pzrLevel_m: () => { const q = keys('PzrLevel')[0]; if (!q) return {id: 'direction.pzrLevel', verdict: 'not evaluable'}
+   const after = (op.frames as J[]).filter(r => r.t_s >= zero).map(r => r.values[q] as number)
+   return {id: 'direction.pzrLevel', verdict: after[after.length - 1] < after[0] && Math.min(...after) > 3.0 ? 'pass' : 'fail', evidence: {at_zero: after[0], at_end: after[after.length - 1], min: Math.min(...after)}} },
+  loopFlowFractionOfNominal: () => { const qs = key === 'C3' ? keys('LoopFlow { loop_id: "A"') : keys('LoopFlow'), t1 = key === 'C3' ? holdAbs : zero + 10
+   if (!qs.length || t1 == null) return {id: 'direction.loopFlow', verdict: 'not evaluable'}
+   const e = qs.map(q => ({q, at_zero: val(zero, q), at: val(t1, q)})); return {id: 'direction.loopFlow', verdict: e.every(x => x.at < x.at_zero) ? 'pass' : 'fail', evidence: {t_s: t1 - zero, loops: e}} },
+  corePowerRelative: () => { const q = keys('CurrentProxy')[0]; if (!q || holdAbs == null) return {id: 'direction.corePower', verdict: 'not evaluable'}
+   const a = val(holdAbs, q), b = val(holdAbs + 10, q); return {id: 'direction.corePower', verdict: b < a ? 'pass' : 'fail', evidence: {at_holding_loss: a, at_10_s_after: b}} },
+ }
+ for (const d of Object.keys(dirs)) lines.push(direction[d] ? direction[d]() : {id: `direction.${d}`, verdict: 'not evaluable', evidence: 'no evaluator'})
  // Sequence, may and must-not lines.
  const causes = (tl.causes as [number, string, number][]), hold = tl.holding_lost_s as number | null
  const accepted = (fn: string) => [0, 1, 2].map(d => causes.find(c => c[0] === d && c[1] === fn)?.[2] ?? null)
