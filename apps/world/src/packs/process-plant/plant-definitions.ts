@@ -14,6 +14,12 @@ import { pressurizedWaterReactorReferenceIcForGraph } from './specs/reference-ic
 export const processPlantPwrReferenceModelRef = 'process-plant.pwr.reference'
 export const processPlantPwrFullPowerOperatingPointRef = 'process-plant.pwr.full-power'
 export const processPlantPwrReferenceAutomationRef = 'process-plant.pwr.standard'
+/** The LD-01 unit, run by its native engine from the artifact LD01_UNIT_ARTIFACT names (engine/artifact.ts). */
+export const processPlantLd01ModelRef = 'process-plant.ld01'
+/** The unit at the S3 settled state its artifact holds. */
+export const processPlantLd01SettledOperatingPointRef = 'process-plant.ld01.s3-settled'
+/** The unit's own protection, which runs in its kernel (platform design §3 interpretation 1). */
+export const processPlantLd01KernelAutomationRef = 'process-plant.ld01.kernel'
 
 export interface ResolvedProcessPlantOperatingPoint {
   readonly parameterOverrides: Readonly<Record<string, unknown>>
