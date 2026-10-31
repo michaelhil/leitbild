@@ -362,7 +362,7 @@ describe('authored hot operating source', () => {
 })
 
 const energyCoefficients: OperatingEnergyCoefficients = {
-  identity: 'LD01-HOT-ENERGY-1', preparationDuration_s: 2592000,
+  identity: 'LD01-HOT-ENERGY-1', preparationDuration_s: 2592000, decayHistoryDuration_s: 2592000,
   fertileCapture_barn: 4, fertileBinding_MeV: 4.8063822, xenonBinding_MeV: 8.0871234, samariumBinding_MeV: 7.9867556,
   bindingCoolantFraction: .1, bindingCoolantSensitivity: [0, .1, .2],
   promptFissionCoolantFraction: .02, promptFissionCoolantSensitivity: [0, .02, .04],
@@ -400,7 +400,28 @@ describe('actual source / finite material / event-energy join', () => {
     // the additional operational allowance begins at this immutable baseline.
     expect(() => validateOperatingSourceAccepted(preparedSource, preparedSource.reference.neutrons, preparedSource.reference.conditions, 0)).not.toThrow()
     expect(sum(energy.carriers.map(c => c.spentFissions)) / p.referenceFissions_per_s).toBeGreaterThan(30 * 86400)
-    expect(() => prepareOperatingEnergy(mapping, p, { ...energyCoefficients, preparationDuration_s: 600 * 86400 }, history)).toThrow('Infeasible')
+    expect(() => prepareOperatingEnergy(mapping, p, { ...energyCoefficients, preparationDuration_s: 600 * 86400, decayHistoryDuration_s: 600 * 86400 }, history)).toThrow('Infeasible')
+  })
+
+  test('R4-NUC-DECAY-HISTORY: a longer decay-heat history fills only the 25 stores, decayed through the unchanged preparation', () => {
+    const year = 365 * 86400
+    const longer = prepareOperatingEnergy(mapping, p, { ...energyCoefficients, decayHistoryDuration_s: year }, history)
+    energy.carriers.forEach((c, a) => {
+      const l = longer.carriers[a]!
+      // Depletion, poisons, precursors and present events are the preparation's, bit for bit.
+      expect([l.fissileAtoms, l.fertileAtoms, l.iodineAtoms, l.xenonAtoms, l.samariumAtoms, l.fissions_per_s, ...l.precursors])
+        .toEqual([c.fissileAtoms, c.fertileAtoms, c.iodineAtoms, c.xenonAtoms, c.samariumAtoms, c.fissions_per_s, ...c.precursors])
+      c.stores_J.forEach((E, g) => {
+        const k = history.fissionProductLambda_s_inv[g] ?? 1 / history.effectiveCaptureTimeConstants_s[g - 23]!
+        expect(l.stores_J[g]!).toBeGreaterThanOrEqual(E)
+        // A short-lived store forgets the extension; a long-lived one keeps more of it.
+        if (k * 2592000 > 50) expect(l.stores_J[g]!).toBe(E)
+      })
+      expect(l.history_W).toBeGreaterThan(c.history_W)
+      expect(l.preparationReleased_J).toBeGreaterThanOrEqual(0)
+    })
+    // Equal durations reproduce the preparation exactly.
+    expect(prepareOperatingEnergy(mapping, p, { ...energyCoefficients }, history).carriers).toEqual(energy.carriers)
   })
 
   test('finite six-group precursor and 25 heat stores are not silently overwritten by stationary values', () => {
