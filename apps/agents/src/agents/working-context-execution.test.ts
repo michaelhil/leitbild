@@ -6,7 +6,7 @@ import { evaluate, type EvalOptions } from './evaluation.ts'
 import { createToolExecutor } from './spawn.ts'
 import { createExecutionStore } from '../core/executions/store.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
-import { createWorkingContextArchive } from '../core/working-context.ts'
+import { contextCheckpointReceiptForModel, createWorkingContextArchive } from '../core/working-context.ts'
 import { createContextCheckpointTool } from '../tools/built-in/context-checkpoint.ts'
 import { toolsToDefinitions } from '../llm/tool-capability.ts'
 import type { ChatRequest, LLMProvider } from '../core/types/llm.ts'
@@ -78,6 +78,13 @@ test('three real archived checkpoints preserve roles, complete selected protocol
     expect(stage.event.manifest.actionLedger).toHaveLength(1)
     expect(stage.event.manifest.actionLedger[0]!.arguments).toEqual({ turnId: 'turn', toolCallId: 'call_1_0', part: 'arguments' })
     expect(JSON.stringify(stage)).not.toContain('private-local')
+    const index = stage.event.manifest.checkpointId === 'context_1' ? 4 : stage.event.manifest.checkpointId === 'context_2' ? 6 : 8
+    const receipt = requests[index]!.messages.findLast(message => message.role === 'tool')!
+    const wire = JSON.parse(receipt.content)
+    expect(wire.result).toEqual(contextCheckpointReceiptForModel(stage.event.manifest))
+    expect(wire.result).not.toHaveProperty('actionLedger')
+    const raw = f.store.getCall('room', 'turn', wire.execution.toolCallId)!.result!
+    expect((raw.data as { manifest: unknown }).manifest).toEqual(stage.event.manifest)
   }
   expect(f.store.getModelCall('room', 'turn', 'model_9')!.contextCheckpointId).toBe('context_3')
   const old = f.store.getCall('room', 'turn', 'call_1_0')!

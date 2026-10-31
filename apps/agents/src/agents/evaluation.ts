@@ -10,7 +10,7 @@ import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
 import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider, ProviderContinuation } from '../core/types/llm.ts'
 import type { CorrectionCause, EvalEventCore } from '../core/types/agent-eval.ts'
 import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult, ToolProgress } from '../core/types/tool.ts'
-import { CONTEXT_CHECKPOINT_TOOL, contextCheckpointInputSchema, prepareWorkingContextCheckpoint, projectWorkingContextMessages, workingContextArchiveFailure,
+import { CONTEXT_CHECKPOINT_TOOL, contextCheckpointInputSchema, contextCheckpointManifestSchema, contextCheckpointReceiptForModel, prepareWorkingContextCheckpoint, projectWorkingContextMessages, workingContextArchiveFailure,
   type WorkingContextArchive, type WorkingContextGroup, type PreparedWorkingContext, type WorkingMessage } from '../core/working-context.ts'
 import type { MessageCause, ToolTraceEntry } from '../core/types/messaging.ts'
 import type { ContextResult, FlushInfo } from './context-builder.ts'
@@ -111,7 +111,10 @@ export const formatToolDataForLLM = (data: unknown): string => {
 // the turn's next keys. Checks of the answer read the raw result or the turn's
 // cards, never this text (workspaceCallResultForModel says what it leaves out).
 const formatToolResult = (tool: string, raw: ToolResult, cards: TurnCards): string => {
-  const result = tool === 'workspace_call' ? workspaceCallResultForModel(raw, cards) : raw
+  const result = tool === 'workspace_call' ? workspaceCallResultForModel(raw, cards)
+    : tool === CONTEXT_CHECKPOINT_TOOL && raw.success ? { ...raw,
+      data: contextCheckpointReceiptForModel(contextCheckpointManifestSchema.parse((raw.data as { manifest?: unknown } | undefined)?.manifest)),
+    } : raw
   if (raw.recall) return JSON.stringify({ execution: raw.recall,
     ...(result.success ? (Object.hasOwn(result, 'data') ? { result: result.data } : {})
       : { result: { success: false, error: result.error ?? 'Tool failed', ...(result.data === undefined ? {} : { details: result.data }) } }),

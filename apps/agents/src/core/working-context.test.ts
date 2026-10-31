@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createExecutionStore, type ExecutionStore } from './executions/store.ts'
-import { createWorkingContextArchive, prepareWorkingContextCheckpoint, projectWorkingContextMessages, type WorkingContextGroup, type WorkingMessage } from './working-context.ts'
+import { contextCheckpointReceiptForModel, createWorkingContextArchive, prepareWorkingContextCheckpoint, projectWorkingContextMessages, type ContextCheckpointManifest, type WorkingContextGroup, type WorkingMessage } from './working-context.ts'
 
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const close of cleanup.splice(0).reverse()) close() })
@@ -67,4 +67,32 @@ test('refuse unseen, incomplete, forged protocol groups and foreign or finished 
   expect(() => foreign.readCall('a')).toThrow('unavailable')
   store.finishTurn('turn', 'completed')
   expect(() => prepare([a])).toThrow('no longer running')
+})
+
+test('model receipt factors only exact cumulative ledger descriptors and reconstructs every invocation in original order', () => {
+  const { store, archive } = fixture(); const a = group(store, 'a')
+  const base = prepareWorkingContextCheckpoint({ input: { reason: 'literal semantic boundary', retain: [{ toolCallId: 'a', reason: 'literal model reason' }] },
+    groups: [a], archive, checkpointCallId: 'checkpoint', precedingModelId: 'model_2', ordinal: 2 }).manifest
+  const effects = [{ kind: 'change' as const, outcome: 'returned' as const, operationId: 'operation', target: { unit: '2', nested: { exact: 1.23456789012345 } } },
+    { kind: 'read' as const, outcome: 'returned' as const }]
+  const entry = (toolCallId: string, actualEffects: ContextCheckpointManifest['actionLedger'][number]['effects'] = effects, tool = 'workspace_call') => ({ toolCallId, tool, effects: actualEffects,
+    arguments: { turnId: base.turnId, toolCallId, part: 'arguments' as const }, read: { turnId: base.turnId, toolCallId, part: 'result' as const } })
+  const manifest: ContextCheckpointManifest = { ...base,
+    previousCheckpoint: { checkpointId: 'context_1', read: { turnId: base.turnId, toolCallId: 'prior', part: 'result' } },
+    actionLedger: [entry('first'), entry('other', [{ ...effects[0]!, target: { unit: '3' } }]), entry('repeat'),
+      entry('reordered', [...effects].reverse()), entry('different-tool', effects, 'another_tool')],
+  }
+  const before = JSON.stringify(manifest), projected = contextCheckpointReceiptForModel(manifest)
+  expect(projected.returnedChangeGroups).toHaveLength(4)
+  expect(projected.returnedChangeGroups[0]!.calls).toEqual([{ index: 0, toolCallId: 'first' }, { index: 2, toolCallId: 'repeat' }])
+  const expanded = projected.returnedChangeGroups.flatMap(descriptor => descriptor.calls.map(call => ({ index: call.index, entry: {
+    toolCallId: call.toolCallId, tool: descriptor.tool, effects: descriptor.effects,
+    arguments: { turnId: projected.turnId, toolCallId: call.toolCallId, part: 'arguments' },
+    read: { turnId: projected.turnId, toolCallId: call.toolCallId, part: 'result' },
+  } }))).sort((a, b) => a.index - b.index).map(call => call.entry)
+  const { kind: _kind, returnedChangeGroups: _groups, ...unchanged } = projected
+  expect({ ...unchanged, actionLedger: expanded }).toEqual(manifest)
+  expect(JSON.stringify(manifest)).toBe(before)
+  expect(contextCheckpointReceiptForModel({ ...base, actionLedger: [] }).returnedChangeGroups).toEqual([])
+  expect(() => contextCheckpointReceiptForModel({ ...manifest, actionLedger: [{ ...manifest.actionLedger[0]!, read: { turnId: 'foreign', toolCallId: 'first', part: 'result' } }] })).toThrow('recall selectors')
 })

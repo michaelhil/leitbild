@@ -39,6 +39,31 @@ export const contextCheckpointManifestSchema = z.object({
     retainedCalls: z.number().int().nonnegative(), archivedCalls: z.number().int().nonnegative() }).strict(),
 }).strict()
 export type ContextCheckpointManifest = z.infer<typeof contextCheckpointManifestSchema>
+
+/** Model presentation only: factor repeated cumulative invocation descriptors.
+ * All other manifest fields and the archived full outcome remain exact. */
+export const contextCheckpointReceiptForModel = (manifest: ContextCheckpointManifest) => {
+  const returnedChangeGroups: Array<{
+    tool: string; effects: ContextCheckpointManifest['actionLedger'][number]['effects']
+    calls: Array<{ index: number; toolCallId: string }>
+  }> = []
+  const descriptors = new Map<string, number>()
+  manifest.actionLedger.forEach((entry, index) => {
+    if (!equalJson(entry.arguments, { turnId: manifest.turnId, toolCallId: entry.toolCallId, part: 'arguments' })
+      || !equalJson(entry.read, { turnId: manifest.turnId, toolCallId: entry.toolCallId, part: 'result' })) {
+      throw new Error('context_checkpoint_receipt_invalid: ledger recall selectors do not match their exact turn/call identity')
+    }
+    const descriptor = { tool: entry.tool, effects: entry.effects }
+    const key = JSON.stringify(descriptor)
+    const existing = descriptors.get(key)
+    if (existing === undefined) {
+      descriptors.set(key, returnedChangeGroups.length)
+      returnedChangeGroups.push({ ...descriptor, calls: [{ index, toolCallId: entry.toolCallId }] })
+    } else returnedChangeGroups[existing]!.calls.push({ index, toolCallId: entry.toolCallId })
+  })
+  const { actionLedger: _ledger, ...exactManifest } = manifest
+  return { kind: 'context-checkpoint' as const, ...exactManifest, returnedChangeGroups }
+}
 export type WorkingMessage = ChatRequest['messages'][number]
 export interface WorkingContextGroup {
   readonly groupId: string
