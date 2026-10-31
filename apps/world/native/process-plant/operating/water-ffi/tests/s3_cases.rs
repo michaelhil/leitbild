@@ -1711,14 +1711,13 @@ fn drive(
     // Explicit matrix management (plan r4 baseline, lead 31 Oct: MR-1 retired
     // under R11-2a's N2 terms; it fails C2 at the last seat and costs more):
     // LD01_S3_MATRIX_REBUILD=stock runs stock IDAS matrix management,
-    // =packet the packet's MR-1 section; unset keeps the packet's.
-    match std::env::var("LD01_S3_MATRIX_REBUILD").ok().as_deref() {
-        None | Some("packet") => {}
-        Some("stock") => {
-            driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock
-        }
+    // =packet the packet's MR-1 section; unset is stock (the r4 baseline,
+    // $SP/lanes/BASELINE-r4.md). The receipt's configuration records it.
+    driver.matrix_rebuild = match std::env::var("LD01_S3_MATRIX_REBUILD").ok().as_deref() {
+        None | Some("stock") => leitbild_operating_water::frame::MatrixRebuild::Stock,
+        Some("packet") => leitbild_operating_water::frame::MatrixRebuild::Packet,
         Some(v) => panic!("LD01_S3_MATRIX_REBUILD={v}: stock or packet"),
-    }
+    };
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
