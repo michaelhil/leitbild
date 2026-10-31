@@ -22,10 +22,11 @@
 mod spine;
 
 use leitbild_operating_plant::{
+    control::feed::Mode,
     joined::packet::Packet,
     sg::{
         packet::Section,
-        secondary::{Secondaries, Stem},
+        secondary::{FeedMode, Secondaries},
     },
     thermal::{Scalar, WaterProperties},
 };
@@ -112,7 +113,6 @@ fn feed_state_onto_the_feed_packet() {
     };
     let mut flows = Vec::new();
     let mut openings = Vec::new();
-    let t0 = state["t_s"].as_f64().unwrap();
     let mut report = Vec::new();
     for (k, g) in owner.steam_generators().iter().enumerate() {
         let id = &g.id;
@@ -141,24 +141,38 @@ fn feed_state_onto_the_feed_packet() {
     let total: f64 = flows.iter().map(|f| f.1).sum();
     let header = feed.header_pa(Scalar::constant(total)).value;
     set(&mut y, "FW.HEADER.p", header);
+    let cascade = feed.train.cascade;
+    let m0 = feed.train.nominal_flow_kg_s;
     for (k, m, p) in &flows {
         let u = feed
             .opening_for(*m, header - p)
             .expect("an opening passes the steam flow");
         openings.push(u);
         report[*k]["fcv_opening"] = json!(u);
+        // The control at the tracked AUTO point: lags at their inputs.
+        let id = &owner.steam_generators()[*k].id;
+        let level = report[*k]["apparent_level_m"].as_f64().unwrap();
+        let (il, i_f) = cascade.tracked(m0, level, *m, *m, u).unwrap();
+        for (label, v) in [
+            ("NR1.lag", level),
+            ("FT.STEAM.lag", *m),
+            ("FW.FT.lag", *m),
+            ("IL", il),
+            ("IF", i_f),
+            ("FCV.u", u),
+        ] {
+            set(&mut y, &format!("FW.{id}.{label}"), v);
+        }
     }
     assert!(y.iter().all(|v| v.is_finite()));
-    let stems: Vec<Stem> = openings
+    let modes: Vec<FeedMode> = openings
         .iter()
-        .map(|u| Stem {
-            from_s: t0,
-            from: *u,
-            target: *u,
-            rate: 0.,
+        .map(|u| FeedMode {
+            mode: Mode::Auto,
+            held: *u,
         })
         .collect();
-    state["discrete_state"]["operator"]["secondary"]["feed_stems"] = json!(stems);
+    state["discrete_state"]["operator"]["secondary"]["feed_modes"] = json!(modes);
     state["y"] = json!(y);
     state["yp"] = json!(yp);
     let hex = |v: &[f64]| {
@@ -171,7 +185,7 @@ fn feed_state_onto_the_feed_packet() {
     state["packet"] = json!(packet_path);
     state["packet_sha256"] = json!(sha256(&bytes));
     state["converted"] = json!({"from": from_path, "from_sha256": sha256(&std::fs::read(&from_path).unwrap()),
-        "rule": "plan r4 X4.1: existing coordinates bitwise by label; C08 at beta_eq with M_v' = 0; feed at the branch flows equal to the steam demand, header on the pump curve, FCV at the opening that passes it",
+        "rule": "plan r4 X4.1: existing coordinates bitwise by label; C08 at beta_eq with M_v' = 0; feed at the branch flows equal to the steam demand, header on the pump curve, FCV at the opening that passes it; the continuous control at the tracked AUTO point (lags at their inputs, IL and IF by the tracking law)",
         "header_Pa": header, "sgs": report});
     let out = env("LD01_FEED_STATE_OUT");
     std::fs::write(&out, serde_json::to_vec(&state).unwrap()).unwrap();

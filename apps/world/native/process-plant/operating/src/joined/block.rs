@@ -87,6 +87,9 @@ pub enum Class {
     // header pressure and branch flows, only with the packet's `feedTrain`.
     FeedHeader,
     FeedBranch,
+    // The continuous three-element control per SG: channel lags,
+    // integrals and the FCV stem (differential).
+    FeedControl,
     // Rod bodies and guide passages owner.
     RodPosition,
     RodVelocity,
@@ -584,34 +587,6 @@ pub trait Secondary<P> {
     /// Whether [`Secondary::declare_feed_gate`] was declared.
     fn feed_gate_declared(&self) -> bool {
         false
-    }
-    // FEED hooks (plan r4 X4.1; defaults leave owners without a feed train
-    // unchanged).
-    /// The observed FCV position of every SG's feed branch at `t`, when the
-    /// owner composes a feed train.
-    fn feed_valve_positions(&self, _t: f64) -> Option<Vec<f64>> {
-        None
-    }
-    /// A new FCV demand of SG `sg` from `t` on: the stem leaves its current
-    /// position toward `target` and arrives after `ramp_s` or at the
-    /// declared stroke rate, whichever is slower. The position is
-    /// continuous at `t` (a held-input slope change, class S).
-    fn set_feed_valve_demand(
-        &mut self,
-        _t: f64,
-        _sg: usize,
-        _target: f64,
-        _ramp_s: f64,
-    ) -> Result<(), Failure> {
-        Err(Failure::Fatal(
-            "this secondary owner composes no feed train".into(),
-        ))
-    }
-    /// The total pickup steam of SG `sg` at `t` and SG pressure `p_pa`
-    /// (turbine admission plus bypass; reliefs excluded): the source of
-    /// its `FT.STEAM` channel.
-    fn pickup_steam_kg_s(&self, _t: f64, _sg: usize, _p_pa: f64) -> Option<f64> {
-        None
     }
 }
 

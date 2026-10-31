@@ -123,11 +123,10 @@ pub struct FeedTrain {
     pub fcv_reference_opening: f64,
     #[serde(rename = "fcvStrokePerSecond")]
     pub fcv_stroke_per_second: f64,
-    /// The FCV positioner's resolution (`ld01-feed-compact`): a new demand
-    /// reaches the stem when it differs from the one in force by at least
-    /// this fraction of stroke, or reaches a range bound.
-    #[serde(rename = "demandResolution")]
-    pub demand_resolution: f64,
+    /// The continuous stem's time constant toward the demand
+    /// (`ld01-feed-compact`), within the stroke rate.
+    #[serde(rename = "stemTimeConstant_s")]
+    pub stem_time_constant_s: f64,
     /// The three-element cascade (`ld01-feed-cascade`), read by the feed
     /// controller (`control::feed`), not by the owner's rows.
     pub cascade: crate::control::feed::Cascade,

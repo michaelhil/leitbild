@@ -11,7 +11,8 @@
  * derives the pump rise, the entry-loss coefficient, the branch drops and
  * the prepared openings once):
  * - `ld01-feed-compact` (feedwater/control-and-faults.md): the selected
- *   reduced realization, checked literally;
+ *   reduced realization, checked literally, and the continuous stem's time
+ *   constant (the cascade is realized continuously: owner, 31 October 2026);
  * - `reference-service-pump` (feedwater/equipment.md): `m0`, suction,
  *   discharge and the FCV sizing receiver pressure;
  * - `ld01-feed-train` (same page): the shutoff head ratio, the ISO-path
@@ -37,8 +38,8 @@ export const compactOwner = { page: 'systems/feedwater/control-and-faults.md', h
 const compactSchema = z.object({
   pumpLaw: z.literal('forwardQuadraticAtRatedSpeed'), fluid: z.literal('liquidAtReferenceDensity'),
   branchLaw: z.literal('seriesIsoPathAndFcvLiquid'), feedEnthalpy: z.literal('recordedSgFeedState'),
-  supportLoss: z.literal('deliveredFeedZero'), stem: z.literal('frameRampAtStrokeRate'), levelInput: z.literal('apparentLevel'),
-  demandResolution: z.number().finite().min(0).max(0.1) }).strict()
+  supportLoss: z.literal('deliveredFeedZero'), stem: z.literal('firstOrderWithinStrokeRate'), levelInput: z.literal('apparentLevel'),
+  cascade: z.literal('continuous'), stemTimeConstant_s: z.number().finite().positive() }).strict()
 const cascadeSchema = z.object({
   levelSetpoint: fraction, outerProportional: pos, outerIntegral_per_s: pos, requestRange: range, valveBias: fraction, valveRange: range,
   innerProportional: pos, innerIntegral_per_s: pos, sample_s: pos, feedFlowLag_s: pos, feedFlowSpan: range, steamFlowLag_s: pos, steamFlowSpan: range,
@@ -68,12 +69,14 @@ export function compileFeedCompact(p: CompactPages) {
   if (!(pump.receiverPressure_MPa < train.branchIsoOutletPressure_MPa && train.branchIsoOutletPressure_MPa < cycle.feedHeaderPressure_MPaAbs
     && cycle.feedHeaderPressure_MPaAbs < pump.outletPressure_MPa))
     throw Error('The allocation must fall from discharge to header to FCV inlet to the sizing SG pressure')
-  const { controlChannel, initialMode, initialDemandRule, ...law } = cascade
+  // The continuous realization (ld01-feed-compact `cascade`) carries the
+  // gains, ranges and lags; the sampling interval is the sampled law's.
+  const { controlChannel, initialMode, initialDemandRule, sample_s, ...law } = cascade
   return {
     nominalFlow_kg_s: pump.flow_kg_s, suctionPressure_Pa: pump.inletPressure_MPa * MPa, dischargePressure_Pa: pump.outletPressure_MPa * MPa,
     shutoffHeadRatio: train.shutoffHeadRatio, headerPressure_Pa: cycle.feedHeaderPressure_MPaAbs * MPa,
     isoOutletPressure_Pa: train.branchIsoOutletPressure_MPa * MPa, receiverPressure_Pa: pump.receiverPressure_MPa * MPa,
-    fcvReferenceOpening: train.fcvReferenceOpening, fcvStrokePerSecond: train.fcvStrokePerSecond, demandResolution: compact.demandResolution,
+    fcvReferenceOpening: train.fcvReferenceOpening, fcvStrokePerSecond: train.fcvStrokePerSecond, stemTimeConstant_s: compact.stemTimeConstant_s,
     cascade: { ...law, narrowSpan_m: level.nrSpan_m, nrLag_s: level.nrLag_s },
   }
 }

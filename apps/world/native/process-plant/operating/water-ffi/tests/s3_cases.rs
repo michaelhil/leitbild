@@ -533,7 +533,7 @@ struct Recorder {
     /// The observed quantities and their references ride along once.
     operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
     /// HOOK (FEED, plan r4 X4.1): with the packet's feed train, each loop's
-    /// mass-weighted HOT and COLD leg temperatures once per second (U3's
+    /// mass-weighted HOT and COLD leg temperatures at every frame (U3's
     /// Tavg = (Th + Tc)/2), read at the frame's left limit with the system
     /// (`sample`); never in `frames`.
     legs: Option<Legs>,
@@ -563,11 +563,11 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
         }
         Ok(())
     }
-    fn sample(&mut self, k: u64, t: f64, system: &S) -> Result<(), String> {
+    fn sample(&mut self, _k: u64, t: f64, system: &S) -> Result<(), String> {
         let Some(l) = self.legs.as_mut() else {
             return Ok(());
         };
-        if k % 10 != 0 || l.at != t {
+        if l.at != t {
             return Ok(());
         }
         let net = &system.integrated().joined.network;
@@ -1787,15 +1787,7 @@ fn drive(
     if let Some(h) = ask.max_step {
         ida.set_max_step(h).unwrap();
     }
-    // HOOK (FEED, plan r4 cost): LD01_S3_JUMP=off drops the class-S jump
-    // diagnostic (one Jacobian and factorization per S instant, S3-D4's
-    // reported diagnostic, never a gate); unset keeps it.
-    let diagnostic = match std::env::var("LD01_S3_JUMP").ok().as_deref() {
-        None => Diagnostic::Jump,
-        Some("off") => Diagnostic::None,
-        Some(v) => panic!("LD01_S3_JUMP={v}: only off (or unset)"),
-    };
-    let mut driver = Driver::new(frame, diagnostic, spine::z1::cpu_s, t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, t0).unwrap();
     // Explicit matrix management (plan r4 baseline, lead 31 Oct: MR-1 retired
     // under R11-2a's N2 terms; it fails C2 at the last seat and costs more):
     // LD01_S3_MATRIX_REBUILD=stock runs stock IDAS matrix management,
@@ -2811,7 +2803,6 @@ fn drive(
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "weights": ida.weight_rule_kind(),
-            "s_jump_diagnostic": std::env::var("LD01_S3_JUMP").ok().as_deref() != Some("off"),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": s3_unit::MAX_ORDER, "max_step_s": max_step,
             "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
@@ -2889,7 +2880,7 @@ fn drive(
             "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
             "read_instructions": perf_read_instructions(),
             "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
-        "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, every 10th frame's left limit", "rows": l.rows})),
+        "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
     });
     eprintln!(

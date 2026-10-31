@@ -1,34 +1,47 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/feedwater/control-and-faults.md#selected-cascade-law
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/feedwater/control-and-faults.md#modes-and-transfer
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/feedwater/control-and-faults.md#continuous-realization-plan-r4-31-october-2026
 //! The three-element SG level control law of one SG (`ld01-feed-cascade`),
-//! sampled on the declared 0.1 s I&C frame: the outer level loop trims the
-//! steam-flow feedforward into a requested feed flow, the inner loop turns
-//! the feed-flow error into the FCV demand.
+//! realized continuously (owner, 31 October 2026: real time at every frame;
+//! the 0.1 s sampled law forced 295 stops in 60 s): the outer level loop
+//! trims the steam-flow feedforward into a requested feed flow, the inner
+//! loop turns the feed-flow error into the FCV demand, with the page's gains
+//! and channel lags unchanged.
 //!
 //! ```text
-//! eL = lsp − l            r = clamp(s + KpL eL + IL, r_lo, r_hi)   dIL/dt = KiL eL
-//! eF = r − f              u = clamp(bias + KpF eF + IF, u_lo, u_hi) dIF/dt = KiF eF
+//! eL = lsp − l     r = clamp(s + KpL eL + IL, r_lo, r_hi)       IL' = KiL eL
+//! eF = r − f       u_d = clamp(bias + KpF eF + IF, u_lo, u_hi)  IF' = KiF eF
 //! ```
 //!
-//! `l` is the selected NR channel normalized to its span, `s` and `f` the
-//! steam and feed flow channels normalized by the one-SG nominal feed flow
-//! `m0`. Each integral advances once per frame by the frame's error
-//! (forward), and stops while saturation and the error would drive the
-//! unsaturated output farther outward (the page's directional anti-windup).
-//! The law owns no plant state and never reads solver truth: it takes the
-//! acquired (lagged) channel values and the observed FCV position, and
-//! returns a valve demand that the composing frame driver applies to the
-//! SG owner's FCV stem (a held-input change at the frame instant, class S).
-//! An unusable or out-of-span input withdraws AUTO to HOLD (the last demand
-//! retained); there is no substitute input and no single-element fallback.
-use crate::network::Failure;
+//! `l` is the lagged NR1 channel normalized to its span, `s` and `f` the
+//! lagged steam and feed flow channels normalized by the one-SG nominal feed
+//! flow `m0`. An integral stops while its saturated output and the error
+//! would drive the unsaturated output farther outward (the page's
+//! directional anti-windup). The law owns no state: the SG owner carries the
+//! lags, both integrals and the stem as differential coordinates and
+//! evaluates these rates in its rows. Every corner (the clamps, the
+//! anti-windup switch) is continuous in value and not located.
+use crate::{network::Failure, thermal::Scalar};
 use serde::{Deserialize, Serialize};
 
 fn fatal(reason: impl Into<String>) -> Failure {
     Failure::Fatal(format!("feed control: {}", reason.into()))
 }
+fn s(v: f64) -> Scalar {
+    Scalar::constant(v)
+}
+fn clamp(x: Scalar, r: [f64; 2]) -> Scalar {
+    if x.value < r[0] {
+        s(r[0])
+    } else if x.value > r[1] {
+        s(r[1])
+    } else {
+        x
+    }
+}
 
-/// `ld01-feed-cascade`, unchanged (normalized units).
+/// `ld01-feed-cascade`'s gains, ranges and lags, unchanged (normalized
+/// units), with the NR span and lag of `ld01-sg-level-channels`.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Cascade {
@@ -48,8 +61,6 @@ pub struct Cascade {
     pub inner_proportional: f64,
     #[serde(rename = "innerIntegral_per_s")]
     pub inner_integral_per_s: f64,
-    #[serde(rename = "sample_s")]
-    pub sample_s: f64,
     #[serde(rename = "feedFlowLag_s")]
     pub feed_flow_lag_s: f64,
     #[serde(rename = "feedFlowSpan")]
@@ -58,11 +69,40 @@ pub struct Cascade {
     pub steam_flow_lag_s: f64,
     #[serde(rename = "steamFlowSpan")]
     pub steam_flow_span: [f64; 2],
-    /// `ld01-sg-level-channels`: the narrow span (m) and the NR lag (s).
     #[serde(rename = "narrowSpan_m")]
     pub narrow_span_m: [f64; 2],
     #[serde(rename = "nrLag_s")]
     pub nr_lag_s: f64,
+}
+
+/// The controller's normal mode (the page's MANUAL, AUTO and HOLD).
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum Mode {
+    Manual,
+    Auto,
+    Hold,
+}
+
+/// The law at one state, with directions.
+#[derive(Clone, Copy, Debug)]
+pub struct Law {
+    /// Requested feed flow, normalized.
+    pub request: Scalar,
+    /// FCV demand.
+    pub demand: Scalar,
+    /// `IL'` and `IF'` (1/s).
+    pub outer_rate: Scalar,
+    pub inner_rate: Scalar,
+}
+
+/// Directional anti-windup: the integral's rate, or zero while the
+/// unsaturated output lies beyond a bound and the error drives it farther.
+fn integral_rate(gain: f64, error: Scalar, unsat: f64, range: [f64; 2]) -> Scalar {
+    if (unsat > range[1] && error.value > 0.) || (unsat < range[0] && error.value < 0.) {
+        s(0.)
+    } else {
+        s(gain) * error
+    }
 }
 
 impl Cascade {
@@ -74,7 +114,6 @@ impl Cascade {
             self.outer_integral_per_s,
             self.inner_proportional,
             self.inner_integral_per_s,
-            self.sample_s,
             self.feed_flow_lag_s,
             self.steam_flow_lag_s,
             self.nr_lag_s,
@@ -97,159 +136,69 @@ impl Cascade {
         }
         Ok(())
     }
-}
 
-/// The controller's normal mode (the page's MANUAL, AUTO and HOLD).
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-pub enum Mode {
-    Manual,
-    Auto,
-    Hold,
-}
-
-/// One frame's acquired inputs of one SG, in physical units; `None` where
-/// the channel is unusable (unavailable or out of span).
-#[derive(Clone, Copy, Debug, Serialize)]
-pub struct Inputs {
-    pub level_m: Option<f64>,
-    pub steam_kg_s: Option<f64>,
-    pub feed_kg_s: Option<f64>,
-    /// The observed (delivered) FCV position.
-    pub position: f64,
-}
-
-/// One SG's controller state: the mode, both integrals and the demand.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-pub struct Controller {
-    pub mode: Mode,
-    pub outer_integral: f64,
-    pub inner_integral: f64,
-    pub demand: f64,
-    /// The last requested feed flow (normalized), AUTO only.
-    pub request: f64,
-}
-
-/// One frame's decision, for the receipt.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub struct Decision {
-    pub mode: Mode,
-    pub level: Option<f64>,
-    pub request: f64,
-    pub demand: f64,
-    /// AUTO withdrawn to HOLD at this frame.
-    pub withdrawn: bool,
-}
-
-/// Directional anti-windup: integrate unless the unsaturated output lies
-/// beyond a bound and the error drives it farther out.
-fn integrate(integral: f64, gain: f64, error: f64, dt: f64, unsat: f64, range: [f64; 2]) -> f64 {
-    if (unsat > range[1] && error > 0.) || (unsat < range[0] && error < 0.) {
-        integral
-    } else {
-        integral + gain * error * dt
+    /// The AUTO law at the lagged channels (level m, flows kg/s) and both
+    /// integrals.
+    pub fn auto(
+        &self,
+        m0: f64,
+        level_m: Scalar,
+        steam_kg_s: Scalar,
+        feed_kg_s: Scalar,
+        outer: Scalar,
+        inner: Scalar,
+    ) -> Law {
+        let [lo, hi] = self.narrow_span_m;
+        let l = (level_m - s(lo)) / s(hi - lo);
+        let (st, f) = (steam_kg_s / s(m0), feed_kg_s / s(m0));
+        let el = s(self.level_setpoint) - l;
+        let r_unsat = st + s(self.outer_proportional) * el + outer;
+        let request = clamp(r_unsat, self.request_range);
+        let ef = request - f;
+        let u_unsat = s(self.valve_bias) + s(self.inner_proportional) * ef + inner;
+        Law {
+            request,
+            demand: clamp(u_unsat, self.valve_range),
+            outer_rate: integral_rate(
+                self.outer_integral_per_s,
+                el,
+                r_unsat.value,
+                self.request_range,
+            ),
+            inner_rate: integral_rate(
+                self.inner_integral_per_s,
+                ef,
+                u_unsat.value,
+                self.valve_range,
+            ),
+        }
     }
-}
 
-impl Controller {
-    /// MANUAL at a prepared demand (the page's initial mode).
-    pub fn manual(demand: f64, law: &Cascade) -> Result<Self, Failure> {
-        law.validate()?;
-        if !(law.valve_range[0]..=law.valve_range[1]).contains(&demand) {
+    /// The page's tracked transfer into AUTO at observed position `u` and
+    /// lagged channels: `IL = f − s − KpL eL` (request `r = f`), `IF = u −
+    /// bias − KpF (r − f)` (first demand `u`). Refused when a channel lies
+    /// outside its span or the feed outside the request range.
+    pub fn tracked(
+        &self,
+        m0: f64,
+        level_m: f64,
+        steam_kg_s: f64,
+        feed_kg_s: f64,
+        u: f64,
+    ) -> Result<(f64, f64), Failure> {
+        let [lo, hi] = self.narrow_span_m;
+        let (st, f) = (steam_kg_s / m0, feed_kg_s / m0);
+        if !((lo..=hi).contains(&level_m)
+            && (self.steam_flow_span[0]..=self.steam_flow_span[1]).contains(&st)
+            && (self.feed_flow_span[0]..=self.feed_flow_span[1]).contains(&f)
+            && (self.request_range[0]..=self.request_range[1]).contains(&f))
+        {
             return Err(fatal(format!(
-                "MANUAL demand {demand} outside the valve range"
+                "AUTO entry refused: level {level_m} m, steam {st}, feed {f} (normalized)"
             )));
         }
-        Ok(Self {
-            mode: Mode::Manual,
-            outer_integral: 0.,
-            inner_integral: 0.,
-            demand,
-            request: 0.,
-        })
-    }
-
-    fn normalized(law: &Cascade, m0: f64, i: &Inputs) -> Option<(f64, f64, f64)> {
-        let [lo, hi] = law.narrow_span_m;
-        let l = i.level_m.filter(|v| (lo..=hi).contains(v))?;
-        let s = i
-            .steam_kg_s
-            .map(|v| v / m0)
-            .filter(|v| (law.steam_flow_span[0]..=law.steam_flow_span[1]).contains(v))?;
-        let f = i
-            .feed_kg_s
-            .map(|v| v / m0)
-            .filter(|v| (law.feed_flow_span[0]..=law.feed_flow_span[1]).contains(v))?;
-        Some(((l - lo) / (hi - lo), s, f))
-    }
-
-    /// The tracked MANUAL/HOLD → AUTO transfer (the page's tracking law):
-    /// `IL = f − s − KpL eL` (request `r = f`), `IF = u_obs − bias −
-    /// KpF (r − f)` (first output `u_obs`). Refused with unusable inputs or
-    /// a feed flow outside the request range.
-    pub fn transfer_to_auto(&mut self, law: &Cascade, m0: f64, i: &Inputs) -> Result<(), Failure> {
-        let (l, s, f) = Self::normalized(law, m0, i)
-            .ok_or_else(|| fatal("AUTO entry needs valid level, steam and feed inputs"))?;
-        if !(law.request_range[0]..=law.request_range[1]).contains(&f) {
-            return Err(fatal(format!(
-                "AUTO entry refused: feed {f} outside the request range"
-            )));
-        }
-        let el = law.level_setpoint - l;
-        self.outer_integral = f - s - law.outer_proportional * el;
-        self.inner_integral = i.position - law.valve_bias;
-        self.request = f;
-        self.demand = i.position;
-        self.mode = Mode::Auto;
-        Ok(())
-    }
-
-    /// One frame: the demand in force after it.
-    pub fn frame(&mut self, law: &Cascade, m0: f64, i: &Inputs) -> Decision {
-        let mut withdrawn = false;
-        let level = i.level_m;
-        if self.mode == Mode::Auto {
-            match Self::normalized(law, m0, i) {
-                None => {
-                    self.mode = Mode::Hold;
-                    withdrawn = true;
-                }
-                Some((l, s, f)) => {
-                    let dt = law.sample_s;
-                    let el = law.level_setpoint - l;
-                    let r_unsat = s + law.outer_proportional * el + self.outer_integral;
-                    let r = r_unsat.clamp(law.request_range[0], law.request_range[1]);
-                    self.outer_integral = integrate(
-                        self.outer_integral,
-                        law.outer_integral_per_s,
-                        el,
-                        dt,
-                        r_unsat,
-                        law.request_range,
-                    );
-                    let ef = r - f;
-                    let u_unsat =
-                        law.valve_bias + law.inner_proportional * ef + self.inner_integral;
-                    let u = u_unsat.clamp(law.valve_range[0], law.valve_range[1]);
-                    self.inner_integral = integrate(
-                        self.inner_integral,
-                        law.inner_integral_per_s,
-                        ef,
-                        dt,
-                        u_unsat,
-                        law.valve_range,
-                    );
-                    self.request = r;
-                    self.demand = u;
-                }
-            }
-        }
-        Decision {
-            mode: self.mode,
-            level,
-            request: self.request,
-            demand: self.demand,
-            withdrawn,
-        }
+        let el = self.level_setpoint - (level_m - lo) / (hi - lo);
+        Ok((f - st - self.outer_proportional * el, u - self.valve_bias))
     }
 }
 
@@ -267,7 +216,6 @@ mod tests {
             valve_range: [0., 1.],
             inner_proportional: 0.3,
             inner_integral_per_s: 0.2,
-            sample_s: 0.1,
             feed_flow_lag_s: 0.25,
             feed_flow_span: [0., 1.5],
             steam_flow_lag_s: 0.25,
@@ -278,69 +226,23 @@ mod tests {
     }
 
     #[test]
-    fn the_tracked_transfer_is_bumpless_and_a_low_level_raises_demand() {
-        let (law, m0) = (law(), 800.);
-        let mut c = Controller::manual(0.877, &law).unwrap();
-        let at = Inputs {
-            level_m: Some(6.94),
-            steam_kg_s: Some(820.),
-            feed_kg_s: Some(820.),
-            position: 0.877,
-        };
-        c.transfer_to_auto(&law, m0, &at).unwrap();
-        let d = c.frame(&law, m0, &at);
-        assert!((d.demand - 0.877).abs() < 1e-12 && (d.request - 820. / 800.).abs() < 1e-12);
-        let low = Inputs {
-            level_m: Some(6.5),
-            ..at
-        };
-        let d = c.frame(&law, m0, &low);
-        assert!(d.demand > 0.877 && d.request > 820. / 800.);
+    fn the_tracked_point_demands_the_observed_position_and_a_low_level_raises_it() {
+        let (c, m0) = (law(), 800.);
+        let (il, i_f) = c.tracked(m0, 6.94, 820., 820., 0.877).unwrap();
+        let at = c.auto(m0, s(6.94), s(820.), s(820.), s(il), s(i_f));
+        assert!((at.demand.value - 0.877).abs() < 1e-12);
+        assert!((at.request.value - 820. / 800.).abs() < 1e-12);
+        let low = c.auto(m0, s(6.5), s(820.), s(820.), s(il), s(i_f));
+        assert!(low.demand.value > 0.877 && low.outer_rate.value > 0.);
     }
 
     #[test]
-    fn an_out_of_span_level_withdraws_auto_to_hold_and_keeps_the_demand() {
-        let (law, m0) = (law(), 800.);
-        let mut c = Controller::manual(0.5, &law).unwrap();
-        let at = Inputs {
-            level_m: Some(7.),
-            steam_kg_s: Some(400.),
-            feed_kg_s: Some(400.),
-            position: 0.5,
-        };
-        c.transfer_to_auto(&law, m0, &at).unwrap();
-        let d = c.frame(
-            &law,
-            m0,
-            &Inputs {
-                level_m: Some(3.9),
-                ..at
-            },
-        );
-        assert!(d.withdrawn && d.mode == Mode::Hold && d.demand == 0.5);
-    }
-
-    #[test]
-    fn saturation_stops_the_outward_integral() {
-        let (law, m0) = (law(), 800.);
-        let mut c = Controller::manual(1., &law).unwrap();
-        let at = Inputs {
-            level_m: Some(7.),
-            steam_kg_s: Some(800.),
-            feed_kg_s: Some(800.),
-            position: 1.,
-        };
-        c.transfer_to_auto(&law, m0, &at).unwrap();
-        let empty = Inputs {
-            level_m: Some(4.),
-            steam_kg_s: Some(1100.),
-            feed_kg_s: Some(500.),
-            ..at
-        };
-        c.frame(&law, m0, &empty);
-        let (il, i_f) = (c.outer_integral, c.inner_integral);
-        c.frame(&law, m0, &empty);
-        assert_eq!((c.outer_integral, c.inner_integral), (il, i_f));
-        assert_eq!(c.demand, 1.);
+    fn saturation_stops_the_outward_integral_and_out_of_span_refuses_auto() {
+        let (c, m0) = (law(), 800.);
+        let sat = c.auto(m0, s(4.), s(1100.), s(500.), s(0.), s(0.4));
+        assert_eq!(sat.request.value, 1.2);
+        assert_eq!(sat.demand.value, 1.);
+        assert_eq!((sat.outer_rate.value, sat.inner_rate.value), (0., 0.));
+        assert!(c.tracked(m0, 3.9, 800., 800., 0.7).is_err());
     }
 }

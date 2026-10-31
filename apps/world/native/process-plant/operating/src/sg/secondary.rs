@@ -48,10 +48,14 @@
 //! at rated speed sharing `Q = Σ m`, `q = Q / (2 m0)`, `k_e` the entry loss
 //! at `2 m0`; per SG the algebraic branch flow with `m - m0 u sqrt(dp /
 //! (a_iso u² + a_fcv u_ref²))` (kg/s), `dp = p_H - p_SG`, the fixed/ISO
-//! path's drop `a_iso` and the FCV's `a_fcv` at `m0` and `u_ref`. The FCV
-//! position `u` is a held piecewise-linear stem the feed controller sets at
-//! frame instants (continuous, so class S). The S3-D12 gate, when it
-//! closes, zeroes the delivered feed only (pump coastdown not modelled).
+//! path's drop `a_iso` and the FCV's `a_fcv` at `m0` and `u_ref`. Then per
+//! SG the continuous three-element control (`control::feed`, owner 31
+//! October 2026): differential NR1, FT.STEAM and FW.FT lags, both
+//! integrals and the FCV stem `u' = clamp((u_d - u) / tau_stem, ±stroke)`,
+//! so no control change stops the integrator. In AUTO the NR1 lag's span
+//! edges are roots: leaving the span withdraws AUTO to HOLD at the demand
+//! in force (integrals frozen). The S3-D12 gate, when it closes, zeroes the
+//! delivered feed only (pump coastdown not modelled).
 //!
 //! Roots: each valve's crack, full-lift, reseat and seat thresholds, armed
 //! only by the valve state that owns them and otherwise a constant +1 (a
@@ -70,6 +74,7 @@ use super::{
     relief::{Branch, Characteristic, Threshold, Transition, Valve},
 };
 use crate::{
+    control::feed::{Law as FeedLaw, Mode},
     joined::{
         block::{
             Class, Command, Coordinates, Crossing, Layout, OwnerAccount, Secondary, SecondaryView,
@@ -103,6 +108,16 @@ pub const APPARENT_COORDINATES: usize = 3;
 /// Offset of the feed header after every SG's coordinates; branch `k`
 /// follows at `HEADER + 1 + k`.
 pub const HEADER: usize = 0;
+/// Per SG after the branches: the continuous control's coordinates.
+pub const CONTROL: usize = 6;
+pub const NR_LAG: usize = 0;
+pub const STEAM_LAG: usize = 1;
+pub const FEED_LAG: usize = 2;
+pub const OUTER: usize = 3;
+pub const INNER: usize = 4;
+pub const STEM: usize = 5;
+/// Feed roots per SG (AUTO only): NR1 lag at the span's low and high edge.
+pub const FEED_ROOTS: usize = 2;
 /// Thresholds of every valve, in root order.
 pub const THRESHOLDS: [Threshold; 4] = [
     Threshold::Crack,
@@ -208,42 +223,13 @@ impl Apparent {
     }
 }
 
-/// One FCV stem: from `from` at `from_s` toward `target` at `rate`
-/// (fraction/s), resting at the target once reached.
+/// One SG's controller mode and the demand a HOLD keeps.
 #[derive(Clone, Copy, Debug, Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct Stem {
+pub struct FeedMode {
+    pub mode: Mode,
     #[serde(with = "snapshot_bits")]
-    pub from_s: f64,
-    #[serde(with = "snapshot_bits")]
-    pub from: f64,
-    #[serde(with = "snapshot_bits")]
-    pub target: f64,
-    #[serde(with = "snapshot_bits")]
-    pub rate: f64,
-}
-impl Stem {
-    pub fn held(position: f64, t: f64) -> Self {
-        Self {
-            from_s: t,
-            from: position,
-            target: position,
-            rate: 0.,
-        }
-    }
-    /// The position at `t` (at `from_s` exactly `from`).
-    pub fn position(&self, t: f64) -> f64 {
-        if t <= self.from_s || self.rate == 0. {
-            return self.from;
-        }
-        let gap = self.target - self.from;
-        let travel = self.rate * (t - self.from_s);
-        if travel >= gap.abs() {
-            self.target
-        } else {
-            self.from + travel.copysign(gap)
-        }
-    }
+    pub held: f64,
 }
 
 /// The compact feed train, compiled once (pressures in Pa, flows in kg/s).
@@ -262,10 +248,45 @@ pub struct FeedOwner {
     /// The prepared MANUAL opening per SG: the opening that delivers its
     /// steam demand at its prepared pressure (the S4-D6 rule).
     pub prepared_opening: Vec<f64>,
-    pub stems: Vec<Stem>,
+    pub modes: Vec<FeedMode>,
+    /// The SG count (control coordinates follow the branches).
+    pub sgs: usize,
 }
 
 impl FeedOwner {
+    /// First control coordinate of SG `k`, own index.
+    pub fn control(&self, k: usize) -> usize {
+        self.base + HEADER + 1 + self.sgs + CONTROL * k
+    }
+    /// SG `k`'s law at its control coordinates (`c`: lags, integrals) in
+    /// its current mode: AUTO's, or HOLD/MANUAL at the held demand.
+    pub fn law(&self, k: usize, c: [Scalar; 5]) -> FeedLaw {
+        match self.modes[k].mode {
+            Mode::Auto => {
+                self.train
+                    .cascade
+                    .auto(self.train.nominal_flow_kg_s, c[0], c[1], c[2], c[3], c[4])
+            }
+            Mode::Hold | Mode::Manual => FeedLaw {
+                request: s(0.),
+                demand: s(self.modes[k].held),
+                outer_rate: s(0.),
+                inner_rate: s(0.),
+            },
+        }
+    }
+    /// The stem rate toward demand `d` at position `u`.
+    pub fn stem_rate(&self, d: Scalar, u: Scalar) -> Scalar {
+        let r = (d - u) / s(self.train.stem_time_constant_s);
+        let v = self.train.fcv_stroke_per_second;
+        if r.value > v {
+            s(v)
+        } else if r.value < -v {
+            s(-v)
+        } else {
+            r
+        }
+    }
     /// Header pressure the pumps hold at total flow `q_total`.
     pub fn header_pa(&self, q_total: Scalar) -> Scalar {
         let m0 = self.train.nominal_flow_kg_s;
@@ -538,6 +559,36 @@ impl Secondaries {
                     layout.push(format!("FW.{}.m", g.id), Class::FeedBranch, false, m0, m0);
                     prepared.push(g.steam_demand_kg_s);
                 }
+                // The control at the tracked AUTO point of the prepared
+                // state: each lag at its input, the integrals by the
+                // tracking law, the stem at the prepared opening.
+                let a = apparent.ok_or_else(|| fatal("the feed train needs the apparent level"))?;
+                for (k, (g, x)) in sgs.iter().zip(stocks).enumerate() {
+                    let id = &g.id;
+                    let level = (x.liquid_volume_m3
+                        + a.prepared_distribution * (g.volume_m3 - x.liquid_volume_m3))
+                        / a.area_m2;
+                    let m = g.steam_demand_kg_s;
+                    let u = f.prepared_opening[k];
+                    let (il, i_f) = train.cascade.tracked(m0, level, m, m, u)?;
+                    for (label, v, scale) in [
+                        ("NR1.lag", level, 1.),
+                        ("FT.STEAM.lag", m, m0),
+                        ("FW.FT.lag", m, m0),
+                        ("IL", il, 1.),
+                        ("IF", i_f, 1.),
+                        ("FCV.u", u, 1.),
+                    ] {
+                        layout.push(
+                            format!("FW.{id}.{label}"),
+                            Class::FeedControl,
+                            true,
+                            scale,
+                            scale,
+                        );
+                        prepared.push(v);
+                    }
+                }
                 Some(f)
             }
         };
@@ -738,7 +789,12 @@ impl Secondaries {
             let header = y[f.base + HEADER];
             for (k, g) in self.sgs.iter().enumerate() {
                 let m = y[f.base + HEADER + 1 + k];
-                if !(header > y[g.base + PRESSURE] && m.is_finite() && m >= 0.) {
+                let u = y[f.control(k) + STEM];
+                if !(header > y[g.base + PRESSURE]
+                    && m.is_finite()
+                    && m >= 0.
+                    && (0. ..=1.).contains(&u))
+                {
                     return Err(fatal(format!(
                         "FW.{} accepted state refused: header {header} Pa, SG {} Pa, flow {m} kg/s (a closing branch check is outside the compact train)",
                         g.id,
@@ -909,9 +965,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
         if self.trip_s.is_some() {
             state["bypass_side"] = json!(self.bypass_side);
         }
-        // The FCV stems exactly (bit patterns), only with the feed train.
+        // The controllers' modes, only with the feed train.
         if let Some(f) = &self.feed {
-            state["feed_stems"] = json!(f.stems);
+            state["feed_modes"] = json!(f.modes);
         }
         state
     }
@@ -922,7 +978,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
             keys.push("bypass_side");
         }
         if self.feed.is_some() {
-            keys.push("feed_stems");
+            keys.push("feed_modes");
         }
         let o = snapshot_object(state, "secondary", &keys)?;
         let bypass_side: Vec<[Option<bool>; 2]> = if tripped {
@@ -933,25 +989,19 @@ impl<P: Properties> Secondary<P> for Secondaries {
         } else {
             vec![[None; 2]; self.sgs.len()]
         };
-        let stems = match &self.feed {
+        let modes = match &self.feed {
             None => None,
             Some(f) => {
-                let stems: Vec<Stem> = serde_json::from_value(o["feed_stems"].clone())
-                    .map_err(|e| fatal(format!("secondary snapshot: feed_stems: {e}")))?;
-                if stems.len() != f.stems.len()
-                    || stems.iter().any(|m| {
-                        m.from_s.is_nan()
-                            || m.from_s == f64::INFINITY
-                            || !(0. ..=1.).contains(&m.from)
-                            || !(0. ..=1.).contains(&m.target)
-                            || !(0. ..=f.train.fcv_stroke_per_second).contains(&m.rate)
-                    })
+                let modes: Vec<FeedMode> = serde_json::from_value(o["feed_modes"].clone())
+                    .map_err(|e| fatal(format!("secondary snapshot: feed_modes: {e}")))?;
+                if modes.len() != f.modes.len()
+                    || modes.iter().any(|m| !(0. ..=1.).contains(&m.held))
                 {
                     return Err(fatal(
-                        "secondary snapshot: a feed stem per SG inside its travel",
+                        "secondary snapshot: a feed mode per SG, held demand in 0..1",
                     ));
                 }
-                Some(stems)
+                Some(modes)
             }
         };
         let trip_s = restored_time(&o["trip_s"])?;
@@ -997,54 +1047,10 @@ impl<P: Properties> Secondary<P> for Secondaries {
         self.bypass_side = bypass_side;
         self.feed_supported = feed_supported;
         self.valves = valves;
-        if let (Some(f), Some(stems)) = (self.feed.as_mut(), stems) {
-            f.stems = stems;
+        if let (Some(f), Some(modes)) = (self.feed.as_mut(), modes) {
+            f.modes = modes;
         }
         Ok(())
-    }
-    fn feed_valve_positions(&self, t: f64) -> Option<Vec<f64>> {
-        self.feed
-            .as_ref()
-            .map(|f| f.stems.iter().map(|m| m.position(t)).collect())
-    }
-    fn set_feed_valve_demand(
-        &mut self,
-        t: f64,
-        sg: usize,
-        target: f64,
-        ramp_s: f64,
-    ) -> Result<(), Failure> {
-        let f = self
-            .feed
-            .as_mut()
-            .ok_or_else(|| fatal("this secondary owner composes no feed train"))?;
-        if sg >= f.stems.len()
-            || !t.is_finite()
-            || !(0. ..=1.).contains(&target)
-            || !(ramp_s.is_finite() && ramp_s > 0.)
-        {
-            return Err(fatal(format!(
-                "FW branch {sg}: demand {target} at {t} s over {ramp_s} s"
-            )));
-        }
-        let from = f.stems[sg].position(t);
-        if t < f.stems[sg].from_s {
-            return Err(fatal("an FCV demand before the stem's last change"));
-        }
-        let rate = f
-            .train
-            .fcv_stroke_per_second
-            .min((target - from).abs() / ramp_s);
-        f.stems[sg] = Stem {
-            from_s: t,
-            from,
-            target,
-            rate,
-        };
-        Ok(())
-    }
-    fn pickup_steam_kg_s(&self, t: f64, sg: usize, p_pa: f64) -> Option<f64> {
-        (sg < self.sgs.len()).then(|| self.pickup_steam(sg, t, s(p_pa)).0.value)
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
         self.ramp_end().filter(|end| *end > t)
@@ -1214,8 +1220,32 @@ impl<P: Properties> Secondary<P> for Secondaries {
                         self.sgs[k].id, header.value
                     )));
                 }
-                let u = s(f.stems[k].position(t));
+                let c = f.control(k);
+                let u = x.value(c + STEM);
                 rows[fb + HEADER + 1 + k] = *m - f.branch_kg_s(u, dp);
+                // The continuous control: the channel lags, the integrals
+                // and the stem toward the law's demand.
+                let law = &f.train.cascade;
+                let level = match self.apparent {
+                    Some(a) => {
+                        let d = self.sgs[k].base + LIFTS + self.sgs[k].valves.len();
+                        (x.value(self.sgs[k].base + LIQUID_VOLUME) + x.value(d + SUBMERGED))
+                            / s(a.area_m2)
+                    }
+                    None => return Err(fatal("the feed train needs the apparent level")),
+                };
+                let p_sg = x.value(self.sgs[k].base + PRESSURE);
+                let (steam, _) = self.pickup_steam(k, t, p_sg);
+                let lags: [Scalar; 5] =
+                    [NR_LAG, STEAM_LAG, FEED_LAG, OUTER, INNER].map(|o| x.value(c + o));
+                let l = f.law(k, lags);
+                rows[c + NR_LAG] = x.rate(c + NR_LAG) - (level - lags[0]) / s(law.nr_lag_s);
+                rows[c + STEAM_LAG] =
+                    x.rate(c + STEAM_LAG) - (steam - lags[1]) / s(law.steam_flow_lag_s);
+                rows[c + FEED_LAG] = x.rate(c + FEED_LAG) - (*m - lags[2]) / s(law.feed_flow_lag_s);
+                rows[c + OUTER] = x.rate(c + OUTER) - l.outer_rate;
+                rows[c + INNER] = x.rate(c + INNER) - l.inner_rate;
+                rows[c + STEM] = x.rate(c + STEM) - f.stem_rate(l.demand, u);
             }
         }
         if rows
@@ -1283,8 +1313,23 @@ impl<P: Properties> Secondary<P> for Secondaries {
             header.extend(&branches);
             own[fb + HEADER] = header;
             for (k, g) in self.sgs.iter().enumerate() {
-                own[fb + HEADER + 1 + k] =
-                    vec![fb + HEADER, fb + HEADER + 1 + k, g.base + PRESSURE];
+                let c = f.control(k);
+                own[fb + HEADER + 1 + k] = vec![
+                    fb + HEADER,
+                    fb + HEADER + 1 + k,
+                    g.base + PRESSURE,
+                    c + STEM,
+                ];
+                let d = g.base + LIFTS + g.valves.len();
+                own[c + NR_LAG] = vec![g.base + LIQUID_VOLUME, d + SUBMERGED, c + NR_LAG];
+                own[c + STEAM_LAG] = vec![g.base + PRESSURE, c + STEAM_LAG];
+                own[c + FEED_LAG] = vec![fb + HEADER + 1 + k, c + FEED_LAG];
+                let law: Vec<usize> = (0..STEM).map(|o| c + o).collect();
+                own[c + OUTER] = law.clone();
+                own[c + INNER] = law.clone();
+                let mut stem = law;
+                stem.push(c + STEM);
+                own[c + STEM] = stem;
             }
         }
         for o in &mut own {
@@ -1305,7 +1350,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
         self.sgs
             .iter()
             .map(|g| THRESHOLDS.len() * g.valves.len() + 2 + BYPASS_ROOTS)
-            .sum()
+            .sum::<usize>()
+            + self
+                .feed
+                .as_ref()
+                .map_or(0, |_| FEED_ROOTS * self.sgs.len())
     }
 
     fn roots(
@@ -1344,6 +1393,18 @@ impl<P: Properties> Secondary<P> for Secondaries {
             out[i + 1] = if armed { p - (p0 + w) } else { DISARMED };
             i += BYPASS_ROOTS;
         }
+        // The NR1 lag's span edges, armed in AUTO: leaving the span
+        // withdraws AUTO to HOLD.
+        if let Some(f) = &self.feed {
+            let [lo, hi] = f.train.cascade.narrow_span_m;
+            for k in 0..self.sgs.len() {
+                let l = x.value(f.control(k) + NR_LAG).value;
+                let auto = f.modes[k].mode == Mode::Auto;
+                out[i] = if auto { l - lo } else { DISARMED };
+                out[i + 1] = if auto { hi - l } else { DISARMED };
+                i += FEED_ROOTS;
+            }
+        }
         if out.iter().any(|v| !v.is_finite()) {
             return Err(fatal("nonfinite SG root"));
         }
@@ -1375,6 +1436,14 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 };
             }
             i += 2 + BYPASS_ROOTS;
+        }
+        // The NR1 span edges report only the leaving (falling) crossing.
+        if self.feed.is_some() {
+            for _ in 0..self.sgs.len() {
+                out[i] = -1;
+                out[i + 1] = -1;
+                i += FEED_ROOTS;
+            }
         }
         Ok(())
     }
@@ -1454,10 +1523,41 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 }
             }
         }
+        // An NR1 span edge in AUTO: HOLD at the demand in force.
+        let mut withdrawn = Vec::new();
+        if let Some(f) = self.feed.as_mut() {
+            let first: usize = self
+                .sgs
+                .iter()
+                .map(|g| THRESHOLDS.len() * g.valves.len() + 2 + BYPASS_ROOTS)
+                .sum();
+            for k in 0..self.sgs.len() {
+                let d = &directions[first + FEED_ROOTS * k..first + FEED_ROOTS * (k + 1)];
+                if d.iter().all(|v| *v == 0) {
+                    continue;
+                }
+                if f.modes[k].mode != Mode::Auto {
+                    return Err(fatal(format!(
+                        "FW.{} span root crossed outside AUTO",
+                        self.sgs[k].id
+                    )));
+                }
+                let c = f.control(k);
+                let lags = [NR_LAG, STEAM_LAG, FEED_LAG, OUTER, INNER].map(|o| s(y[c + o]));
+                let held = f.law(k, lags).demand.value;
+                f.modes[k] = FeedMode {
+                    mode: Mode::Hold,
+                    held,
+                };
+                withdrawn.push(json!({"sg": self.sgs[k].id, "to": "HOLD", "held_demand": held,
+                    "nr1_lag_m": y[c + NR_LAG], "reason": "the selected NR1 channel left its span"}));
+            }
+        }
+        let changed = seats > 0 || !withdrawn.is_empty();
         Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner":"secondary","t_s":t,"relief":events,"seats":seats,
-                "stateChanged":seats > 0}),
+                "feedWithdrawn":withdrawn,"stateChanged":changed}),
         })
     }
 
@@ -1768,7 +1868,7 @@ fn feed_owner(
             && t.iso_outlet_pressure_pa < t.header_pressure_pa
             && t.receiver_pressure_pa < t.iso_outlet_pressure_pa)
         || !(t.fcv_reference_opening > 0. && t.fcv_reference_opening < 1.)
-        || !(t.demand_resolution >= 0. && t.demand_resolution < 0.1)
+        || !(t.stem_time_constant_s > 0. && t.stem_time_constant_s.is_finite())
     {
         return Err(fatal("compact feed train pressures, ratio or opening"));
     }
@@ -1782,7 +1882,8 @@ fn feed_owner(
         iso_drop_pa: t.header_pressure_pa - t.iso_outlet_pressure_pa,
         fcv_drop_pa: t.iso_outlet_pressure_pa - t.receiver_pressure_pa,
         prepared_opening: Vec::new(),
-        stems: Vec::new(),
+        modes: Vec::new(),
+        sgs: sgs.len(),
     };
     let total: f64 = sgs.iter().map(|g| g.steam_demand_kg_s).sum();
     let header = f.header_pa(s(total)).value;
@@ -1797,7 +1898,10 @@ fn feed_owner(
                 ))
             })?;
         f.prepared_opening.push(u);
-        f.stems.push(Stem::held(u, f64::NEG_INFINITY));
+        f.modes.push(FeedMode {
+            mode: Mode::Auto,
+            held: u,
+        });
     }
     Ok(f)
 }

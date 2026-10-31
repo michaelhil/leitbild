@@ -192,11 +192,11 @@ pub const TABLE_1_1: [MemoRow; 21] = [
         rows: "M_v = rho_g (V - V_l); beta' = (beta_eq - beta)/tau_distribution; V_sub = beta (V - V_l)",
     },
     MemoRow {
-        row: "Compact feed train (header, 2 branches)",
+        row: "Compact feed train (header, 2 branches, continuous control)",
         owner: "secondary",
-        classes: &[Class::FeedHeader, Class::FeedBranch],
+        classes: &[Class::FeedHeader, Class::FeedBranch, Class::FeedControl],
         memo: [0, 0],
-        rows: "header on the pumps' forward curve less the entry loss; branch flow by the series ISO path and FCV law",
+        rows: "header on the pumps' forward curve less the entry loss; branch flow by the series ISO path and FCV law; per SG NR1/FT lags, IL, IF and the FCV stem",
     },
 ];
 /// The memo's totals: differential, algebraic, all.
@@ -284,7 +284,7 @@ fn difference(row: &str) -> Option<&'static str> {
         "SG apparent-level distribution x2 (C08)" => {
             "C08 (S4-D12; plan r4 X4.1): the compact apparent-level allocation joins after the memo's allocation, only with the packet's apparentLevel section"
         }
-        "Compact feed train (header, 2 branches)" => {
+        "Compact feed train (header, 2 branches, continuous control)" => {
             "plan r4 X4.1: the compact feed train replaces F3 (a)'s inventory-holding feed, only with the packet's feedTrain section"
         }
         "PZR heater rod segments, shell bands and heads (G6)" | "PZR relief lift (G6)" => {

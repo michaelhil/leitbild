@@ -134,7 +134,8 @@ pub struct S3Unit<J: JoinedSystem = Integrated<If97>> {
     pub restart: Restart,
     pub control: PzrClient,
     /// The three-element SG level controllers (plan r4 X4.1), when the
-    /// packet composes the compact feed train: AUTO from the start.
+    /// packet composes the compact feed train: the record of the SG owner's
+    /// continuous control (class O).
     pub feed: Option<FeedClient>,
     pub frame: Frame,
     pub receipt: Value,
@@ -307,15 +308,14 @@ pub fn compose_with<J: JoinedSystem>(
         (c, p, s, Some(l1.changes.len()))
     };
     let mut control = control;
-    // Plan r4 X4.1: the feed controllers, MANUAL at the stems' positions
-    // (prepared, or the saved state's), then AUTO by the tracking law at
-    // the start (the case's declared command for U1's "SG level" control).
+    // Plan r4 X4.1: the SG owner's continuous feed control, recorded per
+    // frame (it decides no change; its AUTO point is the state's own).
     let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1)
         .map_err(|e| format!("packet json: {e}"))?;
     let sg_section: leitbild_operating_plant::sg::packet::Section =
         serde_json::from_value(packet_json["secondary"].clone())
             .map_err(|e| format!("the packet's secondary section: {e}"))?;
-    let mut feed = FeedClient::commission(&joined, &sg_section, frame.period_s(), true, t0, &y)?;
+    let mut feed = FeedClient::commission(&joined, &sg_section, y.len())?;
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
@@ -441,7 +441,7 @@ pub fn compose_with<J: JoinedSystem>(
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
-        "feed_control": feed.as_ref().map(|f| json!({"class": "S (S3-D4: the stem is continuous at the change)", "start": "MANUAL at each stem's position, AUTO by the tracking law at t0", "controllers": f.controllers})),
+        "feed_control": feed.as_ref().map(|_| json!({"class": "C (continuous, in the SG owner; owner 31 Oct 2026)", "start": "AUTO at the state's tracked point (the composed or carried state)"})),
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
