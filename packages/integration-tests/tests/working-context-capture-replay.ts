@@ -61,7 +61,7 @@ interface RequestMeasure {
   readonly estimatedInputTokens: number; readonly requestBytes: number; readonly messageBytes: number
   readonly sharedPrefixEstimatedTokens: number; readonly opaqueContinuationBytes: number; readonly checkpointId?: string
   readonly exactOriginalCompletionTokens?: number; readonly extraCompletionTokenEstimate?: number
-  readonly activeOriginalCallIds: ReadonlyArray<string>; readonly withheldProtocolByteAllowance: number
+  readonly activeOriginalCallIds: ReadonlyArray<string>; readonly opaqueProtocolBytes: number
 }
 
 /** Real public World descriptors, assembled locally. Module business calls in
@@ -282,7 +282,7 @@ const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: Read
   const highRates = high.priceReconciliation.ratesUsdPerToken, threshold = high.priceReconciliation.promptThreshold!
   const scenarios = []
   for (const multiplier of [quantile(ratios, 0.5), ratios.at(-1)!]) {
-    for (const cache of ['cold-every-request', 'shared-prefix-with-cold-rebase'] as const) {
+    for (const cache of ['cold-every-request', 'shared-prefix-with-cold-rebase', 'adjacent-prefix-without-forced-cold-rebase'] as const) {
       let cost = 0, promptTokens = 0, longContextRequests = 0, cacheReadTokens = 0, cacheWriteTokens = 0
       let sourceCallCost = 0, checkpointCost = 0, fixtureEndingCost = 0
       for (let i = 0; i < requests.length; i++) {
@@ -290,11 +290,11 @@ const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: Read
         // The observed calibration already includes transport/tokenizer/opaque
         // overhead. The explicit byte allowance is added again conservatively,
         // rather than assuming redacted reasoning costs nothing after rebasing.
-        const tokens = Math.ceil(request.estimatedInputTokens * multiplier + request.withheldProtocolByteAllowance / 4)
+        const tokens = Math.ceil(request.estimatedInputTokens * multiplier + request.opaqueProtocolBytes / 4)
         const long = tokens >= threshold
         const rates = long ? highRates : lowRates
         const afterRebase = i > 0 && request.checkpointId !== requests[i - 1]!.checkpointId
-        const read = cache === 'cold-every-request' || afterRebase ? 0 : Math.min(tokens, Math.floor(request.sharedPrefixEstimatedTokens * multiplier))
+        const read = cache === 'cold-every-request' || (cache === 'shared-prefix-with-cold-rebase' && afterRebase) ? 0 : Math.min(tokens, Math.floor(request.sharedPrefixEstimatedTokens * multiplier))
         const write = tokens - read
         const completion = request.exactOriginalCompletionTokens ?? Math.ceil((request.extraCompletionTokenEstimate ?? 0) * multiplier)
         const value = read * Number(rates.input_cache_read) + write * Number(rates.input_cache_write) + completion * Number(rates.completion)
@@ -313,7 +313,7 @@ const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: Read
   return { tokenEstimation: 'Production estimateRequestSize counts complete textual request, approximately characters/4. Calibrated ratios are observed on the original 205 requests; these are not GPT tokenization or served bills.',
     calibration: { minimum: ratios[0], median: quantile(ratios, 0.5), maximum: ratios.at(-1) },
     exactCapturedRateSnapshot: { promptThreshold: threshold, lowRates, highRates },
-    cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix is an explicit adjacent-JSON-prefix sensitivity; the first request after EVERY checkpoint is fully cold. No cache hit is guaranteed.',
+    cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix is an explicit adjacent-JSON-prefix sensitivity, with either every post-checkpoint request fully cold or only the actually changed prefix lost. No cache hit is guaranteed.',
     opaqueAssumptions: 'Exact recovered per-call continuation bytes are counted for every selected original group. The observed public-request calibration already includes hidden protocol overhead; adding selected bytes/4 again is deliberately conservative. No opaque payload is disclosed.', scenarios }
 }
 
@@ -407,6 +407,26 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
     const continuation = continuationByProvider.get(byCall.get(callId)!.providerCallId)
     return [callId, continuation === undefined ? 0 : bytes(continuation)]
   }))
+  let previousOriginalText = ''
+  const originalRequestMeasures: RequestMeasure[] = sourceModels.map(model => {
+    const restored: ChatRequest = { ...model.request, messages: model.request.messages.map(message => {
+      if (message.role !== 'assistant' || !message.toolCalls?.length) return message
+      const protocol = continuationByProvider.get(message.toolCalls[0]!.id!)
+      return protocol ? { ...message, continuation: protocol } : message
+    }) }
+    const size = estimateRequestSize(restored), text = requestText(restored)
+    const activeOriginalCallIds = restored.messages.filter(message => message.role === 'tool').flatMap(message => {
+      const source = byProvider.get(message.toolCallId ?? '')
+      return source ? [source.id] : []
+    })
+    const measured: RequestMeasure = { ordinal: model.ordinal, sourceModelOrdinal: model.ordinal, kind: 'source-call',
+      estimatedInputTokens: size.estimatedInputTokens, requestBytes: bytes(restored), messageBytes: bytes(restored.messages),
+      sharedPrefixEstimatedTokens: Math.floor(sharedCharacters(previousOriginalText, text) / 4), opaqueContinuationBytes: size.continuationBytes,
+      activeOriginalCallIds, opaqueProtocolBytes: activeOriginalCallIds.reduce((n, id) => n + knownProtocolBytes.get(id)!, 0),
+      exactOriginalCompletionTokens: byBilled.get(model.id)!.metrics.completionTokens }
+    previousOriginalText = text
+    return measured
+  })
   const assertions = { originalArgumentAndDataParity: 0, exactRecall: 0, humanRoleEquality: 0, selectedGroupsVisible: 0,
     failedOrUnknownPinned: 0, durableCheckpointLinks: 0, modelBillingUnknown: 0, immutableSourceHash: 0 }
   const originalHuman = firstRequest.messages.filter(message => message.role === 'user' || message.role === 'system')
@@ -461,7 +481,7 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         estimatedInputTokens: requestSize.estimatedInputTokens, requestBytes: bytes(request), messageBytes: bytes(request.messages),
         sharedPrefixEstimatedTokens: Math.floor(sharedCharacters(previousText, text) / 4), opaqueContinuationBytes: requestSize.continuationBytes,
         ...(checkpointId ? { checkpointId } : {}), activeOriginalCallIds,
-        withheldProtocolByteAllowance: activeOriginalCallIds.reduce((n, id) => n + knownProtocolBytes.get(id)!, 0) })
+        opaqueProtocolBytes: activeOriginalCallIds.reduce((n, id) => n + knownProtocolBytes.get(id)!, 0) })
       previousText = text
       // No historical served usage or billing is attached to this synthetic
       // result. The estimator and old real bills live only in the report.
@@ -546,7 +566,10 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         sourceCallEstimatedInputTokens: measured.filter(r => r.kind === 'source-call').reduce((n, row) => n + row.estimatedInputTokens, 0),
         allEstimatedInputTokens: measured.reduce((n, row) => n + row.estimatedInputTokens, 0), peakEstimatedInputTokens: Math.max(...measured.map(r => r.estimatedInputTokens)),
         offlineFixtureTransportCalls: broker.transportCount(), externalNetworkCalls: 0, providerCalls: 0 },
-      pricing: priceReplay(measured, sourceModels, billed), requests: measured,
+      pricing: { counterfactualReplay: priceReplay(measured, sourceModels, billed),
+        likeForLikeOriginalRequests: priceReplay(originalRequestMeasures, sourceModels, billed),
+        contrast: 'Original and checkpointed request estimates use the same observed calibration, opaque-byte accounting and cache scenarios. These conditional estimates are distinct from the actual original provider bill; neither scenario is a realized new bill.' },
+      requests: measured,
       checkpointDecisions: checkpoints.map(({ input, semantic, manifest }) => ({ input, semantic, manifest })),
       limitations: ['Retention choices were scripted from already captured phases, not generated by a new LLM. Behavior and task completion require later separate evaluation.',
         'No missing capture-health acquisition, due history proof or physical fact is supplied by checkpointing. The original 600-second goal did not complete.',
