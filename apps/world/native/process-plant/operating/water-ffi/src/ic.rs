@@ -33,7 +33,7 @@ use crate::joined::JoinedSystem;
 use leitbild_operating_plant::{
     ic::{
         acquisition::Overrange,
-        packet::{Quantity, Section},
+        packet::{Quantity, ReportSource, Section},
         protection::Protection,
     },
     joined::{block::Command, operator::Joined},
@@ -81,8 +81,16 @@ enum Observation {
         regions: Vec<ProxyRegion>,
         factor: f64,
     },
+    /// `LD01.TG.STOP.POS`: the STOP's stroke in percent, a function of time
+    /// and the latched TRIP (`trip_s`, refreshed after every restart), never
+    /// of a coordinate.
+    StopPosition { trip_s: Option<f64>, travel_s: f64 },
 }
 impl Observation {
+    /// The STOP's stroke at `t`, percent.
+    fn stop_percent(trip_s: Option<f64>, travel_s: f64, t: f64) -> f64 {
+        100. * leitbild_operating_plant::sg::secondary::steam_fraction(trip_s, travel_s, t)
+    }
     fn value(&self, y: &[f64]) -> Result<f64, String> {
         match self {
             Observation::Linear(terms) => Ok(terms.iter().map(|(i, c)| y[*i] * c).sum()),
@@ -99,6 +107,11 @@ impl Observation {
                 // Each interface reads at most its span limit (status below).
                 let clamp = |p: f64| p.clamp(span[0], span[1]);
                 Ok(a * (clamp(low) - clamp(high)) + b)
+            }
+            // Fully open until a TRIP latches; after it, the stroke needs a time.
+            Observation::StopPosition { trip_s: None, .. } => Ok(100.),
+            Observation::StopPosition { .. } => {
+                Err("the STOP position after the TRIP is read at a time, not a state".into())
             }
         }
     }
@@ -138,6 +151,10 @@ impl Observation {
     fn linear(&self) -> bool {
         matches!(self, Observation::Linear(_))
     }
+    /// Read from time and an owner's latched state, not from coordinates.
+    fn timed(&self) -> bool {
+        matches!(self, Observation::StopPosition { .. })
+    }
     /// Every solver coordinate `value` reads.
     fn coordinates(&self) -> Vec<usize> {
         match self {
@@ -159,6 +176,7 @@ impl Observation {
                 })
                 .collect(),
             Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
+            Observation::StopPosition { .. } => Vec::new(),
         }
     }
 }
@@ -278,6 +296,8 @@ pub struct ProtectionClient {
     taylor: Vec<Vec<f64>>,
     /// The coordinates the nonlinear observations read (sorted, distinct).
     nonlinear_read: Vec<usize>,
+    /// The section declares the bank inserted report (read after restarts).
+    bank_report: bool,
     derivatives: Vec<Vec<f64>>,
 }
 impl ProtectionClient {
@@ -482,6 +502,43 @@ impl ProtectionClient {
                     );
                     Observation::Linear(vec![(i, scales[i] / reference)])
                 }
+                Quantity::BankPosition { normal_travel_m } => {
+                    let rods = joined
+                        .rods()
+                        .ok_or("a bank position channel needs the rods")?;
+                    let n = rods.clusters();
+                    if !(normal_travel_m.is_finite() && *normal_travel_m > 0. && n > 0) {
+                        return Err(format!(
+                            "{}: stroke {normal_travel_m} m over {n} clusters",
+                            f.id
+                        ));
+                    }
+                    let o = joined.offsets().rods;
+                    references.insert(f.id.clone(), json!({"clusters": n, "normal_travel_m": normal_travel_m,
+                        "basis": "mean stem travel over every cluster over the normal stroke (ld01-bank-channels)"}));
+                    Observation::Linear(
+                        (0..n)
+                            .map(|c| {
+                                let i = o + rods.cluster_coordinate(c);
+                                (i, scales[i] / (n as f64 * normal_travel_m))
+                            })
+                            .collect(),
+                    )
+                }
+                Quantity::StopValvePosition { stop_travel_s } => {
+                    let secondary = joined
+                        .secondary()
+                        .ok_or("a STOP position channel needs the secondary")?;
+                    if !(stop_travel_s.is_finite() && *stop_travel_s > 0.) {
+                        return Err(format!("{}: STOP travel {stop_travel_s} s", f.id));
+                    }
+                    references.insert(f.id.clone(), json!({"stop_travel_s": stop_travel_s,
+                        "basis": "the secondary's STOP law: 100 % until the TRIP, linear to 0 over the travel (ld01-steam-valve-position-channels)"}));
+                    Observation::StopPosition {
+                        trip_s: secondary.turbine_trip_time(),
+                        travel_s: *stop_travel_s,
+                    }
+                }
             };
             if !observed.iter().any(|(q, _)| *q == f.quantity) {
                 observed.push((f.quantity.clone(), observation));
@@ -495,10 +552,18 @@ impl ProtectionClient {
                 .1
                 .value(y)
         })?;
+        let mut protection = protection;
+        let bank_report = section
+            .reports
+            .iter()
+            .any(|r| r.source == ReportSource::BankInserted);
+        if bank_report {
+            protection.set_bank_seated(bank_seated(joined)?);
+        }
         let n = y.len();
         let mut nonlinear_read: Vec<usize> = observed
             .iter()
-            .filter(|(_, o)| !o.linear())
+            .filter(|(_, o)| !o.linear() && !o.timed())
             .flat_map(|(_, o)| o.coordinates())
             .collect();
         nonlinear_read.sort_unstable();
@@ -512,6 +577,7 @@ impl ProtectionClient {
             states: Vec::new(),
             taylor: Vec::new(),
             nonlinear_read,
+            bank_report,
         })
     }
     /// HOOK (GATE, S3 case harness; KERN to reconcile): the dense-output
@@ -547,7 +613,8 @@ impl ProtectionClient {
 }
 fn values_of(observed: &[(Quantity, Observation)], y: &[f64]) -> Result<Value, String> {
     let mut out = serde_json::Map::new();
-    for (q, o) in observed {
+    // A timed reading (the STOP position) has no value at a state alone.
+    for (q, o) in observed.iter().filter(|(_, o)| !o.timed()) {
         out.insert(format!("{q:?}"), json!(o.value(y)?));
     }
     Ok(Value::Object(out))
@@ -590,7 +657,19 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
                 }
             }
         }
-        if self.observed.iter().any(|(_, o)| !o.linear()) {
+        for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
+            // Linear in time inside one dense interval: the TRIP latches at a
+            // restart and the STOP ramp's end is an owner time event.
+            if let Observation::StopPosition { trip_s, travel_s } = o {
+                let (a, b) = (
+                    Observation::stop_percent(*trip_s, *travel_s, from),
+                    Observation::stop_percent(*trip_s, *travel_s, to),
+                );
+                d.clear();
+                d.extend([a, (b - a) / (to - from)]);
+            }
+        }
+        if self.observed.iter().any(|(_, o)| !o.linear() && !o.timed()) {
             let offsets = lobatto_offsets(to - from, order.max(1));
             self.states.resize(offsets.len(), Vec::new());
             for (state, s) in self.states.iter_mut().zip(&offsets) {
@@ -599,7 +678,7 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
             }
             let mut values = vec![0.; offsets.len()];
             for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
-                if !o.linear() {
+                if !o.linear() && !o.timed() {
                     for (v, state) in values.iter_mut().zip(&self.states) {
                         *v = o.value(state)?;
                     }
@@ -657,6 +736,35 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
         }
         Ok(Vec::new())
     }
+    /// The owners' discrete state a reading depends on, after the restart
+    /// at `t`: the latched TRIP (STOP position) and the seated chain.
+    fn restarted(&mut self, _t: f64, system: &S) -> Result<(), String> {
+        let joined = &system.integrated().joined;
+        for (_, o) in &mut self.observed {
+            if let Observation::StopPosition { trip_s, .. } = o {
+                *trip_s = joined
+                    .secondary()
+                    .ok_or("a STOP position channel without the secondary")?
+                    .turbine_trip_time();
+            }
+        }
+        if self.bank_report {
+            self.protection.set_bank_seated(bank_seated(joined)?);
+        }
+        Ok(())
+    }
+}
+
+/// Every cluster seated, from the rods owner's discrete modes.
+fn bank_seated<P: Properties + WaterProperties>(joined: &Joined<P>) -> Result<bool, String> {
+    let rods = joined
+        .rods()
+        .ok_or("the bank inserted report needs the rods")?;
+    let state = rods.discrete_state();
+    let modes = state["modes"]
+        .as_array()
+        .ok_or("the rods' discrete state lists no modes")?;
+    Ok(!modes.is_empty() && modes.iter().all(|m| m.as_str() == Some("seated")))
 }
 
 #[cfg(test)]
@@ -766,6 +874,28 @@ mod tests {
             }
             assert_eq!(o.value(&sparse).unwrap(), o.value(&full).unwrap());
         }
+    }
+
+    /// The STOP position is open until the TRIP, then linear to closed over
+    /// the travel, and reads no coordinate.
+    #[test]
+    fn the_stop_position_follows_the_secondary_law() {
+        use super::Observation;
+        let f = |t| Observation::stop_percent(Some(10.), 0.3, t);
+        assert_eq!(Observation::stop_percent(None, 0.3, 50.), 100.);
+        assert_eq!((f(9.), f(10.), f(10.3), f(11.)), (100., 100., 0., 0.));
+        assert!((f(10.15) - 50.).abs() < 1e-9);
+        let o = Observation::StopPosition {
+            trip_s: None,
+            travel_s: 0.3,
+        };
+        assert!(o.timed() && o.coordinates().is_empty());
+        assert_eq!(o.value(&[]).unwrap(), 100.);
+        let latched = Observation::StopPosition {
+            trip_s: Some(10.),
+            travel_s: 0.3,
+        };
+        assert!(latched.value(&[]).is_err());
     }
 
     #[test]

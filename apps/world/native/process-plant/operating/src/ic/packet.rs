@@ -85,6 +85,16 @@ pub enum Quantity {
     /// hydraulic sections with a pump, in packet order), `rotor_id` its
     /// section. Linear in the rotor's angular-momentum coordinate.
     PumpSpeed { rotor: usize, rotor_id: String },
+    /// `LD01.CORE.BANK.POS` (plan r4 tag map, ld01-bank-channels): the mean
+    /// stem travel over every cluster as a fraction of the normal stroke
+    /// `normal_travel_m` (the rods packet's), 0 seated. Linear in the
+    /// clusters' travel coordinates.
+    BankPosition { normal_travel_m: f64 },
+    /// `LD01.TG.STOP.POS` (ld01-steam-valve-position-channels): the STOP's
+    /// stroke in percent, 100 until the latched TRIP, then the linear travel
+    /// to 0 over `stop_travel_s` (the secondary's steam-admission law). A
+    /// function of time and the latched TRIP, read from the live secondary.
+    StopValvePosition { stop_travel_s: f64 },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -114,6 +124,10 @@ pub struct Family {
 pub enum ReportSource {
     /// The ACT.B turbine controls' retained trip memory (`LD01.TG` TRIP).
     TurbineRetainedTrip,
+    /// `LD01.CORE.BANK.INSERTED` (ld01-bank-channels): the series contact
+    /// chain, closed only when every cluster is seated (the rods owner's
+    /// modes, read live after each restart).
+    BankInserted,
 }
 
 #[derive(Clone, Debug, Deserialize)]
