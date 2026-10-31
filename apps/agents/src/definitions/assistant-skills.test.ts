@@ -74,7 +74,7 @@ describe('Leitbild Assistant skills', () => {
     expect(assistance.body).toContain('A target or elapsed time alone proves neither recovery nor sustained stability')
     expect(assistance.body).not.toContain('Tavg falls below its no-load value')
     expect(assistance.body).not.toContain('With every narrow-range level off scale its criterion is total feed')
-    expect(assistance.body).toContain('Respect an explicitly requested monitoring horizon in simulation time')
+    expect(assistance.body).toContain('Respect the requested monitoring horizon in simulation time')
     expect(assistance.body).toContain('Leave the procedure active unless its authored end or handover is supported')
     expect(assistance.body).toContain('Repeated reads at one paused time add no monitoring duration')
     // A rate the display marks "reversing" is turning, not going one way (run-26c rcp-trip).
@@ -168,29 +168,35 @@ describe('Leitbild Assistant skills', () => {
     // Source-linked Basis already owns duties omitted from a branch comparison.
     expect(assistance).toContain('Read linked Basis before new phases; reuse same-pin sections')
     expect(assistance).toContain('`stepId` only for missing exact queries or basis')
-    expect(assistance).toContain('When the source separates checkpoints from sampled reviews')
+    expect(assistance).toContain('When source separates checkpoints/sampled reviews')
     expect(assistance).toContain('exact current condition/basis via the published current-check query')
     expect(assistance).toContain('request missing current function/controller facts')
-    expect(assistance).toContain('Before each record update obtain fresh driver/source/step and complete prior note from canonical `next` or `world.procedure.run.read`')
+    expect(assistance).toContain('Before each note update read fresh driver/source/step and complete prior note from canonical `next` or `world.procedure.run.read`')
     // Actual initial-settling evidence existed only in raw tool history in the
     // failed provider rehearsal. Future source-required records need an explicit
     // transferable home, without adding a plant criterion or a note language.
-    expect(assistance).toContain('Write required fields in `world.procedure.step.update` comments, not tool history')
+    expect(assistance).toContain('Record required fields in `world.procedure.step.update` comments, not tool history')
     // Source-required initial rows and cumulative checkpoints remain intact,
     // while one unchanged lineup's acquisition is not recopied into every row.
-    expect(assistance).toContain('Keep unchanged lineup/dependencies once per note with acquisition refs')
-    expect(assistance).toContain('cached notes/plain receipts do not suffice')
+    expect(assistance).toContain('Keep unchanged lineup/acquisition refs once per note')
+    expect(assistance).toContain('Use exact IDs/exact earlier durable record refs, not prefixes')
+    expect(assistance).toContain('not cached notes/plain receipts')
     expect(assistance).toContain('Source controls current frame counts/older history refs')
-    expect(assistance).toContain('Share Plant/model/episode/duty/column headers across full-precision rows')
+    expect(assistance).toContain('Share headers/full-precision rows')
     expect(assistance).toContain('keep required timestamps/counts/proofs/duties and Human text verbatim')
     expect(assistance).not.toContain('preserve every prior timestamp/count/proof/duty')
     expect(assistance).toContain('Never truncate or round')
-    expect(assistance).toContain('`observationsAcquired:false` is canonical state, never physical evidence or an atomic note-write guarantee')
+    expect(assistance).toContain('`observationsAcquired:false` is state, not physical evidence or atomic note-write protection')
     expect(assistance).toContain('At each source cadence durably update checkpoint note and report chat progress')
     expect(assistance).toContain('Retain sequence on waits; omit `procedureRunId` on clock-only waits')
-    expect(assistance).toContain("At a known step's due review, run its exact pinned normal response query with full required history/current criteria, then select with `nextDetail:\"state\"`")
+    expect(assistance).toContain('Known-step due review: run its exact pinned normal response query with all required history/current criteria, then select with `nextDetail:"state"`')
     expect(assistance).toContain('that acknowledgement adds no physical evidence')
     expect(assistance).toContain('Current checks never satisfy a historical branch')
+    // Exact dated frame arithmetic is distinct from the recorder's retained
+    // left boundary. The pure optional helper neither acquires nor qualifies it.
+    expect(assistance).toContain('Use actual dated frame endpoints; if offered, `sample_changes` computes math absent there, not physical proof')
+    expect(assistance).toContain('Read linked Basis before new phases; reuse same-pin sections')
+    expect(assistance).toContain('Justify criteria/actions via pinned `world.procedure.source.read` Basis sections')
     expect(assistance).toContain('For repeated reads/waits of a known step set `includeGuidance:false`')
     expect(assistance).toContain('`guidanceIncluded:false` omits static guidance only')
     expect(assistance).toContain('Use full `world.procedure.run.step.read` on continue, new Run/step/source, deviation or unknown')
