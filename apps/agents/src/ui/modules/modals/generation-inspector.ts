@@ -4,6 +4,8 @@ import { showToast } from '../toast.ts'
 import { buildExecutionJourney, readableEvidence, extractPromptSections, formatElapsed, recordedExecutionCosts, type ExecutionInspection, type GenerationQueryInspection, type JourneyActor, type JourneyEvent } from './execution-journey.ts'
 import type { ExecutionCall } from '../../../core/executions/store.ts'
 import type { ExecutionModelCall } from '../../../core/executions/model-evidence.ts'
+import type { ContextCheckpointManifest } from '../../../core/working-context.ts'
+import { checkpointRequestLineage, recordedCheckpointEvent, recordedRecallEvent } from './checkpoint-inspection.ts'
 import { progressActivityEvents, recordedOperations, recordedOperationView, type ProgressActivity } from './progress-activity.ts'
 import { currentWorkspaceId } from '../api-client.ts'
 import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
@@ -75,6 +77,7 @@ export const showGenerationInspector = (options: {
   const activityEvents = execution && activity ? progressActivityEvents(execution, allEvents, activity) : undefined
   let events = activity ? activityEvents ?? [] : allEvents
   let compactActivity = activity !== undefined
+  let activateFullTurnScope: (() => void) | undefined
   const bar = document.createElement('div')
   bar.className = 'inspector-toolbar'
   const chips = document.createElement('div')
@@ -101,11 +104,14 @@ export const showGenerationInspector = (options: {
       if (selected) select(selected); else renderOverview()
     } })
     const full = createButton({ label: 'Full turn', onClick: () => {
-      events = allEvents; update.setAttribute('aria-pressed', 'false'); full.setAttribute('aria-pressed', 'true')
-      setActivityPresentation(false)
+      activateFullTurnScope!()
       const selected = events.find(event => event.id === selectedId)
       if (selected) select(selected); else renderOverview()
     } })
+    activateFullTurnScope = () => {
+      events = allEvents; update.setAttribute('aria-pressed', 'false'); full.setAttribute('aria-pressed', 'true')
+      setActivityPresentation(false)
+    }
     update.setAttribute('aria-pressed', 'true'); full.setAttribute('aria-pressed', 'false')
     scope.append(update, full); modes.appendChild(scope)
   }
@@ -271,6 +277,11 @@ export const showGenerationInspector = (options: {
     if (sensitive) { note(host, 'Sensitive provider protocol included by explicit request.'); renderRaw(host, record, true); return }
     phase(host, 'Input', `${record.messageCount} messages · ${record.toolCount} available tools`)
     phase(host, 'Reported cost', record.metrics?.costUsd === undefined ? 'Unknown' : `USD ${record.metrics.costUsd}`)
+    if (record.contextCheckpointId) {
+      const checkpoint = recordedCheckpointEvent(allEvents, execution.turn.id, record.contextCheckpointId)
+      if (checkpoint) host.appendChild(createButton({ label: 'Inspect context checkpoint', onClick: () => inspectRecorded(checkpoint) }))
+      else note(host, `The exact context checkpoint ${record.contextCheckpointId} is unavailable in this execution index.`)
+    }
     renderQuery(host, record.request as unknown as GenerationQueryInspection['query'], body => {
       if (record.error) value(body, 'Recorded model error', record.error)
       if (record.response) {
@@ -345,6 +356,48 @@ export const showGenerationInspector = (options: {
       { label: 'Raw', render: body => renderRaw(body, record) },
     ])
   }
+  const inspectRecorded = (event: JourneyEvent): void => {
+    if (activity && !events.some(item => item.id === event.id)) {
+      if (!activateFullTurnScope) throw new Error('The activity Inspector has no full-turn scope control')
+      activateFullTurnScope()
+    }
+    select(event, true)
+  }
+  const renderCheckpoint = (host: HTMLElement, manifest: ContextCheckpointManifest): void => {
+    if (!execution) throw new Error('A recorded context checkpoint requires its execution index')
+    phase(host, 'Boundary', manifest.reason)
+    note(host, 'This records what stayed in the model context. Earlier requests and outcomes remain in the full execution archive.')
+    const link = (target: HTMLElement, label: string, event: JourneyEvent | undefined, unavailable: string): void => {
+      if (event) target.appendChild(createButton({ label, onClick: () => inspectRecorded(event) }))
+      else note(target, unavailable)
+    }
+    const lineage = checkpointRequestLineage(execution.models, manifest)
+    const navigation = document.createElement('div'); navigation.className = 'inspector-mode'
+    if (manifest.previousCheckpoint) link(navigation, 'Previous checkpoint', recordedCheckpointEvent(allEvents, execution.turn.id, manifest.previousCheckpoint.checkpointId), 'The preceding checkpoint is unavailable in this execution index.')
+    link(navigation, 'Preceding model request', lineage.preceding === undefined ? undefined : allEvents.find(event => event.source.kind === 'model' && event.source.call.id === lineage.preceding!.id), 'The preceding model request is unavailable in this execution index.')
+    host.appendChild(navigation)
+    if (lineage.following.length) lazyDisclosure(host, `Requests using this context · ${lineage.following.length}`, body => {
+      for (const request of lineage.following) link(body, `Model ${request.ordinal} · ${request.status}`, allEvents.find(event => event.source.kind === 'model' && event.source.call.id === request.id), `Model ${request.id} is unavailable in this execution index.`)
+    })
+    else note(host, 'No subsequent model request is recorded for this checkpoint.')
+    const groups = (label: string, entries: ContextCheckpointManifest['retainedGroups']): void => {
+      lazyDisclosure(host, `${label} · ${entries.length}`, body => {
+        for (const group of entries) {
+          body.appendChild(text('h4', group.groupId, 'inspector-section-title'))
+          for (const reason of group.reasons) note(body, `${reason.kind === 'runtime' ? 'Runtime rule' : 'Agent reason'}: ${reason.text}`)
+          for (const read of group.read) link(body, `Inspect ${read.toolCallId}`, recordedRecallEvent(allEvents, execution.turn.id, read), `The exact record ${read.toolCallId} is unavailable in this execution index.`)
+          lazyDisclosure(body, 'Exact recall selectors', target => renderRaw(target, group.read))
+        }
+      })
+    }
+    groups('Kept for the model', manifest.retainedGroups)
+    groups('Newly archived in this checkpoint', manifest.archivedGroups)
+    if (manifest.actionLedger.length) lazyDisclosure(host, 'Recorded change receipts', body => {
+      note(body, 'Returned invocation records are historical. They do not confirm physical attainment or native procedure eligibility.')
+      renderStructured(body, 'Change receipts', manifest.actionLedger, true)
+    })
+    lazyDisclosure(host, 'Exact checkpoint manifest', body => renderRaw(body, manifest))
+  }
   const renderOverview = (): void => {
     selection++; selectedId = 'overview'; detail.replaceChildren()
     if (activity) {
@@ -397,7 +450,10 @@ export const showGenerationInspector = (options: {
     switch (event.source.kind) {
       case 'model': body.appendChild(text('p', 'Loading exact model evidence…', 'inspector-note')); void renderModel(body, event, token); break
       case 'tool': body.appendChild(text('p', 'Loading exact tool evidence…', 'inspector-note')); void renderTool(body, event, token); break
-      case 'stage': value(body, 'Recorded runtime stage', event.source.stage.event); break
+      case 'stage':
+        if (event.source.stage.event.kind === 'context_checkpoint') renderCheckpoint(body, event.source.stage.event.manifest)
+        else value(body, 'Recorded runtime stage', event.source.stage.event)
+        break
       case 'snapshot': note(body, 'A retained request snapshot, not a captured model response or complete iteration history.'); renderQuery(body, event.source.query); break
       case 'comparison': body.appendChild(text('h4', 'Exact comparison evidence', 'inspector-section-title')); renderRaw(body, event.source.record); break
       case 'starting': body.appendChild(text('h4', 'Captured task starting input', 'inspector-section-title')); renderRaw(body, event.source.input); break
