@@ -709,6 +709,54 @@ impl<P: Properties + WaterProperties> Joined<P> {
             SecondaryPort::Prepared(_) => None,
         }
     }
+    /// X4.3 (lane TURB): the secondary rows' response to a unit direction in
+    /// the turbine valve opening at `(t, y, y')`, every coordinate unseeded,
+    /// on the metal heats of the last evaluation (its values only), as
+    /// `(global row, scaled value)` for every row of
+    /// [`Secondary::admission_rows`] (a fixed pattern; values may be zero).
+    #[allow(clippy::too_many_arguments)]
+    pub fn secondary_admission_column(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        cj: f64,
+        opening: f64,
+        out: &mut Vec<(usize, f64)>,
+    ) -> Result<(), Failure> {
+        let o = self.blocks.offsets;
+        out.clear();
+        let Blocks {
+            properties,
+            secondary,
+            heats,
+            scales,
+            secondary_rows,
+            ..
+        } = &mut self.blocks;
+        let SecondaryPort::Owner(b) = secondary else {
+            return Err(fatal("an admission column without a secondary owner"));
+        };
+        let heat_w: Vec<Scalar> = heats
+            .solids
+            .secondary_w
+            .iter()
+            .map(|h| s(h.value))
+            .collect();
+        let x = view(y, yp, None, cj, o.secondary..o.rods, &scales[2].coordinates)?;
+        b.set_admission_opening(opening, 1.)?;
+        let result = b.rows(properties, t, x, &heat_w, secondary_rows);
+        b.set_admission_opening(opening, 0.)?;
+        result?;
+        for r in b.admission_rows() {
+            out.push((
+                o.secondary + r,
+                secondary_rows[r].direction / scales[2].rows[r],
+            ));
+        }
+        Ok(())
+    }
+
     pub fn rods_mut(&mut self) -> Option<&mut (dyn Rods<P> + 'static)> {
         match &mut self.blocks.rods {
             RodPort::Owner(b) => Some(b.as_mut()),

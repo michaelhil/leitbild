@@ -1369,6 +1369,7 @@ mod integrated {
         };
         let (yp, ids) = if appended > 0 {
             let mut tail = vec![0.; appended];
+            ida.system_mut().appended_operator_state(y);
             let tail_ids = ida.system_mut().appended_start(t, y_tail, &mut tail)?;
             if tail_ids.len() != appended {
                 return Err("restart: appended identity layout".into());
@@ -1545,6 +1546,19 @@ mod integrated {
             _yp: &mut [f64],
         ) -> Result<Vec<f64>, String> {
             Ok(Vec::new())
+        }
+        /// X4.3 hook (lane TURB): the operator's coordinates `y` at a
+        /// restart, given to the appended owners before
+        /// [`JoinedSystem::appended_start`] (the slice's admission reads the
+        /// SG pressures). The default reads nothing.
+        fn appended_operator_state(&mut self, _y: &[f64]) {}
+        /// X4.3: the admitted turbine steam's measurand at `t`, when an
+        /// appended owner sets it: the appended valve coordinate (global)
+        /// and per SG the global pressure coordinate with its coefficient
+        /// per solver unit, `m = y[valve] * sum c_k y[p_k]`. `None`: the
+        /// SG owner's time-only admission.
+        fn admission_probe(&self, _t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
+            None
         }
         /// The appended owners' earliest due time strictly after `t`.
         fn appended_next_event(&self, _t: f64) -> Option<f64> {

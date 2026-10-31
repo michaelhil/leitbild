@@ -579,6 +579,38 @@ pub trait Secondary<P> {
     fn turbine_trip_time(&self) -> Option<f64> {
         None
     }
+    /// X4.3 hook (lane TURB): declare the turbine admission valve's choked
+    /// law (admission proportional to the slice's valve opening and the SG
+    /// pressure) and the at-power bypass band on the header stand-in, before
+    /// any structure is compiled. An owner without the law refuses.
+    fn declare_valve_admission(
+        &mut self,
+        _band_start_pa: f64,
+        _band_full_pa: f64,
+        _main_steam_loss_pa: f64,
+    ) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner has no turbine valve law".into(),
+        ))
+    }
+    /// X4.3: the valve opening of the evaluation that follows (a trial
+    /// input set from the slice's coordinate) and its seed direction.
+    fn set_admission_opening(&mut self, _opening: f64, _direction: f64) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner has no turbine valve law".into(),
+        ))
+    }
+    /// X4.3: per SG, the own pressure coordinate and the coefficient
+    /// `c_k(t)` of the admitted turbine steam `a * sum c_k p_k` (kg/s per Pa
+    /// at full opening), when the valve law is declared.
+    fn admission_terms(&self, _t: f64) -> Option<Vec<(usize, f64)>> {
+        None
+    }
+    /// X4.3: the own rows reading the valve opening (sorted), empty
+    /// without the valve law.
+    fn admission_rows(&self) -> Vec<usize> {
+        Vec::new()
+    }
     /// S3-D12: the recorded feed (F3 (a)) gated by the feed pumps' supply.
     /// A held input entering only the SG stocks' rates (class S, S3-D4).
     fn set_feed_supported(&mut self, _supported: bool) -> Result<(), Failure> {

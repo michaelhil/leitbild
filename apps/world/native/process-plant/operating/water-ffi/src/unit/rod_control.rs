@@ -175,9 +175,16 @@ pub struct RodClient {
     pub at: f64,
     pub inputs: Inputs,
     pub lagged: [f64; 3],
-    /// The admitted steam fraction the last `sample` read.
+    /// The admitted steam fraction the last `sample` read (time-only
+    /// admission), or the frame's own from the X4.3 valve probe.
     pub load: f64,
+    /// X4.3: the admitted steam's measurand when the governor sets it
+    /// (`m = y[valve] * sum c_k y[p_k]`), read at each frame's left limit.
+    pub admission: Option<(usize, Vec<(usize, f64)>)>,
     pub engaged: bool,
+    /// The operator's bank HOLD (`SET LD01.CORE.BANK to HOLD`): AUTO
+    /// decides nothing and the drive is held at rest until released.
+    pub hold: bool,
     pub in_force_m_s: f64,
     pub scratch: Vec<f64>,
     /// Per frame: the delivered evidence and the decision.
@@ -212,6 +219,7 @@ impl<S: JoinedSystem> Client<S> for RodClient {
             .and_then(|s| s.admitted_steam_kg_s(t))
             .ok_or("rod control needs the SG owner's admitted steam")?;
         self.load = steam / self.nominal_steam_kg_s;
+        self.admission = system.admission_probe(t);
         self.engaged = joined
             .rods()
             .ok_or("rod control needs the rod owner")?
@@ -222,6 +230,9 @@ impl<S: JoinedSystem> Client<S> for RodClient {
     fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
         dense.derivative(t, 0, &mut self.scratch)?;
         let y = &self.scratch;
+        if let Some(load) = admitted_fraction(self.admission.as_ref(), y, self.nominal_steam_kg_s) {
+            self.load = load;
+        }
         let now: Inputs = [
             self.probe.tavg_k(y)?,
             self.load,
@@ -243,7 +254,27 @@ impl<S: JoinedSystem> Client<S> for RodClient {
         self.at = t;
         let evidence = self.deliver();
         let mut out = Vec::new();
-        let decision: Option<Decision> = if self.engaged {
+        if self.engaged && self.hold && self.in_force_m_s != 0. {
+            {
+                out.push(Change {
+                    due_s: t,
+                    class: self.class,
+                    kind: "rod drive rate (bank HOLD)".into(),
+                    action: Action::Held(Box::new(move |s: &mut S| {
+                        s.integrated_mut()
+                            .joined
+                            .rods_mut()
+                            .ok_or("no rod owner")?
+                            .set_drive(t, Some(0.))
+                            .map(|_| ())
+                            .map_err(|f| format!("{f:?}"))
+                    })),
+                });
+                self.in_force_m_s = 0.;
+                self.schedule.push((t, 0.));
+            }
+        }
+        let decision: Option<Decision> = if self.engaged && !self.hold {
             let d = self
                 .controller
                 .frame(h, &evidence)
@@ -274,12 +305,29 @@ impl<S: JoinedSystem> Client<S> for RodClient {
         };
         self.series.push(
             json!({"k": k, "t_s": t, "tavg_raw_k": now[0], "evidence": evidence,
-            "decision": decision, "engaged": self.engaged, "rate_m_s": self.in_force_m_s}),
+            "decision": decision, "engaged": self.engaged, "hold": self.hold, "rate_m_s": self.in_force_m_s}),
         );
         Ok(out)
     }
     fn stop_at_frame(&self, _k: u64) -> bool {
         self.engaged && self.class == Class::S
+    }
+}
+
+/// X4.3: the admitted turbine steam over `nominal` from the valve probe.
+fn admitted_fraction(
+    probe: Option<&(usize, Vec<(usize, f64)>)>,
+    y: &[f64],
+    nominal: f64,
+) -> Option<f64> {
+    probe.map(|(a, terms)| y[*a] * terms.iter().map(|(p, c)| c * y[*p]).sum::<f64>() / nominal)
+}
+
+impl RodClient {
+    /// The operator's bank HOLD (`true`) or its release to AUTO (`false`),
+    /// acted on at the next frame.
+    pub fn set_hold(&mut self, hold: bool) {
+        self.hold = hold;
     }
 }
 
@@ -308,14 +356,16 @@ pub fn commission<S: JoinedSystem<Properties = If97>>(
     if !(steam.is_finite() && steam > 0.) {
         return Err(format!("the prepared admitted steam {steam} kg/s"));
     }
-    let inputs: Inputs = [probe.tavg_k(y)?, 1., probe.nuclear(y), probe.travel_m(y)];
+    let admission = system.admission_probe(t0);
+    let load = admitted_fraction(admission.as_ref(), y, steam).unwrap_or(1.);
+    let inputs: Inputs = [probe.tavg_k(y)?, load, probe.nuclear(y), probe.travel_m(y)];
     let mut client = RodClient {
         class,
         controller: Controller::new(
             law.clone(),
             &Evidence {
                 tavg_k: inputs[0],
-                load: 1.,
+                load,
                 nuclear: inputs[2],
                 position_m: inputs[3],
             },
@@ -325,9 +375,11 @@ pub fn commission<S: JoinedSystem<Properties = If97>>(
         nominal_steam_kg_s: steam,
         at: t0,
         inputs,
-        lagged: [inputs[0], 1., inputs[3]],
-        load: 1.,
+        lagged: [inputs[0], load, inputs[3]],
+        load,
+        admission,
         engaged: true,
+        hold: false,
         in_force_m_s: 0.,
         scratch: vec![0.; y.len()],
         series: Vec::new(),
