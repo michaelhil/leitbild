@@ -15,6 +15,7 @@ import { handleWorldModuleApi } from '../../../apps/world/src/core/api/workspace
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
 import { createProcedureSourceService } from '../../../apps/world/src/features/procedures/source.ts'
+import { projectProcedureStepGuidance, type ProcedureStepView } from '../../../apps/world/src/features/procedures/step-view.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../../../apps/world/src/packs/process-plant/index.ts'
 import { decodeProcessPlantSampleTimeRuns, expandProcessPlantProcedureEvidence, readProcessPlantProcedureEvidence,
   type ProcessPlantProcedureEvidenceFrame, type ProcessPlantSampleTimeRun } from '../../../apps/world/src/packs/process-plant/procedure-evidence-facts.ts'
@@ -120,7 +121,7 @@ const expectSummaryParity = (summary: Wire, full: Wire) => {
   }
 }
 
-const setup = async () => {
+const setup = async (richGuidance = false) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'procedure-evidence-context-'))
   let registry: WorldWorkspaceRuntimeRegistry | undefined
   cleanup.push(async () => { await registry?.shutdown(); await rm(dataDir, { recursive: true, force: true }) })
@@ -128,8 +129,29 @@ const setup = async () => {
   definition.id = 'evidence-context-protocol'
   definition.title = 'Ordinary full-power protocol fixture'
   definition.timeline = { cues: [] }; definition.objectives = []
+  const richSource = source.replace('Check: observe real five-second receiver samples before the protocol monitor.',
+    'Check: observe real five-second receiver samples. Read «NIS-PR-AVG», «AFW-A-CV» and «KNOWN-ABSENT-TAG» for the software projection test.') + `
+## Tags
+- id: NIS-PR-AVG
+  description: Native power operand description for the projection test
+  sim-path: core.powerRangePercent
+  units: percent
+  equipment: core
+  source: ${basisSource}
+  model-note: Authored reference context; acquired quality remains a separate current fact
+- id: AFW-A-CV
+  description: Writable valve demand; current feedback must remain distinct
+  sim-path: auxFeedwaterValveA.positionFraction
+  units: fraction
+  equipment: auxFeedwaterValveA
+  source: ${basisSource}
+- id: KNOWN-ABSENT-TAG
+  description: Deliberately absent source binding; not an instrument failure
+  units: boolean
+  source: ${basisSource}
+`
   const knowledge = createKnowledge({ revision, documents: [
-    { path: `procedures/${procedureId}.md`, content: source },
+    { path: `procedures/${procedureId}.md`, content: richGuidance ? richSource : source },
     { path: 'basis.md', content: '# Basis\n## Protocol only\nSoftware protocol and context-size fixture. Not operating criteria or physical ES-0.1 qualification.' },
   ] })
   registry = createWorldWorkspaceRuntimeRegistry({
@@ -205,7 +227,7 @@ describe('procedure evidence across World and the Agent protected turn', () => {
     const f = await setup()
     const started = await f.invoke('world.procedure.run.start', { sourceId, procedureId, scope: { plantId } })
     const runId = started.pinned.runId
-    const read = () => f.invoke('world.procedure.run.step.read', { runId })
+    const read = (includeGuidance = false) => f.invoke('world.procedure.run.step.read', { runId, includeGuidance })
     let previousComment: string | undefined
     const note = async (label: string) => {
       const comment = `${label}; actual simulation time ${f.run.snapshot().clock!.currentTime}; retained observations are sampled, not continuous. `
@@ -223,12 +245,23 @@ describe('procedure evidence across World and the Agent protected turn', () => {
     for (let index = 0; index < 26; index++) {
       await f.advance(5)
       const view = await read()
+      expect(view.guidanceIncluded).toBe(false)
+      expect(view.step).not.toHaveProperty('blocks')
+      expect(view.step).not.toHaveProperty('branches')
+      if (index === 0 || index === 25) {
+        const full = await f.invoke('world.procedure.run.step.read', { runId }, false)
+        expect(view).toEqual(projectProcedureStepGuidance(full as ProcedureStepView, false))
+      }
       if (previousComment !== undefined) expect(view.step.state.comment).toBe(previousComment)
       expect(view.step.branchAssessments[0].status).toBe(index === 0 ? 'unknown' : 'supported')
       if (index === 0) expect(view.step.branchAssessments[0].observation.result.evidence.every((row: Wire) => row.reason.includes('left boundary'))).toBe(true)
       await note(`initial review ${index + 1}`)
     }
     const entered = await select('acquire')
+    expect(entered.next).not.toHaveProperty('guidanceIncluded')
+    expect(entered.next.step.id).toBe('monitor')
+    expect(entered.next.step.blocks.length).toBeGreaterThan(0)
+    expect(entered.next.step.branches).toHaveLength(4)
     const initialCallCount = f.recordedCalls.length
     const pinned = entered.next.step.definition
     const discovered = await f.invoke(pinned.capabilityId, pinned.input)
@@ -347,6 +380,26 @@ describe('procedure evidence across World and the Agent protected turn', () => {
       entry[index < initialCallCount ? 'initialBytes' : 'monitoringBytes'] += bytes(call.result)
     })
     const stepFields: Record<string, number> = {}
+    const initialFields: Record<string, number> = {}
+    const addInitial = (key: string, value: unknown) => { initialFields[key] = (initialFields[key] ?? 0) + bytes(value) }
+    for (const call of f.recordedCalls.filter(call => call.capabilityId === 'world.procedure.run.step.read' && call.result.step?.id === 'acquire')) {
+      const view = call.result
+      for (const [key, value] of Object.entries({ all: view, blocks: view.step.blocks, branches: view.step.branches, tags: view.tags,
+        csfs: view.csfs, state: view.step.state, definition: view.step.definition, run: view.run, branchAssessments: view.step.branchAssessments })) addInitial(key, value)
+      for (const branch of view.step.branchAssessments as Wire[]) {
+        addInitial('assessment.readings', branch.readings)
+        addInitial('assessment.condition', branch.condition)
+        addInitial('assessment.applicability', branch.applicability)
+        const response = branch.observation?.result
+        if (response === undefined) continue
+        addInitial('observation.result', response)
+        addInitial('response.current', response.current)
+        addInitial('response.current.readings', response.current.readings)
+        addInitial('response.current.evidence', response.current.evidence)
+        addInitial('response.recordings', response.recordings)
+        addInitial('response.evidence', response.evidence)
+      }
+    }
     let currentFactCharacters = 0, uniqueCurrentFactCharacters = 0
     const add = (key: string, value: unknown) => { stepFields[key] = (stepFields[key] ?? 0) + bytes(value) }
     const readViews = f.recordedCalls.map(call => call.result.next ?? call.result).filter(result => result.step !== undefined)
@@ -383,7 +436,7 @@ describe('procedure evidence across World and the Agent protected turn', () => {
       }
       uniqueCurrentFactCharacters += [...uniqueCurrentFacts].reduce((sum, facts) => sum + facts.length, 0)
     }
-    console.info('procedure-evidence-context contributors', JSON.stringify({ byOperation, stepFields, readViews: readViews.length,
+    console.info('procedure-evidence-context contributors', JSON.stringify({ byOperation, stepFields, initialFields, readViews: readViews.length,
       currentFactCharacters, uniqueCurrentFactCharacters, duplicateCurrentFactCharactersWithinViews: currentFactCharacters - uniqueCurrentFactCharacters,
       outputCharacters: f.transcript.filter(message => message.role === 'tool').reduce((sum, message) => sum + message.content.length, 0),
       argumentCharacters: f.transcript.filter(message => message.role === 'assistant').reduce((sum, message) => sum + bytes(message.toolCalls), 0) }))
@@ -447,5 +500,37 @@ describe('procedure evidence across World and the Agent protected turn', () => {
       condition: { type: 'comparison', signal: { tagId: 'nis.power_range.avg' }, operator: '>', value: 0, unit: 'percent' } })
     expect(existingExternalReference.status).toBe('satisfied')
     expect(expanded(existingExternalReference)[0]).toMatchObject({ reference: { tagId: 'nis.power_range.avg' }, signal: { tagId: 'NIS-PR-AVG' }, quality: { status: 'good' } })
+  }, 30_000)
+
+  test('known-step guidance projection preserves actual tag caveats, missing bindings, comments and default full recovery through both public reads', async () => {
+    const f = await setup(true)
+    const started = await f.invoke('world.procedure.run.start', { sourceId, procedureId, scope: { plantId } })
+    const runId = started.pinned.runId
+    await f.invoke('world.procedure.step.update', { runId, stepId: 'acquire', comment: 'Retain this actual operator note and its timing anchors.' })
+    const full = await f.invoke('world.procedure.run.step.read', { runId })
+    const lean = await f.invoke('world.procedure.run.step.read', { runId, includeGuidance: false })
+    expect(lean).toEqual(projectProcedureStepGuidance(full as ProcedureStepView, false))
+    expect(lean.guidanceIncluded).toBe(false)
+    expect(lean.step.branchAssessments).toEqual(full.step.branchAssessments)
+    expect(lean.step.state).toEqual(full.step.state)
+    expect(lean.run).toEqual(full.run)
+    expect(lean.csfs).toEqual(full.csfs)
+    expect(lean.step.definition).toEqual(full.step.definition)
+    expect(full.tags.some((row: Wire) => row.description && row.notes)).toBe(true)
+    for (const tag of full.tags as Wire[]) {
+      const { description: _description, notes: _notes, ...facts } = tag
+      expect(lean.tags.find((row: Wire) => row.id === tag.id)).toEqual(facts)
+    }
+    expect(lean.tags.find((row: Wire) => row.id === 'AFW-A-CV').reading.note).toContain('Writable command or demand')
+    expect(lean.tags.find((row: Wire) => row.id === 'KNOWN-ABSENT-TAG').unavailable).toBeString()
+    const waited = await f.invoke('world.simulation-run.wait', { untilSimulationTime: full.simulationTime, procedureRunId: runId, includeGuidance: false })
+    expect(waited.next).toEqual(lean)
+    const defaultAgain = await f.invoke('world.procedure.run.step.read', { runId })
+    expect(defaultAgain).toEqual(full)
+    expect(defaultAgain).not.toHaveProperty('guidanceIncluded')
+    const badWait = await f.invoke('world.simulation-run.wait', { untilSimulationTime: full.simulationTime, includeGuidance: false }, false, 400)
+    expect(badWait.error.code).toBe('invalid_request')
+    const delivered = JSON.parse(f.transcript.findLast(message => message.role === 'tool' && message.content.includes('"guidanceIncluded":false'))!.content)
+    expect(delivered.results[0].data.guidanceIncluded ?? delivered.results[0].data.next.guidanceIncluded).toBe(false)
   }, 30_000)
 })
