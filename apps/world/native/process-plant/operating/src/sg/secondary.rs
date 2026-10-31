@@ -1320,11 +1320,13 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 rows[c + NR_LAG] = x.rate(c + NR_LAG) - (level - lags[0]) / s(law.nr_lag_s);
                 rows[c + STEAM_LAG] =
                     x.rate(c + STEAM_LAG) - (steam - lags[1]) / s(law.steam_flow_lag_s);
-                // FW.FT reads the delivered main feed (zero while the pumps
-                // are unsupplied).
-                let delivered = if self.feed_supported { *m } else { s(0.) };
-                rows[c + FEED_LAG] =
-                    x.rate(c + FEED_LAG) - (delivered - lags[2]) / s(law.feed_flow_lag_s);
+                // FW.FT reads the train's branch flow. The S3-D12 gate zeroes
+                // only the delivered feed (the reduction without pump
+                // coastdown), so the channel does not see a reserve
+                // transfer's brief gate as a feed step (C2: reading the gated
+                // flow drove the inner loop through the rod-seat window,
+                // 113 against 74 Jacobians).
+                rows[c + FEED_LAG] = x.rate(c + FEED_LAG) - (*m - lags[2]) / s(law.feed_flow_lag_s);
                 rows[c + OUTER] = x.rate(c + OUTER) - l.outer_rate;
                 rows[c + INNER] = x.rate(c + INNER) - l.inner_rate;
                 rows[c + STEM] = x.rate(c + STEM) - f.stem_rate(l.demand, u);
