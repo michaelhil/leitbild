@@ -2016,6 +2016,22 @@ fn the_delta_cj_setter_admits_stocks_range_and_refuses_its_silent_default() {
     for good in [0., 0.1, 0.25, 0.999] {
         ida.set_delta_cj_lsetup(good).unwrap();
     }
+    // R4-ETA: stock's fixed step-size bounds, refused outside stock's range.
+    for (lo, hi) in [
+        (-0.1, 2.),
+        (1.1, 2.),
+        (0.5, 0.9),
+        (f64::NAN, 2.),
+        (0.5, f64::INFINITY),
+    ] {
+        assert!(
+            ida.set_eta_fixed_step_bounds(lo, hi).is_err(),
+            "({lo}, {hi})"
+        );
+    }
+    for (lo, hi) in [(1., 2.), (0.75, 2.), (0.5, 2.), (0., 1.)] {
+        ida.set_eta_fixed_step_bounds(lo, hi).unwrap();
+    }
     let (mut y, mut yp) = (vec![1.], vec![-1.]);
     ida.advance(0.1, &mut y, &mut yp).unwrap();
     assert!(
