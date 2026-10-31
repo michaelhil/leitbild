@@ -22,6 +22,18 @@ export interface ToolResult {
   // calling Agent's own progress messages (Message.progress) as soon as this
   // result returns (workspace_call `say`). Never part of what the model reads.
   readonly progress?: ReadonlyArray<ToolProgress>
+  /** Trusted invocation metadata, never a model declaration or physical proof. */
+  readonly effects?: ReadonlyArray<ToolExecutionEffect>
+}
+
+export interface ToolExecutionEffect {
+  readonly kind: 'read' | 'change' | 'unknown'
+  readonly outcome: 'returned' | 'not-dispatched' | 'unknown'
+  readonly operationId?: string
+  readonly target?: Readonly<Record<string, unknown>>
+}
+export interface ToolEvaluationControls {
+  readonly checkpoint: (call: ToolCall, input: unknown) => Promise<unknown>
 }
 
 // Options for tool-internal LLM calls — model is inherited from the calling agent.
@@ -45,6 +57,7 @@ export interface ToolContext {
   readonly signal?: AbortSignal
   /** Execution-evidence id of this call within the current turn; absent for standalone executors. */
   readonly executionCallId?: string
+  readonly contextCheckpoint?: (input: unknown) => Promise<unknown>
   readonly callerId: string
   readonly callerName: string
   readonly roomId?: string          // current trigger room ID — available when tool is called from a room context
@@ -55,6 +68,8 @@ export interface ToolContext {
 
 export interface Tool {
   readonly name: string
+  /** Absent classification stays unknown and is pinned during checkpointing. */
+  readonly contextEffect?: 'read' | 'change'
   // LLM-facing prose. Single imperative clause; second sentence only for a
   // non-obvious constraint or cross-tool dependency. If the return shape
   // carries a contract the LLM must act on (e.g. paste a fence verbatim),
@@ -107,7 +122,7 @@ export interface ToolRegistry {
   readonly listEntries: () => ReadonlyArray<ToolRegistryEntry>
 }
 
-export type ToolExecutor = (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal, executionTurnId?: string) => Promise<ReadonlyArray<ToolResult>>
+export type ToolExecutor = (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal, executionTurnId?: string, controls?: ToolEvaluationControls) => Promise<ReadonlyArray<ToolResult>>
 
 // === Native tool calling (OpenAI/Ollama-compatible) ===
 
