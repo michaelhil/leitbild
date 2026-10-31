@@ -3595,6 +3595,10 @@ fn s3_case_run() {
     });
     if let Some(c) = &cost_drive {
         g_cost["cost_drive_cpu"] = c.record["cpu"].clone();
+        // HOOK (OU-A U5 lag, 3e0d243fd's receipt part): the ungated cost
+        // drive's frame instructions (with LD01_OU_FRAME_COST=1), which
+        // PERF's ld01-cost reads first.
+        g_cost["ou_cost_drive_frames"] = c.record["ou_frame_instructions"].clone();
     }
     families.insert("G_cost".into(), g_cost);
     let mut not_implemented: Vec<&str> = Vec::new();
