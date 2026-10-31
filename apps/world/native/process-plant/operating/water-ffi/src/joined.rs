@@ -1753,6 +1753,16 @@ mod integrated {
         fn klu_ordering(&self) -> KluOrdering {
             KluOrdering::Amd
         }
+        /// E-NUC: each coordinate's multiplicity, from the owners' layouts.
+        fn multiplicities(&self) -> Option<Vec<f64>> {
+            Some(
+                self.joined
+                    .layouts()
+                    .iter()
+                    .flat_map(|(_, l)| l.multiplicity.iter().map(|m| *m as f64))
+                    .collect(),
+            )
+        }
         /// The pattern's entries, or for a presence-following system the
         /// capacity every presence key fits.
         fn nonzeros(&self) -> usize {
@@ -1863,6 +1873,9 @@ mod integrated {
         }
         fn klu_ordering(&self) -> KluOrdering {
             self.0.klu_ordering()
+        }
+        fn multiplicities(&self) -> Option<Vec<f64>> {
+            self.0.multiplicities()
         }
         fn residual(
             &mut self,

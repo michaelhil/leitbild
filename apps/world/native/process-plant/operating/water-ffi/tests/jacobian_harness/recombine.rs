@@ -107,6 +107,9 @@ impl<S: System> System for Recombined<S> {
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
     }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn residual(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         if t > self.latest_residual {
             self.latest_residual = t;

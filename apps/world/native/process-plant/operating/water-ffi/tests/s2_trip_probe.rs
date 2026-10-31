@@ -158,6 +158,9 @@ impl System for RootLedger {
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
     }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn quadrature_count(&self) -> usize {
         self.inner.quadrature_count()
     }

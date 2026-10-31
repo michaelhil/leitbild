@@ -317,8 +317,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
         rods: RodPort<P>,
     ) -> Result<Self, Failure> {
         let cells = network.cell_layout.len();
-        let nuclear = Nuclear::new(packet, cells)?;
-        let solids = Solids::new(packet, cells)?;
+        // E-NUC phase B: the solids' replica classes follow the nuclear
+        // groups and keep every rod seat's deposit store single; the nuclear
+        // block's ports are the solids' half classes.
+        let mut nuclear = Nuclear::new(packet, cells)?;
+        let singles = match &rods {
+            RodPort::Owner(b) => b.deposit_stores(),
+            RodPort::Prepared(_) => Vec::new(),
+        };
+        let solids = Solids::new(packet, cells, nuclear.group_of(), &singles)?;
+        nuclear.set_ports(solids.half_members())?;
         let generators = solids.secondaries();
         let clusters = nuclear.feedback().rod_count();
         let secondary_len = match &secondary {
@@ -473,7 +481,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             rod_rows: vec![s(0.); rods_len],
             pzr_rows: vec![s(0.); pzr_len],
             temperatures: solids::Temperatures::default(),
-            fuel_t: vec![s(0.); nuclear.carriers()],
+            fuel_t: vec![s(0.); nuclear.ports()],
             water: vec![
                 RegionWater {
                     density_kg_m3: s(0.),
@@ -1800,7 +1808,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 .blocks
                 .solids
                 .passive_store(store)
-                .ok_or_else(|| fatal(format!("deposit into unknown passive store {store}")))?;
+                .ok_or_else(|| {
+                    fatal(format!(
+                        "deposit into passive store {store}: unknown or of a replica class (E-NUC)"
+                    ))
+                })?;
             let scale = self.blocks.scales[1].coordinates[i];
             y[o.solids + i] += energy / scale;
         }
@@ -2008,15 +2020,19 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let nuc = &self.blocks.nuclear;
         let sol = &self.blocks.solids;
-        let (regions, carriers) = (nuc.regions(), nuc.carriers());
+        // E-NUC: a "carrier" here is a nuclear port, one per solids half.
+        let (regions, carriers) = (nuc.regions(), nuc.ports());
         let mut regions_of = vec![BTreeSet::new(); carriers];
         let mut carriers_of = vec![BTreeSet::new(); regions];
-        for support in nuc.supports() {
+        for support in nuc.port_supports() {
             regions_of[support.material].insert(support.region);
             carriers_of[support.region].insert(support.material);
         }
         let n_of = |i: usize| o.nuclear + i;
-        let carrier_vars = |a: usize, out: &mut BTreeSet<usize>| {
+        // E-NUC: a port's nuclear state is its replica group's.
+        let group = nuc.port_group();
+        let carrier_vars = |carrier: usize, out: &mut BTreeSet<usize>| {
+            let a = group[carrier];
             for g in 0..6 {
                 out.insert(o.nuclear + nuc.precursor(a, g));
                 out.insert(o.nuclear + nuc.material(a, g));
@@ -2040,7 +2056,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // which read the support populations, fissile, fertile, Xe and Sm.
         let events = |a: usize, out: &mut BTreeSet<usize>| {
             for k in [0, 1, 3, 5] {
-                out.insert(o.nuclear + nuc.material(a, k));
+                out.insert(o.nuclear + nuc.material(group[a], k));
             }
             out.extend(regions_of[a].iter().map(|i| n_of(*i)));
         };
@@ -2048,7 +2064,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let fuel_heat = |a: usize, out: &mut BTreeSet<usize>| {
             events(a, out);
             for g in 0..nuclear::HISTORIES {
-                out.insert(o.nuclear + nuc.history(a, g));
+                out.insert(o.nuclear + nuc.history(group[a], g));
             }
         };
         let half_vars = |a: usize, out: &mut BTreeSet<usize>| {
@@ -2083,10 +2099,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
             let mut cols: BTreeSet<usize> = (0..regions).map(n_of).collect();
             for a in carriers_i {
                 for g in 0..6 {
-                    cols.insert(o.nuclear + nuc.precursor(*a, g));
+                    cols.insert(o.nuclear + nuc.precursor(group[*a], g));
                 }
                 for k in [0, 1, 3, 5] {
-                    cols.insert(o.nuclear + nuc.material(*a, k));
+                    cols.insert(o.nuclear + nuc.material(group[*a], k));
                 }
                 cols.insert(o.solids + sol.energy(*a, 0));
                 cols.insert(o.solids + sol.energy(*a, 1));

@@ -99,6 +99,10 @@ pub struct Layout {
     /// Physical row value of one solver unit; finite, > 0. For a
     /// differential coordinate it must equal the coordinate's scale.
     pub row_scales: Vec<f64>,
+    /// E-NUC (plan r4): how many identical coordinates of the unreduced
+    /// model this coordinate stands for (1 unless the owner groups exact
+    /// replicas, whose rows and states are equal by construction).
+    pub multiplicity: Vec<usize>,
 }
 
 impl Layout {
@@ -109,11 +113,25 @@ impl Layout {
         self.labels.is_empty()
     }
     pub fn push(&mut self, label: String, class: Class, differential: bool, scale: f64, row: f64) {
+        self.push_replicated(label, class, differential, scale, row, 1);
+    }
+    /// [`Self::push`] for a coordinate standing for `multiplicity` exact
+    /// replicas of the unreduced model (E-NUC).
+    pub fn push_replicated(
+        &mut self,
+        label: String,
+        class: Class,
+        differential: bool,
+        scale: f64,
+        row: f64,
+        multiplicity: usize,
+    ) {
         self.labels.push(label);
         self.classes.push(class);
         self.differential.push(differential);
         self.scales.push(scale);
         self.row_scales.push(row);
+        self.multiplicity.push(multiplicity);
     }
     /// Refuse an inconsistent declaration before any composition.
     pub fn validate(&self, owner: &str) -> Result<(), Failure> {
@@ -123,9 +141,11 @@ impl Layout {
             self.differential.len(),
             self.scales.len(),
             self.row_scales.len(),
+            self.multiplicity.len(),
         ]
         .iter()
         .any(|k| *k != n)
+            || self.multiplicity.contains(&0)
         {
             return Err(Failure::Fatal(format!("{owner}: layout lengths differ")));
         }

@@ -574,6 +574,9 @@ impl<S: System> System for Recorder<S> {
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
     }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn nonzeros(&self) -> usize {
         self.inner.nonzeros()
     }

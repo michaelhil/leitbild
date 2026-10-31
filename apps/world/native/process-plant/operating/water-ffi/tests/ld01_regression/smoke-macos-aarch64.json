@@ -2,20 +2,20 @@
   "counts": {
     "census": {
       "composed": [
-        17251,
-        1194,
-        18445
+        1084,
+        90,
+        1174
       ],
-      "histories": 9650,
+      "histories": 450,
       "with_pending": [
-        17335,
-        1362,
-        18697
+        1168,
+        258,
+        1426
       ]
     },
     "composition": {
-      "algebraic": 1366,
-      "dimension": 18708,
+      "algebraic": 262,
+      "dimension": 1437,
       "owner_transactions": 1,
       "s1_settling": {
         "convergence_failures": 4,
@@ -26,16 +26,16 @@
         "steps": 219
       },
       "surface_max_iterations": 2,
-      "surface_sets": 386
+      "surface_sets": 18
     },
     "oracle": {
-      "columns": 198,
+      "columns": 189,
       "outside_pattern": 0,
       "within_1e-9": true
     },
     "release_restart": {
-      "algebraic_after": 1313,
-      "algebraic_before": 1365,
+      "algebraic_after": 209,
+      "algebraic_before": 261,
       "clusters": 52,
       "constraint_rate_within_bound": true,
       "opening_transactions": 1,
@@ -48,18 +48,18 @@
     },
     "settle": {
       "convergence_failures": 9,
-      "error_failures": 62,
+      "error_failures": 60,
       "failure": null,
-      "jacobians": 317,
+      "jacobians": 320,
       "last_order": 2,
-      "linear_setups": 317,
-      "nonlinear_iterations": 2866,
+      "linear_setups": 320,
+      "nonlinear_iterations": 2886,
       "reached": true,
-      "residuals": 2867,
+      "residuals": 2887,
       "root_restarts": 1,
-      "steps": 2333,
-      "system_jacobians": 317,
-      "system_residuals": 5635
+      "steps": 2352,
+      "system_jacobians": 320,
+      "system_residuals": 5681
     },
     "z1": {
       "constraint_rate_within_bound": true,
