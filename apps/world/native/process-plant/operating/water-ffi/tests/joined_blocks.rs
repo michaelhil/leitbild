@@ -330,6 +330,15 @@ fn joined_blocks_against_colored() {
         );
         y[o.pzr] = lift;
     }
+    // B1 (lane ROD, NUC review): LD01_JAC_STUCK_WORTH_DK applies the
+    // stuck-cluster term before both assemblies, so the nuclear block's
+    // partials are compared with it applied.
+    let stuck_worth = std::env::var("LD01_JAC_STUCK_WORTH_DK")
+        .ok()
+        .map(|v| v.parse::<f64>().expect("LD01_JAC_STUCK_WORTH_DK"));
+    if let Some(dk) = stuck_worth {
+        joined.nuclear_mut().apply_stuck_worth(dk).expect("B1 term");
+    }
     let (reference, colored, colors, colored_s) = joined_colored(&mut joined, &y, &zero, cj);
     let mine = &structure.pattern;
     // Every colored nonzero lies in the block pattern.
@@ -435,7 +444,7 @@ fn joined_blocks_against_colored() {
     let klu_structural = klu(&reference, &colored);
     let receipt = json!({
         "kind": "s2-joined-blocks-against-colored-NOT-EVIDENCE",
-        "relative_state_perturbation": perturb, "pzr_relief_lift": lift,
+        "relative_state_perturbation": perturb, "pzr_relief_lift": lift, "stuck_worth_dk": stuck_worth,
         "block_assembly_refused": refused,
         "klu_block_pattern": klu_blocks, "klu_structural_pattern": klu_structural,
         "composition": {"dimension": n, "offsets": o, "full_owners": full},

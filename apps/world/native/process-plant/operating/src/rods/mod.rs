@@ -1901,6 +1901,11 @@ impl<P: Properties> Rods<P> for RodBlock {
     fn drive(&self) -> Option<f64> {
         RodBlock::drive(self)
     }
+    fn stuck_out(&self) -> bool {
+        let n = self.groups.len();
+        (0..n).any(|c| self.failed_release[c] && self.modes[c] == Mode::Held)
+            && (0..n).all(|c| self.failed_release[c] || self.modes[c] == Mode::Seated)
+    }
     fn set_drive(&mut self, t: f64, drive: Option<f64>) -> Result<Transaction, Failure> {
         RodBlock::set_drive(self, t, drive)
     }

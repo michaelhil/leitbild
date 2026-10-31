@@ -430,7 +430,9 @@ pub struct Fixed<'a> {
 }
 
 /// The margin check at one state from its source-feedback conditions: the
-/// current `rho`, `G` and water terms the feedback evaluates there.
+/// current `rho`, `G` and water terms the feedback evaluates there, with
+/// `applied_dk` (B1's applied stuck-cluster term, `Nuclear::stuck_worth_dk`)
+/// added to every region's reactivity as the running kinetics adds it.
 pub fn margin_at(
     feedback: &sf::Model,
     kinetics: &kinetics::Model,
@@ -438,6 +440,7 @@ pub fn margin_at(
     neutrons: &[Scalar],
     conditions: sf::Conditions<'_>,
     extension: &Extension,
+    applied_dk: f64,
 ) -> Result<Margin, Error> {
     margins_at(
         feedback,
@@ -447,12 +450,14 @@ pub fn margin_at(
         conditions,
         &[extension.margin_water_term_factor],
         extension.shutdown_margin_minimum,
+        applied_dk,
     )
     .map(|mut m| m.remove(0))
 }
 
 /// [`margin_at`] at each water-term factor of `factors`, with `minimum`
 /// inserted, on one evaluation of the feedback.
+#[allow(clippy::too_many_arguments)] // The feedback's inputs, the factors and B1's term.
 fn margins_at(
     feedback: &sf::Model,
     kinetics: &kinetics::Model,
@@ -461,6 +466,7 @@ fn margins_at(
     conditions: sf::Conditions<'_>,
     factors: &[f64],
     minimum: f64,
+    applied_dk: f64,
 ) -> Result<Vec<Margin>, Error> {
     let r = feedback.region_count();
     let mut terms = vec![sf::ReactivityTerms::default(); r];
@@ -475,7 +481,8 @@ fn margins_at(
         .regions
         .iter()
         .map(|x| kinetics::RegionInput {
-            reactivity: x.reactivity.value,
+            // B1: the applied stuck-cluster term.
+            reactivity: x.reactivity.value + applied_dk,
             external_source_per_s: x.external_source_per_s.value,
         })
         .collect();
@@ -507,6 +514,7 @@ fn margins_at(
 
 /// D3 (a) at one accepted state from its source-feedback conditions: the
 /// margin check, then the source domains it selects.
+#[allow(clippy::too_many_arguments)] // The feedback's inputs, the record and B1's term.
 pub fn admit(
     feedback: &sf::Model,
     kinetics: &kinetics::Model,
@@ -515,10 +523,13 @@ pub fn admit(
     conditions: sf::Conditions<'_>,
     additional_reference_exposure_s: f64,
     extension: &Extension,
+    applied_dk: f64,
 ) -> Result<Admission, Error> {
     let original = feedback.domains();
     extension.validate(&original)?;
-    let margin = margin_at(feedback, kinetics, fixed, neutrons, conditions, extension)?;
+    let margin = margin_at(
+        feedback, kinetics, fixed, neutrons, conditions, extension, applied_dk,
+    )?;
     let mut out = sf::Output::new(
         feedback.region_count(),
         feedback.material_count(),
@@ -640,6 +651,7 @@ pub fn admit_accepted(
         at.conditions(),
         additional_reference_exposure_s,
         extension,
+        nuclear.stuck_worth_dk(),
     )?;
     sf::phase_absence(phase).map_err(|exit| Error::Unsupported {
         domain: admission.domain,
@@ -750,6 +762,7 @@ pub struct HotStandbyAdmission {
 /// P1 at one state from its source-feedback conditions: the reported
 /// margins, then the hot-standby domains. The margin is an output; only
 /// leaving the domains is an unsupported result.
+#[allow(clippy::too_many_arguments)] // The feedback's inputs, the record and B1's term.
 pub fn admit_hot_standby(
     feedback: &sf::Model,
     kinetics: &kinetics::Model,
@@ -758,6 +771,7 @@ pub fn admit_hot_standby(
     conditions: sf::Conditions<'_>,
     additional_reference_exposure_s: f64,
     record: &HotStandby,
+    applied_dk: f64,
 ) -> Result<HotStandbyAdmission, Error> {
     let original = feedback.domains();
     record.validate(&original)?;
@@ -769,6 +783,7 @@ pub fn admit_hot_standby(
         conditions,
         &record.reported_water_term_factors,
         record.reference_margin_dk_k,
+        applied_dk,
     )?;
     let r = feedback.region_count();
     let margins: Vec<ReportedMargin> = record
@@ -823,6 +838,7 @@ pub fn admit_hot_standby_accepted(
         at.conditions(),
         additional_reference_exposure_s,
         record,
+        nuclear.stuck_worth_dk(),
     )?;
     sf::phase_absence(phase).map_err(|exit| Error::Unsupported {
         domain: Domain::HotStandby,

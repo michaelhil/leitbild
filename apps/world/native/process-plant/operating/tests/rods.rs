@@ -1134,6 +1134,30 @@ fn the_rate_drive_enters_only_the_travel_rows_and_the_opening_ends_it() {
     );
 }
 
+/// B1 (lane ROD): the stuck cluster is out exactly when it is held with a
+/// declared stuck grip and every other class is seated.
+#[test]
+fn the_stuck_cluster_is_out_once_every_other_class_is_seated() {
+    let water = z4_field(0.);
+    let mut b = block_with(SpiderDrag::Omitted, &[5]);
+    held(&mut b, &water, 2.8, 1.3157);
+    assert!(!Rods::<Liquid>::stuck_out(&b), "nothing declared");
+    b.set_failed_release(5).unwrap();
+    assert!(!Rods::<Liquid>::stuck_out(&b), "the bank is still held");
+    for c in 0..N {
+        if c != 5 {
+            b.set_mode(c, Mode::Free);
+        }
+    }
+    assert!(!Rods::<Liquid>::stuck_out(&b), "the bank is still falling");
+    for c in 0..N {
+        if c != 5 {
+            b.set_mode(c, Mode::Seated);
+        }
+    }
+    assert!(Rods::<Liquid>::stuck_out(&b));
+}
+
 #[test]
 fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
     let water = z4_field(0.);

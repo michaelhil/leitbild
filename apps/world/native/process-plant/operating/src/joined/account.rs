@@ -687,7 +687,10 @@ impl Plan {
             mut source_abs,
         ] = [0.; 4];
         for ((&i, f), p) in self.populations.iter().zip(&feedback.regions).zip(regions) {
-            let g = f.reactivity.value / p.generation_time_s * y[i] * self.scales[i];
+            // B1: the applied stuck-cluster term, as Nuclear::rows adds it.
+            let g = (f.reactivity.value + nuclear.stuck_worth_dk()) / p.generation_time_s
+                * y[i]
+                * self.scales[i];
             generation += g;
             generation_abs += g.abs();
             source += f.external_source_per_s.value;

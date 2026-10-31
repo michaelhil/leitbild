@@ -261,6 +261,11 @@ pub struct Nuclear {
     precursor_decay: Vec<[f64; DELAYED]>,
     // Preallocated stage buffers; nothing allocates on the success path.
     work: Work,
+    /// Owner request 14 B1 (lane ROD, for NUC's review): the declared
+    /// constant stuck-cluster reactivity term (Δk/k) added to every
+    /// region's reactivity once applied ([`Nuclear::apply_stuck_worth`]);
+    /// zero otherwise.
+    stuck_worth_dk: f64,
 }
 
 /// The source feedback's inputs of one evaluation, values only.
@@ -754,7 +759,36 @@ impl Nuclear {
                 .map(|&c| source.materials[c].decay_constants_per_s)
                 .collect(),
             work,
+            stuck_worth_dk: 0.,
         })
+    }
+
+    /// B1: the applied stuck-cluster term, Δk/k (zero until applied).
+    pub fn stuck_worth_dk(&self) -> f64 {
+        self.stuck_worth_dk
+    }
+    /// B1: apply the declared constant stuck-cluster term, once, positive
+    /// and finite.
+    pub fn apply_stuck_worth(&mut self, dk: f64) -> Result<(), Failure> {
+        if !(dk.is_finite() && dk > 0.) {
+            return Err(fatal(format!(
+                "B1: stuck-cluster term {dk} must be positive and finite"
+            )));
+        }
+        if self.stuck_worth_dk != 0. {
+            return Err(fatal("B1: the stuck-cluster term is already applied"));
+        }
+        self.stuck_worth_dk = dk;
+        Ok(())
+    }
+    /// B1: a snapshot's term (`None`: not applied).
+    pub fn restore_stuck_worth(&mut self, dk: Option<f64>) -> Result<(), Failure> {
+        match dk {
+            None => self.stuck_worth_dk = 0.,
+            Some(v) if v.is_finite() && v > 0. => self.stuck_worth_dk = v,
+            Some(v) => return Err(fatal(format!("B1 snapshot: stuck-cluster term {v}"))),
+        }
+        Ok(())
     }
 
     pub fn layout(&self) -> &Layout {
@@ -1148,7 +1182,12 @@ impl Nuclear {
             }
             for i in 0..r {
                 w.region_value[i] = kinetics::RegionInput {
-                    reactivity: out.regions[i].reactivity.value,
+                    // B1: the applied stuck-cluster term, a constant.
+                    reactivity: if self.stuck_worth_dk == 0. {
+                        out.regions[i].reactivity.value
+                    } else {
+                        out.regions[i].reactivity.value + self.stuck_worth_dk
+                    },
                     external_source_per_s: out.regions[i].external_source_per_s.value,
                 };
                 if seeded {

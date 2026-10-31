@@ -221,6 +221,11 @@ pub struct Joined<P: Properties> {
     /// unless declared ([`Joined::activate_phase_modes`]): S1 and S2 hold
     /// every cell liquid with no mode roots.
     phase_modes: bool,
+    /// Owner request 14 B1 (lane ROD, for NUC's review): the declared
+    /// constant stuck-cluster term (Δk/k), applied to the nuclear block in
+    /// the transaction that seats the last released class while a stuck one
+    /// stays out ([`Joined::declare_stuck_worth`]); `None` when undeclared.
+    stuck_worth: Option<f64>,
     /// The credited outputs on pressure coordinates the derived tolerance
     /// classes take their budgets from (S2-D24r, S3-D16), declared by the
     /// composition from their strict blocks ([`Joined::declare_credited`]);
@@ -516,6 +521,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             structure: None,
             counters: Counters::default(),
             phase_modes: false,
+            stuck_worth: None,
             credited: Vec::new(),
             supply_routed: false,
             value_state: ValueState::default(),
@@ -569,6 +575,24 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     pub fn offsets(&self) -> Offsets {
         self.blocks.offsets
+    }
+    /// B1 (owner request 14, lane ROD): declare the constant stuck-cluster
+    /// term (Δk/k) a composition with a declared stuck cluster applies once
+    /// that cluster stays out with every other class seated. Positive and
+    /// finite, declared once, before any transaction.
+    pub fn declare_stuck_worth(&mut self, dk: f64) -> Result<(), Failure> {
+        if !(dk.is_finite() && dk > 0.) {
+            return Err(fatal(format!("B1: declared stuck-cluster term {dk}")));
+        }
+        if self.stuck_worth.is_some() {
+            return Err(fatal("B1: the stuck-cluster term is already declared"));
+        }
+        self.stuck_worth = Some(dk);
+        Ok(())
+    }
+    /// B1 checks (zero-time): the nuclear block, to apply its term directly.
+    pub fn nuclear_mut(&mut self) -> &mut Nuclear {
+        &mut self.blocks.nuclear
     }
     pub fn nuclear(&self) -> &Nuclear {
         &self.blocks.nuclear
@@ -695,8 +719,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "modes": serde_json::to_value(self.network.cell_modes()).expect("cell modes serialize"),
                 "spray": serde_json::to_value(self.network.spray_discrete_state()).expect("spray state serializes"),
             },
-            // No discrete state: their rows read coordinates and the packet only.
-            "nuclear": serde_json::Value::Null,
+            // B1: the applied stuck-cluster term, when applied; the solids
+            // hold no discrete state.
+            "nuclear": match self.blocks.nuclear.stuck_worth_dk() {
+                0. => serde_json::Value::Null,
+                dk => serde_json::json!({"stuck_worth_dk": super::block::snapshot_time(Some(dk))}),
+            },
             "solids": serde_json::Value::Null,
             "secondary": self.secondary().map(|b| b.discrete_state()),
             "rods": self.rods().map(|b| b.discrete_state()),
@@ -727,11 +755,21 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "phase_modes",
             ],
         )?;
-        if !(o["nuclear"].is_null() && o["solids"].is_null()) {
-            return Err(fatal(
-                "snapshot: the nuclear and solid blocks hold no discrete state",
-            ));
+        if !o["solids"].is_null() {
+            return Err(fatal("snapshot: the solid blocks hold no discrete state"));
         }
+        let stuck_worth = if o["nuclear"].is_null() {
+            None
+        } else {
+            let n = super::block::snapshot_object(&o["nuclear"], "nuclear", &["stuck_worth_dk"])?;
+            if self.stuck_worth.is_none() {
+                return Err(fatal(
+                    "snapshot: a B1 stuck-cluster term into an operator that declares none",
+                ));
+            }
+            super::block::restored_time(&n["stuck_worth_dk"])?
+        };
+        self.blocks.nuclear.restore_stuck_worth(stuck_worth)?;
         let network = super::block::snapshot_object(
             &o["network"],
             "network",
@@ -1315,6 +1353,20 @@ impl<P: Properties + WaterProperties> Joined<P> {
             done.push(owner.transact(&b.properties, t, &directions[ns..ns + nr], &mut x)?);
             for ((i, v), s) in (o.rods..o.pzr).zip(&x).zip(scales) {
                 y[i] = v / s;
+            }
+            // B1 (owner request 14, lane ROD): the transaction that leaves
+            // a declared stuck cluster out with every other class seated
+            // applies the declared constant term, once.
+            if let Some(dk) = self.stuck_worth
+                && owner.stuck_out()
+                && b.nuclear.stuck_worth_dk() == 0.
+            {
+                b.nuclear.apply_stuck_worth(dk)?;
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt: serde_json::json!({"owner": "nuclear", "B1": {"t_s": t, "stuck_worth_dk": dk,
+                        "rule": "owner request 14 B1: the declared constant stuck-cluster term, added to every region's reactivity while the cluster stays out"}}),
+                });
             }
         }
         let np = b.pzr.root_count();

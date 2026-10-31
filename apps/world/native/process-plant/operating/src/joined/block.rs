@@ -726,6 +726,9 @@ pub trait Rods<P> {
         y: &mut [f64],
     ) -> Result<Transaction, Failure>;
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure>;
+    /// B1 (lane ROD): a class whose grip is declared stuck is held while
+    /// every other class is seated (the stuck cluster stays out).
+    fn stuck_out(&self) -> bool;
     /// X4.4 (lane ROD): the ordinary rate drive's common requested rate
     /// (m/s) while it is engaged, `None` otherwise.
     fn drive(&self) -> Option<f64>;

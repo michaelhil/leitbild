@@ -152,7 +152,8 @@ pub fn nuclear_partials(
         .regions
         .iter()
         .map(|v| kinetics::RegionInput {
-            reactivity: v.reactivity.value,
+            // B1: the applied stuck-cluster term, as Nuclear::rows adds it.
+            reactivity: v.reactivity.value + nuclear.stuck_worth_dk(),
             external_source_per_s: v.external_source_per_s.value,
         })
         .collect();
