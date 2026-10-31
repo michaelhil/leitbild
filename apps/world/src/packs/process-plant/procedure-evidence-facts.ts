@@ -7,13 +7,14 @@ import type { ProcessPlantProcedureEvidence, ProcessPlantProcedureIcEvidence } f
  * schema. Exact static metadata remains discoverable by the canonical path or
  * tag through the signal APIs. Keep binding and acquired-snapshot facts distinct:
  * disagreement in unit, writability or ranges must remain inspectable. */
-export type ProcessPlantEvidenceSignal = Pick<ProcessSignalBinding, 'path' | 'tagId' | 'label' | 'unit' | 'writable' | 'published' | 'limits' | 'simulatorOnly'>
+export type ProcessPlantEvidenceSignal = Pick<ProcessSignalBinding, 'path' | 'tagId' | 'label' | 'unit' | 'writable' | 'published' | 'limits' | 'simulatorOnly' | 'externalRefs'>
 export const processPlantEvidenceSignal = (binding: ProcessSignalBinding): ProcessPlantEvidenceSignal => ({
   path: binding.path,
   ...(binding.tagId === undefined ? {} : { tagId: binding.tagId }),
   label: binding.label, unit: binding.unit, writable: binding.writable, published: binding.published,
   ...(binding.limits === undefined ? {} : { limits: binding.limits }),
   ...(binding.simulatorOnly === undefined ? {} : { simulatorOnly: binding.simulatorOnly }),
+  ...(binding.externalRefs === undefined ? {} : { externalRefs: binding.externalRefs }),
 })
 export type ProcessPlantEvidenceVariable = Pick<ProcessPlantVariableSnapshot, 'path' | 'value' | 'canonicalValue' | 'unit' | 'writable' | 'published' | 'limits'>
 export const processPlantEvidenceVariable = (variable: ProcessPlantVariableSnapshot): ProcessPlantEvidenceVariable => ({
@@ -75,6 +76,12 @@ export const expandProcessPlantProcedureEvidence = (frame: ProcessPlantProcedure
     const { unresolvedReference, ...reading } = readProcessPlantProcedureEvidence(frame, row.readingIndex)
     if (unresolvedReference !== undefined && JSON.stringify(unresolvedReference) !== JSON.stringify(row.reference)) throw new Error('Unresolved procedure reading does not match its leaf reference')
     if (row.reference.path !== undefined && reading.signal !== undefined && row.reference.path !== reading.signal.path) throw new Error('Procedure reading path does not match its leaf reference')
+    if (row.reference.tagId !== undefined && reading.signal !== undefined && row.reference.tagId !== reading.signal.tagId) {
+      // Signal resolution gives a canonical tag precedence over a graph's
+      // declared external identity. No new identity or guessed match is added.
+      const canonicalTagPresent = frame.readings.some(candidate => candidate.signal?.tagId === row.reference.tagId)
+      if (canonicalTagPresent || !reading.signal.externalRefs?.includes(row.reference.tagId)) throw new Error('Procedure reading tag does not match its leaf reference')
+    }
     return { ...reading, reference: row.reference, comparison: row.comparison, status: row.status, ...(row.reason === undefined ? {} : { reason: row.reason }) }
   })
 }

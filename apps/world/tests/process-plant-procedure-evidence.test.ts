@@ -68,6 +68,16 @@ describe('read-only procedure condition evidence', () => {
     expect(result.status).toBe('challenged')
   })
 
+  test('strict expansion accepts the actual graph-declared external identity without inventing a new binding', () => {
+    const external = processPlantSignalReferenceSchema.parse({ tagId: 'nis.power_range.avg' })
+    const canonical = processPlantSignalReferenceSchema.parse({ tagId: 'NIS-PR-AVG' })
+    const result = evaluateProcessPlantProcedureCondition({ plant, basis, condition: { type: 'all', conditions: [external, canonical].map(signal => ({ type: 'comparison', signal, operator: '>', value: 0, unit: 'percent' })) } })
+    expect(result.status).toBe('satisfied')
+    expect(result.readings).toHaveLength(1)
+    expect(result.readings[0]?.signal).toMatchObject({ tagId: 'NIS-PR-AVG', externalRefs: ['nis.power_range.avg'] })
+    expect(expandProcessPlantProcedureEvidence(result).map(row => 'reference' in row ? row.reference : undefined)).toEqual([external, canonical])
+  })
+
   test('unknown units, absent bindings and value types cannot become successful comparisons', () => {
     expect(evaluate({ ...power(1), unit: 'percent' } as ProcessPlantProcedureCondition).evidence[0]?.reason).toContain('native signal unit MW')
     expect(evaluate(missing)).toMatchObject({ status: 'unknown', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', quality: { status: 'unavailable', reason: 'Signal is absent from the current Plant graph.' } }] })

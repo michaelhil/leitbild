@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { decodeProcessPlantSampleTimeRuns, encodeProcessPlantSampleTimeRuns, processPlantSampleTimeRunSchema, normalizeProcessPlantProcedureEvidence, expandProcessPlantProcedureEvidence, readProcessPlantProcedureEvidence, type ProcessPlantProcedureEvidenceFrame } from '../src/packs/process-plant/procedure-evidence-facts.ts'
 import type { ProcessPlantProcedureEvidence, ProcessPlantProcedureIcEvidence } from '../src/packs/process-plant/condition-evidence.ts'
-import { variablePathSchema } from '../src/packs/process-plant/graph/index.ts'
+import { variablePathSchema, processSignalTagIdSchema } from '../src/packs/process-plant/graph/index.ts'
 
 describe('frame-local complete acquired facts', () => {
   const path = variablePathSchema.parse('pressure.value')
@@ -60,6 +60,19 @@ describe('frame-local complete acquired facts', () => {
     const { signal: _signal, variable: _variable, ...unresolvedFacts } = base
     const unresolved = normalizeProcessPlantProcedureEvidence([unresolvedFacts])
     expect(() => expandProcessPlantProcedureEvidence({ ...unresolved, evidence: [{ ...unresolved.evidence[0]!, reference: { path: variablePathSchema.parse('foreign.value') } } as typeof row] })).toThrow('reference')
+  })
+
+  test('a valid index for another tagged operand cannot misattribute its reading', () => {
+    const tagA = processSignalTagIdSchema.parse('TAG-A'), tagB = processSignalTagIdSchema.parse('TAG-B')
+    const tagged = { ...base, reference: { tagId: tagA }, signal: { ...base.signal!, tagId: tagA } }
+    const other = { ...base, reference: { tagId: tagB }, signal: { ...base.signal!, tagId: tagB, externalRefs: ['plant.external-pressure'] } }
+    const frame = normalizeProcessPlantProcedureEvidence([tagged, other])
+    const leaf = frame.evidence[0]!
+    expect(() => expandProcessPlantProcedureEvidence({ ...frame, evidence: [{ ...leaf, readingIndex: 1 } as typeof leaf] })).toThrow('tag')
+    const external = processSignalTagIdSchema.parse('plant.external-pressure')
+    expect(expandProcessPlantProcedureEvidence({ ...frame, evidence: [{ ...leaf, reference: { tagId: external }, readingIndex: 1 } as typeof leaf] })[0]).toMatchObject({ signal: { tagId: tagB } })
+    const collision = normalizeProcessPlantProcedureEvidence([tagged, { ...other, signal: { ...other.signal, externalRefs: [tagA] } }])
+    expect(() => expandProcessPlantProcedureEvidence({ ...collision, evidence: [{ ...leaf, readingIndex: 1 } as typeof leaf] })).toThrow('tag')
   })
 })
 
