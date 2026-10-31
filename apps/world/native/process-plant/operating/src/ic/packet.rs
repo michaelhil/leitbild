@@ -42,6 +42,10 @@ pub enum Quantity {
     /// An SG's collapsed level `V_l / area`, m (declared S3 limit, decision
     /// S3-D1.20).
     SgCollapsedLevel { sg: String, area_m2: f64 },
+    /// S5 (C08, S4-D10 (a)): an SG's apparent level `(V_l + V_sub) / area`,
+    /// m, the two-phase level including the steam under the surface; the
+    /// joined packet must compose the apparent-level allocation.
+    SgApparentLevel { sg: String, area_m2: f64 },
     /// A loop's signed mass flow at its cold-return face, observed as a
     /// fraction of the loop's installed nominal forward flow. The family's
     /// span is in fractions (`spanFractionOfNominal`); its quantization and

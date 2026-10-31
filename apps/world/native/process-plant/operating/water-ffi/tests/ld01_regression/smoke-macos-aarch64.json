@@ -14,8 +14,8 @@
       ]
     },
     "composition": {
-      "algebraic": 102,
-      "dimension": 1205,
+      "algebraic": 109,
+      "dimension": 1226,
       "owner_transactions": 1,
       "s1_settling": {
         "convergence_failures": 4,
@@ -29,37 +29,37 @@
       "surface_sets": 18
     },
     "oracle": {
-      "columns": 176,
+      "columns": 185,
       "outside_pattern": 0,
       "within_1e-9": true
     },
     "release_restart": {
-      "algebraic_after": 100,
-      "algebraic_before": 101,
+      "algebraic_after": 107,
+      "algebraic_before": 108,
       "clusters": 52,
       "constraint_rate_within_bound": true,
       "opening_transactions": 1,
       "placements": 0,
-      "projection_passes": 0,
+      "projection_passes": 1,
       "rate_passes": 1,
       "released_clusters": 52,
       "residual_within_bound": true,
       "trip_transactions": 3
     },
     "settle": {
-      "convergence_failures": 10,
+      "convergence_failures": 9,
       "error_failures": 61,
       "failure": null,
-      "jacobians": 321,
+      "jacobians": 327,
       "last_order": 2,
-      "linear_setups": 321,
-      "nonlinear_iterations": 2885,
+      "linear_setups": 327,
+      "nonlinear_iterations": 2871,
       "reached": true,
-      "residuals": 2886,
+      "residuals": 2872,
       "root_restarts": 1,
-      "steps": 2348,
-      "system_jacobians": 321,
-      "system_residuals": 5673
+      "steps": 2322,
+      "system_jacobians": 327,
+      "system_residuals": 5642
     },
     "z1": {
       "constraint_rate_within_bound": true,
@@ -71,7 +71,7 @@
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
     "metastable_page_sha256": "f30533c1d9281904abb844180699614638585d69647c2dc5bc9847ec6fec6595",
-    "packet_sha256": "c7c3c3042d50040585a1394c25db0cde0ae7c6ad49fab64212508dfed9a68f03",
+    "packet_sha256": "11c9a7e532bdd9a89f69f250081befa0e83202cfc5a06d47da5f669c683e57fd",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
     "water_adapter_sha256": "4bc25801537eab9fa8b1835106165c3304deff8d62dc7e3fc547f147333671c9"

@@ -77,6 +77,19 @@ pub enum Class {
     SecondaryStock,
     SecondaryChart,
     ReliefLift,
+    // SG secondary owner, C08 apparent level (S4-D12, plan r4 X4.1): the
+    // algebraic vapor mass, the differential distribution and the algebraic
+    // submerged volume, present only with the packet's `apparentLevel`.
+    SecondaryVapor,
+    SecondaryDistribution,
+    SecondarySubmerged,
+    // SG secondary owner, compact feed train (plan r4 X4.1): the algebraic
+    // header pressure and branch flows, only with the packet's `feedTrain`.
+    FeedHeader,
+    FeedBranch,
+    // The continuous three-element control per SG: channel lags,
+    // integrals and the FCV stem (differential).
+    FeedControl,
     // Rod bodies and guide passages owner.
     RodPosition,
     RodVelocity,

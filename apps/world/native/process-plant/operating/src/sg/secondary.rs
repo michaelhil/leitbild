@@ -1,5 +1,8 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/steam-generation/thermodynamics.md#s2-secondary-block
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/steam-power/admission-and-protection.md#turbine-trip-and-reset-semantics
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/steam-generation/thermodynamics.md#compact-apparent-level-allocation-c08-15-october-2026
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/feedwater/equipment.md#pressure-and-nominal-flow-allocation
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/feedwater/control-and-faults.md#compact-feed-train-plan-r4-31-october-2026
 //! The SG secondary owner of the joined spine ([`Secondary`]).
 //!
 //! Per SG, in this order: differential total water mass `M` and internal
@@ -24,6 +27,36 @@
 //! (F3 (a)), so the mass row reads `M' = 0` exactly. No fixed heat removal,
 //! imposed SG pressure or temperature, `Q/h_fg` mass source or clipped `V_l`.
 //!
+//! **Apparent level (C08; packet `apparentLevel`, absent in S1-S3, whose
+//! coordinates, rows and roots stay bitwise).** Each SG appends after its
+//! lifts an algebraic vapor mass `M_v` with `M_v - rho_g(p) (V - V_l)` (kg),
+//! a differential distribution `beta` with `beta' - (beta_eq - beta) /
+//! tau_distribution` (1/s) and an algebraic submerged volume `V_sub` with
+//! `V_sub - beta (V - V_l)` (m³); `beta_eq = min(V_g, V_sub,max,
+//! tau_residence m_evap / rho_g) / V_g`, `m_evap = max(0, M_v' + steam +
+//! relief)`, `tau_residence = V_sub,nom rho_g(p_nom) / F_nom` derived once.
+//! They carry no mass or energy and no other row reads them; the apparent
+//! level `(V_l + V_sub) / A` is what the NR channels acquire. The law's
+//! `max` and `min` corners are continuous and **not located** (lead, plan
+//! r4: no restart for an observed quantity's kink).
+//!
+//! **Compact feed train (packet `feedTrain`, only with the apparent
+//! level).** It replaces F3 (a): the mass row is the real balance `M' =
+//! feed - steam - relief` and the feed enters at the recorded feed
+//! enthalpy. After every SG's coordinates: the algebraic header pressure
+//! with `p_H - (p_suct + dp0 (r - (r - 1) q²) - k_e Q²)` (Pa), both pumps
+//! at rated speed sharing `Q = Σ m`, `q = Q / (2 m0)`, `k_e` the entry loss
+//! at `2 m0`; per SG the algebraic branch flow with `m - m0 u sqrt(dp /
+//! (a_iso u² + a_fcv u_ref²))` (kg/s), `dp = p_H - p_SG`, the fixed/ISO
+//! path's drop `a_iso` and the FCV's `a_fcv` at `m0` and `u_ref`. Then per
+//! SG the continuous three-element control (`control::feed`, owner 31
+//! October 2026): differential NR1, FT.STEAM and FW.FT lags, both
+//! integrals and the FCV stem `u' = clamp((u_d - u) / tau_stem, ±stroke)`,
+//! so no control change stops the integrator. In AUTO the NR1 lag's span
+//! edges are roots: leaving the span withdraws AUTO to HOLD at the demand
+//! in force (integrals frozen). The S3-D12 gate, when it closes, zeroes the
+//! delivered feed only (pump coastdown not modelled).
+//!
 //! Roots: each valve's crack, full-lift, reseat and seat thresholds, armed
 //! only by the valve state that owns them and otherwise a constant +1 (a
 //! disarmed root never crosses), so the root count never changes. After the
@@ -41,15 +74,16 @@ use super::{
     relief::{Branch, Characteristic, Threshold, Transition, Valve},
 };
 use crate::{
+    control::feed::{Law as FeedLaw, Mode},
     joined::{
         block::{
             Class, Command, Coordinates, Crossing, Layout, OwnerAccount, Secondary, SecondaryView,
-            Structure, Transaction, restored_time, snapshot_object, snapshot_time,
+            Structure, Transaction, restored_time, snapshot_bits, snapshot_object, snapshot_time,
         },
         packet::SecondaryStock,
     },
     network::{self, Failure, stratified},
-    thermal::{Saturation, Scalar, WaterProperties},
+    thermal::{Number, Saturation, Scalar, WaterProperties},
 };
 use serde::Serialize;
 use serde_json::json;
@@ -65,6 +99,25 @@ pub const ENERGY: usize = 1;
 pub const PRESSURE: usize = 2;
 pub const LIQUID_VOLUME: usize = 3;
 pub const LIFTS: usize = 4;
+/// Offsets of the C08 coordinates after one SG's lifts.
+pub const VAPOR: usize = 0;
+pub const DISTRIBUTION: usize = 1;
+pub const SUBMERGED: usize = 2;
+/// C08 coordinates per SG.
+pub const APPARENT_COORDINATES: usize = 3;
+/// Offset of the feed header after every SG's coordinates; branch `k`
+/// follows at `HEADER + 1 + k`.
+pub const HEADER: usize = 0;
+/// Per SG after the branches: the continuous control's coordinates.
+pub const CONTROL: usize = 6;
+pub const NR_LAG: usize = 0;
+pub const STEAM_LAG: usize = 1;
+pub const FEED_LAG: usize = 2;
+pub const OUTER: usize = 3;
+pub const INNER: usize = 4;
+pub const STEM: usize = 5;
+/// Feed roots per SG (AUTO only): NR1 lag at the span's low and high edge.
+pub const FEED_ROOTS: usize = 2;
 /// Thresholds of every valve, in root order.
 pub const THRESHOLDS: [Threshold; 4] = [
     Threshold::Crack,
@@ -118,6 +171,149 @@ pub struct Derived {
     pub no_load_saturation_k: f64,
 }
 
+/// The C08 distribution law's selections and its residence time, derived
+/// once on the runtime law from the nominal reference.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Apparent {
+    pub residence_s: f64,
+    pub maximum_submerged_m3: f64,
+    pub distribution_s: f64,
+    pub prepared_distribution: f64,
+    pub area_m2: f64,
+}
+
+/// The distribution law at one state, with directions.
+#[derive(Clone, Copy, Debug)]
+pub struct Law {
+    /// `M_v' + steam + relief`: the net phase change before the clamp.
+    pub raw: Scalar,
+    pub evaporation: Scalar,
+    /// `tau_residence m_evap / rho_g`.
+    pub held_m3: Scalar,
+    /// `min(V_g, V_sub,max)`.
+    pub cap_m3: Scalar,
+    pub beta_eq: Scalar,
+}
+
+impl Apparent {
+    /// The law at the vapor mass rate, the withdrawn pickup gas, the vapor
+    /// density and the gas volume (pure steam: `vbar_steam = 1/rho_g`).
+    /// Each corner is continuous in value; none is located.
+    pub fn law(&self, vapor_rate: Scalar, withdrawn: Scalar, rho_g: Scalar, gas_m3: Scalar) -> Law {
+        let raw = vapor_rate + withdrawn;
+        let evaporation = if raw.value > 0. { raw } else { s(0.) };
+        let held_m3 = s(self.residence_s) * evaporation / rho_g;
+        let cap_m3 = if gas_m3.value < self.maximum_submerged_m3 {
+            gas_m3
+        } else {
+            s(self.maximum_submerged_m3)
+        };
+        let target = if held_m3.value < cap_m3.value {
+            held_m3
+        } else {
+            cap_m3
+        };
+        Law {
+            raw,
+            evaporation,
+            held_m3,
+            cap_m3,
+            beta_eq: target / gas_m3,
+        }
+    }
+}
+
+/// One SG's controller mode and the demand a HOLD keeps.
+#[derive(Clone, Copy, Debug, Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FeedMode {
+    pub mode: Mode,
+    #[serde(with = "snapshot_bits")]
+    pub held: f64,
+}
+
+/// The compact feed train, compiled once (pressures in Pa, flows in kg/s).
+#[derive(Clone, Debug)]
+pub struct FeedOwner {
+    pub train: packet::FeedTrain,
+    /// First feed coordinate (the header), own index.
+    pub base: usize,
+    /// Nominal pump pressure rise `dp0` at `m0`.
+    pub pump_rise_pa: f64,
+    /// Header-entry loss coefficient `k_e` (Pa per (kg/s)²).
+    pub entry_coefficient: f64,
+    /// Fixed/ISO-path and FCV drops at `m0` (FCV at its reference opening).
+    pub iso_drop_pa: f64,
+    pub fcv_drop_pa: f64,
+    /// The prepared MANUAL opening per SG: the opening that delivers its
+    /// steam demand at its prepared pressure (the S4-D6 rule).
+    pub prepared_opening: Vec<f64>,
+    pub modes: Vec<FeedMode>,
+    /// The SG count (control coordinates follow the branches).
+    pub sgs: usize,
+}
+
+impl FeedOwner {
+    /// First control coordinate of SG `k`, own index.
+    pub fn control(&self, k: usize) -> usize {
+        self.base + HEADER + 1 + self.sgs + CONTROL * k
+    }
+    /// SG `k`'s law at its control coordinates (`c`: lags, integrals) in
+    /// its current mode: AUTO's, or HOLD/MANUAL at the held demand.
+    pub fn law(&self, k: usize, c: [Scalar; 5]) -> FeedLaw {
+        match self.modes[k].mode {
+            Mode::Auto => {
+                self.train
+                    .cascade
+                    .auto(self.train.nominal_flow_kg_s, c[0], c[1], c[2], c[3], c[4])
+            }
+            Mode::Hold | Mode::Manual => FeedLaw {
+                request: s(0.),
+                demand: s(self.modes[k].held),
+                outer_rate: s(0.),
+                inner_rate: s(0.),
+            },
+        }
+    }
+    /// The stem rate toward demand `d` at position `u`.
+    pub fn stem_rate(&self, d: Scalar, u: Scalar) -> Scalar {
+        let r = (d - u) / s(self.train.stem_time_constant_s);
+        let v = self.train.fcv_stroke_per_second;
+        if r.value > v {
+            s(v)
+        } else if r.value < -v {
+            s(-v)
+        } else {
+            r
+        }
+    }
+    /// Header pressure the pumps hold at total flow `q_total`.
+    pub fn header_pa(&self, q_total: Scalar) -> Scalar {
+        let m0 = self.train.nominal_flow_kg_s;
+        let r = self.train.shutoff_head_ratio;
+        let q = q_total / s(2. * m0);
+        s(self.train.suction_pressure_pa) + s(self.pump_rise_pa) * (s(r) - s(r - 1.) * q * q)
+            - s(self.entry_coefficient) * q_total * q_total
+    }
+    /// Branch flow at opening `u` and drop `dp` (Pa, positive).
+    pub fn branch_kg_s(&self, u: Scalar, dp: Scalar) -> Scalar {
+        let ur = self.train.fcv_reference_opening;
+        let den = s(self.iso_drop_pa) * u * u + s(self.fcv_drop_pa * ur * ur);
+        s(self.train.nominal_flow_kg_s) * u * (dp / den).pow(0.5)
+    }
+    /// The opening that passes `m` at drop `dp` (the inverse of
+    /// [`FeedOwner::branch_kg_s`]).
+    pub fn opening_for(&self, m: f64, dp: f64) -> Option<f64> {
+        let (m0, ur) = (
+            self.train.nominal_flow_kg_s,
+            self.train.fcv_reference_opening,
+        );
+        let x = m / m0;
+        let den = dp - x * x * self.iso_drop_pa;
+        (den > 0.).then(|| x * (self.fcv_drop_pa * ur * ur / den).sqrt())
+    }
+}
+
 /// One SG's boundary flows of the last `rows` evaluation, with directions.
 #[derive(Clone, Debug)]
 pub struct Boundary {
@@ -160,6 +356,11 @@ pub struct Secondaries {
     prepared: Vec<f64>,
     valves: Vec<Vec<Valve>>,
     trip_s: Option<f64>,
+    /// Per SG, the side of each bypass kink its last located crossing left
+    /// (`true` above), unset from the TRIP until the first crossing. A set
+    /// side arms only the reverse crossing, so a restart that puts the
+    /// pressure back a hair across the kink does not fire it again.
+    bypass_side: Vec<[Option<bool>; 2]>,
     /// S3-D12 (ELEC hook): the recorded feed flows only while the feed
     /// pumps are supplied; `true` in the prepared state (S1/S2 unchanged).
     feed_supported: bool,
@@ -171,6 +372,52 @@ pub struct Secondaries {
     saturation: Vec<Option<([u64; 2], Saturation)>>,
     nozzle: Vec<Option<Nozzle>>,
     boundary: Vec<Boundary>,
+    /// C08: the apparent-level allocation, when the packet composes it.
+    apparent: Option<Apparent>,
+    /// The compact feed train, when the packet composes it.
+    feed: Option<FeedOwner>,
+}
+
+/// Steam admission fraction at `t` after a TRIP latched at `trip_s`: 1 at
+/// power; after the TRIP the STOP's linear travel to zero over `travel_s`.
+pub fn steam_fraction(trip_s: Option<f64>, travel_s: f64, t: f64) -> f64 {
+    match trip_s {
+        None => 1.,
+        Some(t0) if t <= t0 => 1.,
+        Some(t0) => (1. - (t - t0) / travel_s).max(0.),
+    }
+}
+/// The bypass stand-in's opening (R12-B1): zero before the TRIP, then
+/// linear from the no-load pressure over one band width.
+pub fn bypass_opening(b: &packet::Bypass, trip_s: Option<f64>, t: f64, p: Scalar) -> Scalar {
+    if !trip_s.is_some_and(|t0| t >= t0) {
+        return s(0.);
+    }
+    let u = (p - s(b.no_load_pressure_pa)) / s(b.band_width_pa);
+    if u.value <= 0. {
+        s(0.)
+    } else if u.value >= 1. {
+        s(1.)
+    } else {
+        u
+    }
+}
+/// One SG's pickup steam (turbine admission plus bypass) and the bypass's
+/// part: the owner's withdrawal law, also the source of `FT.STEAM`.
+pub fn pickup_steam(
+    demand_kg_s: f64,
+    travel_s: f64,
+    bypass: &packet::Bypass,
+    trip_s: Option<f64>,
+    t: f64,
+    p: Scalar,
+) -> (Scalar, Scalar) {
+    let by =
+        s(bypass.fraction_of_nominal_steam * demand_kg_s) * bypass_opening(bypass, trip_s, t, p);
+    (
+        s(demand_kg_s * steam_fraction(trip_s, travel_s, t)) + by,
+        by,
+    )
 }
 
 /// The selected saturated chart: `M = V_l rho_f + (V - V_l) rho_g` and
@@ -196,6 +443,16 @@ impl Secondaries {
     ) -> Result<Self, Failure> {
         let (mut sgs, reliefs) = compile(section)?;
         let derived = derive(section, props)?;
+        let apparent = section
+            .apparent_level
+            .as_ref()
+            .map(|a| apparent(a, props))
+            .transpose()?;
+        if section.feed_train.is_some() && apparent.is_none() {
+            return Err(fatal(
+                "the compact feed train needs the apparent level (its controller reads the NR channels)",
+            ));
+        }
         if stocks.len() != sgs.len() {
             return Err(fatal("one prepared stock per SG"));
         }
@@ -252,7 +509,89 @@ impl Secondaries {
                 layout.push(format!("{v}.lift"), Class::ReliefLift, true, 1., 1.);
                 prepared.push(0.);
             }
+            if let Some(a) = apparent {
+                // Scales from the prepared gas: its vapor mass and volume.
+                let gas = g.volume_m3 - x.liquid_volume_m3;
+                let vapor = sat.vapor.density.value * gas;
+                layout.push(
+                    format!("SG.{id}.M_v"),
+                    Class::SecondaryVapor,
+                    false,
+                    vapor,
+                    vapor,
+                );
+                layout.push(
+                    format!("SG.{id}.beta"),
+                    Class::SecondaryDistribution,
+                    true,
+                    1.,
+                    1.,
+                );
+                layout.push(
+                    format!("SG.{id}.V_sub"),
+                    Class::SecondarySubmerged,
+                    false,
+                    gas,
+                    gas,
+                );
+                prepared.extend([
+                    vapor,
+                    a.prepared_distribution,
+                    a.prepared_distribution * gas,
+                ]);
+            }
         }
+        let feed = match section.feed_train {
+            None => None,
+            Some(train) => {
+                let f = feed_owner(train, &sgs, stocks, prepared.len())?;
+                let m0 = train.nominal_flow_kg_s;
+                layout.push(
+                    "FW.HEADER.p".into(),
+                    Class::FeedHeader,
+                    false,
+                    train.header_pressure_pa,
+                    train.header_pressure_pa,
+                );
+                let total: f64 = sgs.iter().map(|g| g.steam_demand_kg_s).sum();
+                prepared.push(f.header_pa(s(total)).value);
+                for g in &sgs {
+                    layout.push(format!("FW.{}.m", g.id), Class::FeedBranch, false, m0, m0);
+                    prepared.push(g.steam_demand_kg_s);
+                }
+                // The control at the tracked AUTO point of the prepared
+                // state: each lag at its input, the integrals by the
+                // tracking law, the stem at the prepared opening.
+                let a = apparent.ok_or_else(|| fatal("the feed train needs the apparent level"))?;
+                for (k, (g, x)) in sgs.iter().zip(stocks).enumerate() {
+                    let id = &g.id;
+                    let level = (x.liquid_volume_m3
+                        + a.prepared_distribution * (g.volume_m3 - x.liquid_volume_m3))
+                        / a.area_m2;
+                    let m = g.steam_demand_kg_s;
+                    let u = f.prepared_opening[k];
+                    let (il, i_f) = train.cascade.tracked(m0, level, m, m, u)?;
+                    for (label, v, scale) in [
+                        ("NR1.lag", level, 1.),
+                        ("FT.STEAM.lag", m, m0),
+                        ("FW.FT.lag", m, m0),
+                        ("IL", il, 1.),
+                        ("IF", i_f, 1.),
+                        ("FCV.u", u, 1.),
+                    ] {
+                        layout.push(
+                            format!("FW.{id}.{label}"),
+                            Class::FeedControl,
+                            true,
+                            scale,
+                            scale,
+                        );
+                        prepared.push(v);
+                    }
+                }
+                Some(f)
+            }
+        };
         // The same formulation must have prepared these stocks: IF97 against
         // IAPWS-95 already differs by about 7e-6 in mass at 6 MPa.
         if defect.is_nan() || defect > 1e-9 {
@@ -288,12 +627,41 @@ impl Secondaries {
             layout,
             prepared,
             trip_s: None,
+            bypass_side: vec![[None; 2]; n],
             feed_supported: true,
             feed_gate_declared: false,
             preparation_defect: defect,
             saturation: vec![None; n],
             nozzle: vec![None; n],
+            apparent,
+            feed,
         })
+    }
+
+    /// C08's allocation, when composed.
+    pub fn apparent(&self) -> Option<Apparent> {
+        self.apparent
+    }
+    /// First C08 coordinate of SG `k` (own index), when composed.
+    pub fn apparent_base(&self, k: usize) -> Option<usize> {
+        self.apparent
+            .map(|_| self.sgs[k].base + LIFTS + self.sgs[k].valves.len())
+    }
+    /// The compact feed train, when composed.
+    pub fn feed(&self) -> Option<&FeedOwner> {
+        self.feed.as_ref()
+    }
+    /// The pickup steam of SG `k` at `t` and pressure `p`: the STOP-ramped
+    /// turbine admission plus the bypass stand-in (R12-B1).
+    fn pickup_steam(&self, k: usize, t: f64, p: Scalar) -> (Scalar, Scalar) {
+        pickup_steam(
+            self.sgs[k].steam_demand_kg_s,
+            self.stop_travel_s,
+            &self.bypass,
+            self.trip_s,
+            t,
+            p,
+        )
     }
 
     /// Prepared stocks on the runtime chart at a pressure and liquid volume,
@@ -378,28 +746,13 @@ impl Secondaries {
     /// Steam admission fraction at `t`: 1 at power; after the TRIP the STOP's
     /// linear travel to zero.
     pub fn steam_fraction(&self, t: f64) -> f64 {
-        match self.trip_s {
-            None => 1.,
-            Some(t0) if t <= t0 => 1.,
-            Some(t0) => (1. - (t - t0) / self.stop_travel_s).max(0.),
-        }
+        steam_fraction(self.trip_s, self.stop_travel_s, t)
     }
     /// The bypass stand-in's opening at `t` and SG pressure `p` (R12-B1):
     /// zero before the TRIP, then linear from the no-load pressure over one
     /// band width, closed below and fully open above.
     pub fn bypass_opening(&self, t: f64, p: Scalar) -> Scalar {
-        if !self.trip_s.is_some_and(|t0| t >= t0) {
-            return s(0.);
-        }
-        let b = &self.bypass;
-        let u = (p - s(b.no_load_pressure_pa)) / s(b.band_width_pa);
-        if u.value <= 0. {
-            s(0.)
-        } else if u.value >= 1. {
-            s(1.)
-        } else {
-            u
-        }
+        bypass_opening(&self.bypass, self.trip_s, t, p)
     }
     /// The bypass parameters (R12-B1).
     pub fn bypass(&self) -> &packet::Bypass {
@@ -430,6 +783,24 @@ impl Secondaries {
                     "SG.{} accepted state refused: M {m} kg, p {p} Pa, V_l {vl} m³, lifts {lifts:?}",
                     g.id
                 )));
+            }
+        }
+        if let Some(f) = &self.feed {
+            let header = y[f.base + HEADER];
+            for (k, g) in self.sgs.iter().enumerate() {
+                let m = y[f.base + HEADER + 1 + k];
+                let u = y[f.control(k) + STEM];
+                if !(header > y[g.base + PRESSURE]
+                    && m.is_finite()
+                    && m >= 0.
+                    && (0. ..=1.).contains(&u))
+                {
+                    return Err(fatal(format!(
+                        "FW.{} accepted state refused: header {header} Pa, SG {} Pa, flow {m} kg/s (a closing branch check is outside the compact train)",
+                        g.id,
+                        y[g.base + PRESSURE]
+                    )));
+                }
             }
         }
         Ok(())
@@ -582,17 +953,57 @@ impl<P: Properties> Secondary<P> for Secondaries {
     // S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
     // the latched TRIP time and every valve's branch, seat and closing state.
     fn discrete_state(&self) -> serde_json::Value {
-        json!({
+        let mut state = json!({
             "trip_s": snapshot_time(self.trip_s),
             "feed_supported": self.feed_supported,
             "valves": self.valves.iter().map(|sg| sg.iter().map(|v| json!({
                 "branch": match v.branch { Branch::Ascending => "ascending", Branch::Descending => "descending" },
                 "seated": v.seated, "closing": v.closing,
             })).collect::<Vec<_>>()).collect::<Vec<_>>(),
-        })
+        });
+        // The bypass kinks' sides, only once the TRIP has armed them.
+        if self.trip_s.is_some() {
+            state["bypass_side"] = json!(self.bypass_side);
+        }
+        // The controllers' modes, only with the feed train.
+        if let Some(f) = &self.feed {
+            state["feed_modes"] = json!(f.modes);
+        }
+        state
     }
     fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
-        let o = snapshot_object(state, "secondary", &["trip_s", "feed_supported", "valves"])?;
+        let tripped = !state["trip_s"].is_null();
+        let mut keys = vec!["trip_s", "feed_supported", "valves"];
+        if tripped {
+            keys.push("bypass_side");
+        }
+        if self.feed.is_some() {
+            keys.push("feed_modes");
+        }
+        let o = snapshot_object(state, "secondary", &keys)?;
+        let bypass_side: Vec<[Option<bool>; 2]> = if tripped {
+            serde_json::from_value(o["bypass_side"].clone())
+                .ok()
+                .filter(|v: &Vec<[Option<bool>; 2]>| v.len() == self.sgs.len())
+                .ok_or_else(|| fatal("secondary snapshot: bypass_side per SG"))?
+        } else {
+            vec![[None; 2]; self.sgs.len()]
+        };
+        let modes = match &self.feed {
+            None => None,
+            Some(f) => {
+                let modes: Vec<FeedMode> = serde_json::from_value(o["feed_modes"].clone())
+                    .map_err(|e| fatal(format!("secondary snapshot: feed_modes: {e}")))?;
+                if modes.len() != f.modes.len()
+                    || modes.iter().any(|m| !(0. ..=1.).contains(&m.held))
+                {
+                    return Err(fatal(
+                        "secondary snapshot: a feed mode per SG, held demand in 0..1",
+                    ));
+                }
+                Some(modes)
+            }
+        };
         let trip_s = restored_time(&o["trip_s"])?;
         let feed_supported = o["feed_supported"]
             .as_bool()
@@ -633,8 +1044,12 @@ impl<P: Properties> Secondary<P> for Secondaries {
             }
         }
         self.trip_s = trip_s;
+        self.bypass_side = bypass_side;
         self.feed_supported = feed_supported;
         self.valves = valves;
+        if let (Some(f), Some(modes)) = (self.feed.as_mut(), modes) {
+            f.modes = modes;
+        }
         Ok(())
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
@@ -698,7 +1113,6 @@ impl<P: Properties> Secondary<P> for Secondaries {
         {
             return Err(fatal("secondary row layout"));
         }
-        let fraction = self.steam_fraction(t);
         for (k, heat) in heat_w.iter().enumerate() {
             let g = self.sgs[k].clone();
             let b = g.base;
@@ -722,9 +1136,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
             rows[b + PRESSURE] = mass - chart_mass;
             rows[b + LIQUID_VOLUME] = energy - chart_energy;
             // R12-B1: the bypass stand-in joins the turbine admission.
-            let bypass = s(self.bypass.fraction_of_nominal_steam * g.steam_demand_kg_s)
-                * self.bypass_opening(t, p);
-            let steam = s(g.steam_demand_kg_s * fraction) + bypass;
+            let (steam, bypass) = self.pickup_steam(k, t, p);
             let lifts: Vec<Scalar> = (0..g.valves.len())
                 .map(|j| x.value(b + LIFTS + j))
                 .collect();
@@ -759,17 +1171,30 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     x.rate(b + LIFTS + j) - self.reliefs[j].lift_rate(valve, p, *lift);
             }
             // F3 (a): the feed is exactly the withdrawn gas; x - x is exact.
-            // S3-D12: gated to zero while the feed pumps are unsupplied.
+            // With the compact train: the branch's delivered flow. S3-D12:
+            // gated to zero while the feed pumps are unsupplied.
             let withdrawn = steam + relief;
-            let feed = if self.feed_supported {
-                withdrawn
-            } else {
-                s(0.)
+            let feed = match (&self.feed, self.feed_supported) {
+                (_, false) => s(0.),
+                (None, true) => withdrawn,
+                (Some(f), true) => x.value(f.base + HEADER + 1 + k),
             };
             let mass_receipt = feed - withdrawn;
             let energy_receipt = *heat + feed * s(self.derived.feed_enthalpy_j_kg) - withdrawn * hg;
             rows[b + MASS] = x.rate(b + MASS) - mass_receipt;
             rows[b + ENERGY] = x.rate(b + ENERGY) - energy_receipt;
+            if let Some(a) = self.apparent {
+                // C08: no mass or energy; the withdrawn gas is the pickup's.
+                let d = b + LIFTS + g.valves.len();
+                let gas = s(g.volume_m3) - vl;
+                let rho_g = sat.vapor.density;
+                let beta = x.value(d + DISTRIBUTION);
+                let law = a.law(x.rate(d + VAPOR), withdrawn, rho_g, gas);
+                rows[d + VAPOR] = x.value(d + VAPOR) - rho_g * gas;
+                rows[d + DISTRIBUTION] =
+                    x.rate(d + DISTRIBUTION) - (law.beta_eq - beta) / s(a.distribution_s);
+                rows[d + SUBMERGED] = x.value(d + SUBMERGED) - beta * gas;
+            }
             report.steam_kg_s = steam;
             report.bypass_kg_s = bypass;
             report.feed_kg_s = feed;
@@ -778,6 +1203,50 @@ impl<P: Properties> Secondary<P> for Secondaries {
             report.relief_flux_kg_m2_s = flux;
             report.mass_receipt_kg_s = mass_receipt;
             report.energy_receipt_w = energy_receipt;
+        }
+        if let Some(f) = &self.feed {
+            let fb = f.base;
+            let flows: Vec<Scalar> = (0..self.sgs.len())
+                .map(|k| x.value(fb + HEADER + 1 + k))
+                .collect();
+            let total = flows.iter().fold(s(0.), |a, m| a + *m);
+            let header = x.value(fb + HEADER);
+            rows[fb + HEADER] = header - f.header_pa(total);
+            for (k, m) in flows.iter().enumerate() {
+                let dp = header - x.value(self.sgs[k].base + PRESSURE);
+                if !(dp.value > 0.) {
+                    return Err(recoverable(format!(
+                        "FW.{} branch trial: header {} Pa at or below the SG (the check would close)",
+                        self.sgs[k].id, header.value
+                    )));
+                }
+                let c = f.control(k);
+                let u = x.value(c + STEM);
+                rows[fb + HEADER + 1 + k] = *m - f.branch_kg_s(u, dp);
+                // The continuous control: the channel lags, the integrals
+                // and the stem toward the law's demand.
+                let law = &f.train.cascade;
+                let level = match self.apparent {
+                    Some(a) => {
+                        let d = self.sgs[k].base + LIFTS + self.sgs[k].valves.len();
+                        (x.value(self.sgs[k].base + LIQUID_VOLUME) + x.value(d + SUBMERGED))
+                            / s(a.area_m2)
+                    }
+                    None => return Err(fatal("the feed train needs the apparent level")),
+                };
+                let p_sg = x.value(self.sgs[k].base + PRESSURE);
+                let (steam, _) = self.pickup_steam(k, t, p_sg);
+                let lags: [Scalar; 5] =
+                    [NR_LAG, STEAM_LAG, FEED_LAG, OUTER, INNER].map(|o| x.value(c + o));
+                let l = f.law(k, lags);
+                rows[c + NR_LAG] = x.rate(c + NR_LAG) - (level - lags[0]) / s(law.nr_lag_s);
+                rows[c + STEAM_LAG] =
+                    x.rate(c + STEAM_LAG) - (steam - lags[1]) / s(law.steam_flow_lag_s);
+                rows[c + FEED_LAG] = x.rate(c + FEED_LAG) - (*m - lags[2]) / s(law.feed_flow_lag_s);
+                rows[c + OUTER] = x.rate(c + OUTER) - l.outer_rate;
+                rows[c + INNER] = x.rate(c + INNER) - l.inner_rate;
+                rows[c + STEM] = x.rate(c + STEM) - f.stem_rate(l.demand, u);
+            }
         }
         if rows
             .iter()
@@ -800,7 +1269,12 @@ impl<P: Properties> Secondary<P> for Secondaries {
             // declared feed gate (S3-D27) may close, and the withdrawal then
             // reads the pressure and the relief lifts (structural zeros
             // while the gate is open).
-            own[b + MASS] = if self.feed_gate_declared {
+            own[b + MASS] = if let Some(f) = &self.feed {
+                // The real balance: the branch flow against the withdrawal.
+                let mut mass = vec![b + MASS, b + PRESSURE, f.base + HEADER + 1 + k];
+                mass.extend(&lifts);
+                mass
+            } else if self.feed_gate_declared {
                 let mut mass = vec![b + MASS, b + PRESSURE];
                 mass.extend(&lifts);
                 mass
@@ -809,14 +1283,54 @@ impl<P: Properties> Secondary<P> for Secondaries {
             };
             let mut energy = vec![b + ENERGY, b + PRESSURE];
             energy.extend(&lifts);
+            if let Some(f) = &self.feed {
+                energy.push(f.base + HEADER + 1 + k);
+            }
             own[b + ENERGY] = energy;
             heat[b + ENERGY] = vec![k];
             own[b + PRESSURE] = vec![b + MASS, b + PRESSURE, b + LIQUID_VOLUME];
             own[b + LIQUID_VOLUME] = vec![b + ENERGY, b + PRESSURE, b + LIQUID_VOLUME];
-            for i in lifts {
+            for &i in &lifts {
                 own[i] = vec![b + PRESSURE, i];
             }
+            if self.apparent.is_some() {
+                let d = b + LIFTS + g.valves.len();
+                own[d + VAPOR] = vec![b + PRESSURE, b + LIQUID_VOLUME, d + VAPOR];
+                // The law reads the withdrawn gas (steam by time and
+                // pressure, relief by pressure and lifts), the vapor
+                // density, the gas volume and the vapor mass rate.
+                let mut law = vec![b + PRESSURE, b + LIQUID_VOLUME, d + VAPOR, d + DISTRIBUTION];
+                law.extend(&lifts);
+                own[d + DISTRIBUTION] = law;
+                own[d + SUBMERGED] = vec![b + LIQUID_VOLUME, d + DISTRIBUTION, d + SUBMERGED];
+            }
             outputs.push(vec![b + PRESSURE, b + LIQUID_VOLUME]);
+        }
+        if let Some(f) = &self.feed {
+            let fb = f.base;
+            let branches: Vec<usize> = (0..self.sgs.len()).map(|k| fb + HEADER + 1 + k).collect();
+            let mut header = vec![fb + HEADER];
+            header.extend(&branches);
+            own[fb + HEADER] = header;
+            for (k, g) in self.sgs.iter().enumerate() {
+                let c = f.control(k);
+                own[fb + HEADER + 1 + k] = vec![
+                    fb + HEADER,
+                    fb + HEADER + 1 + k,
+                    g.base + PRESSURE,
+                    c + STEM,
+                ];
+                let d = g.base + LIFTS + g.valves.len();
+                own[c + NR_LAG] = vec![g.base + LIQUID_VOLUME, d + SUBMERGED, c + NR_LAG];
+                own[c + STEAM_LAG] = vec![g.base + PRESSURE, c + STEAM_LAG];
+                own[c + FEED_LAG] = vec![fb + HEADER + 1 + k, c + FEED_LAG];
+                let law: Vec<usize> = (0..STEM).map(|o| c + o).collect();
+                own[c + OUTER] = law.clone();
+                own[c + INNER] = law.clone();
+                let mut stem = law;
+                stem.push(c + STEM);
+                own[c + STEM] = stem;
+            }
         }
         for o in &mut own {
             o.sort_unstable();
@@ -836,7 +1350,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
         self.sgs
             .iter()
             .map(|g| THRESHOLDS.len() * g.valves.len() + 2 + BYPASS_ROOTS)
-            .sum()
+            .sum::<usize>()
+            + self
+                .feed
+                .as_ref()
+                .map_or(0, |_| FEED_ROOTS * self.sgs.len())
     }
 
     fn roots(
@@ -875,6 +1393,18 @@ impl<P: Properties> Secondary<P> for Secondaries {
             out[i + 1] = if armed { p - (p0 + w) } else { DISARMED };
             i += BYPASS_ROOTS;
         }
+        // The NR1 lag's span edges, armed in AUTO: leaving the span
+        // withdraws AUTO to HOLD.
+        if let Some(f) = &self.feed {
+            let [lo, hi] = f.train.cascade.narrow_span_m;
+            for k in 0..self.sgs.len() {
+                let l = x.value(f.control(k) + NR_LAG).value;
+                let auto = f.modes[k].mode == Mode::Auto;
+                out[i] = if auto { l - lo } else { DISARMED };
+                out[i + 1] = if auto { hi - l } else { DISARMED };
+                i += FEED_ROOTS;
+            }
+        }
         if out.iter().any(|v| !v.is_finite()) {
             return Err(fatal("nonfinite SG root"));
         }
@@ -898,9 +1428,22 @@ impl<P: Properties> Secondary<P> for Secondaries {
             }
             out[i] = 0;
             out[i + 1] = 0;
-            out[i + 2] = 0;
-            out[i + 3] = 0;
+            for (b, side) in self.bypass_side[k].iter().enumerate() {
+                out[i + 2 + b] = match side {
+                    None => 0,
+                    Some(true) => -1,
+                    Some(false) => 1,
+                };
+            }
             i += 2 + BYPASS_ROOTS;
+        }
+        // The NR1 span edges report only the leaving (falling) crossing.
+        if self.feed.is_some() {
+            for _ in 0..self.sgs.len() {
+                out[i] = -1;
+                out[i + 1] = -1;
+                i += FEED_ROOTS;
+            }
         }
         Ok(())
     }
@@ -974,15 +1517,47 @@ impl<P: Properties> Secondary<P> for Secondaries {
             for (offset, name) in [(2, "bypass band start"), (3, "bypass full opening")] {
                 let d = directions[guard + offset];
                 if d != 0 {
+                    self.bypass_side[k][offset - 2] = Some(d > 0);
                     events.push(json!({"bypass": format!("SG.{}", g.id), "threshold": name,
                         "direction": d, "pressure_Pa": p}));
                 }
             }
         }
+        // An NR1 span edge in AUTO: HOLD at the demand in force.
+        let mut withdrawn = Vec::new();
+        if let Some(f) = self.feed.as_mut() {
+            let first: usize = self
+                .sgs
+                .iter()
+                .map(|g| THRESHOLDS.len() * g.valves.len() + 2 + BYPASS_ROOTS)
+                .sum();
+            for k in 0..self.sgs.len() {
+                let d = &directions[first + FEED_ROOTS * k..first + FEED_ROOTS * (k + 1)];
+                if d.iter().all(|v| *v == 0) {
+                    continue;
+                }
+                if f.modes[k].mode != Mode::Auto {
+                    return Err(fatal(format!(
+                        "FW.{} span root crossed outside AUTO",
+                        self.sgs[k].id
+                    )));
+                }
+                let c = f.control(k);
+                let lags = [NR_LAG, STEAM_LAG, FEED_LAG, OUTER, INNER].map(|o| s(y[c + o]));
+                let held = f.law(k, lags).demand.value;
+                f.modes[k] = FeedMode {
+                    mode: Mode::Hold,
+                    held,
+                };
+                withdrawn.push(json!({"sg": self.sgs[k].id, "to": "HOLD", "held_demand": held,
+                    "nr1_lag_m": y[c + NR_LAG], "reason": "the selected NR1 channel left its span"}));
+            }
+        }
+        let changed = seats > 0 || !withdrawn.is_empty();
         Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner":"secondary","t_s":t,"relief":events,"seats":seats,
-                "stateChanged":seats > 0}),
+                "feedWithdrawn":withdrawn,"stateChanged":changed}),
         })
     }
 
@@ -1037,6 +1612,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     return Err(fatal("turbine TRIP time"));
                 }
                 self.trip_s = Some(t);
+                self.bypass_side = vec![[None; 2]; self.sgs.len()];
                 Ok(Transaction {
                     deposits: Vec::new(),
                     receipt: json!({"owner":"secondary","command":command,"t_s":t,
@@ -1230,4 +1806,102 @@ fn derive<P: Properties>(section: &packet::Section, props: &P) -> Result<Derived
         rating_choked: flux.choked,
         no_load_saturation_k: no_load,
     })
+}
+
+/// C08's derived law: `tau_residence = V_sub,nom rho_g(p_nom) / F_nom` on
+/// the runtime law, once.
+fn apparent<P: Properties>(a: &packet::ApparentLevel, props: &P) -> Result<Apparent, Failure> {
+    let d = a.distribution;
+    if ![
+        d.nominal_submerged_volume_m3,
+        d.nominal_pressure_pa,
+        d.nominal_steam_flow_kg_s,
+        d.maximum_submerged_volume_m3,
+        d.distribution_time_s,
+        a.indication.indicated_level_area_m2,
+    ]
+    .into_iter()
+    .all(positive)
+        || !(d.prepared_distribution > 0. && d.prepared_distribution < 1.)
+    {
+        return Err(fatal("SG apparent-level section values"));
+    }
+    let sat = WaterProperties::saturation(props, s(d.nominal_pressure_pa))
+        .map_err(|e| fatal(format!("SG apparent-level nominal saturation: {e}")))?;
+    let residence_s =
+        d.nominal_submerged_volume_m3 * sat.vapor.density.value / d.nominal_steam_flow_kg_s;
+    if !positive(residence_s) {
+        return Err(fatal("SG apparent-level residence time"));
+    }
+    Ok(Apparent {
+        residence_s,
+        maximum_submerged_m3: d.maximum_submerged_volume_m3,
+        distribution_s: d.distribution_time_s,
+        prepared_distribution: d.prepared_distribution,
+        area_m2: a.indication.indicated_level_area_m2,
+    })
+}
+
+/// The compact feed train's derived coefficients and prepared openings:
+/// the pump rise and entry loss from the discharge and header pressures at
+/// `2 m0`, the ISO-path and FCV drops at `m0`, and per SG the MANUAL
+/// opening that delivers its steam demand at its prepared pressure with
+/// both pumps sharing the total demand (the S4-D6 rule on the compact law).
+fn feed_owner(
+    train: packet::FeedTrain,
+    sgs: &[SteamGenerator],
+    stocks: &[SecondaryStock],
+    base: usize,
+) -> Result<FeedOwner, Failure> {
+    let t = train;
+    if ![
+        t.nominal_flow_kg_s,
+        t.suction_pressure_pa,
+        t.fcv_stroke_per_second,
+        t.receiver_pressure_pa,
+    ]
+    .into_iter()
+    .all(positive)
+        || !(t.shutoff_head_ratio > 1.)
+        || !(t.suction_pressure_pa < t.discharge_pressure_pa
+            && t.header_pressure_pa < t.discharge_pressure_pa
+            && t.iso_outlet_pressure_pa < t.header_pressure_pa
+            && t.receiver_pressure_pa < t.iso_outlet_pressure_pa)
+        || !(t.fcv_reference_opening > 0. && t.fcv_reference_opening < 1.)
+        || !(t.stem_time_constant_s > 0. && t.stem_time_constant_s.is_finite())
+    {
+        return Err(fatal("compact feed train pressures, ratio or opening"));
+    }
+    t.cascade.validate()?;
+    let m0 = t.nominal_flow_kg_s;
+    let mut f = FeedOwner {
+        train: t,
+        base,
+        pump_rise_pa: t.discharge_pressure_pa - t.suction_pressure_pa,
+        entry_coefficient: (t.discharge_pressure_pa - t.header_pressure_pa) / (2. * m0).powi(2),
+        iso_drop_pa: t.header_pressure_pa - t.iso_outlet_pressure_pa,
+        fcv_drop_pa: t.iso_outlet_pressure_pa - t.receiver_pressure_pa,
+        prepared_opening: Vec::new(),
+        modes: Vec::new(),
+        sgs: sgs.len(),
+    };
+    let total: f64 = sgs.iter().map(|g| g.steam_demand_kg_s).sum();
+    let header = f.header_pa(s(total)).value;
+    for (g, x) in sgs.iter().zip(stocks) {
+        let u = f
+            .opening_for(g.steam_demand_kg_s, header - x.pressure_pa)
+            .filter(|u| *u > 0. && *u <= 1.)
+            .ok_or_else(|| {
+                fatal(format!(
+                    "FW.{}: no FCV opening delivers {} kg/s at the prepared {} Pa",
+                    g.id, g.steam_demand_kg_s, x.pressure_pa
+                ))
+            })?;
+        f.prepared_opening.push(u);
+        f.modes.push(FeedMode {
+            mode: Mode::Auto,
+            held: u,
+        });
+    }
+    Ok(f)
 }

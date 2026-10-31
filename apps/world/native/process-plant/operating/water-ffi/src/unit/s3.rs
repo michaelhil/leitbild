@@ -25,7 +25,7 @@
 //! sections, ELEC's packet).
 use super::{
     inputs::Inputs,
-    profile::{MAX_ORDER, RESTART, Solver},
+    profile::{GUIDE_CURRENT_BASIS_PA, MAX_ORDER, RESTART, Solver},
     pzr_control::{self, PzrClient},
     spine::{Started, credited_outputs, started_full_composition},
 };
@@ -111,6 +111,10 @@ pub struct S3Unit<J: JoinedSystem = Integrated<If97>> {
     pub derived: DerivedTolerances,
     pub restart: Restart,
     pub control: PzrClient,
+    /// Whether the packet composes the compact feed train with the
+    /// three-element SG level control (plan r4 X4.1): continuous, in the
+    /// SG owner; a case harness may record it (class O).
+    pub feed_train: bool,
     pub frame: Frame,
     pub receipt: Value,
     /// The operator at the packet's prepared hot reference (the composed
@@ -242,7 +246,13 @@ pub fn compose_with<J: JoinedSystem>(
         .map_err(|e| format!("feed gate: {e:?}"))?;
     let structure = JoinedJacobian::compile_for(&mut joined, t0, &y, None)
         .map_err(|e| format!("structure: {e:?}"))?;
-    let credited = credited_outputs(&joined, &inputs.spine)?;
+    // R4-GUIDE-BASIS: the guide-current class from the operator-grade
+    // basis, the core-DP output's budget only (the contract's 50 Pa stays
+    // the S2 record).
+    let mut credited = credited_outputs(&joined, &inputs.spine)?;
+    for c in credited.iter_mut().filter(|c| c.name == "core_dp_pa") {
+        c.budget = GUIDE_CURRENT_BASIS_PA;
+    }
     let derived = derived_tolerances(
         &mut joined,
         &structure,
@@ -288,6 +298,12 @@ pub fn compose_with<J: JoinedSystem>(
         (c, p, s, Some(l1.changes.len()))
     };
     let mut control = control;
+    // Plan r4 X4.1: the SG owner's continuous feed control (it decides no
+    // change; its AUTO point is the state's own).
+    let sg_section: leitbild_operating_plant::sg::packet::Section =
+        serde_json::from_value(inputs.spine.packet_json()?["secondary"].clone())
+            .map_err(|e| format!("the packet's secondary section: {e}"))?;
+    let feed_train = sg_section.feed_train.is_some() && sg_section.apparent_level.is_some();
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
@@ -405,6 +421,7 @@ pub fn compose_with<J: JoinedSystem>(
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
+        "feed_control": feed_train.then(|| json!({"class": "C (continuous, in the SG owner; owner 31 Oct 2026)", "start": "AUTO at the state's tracked point (the composed or carried state)"})),
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
@@ -423,6 +440,7 @@ pub fn compose_with<J: JoinedSystem>(
         derived,
         restart,
         control,
+        feed_train,
         frame,
         receipt,
         reference,

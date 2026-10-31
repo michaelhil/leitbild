@@ -235,6 +235,7 @@ unsafe extern "C" {
     fn operating_ida_solution_scaling(ida: *mut c_void, enabled: c_int) -> c_int;
     fn operating_ida_newton_coefficient(ida: *mut c_void, coefficient: f64) -> c_int;
     fn operating_ida_delta_cj(ida: *mut c_void, dcj: f64) -> c_int;
+    fn operating_ida_eta_fixed(ida: *mut c_void, eta_min_fx: f64, eta_max_fx: f64) -> c_int;
     fn operating_ida_klu_ordering(ida: *mut c_void, ordering: c_int) -> c_int;
     fn operating_ida_reinitialize(ida: *mut c_void, t: f64, y: *const f64, yp: *const f64)
     -> c_int;
@@ -1147,6 +1148,23 @@ impl<S: System> Ida<S> {
             return Err(format!("IDA dcj {dcj} must lie in [0, 1)"));
         }
         let code = unsafe { operating_ida_delta_cj(self.handle.as_ptr(), dcj) };
+        self.check(code)
+    }
+    /// Stock IDASetEtaFixedStepBounds (lead decision R4-ETA, plan r4): after
+    /// an accepted step stock keeps h unchanged while its tentative step
+    /// ratio lies in `(eta_min_fx, eta_max_fx)` (stock's defaults 1 and 2);
+    /// the error test still judges every step. Stock silently replaces an
+    /// out-of-range value with its default, so `eta_min_fx` outside `[0, 1]`
+    /// or `eta_max_fx` below 1 is refused here instead. Retained across
+    /// IDAReInit.
+    pub fn set_eta_fixed_step_bounds(&mut self, eta_min_fx: f64, eta_max_fx: f64) -> Result<()> {
+        self.configurable("fixed step-size bounds")?;
+        if !(0. ..=1.).contains(&eta_min_fx) || !(eta_max_fx >= 1. && eta_max_fx.is_finite()) {
+            return Err(format!(
+                "IDA fixed-step bounds ({eta_min_fx}, {eta_max_fx}) need 0 <= eta_min_fx <= 1 <= eta_max_fx"
+            ));
+        }
+        let code = unsafe { operating_ida_eta_fixed(self.handle.as_ptr(), eta_min_fx, eta_max_fx) };
         self.check(code)
     }
     /// Only actual intervention/event boundaries and the final horizon require

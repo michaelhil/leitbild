@@ -355,6 +355,12 @@ int operating_ida_newton_coefficient(OperatingIDA *o,double coefficient) {
 int operating_ida_delta_cj(OperatingIDA *o,double dcj) {
     return IDASetDeltaCjLSetup(o->ida,dcj);
 }
+/* Stock IDASetEtaFixedStepBounds (plan r4, lead decision R4-ETA): after an
+   accepted step stock keeps h unchanged while its tentative ratio lies in
+   (eta_min_fx, eta_max_fx); stock's defaults are 1 and 2. */
+int operating_ida_eta_fixed(OperatingIDA *o,double eta_min_fx,double eta_max_fx) {
+    return IDASetEtaFixedStepBounds(o->ida,eta_min_fx,eta_max_fx);
+}
 /* Stock SUNLinSol_KLUSetOrdering: KLU's fill-reducing ordering, 0 AMD,
    1 COLAMD (stock's default), 2 natural. KLU reads it at its first symbolic
    analysis, which the first linear setup performs and IDAReInit keeps. */
