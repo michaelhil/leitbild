@@ -9,7 +9,7 @@ import { observableRefSchema, refObjectId } from '../../../core/model/alerts.ts'
 import type { ElectricalConnectionDefinition, ObjectId, SimulationClockState } from '../../../core/model/index.ts'
 import type { Selector } from '../../../core/observation/spec.ts'
 import { observationProviderFor } from '../observation/port.ts'
-import { resolveName, searchObservables, type SearchRun } from '../observation/search.ts'
+import { resolveName, searchObservables, type SearchMatch, type SearchRun } from '../observation/search.ts'
 import { declarationOf, same, visibleObject } from './declared.ts'
 import type { Collection, ComposeIssue } from './model.ts'
 import { topologyOf } from './topology.ts'
@@ -68,9 +68,19 @@ export const resolveSubject = async (run: ComposeRun, name: string | { readonly 
   const visibleWithin = within.filter(id => visibleObject(run, id) !== undefined)
   const asked = [...visibleWithin.map(id => ({ text: name, objectId: id })), { text: name }]
   const results = await searchObservables(run, asked)
-  for (const result of results) {
-    const match = result.matches.find(candidate => candidate.score >= 3)
-    if (match === undefined) continue
+  const local = results.slice(0, visibleWithin.length).flatMap(result => result.matches.filter(match => match.score >= 3))
+  const candidates = local.length > 0 ? local : (results.at(-1)?.matches ?? []).filter(match => match.score >= 3)
+  const best = Math.max(...candidates.map(match => match.score))
+  const matches = [...new Map(candidates.filter(match => match.score === best).map(match => [
+    JSON.stringify([match.kind, match.objectId, match.ref, match.element?.id]), match,
+  ])).values()]
+  if (matches.length > 1) {
+    const qualified = (match: SearchMatch): string => match.ref ?? (match.element === undefined ? match.objectId : `${match.objectId}#${match.element.id}`)
+    return { path, code: 'unknown_name', message: `"${name}" matches several subjects; name each intended owner as objectId#tag-or-label`,
+      didYouMean: [...new Set(matches.map(match => match.pack))].map(pack => ({ pack, suggestions: matches.filter(match => match.pack === pack).map(qualified) })) }
+  }
+  const match = matches[0]
+  if (match !== undefined) {
     const id = match.objectId as ObjectId
     if (match.kind === 'observable' && match.ref !== undefined) return { kind: 'observable', objectId: id, ref: match.ref }
     if (match.kind === 'element' && match.element !== undefined) return { kind: 'element', objectId: id, elementId: match.element.id }

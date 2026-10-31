@@ -65,3 +65,25 @@ test('mixed-owner value headings are reserved by composition and keep exact insp
   expect(outcome.state.views.find(section => section.kind === 'values')?.rows).toBe(blockRows(values.blocks))
   expect(values.blocks.flatMap(block => block.kind === 'owner' ? block.values.map(value => value.ref) : [])).toEqual(['unit:one#speed', 'unit:two#speed'])
 })
+
+test('ambiguous values refuse with exact alternatives, and a global alerts view cannot conceal a missing quiet owner', async () => {
+  const request = (signals: string[], subjects = ['unit:one', 'unit:two']) => displaySpecSchema.parse({ title: 'Compare each unit', question: 'Show each unit and Run alerts.', subjects,
+    views: [{ kind: 'values', signals }, { kind: 'alerts', scope: 'run' }] })
+  expect(await composeVignette(run, request(['SPD']))).toMatchObject({ ok: false, issues: [{ path: 'views.0.signals.0', code: 'unknown_name', message: expect.stringContaining('several subjects') }] })
+  expect(await composeVignette(run, request(['unit:one#speed']))).toMatchObject({ ok: false, issues: [{ path: 'subjects.1', code: 'not_fitted' }] })
+  expect(await composeVignette(run, request(['unit:one#speed'], ['unit:two#speed']))).toMatchObject({ ok: false, issues: [{ path: 'subjects.0', code: 'not_fitted' }] })
+  const both = await composeVignette(run, request(['unit:one#SPD', 'unit:two#SPD']))
+  if (!both.ok) throw Error(JSON.stringify(both.issues))
+  expect(both.state.views.find(view => view.kind === 'values')).toMatchObject({ refs: ['unit:one#speed', 'unit:two#speed'] })
+  const pureAlerts = await composeVignette(run, displaySpecSchema.parse({ title: 'Run alerts', question: 'Show all alerts.', subjects: ['unit:one', 'unit:two'], views: [{ kind: 'alerts', scope: 'run' }] }))
+  expect(pureAlerts.ok).toBe(true)
+})
+
+test('an owner actually represented by Run alerts may stand beside another owner’s measured values', async () => {
+  const alerted = { ...run, objects: run.objects.map(object => object.id === 'unit:two' ? { ...object, alerts: [{ id: 'two-high', kind: 'test', severity: 'warning' as const, message: 'Unit Two warning',
+    raisedAt: run.clock!.currentTime, acknowledged: false, priority: 'warning' as const, clock: 'simulation' as const }] } : object) }
+  const outcome = await composeVignette(alerted, displaySpecSchema.parse({ title: 'Unit One and Unit Two concern', question: 'Show Unit One speed and the Unit Two alert.', subjects: ['unit:one', 'unit:two'],
+    views: [{ kind: 'values', signals: ['unit:one#speed'] }, { kind: 'alerts', scope: 'run' }] }))
+  if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+  expect(outcome.card.items.some(item => item.subject && 'objectId' in item.subject && item.subject.objectId === 'unit:two')).toBe(true)
+})

@@ -19,8 +19,8 @@ export const selectorSchema = z.object({
 }).strict()
 
 export const viewSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('trend'), signals: z.array(nameSchema).min(1).max(12), horizon: z.enum(['2m', '10m', '30m']).optional() }).strict(),
-  z.object({ kind: z.literal('values'), signals: z.array(nameSchema).min(1).max(16).optional(), of: selectorSchema.optional() }).strict(),
+  z.object({ kind: z.literal('trend'), signals: z.array(nameSchema).min(1).max(12).describe('Exact refs or owner-qualified objectId#tag-or-label; a name matching several subjects is refused'), horizon: z.enum(['2m', '10m', '30m']).optional() }).strict(),
+  z.object({ kind: z.literal('values'), signals: z.array(nameSchema).min(1).max(16).optional().describe('Exact refs or owner-qualified objectId#tag-or-label; a name matching several subjects is refused. Omit for each subject’s lead values'), of: selectorSchema.optional() }).strict(),
   z.object({ kind: z.literal('alerts'), scope: z.enum(['related', 'run']).default('related') }).strict(),
   z.object({
     kind: z.literal('topology'), from: namesSchema, to: namesSchema,
