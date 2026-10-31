@@ -163,8 +163,12 @@ test('pricing charges opaque allowance as writes even when the complete plaintex
       ratesUsdPerToken: { prompt: '0.000002', completion: '0.00001', input_cache_read: '0.0000002', input_cache_write: '0.0000025' } } }))
   const measures: Parameters<typeof priceReplay>[0] = [{ ordinal: 1, kind: 'source-call', estimatedInputTokens: 200, sharedPrefixEstimatedTokens: 200,
     requestBytes: 1, messageBytes: 1, opaqueContinuationBytes: 400, opaqueProtocolBytes: 400, activeOriginalCallIds: [], exactOriginalCompletionTokens: 0 }]
-  const scenario = priceReplay(measures, models, billing).scenarios.find(s => s.cache === 'adjacent-prefix-without-forced-cold-rebase')!
+  const scenario = priceReplay(measures, models, billing, { opaqueStress: true }).scenarios.find(s => s.cache === 'adjacent-prefix-without-forced-cold-rebase')!
   expect(scenario.estimatedPromptTokens).toBe(300)
   expect(scenario.estimatedCacheReadTokens).toBe(200)
   expect(scenario.estimatedCacheWriteTokens).toBe(100)
+  const base = priceReplay(measures, models, billing).scenarios.find(s => s.cache === 'adjacent-prefix-without-forced-cold-rebase')!
+  expect(base.estimatedPromptTokens).toBe(200)
+  expect(base.estimatedCacheReadTokens).toBe(200)
+  expect(base.estimatedCacheWriteTokens).toBe(0)
 })

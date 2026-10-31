@@ -306,7 +306,7 @@ export const assertCheckpointReceiptLossless = (manifest: ContextCheckpointManif
   assert.equal(Object.keys(expanded).length, actionLedger.length, 'Missing exact action receipt')
   assert.deepEqual(expanded, actionLedger)
 }
-export const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: ReadonlyArray<ExecutionModelCall>, billed: ReadonlyArray<BillingRow>) => {
+export const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: ReadonlyArray<ExecutionModelCall>, billed: ReadonlyArray<BillingRow>, options: { opaqueStress?: boolean } = {}) => {
   const byId = new Map(billed.map(row => [row.executionKey.split('/').at(-1)!, row]))
   const ratios = sourceModels.map(model => byId.get(model.id)!.metrics.promptTokens / estimateRequestSize(model.request).estimatedInputTokens).sort((a, b) => a - b)
   const lowRates = billed.find(row => row.priceReconciliation.promptThreshold === null)!.priceReconciliation.ratesUsdPerToken
@@ -320,13 +320,10 @@ export const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModel
       let sourceCallCost = 0, checkpointCost = 0, fixtureEndingCost = 0
       for (let i = 0; i < requests.length; i++) {
         const request = requests[i]!
-        // The observed calibration already includes transport/tokenizer/opaque
-        // overhead. The explicit byte allowance is added again conservatively,
-        // rather than assuming redacted reasoning costs nothing after rebasing.
         const plaintextTokens = Math.ceil(request.estimatedInputTokens * multiplier)
-        // Opaque bytes are not in the plaintext estimator/prefix. Charge all
-        // selected protocol bytes as writes, including unchanged older state.
-        const tokens = plaintextTokens + Math.ceil(request.opaqueProtocolBytes / 4)
+        // BASE calibration already includes original transport/tokenizer/opaque
+        // overhead. Only the separately named stress case adds opaque writes.
+        const tokens = plaintextTokens + (options.opaqueStress === true ? Math.ceil(request.opaqueProtocolBytes / 4) : 0)
         const long = tokens >= threshold
         const rates = long ? highRates : lowRates
         const afterRebase = i > 0 && request.checkpointId !== requests[i - 1]!.checkpointId
@@ -346,11 +343,14 @@ export const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModel
         sourceCallCostUsd: sourceCallCost, extraCheckpointCostUsd: checkpointCost, fixtureEndingCostUsd: fixtureEndingCost })
     }
   }
-  return { tokenEstimation: 'Production estimateRequestSize counts complete textual request, approximately characters/4. Calibrated ratios are observed on the original 205 requests; these are not GPT tokenization or served bills.',
+  return { method: options.opaqueStress === true ? 'OPTIONAL STRESS: calibrated input plus all selected opaque bytes write-charged again' : 'BASE: empirical actual-input/text-size ratio, already including original opaque/tokenizer/transport overhead',
+    tokenEstimation: 'Production estimateRequestSize counts complete textual request, approximately characters/4. Calibrated ratios are observed on the original 205 requests; these are not GPT tokenization or served bills.',
     calibration: { minimum: ratios[0], median: quantile(ratios, 0.5), maximum: ratios.at(-1) },
     exactCapturedRateSnapshot: { promptThreshold: threshold, lowRates, highRates },
-    cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix compares exact static schemas/instructions and complete consecutive identical messages, counted by the same production plaintext estimator. Selected opaque bytes are always write-charged. Either every post-checkpoint request is fully cold or only the changed message suffix is. No cache hit is guaranteed.',
-    opaqueAssumptions: 'Exact recovered per-call continuation bytes are counted for every selected original group. The observed public-request calibration already includes hidden protocol overhead; adding selected bytes/4 again is deliberately conservative. No opaque payload is disclosed.',
+    cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix compares exact static schemas/instructions and complete consecutive identical messages, counted and scaled in the same units as the complete text estimate. Either every post-checkpoint request is fully cold or only the changed message suffix is. No cache hit is guaranteed.',
+    opaqueAssumptions: options.opaqueStress === true
+      ? 'Opaque byte allowance is deliberately double-counted beyond the empirical input ratio and write-charged on every request. This is a stress case, not a calibrated cost forecast.'
+      : 'The observed actual-input/text-size ratio already includes original hidden protocol and other overhead. No additional opaque byte charge is added in the base calculation. Actual selected opaque bytes remain exactly recorded separately.',
     additionalCheckpointOutputSensitivity: { maximumObservedOriginalCompletionTokens: maxObservedCompletion,
       extraCheckpointRounds: requests.filter(request => request.kind === 'checkpoint').length,
       allowanceUsdAtHighestCapturedOutputRate: requests.filter(request => request.kind === 'checkpoint').length * maxObservedCompletion * Number(highRates.completion),
@@ -621,6 +621,8 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         offlineFixtureTransportCalls: broker.transportCount(), externalNetworkCalls: 0, providerCalls: 0 },
       pricing: { counterfactualReplay: priceReplay(measured, sourceModels, billed),
         likeForLikeOriginalRequests: priceReplay(originalRequestMeasures, sourceModels, billed),
+        optionalOpaqueStress: { counterfactualReplay: priceReplay(measured, sourceModels, billed, { opaqueStress: true }),
+          likeForLikeOriginalRequests: priceReplay(originalRequestMeasures, sourceModels, billed, { opaqueStress: true }) },
         contrast: 'Original and checkpointed request estimates use the same observed calibration, opaque-byte accounting and cache scenarios. These conditional estimates are distinct from the actual original provider bill; neither scenario is a realized new bill.' },
       requests: measured,
       checkpointDecisions: checkpoints.map(({ input, semantic, manifest }) => ({ input, semantic, manifest })),
@@ -683,9 +685,10 @@ export const repriceArchivedWorkingContext = async (paths: { report: string; bil
     previous = request
   }
   const originalPricing = priceReplay(original, models, billed)
+  const originalStressPricing = priceReplay(original, models, billed, { opaqueStress: true })
   const actualWrites = billed.reduce((sum, row) => sum + row.metrics.cacheCreation, 0)
-  assert(originalPricing.scenarios.every(scenario => scenario.estimatedCacheWriteTokens >= actualWrites),
-    'The conservative original-prefix model must not contradict the observed original cache writes')
+  assert(originalStressPricing.scenarios.every(scenario => scenario.estimatedCacheWriteTokens >= actualWrites),
+    'The explicitly conservative stress case must not contradict observed original cache writes')
   const result = { qualification: 'PURE REPRICING of finished real-runtime request snapshots; no new evaluation or changed archive/retention proof.',
     supersedesAllPricingInReport: { path: resolve(paths.report), sha256: sha(reportBytes) },
     runtimeQualificationUnchanged: report.assertions, runtimeImplementation: report.implementation,
@@ -695,10 +698,12 @@ export const repriceArchivedWorkingContext = async (paths: { report: string; bil
       originalCompletedRequests: models.length, originalTotalBytes: models.reduce((sum, model) => sum + model.requestBytes, 0), originalPeakBytes: Math.max(...models.map(model => model.requestBytes)),
       repairedRequests: report.requests.length, repairedTotalBytes: report.requests.reduce((sum, request) => sum + request.requestBytes, 0), repairedPeakBytes: Math.max(...report.requests.map(request => request.requestBytes)),
       reductionFraction: 1 - report.requests.reduce((sum, request) => sum + request.requestBytes, 0) / models.reduce((sum, model) => sum + model.requestBytes, 0) },
-    correctedPrefixRule: 'Exact same schemas/instructions plus whole consecutive identical messages, sized through production estimateRequestSize. No JSON serialization inflation and no opaque cache reads. All selected opaque bytes are conservatively writes.',
-    sourceObservedWriteSanity: { actualOriginalCacheWriteTokens: actualWrites, allOriginalScenariosAtLeastObservedWrites: true,
-      originalPredictedCacheWriteTokens: originalPricing.scenarios.map(scenario => ({ calibration: scenario.calibration, cache: scenario.cache, tokens: scenario.estimatedCacheWriteTokens })) },
-    pricing: { counterfactualReplay: priceReplay(repriced, models, billed), likeForLikeOriginalRequests: originalPricing },
+    correctedPrefixRule: 'Exact same schemas/instructions plus whole consecutive identical messages, sized/scaled in the same units as the production full-text estimate. No JSON serialization inflation. Base ratio already includes original opaque overhead; only the separately named stress case adds opaque-write allowance.',
+    sourceObservedWriteSanity: { actualOriginalCacheWriteTokens: actualWrites, conservativeStressScenariosAtLeastObservedWrites: true,
+      baseOriginalPredictedCacheWriteTokens: originalPricing.scenarios.map(scenario => ({ calibration: scenario.calibration, cache: scenario.cache, tokens: scenario.estimatedCacheWriteTokens,
+        differenceFromObservedTokens: scenario.estimatedCacheWriteTokens - actualWrites, ratioToObservedWrites: scenario.estimatedCacheWriteTokens / actualWrites })) },
+    pricing: { counterfactualReplay: priceReplay(repriced, models, billed), likeForLikeOriginalRequests: originalPricing,
+      optionalOpaqueStress: { counterfactualReplay: priceReplay(repriced, models, billed, { opaqueStress: true }), likeForLikeOriginalRequests: originalStressPricing } },
     archive: { databasePath: report.archive.databasePath, roomId: report.archive.roomId, turnId: report.archive.turnId },
     requestCount: repriced.length, requests: repriced }
   assert(!await Bun.file(paths.output).exists(), 'Pure repricing must write a new artifact, never replace original evidence')
