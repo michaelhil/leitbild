@@ -292,7 +292,7 @@ const heatSink = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): ProcessPlant
           yes: status('green', 'Every steam generator has level on span and pressure in hand: the heat sink is satisfied.'),
           no: status('yellow', 'A steam generator\'s narrow-range level is below span while feed holds the heat sink; after a loss of its feedwater at power that is the expected shrink and boil-off, refilled by auxiliary feedwater.', 'FR-H.5'),
         }),
-        no: status('yellow', 'A steam generator is above its relief valves\' pressure: normal steam release is not holding it.', 'FR-H.4'),
+        no: status('yellow', `A steam generator is at or above the ${normalReliefLimitMPa} MPa high-pressure screen; use E-0 to assess achieved steam release and a fresh pressure response. This snapshot alone does not diagnose condenser loss or persistent heat-sink failure.`, 'E-0'),
       }),
       no: status('yellow', 'A steam generator\'s level is at its high-high limit.', 'FR-H.3'),
     }),
