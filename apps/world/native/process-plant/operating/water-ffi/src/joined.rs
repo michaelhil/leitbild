@@ -878,7 +878,8 @@ pub fn split_credited_groups(keys: &[String], credited: &[bool], max: usize) -> 
 
 pub use integrated::{
     Assembly, Discrete, FirstStep, Integrated, JoinedSystem, Restart, Restarted, census_groups,
-    credited_coordinates, discrete_restart, root_directions, stock_initial_conditions,
+    credited_coordinates, discrete_restart, discrete_restart_unless_noop, root_directions,
+    stock_initial_conditions,
 };
 
 mod integrated {
@@ -968,6 +969,11 @@ mod integrated {
         pub births: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
+        /// E-EVT (plan r4): nothing the integrator reads changed (the state,
+        /// the identity, every residual row and root function bitwise), so
+        /// no consistent start and no IDAReInit were made: stock's history
+        /// continues. `yp` is then empty.
+        pub noop: bool,
     }
     impl Restart {
         /// Configure a segment start (after construction or a restart).
@@ -1027,6 +1033,44 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
+        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, false)
+    }
+
+    /// E-EVT (plan r4): [`discrete_restart`], or, for a command or an owner
+    /// time event whose owners' changes leave everything the integrator
+    /// reads bitwise as it was
+    /// ([`Restarted::noop`]), no consistent start and no IDAReInit. Only a
+    /// driver whose instant carries no client change of its own (such as an
+    /// H1 window-end restart, which must reconfigure the segment) calls it.
+    #[allow(clippy::too_many_arguments)] // As discrete_restart.
+    pub fn discrete_restart_unless_noop<S: JoinedSystem>(
+        ida: &mut Ida<S>,
+        t: f64,
+        discrete: Discrete<'_>,
+        y_all: &mut [f64],
+        network_ids: &[f64],
+        absolute_all: &[f64],
+        relative: f64,
+        restart: &Restart,
+    ) -> Result<Restarted, String> {
+        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, true)
+    }
+
+    #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
+    fn restart_or_continue<S: JoinedSystem>(
+        ida: &mut Ida<S>,
+        t: f64,
+        discrete: Discrete<'_>,
+        y_all: &mut [f64],
+        network_ids: &[f64],
+        absolute_all: &[f64],
+        relative: f64,
+        restart: &Restart,
+        allow_noop: bool,
+    ) -> Result<Restarted, String> {
+        // E-EVT (plan r4, lead): only a command or an owner time event may be
+        // a no-op; a located root (a kink root among them) keeps its restart.
+        let allow_noop = allow_noop && !matches!(discrete, Discrete::Roots(_));
         if absolute_all.len() != y_all.len() {
             return Err("restart tolerances layout".into());
         }
@@ -1071,11 +1115,22 @@ mod integrated {
         // the identity before it. A root-located or dense-output state off
         // the algebraic manifold shows here, separately from what the
         // transactions change.
+        let zero_rates = vec![0.; y.len()];
+        let mut roots_entry = vec![0.; joined.root_count()];
+        let mut directions_entry = Vec::new();
+        if allow_noop {
+            joined
+                .roots(t, y, &zero_rates, &mut roots_entry)
+                .map_err(message)?;
+            directions_entry = joined.root_directions().map_err(message)?;
+        }
+        let entry_rows: Vec<f64>;
         let entry = {
             let zero = vec![0.; y.len()];
             joined
                 .evaluate(t, y, &zero, None, 0., None)
                 .map_err(message)?;
+            entry_rows = joined.rows().iter().map(|r| r.value).collect();
             super::largest(
                 joined
                     .rows()
@@ -1107,6 +1162,56 @@ mod integrated {
         // presence key switches the block structure (S3-D-P3).
         let declared = VaporPresence::of(&joined.network, &joined.network.declared_presence(y));
         let presence_changed = integrated.follow_presence(t, y, &declared)?;
+        // E-EVT (plan r4): a no-op instant. Nothing the integrator reads
+        // changed: the state and identity bitwise, no presence change, no
+        // appended change, every residual row at (t, y, 0) and every root
+        // function and direction bitwise as at entry. Stock's history then
+        // continues; there is no consistent start and no IDAReInit.
+        if allow_noop
+            && !presence_changed
+            && appended_done.is_empty()
+            && y.iter().zip(&before).all(|(a, b)| a.to_bits() == b.to_bits())
+            && integrated.joined.differential(network_ids) == identity_before
+            && integrated.joined.network.cell_modes() == modes_before.as_slice()
+        {
+            let joined = &mut integrated.joined;
+            joined
+                .evaluate(t, y, &zero_rates, None, 0., None)
+                .map_err(message)?;
+            let rows_same = joined
+                .rows()
+                .iter()
+                .zip(&entry_rows)
+                .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            let mut roots_now = vec![0.; roots_entry.len()];
+            joined
+                .roots(t, y, &zero_rates, &mut roots_now)
+                .map_err(message)?;
+            let roots_same = roots_now
+                .iter()
+                .zip(&roots_entry)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+                && joined.root_directions().map_err(message)? == directions_entry;
+            if rows_same && roots_same {
+                return Ok(Restarted {
+                    transactions: done,
+                    placements: Vec::new(),
+                    transacted: Vec::new(),
+                    passes_allowed: 0,
+                    presence_changed,
+                    modes_changed: false,
+                    equilibrium_classes: Vec::new(),
+                    appended: appended_done,
+                    constraint_at_entry: entry,
+                    first_step_s: 0.,
+                    last_step_s: last_step,
+                    births: Vec::new(),
+                    yp: Vec::new(),
+                    report: Report::default(),
+                    noop: true,
+                });
+            }
+        }
         let Integrated {
             joined,
             assembly,
@@ -1275,6 +1380,7 @@ mod integrated {
             births,
             yp,
             report,
+            noop: false,
         })
     }
 

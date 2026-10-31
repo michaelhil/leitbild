@@ -73,7 +73,10 @@
 //! `discrete_restart`.
 use crate::{
     ida::{Advance, Ida, System},
-    joined::{DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart},
+    joined::{
+        DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart,
+        discrete_restart_unless_noop,
+    },
     klu::SparseLu,
 };
 use leitbild_operating_plant::cost;
@@ -482,6 +485,10 @@ pub struct Driver<S> {
     /// them): steps, residuals, Jacobians, nonlinear iterations, error and
     /// convergence failures, linear setups, root evaluations.
     pub totals: [i64; 8],
+    /// E-EVT (plan r4): the instant being restarted carries a held client
+    /// change (an H1 window-end restart): it restarts even when the owners
+    /// change nothing.
+    client_change_at_restart: bool,
     /// The segments' counters in order, one per restart and the last.
     pub segments: Vec<Value>,
     /// Class O at every accepted step (C3's cost lines): the network's
@@ -584,6 +591,7 @@ impl<S: JoinedSystem> Driver<S> {
             cpu: Cpu::default(),
             log: Vec::new(),
             totals: [0; 8],
+            client_change_at_restart: false,
             segments: Vec::new(),
             donor_flips: DonorFlips::default(),
             r3_band_states: 0,
@@ -1181,6 +1189,7 @@ impl<S: JoinedSystem> Driver<S> {
             // The restart's left side, before any change of the instant.
             self.gate_point(ida, o, t, y, yp, Side::BeforeRestart)?;
         }
+        self.client_change_at_restart = !held.is_empty();
         for f in held {
             f(ida.system_mut())?;
         }
@@ -1194,9 +1203,17 @@ impl<S: JoinedSystem> Driver<S> {
             kinds_r.push("owner time event".into());
         }
         let instant_kind = kinds_r.join(" + ");
-        self.counts.record(Class::R, &instant_kind);
+        // E-EVT (plan r4): a no-op instant continued stock's history: an
+        // exact stop with nothing applied, counted with the S instants.
+        let class = if restarted.0.noop { Class::S } else { Class::R };
+        let instant_kind = if restarted.0.noop {
+            format!("no-op: {instant_kind}")
+        } else {
+            instant_kind
+        };
+        self.counts.record(class, &instant_kind);
         self.log
-            .push(json!({"t_s": t, "class": "R", "kinds": kinds_r,
+            .push(json!({"t_s": t, "class": if restarted.0.noop { "S" } else { "R" }, "kinds": kinds_r,
             "rolled_back_from_s": rolled_back_from, "restart": summary(&restarted)}));
         Ok(())
     }
@@ -1239,7 +1256,14 @@ impl<S: JoinedSystem> Driver<S> {
             (None, Some(c)) => Discrete::Command(c),
             (None, None) => Discrete::TimeEvent,
         };
-        let restarted = discrete_restart(
+        // E-EVT (plan r4): an instant with no client change of its own may
+        // continue stock's history when the owners change nothing.
+        let restart_at = if self.client_change_at_restart {
+            discrete_restart
+        } else {
+            discrete_restart_unless_noop
+        };
+        let restarted = restart_at(
             ida,
             t,
             discrete,
@@ -1249,6 +1273,18 @@ impl<S: JoinedSystem> Driver<S> {
             setup.relative,
             &setup.restart,
         )?;
+        // E-EVT (plan r4): a no-op instant made no IDAReInit. Stock's history,
+        // its counters and quadratures continue, so the segment just closed
+        // stays open: its record is undone and the next close counts it whole.
+        if restarted.noop {
+            if let Some(last) = self.segments.pop() {
+                for (k, a) in COUNTER_NAMES.iter().zip(self.totals.iter_mut()) {
+                    *a -= last["counts"][k].as_i64().unwrap_or(0);
+                }
+            }
+            self.cpu.restart_s += (self.clock)() - started;
+            return Ok((restarted, before));
+        }
         if let Some(q) = carried {
             // Stock IDAQuadReInit: the next segment starts from the value
             // carried (the S2 joined ledger's rule, S2-14 M2).
