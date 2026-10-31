@@ -20,7 +20,7 @@ export const qualificationCases = {
   'procedure-takeover': 'I started E-0 on Unit 2 and have handed it back. Take over the existing procedure and continue through its first supported step only, reporting the result in chat, then release it back to me. Preserve the existing procedure run and source; do not reset, restart or close it.',
   'checkpoint-recall': 'Read Unit 2 generator electrical output from live evidence. Separately obtain its signal definition so you can explain what it measures. At that boundary create a working-context checkpoint retaining the definition and archiving the earlier reading. Retrieve the exact archived result with conversation_read using its turnId, toolCallId and part: result, and report the original value, unit and meaning. Do not take a replacement reading or change the simulation. This is an archive-recall qualification test.',
   'image-read': 'Look only at the attached Inspector screenshot. What model-call count does it show, and what does its offline/provider connection label say? Do not infer these from the current simulation or use tools to obtain substitute data.',
-  cancellation: 'Run E-0 on Unit 2 and report each step in chat. Continue autonomously while evidence supports the procedure. This sandbox test may be cancelled externally.',
+  cancellation: 'Read the current simulation clock, then use the simulation wait capability to wait until one minute after that reading. Keep the Run paused; do not resume or advance it yourself. I will cancel your wait externally. Do not substitute a wall-clock sleep or claim the time passed.',
 } as const
 export type QualificationCase = keyof typeof qualificationCases
 export interface QualificationOptions {
@@ -222,8 +222,11 @@ export const runQualification = async (options: QualificationOptions): Promise<a
         if (substituted) throw Error('Actual serving model/provider substituted; result disqualified')
         break
       }
-      if (caseId === 'cancellation' && models.some(call => call.status === 'completed')) {
-        await cancelAndSettle('Planned cancellation after first completed model call')
+      const pendingWait = Object.values(record.capture.calls).find((call: any) => call.completedAt === undefined
+        && call.tool === 'workspace_call' && call.arguments.calls?.some((operation: any) => operation.operationId === 'world.simulation-run.wait')) as any
+      if (caseId === 'cancellation' && pendingWait) {
+        record.cancelledWaitCall = pendingWait.id
+        await cancelAndSettle('Planned cancellation while the actual simulation wait is pending')
         break
       }
       const stopReason = substituted ? 'Actual serving model/provider substituted; inspect before spending more.'
