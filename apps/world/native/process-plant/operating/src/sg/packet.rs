@@ -422,6 +422,10 @@ pub struct Primary {
     pub pressure_pa: f64,
     #[serde(rename = "temperature_K")]
     pub temperature_k: f64,
+    /// X4.5: the inflow's temperature, the thermal balance input's core
+    /// outlet (the single-pass law's inlet).
+    #[serde(rename = "inletTemperature_K")]
+    pub inlet_temperature_k: f64,
     #[serde(rename = "flowArea_m2")]
     pub flow_area_m2: f64,
     /// Per SG, in the section's order.

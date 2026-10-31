@@ -164,7 +164,7 @@ export function compileSgProbe(d:ProbeSources,primaryMassFlow_kg_s:{A:number,B:n
     // The SG primary cell: the hot reference's pressure, its 290 °C start
     // and the tube film's flow area (X4.5, `ld01-sg-contact`).
     primary:{pressure_Pa:hot.primaryPressure_Pa,temperature_K:balance.coreInlet_C+273.15,
-      flowArea_m2:bundle.filmFlowArea_m2,massFlow_kg_s:SGS.map(id=>primaryMassFlow_kg_s[id])},
+      inletTemperature_K:balance.coreOutlet_C+273.15,flowArea_m2:bundle.filmFlowArea_m2,massFlow_kg_s:SGS.map(id=>primaryMassFlow_kg_s[id])},
     tube:{thermalDiameter_m:bundle.thermalDiameter_m},
     segments:Array.from({length:n},(_,i)=>({developedStart_m:i*L/n,developedEnd_m:(i+1)*L/n,
       exchangeArea_m2:bundle.exchangeArea_m2/n,capacity_J_K:balance.wallCapacity_MJ_K*1e6/n}))}

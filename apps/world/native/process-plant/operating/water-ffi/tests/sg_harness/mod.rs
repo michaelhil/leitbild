@@ -603,8 +603,15 @@ pub fn held_ports<P: WaterProperties>(props: &P, probe: &Probe) -> Vec<PrimaryPo
     q.mass_flow_kg_s
         .iter()
         .map(|m| {
-            PrimaryPort::held(props, q.pressure_pa, q.temperature_k, m / q.flow_area_m2)
-                .expect("held primary")
+            PrimaryPort::held(
+                props,
+                q.pressure_pa,
+                q.temperature_k,
+                q.inlet_temperature_k,
+                *m,
+                q.flow_area_m2,
+            )
+            .expect("held primary")
         })
         .collect()
 }

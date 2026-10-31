@@ -1427,6 +1427,79 @@ pub(crate) fn tube_series_current<P: WaterProperties, N: Number>(
     })
 }
 
+/// X4.5 (lead ruling d): the tube film in series with the tube wall and
+/// fouling, as a conductance per primary (inner) area, `h / (1 + h R)`. The
+/// film coefficient is the tube law's own at the cell's bulk state and the
+/// metal temperature; [`tube_series_current`]'s domain applies (refused once
+/// the wall reaches the primary onset).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn tube_series_conductance<P: WaterProperties, N: Number>(
+    props: &P,
+    pressure: N,
+    bulk_t: N,
+    metal_t: N,
+    mass_flux: N,
+    law: WallLawOf<N>,
+    sat: SaturationOf<N>,
+    bulk: WaterPointOf<N>,
+    series_m2k_w: f64,
+) -> Result<N> {
+    if !matches!(law.film, Film::Tube) || !(series_m2k_w.is_finite() && series_m2k_w >= 0.) {
+        return Err("tube series law needs the tube film and a nonnegative resistance");
+    }
+    if metal_t.value() > bulk_t.value() {
+        let direct =
+            liquid_wall_current(props, pressure, bulk_t, metal_t, mass_flux, law, sat, bulk)?;
+        if direct.mode != "sensible" {
+            return Err(
+                "SG primary face beyond its sensible law: outside the X4.5 tube-wall series domain",
+            );
+        }
+    }
+    liquid_wall_inputs(pressure, bulk_t, metal_t, mass_flux, law)?;
+    let bulk = if bulk_t.value() == sat.temperature.value()
+        && bulk_t.direction() == sat.temperature.direction()
+    {
+        sat.liquid
+    } else {
+        bulk
+    };
+    check_water(bulk)?;
+    if bulk_t.value() > sat.temperature.value() {
+        return Err("stable liquid wall recipient required");
+    }
+    let h = liquid_film(props, pressure, bulk_t, metal_t, mass_flux, law, sat, bulk)?;
+    (h / (N::from(1.) + h * N::from(series_m2k_w))).finite()
+}
+
+/// X4.5 (lead ruling d): the exact single-pass heat of a plug-flow stream
+/// over a wall at one temperature, the standard effectiveness-NTU relation
+/// for a constant-temperature side: `Q = C (T_in - T_wall) (1 - exp(-UA/C))`
+/// into the wall, with `C` the stream's capacity rate (W/K) and `UA` the
+/// conductance (W/K). As `C` falls the effectiveness tends to 1 and
+/// `Q -> C (T_in - T_wall)`, so no flow carries no heat. Where `exp(-UA/C)`
+/// is zero in f64 (`UA/C` above about 745, and `C = 0`) the relation's value
+/// is `C (T_in - T_wall)` exactly; that form is evaluated there, so the
+/// seeded direction stays finite.
+pub fn single_pass_heat<N: Number>(
+    conductance_w_k: N,
+    capacity_w_k: N,
+    inflow_t: N,
+    wall_t: N,
+) -> Result<N> {
+    if !(conductance_w_k.value() > 0. && capacity_w_k.value() >= 0.) {
+        return Err(
+            "single-pass heat needs a positive conductance and a nonnegative capacity rate",
+        );
+    }
+    let drive = inflow_t - wall_t;
+    if (-conductance_w_k.value() / capacity_w_k.value()).exp() == 0. {
+        return (capacity_w_k * drive).finite();
+    }
+    let e = (-(conductance_w_k / capacity_w_k)).exp();
+    (capacity_w_k * (N::from(1.) - e) * drive).finite()
+}
+
 /// Sibling composition may supply the SAME current saturation and bulk tuple
 /// already recovered by its fluid chart. This is exact same-call reuse, not a
 /// cache or a constant-property interface. The public wrapper remains the

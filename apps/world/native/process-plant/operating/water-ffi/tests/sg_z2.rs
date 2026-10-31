@@ -119,7 +119,15 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
     let pressures: Vec<f64> = (0..=36).map(|k| 4.8e6 + 0.05e6 * k as f64).collect();
     let q = &probe.primary;
     let port_at = |t_k: f64, m: f64| {
-        PrimaryPort::held(&props, q.pressure_pa, t_k, m / q.flow_area_m2).unwrap()
+        PrimaryPort::held(
+            &props,
+            q.pressure_pa,
+            t_k,
+            q.inlet_temperature_k,
+            m,
+            q.flow_area_m2,
+        )
+        .unwrap()
     };
     let duty = |port: &PrimaryPort, p: f64| sweep.at(port, p, 0.)["dutyPerSG_W"].as_f64().unwrap();
     let mut cases = Vec::new();
@@ -143,7 +151,7 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
         );
         let (station_root, it2) = sweep.root(|p| duty(&port, p) - station[k], 4.8e6, 6.6e6);
         cases.push(json!({"sg":g.id,"primary":{"pressure_Pa":q.pressure_pa,"temperature_K":q.temperature_k,
-                "massFlow_kg_s":q.mass_flow_kg_s[k],"massFlux_kg_m2_s":q.mass_flow_kg_s[k] / q.flow_area_m2},
+                "inletTemperature_K":q.inlet_temperature_k,"massFlow_kg_s":q.mass_flow_kg_s[k],"massFlux_kg_m2_s":q.mass_flow_kg_s[k] / q.flow_area_m2},
             "sweep":rows,
             "emergentAtDemand":{"bisections":it1,"state":sweep.at(&port, emergent, g.steam_demand_kg_s)},
             "atStationDuty":{"stationDuty_W":station[k],"bisections":it2,"state":sweep.at(&port, station_root, g.steam_demand_kg_s)}}));
@@ -190,7 +198,7 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
     let conductance = film.heat.value / (sizing_wall - (320. + 273.15)) * 5000.;
     let out = json!({
         "probe":"Z2 SG duty versus secondary pressure at 100% power on the native laws (zero time, stationary local wall balance per segment)",
-        "laws":"sg::tube::Tube::segment_heat (thermal::liquid_wall_current, Film::Tube; thermal::secondary_wall) with maintained IF97 (water-ffi If97); demand duty with the block's IF97 feed enthalpy",
+        "laws":"sg::tube::Tube::segment_heat (X4.5 ruling d: thermal::tube_series_conductance and thermal::single_pass_heat from the inflow, Film::Tube; thermal::secondary_wall) with maintained IF97 (water-ffi If97); demand duty with the block's IF97 feed enthalpy",
         "derived":derived,"heldInventory_kg":sweep.mass_kg,"cases":cases,
         "temperatureSensitivity":{"primaryTemperature_K":sizing_outlet,"sg":"A",
             "emergentAtDemand":sweep.at(&port, sens, g.steam_demand_kg_s)},

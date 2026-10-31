@@ -625,10 +625,19 @@ async function compileOperatingSpinePass(wiki: string, if97: string, solids: Sol
       if (areas.length !== 1 || !(areas[0]! > 0)) throw Error(`SG.${side} primary segments need one flow area`)
       return areas[0]!
     }
+  // X4.5 (lead ruling d): the single-pass law's inlet at the settle's seed,
+  // the prepared water of the one region whose edge enters the SG primary.
+  const sgInflow = (side: string) => {
+    const cells = [...new Set(thermal.sg_segments.filter(g => thermal.secondaries[g.secondary]!.id === side).map(g => g.primary))]
+    const into = carved.edges.filter(e => e.to === cells[0])
+    if (cells.length !== 1 || into.length !== 1) throw Error(`SG.${side} primary needs one cell and one inflow edge`)
+    return carved.regions[into[0]!.from]!.water.T
+  }
   if (!(coreArea > 0) || !(flow > 0) || loop !== flow / 2) throw Error('Settle flow basis needs the core flow area and the reference flow')
   const settleBasis = { basisPower_W: compileOperatingPowerBasis({ [powerBasisSources.basis.page]: historyDoc, [powerBasisSources.check.page]: kineticsDoc }),
     coreMassFlux_kg_m2_s: flow / coreArea,
-    sgPrimaryMassFlux_kg_m2_s: thermal.secondaries.map(g => ({ id: g.id, massFlux_kg_m2_s: loop / sgArea(g.id) })) }
+    sgPrimaryMassFlux_kg_m2_s: thermal.secondaries.map(g => ({ id: g.id, massFlux_kg_m2_s: loop / sgArea(g.id),
+      inflowTemperature_K: sgInflow(g.id) })) }
   const settleDerivation = { enthalpyReferenceFlow_kg_s: flow, coreMainFlowArea_m2: coreArea, loopReferenceFlow_kg_s: loop,
     sgPrimaryFlowArea_m2: thermal.secondaries.map(g => ({ id: g.id, area_m2: sgArea(g.id) })),
     preparedPower_W: thermal.source_total_w, powerBasisSources,

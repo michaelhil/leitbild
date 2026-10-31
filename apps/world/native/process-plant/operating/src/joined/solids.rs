@@ -90,6 +90,11 @@ struct Segment {
     primary_area: f64,
     outside_diameter: f64,
     series_m2k_w: f64,
+    /// X4.5 (lead ruling d): the fold's whole primary area and this
+    /// segment's share of the fold's exchange area; the single-pass law is
+    /// the fold's, the segment carries its share at its own metal.
+    fold_primary_area: f64,
+    share: f64,
 }
 
 /// The current water a wall contact sees, from the network's same call.
@@ -102,6 +107,19 @@ pub struct WallWater {
     /// `sum(0.5 * liquid mass flow)` over incident faces over the main flow
     /// area, kg/(m2 s) (operating-thermal.md, actual rod contacts).
     pub mass_flux: Scalar,
+    /// X4.5 (lead ruling d): an SG primary cell's inflow, the single-pass
+    /// law's inlet; none for a core contact's cell.
+    pub inflow: Option<Inflow>,
+}
+
+/// The liquid entering an SG primary cell: its capacity-weighted
+/// temperature and its capacity rate `sum(m_in (cp_donor + cp_cell)/2)`, W/K,
+/// over the faces whose liquid flows into the cell. With no inflow the rate
+/// is zero and the temperature is the cell's (the law's heat is then zero).
+#[derive(Clone, Copy, Debug)]
+pub struct Inflow {
+    pub temperature: Scalar,
+    pub capacity_w_k: Scalar,
 }
 
 /// The split of a half's fuel deposition between its two equal-area and
@@ -237,6 +255,9 @@ pub struct Solids {
     wall_cells: Vec<usize>,
     /// Per network regular cell: its index in `wall_cells`, if any.
     wall_slot: Vec<Option<usize>>,
+    /// Per network regular cell: whether it is an SG primary (its wall water
+    /// carries the inflow, X4.5).
+    inflow_cell: Vec<bool>,
     wall: Vec<Option<WallWater>>,
     helium_rate: Vec<Scalar>,
     passive_rate: Vec<Scalar>,
@@ -331,12 +352,17 @@ fn undirected_water(w: &WallWater) -> bool {
             q.enthalpy,
         ]
     };
+    let inflow = w.inflow.map_or([Scalar::constant(0.); 2], |i| {
+        [i.temperature, i.capacity_w_k]
+    });
     [
         w.pressure,
         w.temperature,
         w.mass_flux,
         w.saturation.temperature,
         w.saturation.surface_tension,
+        inflow[0],
+        inflow[1],
     ]
     .iter()
     .chain(&point(&w.bulk))
@@ -541,6 +567,8 @@ impl Solids {
                 primary_area: g.area_m2 * c.inner_fraction(),
                 outside_diameter: c.tube_outside_diameter_m,
                 series_m2k_w: c.primary_series_m2k_w(),
+                fold_primary_area: c.exchange_area_m2 * c.inner_fraction(),
+                share: g.area_m2 / c.exchange_area_m2,
             };
             if segment.primary >= water_cells
                 || segment.secondary >= t.secondaries.len()
@@ -827,6 +855,10 @@ impl Solids {
         let mut flow_area = vec![0.; water_cells];
         flow_area[..packet.water_flow_area_m2.len()].copy_from_slice(&packet.water_flow_area_m2);
         let mut wall_slot = vec![None; water_cells];
+        let mut inflow_cell = vec![false; water_cells];
+        for g in &segments {
+            inflow_cell[g.primary] = true;
+        }
         for (k, c) in wall_cells.iter().enumerate() {
             if !(flow_area[*c].is_finite() && flow_area[*c] > 0.) {
                 return Err(fatal(format!("wall cell {c} has no main flow area")));
@@ -957,6 +989,7 @@ impl Solids {
             segments,
             secondaries: t.secondaries.len(),
             flow_area,
+            inflow_cell,
             wall_cells,
             wall_slot,
             wall,
@@ -1363,12 +1396,45 @@ impl Solids {
                 flow = flow + s(0.5) * fluid.liquid_mass_flow(face);
             }
         }
+        let bulk = point(q, d);
+        // X4.5 (lead ruling d): the SG primary's inflow, from the donors of
+        // the faces whose liquid enters the cell.
+        let inflow = if self.inflow_cell[cell] {
+            let (mut capacity, mut weighted) = (s(0.), s(0.));
+            for (face, (from, to)) in fluid.endpoints.iter().enumerate() {
+                let m = fluid.liquid_mass_flow(face);
+                let (donor, rate) = if *to == cell && m.value > 0. {
+                    (*from, m)
+                } else if *from == cell && m.value < 0. {
+                    (*to, -m)
+                } else {
+                    continue;
+                };
+                let Some((dq, dd)) = fluid.points[donor][0] else {
+                    return Err(trial(format!("SG inflow donor {donor} has no liquid")));
+                };
+                let c = rate * s(0.5) * (Scalar::new(dq.cp_j_kg_k, dd.cp_j_kg_k) + bulk.cp);
+                capacity = capacity + c;
+                weighted = weighted + c * Scalar::new(dq.temperature_k, dd.temperature_k);
+            }
+            Some(Inflow {
+                temperature: if capacity.value > 0. {
+                    weighted / capacity
+                } else {
+                    Scalar::new(q.temperature_k, d.temperature_k)
+                },
+                capacity_w_k: capacity,
+            })
+        } else {
+            None
+        };
         let water = WallWater {
             pressure,
             temperature: Scalar::new(q.temperature_k, d.temperature_k),
-            bulk: point(q, d),
+            bulk,
             saturation,
             mass_flux: flow / s(self.flow_area[cell]),
+            inflow,
         };
         self.wall_clock += 1;
         self.wall_version[k] = self.wall_clock;
@@ -1976,7 +2042,12 @@ impl Solids {
                 Some((k, q)) if *k == key => *q,
                 _ => {
                     let water = self.wall_at(g.primary)?;
-                    let q = thermal::tube_series_current(
+                    let inflow = water
+                        .inflow
+                        .ok_or_else(|| fatal("SG primary wall water without its inflow"))?;
+                    // X4.5 (lead ruling d): the fold's exact single-pass law
+                    // from the inflow onto this metal, the segment's share.
+                    let u = thermal::tube_series_conductance(
                         properties,
                         water.pressure,
                         water.temperature,
@@ -1993,6 +2064,22 @@ impl Solids {
                         g.series_m2k_w,
                     )
                     .map_err(trial)?;
+                    let whole = thermal::single_pass_heat(
+                        u * s(g.fold_primary_area),
+                        inflow.capacity_w_k,
+                        inflow.temperature,
+                        metal_t,
+                    )
+                    .map_err(trial)?;
+                    // Heat into the fluid per segment, the memo's form.
+                    let heat = -whole * s(g.share);
+                    let q = thermal::WallFlux {
+                        heat,
+                        vapor_mass: s(0.),
+                        liquid_energy: heat,
+                        vapor_energy: s(0.),
+                        mode: "sensible",
+                    };
                     if undirected_bits(&key[1..]) && undirected_water(&water) {
                         self.wall_memo[slot] = Some((key, q));
                     }
@@ -2004,7 +2091,7 @@ impl Solids {
                     "SG primary wall vapor departure needs its transaction",
                 ));
             }
-            let primary_to_metal = -q.heat * s(g.primary_area);
+            let primary_to_metal = -q.heat;
             let view = secondary[g.secondary];
             let out = thermal::secondary_wall(
                 properties,
