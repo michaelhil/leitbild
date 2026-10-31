@@ -39,7 +39,6 @@ import { decideProposal, proposeOperation } from '../operations/proposals.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
 import { processPlantElectricalBoundaries } from '../electrical-ports.ts'
 import { processPlantIdForObject,processPlantPackId,processPlantUnitPackDataSchema,type ProcessPlantUnitPackData } from '../model.ts'
-import { compileProcessPlants } from '../plant-compiler.ts'
 import { answerProcessPlantQuery } from '../query.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
@@ -55,11 +54,15 @@ import {
 } from './object-projection.ts'
 import { proposalSignalEvents } from './proposal-signals.ts'
 import { createProcessPlantRuntimeInstances } from './runtime-instance-factory.ts'
+import { connectProcessPlants } from './native-plants.ts'
+import type { NativeEngineFailure } from '../engine/native-engine.ts'
 import {
   processPlantRuntimeStateSchema,
   restoredOffsiteIsolationsFor,
+  runtimeStateEntryFor,
   runtimeStateForProcessPlants,
   type ProcessPlantRuntimeState,
+  type ProcessPlantRuntimeStateEntry,
 } from './runtime-state.ts'
 import {
   coupledBoundaryEffect,
@@ -194,11 +197,25 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       ? null
       : processPlantRuntimeStateSchema.parse(rawRuntimeState) as ProcessPlantRuntimeState
     const initialObjects = initialProcessPlantObjects(config)
-    const compiledPlants = compileProcessPlants(processPlantDefinitionsFor(initialObjects))
-    const plants = createProcessPlantRuntimeInstances({
-      compiledPlants,
+    // An LD-01 engine that fails before this connection is ready waits here; failNativePlant takes it once it is.
+    const earlyEngineFailures: Array<{ readonly plantId: string; readonly failure: NativeEngineFailure }> = []
+    let onEngineFailure = (plantId: string, failure: NativeEngineFailure): void => { earlyEngineFailures.push({ plantId, failure }) }
+    const connected = await connectProcessPlants({
+      definitions: processPlantDefinitionsFor(initialObjects),
       runtimeState,
+      onEngineFailure: (plantId, failure) => { onEngineFailure(plantId, failure) },
     })
+    const nativeEngines = connected.nativeEngines
+    const unavailable = connected.unavailable
+    const plants = createProcessPlantRuntimeInstances({
+      compiledPlants: connected.compiled,
+      runtimeState,
+      nativeEngines,
+    })
+    const retainedStates = (): ReadonlyMap<string, ProcessPlantRuntimeStateEntry> =>
+      new Map([...unavailable].flatMap(([plantId, entry]) => entry.retained === undefined ? [] : [[plantId, entry.retained] as const]))
+    /** Why a Plant the Run names takes no command or query: its engine is unavailable, or it is not a Plant here. */
+    const missingPlant = (plantId: string): string => unavailable.get(plantId)?.reason ?? `process plant not found: ${plantId}`
     const systemConnections = systemConnectionsFor(config.scenario.connections, plants)
     const connectedPlantIds = new Set(systemConnections.map(connection => String(connection.system.objectId)))
     const networkAvailableByPlant = new Map<string, boolean>()
@@ -285,7 +302,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
 
     const persistence = createRuntimeStateWriter({
       ...(config.runtimeStateStore === undefined ? {} : { store: config.runtimeStateStore }),
-      readState: () => runtimeStateForProcessPlants(plants, offsiteIsolations),
+      readState: () => runtimeStateForProcessPlants(plants, offsiteIsolations, { engines: nativeEngines, retained: retainedStates() }),
       delayMs: defaultSimulationRunRuntimePolicy.runtimePrivateStateFlushIntervalMs,
       label: 'process-plant',
     })
@@ -317,6 +334,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         at: nowIso(),
         simulationTime: clock.currentTime,
         connectedPlantIds,
+        unavailable,
       }).map(object => [object.id, object]),
     )
 
@@ -398,6 +416,64 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       recordedSeriesIds = recordedSeriesFor(recordingPlan)
     }
 
+    /**
+     * An LD-01 engine failed at its time (its child died, or its unit refused an exchange): the Plant leaves the
+     * running Plants with the state it last saved, shows "engine unavailable" with the cause, and nothing
+     * restarts it. A person or an agent may restore the Run's last checkpoint.
+     */
+    const failNativePlant = (plantId: string, failure: NativeEngineFailure): void => {
+      const instance = plants.get(plantId)
+      const engine = nativeEngines.get(plantId)
+      if (instance === undefined || engine === undefined) return
+      unavailable.set(plantId, { reason: failure.reason, retained: runtimeStateEntryFor(instance, offsiteIsolations, engine) })
+      plants.delete(plantId)
+      nativeEngines.delete(plantId)
+      networkAvailableByPlant.delete(plantId)
+      rebuildRecordingPlan()
+      const at = nowIso()
+      emitPackRuntimeEvents(handlers, [{
+        type: 'interaction.signal',
+        at,
+        provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
+        signal: {
+          id: `process-plant-engine-failed:${randomUUID()}` as SignalId,
+          simulationRunId: config.simulationRunId,
+          at,
+          source: { kind: 'simulation', id: processPlantSimRuntimeId },
+          targets: [{ kind: 'broadcast' }],
+          type: 'process-plant.engine.failed',
+          severity: 'critical',
+          payload: { plantId, atMs: failure.atMs, message: failure.reason },
+        },
+      }, ...processPlantProjectionEvents({
+        objectsById, plants, at, simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp, connectedPlantIds, unavailable,
+        provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
+      })])
+      persistence.scheduleSave()
+      void engine.close()
+    }
+    onEngineFailure = failNativePlant
+    for (const { plantId, failure } of earlyEngineFailures.splice(0)) failNativePlant(plantId, failure)
+
+    const noExchanges: ReadonlyMap<string, { readonly simulatedMs: number; readonly wallMs: number }> = new Map()
+    /** Each LD-01 Plant's exchange with its unit, all at once: its ramps, its queued commands, one ADVANCE. */
+    const exchangeNativePlants = async (elapsedMs: number): Promise<ReadonlyMap<string, { readonly simulatedMs: number; readonly wallMs: number }>> => {
+      const exchanged = new Map<string, { readonly simulatedMs: number; readonly wallMs: number }>()
+      const engines = [...nativeEngines]
+      const settled = await Promise.allSettled(engines.map(async ([plantId, engine]) => {
+        const instance = plants.get(plantId)!
+        const startedAt = performance.now()
+        instance.ramps.apply(instance.runtime.elapsedMs() + elapsedMs)
+        const receipt = await engine.advance(elapsedMs)
+        exchanged.set(plantId, { simulatedMs: receipt.simulatedMs, wallMs: performance.now() - startedAt })
+      }))
+      // An engine's own failure has moved its Plant out (failNativePlant); anything else fails the runtime, visibly.
+      for (const [index, outcome] of settled.entries()) {
+        if (outcome.status === 'rejected' && engines[index]![1].failure() === null) throw outcome.reason
+      }
+      return exchanged
+    }
+
     const advance = async (targetSimulationMs = Date.parse(runClock.read().currentTime)): Promise<void> => {
       if (runtimeFailureReason !== null) return
       const simulationMs = targetSimulationMs
@@ -411,10 +487,13 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         }
       }
       const events: PackRuntimeEvent[] = []
-      for (const { runtime, ramps, protection, operations, performance: runtimePerformance } of plants.values()) {
+      // LD-01 Plants exchange with their units first; every other Plant ticks after, synchronously, as before.
+      const exchanged = nativeEngines.size === 0 ? noExchanges : await exchangeNativePlants(elapsedMs)
+      for (const { plant, runtime, ramps, protection, operations, performance: runtimePerformance } of plants.values()) {
         const startedAt = performance.now()
-        ramps.apply(runtime.elapsedMs() + elapsedMs)
-        const tick = runtime.tick(elapsedMs)
+        const exchange = exchanged.get(plant.id)
+        if (exchange === undefined) ramps.apply(runtime.elapsedMs() + elapsedMs)
+        const tick = exchange ?? runtime.tick(elapsedMs)
         events.push(...(protection?.evaluate({
           runtime,
           elapsedMs: runtime.elapsedMs(),
@@ -424,7 +503,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         // A proposal lapses at its plant time, never within a minute of wall time (proposals.ts).
         events.push(...proposalSignalEvents(config.simulationRunId, operations?.expire({ elapsedMs: runtime.elapsedMs(), wallMs: Date.now() }) ?? []))
         runtimePerformance.record({
-          wallMs: performance.now() - startedAt,
+          wallMs: exchange?.wallMs ?? performance.now() - startedAt,
           simulatedMs: tick.simulatedMs,
         })
       }
@@ -434,6 +513,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         at: nowIso(),
         simulationTime: new Date(simulationMs).toISOString() as IsoTimestamp,
         connectedPlantIds,
+        unavailable,
         provenance: {
           source: 'simulator',
           adapterId: processPlantSimAdapterId,
@@ -499,7 +579,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           const payload = processPlantActionInvokePayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const plant = plants.get(payload.data.plantId)
-          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
           const aiRefusal = aiProposeOnlyRefusal(command.kind, context, payload.data.plantId, aiOperationOf(payload.data.plantId))
           if (aiRefusal !== null) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: aiRefusal }
           try {
@@ -536,7 +616,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           const payload = processPlantIcLifecyclePayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const plant = plants.get(payload.data.plantId)
-          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
           const aiRefusal = aiProposeOnlyRefusal(command.kind, context, payload.data.plantId, aiOperationOf(payload.data.plantId))
           if (aiRefusal !== null) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: aiRefusal }
           if (!plant.protection) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant I&C is not configured for plant: ${payload.data.plantId}` }
@@ -564,7 +644,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
             })
             // What a person acknowledged shows at once, the Run paused or playing: its Plant's objects project again now.
             const projected = processPlantProjectionEvents({
-              objectsById, plants, at: nowIso(), simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp, connectedPlantIds,
+              objectsById, plants, at: nowIso(), simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp, connectedPlantIds, unavailable,
               provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
             })
             emitPackRuntimeEvents(handlers, [...events, ...projected])
@@ -583,7 +663,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           const payload = processPlantControlProposePayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const plant = plants.get(payload.data.plantId)
-          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
           if (plant.operations === undefined) throw new Error(`process plant ${payload.data.plantId} keeps no operations record`)
           if (context.origin !== 'person' && context.origin !== 'ai') return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: 'Only a person or an AI agent proposes an operation' }
           try {
@@ -622,7 +702,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           const payload = processPlantActuationResetPayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const plant = plants.get(payload.data.plantId)
-          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
           const refusal = resetActuation(plant, command, context, payload.data.ruleId, payload.data.reason)
           if (refusal !== null) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: refusal }
           await persistence.saveNow()
@@ -632,7 +712,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           const payload = processPlantControlDecidePayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const plant = plants.get(payload.data.plantId)
-          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
           if (plant.operations === undefined) throw new Error(`process plant ${payload.data.plantId} keeps no operations record`)
           if (context.origin === undefined) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: 'A decision on a proposal needs who takes it' }
           const step = decideProposal(plant.operations.book(), {
@@ -661,7 +741,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           const payload = processPlantControlRampPayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const plant = plants.get(payload.data.plantId)
-          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+          if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
           const aiRefusal = aiProposeOnlyRefusal(command.kind, context, payload.data.plantId, aiOperationOf(payload.data.plantId))
           if (aiRefusal !== null) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: aiRefusal }
           const validation = validateOperatorWrite({
@@ -700,7 +780,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         const payload = processPlantControlWritePayloadSchema.safeParse(command.payload)
         if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
         const plant = plants.get(payload.data.plantId)
-        if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant not found: ${payload.data.plantId}` }
+        if (!plant) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: missingPlant(payload.data.plantId) }
         const aiRefusal = aiProposeOnlyRefusal(command.kind, context, payload.data.plantId, aiOperationOf(payload.data.plantId))
         if (aiRefusal !== null) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: aiRefusal }
         try {
@@ -734,7 +814,13 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> => {
         if (runtimeFailureReason !== null) throw new Error(`Process Plant runtime has stopped after a runtime failure: ${runtimeFailureReason}`)
-        if (plants.size === 0) throw new Error('Process Plant runtime is not active for this Scenario')
+        const input = request.input as { readonly plantId?: unknown; readonly objectId?: unknown } | null | undefined
+        const target = typeof input?.plantId === 'string' ? input.plantId : typeof input?.objectId === 'string' ? input.objectId : undefined
+        const unavailableTarget = target === undefined ? undefined : unavailable.get(target)
+        if (unavailableTarget !== undefined) throw new Error(unavailableTarget.reason)
+        if (plants.size === 0) {
+          throw new Error(unavailable.size === 0 ? 'Process Plant runtime is not active for this Scenario' : `No Process Plant engine runs in this Run: ${[...unavailable.values()].map(entry => entry.reason).join('; ')}`)
+        }
         return answerProcessPlantQuery({
           request,
           plants,
@@ -785,9 +871,15 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         clock = nextClock
         localClock?.set(nextClock)
       },
-      checkpoint: persistence.saveNow,
+      checkpoint: async (): Promise<void> => {
+        // A copy point is a restart boundary for each LD-01 unit too (platform design §6.1): SNAPSHOT at the exchange boundary.
+        if (nativeEngines.size > 0) await Promise.all([...nativeEngines.values()].map(engine => engine.checkpoint()))
+        await persistence.saveNow()
+      },
       close: async (): Promise<void> => {
         clearInterval(interval)
+        // Each LD-01 unit is snapshotted where it stands, so the Run resumes there; then its child closes.
+        await Promise.allSettled([...nativeEngines.values()].map(engine => engine.close()))
         await persistence.close()
         handlers.clear()
       },

@@ -20,3 +20,6 @@ export const processPlantEngineKindFor = (modelRef: string): ProcessPlantEngineK
   if (kind === undefined) throw new Error(`process plant model ${modelRef} has no engine`)
   return kind
 }
+
+/** Whether a Plant Model runs on the native engine; a reference the table does not hold is refused by compiling it. */
+export const runsOnNativeEngine = (modelRef: string): boolean => engineKindByModelRef[modelRef] === 'native'
