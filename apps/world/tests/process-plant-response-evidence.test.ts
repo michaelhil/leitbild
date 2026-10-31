@@ -13,7 +13,7 @@ import { createPlantOperations, OPERATIONS_KEPT, type OperationRecord } from '..
 import { processSignalTagIdSchema } from '../src/packs/process-plant/graph/index.ts'
 import { variablePathSchema } from '../src/packs/process-plant/graph/index.ts'
 import { evaluateProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
-import { decodeProcessPlantSampleTimeRuns, type ProcessPlantSampleTimeRun } from '../src/packs/process-plant/procedure-evidence-facts.ts'
+import { decodeProcessPlantSampleTimeRuns, expandProcessPlantProcedureEvidence, type ProcessPlantSampleTimeRun } from '../src/packs/process-plant/procedure-evidence-facts.ts'
 
 guardPlantTests()
 const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:sampled-response', loopCount: 2 }))
@@ -61,9 +61,9 @@ describe('explicitly sampled Plant response', () => {
     const recorded = response.recordings[0]!
     expect(decodeProcessPlantSampleTimeRuns(recorded.sampleTimeRuns as ProcessPlantSampleTimeRun[]).map(offset => new Date(Date.parse(String(recorded.sampleTimestampOrigin)) + offset).toISOString())).toEqual([at(0), at(60), at(120)])
     const raw = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, simulationTime: at(120) })
-    const original = raw.evidence[0]!
+    const original = expandProcessPlantProcedureEvidence(raw)[0]!
     if (!('variable' in original) || original.variable === undefined) throw new Error('Expected the actual acquired physical leaf')
-    expect(response.current.evidence[0]).toMatchObject({ comparison: original.comparison, reference: original.reference, status: original.status,
+    expect(expandProcessPlantProcedureEvidence(response.current)[0]).toMatchObject({ comparison: original.comparison, reference: original.reference, status: original.status,
       rangeValidity: original.rangeValidity, variable: { path: original.variable.path, value: original.variable.value, canonicalValue: original.variable.canonicalValue,
         unit: original.variable.unit, writable: original.variable.writable } })
     expect(plant.runtime.checkpoint()).toEqual(before)
@@ -103,7 +103,7 @@ describe('explicitly sampled Plant response', () => {
     expect(failed.current.status).toBe('challenged')
     expect(failed.reason).toContain('Current physical prerequisites are challenged')
     expect(failed.reason).toContain('not accumulated')
-    expect(failed.current.evidence[0]).toMatchObject({ reference: { tagId: 'SG-A-PRESS' }, variable: { value, unit: 'MPa' }, status: 'challenged' })
+    expect(expandProcessPlantProcedureEvidence(failed.current)[0]).toMatchObject({ reference: { tagId: 'SG-A-PRESS' }, variable: { value, unit: 'MPa' }, status: 'challenged' })
     expect(evaluateProcessPlantResponse({ plant, input: challenged, simulationTime: at(120) })).toMatchObject({ status: 'challenged', reason: expect.stringContaining('active Plant recording') })
     const foreign = processPlantResponseQuerySchema.parse({ ...challenged, targetObjectId: 'plant:foreign-target' })
     expect(evaluateProcessPlantResponse({ ...config(), input: foreign })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('does not match') })

@@ -125,7 +125,7 @@ describe('bounded read-only procedure acquisition', () => {
       expect(fixture.current().stepStates[0]?.decision?.criterion).toMatchObject({ status: 'supported', observation: { result: {
         targetObjectId: fixture.plant.id, simulationTime: fixture.runtime.snapshot().clock!.currentTime,
         evidenceKind: 'engineering-diagnostic', provenance: 'runtime-model', automationDigest: expect.any(String),
-        evidence: [{ variable: { path: 'rcpA.runningState', writable: false, value: true }, status: 'satisfied' }],
+        readings: [{ variable: { path: 'rcpA.runningState', writable: false, value: true } }], evidence: [{ readingIndex: 0, status: 'satisfied' }],
       } } })
     } finally { await fixture.runtime.close() }
   })

@@ -8,6 +8,7 @@ import { processPlantCapabilities } from '../src/packs/process-plant/capabilitie
 import { createProcessPlantRecordingPlan } from '../src/packs/process-plant/recording.ts'
 import { isoTimestampSchema, objectIdSchema } from '../src/core/model/index.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
+import { expandProcessPlantProcedureEvidence } from '../src/packs/process-plant/procedure-evidence-facts.ts'
 
 guardPlantTests()
 
@@ -17,7 +18,12 @@ const plant: ProcessPlantRuntimeInstance = { plant: compiled, runtime, ramps: cr
 const basis = { modelRef: compiled.modelRef, modelDigest: compiled.modelDigest, source: 'source:apps/world/src/packs/process-plant/specs/pwr-reference-template.graph.json', description: 'A bounded model comparison; no CSF adequacy claim.' }
 const power = (value: number, operator: '>' | '<' = '>'): ProcessPlantProcedureCondition => ({ type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ path: 'core.powerMw' }), operator, value, unit: 'MW' })
 const missing: ProcessPlantProcedureCondition = { type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ tagId: 'UNINSTALLED-NI' }), operator: '>', value: 0, unit: 'MW' }
-const evaluate = (condition: ProcessPlantProcedureCondition, target = plant) => evaluateProcessPlantProcedureCondition({ plant: target, condition, basis })
+// Decision assertions inspect the explicit expanded view; the public result
+// retains each exact acquisition once in its frame-local readings table.
+const evaluate = (condition: ProcessPlantProcedureCondition, target = plant) => {
+  const result = evaluateProcessPlantProcedureCondition({ plant: target, condition, basis })
+  return { ...result, evidence: expandProcessPlantProcedureEvidence(result) }
+}
 
 describe('read-only procedure condition evidence', () => {
   test('retains actual values, native metadata, model identity and simulation time without accepting any actuation', () => {
@@ -51,6 +57,15 @@ describe('read-only procedure condition evidence', () => {
     expect(result).toMatchObject({ status: 'unknown', evidence: [{ signal: { unit: 'MW', writable: false },
       variable: { value: actual, canonicalValue: 17, unit: 'kW', writable: true, limits: { hardRange: { min: 0, max: 1e9 } } },
       reason: expect.stringContaining('Writable commands/demands') }] })
+  })
+
+  test('one acquired operand serves all its comparisons without losing a single threshold, reference or outcome', () => {
+    const result = evaluateProcessPlantProcedureCondition({ plant, basis, condition: { type: 'all', conditions: [power(0), power(1e9), power(1e9, '<')] } })
+    expect(result.readings).toHaveLength(1)
+    expect(result.evidence).toHaveLength(3)
+    expect(result.evidence.map(row => 'readingIndex' in row ? row.readingIndex : undefined)).toEqual([0, 0, 0])
+    expect(expandProcessPlantProcedureEvidence(result)).toEqual([evaluate(power(0)).evidence[0]!, evaluate(power(1e9)).evidence[0]!, evaluate(power(1e9, '<')).evidence[0]!])
+    expect(result.status).toBe('challenged')
   })
 
   test('unknown units, absent bindings and value types cannot become successful comparisons', () => {

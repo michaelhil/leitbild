@@ -68,7 +68,7 @@ describe('powered delta-T indications and common evidence validity', () => {
     const condition: ProcessPlantProcedureCondition = { type: 'comparison', signal: { path: signal }, operator: '>', value: 0, unit: 'degC' }
     const basis = { modelRef: plant.modelRef, modelDigest: plant.modelDigest, source: 'test:instrument-power', description: 'Indication availability test only.' }
     const evaluate = (criterion: ProcessPlantProcedureCondition) => evaluateProcessPlantProcedureCondition({ plant: instance, condition: criterion, basis })
-    expect(evaluate(condition)).toMatchObject({ status: 'unknown', evidence: [{ status: 'unknown', rangeValidity: 'unavailable' }] })
+    expect(evaluate(condition)).toMatchObject({ status: 'unknown', readings: [{ rangeValidity: 'unavailable', quality: { status: 'unavailable' } }], evidence: [{ readingIndex: 0, status: 'unknown' }] })
     expect(evaluate({ type: 'not', condition }).status).toBe('unknown')
     const queried = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.signals.read', input: { plantId: plant.id, signals: [{ path: signal }] } }, plants: new Map([[plant.id, instance]]), objects: new Map() }) as { signals: Array<{ quality: { status: string } }> }
     expect(queried.signals[0]?.quality.status).toBe('unavailable')

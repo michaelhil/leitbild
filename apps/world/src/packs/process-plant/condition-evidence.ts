@@ -4,7 +4,7 @@ import { processPlantEvidenceFrame } from './evidence-frame.ts'
 import { processUnitSchema, type ProcessUnit, type VariablePath } from './graph/index.ts'
 import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalQuality } from './signals.ts'
 import type { ProcessPlantSignalReference, ProcessPlantSignalQuality } from './signals.ts'
-import { processPlantEvidenceSignal, processPlantEvidenceVariable, type ProcessPlantEvidenceSignal, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
+import { processPlantEvidenceSignal, processPlantEvidenceVariable, normalizeProcessPlantProcedureEvidence, type ProcessPlantEvidenceSignal, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
 import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator, type ProcessPlantIcSnapshot } from './runtime/ic/control-protection-model.ts'
@@ -69,6 +69,16 @@ export interface ProcessPlantProcedureEvidence {
   readonly status: ProcedureConditionStatus
   readonly reason?: string
 }
+export interface ProcessPlantProcedureIcEvidence {
+  readonly type: 'ic-rule-state'
+  readonly ruleId: string
+  readonly field: 'active' | 'latched'
+  readonly expected: boolean
+  readonly value?: boolean
+  readonly source: string
+  readonly status: ProcedureConditionStatus
+  readonly reason?: string
+}
 
 const compare = (left: number | boolean, operator: ProcessPlantIcComparisonOperator, right: number | boolean): boolean => {
   if (operator === '==') return left === right
@@ -87,7 +97,7 @@ export const evaluateProcessPlantProcedureCondition = (config: {
   readonly basis: ProcessPlantProcedureBasis
   readonly simulationTime?: IsoTimestamp
 }) => {
-  const evidence: Array<ProcessPlantProcedureEvidence | { readonly type: 'ic-rule-state'; readonly ruleId: string; readonly field: 'active' | 'latched'; readonly expected: boolean; readonly value?: boolean; readonly source: string; readonly status: ProcedureConditionStatus; readonly reason?: string }> = []
+  const evidence: Array<ProcessPlantProcedureEvidence | ProcessPlantProcedureIcEvidence> = []
   const plant = config.plant
   const simTimeMs = plant.runtime.elapsedMs()
   const identity = {
@@ -96,7 +106,7 @@ export const evaluateProcessPlantProcedureCondition = (config: {
     automaticCsfQualified: false,
   }
   if (config.basis.modelRef !== plant.plant.modelRef || config.basis.modelDigest !== plant.plant.modelDigest) {
-    return { ...identity, status: 'unknown' as const, reason: 'Procedure basis does not match the current Plant model and digest.', evidence }
+    return { ...identity, status: 'unknown' as const, reason: 'Procedure basis does not match the current Plant model and digest.', ...normalizeProcessPlantProcedureEvidence(evidence) }
   }
   const snapshots = new Map<VariablePath, ProcessPlantVariableSnapshot>()
   const unavailableSnapshots = new Map<VariablePath, string>()
@@ -170,8 +180,8 @@ export const evaluateProcessPlantProcedureCondition = (config: {
   }
   try {
     const status = evaluate(config.condition, 0)
-    return { ...identity, status, ...(status === 'unknown' ? { reason: 'The declared condition cannot be established from the available model evidence.' } : {}), evidence }
+    return { ...identity, status, ...(status === 'unknown' ? { reason: 'The declared condition cannot be established from the available model evidence.' } : {}), ...normalizeProcessPlantProcedureEvidence(evidence) }
   } catch (error) {
-    return { ...identity, status: 'unknown' as const, reason: error instanceof Error ? error.message : String(error), evidence }
+    return { ...identity, status: 'unknown' as const, reason: error instanceof Error ? error.message : String(error), ...normalizeProcessPlantProcedureEvidence(evidence) }
   }
 }

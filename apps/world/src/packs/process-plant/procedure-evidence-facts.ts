@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ProcessSignalBinding } from './graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
+import type { ProcessPlantProcedureEvidence, ProcessPlantProcedureIcEvidence } from './condition-evidence.ts'
 
 /** Facts needed to judge an operand, rather than another copy of its graph
  * schema. Exact static metadata remains discoverable by the canonical path or
@@ -20,6 +21,63 @@ export const processPlantEvidenceVariable = (variable: ProcessPlantVariableSnaps
   writable: variable.writable, published: variable.published,
   ...(variable.limits === undefined ? {} : { limits: variable.limits }),
 })
+
+/** One complete acquisition in this exact condition frame. Comparison-specific
+ * references and outcomes remain on every leaf. Missing bindings retain their
+ * unresolved identity rather than sharing a fabricated anonymous reading. */
+export type ProcessPlantProcedureReading = Omit<ProcessPlantProcedureEvidence, 'reference' | 'comparison' | 'status' | 'reason'> & {
+  readonly unresolvedReference?: ProcessPlantProcedureEvidence['reference']
+}
+export type ProcessPlantProcedureComparison = Pick<ProcessPlantProcedureEvidence, 'reference' | 'comparison' | 'status' | 'reason'> & { readonly readingIndex: number }
+export interface ProcessPlantProcedureEvidenceFrame {
+  readonly readings: ReadonlyArray<ProcessPlantProcedureReading>
+  readonly evidence: ReadonlyArray<ProcessPlantProcedureComparison | ProcessPlantProcedureIcEvidence>
+}
+const exactReadingKey = (reading: ProcessPlantProcedureReading): string => JSON.stringify(reading, (_key, value: unknown) =>
+  typeof value === 'number' && (!Number.isFinite(value) || Object.is(value, -0))
+    ? { numberIdentity: Object.is(value, -0) ? '-0' : String(value) } : value)
+
+/** Deduplicate only identical acquired facts, never canonical path alone. An
+ * unavailable reading, contradictory metadata or distinct native/canonical
+ * value therefore cannot inherit another operand's apparently healthy facts. */
+export const normalizeProcessPlantProcedureEvidence = (
+  acquired: ReadonlyArray<ProcessPlantProcedureEvidence | ProcessPlantProcedureIcEvidence>,
+): ProcessPlantProcedureEvidenceFrame => {
+  const readings: ProcessPlantProcedureReading[] = [], indices = new Map<string, number>()
+  const evidence = acquired.map(row => {
+    if (!('reference' in row)) return row
+    const { reference, comparison, status, reason, ...facts } = row
+    const reading: ProcessPlantProcedureReading = { ...facts, ...(facts.signal === undefined ? { unresolvedReference: reference } : {}) }
+    const key = exactReadingKey(reading)
+    let readingIndex = indices.get(key)
+    if (readingIndex === undefined) { readingIndex = readings.length; readings.push(reading); indices.set(key, readingIndex) }
+    return { reference, comparison, status, ...(reason === undefined ? {} : { reason }), readingIndex }
+  })
+  return { readings, evidence }
+}
+
+export const readProcessPlantProcedureEvidence = (frame: Pick<ProcessPlantProcedureEvidenceFrame, 'readings'>, readingIndex: number): ProcessPlantProcedureReading => {
+  if (!Array.isArray(frame.readings) || !Number.isSafeInteger(readingIndex) || readingIndex < 0 || readingIndex >= frame.readings.length) {
+    throw new Error('Procedure evidence reading index does not identify an acquisition in this frame')
+  }
+  const reading = frame.readings[readingIndex]
+  if (typeof reading !== 'object' || reading === null) throw new Error('Procedure evidence acquisition is absent from this frame')
+  return reading
+}
+
+/** Explicit expansion for current readers and Inspector presentation. This
+ * accepts only the table format; absent indices/tables are errors, never a
+ * second parser or a fallback to a historical wire shape. */
+export const expandProcessPlantProcedureEvidence = (frame: ProcessPlantProcedureEvidenceFrame): ReadonlyArray<ProcessPlantProcedureEvidence | ProcessPlantProcedureIcEvidence> => {
+  if (!Array.isArray(frame.readings) || !Array.isArray(frame.evidence)) throw new Error('Procedure evidence requires this frame\'s readings and evidence arrays')
+  return frame.evidence.map(row => {
+    if (!('reference' in row)) return row
+    const { unresolvedReference, ...reading } = readProcessPlantProcedureEvidence(frame, row.readingIndex)
+    if (unresolvedReference !== undefined && JSON.stringify(unresolvedReference) !== JSON.stringify(row.reference)) throw new Error('Unresolved procedure reading does not match its leaf reference')
+    if (row.reference.path !== undefined && reading.signal !== undefined && row.reference.path !== reading.signal.path) throw new Error('Procedure reading path does not match its leaf reference')
+    return { ...reading, reference: row.reference, comparison: row.comparison, status: row.status, ...(row.reason === undefined ? {} : { reason: row.reason }) }
+  })
+}
 
 /** Lossless ordered timestamp offsets. A negative step records an invalid
  * reversing history honestly; a zero step preserves duplicate timestamps.
