@@ -118,7 +118,9 @@ pub struct Tank {
     pub area_m2: f64,
     #[serde(rename = "initialVolume_m3")]
     pub initial_volume_m3: f64,
-    pub initial_ppm: f64,
+    /// `None` for BLEND: its absorber follows the initial-condition rule
+    /// [`BlendInitial`].
+    pub initial_ppm: Option<f64>,
     #[serde(rename = "stopHeight_m")]
     pub stop_height_m: f64,
     #[serde(rename = "resetHeight_m")]
@@ -162,6 +164,19 @@ pub struct Section {
     pub transfer_flow_kg_s: f64,
     #[serde(rename = "lowBlend")]
     pub low_blend: LowBlend,
+    #[serde(rename = "blendInitialConcentration")]
+    pub blend_initial: BlendInitial,
+}
+
+/// BLEND's absorber at the initial state (lead, plan r4 X4.2): an
+/// initial-condition rule, not a value.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum BlendInitial {
+    /// The primary's concentration at the initial state (COLD.A's liquid,
+    /// where the makeup enters): automatic makeup blends to the RCS
+    /// concentration.
+    #[serde(rename = "primaryAtInitialState")]
+    PrimaryAtInitialState,
 }
 
 // Coordinate order.
@@ -173,12 +188,14 @@ const RECV_M: usize = 4;
 const RECV_B: usize = 5;
 const LEVEL: usize = 6;
 const TAVG: usize = 7;
-/// Per branch: flow lag, integral, stem, from the branch's base.
-const BRANCH: [usize; 2] = [8, 11];
+/// Per branch: flow lag, inner integral, stem and the outer level
+/// integral (R4-CVCS-PI), from the branch's base.
+const BRANCH: [usize; 2] = [8, 12];
 const FT: usize = 0;
 const INTEGRAL: usize = 1;
 const STEM: usize = 2;
-pub const COORDINATES: usize = 14;
+const LEVEL_INTEGRAL: usize = 3;
+pub const COORDINATES: usize = 16;
 /// The level lag's row (local index), the only row reading the PZR cell.
 pub const LEVEL_ROW: usize = LEVEL;
 
@@ -320,6 +337,8 @@ pub struct Cvcs {
     boundary: Boundary,
     /// When set, the next value evaluation records the tracked point.
     prepare: bool,
+    /// The initial-state preparation has set BLEND's absorber.
+    prepared_blend: bool,
 }
 
 /// The network cells every row reads: COLD.A and the leg cells.
@@ -357,10 +376,12 @@ impl Cvcs {
         if !(tanks.iter().all(|k| {
             pos(k.area_m2)
                 && pos(k.initial_volume_m3)
-                && k.initial_ppm.is_finite()
-                && k.initial_ppm >= 0.
                 && k.initial_volume_m3 / k.area_m2 < t.height_m
-        }) && pos(t.height_m)
+        }) && t.blend.initial_ppm.is_none()
+            && [t.water, t.concentrate, t.receiver]
+                .iter()
+                .all(|k| k.initial_ppm.is_some_and(|v| v.is_finite() && v >= 0.))
+            && pos(t.height_m)
             && [c.nominal_flow_kg_s, c.hydraulic_efficiency, c.fixed_loss_pa, c.fcv_loss_pa]
                 .into_iter()
                 .all(pos)
@@ -434,7 +455,8 @@ impl Cvcs {
                 "CVCS.BLEND.B",
                 Class::InventoryStock,
                 1.,
-                mass(&t.blend) * t.blend.initial_ppm * 1e-6,
+                // Set by the initial-state preparation (BlendInitial).
+                0.,
             ),
             ("CVCS.WATER.M", Class::InventoryStock, 1e3, mass(&t.water)),
             (
@@ -453,7 +475,7 @@ impl Cvcs {
                 "CVCS.RECEIVER.B",
                 Class::InventoryStock,
                 1.,
-                mass(&t.receiver) * t.receiver.initial_ppm * 1e-6,
+                mass(&t.receiver) * t.receiver.initial_ppm.unwrap_or(0.) * 1e-6,
             ),
             // The controller at the program's full-power point until the
             // composed state's own tracked point is prepared.
@@ -479,6 +501,7 @@ impl Cvcs {
                 ("FT.lag", flow, 0.),
                 ("I", 1., -section.controller.valve_bias),
                 ("FCV.s", 1., 0.),
+                ("IL", flow, 0.),
             ] {
                 layout.push(
                     format!("CVCS.{b}.{label}"),
@@ -499,7 +522,7 @@ impl Cvcs {
             stops: Stops::default(),
         };
         Ok(Self {
-            concentrate_fraction: t.concentrate.initial_ppm * 1e-6,
+            concentrate_fraction: t.concentrate.initial_ppm.unwrap_or(0.) * 1e-6,
             section: section.clone(),
             layout,
             prepared,
@@ -521,6 +544,7 @@ impl Cvcs {
             level_b,
             boundary: Boundary::default(),
             prepare: false,
+            prepared_blend: false,
         })
     }
 
@@ -723,7 +747,11 @@ impl Cvcs {
         let lag_l = x.value(LEVEL);
         let lag_t = x.value(TAVG);
         let setpoint = self.section.program.setpoint(lag_t);
-        let (auto_c, auto_l) = ctl.requests(lag_l, setpoint);
+        if !(self.prepared_blend || self.prepare) {
+            return Err(fatal(
+                "the CVCS needs its initial-state preparation (BLEND at the primary's concentration)",
+            ));
+        }
         let blend_m = x.value(BLEND_M);
         let blend_x = x.value(BLEND_B) / blend_m;
         let mut flows = [s(0.); 2];
@@ -731,12 +759,24 @@ impl Cvcs {
             let k = b.index();
             let base = BRANCH[k];
             let state = *self.modes.branch(b);
+            let stopped = state.stops.any();
+            let outer = ctl.outer(
+                b == Branch::Charging,
+                lag_l,
+                setpoint,
+                x.value(base + LEVEL_INTEGRAL),
+            );
+            let auto = state.request == Request::Auto && !stopped;
             let request = match state.request {
-                Request::Auto => [auto_c, auto_l][k],
+                Request::Auto => outer.request,
                 Request::Withdrawn => s(0.),
                 Request::Manual(r) => s(r),
             };
-            let stopped = state.stops.any();
+            // A stopped branch has no request in force: its level integral
+            // tracks zero, so a permitted restart is bumpless.
+            let applied = if stopped { s(0.) } else { request };
+            rows[base + LEVEL_INTEGRAL] =
+                x.rate(base + LEVEL_INTEGRAL) - ctl.outer_rate(&outer, applied, auto);
             let inner = ctl.inner(
                 request,
                 x.value(base + FT),
@@ -798,23 +838,36 @@ impl Cvcs {
         };
         if self.prepare {
             self.prepare = false;
-            self.track(level.value, tavg.value, p.value)?;
+            self.track(level.value, tavg.value, p.value, donor_x.value)?;
         }
         Ok(())
     }
 
     /// The controller at its tracked AUTO point of a state: both lags at
-    /// their inputs, each branch's flow at its AUTO request with the stem
-    /// at the opening that passes it, the flow lag at the flow and the
-    /// integral at zero error. Tank stocks are not moved.
-    fn track(&mut self, level: f64, tavg: f64, p: f64) -> Result<(), Failure> {
+    /// their inputs, each branch's level integral at zero (its request the
+    /// wiki's proportional law's, bumpless), its flow at that request with
+    /// the stem at the opening that passes it, the flow lag at the flow and
+    /// the inner integral at zero error. BLEND's absorber follows the
+    /// initial-condition rule: BLEND at `primary` (COLD.A's kg_eq per kg).
+    /// The tank masses are not moved.
+    fn track(&mut self, level: f64, tavg: f64, p: f64, primary: f64) -> Result<(), Failure> {
         let ctl = self.section.controller;
         let setpoint = self.section.program.setpoint(s(tavg));
-        let (rc, rl) = ctl.requests(s(level), setpoint);
         self.prepared[LEVEL] = level;
         self.prepared[TAVG] = tavg;
-        for (b, r) in Branch::ALL.into_iter().zip([rc.value, rl.value]) {
+        match self.section.blend_initial {
+            BlendInitial::PrimaryAtInitialState => {
+                self.prepared[BLEND_B] = self.prepared[BLEND_M] * primary;
+            }
+        }
+        self.prepared_blend = true;
+        for b in Branch::ALL {
             let base = BRANCH[b.index()];
+            let r = ctl
+                .outer(b == Branch::Charging, s(level), setpoint, s(0.))
+                .request
+                .value;
+            self.prepared[base + LEVEL_INTEGRAL] = 0.;
             let u = self
                 .opening_for(b, r, p)
                 .ok_or_else(|| fatal(format!("no {b:?} opening passes {r} kg/s at {p} Pa")))?;
@@ -1122,6 +1175,11 @@ impl Cvcs {
             self.boundary.concentrate_kg_s,
             self.concentrate_fraction,
         )
+    }
+    /// The coordinates the initial-state preparation writes (local
+    /// indices): every controller state and BLEND's absorber.
+    pub fn tracked() -> Vec<usize> {
+        std::iter::once(BLEND_B).chain(LEVEL..COORDINATES).collect()
     }
     /// The tank stocks' local indices: masses (BLEND, WATER, CONCENTRATE,
     /// RECEIVER) and absorbers (BLEND, RECEIVER).

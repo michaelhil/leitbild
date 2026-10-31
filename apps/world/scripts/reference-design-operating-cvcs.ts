@@ -48,7 +48,7 @@ const compactSchema = z.object({
   transfers: z.literal('requestedFlow'), port: z.literal('COLD.A'), levelInput: z.literal('pzrLevelIndication'),
   loopAverageInput: z.literal('massWeightedLegCells'), loopAverageLag_s: pos, stem: z.literal('firstOrderWithinStrokeRate'),
   stemTimeConstant_s: pos, deadband: z.literal('smooth'), deadbandWidth_m: pos, supportLoss: z.literal('chargingZero'),
-  controller: z.literal('continuous'),
+  controller: z.literal('continuous'), blendInitialConcentration: z.literal('primaryAtInitialState'),
   judgement: z.tuple([z.literal('loopAverageInput'), z.literal('loopAverageLag_s'), z.literal('stemTimeConstant_s'), z.literal('deadbandWidth_m')]),
 }).strict()
 const controllerSchema = z.object({
@@ -56,7 +56,7 @@ const controllerSchema = z.object({
   innerProportional: pos, innerIntegral_per_s: pos, valveRange: range, flowLag_s: pos, flowSpan_kg_s: range,
   chargingFixedLoss_MPa: pos, chargingFcvLoss_MPa: pos, fcvReferenceOpening: fraction, regulatingStrokePerSecond: pos,
   letdownUpstreamLoss_MPa: pos, shutoffPressure_MPa: pos, lowBlendStop_m3: pos, lowBlendRestart_m3: pos,
-  receiverStopHeight_m: pos, receiverResetHeight_m: pos,
+  receiverStopHeight_m: pos, receiverResetHeight_m: pos, levelIntegralTime_s: pos,
 }).strict()
 const pumpSchema = z.object({ id: z.literal('CHARGE'), flow_kg_s: pos, inletPressure_MPa: pos, inletTemperature_C: finite,
   outletPressure_MPa: pos, receiverPressure_MPa: pos, hydraulicEfficiency: fraction }).passthrough()
@@ -121,7 +121,7 @@ export function compileCvcs(p: CvcsPages, regions: Region[]) {
     controller: { requestGain_kg_s_m: ctl.requestGain_kg_s_m, requestRange_kg_s: ctl.requestRange_kg_s, band_m: ctl.band_m,
       flowNormalization_kg_s: ctl.flowNormalization_kg_s, valveBias: ctl.valveBias, innerProportional: ctl.innerProportional,
       innerIntegral_per_s: ctl.innerIntegral_per_s, valveRange: ctl.valveRange, flowLag_s: ctl.flowLag_s, flowSpan_kg_s: ctl.flowSpan_kg_s,
-      deadbandWidth_m: compact.deadbandWidth_m, loopAverageLag_s: compact.loopAverageLag_s, stemTimeConstant_s: compact.stemTimeConstant_s,
+      deadbandWidth_m: compact.deadbandWidth_m, levelIntegralTime_s: ctl.levelIntegralTime_s, loopAverageLag_s: compact.loopAverageLag_s, stemTimeConstant_s: compact.stemTimeConstant_s,
       strokePerSecond: ctl.regulatingStrokePerSecond },
     charging: { nominalFlow_kg_s: pump.flow_kg_s, suctionPressure_Pa: pump.inletPressure_MPa * MPa,
       dischargePressure_Pa: pump.outletPressure_MPa * MPa, shutoffPressure_Pa: ctl.shutoffPressure_MPa * MPa,
@@ -131,9 +131,12 @@ export function compileCvcs(p: CvcsPages, regions: Region[]) {
       trimInletPressure_Pa: trim.inletPressure_MPa * MPa, receiverPressure_Pa: trim.outletPressure_MPa * MPa,
       referenceOpening: trim.nominalOpening, coolerOutletTemperature_K: trim.nominalTemperature_C + K },
     tanks: { pressure_Pa: life.pressure_Pa, temperature_K: life.temperature_K, height_m: life.height_m,
-      blend: tank(life.BLEND), water: tank(life.WATER), concentrate: tank(life.CONCENTRATE), receiver: tank(life.RECEIVER) },
+      // BLEND's absorber follows the initial-condition rule (ld01-cvcs
+      // blendInitialConcentration), not the original preparation's ppm.
+      blend: { ...tank(life.BLEND), initial_ppm: null }, water: tank(life.WATER), concentrate: tank(life.CONCENTRATE), receiver: tank(life.RECEIVER) },
     transferFlow_kg_s: life.transferFlow_kg_s,
     lowBlend: { stop_m3: ctl.lowBlendStop_m3, restart_m3: ctl.lowBlendRestart_m3 },
+    blendInitialConcentration: compact.blendInitialConcentration,
   }
 }
 

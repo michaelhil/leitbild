@@ -7,15 +7,22 @@
 //!
 //! ```text
 //! L_set     = program(T)                     (constant outside its ends)
-//! r_charge  = sclamp(G (L_set - band - L), 0, R)
-//! r_letdown = sclamp(G (L - L_set - band), 0, R)
+//! per branch, sigma = +1 charging, -1 letdown (lead R4-CVCS-PI):
+//! eL = sigma (L_set - L)   r* = G (eL - band) + IL   r = sclamp(r*, 0, R)
+//! IL' = (G/Ti) eL + (r_applied - r*)/Ti      (back-calculation, Ti = Kp/Ki)
 //! e = (r - f)/F    u* = bias + Kp e + I    u = clamp(u*, 0, 1)
 //! I' = Ki e + (u - u*) Ki/Kp                 (back-calculation)
 //! s' = clamp((u - s)/tau, -v, v)             (first-order stem)
 //! ```
 //!
 //! `L` is the lagged PZR level indication, `T` the lagged loop average,
-//! `f` the lagged branch flow. `sclamp` is the smooth band (judgement,
+//! `f` the lagged branch flow. The outer level loop keeps the wiki's
+//! proportional gain `G` beyond the band and adds integral action on the
+//! level error from the programmed setpoint, integral time `Ti` (judgement,
+//! `levelIntegralTime_s`): the standard pressurizer level controller, which
+//! holds the setpoint against a continuing shrink. `r_applied` is the request
+//! in force: `r` in AUTO, the MANUAL or withdrawn request otherwise (then
+//! the integral only tracks it). `sclamp` is the smooth band (judgement,
 //! `deadbandWidth_m`); the clamps on `u` and the stroke rate are continuous
 //! in value and are not located. The law owns no state: the CVCS owner
 //! carries the lags, both integrals and both stems as differential
@@ -113,12 +120,26 @@ pub struct Controller {
     pub flow_span_kg_s: [f64; 2],
     #[serde(rename = "deadbandWidth_m")]
     pub deadband_width_m: f64,
+    /// R4-CVCS-PI (judgement): the outer level loop's integral time.
+    #[serde(rename = "levelIntegralTime_s")]
+    pub level_integral_time_s: f64,
     #[serde(rename = "loopAverageLag_s")]
     pub loop_average_lag_s: f64,
     #[serde(rename = "stemTimeConstant_s")]
     pub stem_time_constant_s: f64,
     #[serde(rename = "strokePerSecond")]
     pub stroke_per_second: f64,
+}
+
+/// One branch's outer level loop at one state, with directions.
+#[derive(Clone, Copy, Debug)]
+pub struct Outer {
+    /// The AUTO request `r` (kg/s).
+    pub request: Scalar,
+    /// `r*`, the unsaturated request (kg/s).
+    pub unsaturated: Scalar,
+    /// The integral's error term `(G/Ti) eL` (kg/s per s).
+    pub error_rate: Scalar,
 }
 
 /// One branch's inner loop at one state, with directions.
@@ -142,6 +163,7 @@ impl Controller {
             self.inner_integral_per_s,
             self.flow_lag_s,
             self.deadband_width_m,
+            self.level_integral_time_s,
             self.loop_average_lag_s,
             self.stem_time_constant_s,
             self.stroke_per_second,
@@ -162,16 +184,31 @@ impl Controller {
         }
         Ok(())
     }
-    /// The AUTO requests `(charge, letdown)` (kg/s) at lagged level `l` (m)
-    /// and setpoint `setpoint` (m).
-    pub fn requests(&self, l: Scalar, setpoint: Scalar) -> (Scalar, Scalar) {
+    /// One branch's outer loop (`charging` sign +1, letdown -1) at lagged
+    /// level `l` (m), setpoint `setpoint` (m) and its integral `il` (kg/s).
+    pub fn outer(&self, charging: bool, l: Scalar, setpoint: Scalar, il: Scalar) -> Outer {
         let g = self.request_gain_kg_s_m;
         let w = g * self.deadband_width_m;
-        let band = s(self.band_m);
-        (
-            sclamp(s(g) * (setpoint - band - l), self.request_range_kg_s, w),
-            sclamp(s(g) * (l - setpoint - band), self.request_range_kg_s, w),
-        )
+        let e = if charging { setpoint - l } else { l - setpoint };
+        let unsaturated = s(g) * (e - s(self.band_m)) + il;
+        Outer {
+            request: sclamp(unsaturated, self.request_range_kg_s, w),
+            unsaturated,
+            error_rate: s(g / self.level_integral_time_s) * e,
+        }
+    }
+    /// The outer integral's rate with request `applied` in force: the
+    /// error term in AUTO, plus back-calculation over the integral time
+    /// `Ti = Kp/Ki` toward the request in force (which is the AUTO request
+    /// in AUTO, so the term is the saturation excess); outside AUTO only the
+    /// tracking term (`auto` false).
+    pub fn outer_rate(&self, o: &Outer, applied: Scalar, auto: bool) -> Scalar {
+        let tracking = (applied - o.unsaturated) / s(self.level_integral_time_s);
+        if auto {
+            o.error_rate + tracking
+        } else {
+            tracking
+        }
     }
     /// The inner loop at request `r` and lagged flow `f` (kg/s) and
     /// integral `i`. `closed` (a stopped branch) demands the valve closed
@@ -221,6 +258,7 @@ mod tests {
             flow_lag_s: 0.25,
             flow_span_kg_s: [-7.5, 7.5],
             deadband_width_m: 0.01,
+            level_integral_time_s: 120.,
             loop_average_lag_s: 1.,
             stem_time_constant_s: 0.1,
             stroke_per_second: 0.1,
@@ -266,14 +304,48 @@ mod tests {
         assert!((p.setpoint(s(564.816667)).value - 4.633).abs() < 1e-12);
         assert_eq!(p.setpoint(s(590.)).value, 6.);
         assert_eq!(p.setpoint(s(550.)).value, 4.633);
-        // On the setpoint both requests are below 3e-6 kg/s.
-        let (rc, rl) = c.requests(s(6.), s(6.));
+        let requests = |l: f64| {
+            let (c0, l0) = (
+                c.outer(true, s(l), s(6.), s(0.)),
+                c.outer(false, s(l), s(6.), s(0.)),
+            );
+            (c0.request, l0.request)
+        };
+        // With zero integrals the requests are the wiki's law: on the
+        // setpoint both are below 3e-6 kg/s.
+        let (rc, rl) = requests(6.);
         assert!(rc.value < 3e-6 && rl.value < 3e-6 && rc.value > 0.);
         // 0.5 m low: the wiki's clamp(5 (5.9 - 5.5), 0, 5) = 2 kg/s.
-        let (rc, rl) = c.requests(s(5.5), s(6.));
+        let (rc, rl) = requests(5.5);
         assert!((rc.value - 2.).abs() < 1e-12 && rl.value < 1e-15);
-        let (rc, rl) = c.requests(s(7.5), s(6.));
+        let (rc, rl) = requests(7.5);
         assert!((rl.value - 5.).abs() < 1e-12 && rc.value < 1e-15);
+    }
+
+    #[test]
+    fn the_outer_integral_removes_the_offset_and_tracks_outside_auto() {
+        let c = controller();
+        // 0.5 m low with no integral: 2 kg/s, and the integral grows at
+        // (G/Ti) e = 5/120 x 0.5 kg/s per s.
+        let o = c.outer(true, s(5.5), s(6.), s(0.));
+        assert!((o.request.value - 2.).abs() < 1e-12);
+        let rate = c.outer_rate(&o, o.request, true);
+        assert!((rate.value - 5. / 120. * 0.5).abs() < 1e-12);
+        // At the setpoint with the integral carrying the shrink's makeup the
+        // request is that makeup and the integral holds.
+        let o = c.outer(true, s(6.), s(6.), s(2. + 0.5));
+        assert!((o.request.value - 2.).abs() < 1e-12);
+        assert!(c.outer_rate(&o, o.request, true).value.abs() < 1e-12);
+        // Above the setpoint the request is zero, and the back-calculation
+        // holds the charging integral at G band, where the unsaturated
+        // request is the error's own proportional part.
+        let o = c.outer(true, s(7.), s(6.), s(0.5));
+        assert!(o.request.value < 1e-15);
+        assert!(c.outer_rate(&o, o.request, true).value.abs() < 1e-12);
+        // Outside AUTO the integral only tracks the request in force.
+        let o = c.outer(true, s(5.5), s(6.), s(0.));
+        let r = c.outer_rate(&o, s(1.), false);
+        assert!((r.value - (1. - 2.) / 120.).abs() < 1e-12);
     }
 
     #[test]

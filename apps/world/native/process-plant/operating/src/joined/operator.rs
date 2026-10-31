@@ -1962,9 +1962,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
 
     /// Plan r4 X4.2: the CVCS controller at its tracked AUTO point of the
     /// state `(t, y, 0)` (lags at their inputs, each branch at its AUTO
-    /// request with the stem passing it, integrals at zero error), written
-    /// into `y`; the tank stocks and every other block are not moved. For a
-    /// state carried onto a packet that adds the CVCS.
+    /// request with the stem passing it, integrals at zero error) and BLEND
+    /// at the primary's concentration there, written into `y`; the tank
+    /// masses and every other block are not moved. For a state carried onto
+    /// a packet that adds the CVCS.
     pub fn prepare_cvcs(&mut self, t: f64, y: &mut [f64]) -> Result<(), Failure> {
         self.blocks
             .cvcs
@@ -1976,21 +1977,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
         self.write_cvcs_preparation(y);
         Ok(())
     }
-    /// The CVCS controller's prepared coordinates into `y` (its tank stocks
-    /// keep their values).
+    /// The CVCS controller's prepared coordinates and BLEND's absorber
+    /// into `y` (the tank masses keep their values).
     fn write_cvcs_preparation(&self, y: &mut [f64]) {
         let o = self.blocks.offsets;
         if let Some(b) = &self.blocks.cvcs {
-            let (masses, absorbers) = Cvcs::stocks();
-            for (i, (v, scale)) in b
-                .prepared()
-                .iter()
-                .zip(&self.blocks.scales[5].coordinates)
-                .enumerate()
-            {
-                if !masses.contains(&i) && !absorbers.contains(&i) {
-                    y[o.cvcs + i] = v / scale;
-                }
+            let scales = &self.blocks.scales[5].coordinates;
+            for i in Cvcs::tracked() {
+                y[o.cvcs + i] = b.prepared()[i] / scales[i];
             }
         }
     }
