@@ -69,6 +69,35 @@ test('refuse unseen, incomplete, forged protocol groups and foreign or finished 
   expect(() => prepare([a])).toThrow('no longer running')
 })
 
+test('delayed archival preserves original invocation order and exact ledger recall without dropping absent prior identities', () => {
+  const { store, archive } = fixture()
+  // IDs deliberately sort opposite to invocation order; fixture timestamps are
+  // equal. The original protocol groups are the ordering authority.
+  const earlier = group(store, 'z-earlier', 'change'), later = group(store, 'a-later', 'change'), current = group(store, 'current')
+  const first = prepareWorkingContextCheckpoint({ input: { reason: 'keep earlier evidence active', retain: [{ toolCallId: 'z-earlier', reason: 'still needed' }] },
+    groups: [earlier, later, current], archive, checkpointCallId: 'checkpoint1', precedingModelId: 'model_1', ordinal: 1 })
+  expect(first.manifest.actionLedger.map(entry => entry.toolCallId)).toEqual(['a-later'])
+  const previous = { manifest: first.manifest, callId: 'checkpoint1' }
+  const second = prepareWorkingContextCheckpoint({ input: { reason: 'earlier evidence is now archived', retain: [{ toolCallId: 'current', reason: 'current record' }] },
+    groups: [earlier, later, current], archive, checkpointCallId: 'checkpoint2', precedingModelId: 'model_2', ordinal: 2,
+    previous, previouslyArchived: first.archivedGroupIds })
+  expect(second.manifest.actionLedger.map(entry => entry.toolCallId)).toEqual(['z-earlier', 'a-later'])
+  expect(second.manifest.actionLedger[1]).toEqual(first.manifest.actionLedger[0])
+  expect(second.manifest.actionLedger[0]).toEqual({ toolCallId: 'z-earlier', tool: earlier.calls[0]!.call.tool,
+    effects: [...earlier.calls[0]!.result.effects!], arguments: { turnId: 'turn', toolCallId: 'z-earlier', part: 'arguments' },
+    read: { turnId: 'turn', toolCallId: 'z-earlier', part: 'result' } })
+  const receipt = contextCheckpointReceiptForModel(second.manifest)
+  const reconstructed = receipt.returnedChangeGroups.flatMap(descriptor => descriptor.calls.map(call => ({ index: call.index, entry: {
+    toolCallId: call.toolCallId, tool: descriptor.tool, effects: descriptor.effects,
+    arguments: { turnId: receipt.turnId, toolCallId: call.toolCallId, part: 'arguments' },
+    read: { turnId: receipt.turnId, toolCallId: call.toolCallId, part: 'result' },
+  } }))).sort((a, b) => a.index - b.index).map(call => call.entry)
+  expect(reconstructed).toEqual(second.manifest.actionLedger)
+  expect(() => prepareWorkingContextCheckpoint({ input: { reason: 'invalid missing original group', retain: [{ toolCallId: 'current', reason: 'current record' }] },
+    groups: [earlier, current], archive, checkpointCallId: 'checkpoint3', precedingModelId: 'model_3', ordinal: 3, previous,
+  })).toThrow('accumulated invocation a-later is absent from the original turn groups')
+})
+
 test('model receipt factors only exact cumulative ledger descriptors and reconstructs every invocation in original order', () => {
   const { store, archive } = fixture(); const a = group(store, 'a')
   const base = prepareWorkingContextCheckpoint({ input: { reason: 'literal semantic boundary', retain: [{ toolCallId: 'a', reason: 'literal model reason' }] },

@@ -184,10 +184,19 @@ export const prepareWorkingContextCheckpoint = (config: {
     toolCallId: c.call.callId, tool: c.call.tool, effects: [...c.result.effects],
     arguments: { ...recall(config.archive.turnId, c.call.callId), part: 'arguments' }, read: recall(config.archive.turnId, c.call.callId),
   })
+  for (const callId of ledger.keys()) if (!byCall.has(callId)) {
+    throw workingContextArchiveFailure(`accumulated invocation ${callId} is absent from the original turn groups`)
+  }
+  // Archival can happen later than invocation. Order the cumulative ledger by
+  // the original complete protocol groups, never by first archival or ID text.
+  const actionLedger = config.groups.flatMap(group => group.calls.flatMap(({ call }) => {
+    const entry = ledger.get(call.callId)
+    return entry ? [entry] : []
+  }))
   const manifest = contextCheckpointManifestSchema.parse({
     checkpointId: `context_${config.ordinal}`, turnId: config.archive.turnId, precedingModelId: config.precedingModelId, reason: input.reason,
     ...(config.previous ? { previousCheckpoint: { checkpointId: config.previous.manifest.checkpointId, read: recall(config.archive.turnId, config.previous.callId) } } : {}),
-    retainedGroups, archivedGroups, actionLedger: [...ledger.values()],
+    retainedGroups, archivedGroups, actionLedger,
     counts: { retainedGroups: retainedGroups.length, archivedGroups: archivedGroups.length,
       retainedCalls: retainedGroups.reduce((n, g) => n + g.callIds.length, 0), archivedCalls: archivedGroups.reduce((n, g) => n + g.callIds.length, 0) },
   })
