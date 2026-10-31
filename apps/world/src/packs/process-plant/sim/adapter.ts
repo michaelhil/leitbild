@@ -456,8 +456,22 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     for (const { plantId, failure } of earlyEngineFailures.splice(0)) failNativePlant(plantId, failure)
 
     const noExchanges: ReadonlyMap<string, { readonly simulatedMs: number; readonly wallMs: number }> = new Map()
+    /**
+     * While an LD-01 exchange is in flight the wall tick does nothing: it would read a Run clock that the
+     * maximum-pace slice awaiting this exchange has not moved yet. Only an LD-01 exchange awaits inside an
+     * advance; with no LD-01 Plant this is never set, so every other Plant ticks exactly as before.
+     */
+    let nativeExchangeInFlight = false
     /** Each LD-01 Plant's exchange with its unit, all at once: its ramps, its queued commands, one ADVANCE. */
     const exchangeNativePlants = async (elapsedMs: number): Promise<ReadonlyMap<string, { readonly simulatedMs: number; readonly wallMs: number }>> => {
+      nativeExchangeInFlight = true
+      try {
+        return await exchangeNativePlantsOnce(elapsedMs)
+      } finally {
+        nativeExchangeInFlight = false
+      }
+    }
+    const exchangeNativePlantsOnce = async (elapsedMs: number): Promise<ReadonlyMap<string, { readonly simulatedMs: number; readonly wallMs: number }>> => {
       const exchanged = new Map<string, { readonly simulatedMs: number; readonly wallMs: number }>()
       const engines = [...nativeEngines]
       const settled = await Promise.allSettled(engines.map(async ([plantId, engine]) => {
@@ -478,9 +492,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       if (runtimeFailureReason !== null) return
       const simulationMs = targetSimulationMs
       const elapsedMs = Math.max(0, simulationMs - lastSimulationMs)
-      // Never backward: a wall-paced tick reading the Run clock while a maximum-pace slice it trails is still exchanging
-      // would otherwise rewind the mark, and the next slice would advance that time a second time.
-      lastSimulationMs = Math.max(lastSimulationMs, simulationMs)
+      lastSimulationMs = simulationMs
       if (elapsedMs <= 0 || plants.size === 0) return
       for (const connection of systemConnections) {
         const plantId = String(connection.system.objectId)
@@ -540,6 +552,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     }
 
     const interval = setInterval(() => {
+      if (nativeExchangeInFlight) return
       const runAdvance = async (): Promise<void> => {
         try {
           await advance()

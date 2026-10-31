@@ -165,6 +165,23 @@ describe('an LD-01 Plant in a Run', () => {
     }
   })
 
+  test('at maximum pace, a wall tick during a slow exchange neither rewinds nor repeats the slice (no clock-mark guard needed)', async () => {
+    // Each ADVANCE takes 1.5 s of wall time, longer than the adapter's 1 s wall tick, so a tick fires while a
+    // slice's exchange is in flight and before the Run clock moves. Two 1 s slices must advance the unit 2 s.
+    process.env[ld01UnitArtifactEnv] = await artifactWith({ advanceDelayMs: 1_500 })
+    const object = expand()
+    const clock = pausedClock()
+    const connection = await connect(object, memoryStore(), clock)
+    try {
+      await advance(connection, clock, 1_000)
+      await advance(connection, clock, 1_000)
+      // As after one 1 s slice (15.0011 above), two slices read 15.0021; a rewound mark would read 15.0031.
+      expect(await read(connection, 'PROTECTION.pressure')).toBeCloseTo(15.0021, 12)
+    } finally {
+      await connection.close()
+    }
+  }, 20_000)
+
   test('restored where its artifact is gone, connects as "engine unavailable" and keeps its saved state', async () => {
     process.env[ld01UnitArtifactEnv] = await artifactWith({})
     const object = expand()

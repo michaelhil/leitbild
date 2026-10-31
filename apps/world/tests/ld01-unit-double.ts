@@ -1,8 +1,8 @@
 // A test double of the `ld01-unit` child (water-ffi src/bin/ld01-unit.rs): the same framed protocol on
 // stdin/stdout, a toy unit behind it. Test-only: the native engine's tests spawn it with `bun` in place of the
 // artifact's binary. LOAD's `inputs.packet` names its fixture: the channels with a value and a rate each
-// (value + rate·(t − t0)), the channel a command sets to 1 from its time on, and the times at which it kills
-// itself or refuses an ADVANCE.
+// (value + rate·(t − t0)), the channel a command sets to 1 from its time on, the times at which it kills
+// itself or refuses an ADVANCE, and a wall delay before each ADVANCE reply (a slow exchange).
 import { readFileSync } from 'node:fs'
 
 interface Fixture {
@@ -11,6 +11,7 @@ interface Fixture {
   readonly channels: ReadonlyArray<{ readonly id: string; readonly unit: string; readonly value: number; readonly rate: number; readonly setBy?: string }>
   readonly dieAtS?: number
   readonly refuseAdvanceAtS?: number
+  readonly advanceDelayMs?: number
 }
 
 const bits = (x: number): string => {
@@ -132,6 +133,7 @@ serve: for await (const chunk of Bun.stdin.stream()) {
       closed = true
       break serve
     }
+    if (op === 3 && unit?.fixture.advanceDelayMs !== undefined) await Bun.sleep(unit.fixture.advanceDelayMs)
     process.stdout.write(frame(0, seq, outcome))
   }
 }
