@@ -1133,6 +1133,7 @@ fn d3_at(
             &at.neutrons,
             at.conditions(),
             e,
+            0.,
         ) {
             Ok(m) => {
                 let r = m.reactivity_gain.len();

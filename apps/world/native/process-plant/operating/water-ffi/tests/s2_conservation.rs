@@ -135,8 +135,22 @@ fn s2_identities_close_and_a_dropped_term_is_caught() {
         );
         json!({"exterior_loss_w": loss.value, "unit_energy": mutated.unit_energy.json()})
     };
+    // B1 (lane ROD, NUC review): with the stuck-cluster term applied the
+    // population rows carry sum dk N / Lambda, and the kinetics identity
+    // still closes.
+    let dk = 0.014_936_485_421_591_805;
+    c.joined
+        .nuclear_mut()
+        .apply_stuck_worth(dk)
+        .expect("B1 term");
+    let b1 = c
+        .joined
+        .account(&plan, 0., &c.y, &c.yp)
+        .expect("account with the B1 term");
+    assert!(b1.kinetics.closes(bound), "{}", b1.kinetics.json());
     let receipt = json!({
         "kind": "s2-conservation-identities-NOT-EVIDENCE",
+        "b1_kinetics_with_term": {"stuck_worth_dk": dk, "identity": b1.kinetics.json()},
         "provenance": provenance::git_provenance(),
         "packet": c.packet.path, "packet_sha256": c.packet.sha256,
         "declaration": declaration.receipt()["page"], "bound_relative": bound,

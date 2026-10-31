@@ -52,6 +52,26 @@ export const parseLoopFlowChannel = (text: string) => z.object({
   lag_s: positive, spanFractionOfNominal: band, quantum_kg_s: positive, indeterminateBand_kg_s: nonnegative,
   supply: z.object({ A: z.string(), B: z.string() }).strict(),
 }).strict().parse(configurationBlock(text, 'ld01-loop-flow-channel'))
+// Plan r4 tag map: the bank channels and the steam-valve position convention
+// (operational-observations.md).
+export const parseBankChannels = (text: string) => z.object({
+  position: z.object({ lag_s: positive, span: band, quantum: z.null(), supply: z.string() }).strict(),
+  inserted: z.object({ supply: z.string() }).strict(),
+  sample_s: positive, transport_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-bank-channels'))
+export const parseSteamValvePositionChannels = (text: string) => z.object({
+  lag_s: positive, span_percent: band, quantum_percent: positive, sample_s: positive, transport_s: positive,
+  supply: z.string(), compiled: z.array(z.literal('LD01.TG.STOP.POS')),
+}).strict().parse(configurationBlock(text, 'ld01-steam-valve-position-channels'))
+// Plan r4 tag map: LD01.CORE.NI.SHUTDOWN's SOURCE-pulse path
+// (nuclear-observation-apparatus.md).
+export const parseObservationWindow = (text: string) => z.object({
+  window_s: positive, alpha: positive, theta: positive, minimumExcessCount: positive, backgroundRange_s: z.tuple([nonnegative, nonnegative]),
+  deadtime_s: positive, maximumOccupancy: positive, sample_s: positive, noiseBound_A: positive, commissionOffsetBound_A: positive, saturation_A: positive,
+}).strict().parse(configurationBlock(text, 'reference-nuclear-observation-window'))
+export const parseSourceRangePulse = (text: string) => z.object({
+  rrefEventsPerS: positive.nullable(), darkPerS: nonnegative, supply: z.string(), seed: z.number().int().nonnegative(), maximumAge_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-source-range-pulse'))
 export const parseTurbineStateReport = (text: string) => z.object({
   sample_s: positive, transport_s: positive, maximumAge_s: positive, recovery_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-turbine-state-report'))
@@ -152,8 +172,14 @@ export const packetSchema = z.object({
   mechanics: z.object({ faces: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
   hydraulics: z.object({ sections: z.array(z.object({ id: z.string(), parameters: z.object({ pump: z.unknown() }).passthrough() }).passthrough()) }).passthrough(),
   secondary: z.object({ steamGenerators: z.array(z.object({ id: z.string() }).passthrough()),
-    apparentLevel: z.object({ indication: z.object({ indicatedLevelArea_m2: finite }).passthrough() }).passthrough().optional() }).passthrough(),
+    apparentLevel: z.object({ indication: z.object({ indicatedLevelArea_m2: finite }).passthrough() }).passthrough().optional(),
+    steamAdmission: z.object({ stopTravel_s: positive }).passthrough().optional() }).passthrough(),
   feedback_metadata: z.object({ regions: z.array(z.object({ z0_m: finite, z1_m: finite }).passthrough()) }).passthrough(),
+  // Plan r4 X4.2: a packet composing the CVCS (reference-design-operating-cvcs.ts).
+  cvcs: z.object({ controller: z.object({ flowLag_s: finite, flowSpan_kg_s: z.tuple([finite, finite]) }).passthrough() }).passthrough().optional(),
+  // Plan r4 tag map: the bank's normal stroke and the STOP's travel, when the
+  // packet composes the rods and the steam admission.
+  rods: z.object({ normal_travel_m: positive }).passthrough().optional(),
 }).passthrough()
 type Packet = z.infer<typeof packetSchema>
 
@@ -197,6 +223,17 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const interlock = parseReactorTripTurbineTrip(texts['safety/protection-and-command-precedence.md'])
   const underspeed = parseRcpUnderspeed(texts['safety/source-and-primary-protection.md'])
   const cmt = parseCmtActuation(texts['safety/source-and-primary-protection.md'])
+  const bank = parseBankChannels(texts['systems/instrumentation/operational-observations.md'])
+  const window = parseObservationWindow(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
+  const pulse = parseSourceRangePulse(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
+  // The window's sample and the path's transport are the canonical 0.1 s frontend.
+  const sourceRange = pulse.rrefEventsPerS === null ? null : {
+    id: 'LD01.CORE.NI.SHUTDOWN', supply: pulse.supply, rref_events_per_s: pulse.rrefEventsPerS, dark_per_s: pulse.darkPerS,
+    deadtime_s: window.deadtime_s, window_s: window.window_s, alpha: window.alpha, theta: window.theta,
+    minimum_excess_count: window.minimumExcessCount, background_per_s: window.backgroundRange_s, maximum_occupancy: window.maximumOccupancy,
+    sample_s: window.sample_s, transport_s: channel.transport_s, maximum_age_s: pulse.maximumAge_s, seed: pulse.seed,
+  }
+  const valves = parseSteamValvePositionChannels(texts['systems/instrumentation/operational-observations.md'])
   if (!(cmt.sPressure_Pa < protection.low_pa)) throw Error('The "S" pressure must lie below the low-pressure trip (R12-B3)')
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
@@ -213,7 +250,9 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     ['proxy sampling', proxyPaths.sample_s], ['proxy transport', proxyPaths.transport_s], ['proxy age', proxyPaths.maximumAge_s],
     ['proxy recovery', proxyPaths.recovery_s], ['turbine trip on reactor trip', interlock.delay_s], ['underspeed', underspeed.qualification_s],
     ['underspeed reset', underspeed.resetDuration_s], ['S pressure', cmt.sQualification_s],
-    ['low-2 level', cmt.low2Qualification_s], ['high-3 PRHR timer', prhrActuation.high3Timer_s]] as const) wholeFrames(name, v, frame_s)
+    ['low-2 level', cmt.low2Qualification_s], ['high-3 PRHR timer', prhrActuation.high3Timer_s],
+    ['bank sampling', bank.sample_s], ['bank transport', bank.transport_s],
+    ['valve sampling', valves.sample_s], ['valve transport', valves.transport_s]] as const) wholeFrames(name, v, frame_s)
   // R12-D2: the chain reproduces AP1000's total delay exactly.
   if (Math.abs(underspeed.speedLag_s + channel.sample_s + channel.transport_s + underspeed.qualification_s - underspeed.totalDelay_s) > 1e-12)
     throw Error('RCP underspeed chain (lag + sample + transport + qualification) disagrees with its total delay')
@@ -287,6 +326,23 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
     }
   })
+  // Plan r4 tag map: acquired, observed only (no function reads them); the
+  // page-wide protective age and recovery, as the loop FTs take them.
+  const bankFamilies = packet.rods ? [{
+    id: 'LD01.CORE.BANK.POS', quantity: { bank_position: { normal_travel_m: packet.rods.normal_travel_m } },
+    channels: [{ id: 'LD01.CORE.BANK.POS', supply: bank.position.supply }],
+    channel: { lag_s: bank.position.lag_s, min: bank.position.span[0], max: bank.position.span[1], quantum: null,
+      indeterminate_band: null, sample_s: bank.sample_s, transport_s: bank.transport_s },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }] : []
+  const stop = packet.secondary.steamAdmission
+  const valveFamilies = stop ? [{
+    id: 'LD01.TG.STOP.POS', quantity: { stop_valve_position: { stop_travel_s: stop.stopTravel_s } },
+    channels: [{ id: 'LD01.TG.STOP.POS', supply: valves.supply }],
+    channel: { lag_s: valves.lag_s, min: valves.span_percent[0], max: valves.span_percent[1], quantum: valves.quantum_percent,
+      indeterminate_band: null, sample_s: valves.sample_s, transport_s: valves.transport_s },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }] : []
   const proxyFamily = {
     id: 'LD01.CORE.POWER.P',
     quantity: { current_proxy: { weights, fref_events_per_s: reference.Fref_events_per_s } },
@@ -347,6 +403,19 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     })),
   ]
   const functions = rawFunctions.map(f => ({ ...f, effects: effects(f.id, f.effects) }))
+  // Plan r4 X4.2: with the packet's CVCS, the two normal-inventory FTs, one
+  // I2 channel each ("Each branch has a signed effective total-stream
+  // measured-flow channel, −7.5 to +7.5 kg/s range and 0.25 s lag, on I2",
+  // inventory-and-chemistry.md, as the packet's ld01-cvcs-controller carries
+  // it); observed only, no function reads them.
+  const cvcsFamilies = packet.cvcs ? (['Charging', 'Letdown'] as const).map(branch => {
+    const id = branch === 'Charging' ? 'LD01.INV.CHARGE.FT' : 'LD01.INV.LETDOWN.FT'
+    const c = packet.cvcs!.controller
+    return { id, quantity: { cvcs_flow: { branch } }, channels: [{ id, supply: 'I2' }],
+      channel: { lag_s: c.flowLag_s, min: c.flowSpan_kg_s[0], max: c.flowSpan_kg_s[1], quantum: null, indeterminate_band: null,
+        sample_s: channel.sample_s, transport_s: channel.transport_s },
+      maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s }
+  }) : []
   for (const c of prhrActuation.causes) if (!functions.some(f => f.id === c)) throw Error(`ld01-prhr-actuation names ${c}, which is not compiled`)
   return {
     identity: 'ld01-s3-ic',
@@ -357,12 +426,16 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       channel: { lag_s: channel.lag_s, min: channel.min_pa, max: channel.max_pa, quantum: channel.quantum_pa,
         indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies],
+    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies, ...bankFamilies, ...valveFamilies, ...cvcsFamilies],
     reports: [{
       id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B',
       sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,
       basis: 'ld01-turbine-state-report (reactor-trip-and-hold.md); no qualification duration is selected for LD01.PROT.TG.TRIP',
-    }],
+    }, ...(packet.rods ? [{
+      id: 'LD01.CORE.BANK.INSERTED', source: 'bank_inserted', supply: bank.inserted.supply,
+      sample_s: bank.sample_s, transport_s: bank.transport_s, maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+      basis: 'ld01-bank-channels (operational-observations.md); the page-wide protective age and recovery; observed only',
+    }] : [])],
     functions,
     monitors: pzrLevel.monitors,
     holding: {
@@ -371,7 +444,9 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     },
     turbine_trip_on_reactor_trip: { cause: interlock.cause, delay_s: interlock.delay_s,
       basis: 'ld01-reactor-trip-turbine-trip (protection-and-command-precedence.md, R12-A2): LD01.TRIP.HOLD loss requests LD01.TG TRIP after delay_s; AP1000 DCD Rev. 19 Tier 2 15.0.14' },
-    missing: OPEN_ITEMS,
+    ...(sourceRange ? { source_range: sourceRange } : {}),
+    missing: sourceRange ? OPEN_ITEMS : [...OPEN_ITEMS, { item: 'LD01.CORE.NI.SHUTDOWN regional Rref',
+      note: 'ld01-source-range-pulse rrefEventsPerS is open: the regional collected-event intensity at the original reference field (NUC); no SOURCE path is compiled until it is filled' }],
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
       s2_holding_boundary_replaced_s: s2.turbineTripToOpening_s, converter_region_weights: weights,
       fref_check_events_per_s: fref, flow_reset_band_upper: 'the FT span top (the reset needs only FT above 0.80 nominal)',

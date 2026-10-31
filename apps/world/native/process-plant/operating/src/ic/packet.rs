@@ -26,6 +26,10 @@ pub struct Section {
     /// The reactor-trip → turbine-trip interlock (`ld01-reactor-trip-turbine-trip`,
     /// owner R12-A2).
     pub turbine_trip_on_reactor_trip: TurbineTripOnReactorTrip,
+    /// `LD01.CORE.NI.SHUTDOWN`'s SOURCE-pulse path (plan r4 tag map), when
+    /// the regional reference intensity is selected.
+    #[serde(default)]
+    pub source_range: Option<SourceRangeSpec>,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
     pub provenance: Vec<Value>,
@@ -85,6 +89,21 @@ pub enum Quantity {
     /// hydraulic sections with a pump, in packet order), `rotor_id` its
     /// section. Linear in the rotor's angular-momentum coordinate.
     PumpSpeed { rotor: usize, rotor_id: String },
+    /// Plan r4 X4.2 (for PHYS): a CVCS branch's signed effective total-stream
+    /// flow at its COLD.A boundary (`LD01.INV.CHARGE.FT`,
+    /// `LD01.INV.LETDOWN.FT`), kg/s: the flow the CVCS owner delivers at its
+    /// stem and COLD.A's pressure; the packet must compose the CVCS.
+    CvcsFlow { branch: crate::joined::cvcs::Branch },
+    /// `LD01.CORE.BANK.POS` (plan r4 tag map, ld01-bank-channels): the mean
+    /// stem travel over every cluster as a fraction of the normal stroke
+    /// `normal_travel_m` (the rods packet's), 0 seated. Linear in the
+    /// clusters' travel coordinates.
+    BankPosition { normal_travel_m: f64 },
+    /// `LD01.TG.STOP.POS` (ld01-steam-valve-position-channels): the STOP's
+    /// stroke in percent, 100 until the latched TRIP, then the linear travel
+    /// to 0 over `stop_travel_s` (the secondary's steam-admission law). A
+    /// function of time and the latched TRIP, read from the live secondary.
+    StopValvePosition { stop_travel_s: f64 },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -108,12 +127,40 @@ pub struct Family {
     pub recovery_s: f64,
 }
 
+/// The SOURCE-pulse path's selections (reference-nuclear-observation-window,
+/// ld01-source-range-pulse): `Rref` the regional model's collected-event
+/// intensity at the original reference field, so the detected rate is
+/// `Rref · proxy`.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceRangeSpec {
+    pub id: String,
+    pub supply: String,
+    pub rref_events_per_s: f64,
+    pub dark_per_s: f64,
+    pub deadtime_s: f64,
+    pub window_s: f64,
+    pub alpha: f64,
+    pub theta: f64,
+    pub minimum_excess_count: f64,
+    pub background_per_s: [f64; 2],
+    pub maximum_occupancy: f64,
+    pub sample_s: f64,
+    pub transport_s: f64,
+    pub maximum_age_s: f64,
+    pub seed: u64,
+}
+
 /// The source of a discrete state report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportSource {
     /// The ACT.B turbine controls' retained trip memory (`LD01.TG` TRIP).
     TurbineRetainedTrip,
+    /// `LD01.CORE.BANK.INSERTED` (ld01-bank-channels): the series contact
+    /// chain, closed only when every cluster is seated (the rods owner's
+    /// modes, read live after each restart).
+    BankInserted,
 }
 
 #[derive(Clone, Debug, Deserialize)]

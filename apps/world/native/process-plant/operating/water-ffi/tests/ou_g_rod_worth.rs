@@ -107,6 +107,7 @@ fn rod_position_and_shutdown_margins() {
             &neutrons,
             conditions,
             &e,
+            0.,
         )
         .expect("margin");
         let r = m.reactivity_gain.len();
@@ -331,6 +332,7 @@ fn held_worth_by_pose() {
             &neutrons,
             conditions,
             &e,
+            0.,
         )
         .expect("margin");
         let r = m.reactivity_gain.len();

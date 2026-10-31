@@ -24,6 +24,7 @@ pub mod division;
 pub mod holding;
 pub mod packet;
 pub mod protection;
+pub mod source_range;
 pub mod vote;
 
 /// The declared I&C frame: instants `k · period_s`, integer indexed, on the

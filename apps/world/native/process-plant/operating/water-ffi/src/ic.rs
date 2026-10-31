@@ -29,10 +29,11 @@
 //! follows it (owner R12-A2) becomes the declared `TurbineTripAcquired` at
 //! its own frame instant.
 use crate::frame::{Action, Change, Class, Client, Dense};
+use crate::joined::JoinedSystem;
 use leitbild_operating_plant::{
     ic::{
         acquisition::Overrange,
-        packet::{Quantity, Section},
+        packet::{Quantity, ReportSource, Section},
         protection::Protection,
     },
     joined::{block::Command, operator::Joined},
@@ -80,8 +81,27 @@ enum Observation {
         regions: Vec<ProxyRegion>,
         factor: f64,
     },
+    /// Plan r4 X4.2: a CVCS branch's delivered flow at its stem and COLD.A's
+    /// pressure (coordinate, scale each), by the owner's own law in the
+    /// owner's live modes: `cvcs` is the owner as composed, replaced by the
+    /// joined operator's after every restart ([`Client::restarted`]), so a
+    /// located or commanded stop is read from its instant on.
+    CvcsFlow {
+        cvcs: Box<leitbild_operating_plant::joined::cvcs::Cvcs>,
+        branch: leitbild_operating_plant::joined::cvcs::Branch,
+        stem: (usize, f64),
+        pressure: (usize, f64),
+    },
+    /// `LD01.TG.STOP.POS`: the STOP's stroke in percent, a function of time
+    /// and the latched TRIP (`trip_s`, refreshed after every restart), never
+    /// of a coordinate.
+    StopPosition { trip_s: Option<f64>, travel_s: f64 },
 }
 impl Observation {
+    /// The STOP's stroke at `t`, percent.
+    fn stop_percent(trip_s: Option<f64>, travel_s: f64, t: f64) -> f64 {
+        100. * leitbild_operating_plant::sg::secondary::steam_fraction(trip_s, travel_s, t)
+    }
     fn value(&self, y: &[f64]) -> Result<f64, String> {
         match self {
             Observation::Linear(terms) => Ok(terms.iter().map(|(i, c)| y[*i] * c).sum()),
@@ -93,11 +113,24 @@ impl Observation {
                 nominal,
             } => Ok(mass_flow(y, *impulse, *from, *to, supports)? / nominal),
             Observation::Proxy { regions, factor } => Ok(factor * events(y, regions)),
+            Observation::CvcsFlow {
+                cvcs,
+                branch,
+                stem,
+                pressure,
+            } => cvcs
+                .delivered_flow(*branch, y[stem.0] * stem.1, y[pressure.0] * pressure.1)
+                .map_err(|f| format!("{f:?}")),
             Observation::PzrLevel { a, b, span, .. } => {
                 let (low, high) = self.tap_pressures(y)?;
                 // Each interface reads at most its span limit (status below).
                 let clamp = |p: f64| p.clamp(span[0], span[1]);
                 Ok(a * (clamp(low) - clamp(high)) + b)
+            }
+            // Fully open until a TRIP latches; after it, the stroke needs a time.
+            Observation::StopPosition { trip_s: None, .. } => Ok(100.),
+            Observation::StopPosition { .. } => {
+                Err("the STOP position after the TRIP is read at a time, not a state".into())
             }
         }
     }
@@ -137,6 +170,10 @@ impl Observation {
     fn linear(&self) -> bool {
         matches!(self, Observation::Linear(_))
     }
+    /// Read from time and an owner's latched state, not from coordinates.
+    fn timed(&self) -> bool {
+        matches!(self, Observation::StopPosition { .. })
+    }
     /// Every solver coordinate `value` reads.
     fn coordinates(&self) -> Vec<usize> {
         match self {
@@ -158,6 +195,10 @@ impl Observation {
                 })
                 .collect(),
             Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
+            Observation::CvcsFlow {
+                stem, pressure, ..
+            } => vec![stem.0, pressure.0],
+            Observation::StopPosition { .. } => Vec::new(),
         }
     }
 }
@@ -277,6 +318,10 @@ pub struct ProtectionClient {
     taylor: Vec<Vec<f64>>,
     /// The coordinates the nonlinear observations read (sorted, distinct).
     nonlinear_read: Vec<usize>,
+    /// The section declares the bank inserted report (read after restarts).
+    bank_report: bool,
+    /// The current proxy's place in `observed` (the SOURCE path's rate).
+    proxy_index: Option<usize>,
     derivatives: Vec<Vec<f64>>,
 }
 impl ProtectionClient {
@@ -481,6 +526,68 @@ impl ProtectionClient {
                     );
                     Observation::Linear(vec![(i, scales[i] / reference)])
                 }
+                Quantity::CvcsFlow { branch } => {
+                    let cvcs = joined
+                        .cvcs()
+                        .ok_or("a CVCS flow channel needs the packet's CVCS")?;
+                    let cell = cvcs.port_cell();
+                    // The branches meet COLD.A at its own reference elevation,
+                    // where the port pressure is the cell's pressure.
+                    if net.elevations()[cell] != cvcs.section().port.elevation_m {
+                        return Err(format!(
+                            "{}: the CVCS port lies off the cell's reference elevation",
+                            f.id
+                        ));
+                    }
+                    let p = net.cell_layout[cell].base;
+                    let x = joined.offsets().cvcs
+                        + leitbild_operating_plant::joined::cvcs::Cvcs::stem_coordinate(*branch);
+                    references.insert(f.id.clone(), json!({"branch": branch, "port": cvcs.section().port.id,
+                        "basis": "the CVCS owner's delivered flow at the stem and COLD.A's pressure (plan r4 X4.2)"}));
+                    Observation::CvcsFlow {
+                        cvcs: Box::new(cvcs.clone()),
+                        branch: *branch,
+                        stem: (x, scales[x]),
+                        pressure: (p, scales[p]),
+                    }
+                }
+                Quantity::BankPosition { normal_travel_m } => {
+                    let rods = joined
+                        .rods()
+                        .ok_or("a bank position channel needs the rods")?;
+                    let n = rods.clusters();
+                    if !(normal_travel_m.is_finite() && *normal_travel_m > 0. && n > 0) {
+                        return Err(format!(
+                            "{}: stroke {normal_travel_m} m over {n} clusters",
+                            f.id
+                        ));
+                    }
+                    let o = joined.offsets().rods;
+                    references.insert(f.id.clone(), json!({"clusters": n, "normal_travel_m": normal_travel_m,
+                        "basis": "mean stem travel over every cluster over the normal stroke (ld01-bank-channels)"}));
+                    Observation::Linear(
+                        (0..n)
+                            .map(|c| {
+                                let i = o + rods.cluster_coordinate(c);
+                                (i, scales[i] / (n as f64 * normal_travel_m))
+                            })
+                            .collect(),
+                    )
+                }
+                Quantity::StopValvePosition { stop_travel_s } => {
+                    let secondary = joined
+                        .secondary()
+                        .ok_or("a STOP position channel needs the secondary")?;
+                    if !(stop_travel_s.is_finite() && *stop_travel_s > 0.) {
+                        return Err(format!("{}: STOP travel {stop_travel_s} s", f.id));
+                    }
+                    references.insert(f.id.clone(), json!({"stop_travel_s": stop_travel_s,
+                        "basis": "the secondary's STOP law: 100 % until the TRIP, linear to 0 over the travel (ld01-steam-valve-position-channels)"}));
+                    Observation::StopPosition {
+                        trip_s: secondary.turbine_trip_time(),
+                        travel_s: *stop_travel_s,
+                    }
+                }
             };
             if !observed.iter().any(|(q, _)| *q == f.quantity) {
                 observed.push((f.quantity.clone(), observation));
@@ -494,10 +601,24 @@ impl ProtectionClient {
                 .1
                 .value(y)
         })?;
+        let proxy_index = observed
+            .iter()
+            .position(|(q, _)| matches!(q, Quantity::CurrentProxy { .. }));
+        if section.source_range.is_some() && proxy_index.is_none() {
+            return Err("the SOURCE-pulse path needs the current proxy family".into());
+        }
+        let mut protection = protection;
+        let bank_report = section
+            .reports
+            .iter()
+            .any(|r| r.source == ReportSource::BankInserted);
+        if bank_report {
+            protection.set_bank_seated(bank_seated(joined)?);
+        }
         let n = y.len();
         let mut nonlinear_read: Vec<usize> = observed
             .iter()
-            .filter(|(_, o)| !o.linear())
+            .filter(|(_, o)| !o.linear() && !o.timed())
             .flat_map(|(_, o)| o.coordinates())
             .collect();
         nonlinear_read.sort_unstable();
@@ -511,6 +632,8 @@ impl ProtectionClient {
             states: Vec::new(),
             taylor: Vec::new(),
             nonlinear_read,
+            bank_report,
+            proxy_index,
         })
     }
     /// HOOK (GATE, S3 case harness; KERN to reconcile): the dense-output
@@ -546,7 +669,8 @@ impl ProtectionClient {
 }
 fn values_of(observed: &[(Quantity, Observation)], y: &[f64]) -> Result<Value, String> {
     let mut out = serde_json::Map::new();
-    for (q, o) in observed {
+    // A timed reading (the STOP position) has no value at a state alone.
+    for (q, o) in observed.iter().filter(|(_, o)| !o.timed()) {
         out.insert(format!("{q:?}"), json!(o.value(y)?));
     }
     Ok(Value::Object(out))
@@ -564,7 +688,7 @@ impl Readings {
         values_of(&self.observed, y)
     }
 }
-impl<S> Client<S> for ProtectionClient {
+impl<S: JoinedSystem> Client<S> for ProtectionClient {
     fn name(&self) -> &str {
         "acquired protection"
     }
@@ -589,7 +713,19 @@ impl<S> Client<S> for ProtectionClient {
                 }
             }
         }
-        if self.observed.iter().any(|(_, o)| !o.linear()) {
+        for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
+            // Linear in time inside one dense interval: the TRIP latches at a
+            // restart and the STOP ramp's end is an owner time event.
+            if let Observation::StopPosition { trip_s, travel_s } = o {
+                let (a, b) = (
+                    Observation::stop_percent(*trip_s, *travel_s, from),
+                    Observation::stop_percent(*trip_s, *travel_s, to),
+                );
+                d.clear();
+                d.extend([a, (b - a) / (to - from)]);
+            }
+        }
+        if self.observed.iter().any(|(_, o)| !o.linear() && !o.timed()) {
             let offsets = lobatto_offsets(to - from, order.max(1));
             self.states.resize(offsets.len(), Vec::new());
             for (state, s) in self.states.iter_mut().zip(&offsets) {
@@ -598,7 +734,7 @@ impl<S> Client<S> for ProtectionClient {
             }
             let mut values = vec![0.; offsets.len()];
             for (d, (_, o)) in self.derivatives.iter_mut().zip(&self.observed) {
-                if !o.linear() {
+                if !o.linear() && !o.timed() {
                     for (v, state) in values.iter_mut().zip(&self.states) {
                         *v = o.value(state)?;
                     }
@@ -608,6 +744,10 @@ impl<S> Client<S> for ProtectionClient {
         }
         for (d, (q, _)) in self.derivatives.iter().zip(&self.observed) {
             self.protection.advance(q, to - from, d)?;
+        }
+        // The SOURCE-pulse path's detected events follow the current proxy.
+        if let (Some(i), Some(source)) = (self.proxy_index, self.protection.source.as_mut()) {
+            source.advance(from, to, &self.derivatives[i])?;
         }
         Ok(())
     }
@@ -656,6 +796,48 @@ impl<S> Client<S> for ProtectionClient {
         }
         Ok(Vec::new())
     }
+    /// The owners' discrete state a reading depends on, after the restart
+    /// at `t`: the latched TRIP (STOP position), the seated chain and the
+    /// CVCS branches' modes.
+    fn restarted(&mut self, _t: f64, system: &S) -> Result<(), String> {
+        let joined = &system.integrated().joined;
+        for (_, o) in &mut self.observed {
+            match o {
+                Observation::StopPosition { trip_s, .. } => {
+                    *trip_s = joined
+                        .secondary()
+                        .ok_or("a STOP position channel without the secondary")?
+                        .turbine_trip_time();
+                }
+                // PHYS 27062e3c8 (plan r4 X4.2): the CVCS branches' stops
+                // and requests are read live, the owner's state after the
+                // restart at `t`.
+                Observation::CvcsFlow { cvcs, .. } => {
+                    **cvcs = joined
+                        .cvcs()
+                        .ok_or("a CVCS flow channel without the joined CVCS")?
+                        .clone();
+                }
+                _ => {}
+            }
+        }
+        if self.bank_report {
+            self.protection.set_bank_seated(bank_seated(joined)?);
+        }
+        Ok(())
+    }
+}
+
+/// Every cluster seated, from the rods owner's discrete modes.
+fn bank_seated<P: Properties + WaterProperties>(joined: &Joined<P>) -> Result<bool, String> {
+    let rods = joined
+        .rods()
+        .ok_or("the bank inserted report needs the rods")?;
+    let state = rods.discrete_state();
+    let modes = state["modes"]
+        .as_array()
+        .ok_or("the rods' discrete state lists no modes")?;
+    Ok(!modes.is_empty() && modes.iter().all(|m| m.as_str() == Some("seated")))
 }
 
 #[cfg(test)]
@@ -765,6 +947,28 @@ mod tests {
             }
             assert_eq!(o.value(&sparse).unwrap(), o.value(&full).unwrap());
         }
+    }
+
+    /// The STOP position is open until the TRIP, then linear to closed over
+    /// the travel, and reads no coordinate.
+    #[test]
+    fn the_stop_position_follows_the_secondary_law() {
+        use super::Observation;
+        let f = |t| Observation::stop_percent(Some(10.), 0.3, t);
+        assert_eq!(Observation::stop_percent(None, 0.3, 50.), 100.);
+        assert_eq!((f(9.), f(10.), f(10.3), f(11.)), (100., 100., 0., 0.));
+        assert!((f(10.15) - 50.).abs() < 1e-9);
+        let o = Observation::StopPosition {
+            trip_s: None,
+            travel_s: 0.3,
+        };
+        assert!(o.timed() && o.coordinates().is_empty());
+        assert_eq!(o.value(&[]).unwrap(), 100.);
+        let latched = Observation::StopPosition {
+            trip_s: Some(10.),
+            travel_s: 0.3,
+        };
+        assert!(latched.value(&[]).is_err());
     }
 
     #[test]

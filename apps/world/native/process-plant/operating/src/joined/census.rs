@@ -27,7 +27,7 @@ pub struct MemoRow {
 /// choices, 11 October) and the rod bores' water (P2, 17 October), which
 /// the memo predates: their counts are zero. A row counts its owner's
 /// coordinates of its classes only.
-pub const TABLE_1_1: [MemoRow; 21] = [
+pub const TABLE_1_1: [MemoRow; 22] = [
     MemoRow {
         row: "Regional N, 24 regions",
         owner: "nuclear",
@@ -198,6 +198,13 @@ pub const TABLE_1_1: [MemoRow; 21] = [
         memo: [0, 0],
         rows: "header on the pumps' forward curve less the entry loss; branch flow by the series ISO path and FCV law; per SG NR1/FT lags, IL, IF and the FCV stem",
     },
+    MemoRow {
+        row: "CVCS tanks and normal inventory controller (plan r4 X4.2)",
+        owner: "cvcs",
+        classes: &[Class::InventoryStock, Class::InventoryControl],
+        memo: [0, 0],
+        rows: "tank mass and absorber balances; level, loop-average and flow lags, PI integrals and stems",
+    },
 ];
 /// The memo's totals: differential, algebraic, all.
 pub const MEMO_TOTAL: [usize; 3] = [17418, 3962, 21380];
@@ -286,6 +293,9 @@ fn difference(row: &str) -> Option<&'static str> {
         }
         "Compact feed train (header, 2 branches, continuous control)" => {
             "plan r4 X4.1: the compact feed train replaces F3 (a)'s inventory-holding feed, only with the packet's feedTrain section"
+        }
+        "CVCS tanks and normal inventory controller (plan r4 X4.2)" => {
+            "R4-CVCS (plan r4 X4.2, lead): the compact charging, letdown and source-transfer allocation joins after the memo's allocation"
         }
         "PZR heater rod segments, shell bands and heads (G6)" | "PZR relief lift (G6)" => {
             "G6 (S2 design choices, 11 October): the PZR shell, heads, heater metal and relief join S2 after the memo's allocation"

@@ -56,7 +56,7 @@ export type FeedPages = Record<keyof typeof feedOwners, string>
 
 const pos = z.number().finite().positive(), nonneg = z.number().finite().nonnegative(), fraction = z.number().finite().min(0).max(1)
 const range = z.tuple([nonneg, pos]).refine(([a, b]) => a < b, 'empty range')
-const four = (s: z.ZodTypeAny) => z.array(s).length(4)
+const four = <T extends z.ZodTypeAny>(s: T) => z.array(s).length(4)
 const cascadeSchema = z.object({
   levelSetpoint: fraction, outerProportional: pos, outerIntegral_per_s: pos, requestRange: range, valveBias: fraction, valveRange: range,
   innerProportional: pos, innerIntegral_per_s: pos, sample_s: pos, feedFlowLag_s: pos, feedFlowSpan: range, steamFlowLag_s: pos, steamFlowSpan: range,

@@ -97,6 +97,9 @@ pub enum Class {
     // PZR metal and relief owner (G6).
     PzrMetal,
     PzrReliefLift,
+    // CVCS owner (plan r4 X4.2).
+    InventoryStock,
+    InventoryControl,
 }
 
 /// One block's coordinate declaration, built once at composition.
@@ -563,6 +566,15 @@ pub trait Secondary<P> {
     fn admitted_steam_kg_s(&self, _t: f64) -> Option<f64> {
         None
     }
+    /// X4.4 preview hook (lane ROD; the turbine valve and governor are
+    /// X4.3's): the turbine load demand as a fraction of the prepared steam
+    /// demand, a held input at a frame instant. An owner without the input
+    /// refuses.
+    fn set_turbine_load(&mut self, _t: f64, load: f64) -> Result<Transaction, Failure> {
+        Err(Failure::Fatal(format!(
+            "this secondary owner has no turbine load input (requested {load})"
+        )))
+    }
     /// The latched turbine TRIP time, if any (the trip requests GCB OPEN).
     fn turbine_trip_time(&self) -> Option<f64> {
         None
@@ -587,6 +599,12 @@ pub trait Secondary<P> {
     /// Whether [`Secondary::declare_feed_gate`] was declared.
     fn feed_gate_declared(&self) -> bool {
         false
+    }
+    /// FEED (plan r4): absolute tolerances the owner declares for its
+    /// control coordinates at operator grade, as `(own index, physical
+    /// tolerance)`; the composition applies them. None by default.
+    fn operator_tolerances(&self) -> Vec<(usize, f64)> {
+        Vec::new()
     }
 }
 
@@ -711,6 +729,15 @@ pub trait Rods<P> {
         y: &mut [f64],
     ) -> Result<Transaction, Failure>;
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure>;
+    /// B1 (lane ROD): a class whose grip is declared stuck is held while
+    /// every other class is seated (the stuck cluster stays out).
+    fn stuck_out(&self) -> bool;
+    /// X4.4 (lane ROD): the ordinary rate drive's common requested rate
+    /// (m/s) while it is engaged, `None` otherwise.
+    fn drive(&self) -> Option<f64>;
+    /// X4.4 (lane ROD): engage the rate drive at a rate, change its rate, or
+    /// (`None`) withdraw it; a held input at a frame instant.
+    fn set_drive(&mut self, t: f64, drive: Option<f64>) -> Result<Transaction, Failure>;
     /// The earliest declared time event strictly after `t` (for example the
     /// holding circuit's opening after its declared delay), or `None`.
     fn next_time_event(&self, t: f64) -> Option<f64>;

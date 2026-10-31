@@ -21,7 +21,10 @@
  *   cross-checked against the pump's discharge and suction;
  * - `ld01-feed-cascade` (feedwater/control-and-faults.md): the cascade;
  * - `ld01-sg-level-channels` (steam-generation/instrumentation.md): the NR
- *   span and lag the cascade's level input uses.
+ *   span and lag the cascade's level input uses;
+ * - `ld01-startup-feed` (same page as the cascade): the startup-feed
+ *   stand-in's decay heat, tank temperature and start/isolation levels
+ *   (judgement; MW and °C converted to W and K).
  *
  * Usage: bun reference-design-operating-feed-compact.ts <joined packet with apparentLevel> <wiki root> */
 import { createHash } from 'node:crypto'
@@ -35,11 +38,18 @@ const pos = z.number().finite().positive(), nonneg = z.number().finite().nonnega
 const range = z.tuple([nonneg, pos]).refine(([a, b]) => a < b, 'empty range')
 
 export const compactOwner = { page: 'systems/feedwater/control-and-faults.md', heading: 'Compact feed train (plan r4, 31 October 2026)', fence: 'ld01-feed-compact' } as const
+export const startupOwner = { page: 'systems/feedwater/control-and-faults.md', heading: 'Startup feed stand-in (judgement, 31 October 2026)', fence: 'ld01-startup-feed' } as const
+const startupSchema = z.object({
+  capacityBasis: z.literal('decayHeatAt100sSharedBySgs'), decayHeat_MW: pos, decayHeatTime_s: pos, sourceTemperature_C: z.number().finite(),
+  enthalpyEndpoint: z.literal('saturatedVaporAtNoLoadPressure'), levelChannel: z.literal('LT.NR1'), isolationLevelFraction: fraction,
+  kind: z.literal('judgement'), startLevelFraction: fraction, control: z.literal('continuousPiOnNr1BackCalculation'),
+  power: z.literal('onsiteStandIn'), stemTimeConstant_s: pos }).strict()
 const compactSchema = z.object({
   pumpLaw: z.literal('forwardQuadraticAtRatedSpeed'), fluid: z.literal('liquidAtReferenceDensity'),
   branchLaw: z.literal('seriesIsoPathAndFcvLiquid'), feedEnthalpy: z.literal('recordedSgFeedState'),
   supportLoss: z.literal('deliveredFeedZero'), stem: z.literal('firstOrderWithinStrokeRate'), levelInput: z.literal('apparentLevel'),
-  cascade: z.literal('continuous'), stemTimeConstant_s: z.number().finite().positive() }).strict()
+  cascade: z.literal('continuous'), stemTimeConstant_s: z.number().finite().positive(),
+  operatorTolerances: z.object({ budgetFraction: fraction, uncertaintyFractionOfSpan: fraction, nrLevelBudget_m: pos, flowSpanOfNominal: pos }).strict() }).strict()
 const cascadeSchema = z.object({
   levelSetpoint: fraction, outerProportional: pos, outerIntegral_per_s: pos, requestRange: range, valveBias: fraction, valveRange: range,
   innerProportional: pos, innerIntegral_per_s: pos, sample_s: pos, feedFlowLag_s: pos, feedFlowSpan: range, steamFlowLag_s: pos, steamFlowSpan: range,
@@ -59,6 +69,8 @@ export type CompactPages = { control: string, equipment: string, cycle: string, 
 /** The section from the owners' page texts. */
 export function compileFeedCompact(p: CompactPages) {
   const compact = compactSchema.parse(ownedBlock(p.control, compactOwner.heading, compactOwner.fence))
+  const startup = startupSchema.parse(ownedBlock(p.control, startupOwner.heading, startupOwner.fence))
+  same('startup stem time constant', startup.stemTimeConstant_s, compact.stemTimeConstant_s)
   const cascade = cascadeSchema.parse(ownedBlock(p.control, feedOwners.cascade.heading, feedOwners.cascade.fence))
   const pump = pumpSchema.parse(ownedBlock(p.equipment, feedOwners.pump.heading, feedOwners.pump.fence))
   const train = trainSchema.parse(ownedBlock(p.equipment, feedOwners.train.heading, feedOwners.train.fence))
@@ -77,6 +89,13 @@ export function compileFeedCompact(p: CompactPages) {
     shutoffHeadRatio: train.shutoffHeadRatio, headerPressure_Pa: cycle.feedHeaderPressure_MPaAbs * MPa,
     isoOutletPressure_Pa: train.branchIsoOutletPressure_MPa * MPa, receiverPressure_Pa: pump.receiverPressure_MPa * MPa,
     fcvReferenceOpening: train.fcvReferenceOpening, fcvStrokePerSecond: train.fcvStrokePerSecond, stemTimeConstant_s: compact.stemTimeConstant_s,
+    // Operator-grade absolute tolerances of the channel lags (stated
+    // arithmetic on the block): the NR budget as given; the flow channels'
+    // quarter of the channel rule over their span.
+    operatorTolerances: { nrLevel_m: compact.operatorTolerances.nrLevelBudget_m, flow_kg_s: compact.operatorTolerances.budgetFraction
+      * compact.operatorTolerances.uncertaintyFractionOfSpan * compact.operatorTolerances.flowSpanOfNominal * pump.flow_kg_s },
+    startup: { decayHeat_W: startup.decayHeat_MW * MPa, sourceTemperature_K: startup.sourceTemperature_C + 273.15,
+      startLevelFraction: startup.startLevelFraction, isolationLevelFraction: startup.isolationLevelFraction },
     cascade: { ...law, narrowSpan_m: level.nrSpan_m, nrLag_s: level.nrLag_s },
   }
 }

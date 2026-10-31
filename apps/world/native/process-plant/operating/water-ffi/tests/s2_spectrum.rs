@@ -586,6 +586,7 @@ fn d3_shutdown_margin_at_the_state_and_on_the_z3_envelope() {
                 conditions,
                 0.,
                 e,
+                0.,
             )
         };
         let doubled = judged(&ext);
@@ -598,6 +599,7 @@ fn d3_shutdown_margin_at_the_state_and_on_the_z3_envelope() {
                 &neutrons,
                 conditions,
                 e,
+                0.,
             )
             .expect("margin at the envelope point")
         };

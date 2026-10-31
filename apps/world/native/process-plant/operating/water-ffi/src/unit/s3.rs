@@ -304,6 +304,15 @@ pub fn compose_with<J: JoinedSystem>(
         serde_json::from_value(inputs.spine.packet_json()?["secondary"].clone())
             .map_err(|e| format!("the packet's secondary section: {e}"))?;
     let feed_train = sg_section.feed_train.is_some() && sg_section.apparent_level.is_some();
+    // FEED (plan r4): the SG owner's operator-grade absolute tolerances for
+    // its control coordinates replace the stock scaled floor there.
+    if let Some(sec) = joined.secondary() {
+        let base = joined.offsets().secondary;
+        let scales = sec.layout().scales.clone();
+        for (i, a) in sec.operator_tolerances() {
+            atol[base + i] = a / scales[i];
+        }
+    }
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
