@@ -8,6 +8,10 @@
 //     v2 (E-NUC phase B): with <members.json> (water-ffi nuc_t0_members), the member lists of every grouped
 //     coordinate, nuclear and solid, partition the baseline labels, and a nuclear list equals the packet's group.
 //  R2b (v2) every member's baseline rows equal its representative's, at both points, within the R2 bound.
+//  v3: when the reduced heat and fuel-temperature ports are the solids' half classes (fewer than the carriers),
+//     R3 and R5 compare each port with every member carrier (the members of its U_clad coordinate, in the
+//     baseline's carrier order); the totals compare as before. (v2's first phase-B run compared them index by
+//     index across different lengths: a judge defect, recorded in t0-B-1.)
 //  R2 rows, at (y, y') and at (y, 0): |r_red - r_base(rep)| <= 1e-9 (1 + |r_base(rep)|) in solver units.
 //  R3 heats per carrier (fuel_w, coolant_w) and the totals (event, released, stored rate):
 //     |q_red - q_base| <= 1e-12 max(|q_base|, 1 W).
@@ -86,10 +90,23 @@ for (const point of ["at_state", "at_zero_rates"]) {
   rr.forEach((v, i) => { const b = rb[repOf[i]]; book(`R2 rows ${point} ${owner(rl[i])}`, v - b, b, 1e-9 * (1 + Math.abs(b)), rl[i]); });
   rb.forEach((v, j) => { const b = rb[repOf[redOf[j]]]; const d = Math.abs(v - b) / (1 + Math.abs(b)); spread[point] = Math.max(spread[point] ?? 0, d);
     if (listed) book(`R2b member rows ${point}`, v - b, b, 1e-9 * (1 + Math.abs(b)), bl[j]); });
+  // Port of each baseline carrier: itself, or (phase B) the solids half class holding it.
+  const portOf = (n: number): number[] => {
+    if (n === A) return [...Array(A).keys()];
+    if (!listed) { failures.push("R3 ports without members"); return []; }
+    const halves = rl.filter(l => /^U_clad\[/.test(l));
+    const carrierOf = new Map(bl.filter(l => /^U_clad\[/.test(l)).map((l, a) => [l, a]));
+    const out = new Array(A).fill(-1);
+    halves.forEach((l, k) => (listed[l] ?? []).forEach(m => { const a = carrierOf.get(m); if (a !== undefined) out[a] = k; }));
+    if (halves.length !== n || out.some(v => v < 0)) failures.push("R3 port map");
+    return out;
+  };
   for (const k of ["fuel_w", "coolant_w", "totals_w"]) { const b = F(base[point][k]), r = F(red[point][k]);
-    if (b.length !== r.length) failures.push(`R3 ${k} lengths`); b.forEach((x, i) => book(`R3 ${k}`, r[i] - x, x, 1e-12 * Math.max(Math.abs(x), 1), `${point}[${i}]`)); }
+    const map = k === "totals_w" ? b.map((_, i) => i) : portOf(r.length);
+    b.forEach((x, i) => book(`R3 ${k}`, r[map[i]] - x, x, 1e-12 * Math.max(Math.abs(x), 1), `${point}[${i}]`)); }
   { const b = F(base[point].reactivity), r = F(red[point].reactivity); b.forEach((x, i) => book("R4 reactivity", r[i] - x, x, 1e-13, `${point}[${i}]`)); }
-  { const b = F(base[point].fuel_feedback_k), r = F(red[point].fuel_feedback_k); b.forEach((x, i) => book("R5 fuel feedback", r[i] - x, x, 1e-12 * x, `${point}[${i}]`)); }
+  { const b = F(base[point].fuel_feedback_k), r = F(red[point].fuel_feedback_k); const map = portOf(r.length);
+    b.forEach((x, i) => book("R5 fuel feedback", r[map[i]] - x, x, 1e-12 * x, `${point}[${i}]`)); }
 }
 // R6: Jacobian lumping.
 const csc = (j: any) => ({ p: j.pointers as number[], i: j.indices as number[], v: F(j.values) });
