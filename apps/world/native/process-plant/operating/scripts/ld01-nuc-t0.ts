@@ -8,6 +8,9 @@
 //     v2 (E-NUC phase B): with <members.json> (water-ffi nuc_t0_members), the member lists of every grouped
 //     coordinate, nuclear and solid, partition the baseline labels, and a nuclear list equals the packet's group.
 //  R2b (v2) every member's baseline rows equal its representative's, at both points, within the R2 bound.
+//  v7 (EVT-RODS-BANK T0): when the baseline's heat and fuel-temperature ports already number the reduced ones (both trees
+//     reduced by E-NUC A+B), R3 and R5 compare port by port; v6 mapped them through the members file's unreduced carrier
+//     labels, which such a baseline does not hold (t0-receipt.json, v6: R3/R5 port map only).
 //  v6 (EVT-RODS-BANK): a reduced label the members file lists that is not a grouped label (a merged water region
 //     keeping its first group's label) maps to the listed baseline coordinates before v4's same-label rule.
 //  v3: when the reduced heat and fuel-temperature ports are the solids' half classes (fewer than the carriers),
@@ -104,8 +107,10 @@ for (const point of ["at_state", "at_zero_rates"]) {
   rb.forEach((v, j) => { const b = rb[repOf[redOf[j]]]; const d = Math.abs(v - b) / (1 + Math.abs(b)); spread[point] = Math.max(spread[point] ?? 0, d);
     if (listed) book(`R2b member rows ${point}`, v - b, b, 1e-9 * (1 + Math.abs(b)), bl[j]); });
   // Port of each baseline carrier: itself, or (phase B) the solids half class holding it.
-  const portOf = (n: number): number[] => {
+  const portOf = (n: number, baseline: number): number[] => {
     if (n === A) return [...Array(A).keys()];
+    // v7: a baseline already reduced to the same ports (E-NUC A+B on both trees) compares port by port.
+    if (n === baseline) return [...Array(n).keys()];
     if (!listed) { failures.push("R3 ports without members"); return []; }
     const halves = rl.filter(l => /^U_clad\[/.test(l));
     const carrierOf = new Map(bl.filter(l => /^U_clad\[/.test(l)).map((l, a) => [l, a]));
@@ -115,10 +120,10 @@ for (const point of ["at_state", "at_zero_rates"]) {
     return out;
   };
   for (const k of ["fuel_w", "coolant_w", "totals_w"]) { const b = F(base[point][k]), r = F(red[point][k]);
-    const map = k === "totals_w" ? b.map((_, i) => i) : portOf(r.length);
+    const map = k === "totals_w" ? b.map((_, i) => i) : portOf(r.length, b.length);
     b.forEach((x, i) => book(`R3 ${k}`, r[map[i]] - x, x, 1e-12 * Math.max(Math.abs(x), 1), `${point}[${i}]`)); }
   { const b = F(base[point].reactivity), r = F(red[point].reactivity); b.forEach((x, i) => book("R4 reactivity", r[i] - x, x, 1e-13, `${point}[${i}]`)); }
-  { const b = F(base[point].fuel_feedback_k), r = F(red[point].fuel_feedback_k); const map = portOf(r.length);
+  { const b = F(base[point].fuel_feedback_k), r = F(red[point].fuel_feedback_k); const map = portOf(r.length, b.length);
     b.forEach((x, i) => book("R5 fuel feedback", r[map[i]] - x, x, 1e-12 * x, `${point}[${i}]`)); }
 }
 // R6: Jacobian lumping.
