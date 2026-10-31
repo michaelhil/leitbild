@@ -468,7 +468,7 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.response.action).toBe('respond')
     expect(calls[1]?.messages.find(message => message.role === 'tool')?.content).toBe(evidence)
     expect(calls[1]?.messages.some(message => message.content.startsWith('old-'))).toBe(false)
-    expect(warnings.some(message => message.includes('Evidence was preserved intact'))).toBe(true)
+    expect(warnings.some(message => message.includes('history replay target and remains intact'))).toBe(true)
   })
 
   test('multi-round tool loop (2 tools then content)', async () => {
@@ -671,6 +671,29 @@ describe('evaluate (tool loop)', () => {
     const second = calls[1]!
     expect(second.messages.some(m => m.content.includes(huge))).toBe(true)
     expect(second.messages.some(m => m.content.includes('characters omitted'))).toBe(false)
+  })
+
+  test('a replay-target notice is accurate and emitted once while later operation evidence remains intact', async () => {
+    const receipts = ['first-accepted-operation', 'later-accepted-operation'].map(commandId => ({ commandId, facts: 'measured feedback '.repeat(100) }))
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ id: 'first', function: { name: 'operate', arguments: {} } }] },
+      { toolCalls: [{ id: 'later', function: { name: 'operate', arguments: {} } }] },
+      { content: 'done' },
+    ])
+    let operation = 0
+    const notices: string[] = []
+    const result = await evaluate(
+      { ...baseContextResult(), tokenBudget: 100 }, baseConfig, provider,
+      async () => [{ success: true, data: receipts[operation++] }], undefined, 'room-1',
+      { toolDefinitions: [], onEvent: event => { if (event.kind === 'warning') notices.push(event.message) } },
+    )
+    expect(result.decision.response.action).toBe('respond')
+    expect(operation).toBe(2)
+    const replayNotices = notices.filter(message => message.includes('history replay target'))
+    expect(replayNotices).toHaveLength(1)
+    expect(replayNotices[0]).toContain("provider's context capacity is checked separately")
+    const finalTools = calls.at(-1)!.messages.filter(message => message.role === 'tool')
+    expect(finalTools.map(message => message.content)).toEqual(receipts.map(receipt => JSON.stringify(receipt)))
   })
 
   test('progress lines are posted as each round returns, in call order, and the model never reads them', async () => {

@@ -505,6 +505,7 @@ export const evaluate = async (
   const { toolDefinitions, inReplyTo, requireView, onEvent: externalOnEvent, onProgress, signal, requestToolCheckin } = options ?? {}
   let pendingCorrection = false
   let pendingProgressCallIds: string[] = []
+  let replayTargetNoticeSent = false
   const onEvent = (event: EvalEventCore): void => {
     if (event.kind === 'correction') pendingCorrection = true
     externalOnEvent?.(event)
@@ -726,7 +727,10 @@ export const evaluate = async (
         const systemTokens = Math.ceil((contextResult.systemBlocks?.map(block=>block.text).join('\n\n').length ?? 0)/4)
         const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens, turnStart)
         turnStart -= fit.droppedHistory
-        if (fit.overBudget) onEvent?.({ kind: 'warning', message: 'Current request and tool evidence exceed the model context budget. Evidence was preserved intact; use a narrower or paginated read.' })
+        if (fit.overBudget && !replayTargetNoticeSent) {
+          replayTargetNoticeSent = true
+          onEvent?.({ kind: 'warning', message: "Evidence from this turn exceeds the history replay target and remains intact. The provider's context capacity is checked separately." })
+        }
         if (fit.droppedHistory > 0) onEvent?.({ kind: 'warning', message: `Dropped ${fit.droppedHistory} oldest context messages to retain current tool evidence.` })
 
         const iterations = toolRound + 1 - insistRounds
