@@ -589,6 +589,16 @@ pub trait Rods<P> {
     /// into (a seat's arrival energy into its fitting), each kept out of
     /// the solids' replica classes.
     fn deposit_stores(&self) -> Vec<String>;
+    /// E-NUC: the local index of cluster `c`'s first coordinate (its travel;
+    /// then velocity and the two mouth currents): its motion class's.
+    fn cluster_coordinate(&self, c: usize) -> usize;
+    /// E-NUC: each motion class's member clusters, cluster order.
+    fn class_members(&self) -> Vec<Vec<usize>>;
+    /// E-NUC: a packet-layout saved slice of this block reduced to its
+    /// layout (refused when replicas differ in a state coordinate), with the
+    /// largest relative spread of the algebraic coordinates it took from a
+    /// class's first member.
+    fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String>;
     /// Achieved travel per cluster (m) for the source feedback's overlap.
     fn travel(&self, x: Coordinates<'_>, out: &mut [Scalar]) -> Result<(), Failure>;
     /// Current fluid volume and rate of every regular network cell, from the

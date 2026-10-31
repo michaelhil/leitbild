@@ -49,11 +49,17 @@ fn convert_a_saved_state_to_the_replica_layout() {
         + count("helium")
         + count("passive_stores")
         + count("sg_segments");
-    let reduced = (o.solids - o.nuclear) + (o.secondary - o.solids);
+    // The rods: 52 x [y, v, m_lo, m_up] then the bore groups' [M, U, B, p]
+    // in the packet layout; one motion class per bore group here.
+    let rods = joined.rods().expect("rod owner");
+    let rods_len = o.pzr - o.rods;
+    let full_rods = 4 * rods.clusters() + rods_len / 2;
+    let reduced = (o.solids - o.nuclear) + (o.secondary - o.solids) + rods_len;
+    let current_spread = std::cell::Cell::new(0f64);
     let convert = |old: &[f64]| -> Vec<f64> {
         assert_eq!(
             old.len() + reduced,
-            joined.dimension() + full + full_solids,
+            joined.dimension() + full + full_solids + full_rods,
             "layouts"
         );
         let mut y = old[..o.nuclear].to_vec();
@@ -68,7 +74,14 @@ fn convert_a_saved_state_to_the_replica_layout() {
                 .reduce_packet_state(&old[s0..s0 + full_solids])
                 .unwrap_or_else(|e| panic!("{e}")),
         );
-        y.extend_from_slice(&old[s0 + full_solids..]);
+        let r0 = s0 + full_solids + (o.rods - o.secondary);
+        y.extend_from_slice(&old[s0 + full_solids..r0]);
+        let (r, spread) = rods
+            .reduce_packet_state(&old[r0..r0 + full_rods])
+            .unwrap_or_else(|e| panic!("{e}"));
+        current_spread.set(current_spread.get().max(spread));
+        y.extend(r);
+        y.extend_from_slice(&old[r0 + full_rods..]);
         assert_eq!(y.len(), joined.dimension());
         y
     };
@@ -84,7 +97,10 @@ fn convert_a_saved_state_to_the_replica_layout() {
         "groups": nuclear.replica_groups(),
         "carriers": nuclear.carriers(),
         "solid_halves": solids.halves(),
-        "coordinates": [full + full_solids + joined.dimension() - reduced, joined.dimension()],
+        "rod_motion_classes": rods_len / 8,
+        "mouth_current_spread_taken_from_first_member": current_spread.get(),
+        "mouth_current_rule": "the mouth currents are algebraic: the composition's exact consistent start solves them from the travels and the bores' water; each class takes its first member's value and the largest relative member spread (y and y') is recorded",
+        "coordinates": [full + full_solids + full_rods + joined.dimension() - reduced, joined.dimension()],
     });
     std::fs::write(&to, serde_json::to_vec(&state).unwrap()).unwrap();
 }

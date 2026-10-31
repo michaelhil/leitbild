@@ -713,37 +713,29 @@ impl RodBlock {
         let free = bore_volume - body_area * inserted;
         positive("prepared free bore volume", free)?;
         let mut layout = Layout::default();
-        let mut prepared =
-            Vec::with_capacity(CLUSTER_COORDINATES * n + GROUP_COORDINATES * groups.len());
-        for c in &clusters {
-            layout.push(
-                format!("y[{}]", c.id),
-                Class::RodPosition,
-                true,
-                travel_scale,
-                travel_scale,
-            );
-            layout.push(
-                format!("v[{}]", c.id),
-                Class::RodVelocity,
-                false,
-                speed_scale,
-                speed_scale,
-            );
-            layout.push(
-                format!("m_lower[{}]", c.id),
-                Class::GuideCurrent,
-                false,
-                current_scale,
-                head,
-            );
-            layout.push(
-                format!("m_upper[{}]", c.id),
-                Class::GuideCurrent,
-                false,
-                current_scale,
-                head,
-            );
+        let mut prepared = Vec::with_capacity((CLUSTER_COORDINATES + GROUP_COORDINATES) * groups.len());
+        // E-NUC (plan r4): one motion class per bore group. Its members have
+        // one law, one datum and one bore water, so their bodies move as one:
+        // the class's coordinates are its first member's, standing for the
+        // class (layout multiplicity), and every flow it gives the water is
+        // its members'. A declared single (a stuck cluster) is its own class.
+        for grp in &groups {
+            let (c, m) = (&clusters[grp.members[0]], grp.members.len());
+            for (name, class, differential, scale, row) in [
+                ("y", Class::RodPosition, true, travel_scale, travel_scale),
+                ("v", Class::RodVelocity, false, speed_scale, speed_scale),
+                ("m_lower", Class::GuideCurrent, false, current_scale, head),
+                ("m_upper", Class::GuideCurrent, false, current_scale, head),
+            ] {
+                layout.push_replicated(
+                    format!("{name}[{}x{m}]", c.id),
+                    class,
+                    differential,
+                    scale,
+                    row,
+                    m,
+                );
+            }
             prepared.extend([section.reference_travel_m, 0., 0., 0.]);
         }
         for (k, grp) in groups.iter().enumerate() {
@@ -778,6 +770,7 @@ impl RodBlock {
             prepared.extend([mass, energy, boron, bore_pressure]);
         }
         layout.validate("rods")?;
+        let classes = groups.len();
         let mut block = Self {
             clusters,
             groups,
@@ -821,8 +814,8 @@ impl RodBlock {
             plena,
             layout,
             prepared,
-            modes: vec![Mode::Held; n],
-            failed_release: vec![false; n],
+            modes: vec![Mode::Held; classes],
+            failed_release: vec![false; classes],
             holding_open_at: None,
             capture: false,
             captured: None,
@@ -833,7 +826,7 @@ impl RodBlock {
             ));
         }
         block.reference_displacement = [0, 1].map(|k| {
-            (0..n)
+            (0..block.groups.len())
                 .map(|_| {
                     block
                         .displacement(k, section.reference_travel_m)
@@ -848,7 +841,16 @@ impl RodBlock {
         CLUSTER_COORDINATES * c
     }
     fn group_base(&self, g: usize) -> usize {
-        CLUSTER_COORDINATES * self.clusters.len() + GROUP_COORDINATES * g
+        CLUSTER_COORDINATES * self.groups.len() + GROUP_COORDINATES * g
+    }
+    /// E-NUC: the number of clusters motion class (= bore group) `k`
+    /// stands for.
+    fn count(&self, k: usize) -> f64 {
+        self.groups[k].members.len() as f64
+    }
+    /// Motion class `k`'s first member's identity, for messages.
+    fn class_id(&self, k: usize) -> &str {
+        &self.clusters[self.groups[k].members[0]].id
     }
 
     /// Displaced volume of one cluster in plenum `k` at travel `y`: its
@@ -860,7 +862,7 @@ impl RodBlock {
             .displaced(cell.bottom.max(self.guide_top), cell.top, y)
     }
 
-    fn admit_travel(&self, c: usize, y: f64) -> Result<(), Failure> {
+    fn admit_travel(&self, id: &str, y: f64) -> Result<(), Failure> {
         let top = self.spider_bottom + self.spider_height + y;
         if !y.is_finite()
             || self.body_bottom + y < self.span.0
@@ -868,8 +870,7 @@ impl RodBlock {
             || self.guide_top - (self.body_bottom + y) <= 0.
         {
             return Err(recoverable(format!(
-                "rods: {} travel {y} m leaves the swept-cell geometry",
-                self.clusters[c].id
+                "rods: {id} travel {y} m leaves the swept-cell geometry"
             )));
         }
         Ok(())
@@ -880,23 +881,24 @@ impl RodBlock {
     fn fitting(&self, c: usize) -> String {
         format!("{}/top-fitting", self.clusters[c].fuel_assembly)
     }
-    /// The bodies' mode, discrete retained state.
-    pub fn modes(&self) -> &[Mode] {
-        &self.modes
+    /// Each cluster's mode (its motion class's), discrete retained state.
+    pub fn modes(&self) -> Vec<Mode> {
+        self.clusters.iter().map(|c| self.modes[c.group]).collect()
     }
+    /// Cluster `c`'s mode, which is its motion class's: every member's.
     pub fn set_mode(&mut self, c: usize, mode: Mode) {
-        self.modes[c] = mode;
+        self.modes[self.clusters[c].group] = mode;
     }
     /// The contrary case's stuck cluster (G7): its grip never releases. Only
     /// a cluster kept in its own bore group can be stuck.
     pub fn set_failed_release(&mut self, c: usize) -> Result<(), Failure> {
         self.require_single(c)?;
-        self.failed_release[c] = true;
+        self.failed_release[self.clusters[c].group] = true;
         Ok(())
     }
     /// Whether cluster `c`'s grip is declared stuck (G7).
     pub fn failed_release(&self, c: usize) -> bool {
-        self.failed_release[c]
+        self.failed_release[self.clusters[c].group]
     }
     fn require_single(&self, c: usize) -> Result<(), Failure> {
         let g = &self.groups[self.clusters[c].group];
@@ -925,10 +927,11 @@ impl RodBlock {
         if !t.is_finite() {
             return Err(fatal("rods: stuck-cluster command time"));
         }
-        if self.modes[c] != Mode::Held {
+        let k = cluster.group;
+        if self.modes[k] != Mode::Held {
             return Err(fatal(format!(
                 "rods: {id} is {:?}, not held: a stuck grip is declared before its release",
-                self.modes[c]
+                self.modes[k]
             )));
         }
         if let Some(open) = self.holding_open_at
@@ -938,7 +941,7 @@ impl RodBlock {
                 "rods: the holding circuit opened at {open} s, so {id}'s release is already due"
             )));
         }
-        if self.failed_release[c] {
+        if self.failed_release[k] {
             return Err(fatal(format!("rods: {id} is already declared stuck")));
         }
         self.set_failed_release(c)?;
@@ -992,9 +995,53 @@ impl RodBlock {
     pub fn group_of(&self, c: usize) -> usize {
         self.clusters[c].group
     }
-    /// Index of cluster `c`'s coordinate `offset` in the block's layout.
-    pub fn cluster_index(c: usize, offset: usize) -> usize {
-        Self::base(c) + offset
+    /// Index of cluster `c`'s coordinate `offset` in the block's layout:
+    /// its motion class's (E-NUC).
+    pub fn cluster_index(&self, c: usize, offset: usize) -> usize {
+        Self::base(self.clusters[c].group) + offset
+    }
+    /// E-NUC: the rods' packet-layout local coordinates (52 x [y, v, m_lo,
+    /// m_up], then the bore groups' [M, U, B, p]) reduced to this layout:
+    /// each motion class takes its members' common values. A member whose
+    /// travel or velocity differs in any bit is refused (nothing is
+    /// averaged); the mouth currents, which are algebraic (the composition's
+    /// exact consistent start solves them from the travels and the bores'
+    /// water), take the first member's, and their largest relative spread
+    /// over the members is returned with the reduced state.
+    pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+        let n = self.clusters.len();
+        let groups = GROUP_COORDINATES * self.groups.len();
+        if full.len() != CLUSTER_COORDINATES * n + groups {
+            return Err(format!(
+                "a packet-layout rod state has {} coordinates, not {}",
+                full.len(),
+                CLUSTER_COORDINATES * n + groups
+            ));
+        }
+        let mut out = Vec::with_capacity(self.layout.len());
+        let mut spread = 0f64;
+        for grp in &self.groups {
+            let first = CLUSTER_COORDINATES * grp.members[0];
+            for k in 0..CLUSTER_COORDINATES {
+                let v = full[first + k];
+                for &c in &grp.members {
+                    let w = full[CLUSTER_COORDINATES * c + k];
+                    if k == TRAVEL || k == VELOCITY {
+                        if w.to_bits() != v.to_bits() {
+                            return Err(format!(
+                                "cluster {} differs from its class's {} at coordinate {k}: not a replica state",
+                                self.clusters[c].id, self.clusters[grp.members[0]].id
+                            ));
+                        }
+                    } else if w != v {
+                        spread = spread.max((w - v).abs() / v.abs().max(w.abs()));
+                    }
+                }
+                out.push(v);
+            }
+        }
+        out.extend_from_slice(&full[CLUSTER_COORDINATES * n..]);
+        Ok((out, spread))
     }
     /// Index of bore group `g`'s coordinate `offset` in the block's layout.
     pub fn group_index(&self, g: usize, offset: usize) -> usize {
@@ -1038,7 +1085,7 @@ impl RodBlock {
         let mut out = Vec::with_capacity(self.groups.len());
         for group in &self.groups {
             let c = group.members[0];
-            self.admit_travel(c, travel[c])?;
+            self.admit_travel(&self.clusters[c].id, travel[c])?;
             let path = self.mouth_paths(
                 s(self.body_bottom + travel[c]),
                 Branch::of_rate(velocity[c]),
@@ -1065,7 +1112,7 @@ impl RodBlock {
             let w = water(pressure)?;
             let mut volume = 0.;
             for &m in &group.members {
-                self.admit_travel(m, travel[m])?;
+                self.admit_travel(&self.clusters[m].id, travel[m])?;
                 volume += self.bore_volume
                     - self.body_area * (self.guide_top - (self.body_bottom + travel[m]));
             }
@@ -1083,20 +1130,13 @@ impl RodBlock {
     /// The group's free bore volume at these travels: its members' bores
     /// less their inserted bodies (the tips lie inside the bores).
     fn bore_volume_at(&self, g: usize, x: &Coordinates<'_>) -> Scalar {
-        let mut volume = s(0.);
-        for &c in &self.groups[g].members {
-            let tip = s(self.body_bottom) + x.value(Self::base(c) + TRAVEL);
-            volume = volume + s(self.bore_volume) - s(self.body_area) * (s(self.guide_top) - tip);
-        }
-        volume
+        // E-NUC: the group's members are its motion class.
+        let tip = s(self.body_bottom) + x.value(Self::base(g) + TRAVEL);
+        s(self.count(g)) * (s(self.bore_volume) - s(self.body_area) * (s(self.guide_top) - tip))
     }
     /// The group's free volume rate: its members' travel rates.
     fn bore_volume_rate(&self, g: usize, x: &Coordinates<'_>) -> Scalar {
-        let mut rate = s(0.);
-        for &c in &self.groups[g].members {
-            rate = rate + s(self.body_area) * x.rate(Self::base(c) + TRAVEL);
-        }
-        rate
+        s(self.count(g) * self.body_area) * x.rate(Self::base(g) + TRAVEL)
     }
 
     /// The bores' water of group `g` at these coordinates: its maintained
@@ -1239,14 +1279,15 @@ impl RodBlock {
         fluid: &Fluid<'_>,
         bore: &Bore,
     ) -> Result<Forces, Failure> {
-        let base = Self::base(c);
+        // E-NUC: cluster `c` moves as its motion class.
+        let base = Self::base(self.clusters[c].group);
         let (y, v, m_lo, m_up) = (
             x.value(base + TRAVEL),
             x.value(base + VELOCITY),
             x.value(base + LOWER_CURRENT),
             x.value(base + UPPER_CURRENT),
         );
-        self.admit_travel(c, y.value)?;
+        self.admit_travel(&self.clusters[c].id, y.value)?;
         let branch = Branch::of_rate(x.rate(base + TRAVEL).value);
         let g = s(self.gravity);
         let (lower_liquid, upper_liquid) = (
@@ -1379,7 +1420,7 @@ impl RodBlock {
         bore: &Bore,
     ) -> Result<[f64; 3], Failure> {
         let f = self.forces(c, x, fluid, bore)?;
-        let base = Self::base(c);
+        let base = Self::base(self.clusters[c].group);
         let v = x.value(base + VELOCITY).value;
         let fluid_force = f.net.value + self.mass * self.gravity;
         let heat = -(f.wall.value + f.spider_drag.value) * v;
@@ -1404,7 +1445,9 @@ impl RodBlock {
         bore: &Bore,
         receipts: &mut Receipts<'_>,
     ) -> Result<([Scalar; 4], Forces), Failure> {
-        let f = self.forces(c, x, fluid, bore)?;
+        // E-NUC: `c` is a motion class; the water receives its members'.
+        let m = s(self.count(c));
+        let f = self.forces(self.groups[c].members[0], x, fluid, bore)?;
         let base = Self::base(c);
         let (y, v) = (x.value(base + TRAVEL), x.value(base + VELOCITY));
         let travel = x.rate(base + TRAVEL) - v;
@@ -1420,12 +1463,12 @@ impl RodBlock {
             Mode::Held | Mode::Seated => v,
         };
         for (cell, [mass, enthalpy, tracer]) in self.transport(&f, fluid)? {
-            receipts.add(cell, 0, mass, enthalpy, tracer)?;
+            receipts.add(cell, 0, m * mass, m * enthalpy, m * tracer)?;
         }
         let drag_work = -f.spider_drag * v;
         for (cell, _, fraction) in self.spider_cells(fluid, y) {
             if fraction.value != 0. || fraction.direction != 0. {
-                receipts.heat(cell, fraction * drag_work)?;
+                receipts.heat(cell, m * fraction * drag_work)?;
             }
         }
         Ok(([travel, motion, f.lower_residual, f.upper_residual], f))
@@ -1443,13 +1486,15 @@ impl RodBlock {
     ) -> [Scalar; 4] {
         let base = self.group_base(g);
         let (mut mass, mut energy, mut boron) = (s(0.), s(0.), s(0.));
+        // E-NUC: each member is a motion class standing for its clusters.
         for (c, f, [(_, lower), (_, upper)]) in members {
+            let m = s(self.count(*c));
             // Into the bores: what leaves LOWER and what UPPER does not get.
-            mass = mass - lower[0] - upper[0];
-            energy = energy - lower[1] - upper[1];
-            boron = boron - lower[2] - upper[2];
+            mass = mass - m * (lower[0] + upper[0]);
+            energy = energy - m * (lower[1] + upper[1]);
+            boron = boron - m * (lower[2] + upper[2]);
             let v = x.value(Self::base(*c) + VELOCITY);
-            energy = energy - f.wall * v;
+            energy = energy - m * f.wall * v;
         }
         energy = energy - bore.pressure * self.bore_volume_rate(g, x);
         [
@@ -1471,7 +1516,7 @@ impl RodBlock {
         receipts: &mut Receipts<'_>,
         out: &mut Vec<(usize, Scalar)>,
     ) -> Result<(), Failure> {
-        let n = self.clusters.len();
+        let n = self.groups.len();
         let mut bores: Vec<Option<Bore>> = vec![None; self.groups.len()];
         let mut bore = |g: usize| -> Result<Bore, Failure> {
             if let Some(b) = bores[g] {
@@ -1483,19 +1528,16 @@ impl RodBlock {
         };
         for &u in units {
             if u < n {
-                let b = bore(self.clusters[u].group)?;
+                let b = bore(u)?;
                 let (r, _) = self.cluster_rows(u, x, fluid, &b, receipts)?;
                 out.extend((0..CLUSTER_COORDINATES).map(|k| (Self::base(u) + k, r[k])));
             } else if u - n < self.groups.len() {
                 let g = u - n;
                 let b = bore(g)?;
-                let mut members = Vec::with_capacity(self.groups[g].members.len());
-                for &c in &self.groups[g].members {
-                    let f = self.forces(c, x, fluid, &b)?;
-                    let t = self.transport(&f, fluid)?;
-                    members.push((c, f, t));
-                }
-                let r = self.group_rows(g, x, &b, &members);
+                // E-NUC: the group's one member is its motion class.
+                let f = self.forces(self.groups[g].members[0], x, fluid, &b)?;
+                let t = self.transport(&f, fluid)?;
+                let r = self.group_rows(g, x, &b, &[(g, f, t)]);
                 out.extend((0..GROUP_COORDINATES).map(|k| (self.group_base(g) + k, r[k])));
             } else {
                 return Err(fatal(format!("rods: unit {u} outside the block")));
@@ -1546,10 +1588,12 @@ impl<P: Properties> Rods<P> for RodBlock {
             return Err(fatal("rods: account layout"));
         }
         let (mut energy, mut rate) = (0., 0.);
-        for c in 0..self.clusters.len() {
+        // E-NUC: each motion class counts its members.
+        for c in 0..self.groups.len() {
             let base = Self::base(c);
+            let m = self.count(c);
             let (y, v) = (x.value(base + TRAVEL).value, x.value(base + VELOCITY).value);
-            energy += 0.5 * self.mass * v * v + self.mass * self.gravity * y;
+            energy += m * (0.5 * self.mass * v * v + self.mass * self.gravity * y);
             // The rows' own rates: y' = v always; v' = F_net / M for a free
             // body, whose row is v' - F_net/M. A held or seated body's row
             // is the constraint v = 0 and pays no kinetic rate.
@@ -1558,7 +1602,7 @@ impl<P: Properties> Rods<P> for RodBlock {
                 Mode::Free => x.rate(base + VELOCITY).value - rows[base + VELOCITY].value,
                 Mode::Held | Mode::Seated => 0.,
             };
-            rate += self.mass * v * acceleration + self.mass * self.gravity * travel;
+            rate += m * (self.mass * v * acceleration + self.mass * self.gravity * travel);
         }
         Ok(OwnerAccount {
             mechanical_j: energy,
@@ -1586,11 +1630,12 @@ impl<P: Properties> Rods<P> for RodBlock {
     // every cluster's mode and declared failed release, and the holding
     // circuit's opening time.
     fn discrete_state(&self) -> serde_json::Value {
+        // E-NUC: per cluster, each its motion class's.
         json!({
-            "modes": self.modes.iter().map(|m| match m {
+            "modes": self.clusters.iter().map(|c| match self.modes[c.group] {
                 Mode::Held => "held", Mode::Free => "free", Mode::Seated => "seated",
             }).collect::<Vec<_>>(),
-            "failed_release": self.failed_release,
+            "failed_release": self.clusters.iter().map(|c| self.failed_release[c.group]).collect::<Vec<_>>(),
             "holding_open_at": snapshot_time(self.holding_open_at),
         })
     }
@@ -1628,9 +1673,28 @@ impl<P: Properties> Rods<P> for RodBlock {
                 self.require_single(c)?;
             }
         }
+        // E-NUC: a motion class's members share one mode; a snapshot whose
+        // members differ is refused.
+        let mut class_modes = Vec::with_capacity(self.groups.len());
+        let mut class_failed = Vec::with_capacity(self.groups.len());
+        for grp in &self.groups {
+            let first = grp.members[0];
+            if grp
+                .members
+                .iter()
+                .any(|c| modes[*c] != modes[first] || failed[*c] != failed[first])
+            {
+                return Err(fatal(format!(
+                    "rods snapshot: the members of {}'s motion class hold different modes",
+                    self.clusters[first].id
+                )));
+            }
+            class_modes.push(modes[first]);
+            class_failed.push(failed[first]);
+        }
         self.holding_open_at = restored_time(&o["holding_open_at"])?;
-        self.modes = modes;
-        self.failed_release = failed;
+        self.modes = class_modes;
+        self.failed_release = class_failed;
         Ok(())
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
@@ -1641,7 +1705,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         // stuck releases here, since its release root (t - open) is exactly
         // zero at the stop and would never report a crossing. A release the
         // root already transacted left no held cluster: nothing is due.
-        let directions: Vec<i32> = (0..self.clusters.len())
+        let directions: Vec<i32> = (0..self.groups.len())
             .map(|c| i32::from(self.modes[c] == Mode::Held && !self.failed_release[c]))
             .collect();
         if self.holding_open_at != Some(t) || directions.iter().all(|d| *d == 0) {
@@ -1692,6 +1756,15 @@ impl<P: Properties> Rods<P> for RodBlock {
             })
             .collect()
     }
+    fn class_members(&self) -> Vec<Vec<usize>> {
+        self.bore_groups()
+    }
+    fn cluster_coordinate(&self, c: usize) -> usize {
+        self.cluster_index(c, TRAVEL)
+    }
+    fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+        RodBlock::reduce_packet_state(self, full)
+    }
     fn deposit_stores(&self) -> Vec<String> {
         (0..self.clusters.len()).map(|c| self.fitting(c)).collect()
     }
@@ -1702,8 +1775,9 @@ impl<P: Properties> Rods<P> for RodBlock {
         if out.len() != self.clusters.len() || x.len() != self.layout.len() {
             return Err(fatal("rods: travel layout"));
         }
+        // E-NUC: each cluster's travel is its motion class's.
         for (c, t) in out.iter_mut().enumerate() {
-            *t = x.value(Self::base(c) + TRAVEL);
+            *t = x.value(Self::base(self.clusters[c].group) + TRAVEL);
         }
         Ok(())
     }
@@ -1725,20 +1799,25 @@ impl<P: Properties> Rods<P> for RodBlock {
                 rate_m3_s: s(0.),
             };
         }
-        for c in 0..self.clusters.len() {
-            self.admit_travel(c, x.value(Self::base(c) + TRAVEL).value)?;
+        for c in 0..self.groups.len() {
+            self.admit_travel(self.class_id(c), x.value(Self::base(c) + TRAVEL).value)?;
         }
         for (k, cell) in self.plena.iter().enumerate() {
             let mut volume = s(compiled_m3[cell.index]);
             let mut rate = s(0.);
-            for c in 0..self.clusters.len() {
+            // E-NUC: each motion class displaces its members' volume.
+            for c in 0..self.groups.len() {
+                let m = self.count(c);
                 let y = x.value(Self::base(c) + TRAVEL);
                 let r = x.rate(Self::base(c) + TRAVEL);
                 let (d, slope, curvature) = self.displacement(k, y.value);
                 // V = V_compiled + D(y_ref) - D(y); V' = -dD/dy y'.
                 volume = volume
-                    + Scalar::new(self.reference_displacement[k][c] - d, -slope * y.direction);
-                rate = rate - Scalar::new(slope, curvature * y.direction) * r;
+                    + Scalar::new(
+                        m * (self.reference_displacement[k][c] - d),
+                        -m * slope * y.direction,
+                    );
+                rate = rate - Scalar::new(m * slope, m * curvature * y.direction) * r;
             }
             out[cell.index] = CellVolume {
                 volume_m3: volume,
@@ -1759,11 +1838,12 @@ impl<P: Properties> Rods<P> for RodBlock {
         if rows.len() != self.layout.len() || x.len() != self.layout.len() {
             return Err(fatal("rods: row layout"));
         }
-        let n = self.clusters.len();
+        let n = self.groups.len();
         let bores = self.bores(properties, &x)?;
         let mut members: Vec<Vec<Member>> = vec![Vec::new(); self.groups.len()];
         for c in 0..n {
-            let g = self.clusters[c].group;
+            // E-NUC: motion class `c` is bore group `c`'s one member.
+            let g = c;
             let (r, f) = self.cluster_rows(c, &x, fluid, &bores[g], receipts)?;
             rows[Self::base(c)..Self::base(c) + CLUSTER_COORDINATES].copy_from_slice(&r);
             let t = self.transport(&f, fluid)?;
@@ -1780,10 +1860,11 @@ impl<P: Properties> Rods<P> for RodBlock {
             self.captured = None;
             if self.capture {
                 let mut ledger = [0.; 3];
-                for c in 0..n {
-                    let b = &bores[self.clusters[c].group];
-                    for (sum, part) in ledger.iter_mut().zip(self.power(c, &x, fluid, b)?) {
-                        *sum += part;
+                for (c, b) in bores.iter().enumerate() {
+                    let m = self.count(c);
+                    let power = self.power(self.groups[c].members[0], &x, fluid, b)?;
+                    for (sum, part) in ledger.iter_mut().zip(power) {
+                        *sum += m * part;
                     }
                 }
                 self.captured = Some(ledger);
@@ -1825,7 +1906,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         if cells.iter().any(|c| {
             *c < self.regular && [self.lower, self.upper, self.main].contains(c) && moved(fluid, *c)
         }) {
-            out.extend(0..self.clusters.len() + self.groups.len());
+            out.extend(0..2 * self.groups.len());
         }
         Ok(())
     }
@@ -1836,20 +1917,21 @@ impl<P: Properties> Rods<P> for RodBlock {
         if i >= self.layout.len() {
             return Err(fatal(format!("rods: coordinate {i} outside the block")));
         }
-        let n = self.clusters.len();
+        // E-NUC: motion class `c`'s coordinates are read by itself and its
+        // bore group `c`, the group's by itself and its one class.
+        let n = self.groups.len();
         let cluster_end = CLUSTER_COORDINATES * n;
         if i < cluster_end {
             let c = i / CLUSTER_COORDINATES;
-            out.extend([c, n + self.clusters[c].group]);
+            out.extend([c, n + c]);
         } else {
             let g = (i - cluster_end) / GROUP_COORDINATES;
-            out.push(n + g);
-            out.extend(self.groups[g].members.iter().copied());
+            out.extend([n + g, g]);
         }
         Ok(())
     }
     fn structure(&self) -> Structure {
-        let n = self.clusters.len();
+        let n = self.groups.len();
         let plena = vec![self.lower, self.upper, self.main];
         let rows = self.layout.len();
         let mut st = Structure {
@@ -1859,7 +1941,12 @@ impl<P: Properties> Rods<P> for RodBlock {
             heat: vec![Vec::new(); rows],
             receipts: Vec::new(),
             volumes: Vec::new(),
-            outputs: (0..n).map(|c| vec![Self::base(c) + TRAVEL]).collect(),
+            // E-NUC: each cluster's travel is its motion class's.
+            outputs: self
+                .clusters
+                .iter()
+                .map(|c| vec![Self::base(c.group) + TRAVEL])
+                .collect(),
         };
         let group_state = |g: usize| -> Vec<usize> {
             (0..GROUP_COORDINATES)
@@ -1870,7 +1957,7 @@ impl<P: Properties> Rods<P> for RodBlock {
             let base = Self::base(c);
             let own: Vec<usize> = (0..CLUSTER_COORDINATES)
                 .map(|k| base + k)
-                .chain(group_state(self.clusters[c].group))
+                .chain(group_state(c))
                 .collect();
             st.own.push(vec![base + TRAVEL, base + VELOCITY]);
             st.cells.push(Vec::new());
@@ -1879,11 +1966,9 @@ impl<P: Properties> Rods<P> for RodBlock {
                 st.cells.push(plena.clone());
             }
         }
-        for (g, group) in self.groups.iter().enumerate() {
-            let own: Vec<usize> = group
-                .members
-                .iter()
-                .flat_map(|c| (0..CLUSTER_COORDINATES).map(move |k| Self::base(*c) + k))
+        for g in 0..self.groups.len() {
+            let own: Vec<usize> = (0..CLUSTER_COORDINATES)
+                .map(|k| Self::base(g) + k)
                 .chain(group_state(g))
                 .collect();
             for _ in 0..GROUP_COORDINATES {
@@ -1905,7 +1990,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         st
     }
     fn root_count(&self) -> usize {
-        self.clusters.len()
+        self.groups.len()
     }
     /// Only a seated body's lift-off root reads the fluid (its forces);
     /// release and seat roots read time and travel.
@@ -1916,15 +2001,16 @@ impl<P: Properties> Rods<P> for RodBlock {
     /// strictly inside R3's band, on the bores' density `M/V` (their EOS
     /// row's value at a solved state).
     fn r3_band(&self, x: Coordinates<'_>, _: &Fluid<'_>) -> Result<usize, Failure> {
-        Ok((0..self.clusters.len())
+        // E-NUC: each motion class counts its members.
+        Ok((0..self.groups.len())
             .filter(|&c| {
-                let g = self.clusters[c].group;
-                let density = x.value(self.group_base(g) + BORE_MASS).value
-                    / self.bore_volume_at(g, &x).value;
+                let density = x.value(self.group_base(c) + BORE_MASS).value
+                    / self.bore_volume_at(c, &x).value;
                 let m_up = x.value(Self::base(c) + UPPER_CURRENT).value;
                 (m_up / density / self.blend_volume_current).abs() < 1.
             })
-            .count())
+            .map(|c| self.groups[c].members.len())
+            .sum())
     }
     fn roots(
         &mut self,
@@ -1934,7 +2020,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         fluid: &Fluid<'_>,
         out: &mut [f64],
     ) -> Result<(), Failure> {
-        if out.len() != self.clusters.len() {
+        if out.len() != self.groups.len() {
             return Err(fatal("rods: root layout"));
         }
         for (c, root) in out.iter_mut().enumerate() {
@@ -1948,8 +2034,8 @@ impl<P: Properties> Rods<P> for RodBlock {
                 Mode::Free => x.value(Self::base(c) + TRAVEL).value,
                 // Lift-off when the seat would have to pull.
                 Mode::Seated => {
-                    let bore = self.bore(properties, self.clusters[c].group, &x)?;
-                    -self.forces(c, &x, fluid, &bore)?.net.value
+                    let bore = self.bore(properties, c, &x)?;
+                    -self.forces(self.groups[c].members[0], &x, fluid, &bore)?.net.value
                 }
             };
         }
@@ -1968,7 +2054,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         weights: &[f64],
         directions: &mut [i32],
     ) -> Result<usize, Failure> {
-        let n = self.clusters.len();
+        let n = self.groups.len();
         if directions.len() != n || y.len() != self.layout.len() || weights.len() != y.len() {
             return Err(fatal("rods: coincident-root layout"));
         }
@@ -1998,7 +2084,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         directions: &[i32],
         y: &mut [f64],
     ) -> Result<Transaction, Failure> {
-        if directions.len() != self.clusters.len() || y.len() != self.layout.len() {
+        if directions.len() != self.groups.len() || y.len() != self.layout.len() {
             return Err(fatal("rods: transaction layout"));
         }
         let mut deposits = Vec::new();
@@ -2007,7 +2093,13 @@ impl<P: Properties> Rods<P> for RodBlock {
             if direction == 0 {
                 continue;
             }
-            let id = &self.clusters[c].id;
+            // E-NUC: motion class `c` transacts for every member.
+            let id = self.class_id(c).to_string();
+            let ids: Vec<&str> = self.groups[c]
+                .members
+                .iter()
+                .map(|m| self.clusters[*m].id.as_str())
+                .collect();
             let base = Self::base(c);
             match self.modes[c] {
                 Mode::Held => {
@@ -2022,7 +2114,9 @@ impl<P: Properties> Rods<P> for RodBlock {
                         )));
                     }
                     self.modes[c] = Mode::Free;
-                    events.push(json!({"cluster": id, "event": "grip release", "t_s": t, "travel_m": y[base + TRAVEL]}));
+                    for id in &ids {
+                        events.push(json!({"cluster": id, "event": "grip release", "t_s": t, "travel_m": y[base + TRAVEL]}));
+                    }
                 }
                 Mode::Free => {
                     if direction > 0 {
@@ -2036,16 +2130,20 @@ impl<P: Properties> Rods<P> for RodBlock {
                     y[base + TRAVEL] = 0.;
                     y[base + VELOCITY] = 0.;
                     self.modes[c] = Mode::Seated;
-                    let store = self.fitting(c);
-                    deposits.push((store.clone(), energy));
-                    events.push(json!({"cluster": id, "event": "seat", "t_s": t, "arrival_speed_m_s": speed, "arrival_energy_j": energy, "fitting": store, "located_travel_residue_m": residue, "potential_energy_residue_j": self.mass * self.gravity * residue}));
+                    for &m in &self.groups[c].members {
+                        let (id, store) = (&self.clusters[m].id, self.fitting(m));
+                        deposits.push((store.clone(), energy));
+                        events.push(json!({"cluster": id, "event": "seat", "t_s": t, "arrival_speed_m_s": speed, "arrival_energy_j": energy, "fitting": store, "located_travel_residue_m": residue, "potential_energy_residue_j": self.mass * self.gravity * residue}));
+                    }
                 }
                 Mode::Seated => {
                     if direction > 0 {
                         return Err(fatal(format!("rods: {id} seat reaction rose through zero")));
                     }
                     self.modes[c] = Mode::Free;
-                    events.push(json!({"cluster": id, "event": "lift-off", "t_s": t}));
+                    for id in &ids {
+                        events.push(json!({"cluster": id, "event": "lift-off", "t_s": t}));
+                    }
                 }
             }
         }

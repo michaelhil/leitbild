@@ -227,14 +227,20 @@ fn block_with(drag: SpiderDrag, singles: &[usize]) -> RodBlock {
     )
     .unwrap()
 }
+/// E-NUC: every cluster declared single, so each is its own motion class
+/// and the per-cluster tests see per-cluster coordinates.
 fn block(drag: SpiderDrag) -> RodBlock {
+    block_with(drag, &(0..N).collect::<Vec<_>>())
+}
+/// The fixture's bore groups as motion classes (nothing declared single).
+fn grouped_block(drag: SpiderDrag) -> RodBlock {
     block_with(drag, &[])
 }
 fn layout(b: &RodBlock) -> &leitbild_operating_plant::joined::block::Layout {
     Rods::<Liquid>::layout(b)
 }
-fn ci(c: usize, k: usize) -> usize {
-    RodBlock::cluster_index(c, k)
+fn ci(b: &RodBlock, c: usize, k: usize) -> usize {
+    b.cluster_index(c, k)
 }
 
 /// One cell's water: pressure at its reference, liquid density, viscosity,
@@ -430,9 +436,9 @@ fn held(b: &mut RodBlock, water: &[Water1], travel: f64, current: f64) -> Vec<f6
     }
     let mut physical = Rods::<Liquid>::prepared(b);
     for c in 0..N {
-        physical[ci(c, TRAVEL)] = travel;
-        physical[ci(c, LOWER_CURRENT)] = current;
-        physical[ci(c, UPPER_CURRENT)] = current;
+        physical[ci(b, c, TRAVEL)] = travel;
+        physical[ci(b, c, LOWER_CURRENT)] = current;
+        physical[ci(b, c, UPPER_CURRENT)] = current;
     }
     // The groups' prepared water at their free volume at this travel.
     let y = solver(b, &physical);
@@ -451,7 +457,7 @@ fn held(b: &mut RodBlock, water: &[Water1], travel: f64, current: f64) -> Vec<f6
 
 #[test]
 fn bore_groups_are_the_equal_sector_shares_and_the_declared_singles() {
-    let b = block(SpiderDrag::Omitted);
+    let b = grouped_block(SpiderDrag::Omitted);
     let groups = b.bore_groups();
     // The fixture's shares: c % 13 == 0 is split, the rest by c % 4.
     assert_eq!(groups.len(), 8);
@@ -459,7 +465,8 @@ fn bore_groups_are_the_equal_sector_shares_and_the_declared_singles() {
     for members in &groups {
         assert!(members.iter().all(|c| shares(*c) == shares(members[0])));
     }
-    assert_eq!(layout(&b).len(), CLUSTER_COORDINATES * N + 4 * 8);
+    // E-NUC: one motion class per bore group.
+    assert_eq!(layout(&b).len(), CLUSTER_COORDINATES * 8 + 4 * 8);
     let single = block_with(SpiderDrag::Omitted, &[5, 7]);
     assert_eq!(single.bore_groups().len(), 10);
     assert_eq!(single.bore_groups()[single.group_of(5)], vec![5]);
@@ -486,7 +493,7 @@ fn bore_groups_are_the_equal_sector_shares_and_the_declared_singles() {
     // Every current starts at zero (DR13-ROD: the consistent start solves).
     assert!(
         (0..N)
-            .all(|c| prepared[ci(c, LOWER_CURRENT)] == 0. && prepared[ci(c, UPPER_CURRENT)] == 0.)
+            .all(|c| prepared[ci(&b, c, LOWER_CURRENT)] == 0. && prepared[ci(&b, c, UPPER_CURRENT)] == 0.)
     );
 }
 
@@ -572,15 +579,15 @@ fn mixed(b: &mut RodBlock, water: &[Water1]) -> (Vec<f64>, Vec<f64>) {
         let mode = [Mode::Held, Mode::Free, Mode::Free, Mode::Seated][c % 4];
         b.set_mode(c, mode);
         if mode == Mode::Free {
-            physical[ci(c, TRAVEL)] = 0.4 + 0.035 * c as f64;
-            physical[ci(c, VELOCITY)] = -0.3 - 0.03 * c as f64;
-            rate[ci(c, TRAVEL)] = physical[ci(c, VELOCITY)];
-            rate[ci(c, VELOCITY)] = -1.1;
+            physical[ci(b, c, TRAVEL)] = 0.4 + 0.035 * c as f64;
+            physical[ci(b, c, VELOCITY)] = -0.3 - 0.03 * c as f64;
+            rate[ci(b, c, TRAVEL)] = physical[ci(b, c, VELOCITY)];
+            rate[ci(b, c, VELOCITY)] = -1.1;
         } else if mode == Mode::Seated {
-            physical[ci(c, TRAVEL)] = 0.;
+            physical[ci(b, c, TRAVEL)] = 0.;
         }
-        physical[ci(c, LOWER_CURRENT)] *= 1. - 0.6 * (c % 7) as f64 / 6.;
-        physical[ci(c, UPPER_CURRENT)] *= 1. + 0.01 * (c % 5) as f64;
+        physical[ci(b, c, LOWER_CURRENT)] *= 1. - 0.6 * (c % 7) as f64 / 6.;
+        physical[ci(b, c, UPPER_CURRENT)] *= 1. + 0.01 * (c % 5) as f64;
     }
     for g in 0..b.bore_groups().len() {
         rate[b.group_index(g, BORE_MASS)] = -0.03;
@@ -706,7 +713,7 @@ fn analytic_directions_match_differences_and_the_colored_jacobian_is_the_dense_o
         2,
         3,
         4 * 13 + 2,
-        ci(51, UPPER_CURRENT),
+        ci(&b, 51, UPPER_CURRENT),
         b.group_index(0, BORE_MASS),
         b.group_index(7, BORE_PRESSURE),
     ] {
@@ -846,14 +853,14 @@ fn the_bores_and_the_network_exchange_mass_energy_and_tracer_exactly() {
     for c in 0..N {
         let bore = b.bore(&Liquid, b.group_of(c), &x).unwrap();
         let forces = b.forces(c, &x, &f, &bore).unwrap();
-        let v = x.value(ci(c, VELOCITY)).value;
+        let v = x.value(ci(&b, c, VELOCITY)).value;
         wall += -forces.wall.value * v;
         drag += -forces.spider_drag.value * v;
         bore_work += -bore.pressure.value
             * 24.
             * std::f64::consts::PI
             * 0.00475_f64.powi(2)
-            * x.rate(ci(c, TRAVEL)).value;
+            * x.rate(ci(&b, c, TRAVEL)).value;
     }
     let energy = implied(BORE_ENERGY) + into(1) - drag;
     assert!(
@@ -871,7 +878,7 @@ fn the_bores_and_the_network_exchange_mass_energy_and_tracer_exactly() {
     // are constant.
     let plena: f64 = volumes.iter().map(|v| v.rate_m3_s.value).sum();
     let bores: f64 = (0..N)
-        .map(|c| 24. * std::f64::consts::PI * 0.00475_f64.powi(2) * x.rate(ci(c, TRAVEL)).value)
+        .map(|c| 24. * std::f64::consts::PI * 0.00475_f64.powi(2) * x.rate(ci(&b, c, TRAVEL)).value)
         .sum();
     assert!((plena + bores).abs() < 1e-15, "{plena} + {bores}");
 }
@@ -890,7 +897,7 @@ fn the_bodies_work_enters_the_water_once() {
         let bore = b.bore(&Liquid, b.group_of(c), &x).unwrap();
         let [_, h, w] = b.power(c, &x, &f, &bore).unwrap();
         let forces = b.forces(c, &x, &f, &bore).unwrap();
-        let v = x.value(ci(c, VELOCITY)).value;
+        let v = x.value(ci(&b, c, VELOCITY)).value;
         assert!(
             (h + (forces.wall.value + forces.spider_drag.value) * v).abs()
                 <= 1e-12 * h.abs().max(1.)
@@ -902,7 +909,7 @@ fn the_bodies_work_enters_the_water_once() {
             * 24.
             * std::f64::consts::PI
             * 0.00475_f64.powi(2)
-            * x.rate(ci(c, TRAVEL)).value;
+            * x.rate(ci(&b, c, TRAVEL)).value;
     }
     assert!(heat > 0.);
     // The heat port of the plena carries the spider's drag work, and the
@@ -925,11 +932,14 @@ fn the_bodies_work_enters_the_water_once() {
 #[test]
 fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     let water = z4_field(0.);
-    let mut b = block_with(SpiderDrag::Omitted, &[5]);
+    // E-NUC: per-cluster roots and directions need every cluster its own
+    // motion class; the grouped refusal is checked on the fixture's groups.
+    let mut b = block(SpiderDrag::Omitted);
     let mut physical = held(&mut b, &water, 2.8, 1.3157);
     b.set_failed_release(5).unwrap();
     // A cluster sharing its bores' water cannot be stuck.
-    assert!(b.set_failed_release(6).is_err());
+    let mut shared = block_with(SpiderDrag::Omitted, &[5]);
+    assert!(shared.set_failed_release(6).is_err());
     let t = Rods::<Liquid>::command(&mut b, 1.5, Command::TurbineTrip).unwrap();
     assert_eq!(b.holding_open_at(), Some(1.7));
     assert!(t.deposits.is_empty());
@@ -948,19 +958,19 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     assert_eq!(b.modes()[0], Mode::Free);
     assert_eq!(b.modes()[5], Mode::Held);
     let ids = Rods::<Liquid>::differential(&b);
-    assert_eq!(ids[ci(0, VELOCITY)], 1.);
-    assert_eq!(ids[ci(5, VELOCITY)], 0.);
+    assert_eq!(ids[ci(&b, 0, VELOCITY)], 1.);
+    assert_eq!(ids[ci(&b, 5, VELOCITY)], 0.);
     assert_eq!(ids[b.group_index(0, BORE_MASS)], 1.);
     assert_eq!(ids[b.group_index(0, BORE_PRESSURE)], 0.);
     // A free body at the seat: inelastic, its energy into its fitting.
-    physical[ci(0, TRAVEL)] = 1e-13;
-    physical[ci(0, VELOCITY)] = -2.0;
+    physical[ci(&b, 0, TRAVEL)] = 1e-13;
+    physical[ci(&b, 0, VELOCITY)] = -2.0;
     // E-EVT bank seat: a free, descending cluster whose travel is zero
     // within its error weight seats in the same event; one further off, one
     // rising and the held one do not.
     for (c, travel, speed) in [(1, 3e-9, -2.0), (2, 1e-3, -2.0), (3, 3e-9, 0.5), (5, 0., 0.)] {
-        physical[ci(c, TRAVEL)] = travel;
-        physical[ci(c, VELOCITY)] = speed;
+        physical[ci(&b, c, TRAVEL)] = travel;
+        physical[ci(&b, c, VELOCITY)] = speed;
     }
     let mut directions = vec![0; N];
     directions[0] = -1;
@@ -975,11 +985,11 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     assert_eq!(b.modes()[1], Mode::Seated);
     assert_eq!(b.modes()[2], Mode::Free);
     assert_eq!(
-        (physical[ci(0, TRAVEL)], physical[ci(0, VELOCITY)]),
+        (physical[ci(&b, 0, TRAVEL)], physical[ci(&b, 0, VELOCITY)]),
         (0., 0.)
     );
     assert_eq!(
-        (physical[ci(1, TRAVEL)], physical[ci(1, VELOCITY)]),
+        (physical[ci(&b, 1, TRAVEL)], physical[ci(&b, 1, VELOCITY)]),
         (0., 0.)
     );
     assert_eq!(seat.deposits.len(), 2);
@@ -992,7 +1002,7 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
         b.set_mode(c, if c == 5 { Mode::Held } else { Mode::Free });
     }
     b.set_mode(0, Mode::Seated);
-    seated[ci(0, TRAVEL)] = 0.;
+    seated[ci(&b, 0, TRAVEL)] = 0.;
     let y = solver(&b, &seated);
     let x = Coordinates::new(&y, &yp, None, 0., &scales).unwrap();
     Rods::<Liquid>::roots(&mut b, &Liquid, 3., x, &f, &mut roots).unwrap();
@@ -1044,7 +1054,7 @@ fn the_holding_opening_releases_every_held_cluster_once_as_a_time_event() {
 #[test]
 fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
     let water = z4_field(0.);
-    let mut b = block_with(SpiderDrag::Omitted, &[5, 7]);
+    let mut b = block(SpiderDrag::Omitted);
     let mut physical = held(&mut b, &water, 2.8, 1.3157);
     let before = physical.clone();
     let identity = Rods::<Liquid>::differential(&b);
@@ -1064,7 +1074,9 @@ fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
     // Refused: twice, a cluster that does not exist, one sharing its bores.
     assert!(Rods::<Liquid>::command(&mut b, 1.5, Command::StuckCluster { cluster: 5 }).is_err());
     assert!(Rods::<Liquid>::command(&mut b, 1.5, Command::StuckCluster { cluster: 52 }).is_err());
-    assert!(Rods::<Liquid>::command(&mut b, 1.5, Command::StuckCluster { cluster: 6 }).is_err());
+    let mut shared = block_with(SpiderDrag::Omitted, &[5, 7]);
+    held(&mut shared, &water, 2.8, 1.3157);
+    assert!(Rods::<Liquid>::command(&mut shared, 1.5, Command::StuckCluster { cluster: 6 }).is_err());
     Rods::<Liquid>::command(&mut b, 1.5, Command::TurbineTrip).unwrap();
     let open = Rods::<Liquid>::next_time_event(&b, 1.5).unwrap();
     Rods::<Liquid>::command(&mut b, 1.6, Command::StuckCluster { cluster: 7 }).unwrap();
@@ -1096,7 +1108,7 @@ fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
         };
         assert_eq!(b.modes()[c], expected, "cluster {c}");
         assert_eq!(
-            Rods::<Liquid>::differential(&b)[ci(c, VELOCITY)],
+            Rods::<Liquid>::differential(&b)[ci(&b, c, VELOCITY)],
             if expected == Mode::Free { 1. } else { 0. }
         );
     }
@@ -1106,7 +1118,7 @@ fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
     Rods::<Liquid>::command(&mut other, 0., Command::ManualReactorTrip).unwrap();
     assert!(Rods::<Liquid>::command(&mut other, 0., Command::StuckCluster { cluster: 5 }).is_err());
     // A snapshot naming a stuck cluster that shares its bores is refused.
-    let mut grouped = block(SpiderDrag::Omitted);
+    let mut grouped = grouped_block(SpiderDrag::Omitted);
     let state = Rods::<Liquid>::discrete_state(&b);
     assert!(Rods::<Liquid>::restore_discrete_state(&mut grouped, &state).is_err());
 }
@@ -1171,15 +1183,15 @@ fn mouths(
     let scales = layout(b).scales.clone();
     let mut physical = Rods::<Liquid>::prepared(b);
     let g = b.group_of(0);
-    physical[ci(0, TRAVEL)] = y;
-    physical[ci(0, VELOCITY)] = v;
-    physical[ci(0, LOWER_CURRENT)] = currents.0;
-    physical[ci(0, UPPER_CURRENT)] = currents.1;
+    physical[ci(b, 0, TRAVEL)] = y;
+    physical[ci(b, 0, VELOCITY)] = v;
+    physical[ci(b, 0, LOWER_CURRENT)] = currents.0;
+    physical[ci(b, 0, UPPER_CURRENT)] = currents.1;
     physical[b.group_index(g, BORE_PRESSURE)] = p;
     let x = solver(b, &physical);
     let mut seed = vec![0.; x.len()];
-    seed[ci(0, LOWER_CURRENT)] = 1. / scales[ci(0, LOWER_CURRENT)];
-    seed[ci(0, UPPER_CURRENT)] = 1. / scales[ci(0, UPPER_CURRENT)];
+    seed[ci(b, 0, LOWER_CURRENT)] = 1. / scales[ci(b, 0, LOWER_CURRENT)];
+    seed[ci(b, 0, UPPER_CURRENT)] = 1. / scales[ci(b, 0, UPPER_CURRENT)];
     let yp = vec![0.; x.len()];
     let c = Coordinates::new(&x, &yp, Some(&seed), 0., &scales).unwrap();
     let bore = b.bore(&Liquid, g, &c).unwrap();
@@ -1211,8 +1223,8 @@ fn the_hydrostatic_field_has_a_zero_flow_bore_state_and_no_band_set_current() {
         let d = fluid_data(&water);
         let f = fluid(&d);
         let mut physical = physical.to_vec();
-        physical[ci(0, LOWER_CURRENT)] = currents.0;
-        physical[ci(0, UPPER_CURRENT)] = currents.1;
+        physical[ci(&b, 0, LOWER_CURRENT)] = currents.0;
+        physical[ci(&b, 0, UPPER_CURRENT)] = currents.1;
         physical[b.group_index(g, BORE_PRESSURE)] = p;
         let y = solver(&b, &physical);
         let yp = vec![0.; y.len()];
@@ -1346,8 +1358,8 @@ fn a_converted_state_holds_lower_water_at_the_balancing_bore_pressure() {
         .unwrap();
     let mut physical = Rods::<Liquid>::prepared(&b);
     for c in 0..N {
-        physical[ci(c, LOWER_CURRENT)] = current;
-        physical[ci(c, UPPER_CURRENT)] = current;
+        physical[ci(&b, c, LOWER_CURRENT)] = current;
+        physical[ci(&b, c, UPPER_CURRENT)] = current;
     }
     for (g, s) in stocks.iter().enumerate() {
         for (k, v) in [BORE_MASS, BORE_ENERGY, BORE_BORON, BORE_PRESSURE]
@@ -1368,14 +1380,14 @@ fn a_converted_state_holds_lower_water_at_the_balancing_bore_pressure() {
         assert!(rows[b.group_index(g, BORE_PRESSURE)].value.abs() < 1e-12);
         let c = b.bore_groups()[g][0];
         assert!(
-            rows[ci(c, LOWER_CURRENT)].value.abs() < 1e-2,
+            rows[ci(&b, c, LOWER_CURRENT)].value.abs() < 1e-2,
             "lower {}",
-            rows[ci(c, LOWER_CURRENT)].value
+            rows[ci(&b, c, LOWER_CURRENT)].value
         );
         assert!(
-            rows[ci(c, UPPER_CURRENT)].value.abs() < 4.,
+            rows[ci(&b, c, UPPER_CURRENT)].value.abs() < 4.,
             "upper {}",
-            rows[ci(c, UPPER_CURRENT)].value
+            rows[ci(&b, c, UPPER_CURRENT)].value
         );
     }
 }
@@ -1404,9 +1416,9 @@ fn a_seated_lower_balance_keeps_a_laminar_slope_at_rest() {
         b.forces(0, &x, &f, &bore).unwrap().lower_residual.value
     };
     let h = 1e-6;
-    physical[ci(0, LOWER_CURRENT)] = h;
+    physical[ci(&b, 0, LOWER_CURRENT)] = h;
     let up = lower(&physical);
-    physical[ci(0, LOWER_CURRENT)] = -h;
+    physical[ci(&b, 0, LOWER_CURRENT)] = -h;
     let down = lower(&physical);
     let slope = (up - down) / (2. * h);
     // The exact laminar annulus over the reference's 2.325 m: of the order of

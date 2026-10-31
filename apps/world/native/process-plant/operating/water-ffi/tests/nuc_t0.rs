@@ -164,5 +164,8 @@ fn nuc_t0_members() {
     add(sl, sol.half_members(), &halves);
     add(sl, sol.helium_members(), &helium);
     add(sl, sol.store_members(), &stores);
+    let clusters = ids(&["rods", "clusters"]);
+    let rods = joined.rods().expect("rod owner");
+    add(&rods.layout().labels, &rods.class_members(), &clusters);
     std::fs::write(&out, serde_json::to_vec(&Value::Object(map)).unwrap()).expect("members");
 }
