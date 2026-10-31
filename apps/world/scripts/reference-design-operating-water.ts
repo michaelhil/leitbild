@@ -40,6 +40,11 @@ export const operatingWaterBridge=(band:MetastableBand)=>String.raw`
 #include <string>
 #include <type_traits>
 #include <utility>
+// A literal message is a pointer: no std::string is built unless the check
+// fails (PERF, plan r4: the per-call heap allocation was ~15 % of a case).
+void require(bool condition,const char* message) {
+ if(!condition) throw std::domain_error(message);
+}
 void require(bool condition,const std::string& message) {
  if(!condition) throw std::domain_error(message);
 }
