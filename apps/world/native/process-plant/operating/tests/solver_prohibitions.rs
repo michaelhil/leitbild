@@ -248,6 +248,10 @@ const SOLVER_API: &[&str] = &[
     "IDASVtolerances",
     "IDASetConstraints",
     "IDASetDeltaCjLSetup",
+    // Lead decision R4-ETA (plan r4, owner 31 Oct efficiency instruction):
+    // stock IDAS's fixed step-size bounds, a step-size controller option;
+    // the error test still judges every step.
+    "IDASetEtaFixedStepBounds",
     "IDASetId",
     "IDASetInitStep",
     "IDASetJacFn",
@@ -324,6 +328,7 @@ const SOLVER_API: &[&str] = &[
     "operating_ida_current_state",
     "operating_ida_current_time",
     "operating_ida_delta_cj",
+    "operating_ida_eta_fixed",
     "operating_ida_differential",
     "operating_ida_dky",
     "operating_ida_error_diagnostics",
