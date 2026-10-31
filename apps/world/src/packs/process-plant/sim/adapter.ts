@@ -478,7 +478,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       if (runtimeFailureReason !== null) return
       const simulationMs = targetSimulationMs
       const elapsedMs = Math.max(0, simulationMs - lastSimulationMs)
-      lastSimulationMs = simulationMs
+      // Never backward: a wall-paced tick reading the Run clock while a maximum-pace slice it trails is still exchanging
+      // would otherwise rewind the mark, and the next slice would advance that time a second time.
+      lastSimulationMs = Math.max(lastSimulationMs, simulationMs)
       if (elapsedMs <= 0 || plants.size === 0) return
       for (const connection of systemConnections) {
         const plantId = String(connection.system.objectId)
