@@ -1970,6 +1970,42 @@ impl<P: Properties> Rods<P> for RodBlock {
         }
         Ok(())
     }
+    /// The bank seat (E-EVT, plan r4): the free clusters have one law and
+    /// one datum, so a bank released by one holding opening reaches its
+    /// seats as one physical event, and only the integration's error
+    /// separates their located roots. When a free cluster's seat root is
+    /// located, every other free, descending cluster whose travel is zero
+    /// within its own error weight (`0 <= y w <= 1`) seats in the same
+    /// transaction. Its residue is reported as the located one's is.
+    fn coincident(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        directions: &mut [i32],
+    ) -> Result<usize, Failure> {
+        let n = self.clusters.len();
+        if directions.len() != n || y.len() != self.layout.len() || weights.len() != y.len() {
+            return Err(fatal("rods: coincident-root layout"));
+        }
+        if !(0..n).any(|c| directions[c] < 0 && self.modes[c] == Mode::Free) {
+            return Ok(0);
+        }
+        let mut added = 0;
+        for (c, direction) in directions.iter_mut().enumerate() {
+            let base = Self::base(c);
+            let (travel, weight) = (y[base + TRAVEL], weights[base + TRAVEL]);
+            if *direction == 0
+                && self.modes[c] == Mode::Free
+                && y[base + VELOCITY] < 0.
+                && travel >= 0.
+                && travel * weight <= 1.
+            {
+                *direction = -1;
+                added += 1;
+            }
+        }
+        Ok(added)
+    }
     fn transact(
         &mut self,
         _: &P,

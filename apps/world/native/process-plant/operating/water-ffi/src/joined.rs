@@ -1086,7 +1086,18 @@ mod integrated {
             )
         };
         let mut done = match discrete {
-            Discrete::Roots(directions) => joined.transact(t, directions, y).map_err(message)?,
+            // E-EVT (plan r4): one event per bank seat. The located roots
+            // are widened to the roots of the same event, judged in the
+            // handle's own error weights at the state handed in.
+            Discrete::Roots(directions) => {
+                let mut event = directions.to_vec();
+                let mut w = vec![0.; y.len()];
+                rule.weights(y, relative, absolute, &mut w)?;
+                joined
+                    .coincident(y, &w, &mut event)
+                    .map_err(message)?;
+                joined.transact(t, &event, y).map_err(message)?
+            }
             Discrete::TimeEvent => Vec::new(),
             Discrete::Command(c) => joined.command(t, y, c).map_err(message)?,
         };

@@ -1256,6 +1256,36 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         Ok(())
     }
+    /// E-EVT (plan r4): the located `directions` (per root, owners' order)
+    /// widened to the roots of the same event, at the state `y` handed to
+    /// the restart (solver scaling) and the handle's error `weights` there
+    /// (solver scaling). Only the rods declare coincident roots (the bank
+    /// seat, [`super::block::Rods::coincident`]). Returns how many roots
+    /// were added.
+    pub fn coincident(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        directions: &mut [i32],
+    ) -> Result<usize, Failure> {
+        if directions.len() != self.root_count() || weights.len() != y.len() {
+            return Err(fatal("coincident root layout"));
+        }
+        let o = self.blocks.offsets;
+        let ns = self.secondary().map_or(0, |b| b.root_count());
+        let b = &self.blocks;
+        let RodPort::Owner(owner) = &b.rods else {
+            return Ok(0);
+        };
+        let nr = owner.root_count();
+        let scales = &b.scales[3].coordinates;
+        let x: Vec<f64> = (o.rods..o.pzr).zip(scales).map(|(i, s)| y[i] * s).collect();
+        let w: Vec<f64> = (o.rods..o.pzr)
+            .zip(scales)
+            .map(|(i, s)| weights[i] / s)
+            .collect();
+        owner.coincident(&x, &w, &mut directions[ns..ns + nr])
+    }
     /// The owners' transactions at located roots (`directions` per root,
     /// owners' order): each owner may change its own coordinates of `y`
     /// (solver scaling here, physical in the owner); energy deposits enter

@@ -635,6 +635,17 @@ pub trait Rods<P> {
     fn roots_read_fluid(&self) -> bool {
         true
     }
+    /// E-EVT (plan r4, the bank seat): widen located `directions` (one per
+    /// root, as IDAGetRootInfo) at the state `y` handed to the restart to
+    /// every root of the same event, so it transacts once. `weights` are
+    /// the handle's error weights at `y` (physical units, `1/tolerance`).
+    /// Returns how many roots it added.
+    fn coincident(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        directions: &mut [i32],
+    ) -> Result<usize, Failure>;
     fn transact(
         &mut self,
         properties: &P,
