@@ -18,7 +18,7 @@ import type { RouteContext } from '../../../apps/agents/src/api/routes/types.ts'
 import { evaluate } from '../../../apps/agents/src/agents/evaluation.ts'
 import { parseViewFenceBody, viewRefFor } from '../../../apps/agents/src/core/render-validators/view-fence.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
-import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
+import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
 import type { ChatRequest, LLMProvider } from '../../../apps/agents/src/core/types/llm.ts'
 import type { ToolExecutor } from '../../../apps/agents/src/core/types/tool.ts'
@@ -95,6 +95,7 @@ const startChain = async () => {
   }
   deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
   deployment.sharedToolRegistry.register(createPlaceResolveTool())
+  deployment.sharedToolRegistry.register(createSampleChangesTool())
   deployment.sharedToolRegistry.register(createGetTimeTool())
   agentsRegistry = createAgentsWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: baseUrl, idleMs: 1_000_000 })
 

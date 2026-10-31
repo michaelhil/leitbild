@@ -11,7 +11,7 @@ import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-mo
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../../apps/agents/src/api/__fixtures__/stub-gateway.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
-import { createPlaceResolveTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
+import { createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { PROPOSAL_RESUME_CAUSE } from '../../../apps/agents/src/core/proposal-resume.ts'
 import type { AIAgent } from '../../../apps/agents/src/core/types/agent.ts'
 import type { ChatRequest, StreamChunk } from '../../../apps/agents/src/core/types/llm.ts'
@@ -122,6 +122,7 @@ describe('an approved proposal resumes the procedure with real Modules', () => {
     }
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
+    deployment.sharedToolRegistry.register(createSampleChangesTool())
     agentsRegistry = createAgentsWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: baseUrl, idleMs: 1_000_000 })
 
     const { workspace } = await (await fetch(`${baseUrl}/api/workspaces`, {

@@ -15,7 +15,7 @@ import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-mo
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../../apps/agents/src/api/__fixtures__/stub-gateway.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
-import { createPlaceResolveTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
+import { createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import type { AIAgent } from '../../../apps/agents/src/core/types/agent.ts'
 import type { ChatRequest, StreamChunk } from '../../../apps/agents/src/core/types/llm.ts'
 import {
@@ -244,6 +244,7 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
     await loadSkills(join(import.meta.dir, '../../../apps/agents/skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
+    deployment.sharedToolRegistry.register(createSampleChangesTool())
     agentsRegistry = createAgentsWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: baseUrl, idleMs: 1_000_000 })
     const { workspace } = await json<{ workspace: { id: string } }>(await fetch(`${baseUrl}/api/workspaces`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Guarded procedure workflow' }),

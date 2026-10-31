@@ -29,7 +29,7 @@ import { introspectAgentSurface } from '../../../apps/agents/src/diagnostics/sur
 import { BUNDLED_ROOM_DEFINITIONS } from '../../../apps/agents/src/core/definitions/room-definition-catalog.ts'
 import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
 import { messageFocus } from '../../../apps/agents/src/core/message-focus.ts'
-import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools } from '../../../apps/agents/src/tools/built-in/index.ts'
+import { createGetTimeTool, createPlaceResolveTool, createProductKnowledgeTools, createSampleChangesTool } from '../../../apps/agents/src/tools/built-in/index.ts'
 import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
 import {
   createWorkspaceRuntimeRegistry as createAgentsWorkspaceRuntimeRegistry,
@@ -147,6 +147,7 @@ describe('Workspace Host with real Modules', () => {
     })
     deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
     deployment.sharedToolRegistry.register(createPlaceResolveTool())
+    deployment.sharedToolRegistry.register(createSampleChangesTool())
     deployment.sharedToolRegistry.register(createGetTimeTool())
     leitbildRegistry = createAgentsWorkspaceRuntimeRegistry({
       deployment,
@@ -308,6 +309,7 @@ describe('Workspace Host with real Modules', () => {
       'product_search',
       'product_read',
       'place_resolve',
+      'sample_changes',
       'workspace_explore',
       'workspace_call',
     ]))
@@ -315,6 +317,7 @@ describe('Workspace Host with real Modules', () => {
     const refreshedSurface = introspectAgentSurface(agentsRuntime, generalAssistant.name, assistantRoomId)
     expect(refreshedSurface).not.toHaveProperty('error')
     expect('tools' in refreshedSurface ? refreshedSurface.tools.map(tool => tool.name) : []).toEqual(expect.arrayContaining([
+      'sample_changes',
       'workspace_explore',
       'workspace_call',
     ]))
