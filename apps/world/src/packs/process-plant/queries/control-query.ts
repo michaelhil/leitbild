@@ -3,14 +3,14 @@ import { idSchema, objectIdSchema, type IsoTimestamp } from '../../../core/model
 import type { PackRuntimeQuery } from '../../../simulation/protocol.ts'
 import { evaluateProcessPlantAssessments } from '../assessments.ts'
 import { processPlantControlWritePayloadSchema } from '../commands.ts'
-import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
+import { rejectCapabilityInput, rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
 import { validateOperatorWrite } from '../operations/command-guard.ts'
 import { plantControlsFor } from '../operations/controls.ts'
 import { listedControlsFor, listedResetsFor, proposalPortsFor } from '../operations/instance-ports.ts'
 import { reviewProposal } from '../operations/proposals.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from '../runtime/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
-import { refuseInjectedFaultsIn } from '../signals.ts'
+import { processPlantSignalReferenceSchema, readableProcessPlantSignalBinding, refuseInjectedFaultsIn } from '../signals.ts'
 import { requirePlant } from './common.ts'
 import { evaluateProcessPlantProcedureCondition, processPlantProcedureBasisSchema, processPlantProcedureConditionSchema } from '../condition-evidence.ts'
 
@@ -52,7 +52,13 @@ export const controlsListQuerySchema = z.object({
   plantId: idSchema,
   /** The drawn items to list, by the id an agent names them by ("pressurizer.blockValve"); every one when absent. */
   items: z.array(z.string().min(1)).min(1).max(64).optional(),
-}).strict()
+  /** Exact command bindings, independent of the drawn equipment carrying their controls. */
+  commands: z.array(processPlantSignalReferenceSchema).min(1).optional(),
+}).strict().superRefine((payload, ctx) => {
+  if (payload.items !== undefined && payload.commands !== undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'controls.list accepts items or commands, not both' })
+  }
+})
 
 export const answerProcessPlantControlQuery = (config: {
   readonly request: PackRuntimeQuery
@@ -122,7 +128,22 @@ export const answerProcessPlantControlQuery = (config: {
   if (config.request.capabilityId === 'world.process-plant.controls.list') {
     const payload = controlsListQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    const items = listedControlsFor(system, payload.items)
+    const commandPaths = payload.commands === undefined ? undefined : new Set(payload.commands.map(reference => {
+      const binding = readableProcessPlantSignalBinding(system.plant.graph, reference)
+      if (!binding.writable || binding.actuation !== 'command') {
+        return rejectCapabilityInput(`${binding.tagId ?? binding.path} (${binding.path}) is not a writable Plant command. Discover command bindings with world.process-plant.signals.search using writable:true; feedback readings are not commands.`)
+      }
+      return binding.path
+    }))
+    if (commandPaths !== undefined) {
+      const declared = plantControlsFor(system.plant).items
+      for (const path of commandPaths) {
+        if (!declared.some(item => item.offered.some(control => control.path === path) || item.withheld.some(control => control.path === path))) {
+          return rejectCapabilityTarget(`Plant command ${path} has no offered or withheld control on Process Plant ${payload.plantId}; no other command or control item was substituted.`)
+        }
+      }
+    }
+    const items = listedControlsFor(system, payload.items, commandPaths)
     const missing = (payload.items ?? []).filter(id => !items.some(item => item.id === id))
     if (missing.length > 0) {
       // A rejected guess should lead to canonical discovery, not another guess
@@ -130,7 +151,16 @@ export const answerProcessPlantControlQuery = (config: {
       const identities = plantControlsFor(system.plant).items.map(item => ({ id: item.id, label: item.label }))
       return rejectCapabilityTarget(`Process Plant ${payload.plantId} has no item ${missing.join(', ')}. Select exact ids from these declared control-item identities: ${JSON.stringify(identities)}`)
     }
-    return { plantId: payload.plantId, plantElapsedMs: system.runtime.elapsedMs(), items, resets: listedResetsFor(system) }
+    let resets = listedResetsFor(system)
+    if (commandPaths !== undefined) {
+      const offered = items.flatMap(item => item.offered.map(entry => entry.control))
+      const heldPaths = new Set([...commandPaths, ...offered.flatMap(control => control.isolation === undefined ? [] : [control.isolation])])
+      const relatedRules = new Set(offered.flatMap(control => control.options.flatMap(option => [...option.consequences, ...option.opposing].map(rule => rule.ruleId))))
+      // A reset follows the selected command or its declared I&C relations,
+      // including an isolation input held elsewhere; owner proximity is not evidence.
+      resets = resets.filter(reset => reset.holds.some(path => heldPaths.has(path)) || relatedRules.has(reset.ruleId))
+    }
+    return { plantId: payload.plantId, plantElapsedMs: system.runtime.elapsedMs(), items, resets }
   }
   const payload = processPlantControlWritePayloadSchema.parse(config.request.input)
   const system = requirePlant(config.plants, payload.plantId)

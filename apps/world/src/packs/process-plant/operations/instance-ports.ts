@@ -163,8 +163,8 @@ export interface ListedItem {
   readonly withheld: ReadonlyArray<WithheldControl>
 }
 
-/** The Plant's drawn items with their controls where they stand now; only the named items where ids are given, in the derivation's order. */
-export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds?: ReadonlyArray<string>): ReadonlyArray<ListedItem> => {
+/** The Plant's drawn items with their controls where they stand now; optional exact item or command selection, in the derivation's order. */
+export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds?: ReadonlyArray<string>, commandPaths?: ReadonlySet<VariablePath>): ReadonlyArray<ListedItem> => {
   const controls = plantControlsFor(instance.plant)
   const snapshot = instance.protection?.snapshot()
   const numberAt = (path: VariablePath): number => {
@@ -179,14 +179,17 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
     rules: snapshot === undefined ? new Map() : ruleStatesFrom(snapshot),
   }
   return controls.items
-    .filter(entry => itemIds === undefined || itemIds.includes(entry.id))
+    .filter(entry => (itemIds === undefined || itemIds.includes(entry.id)) && (commandPaths === undefined
+      || entry.offered.some(control => commandPaths.has(control.path)) || entry.withheld.some(control => commandPaths.has(control.path))))
     .map(entry => {
-      const automatic = entry.offered.filter(control => control.controller !== undefined && instance.runtime.readVariable(control.controller.automatic) === true)
+      const offered = commandPaths === undefined ? entry.offered : entry.offered.filter(control => commandPaths.has(control.path))
+      const withheld = commandPaths === undefined ? entry.withheld : entry.withheld.filter(control => commandPaths.has(control.path))
+      const automatic = offered.filter(control => control.controller !== undefined && instance.runtime.readVariable(control.controller.automatic) === true)
       return {
       id: entry.id,
       label: entry.label,
       ...(entry.position === undefined ? {} : { position: { path: entry.position, value: numberAt(entry.position) } }),
-      offered: entry.offered.map(control => {
+      offered: offered.map(control => {
         const travel = control.options.flatMap(option => option.travelMs === null ? [] : [option.travelMs])
         const demand = control.demand === undefined ? undefined : numberAt(control.path)
         const under = demand === undefined || snapshot === undefined ? [] : throttledUnder(instance.plant, snapshot, { path: control.path, value: demand })
@@ -211,7 +214,7 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
           ...(protection === undefined ? {} : { protection }),
         }
       }),
-      withheld: [...entry.withheld, ...automatic.map(control => ({ path: control.path,
+      withheld: [...withheld, ...automatic.map(control => ({ path: control.path,
         ...(control.tagId === undefined ? {} : { tagId: control.tagId }),
         reason: automaticReason(instance.plant.graph, { measured: control.controller!.measured,
           setpoint: numberAt(control.controller!.setpoint), operator: control.controller! }),
