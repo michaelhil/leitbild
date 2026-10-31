@@ -19,7 +19,7 @@ export const qualificationCases = {
   'cross-pack-diagram': 'Show one live display with actual process diagrams for Units 2 and 3 and a diagram of their shared Halden switchyard and grid connections. I want to see equipment and connections, with live generation and supply information, rather than only lists of values or trends. Do not change the simulation.',
   'exact-control': 'Trip the reactor on Unit 3 only. Discover the offered control, execute it, allow the simulation to respond, and verify actual feedback. Do not operate the other units. Report the result.',
   'procedure-takeover': 'I started E-0 on Unit 2 and have handed it back. Take over the existing procedure and continue through its first supported step only, reporting the result in chat, then release it back to me. Preserve the existing procedure run and source; do not reset, restart or close it.',
-  'sustained-monitoring': 'Run the model-scoped E-0 on Unit 2, then continue through the receiving ES-0.1 task into secondary-cooling monitoring. Complete 600 simulation seconds of source-required sampled monitoring after entering that monitoring step, including its recorded reviews and five-minute episode decisions. Report every procedure step in chat. Continue autonomously where current evidence and offered controls support it; request my input clearly if actually needed. Preserve the reference distinction, protection and assigned duties. At the end leave the Run paused and release the procedure back to me; do not reset, close it or claim continuous stability or recovery beyond the model-scoped evidence.',
+  'sustained-monitoring': 'Run the model-scoped E-0 on Unit 2, then continue through the receiving ES-0.1 task into secondary-cooling monitoring. Complete 600 simulation seconds of source-required sampled monitoring after entering that monitoring step, including its recorded reviews and five-minute episode decisions. Report every procedure step in chat. Continue autonomously where current evidence and offered controls support it; request my input clearly if actually needed. Preserve the reference distinction, protection and assigned duties. At the delegated endpoint pause and report the sampled span, current lineup and continuing duties, retaining the active procedure and responsibility unless the source handover conditions are met. Do not reset, close it or claim continuous stability or recovery beyond the model-scoped evidence.',
   'checkpoint-recall': 'Read Unit 2 generator electrical output from live evidence. Separately obtain its signal definition so you can explain what it measures. At that boundary create a working-context checkpoint retaining the definition and archiving the earlier reading. Retrieve the exact archived result with conversation_read using its turnId, toolCallId and part: result, and report the original value, unit and meaning. Do not take a replacement reading or change the simulation. This is an archive-recall qualification test.',
   'image-read': 'Look only at the attached Inspector screenshot. What model-call count does it show, and what does its offline/provider connection label say? Do not infer these from the current simulation or use tools to obtain substitute data.',
   cancellation: 'Read the current simulation clock, then use the simulation wait capability to wait until one minute after that reading. Leave playback and pace as they are; do not advance or change them yourself. I will cancel your wait externally. Do not substitute a wall-clock sleep or claim the time passed.',
@@ -228,6 +228,9 @@ export const runQualification = async (options: QualificationOptions): Promise<a
         || Object.values(record.capture.turns).some((execution: any) => execution.stages.some((stage: any) => stage.event.kind === 'model_fallback'))
       if (terminal) {
         if (substituted) throw Error('Actual serving model/provider substituted; result disqualified')
+        if (caseId === 'sustained-monitoring' && turns.some(turn => turn.status !== 'completed')) {
+          record.terminalFailure = turns.filter(turn => turn.status !== 'completed').map(turn => ({ id: turn.id, status: turn.status }))
+        }
         break
       }
       const pendingWait = Object.values(record.capture.calls).find((call: any) => call.completedAt === undefined
@@ -265,7 +268,10 @@ export const runQualification = async (options: QualificationOptions): Promise<a
     await save()
     throw error
   } finally {
-    if (record.observerClockStart && !record.observerClockPause && pauseOwnedRun) {
+    // A stopped monitoring test may have started playback or acceleration itself.
+    // Pause that owned sandbox on failure, preserving the preceding evidence;
+    // a normal terminal result must prove its own paused endpoint, not gain it here.
+    if ((record.observerClockStart || (caseId === 'sustained-monitoring' && (record.error || record.terminalFailure))) && !record.observerClockPause && pauseOwnedRun) {
       try { record.observerClockPause = await pauseOwnedRun() }
       catch (error) { record.observerClockPauseError = String(error) }
       await save()
