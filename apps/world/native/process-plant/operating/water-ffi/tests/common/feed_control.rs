@@ -17,8 +17,8 @@ use serde_json::{Value, json};
 struct Sg {
     liquid: (usize, f64),
     submerged: (usize, f64),
-    /// NR1, FT.STEAM, FW.FT lags, IL, IF, FCV.u, branch flow.
-    control: [(usize, f64); 7],
+    /// NR1, FT.STEAM, FW.FT lags, IL, IF, FCV.u, branch flow, startup valve.
+    control: [(usize, f64); 8],
 }
 
 /// The feed control's per-frame record of every SG.
@@ -27,8 +27,8 @@ pub struct FeedClient {
     sgs: Vec<Sg>,
     scratch: Vec<f64>,
     /// Per frame: index, time and per SG `[apparent level, NR1, FT.STEAM,
-    /// FW.FT, IL, IF, FCV position, branch flow]`.
-    pub series: Vec<(u64, f64, Vec<[f64; 8]>)>,
+    /// FW.FT, IL, IF, FCV position, branch flow, startup valve]`.
+    pub series: Vec<(u64, f64, Vec<[f64; 9]>)>,
 }
 
 impl FeedClient {
@@ -68,6 +68,7 @@ impl FeedClient {
                     c("IF")?,
                     c("FCV.u")?,
                     c("m")?,
+                    c("SF.u")?,
                 ],
             });
         }
@@ -87,7 +88,7 @@ impl FeedClient {
     /// The receipt section.
     pub fn receipt(&self) -> Value {
         json!({"realization": "continuous (owner 31 Oct 2026): lags, integrals and the FCV stem are SG-owner coordinates; this client only records",
-            "columns": ["apparent_level_m", "nr1_lag_m", "ft_steam_lag_kg_s", "fw_ft_lag_kg_s", "il", "if", "fcv_u", "branch_kg_s"],
+            "columns": ["apparent_level_m", "nr1_lag_m", "ft_steam_lag_kg_s", "fw_ft_lag_kg_s", "il", "if", "fcv_u", "branch_kg_s", "startup_u"],
             "series": self.series.iter().map(|(k, t, v)| json!([k, t, v])).collect::<Vec<_>>()})
     }
 }
@@ -107,7 +108,7 @@ impl<S> Client<S> for FeedClient {
             .sgs
             .iter()
             .map(|g| {
-                let mut r = [0.; 8];
+                let mut r = [0.; 9];
                 r[0] = (v(g.liquid) + v(g.submerged)) / self.area_m2;
                 for (j, c) in g.control.iter().enumerate() {
                     r[j + 1] = v(*c);

@@ -25,7 +25,7 @@ use leitbild_operating_plant::{
     joined::packet::Packet,
     sg::{
         packet::Section,
-        secondary::{FeedMode, Secondaries},
+        secondary::{FeedMode, Secondaries, Startup},
     },
     thermal::{Scalar, WaterProperties},
 };
@@ -160,6 +160,8 @@ fn feed_state_onto_the_feed_packet() {
             ("IL", il),
             ("IF", i_f),
             ("FCV.u", u),
+            ("SF.I", 0.),
+            ("SF.u", 0.),
         ] {
             set(&mut y, &format!("FW.{id}.{label}"), v);
         }
@@ -170,6 +172,7 @@ fn feed_state_onto_the_feed_packet() {
         .map(|u| FeedMode {
             mode: Mode::Auto,
             held: *u,
+            startup: Startup::Stopped,
         })
         .collect();
     state["discrete_state"]["operator"]["secondary"]["feed_modes"] = json!(modes);

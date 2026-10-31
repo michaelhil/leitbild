@@ -7,10 +7,10 @@ import {bypassNoLoad,compileOperatingSecondary,compileSgProbe,parseSgBoundaries,
 
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
 const fence=(name:string,value:unknown)=>'```'+name+'\n'+JSON.stringify(value)+'\n```'
-const relief={valves:[{role:'relief',crackPressure_Pa:7947559,fullLiftPressure_Pa:8147559,reseatPressure_Pa:7747559},
+const relief:ReturnType<typeof parseSgRelief>={valves:[{role:'relief',crackPressure_Pa:7947559,fullLiftPressure_Pa:8147559,reseatPressure_Pa:7747559},
   {role:'safety',crackPressure_Pa:8271613,fullLiftPressure_Pa:8595666,reseatPressure_Pa:8071613}],designPressure_Pa:8273709,liftLag_s:.1,seatLagTimeConstants:10,
   backPressure_Pa:101325,descendingSwitch:'inletAtFullLift',
-  rating:{fractionOfNominalFlow:.6,nominalFlow_kg_s:819.818983,fluid:'saturatedVapor',inletPressure_Pa:7000000}} as const
+  rating:{fractionOfNominalFlow:.6,nominalFlow_kg_s:819.818983,fluid:'saturatedVapor',inletPressure_Pa:7000000}}
 const travel={sgIsolation_s:2,turbineStop_s:.3,reheaterIsolation_s:.3,admission_s:1,bypass_s:2}
 const noLoad={mode:'noLoadPressureAfterTurbineTrip',noLoadAverageTemperature_K:564.816667,noLoadPressure_Pa:7623997}
 const control={bandStart_Pa:6413140,bandFull_Pa:6713140,sample_s:.1,availableBelow_Pa:12000,headerEvidenceAge_s:.5,

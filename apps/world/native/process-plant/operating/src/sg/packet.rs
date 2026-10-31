@@ -127,6 +127,13 @@ pub struct FeedTrain {
     /// (`ld01-feed-compact`), within the stroke rate.
     #[serde(rename = "stemTimeConstant_s")]
     pub stem_time_constant_s: f64,
+    /// The startup-feed stand-in (`ld01-startup-feed`, judgement).
+    pub startup: StartupFeed,
+    /// The control coordinates' operator-grade absolute tolerances
+    /// (`ld01-feed-compact`, a quarter of the matching channel's
+    /// uncertainty under `ld01-operator-budgets` r2).
+    #[serde(rename = "operatorTolerances")]
+    pub operator_tolerances: OperatorTolerances,
     /// The three-element cascade (`ld01-feed-cascade`), read by the feed
     /// controller (`control::feed`), not by the owner's rows.
     pub cascade: crate::control::feed::Cascade,
@@ -392,4 +399,34 @@ pub struct Segment {
     pub exchange_area_m2: f64,
     #[serde(rename = "capacity_J_K")]
     pub capacity_j_k: f64,
+}
+
+/// Absolute tolerances of the feed control's channel lags, physical units:
+/// the NR1 lag (m) and the flow-channel lags (kg/s).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct OperatorTolerances {
+    #[serde(rename = "nrLevel_m")]
+    pub nr_level_m: f64,
+    #[serde(rename = "flow_kg_s")]
+    pub flow_kg_s: f64,
+}
+
+/// The startup-feed stand-in (`ld01-startup-feed`, judgement): one branch
+/// per SG from the tank on the onsite-power stand-in, its capacity the
+/// decay heat shared by the SGs over the rise from the tank to saturated
+/// vapour at the no-load pressure (derived once on the runtime law).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct StartupFeed {
+    #[serde(rename = "decayHeat_W")]
+    pub decay_heat_w: f64,
+    #[serde(rename = "sourceTemperature_K")]
+    pub source_temperature_k: f64,
+    /// NR fraction below which a stopped stand-in starts.
+    #[serde(rename = "startLevelFraction")]
+    pub start_level_fraction: f64,
+    /// NR fraction above which a running stand-in isolates.
+    #[serde(rename = "isolationLevelFraction")]
+    pub isolation_level_fraction: f64,
 }
