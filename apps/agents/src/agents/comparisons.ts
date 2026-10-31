@@ -201,7 +201,7 @@ export const createComparisons = (deps: Dependencies) => {
     const provider = deps.llm.bound({source:'comparison',fallbackChain:[]})
     const info = await provider.modelInfo?.(model)
     if (!info || info.contextMax <= 0) throw new Error('Model context capacity is unavailable')
-    if (source.context.messages.some(m=>m.images?.length) && !modelSupportsImages(model)) throw new Error('Selected model cannot consume the captured images')
+    if (source.context.messages.some(m=>m.images?.length) && !modelSupportsImages(model, info)) throw new Error('Selected model cannot consume the captured images')
     if (source.context.messages.some(m=>m.continuation)) throw new Error('Starting input contains model-specific continuation; cross-model task replay is unavailable')
     const tools = source.toolDefinitions.filter(t=>supportedTools.has(t.function.name))
     const systemBlocks = [...(source.context.systemBlocks ?? source.context.messages.filter(m=>m.role==='system').map(m=>({text:m.content,cacheable:true}))),{text:guidance,cacheable:false}]
