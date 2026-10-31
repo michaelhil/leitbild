@@ -13,6 +13,48 @@
 //! A transport hold retains the old delivered sample with its acquisition
 //! frame and discards in-flight samples; nothing held is replayed.
 use serde::Deserialize;
+use serde_json::{Map, Value, json};
+
+/// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): a real number as
+/// its exact IEEE-754 bits, 16 hex digits (`joined::block::snapshot_time`).
+pub fn snapshot_real(x: f64) -> Value {
+    crate::joined::block::snapshot_time(Some(x))
+}
+/// The inverse of [`snapshot_real`]; anything else refuses.
+pub fn restored_real(v: &Value, what: &str) -> Result<f64, String> {
+    crate::joined::block::restored_time(v)
+        .map_err(|e| format!("{what}: {e:?}"))?
+        .ok_or_else(|| format!("{what}: a real number's bits, not null"))
+}
+/// An optional real number ([`snapshot_real`] or null).
+pub fn restored_real_option(v: &Value, what: &str) -> Result<Option<f64>, String> {
+    crate::joined::block::restored_time(v).map_err(|e| format!("{what}: {e:?}"))
+}
+/// The snapshot object `v` with exactly `keys`, refused otherwise.
+pub fn snapshot_fields<'a>(
+    v: &'a Value,
+    owner: &str,
+    keys: &[&str],
+) -> Result<&'a Map<String, Value>, String> {
+    crate::joined::block::snapshot_object(v, owner, keys).map_err(|e| format!("{e:?}"))
+}
+/// A snapshot boolean, refused otherwise.
+pub fn restored_bool(v: &Value, what: &str) -> Result<bool, String> {
+    v.as_bool()
+        .ok_or_else(|| format!("{what}: a boolean, not {v}"))
+}
+/// A snapshot frame index, refused otherwise.
+pub fn restored_frame(v: &Value, what: &str) -> Result<u64, String> {
+    v.as_u64()
+        .ok_or_else(|| format!("{what}: a frame index, not {v}"))
+}
+/// An optional snapshot frame index.
+pub fn restored_frame_option(v: &Value, what: &str) -> Result<Option<u64>, String> {
+    match v {
+        Value::Null => Ok(None),
+        v => restored_frame(v, what).map(Some),
+    }
+}
 
 /// Exact continuation over `dt` of `r' = (q - r) / lag` under the
 /// polynomial `q(a + s) = Σ_j q_j s^j / j!`, `derivatives = [q_0, …, q_p]`
@@ -120,6 +162,35 @@ pub enum Quality {
     Indeterminate(f64),
 }
 
+impl Quality {
+    /// S5 snapshot hook: `{"value" | "below" | "above" | "indeterminate": bits}`.
+    pub fn snapshot(&self) -> Value {
+        let (k, x) = match *self {
+            Quality::Value(x) => ("value", x),
+            Quality::BelowRange(x) => ("below", x),
+            Quality::AboveRange(x) => ("above", x),
+            Quality::Indeterminate(x) => ("indeterminate", x),
+        };
+        json!({ k: snapshot_real(x) })
+    }
+    /// The inverse of [`Quality::snapshot`].
+    pub fn restored(v: &Value) -> Result<Self, String> {
+        let (k, x) = v
+            .as_object()
+            .filter(|o| o.len() == 1)
+            .and_then(|o| o.iter().next())
+            .ok_or_else(|| format!("a sample quality snapshot is one keyed bound, not {v}"))?;
+        let x = restored_real(x, "sample quality")?;
+        match k.as_str() {
+            "value" => Ok(Quality::Value(x)),
+            "below" => Ok(Quality::BelowRange(x)),
+            "above" => Ok(Quality::AboveRange(x)),
+            "indeterminate" => Ok(Quality::Indeterminate(x)),
+            other => Err(format!("sample quality {other}")),
+        }
+    }
+}
+
 /// A sample in flight or delivered, in frame indices.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sample<T> {
@@ -192,6 +263,48 @@ impl<T: Copy> Delivery<T> {
     pub fn lose(&mut self) {
         self.in_flight.clear();
         self.delivered = None;
+    }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): the samples
+    /// in flight and the delivered one, each `[acquired, delivered, value]`
+    /// with its value as `encode` writes it. The sampling and transport are
+    /// the section's, recomposed on restore.
+    pub fn snapshot(&self, encode: impl Fn(&T) -> Value) -> Value {
+        let sample = |s: &Sample<T>| json!([s.acquired, s.delivered, encode(&s.value)]);
+        json!({"in_flight": self.in_flight.iter().map(sample).collect::<Vec<_>>(),
+            "delivered": self.delivered.as_ref().map(sample)})
+    }
+    /// Restore [`Delivery::snapshot`] exactly; anything else refuses.
+    pub fn restore(
+        &mut self,
+        v: &Value,
+        decode: impl Fn(&Value) -> Result<T, String>,
+    ) -> Result<(), String> {
+        let o = snapshot_fields(v, "delivery", &["in_flight", "delivered"])?;
+        let sample = |s: &Value| -> Result<Sample<T>, String> {
+            match s.as_array().map(Vec::as_slice) {
+                Some([a, d, value]) => Ok(Sample {
+                    acquired: restored_frame(a, "a sample's acquisition")?,
+                    delivered: restored_frame(d, "a sample's delivery")?,
+                    value: decode(value)?,
+                }),
+                _ => Err(format!(
+                    "a sample snapshot is [acquired, delivered, value], not {s}"
+                )),
+            }
+        };
+        let in_flight = o["in_flight"]
+            .as_array()
+            .ok_or("delivery: in_flight is not an array")?
+            .iter()
+            .map(sample)
+            .collect::<Result<Vec<_>, _>>()?;
+        let delivered = match &o["delivered"] {
+            Value::Null => None,
+            s => Some(sample(s)?),
+        };
+        self.in_flight = in_flight;
+        self.delivered = delivered;
+        Ok(())
     }
 }
 
@@ -307,6 +420,60 @@ impl Analog {
         }
         self.powered = powered;
     }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): the retained
+    /// response, supply, injected faults, input-stage status and delivery,
+    /// exact. Identity, supply group and configuration are the section's.
+    pub fn snapshot(&self) -> Value {
+        json!({"id": self.id, "response": snapshot_real(self.response), "powered": self.powered,
+            "faults": {"bias": snapshot_real(self.faults.bias),
+                "stuck": crate::joined::block::snapshot_time(self.faults.stuck),
+                "transport_hold": self.faults.transport_hold},
+            "input_overrange": self.input_overrange.map(|o| match o {
+                Overrange::Above => "above",
+                Overrange::Below => "below",
+            }),
+            "delivery": self.delivery.snapshot(Quality::snapshot)})
+    }
+    /// Restore [`Analog::snapshot`] of the same channel exactly.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = snapshot_fields(
+            v,
+            "analog channel",
+            &[
+                "id",
+                "response",
+                "powered",
+                "faults",
+                "input_overrange",
+                "delivery",
+            ],
+        )?;
+        if o["id"].as_str() != Some(self.id.as_str()) {
+            return Err(format!("channel {} restored from {}", self.id, o["id"]));
+        }
+        let f = snapshot_fields(
+            &o["faults"],
+            "channel faults",
+            &["bias", "stuck", "transport_hold"],
+        )?;
+        let faults = Faults {
+            bias: restored_real(&f["bias"], "channel bias")?,
+            stuck: restored_real_option(&f["stuck"], "channel stuck output")?,
+            transport_hold: restored_bool(&f["transport_hold"], "channel transport hold")?,
+        };
+        let input_overrange = match &o["input_overrange"] {
+            Value::Null => None,
+            Value::String(s) if s == "above" => Some(Overrange::Above),
+            Value::String(s) if s == "below" => Some(Overrange::Below),
+            other => return Err(format!("input-stage status {other}")),
+        };
+        self.delivery.restore(&o["delivery"], Quality::restored)?;
+        self.response = restored_real(&o["response"], "channel response")?;
+        self.powered = restored_bool(&o["powered"], "channel supply")?;
+        self.faults = faults;
+        self.input_overrange = input_overrange;
+        Ok(())
+    }
 }
 
 /// One discrete state report (true: the reported state holds), e.g. the
@@ -354,6 +521,28 @@ impl Report {
             self.delivery.lose();
         }
         self.powered = powered;
+    }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): supply,
+    /// transport hold and delivery, exact.
+    pub fn snapshot(&self) -> Value {
+        json!({"id": self.id, "powered": self.powered, "transport_hold": self.transport_hold,
+            "delivery": self.delivery.snapshot(|b| Value::Bool(*b))})
+    }
+    /// Restore [`Report::snapshot`] of the same report exactly.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = snapshot_fields(
+            v,
+            "report",
+            &["id", "powered", "transport_hold", "delivery"],
+        )?;
+        if o["id"].as_str() != Some(self.id.as_str()) {
+            return Err(format!("report {} restored from {}", self.id, o["id"]));
+        }
+        self.delivery
+            .restore(&o["delivery"], |b| restored_bool(b, "a report's state"))?;
+        self.powered = restored_bool(&o["powered"], "report supply")?;
+        self.transport_hold = restored_bool(&o["transport_hold"], "report transport hold")?;
+        Ok(())
     }
 }
 

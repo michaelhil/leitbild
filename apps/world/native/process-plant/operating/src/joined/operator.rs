@@ -720,7 +720,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         })
     }
     /// S5 snapshot hook: restore [`Joined::discrete_state`] exactly into a
-    /// freshly composed operator of the same packet; any mismatch refuses.
+    /// composed operator of the same packet (freshly, or from another saved
+    /// state of it); any mismatch refuses.
     pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
         use crate::{
             network::RotorState,
@@ -756,17 +757,21 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let modes: Vec<CellMode> = serde_json::from_value(network["modes"].clone())
             .map_err(|e| fatal(format!("snapshot: cell modes: {e}")))?;
         self.network.set_cell_modes(&modes)?;
+        // HOOK (WORLD `ld01-unit` RESTORE): the locks replace those of an
+        // operator composed from another saved state of the same packet
+        // (the unit's LOAD state, L1 declared there); a snapshot without L1
+        // cannot undeclare it.
         match (&network["unilateral"], self.network.unilateral().is_some()) {
             (serde_json::Value::Null, false) => {}
-            (v, false) if !v.is_null() => {
+            (serde_json::Value::Null, true) => {
+                return Err(fatal(
+                    "snapshot: no L1 locks for an operator with L1 declared",
+                ));
+            }
+            (v, _) => {
                 let locks = serde_json::from_value(v.clone())
                     .map_err(|e| fatal(format!("snapshot: L1 locks: {e}")))?;
                 self.network.restore_unilateral(locks)?;
-            }
-            _ => {
-                return Err(fatal(
-                    "snapshot: restore into an operator with L1 not yet declared",
-                ));
             }
         }
         self.phase_modes = o["phase_modes"]

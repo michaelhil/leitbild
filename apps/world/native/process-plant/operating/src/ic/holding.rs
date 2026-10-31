@@ -9,6 +9,9 @@
 //! requested. Holding voltage is lost the first instant the chain breaks;
 //! `hold_rearmed` then stays false (no automatic rearm in S3).
 
+use super::acquisition::{restored_bool, restored_real_option, snapshot_fields};
+use serde_json::{Value, json};
+
 /// A mechanically stuck contact's retained state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stuck {
@@ -79,6 +82,53 @@ impl Holding {
             return Some(t);
         }
         None
+    }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): every
+    /// contact's supply, request and stuck state, the manual interrupt,
+    /// ACT.A, the rearm state and the loss instant (bits), exact.
+    pub fn snapshot(&self) -> Value {
+        let stuck = |s: Option<Stuck>| match s {
+            None => Value::Null,
+            Some(Stuck::Open) => json!("open"),
+            Some(Stuck::Closed) => json!("closed"),
+        };
+        json!({"contacts": self.contacts.iter().map(|c| json!({"id": c.id, "supplied": c.supplied,
+                "requested_open": c.requested_open, "stuck": stuck(c.stuck)})).collect::<Vec<_>>(),
+            "manual_closed": self.manual_closed, "act_a": self.act_a, "rearmed": self.rearmed,
+            "lost_at": crate::joined::block::snapshot_time(self.lost_at)})
+    }
+    /// Restore [`Holding::snapshot`] of the same chain exactly.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = snapshot_fields(
+            v,
+            "holding chain",
+            &["contacts", "manual_closed", "act_a", "rearmed", "lost_at"],
+        )?;
+        let contacts = o["contacts"]
+            .as_array()
+            .filter(|a| a.len() == 3)
+            .ok_or("the holding chain snapshot holds three contacts")?;
+        let mut restored = self.contacts.clone();
+        for (c, s) in restored.iter_mut().zip(contacts) {
+            let f = snapshot_fields(s, "contact", &["id", "supplied", "requested_open", "stuck"])?;
+            if f["id"].as_str() != Some(c.id.as_str()) {
+                return Err(format!("contact {} restored from {}", c.id, f["id"]));
+            }
+            c.supplied = restored_bool(&f["supplied"], "contact supply")?;
+            c.requested_open = restored_bool(&f["requested_open"], "contact request")?;
+            c.stuck = match f["stuck"].as_str() {
+                None if f["stuck"].is_null() => None,
+                Some("open") => Some(Stuck::Open),
+                Some("closed") => Some(Stuck::Closed),
+                _ => return Err(format!("contact stuck state {}", f["stuck"])),
+            };
+        }
+        self.lost_at = restored_real_option(&o["lost_at"], "holding loss instant")?;
+        self.contacts = restored;
+        self.manual_closed = restored_bool(&o["manual_closed"], "manual interrupt")?;
+        self.act_a = restored_bool(&o["act_a"], "ACT.A support")?;
+        self.rearmed = restored_bool(&o["rearmed"], "rearm state")?;
+        Ok(())
     }
 }
 
