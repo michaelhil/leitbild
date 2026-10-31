@@ -10,6 +10,7 @@ import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { processPlantUnitPackDataSchema } from '../src/packs/process-plant/model.ts'
 import { processPlantRuntimeStateSchema } from '../src/packs/process-plant/sim/runtime-state.ts'
 import { ld01UnitArtifactEnv } from '../src/packs/process-plant/engine/artifact.ts'
+import { ld01ChannelIdOf } from '../src/packs/process-plant/engine/tag-map.ts'
 import { scenarios } from './fixtures/scenarios.ts'
 import { compileOperatingGraph } from '../scripts/reference-design-operating-graph'
 import { elec, ic, packet, unitOf } from '../scripts/reference-design-operating-graph.fixture'
@@ -52,10 +53,11 @@ const tagMap = {
 }
 
 /** An artifact whose binary starts the protocol double, its fixture as the joined packet. */
-const artifactWith = async (fixture: Record<string, unknown>, compiled: { readonly graph: unknown; readonly tagMap: unknown } = { graph, tagMap }): Promise<string> => {
+const artifactWith = async (fixture: Record<string, unknown>, compiled: { readonly graph: unknown; readonly tagMap: unknown; readonly automation: unknown } = { graph, tagMap, automation: {} }): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'leitbild-ld01-shell-'))
   cleanups.push(async () => { await rm(directory, { recursive: true, force: true }) })
   const files: Record<string, string> = {
+    'lib/libtest.dylib': 'a library the binary would load\n',
     'bin/ld01-unit': `#!/bin/sh\nexec '${process.execPath}' '${join(import.meta.dir, 'ld01-unit-double.ts')}'\n`,
     'packets/joined.json': JSON.stringify({
       t0: 100, frame_s: 0.1,
@@ -67,9 +69,9 @@ const artifactWith = async (fixture: Record<string, unknown>, compiled: { readon
     }),
     'packets/ic.json': '{}', 'packets/pzr-control.json': '{}', 'packets/elec.json': '{}', 'packets/s3-state.json': '{}',
     'wiki/page.md': '# page\n',
-    'ld01-graph.json': JSON.stringify({ format: 'ld01-plant-graph', sources: { packet: 'c'.repeat(64) }, graph: compiled.graph, tagMap: compiled.tagMap }),
+    'ld01-graph.json': JSON.stringify({ format: 'ld01-plant-graph', sources: { packet: 'c'.repeat(64) }, scope: ['test graph'], graph: compiled.graph, tagMap: compiled.tagMap, automation: compiled.automation }),
     'artifact.json': JSON.stringify({
-      format: 'ld01-unit-artifact', binary: 'bin/ld01-unit', graph: 'ld01-graph.json',
+      format: 'ld01-unit-artifact', binary: 'bin/ld01-unit', libraries: ['lib/libtest.dylib'], graph: 'ld01-graph.json',
       load: {
         inputs: { packet: 'packets/joined.json', wiki_root: 'wiki', wiki_commit: null, wiki_repository: null, ic: 'packets/ic.json', pzr_control: 'packets/pzr-control.json', pzr_control_wiki: 'wiki', elec: 'packets/elec.json' },
         state: 'packets/s3-state.json', solver: { weights: 'declared', first_step: 'declared' },
@@ -212,7 +214,7 @@ describe('an LD-01 Plant in a Run', () => {
 
   test('on its compiled graph, serves the generated displays: declarations, topology and reads of the unit\'s frame', async () => {
     const compiled = compileOperatingGraph({ packet, ic, elec, sha8: 'abcdef12' })
-    const channels = [...new Set(Object.values(compiled.tagMap.channels))].map(id => unitOf(id) === '1'
+    const channels = [...new Set(Object.values(compiled.tagMap.channels).map(ld01ChannelIdOf))].map(id => unitOf(id) === '1'
       ? { id, unit: '1', value: 1, rate: 0 }
       : { id, unit: unitOf(id), value: 15_000_000, rate: 1_000 })
     process.env[ld01UnitArtifactEnv] = await artifactWith({ channels }, compiled)
@@ -232,6 +234,9 @@ describe('an LD-01 Plant in a Run', () => {
       const read = await connection.invokeQuery({ capabilityId: 'world.process-plant.observation.read', input: { refs: ['plant:ld01#PZR.PT1', 'plant:ld01#PUMP.A1.speed'] } }) as { readonly observations: ReadonlyArray<{ readonly ref: string; readonly value: unknown }> }
       expect(read.observations.find(entry => entry.ref === 'plant:ld01#PZR.PT1')?.value).toBeCloseTo(15.0011, 9)
       expect(read.observations.find(entry => entry.ref === 'plant:ld01#PUMP.A1.speed')?.value).toBeCloseTo(15_001_100 * 60 / (2 * Math.PI), 3)
+      // The kernel's latches (every '1' channel of this double reads 1: each function latched in one division) annunciate.
+      const alarms = await connection.invokeQuery({ capabilityId: 'world.process-plant.alarms.status', input: { plantId: 'plant:ld01' } }) as { readonly trips: ReadonlyArray<{ readonly ruleId: string; readonly active: boolean }>; readonly alarms: ReadonlyArray<{ readonly ruleId: string; readonly active: boolean }> }
+      expect(alarms.trips.find(trip => trip.ruleId === 'LD01.PROT.PZR.HIGH_PRESSURE')?.active).toBe(true)
     } finally {
       await connection.close()
     }

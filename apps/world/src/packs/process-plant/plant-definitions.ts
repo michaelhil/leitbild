@@ -123,8 +123,11 @@ export const resolveProcessPlantAutomation = (
 ): ProcessPlantProtectionConfig => {
   if (selection.ref === processPlantLd01KernelAutomationRef) {
     if (modelRef !== processPlantLd01ModelRef) throw new Error(`automation ${selection.ref} is not compatible with process plant model ${modelRef}`)
-    // The unit's protection acts in its kernel, in exact event order with the physics; no TS rule evaluates it.
-    return processPlantIcConfigSchema.parse({})
+    // The unit's protection acts in its kernel, in exact event order with the physics. Its artifact declares the kernel's
+    // latches as alarm and trip rules that read only the kernel's latch channels: they annunciate, never decide or act.
+    const resolution = resolveLd01UnitArtifact()
+    if (!resolution.ok) throw new Error(`an LD-01 Plant is refused: ${resolution.reason}`)
+    return resolution.artifact.automation
   }
   if (selection.ref !== processPlantPwrReferenceAutomationRef) {
     throw new Error(`unknown process plant automation: ${selection.ref}`)

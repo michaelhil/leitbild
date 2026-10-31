@@ -20,7 +20,7 @@ import {
 /**
  * Each Plant's runtime instance, its engine chosen by its Plant Model (engine/port.ts): the TS runtime is made
  * here; an LD-01 Plant's native engine is connected before (it starts a child) and handed in. An LD-01 Plant's
- * protection runs in its kernel, so it has no TS protection runner.
+ * protection acts in its kernel; its runner only annunciates the kernel's latches (its rules read latch channels).
  */
 export const createProcessPlantRuntimeInstances = (config: {
   readonly compiledPlants: ReadonlyArray<CompiledProcessPlant>
@@ -49,7 +49,8 @@ export const createProcessPlantRuntimeInstances = (config: {
       ...(restoredRamps === undefined ? {} : { restoredSnapshot: restoredRamps }),
     })
     // An automatic action's write ends a ramp on the same variable: the ramp no longer reopens a valve a trip shut.
-    const protection = native !== undefined ? undefined : createProcessPlantProtectionRunner({
+    // An LD-01 Plant's rules only annunciate its kernel's latches, read from the frame; they write nothing.
+    const protection = createProcessPlantProtectionRunner({
       system: plant,
       protection: plant.automation,
       ...(restoredProtectionSnapshot === undefined ? {} : { restoredSnapshot: restoredProtectionSnapshot }),
@@ -59,7 +60,7 @@ export const createProcessPlantRuntimeInstances = (config: {
       plant,
       runtime,
       ramps,
-      ...(protection === undefined ? {} : { protection }),
+      protection,
       operations: createPlantOperations({ graph: plant.graph, ...(restoredOperations === undefined ? {} : { restored: restoredOperations }) }),
       performance: createProcessPlantRuntimePerformance(),
     }

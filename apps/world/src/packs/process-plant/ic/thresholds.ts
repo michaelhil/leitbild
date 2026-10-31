@@ -390,7 +390,8 @@ export const icThresholdsForSignal = (
 const ruleLimits = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule, path: VariablePath): ReadonlyArray<ReadLimit> | null => {
   const found = limitsOn(plant, rule.condition, path, false, { gates: [] })
   if (found.includes('unstated')) return null
-  const nominal = operatingPointValue(plant, path)
+  // A plain comparison's limit is always its own; only a combined condition's is judged at the operating point.
+  const nominal = rule.condition.type === 'comparison' ? undefined : operatingPointValue(plant, path)
   const limits = (found as ReadonlyArray<ReadLimit>)
     .filter(limit => rule.condition.type === 'comparison' || nominal === undefined || !holds(nominal, limit.operator, limit.value))
   return limits.length === 0 ? null : limits

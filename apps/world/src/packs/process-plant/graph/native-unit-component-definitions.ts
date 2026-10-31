@@ -48,6 +48,16 @@ const observedVariables = ({ parameters }: { readonly parameters: unknown }): Re
 }
 
 const coolant = { kind: 'hydraulicThermal', circuit: 'coolant' } as const
+const feed = { kind: 'hydraulicThermal', circuit: 'feed' } as const
+
+/** A level reading in percent of a declared span, the equipment's level aspect. */
+const levelAspect = (parameters: unknown) => {
+  const level = (parameters as { readonly levelReading?: string }).levelReading
+  return level === undefined ? [] : [aspect('level', { variable: level, reading: 'value' })]
+}
+
+/** Rod travels read one by one, inserted at travel 0, and the mean travel they average to. */
+const insertionSchema = z.object({ reading: localVariablePathSchema, groups: z.array(z.array(localVariablePathSchema).min(1)).min(1) }).strict()
 
 export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
@@ -65,10 +75,14 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     kind: 'nativeReactorCore' as ComponentKind,
     label: 'Reactor core',
     ports: { inlet: { ...coolant, direction: 'in' }, outlet: { ...coolant, direction: 'out' } },
-    parametersSchema: observedSchema.extend({ volumeM3: z.number().finite().positive(), powerReading: localVariablePathSchema }).strict(),
+    parametersSchema: observedSchema.extend({ volumeM3: z.number().finite().positive(), powerReading: localVariablePathSchema, insertion: insertionSchema.optional() }).strict(),
     semantics: parameters => {
-      const core = parameters as Observed & { readonly powerReading: string }
-      return fixedSemantics({ keyValues: core.keyValues, energy: [{ role: 'source', circuit: 'coolant', rate: core.powerReading }] })(parameters)
+      const core = parameters as Observed & { readonly powerReading: string; readonly insertion?: z.infer<typeof insertionSchema> }
+      return fixedSemantics({
+        keyValues: core.keyValues,
+        energy: [{ role: 'source', circuit: 'coolant', rate: core.powerReading }],
+        ...(core.insertion === undefined ? {} : { insertion: { reading: core.insertion.reading, insertedAt: 'min' as const, groups: core.insertion.groups } }),
+      })(parameters)
     },
     variables: [],
     resolveAdditionalVariables: observedVariables,
@@ -81,9 +95,10 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
       primaryInlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'primary' },
       primaryOutlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'primary' },
       steamOutlet: { kind: 'steam', direction: 'out', circuit: 'secondary' },
+      feedwaterInlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'secondary' },
     },
-    parametersSchema: observedSchema.extend({ primaryVolumeM3: z.number().finite().positive(), secondaryVolumeM3: z.number().finite().positive() }).strict(),
-    semantics: parameters => fixedSemantics({ keyValues: (parameters as Observed).keyValues, energy: [{ role: 'transfer', from: 'primary', to: 'secondary' }] })(parameters),
+    parametersSchema: observedSchema.extend({ primaryVolumeM3: z.number().finite().positive(), secondaryVolumeM3: z.number().finite().positive(), levelReading: localVariablePathSchema.optional() }).strict(),
+    semantics: parameters => fixedSemantics({ keyValues: (parameters as Observed).keyValues, energy: [{ role: 'transfer', from: 'primary', to: 'secondary' }], aspects: levelAspect(parameters) })(parameters),
     variables: [],
     resolveAdditionalVariables: observedVariables,
   }),
@@ -105,9 +120,9 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     kind: 'nativePressurizer' as ComponentKind,
     label: 'Pressurizer',
     ports: { surgeLine: { ...coolant, direction: 'bidirectional' }, sprayInlet: { ...coolant, direction: 'in' } },
-    parametersSchema: observedSchema.extend({ volumeM3: z.number().finite().positive(), bottomM: z.number().finite(), topM: z.number().finite() }).strict()
+    parametersSchema: observedSchema.extend({ volumeM3: z.number().finite().positive(), bottomM: z.number().finite(), topM: z.number().finite(), levelReading: localVariablePathSchema.optional() }).strict()
       .refine(pressurizer => pressurizer.topM > pressurizer.bottomM, 'a pressurizer top above its bottom'),
-    semantics: parameters => fixedSemantics({ keyValues: (parameters as Observed).keyValues })(parameters),
+    semantics: parameters => fixedSemantics({ keyValues: (parameters as Observed).keyValues, aspects: levelAspect(parameters) })(parameters),
     variables: [],
     resolveAdditionalVariables: observedVariables,
   }),
@@ -115,7 +130,8 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     // The turbine-generator: it takes work out of the steam and exports it, running while its shaft turns.
     kind: 'nativeTurbineGenerator' as ComponentKind,
     label: 'Turbine-generator',
-    ports: { steamInlet: { kind: 'steam', direction: 'in', circuit: 'steam' } },
+    // Its condensate returns to the feed train through a condenser and pumps the unit does not model (the graph file says so).
+    ports: { steamInlet: { kind: 'steam', direction: 'in', circuit: 'steam' }, condensateReturn: { kind: 'hydraulicThermal', direction: 'out', circuit: 'steam' } },
     parametersSchema: observedSchema.extend({ powerReading: localVariablePathSchema, speedReading: localVariablePathSchema }).strict(),
     semantics: parameters => {
       const generator = parameters as Observed & { readonly powerReading: string; readonly speedReading: string }
@@ -123,6 +139,35 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
         keyValues: generator.keyValues,
         energy: [{ role: 'sink', circuit: 'steam', rate: generator.powerReading }],
         aspects: [aspect('running', { variable: generator.speedReading, reading: 'aboveZero' })],
+      })(parameters)
+    },
+    variables: [],
+    resolveAdditionalVariables: observedVariables,
+  }),
+  defineComponent({
+    // The feed train's header: the feed pumps' discharge, which the branches to the SGs take from.
+    kind: 'nativeFeedHeader' as ComponentKind,
+    label: 'Feedwater header',
+    ports: { inlet: { ...feed, direction: 'in' }, outlet: { ...feed, direction: 'out' } },
+    parametersSchema: observedSchema.extend({ nominalFlowKgPerS: z.number().finite().positive(), headerPressurePa: z.number().finite().positive() }).strict(),
+    semantics: parameters => fixedSemantics({ keyValues: (parameters as Observed).keyValues })(parameters),
+    variables: [],
+    resolveAdditionalVariables: observedVariables,
+  }),
+  defineComponent({
+    // A feed branch's control valve: its stem position and the branch flow it passes.
+    kind: 'nativeFeedValve' as ComponentKind,
+    label: 'Feedwater control valve',
+    ports: { inlet: { ...feed, direction: 'in' }, outlet: { ...feed, direction: 'out' } },
+    parametersSchema: observedSchema.extend({ positionReading: localVariablePathSchema, flowReading: localVariablePathSchema, nominalFlowKgPerS: z.number().finite().positive() }).strict(),
+    semantics: parameters => {
+      const valve = parameters as Observed & { readonly positionReading: string; readonly flowReading: string }
+      return fixedSemantics({
+        function: 'modulating',
+        keyValues: valve.keyValues,
+        aspects: [aspect('position', { variable: valve.positionReading, reading: 'value' }), aspect('throughput', { variable: valve.flowReading, reading: 'flow' })],
+        ratedOutflow: [{ port: 'outlet', parameter: 'nominalFlowKgPerS' }],
+        portFlows: [{ port: 'outlet', variable: valve.flowReading }],
       })(parameters)
     },
     variables: [],

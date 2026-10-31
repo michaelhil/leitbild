@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compileResolvedProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
@@ -174,12 +174,13 @@ describe('the LD-01 native artifact', () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-ld01-artifact-'))
     cleanups.push(async () => { await rm(directory, { recursive: true, force: true }) })
     const files: Record<string, string> = {
+      'lib/libtest.dylib': 'a library the binary would load\n',
       'bin/ld01-unit': '#!/bin/sh\nexit 2\n',
       'packets/joined.json': '{}', 'packets/ic.json': '{}', 'packets/pzr-control.json': '{}', 'packets/elec.json': '{}', 'packets/s3-state.json': '{}',
       'wiki/world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md': '# page\n',
-      'ld01-graph.json': JSON.stringify({ format: 'ld01-plant-graph', sources: { packet: 'c'.repeat(64) }, graph: plant.sourceGraph, tagMap }),
+      'ld01-graph.json': JSON.stringify({ format: 'ld01-plant-graph', sources: { packet: 'c'.repeat(64) }, scope: ['test graph'], graph: plant.sourceGraph, tagMap, automation: {} }),
       'artifact.json': JSON.stringify({
-        format: 'ld01-unit-artifact', binary: 'bin/ld01-unit', graph: 'ld01-graph.json',
+        format: 'ld01-unit-artifact', binary: 'bin/ld01-unit', libraries: ['lib/libtest.dylib'], graph: 'ld01-graph.json',
         load: {
           inputs: { packet: 'packets/joined.json', wiki_root: 'wiki', wiki_commit: null, wiki_repository: null, ic: 'packets/ic.json', pzr_control: 'packets/pzr-control.json', pzr_control_wiki: 'wiki', elec: 'packets/elec.json' },
           state: 'packets/s3-state.json', solver: { weights: 'declared', first_step: 'declared' },
@@ -210,6 +211,14 @@ describe('the LD-01 native artifact', () => {
     expect(artifact.load.inputs.wiki_root).toBe(join(directory, 'wiki'))
     expect(artifact.tagMap).toEqual(tagMap)
     expect(String(artifact.graph.id)).toBe('ld01.test')
+  })
+
+  test('is refused when a library it names is missing', async () => {
+    const { directory } = await artifactAt()
+    await rename(join(directory, 'lib/libtest.dylib'), join(directory, 'lib/moved.dylib'))
+    const resolution = resolveLd01UnitArtifact({ LD01_UNIT_ARTIFACT: directory })
+    expect(resolution.ok).toBe(false)
+    expect(!resolution.ok && resolution.reason).toContain('lib/libtest.dylib')
   })
 
   test('is refused when a file differs from its manifest digest', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { compilePlantGraph, processPlantComponentRegistry } from '../src/packs/process-plant/graph/index.ts'
-import { bindLd01TagMap, type Ld01Channel } from '../src/packs/process-plant/engine/tag-map.ts'
+import { bindLd01TagMap, ld01ChannelIdOf, type Ld01Channel } from '../src/packs/process-plant/engine/tag-map.ts'
 import { principalCircuits } from '../src/packs/process-plant/equipment/circuits.ts'
 import { compileOperatingGraph } from './reference-design-operating-graph'
 import { elec, ic, packet, unitOf } from './reference-design-operating-graph.fixture'
@@ -44,9 +44,9 @@ describe('the LD-01 graph compiler', () => {
 
   test('maps every graph variable to a channel or a command, and binds to the channels it names', () => {
     expect(graph.variables.every(variable => compiled.tagMap.channels[variable.path] !== undefined || compiled.tagMap.commands[variable.path] !== undefined)).toBe(true)
-    const binding = bindLd01TagMap(graph, compiled.tagMap, channelsFor(Object.values(compiled.tagMap.channels)))
+    const binding = bindLd01TagMap(graph, compiled.tagMap, channelsFor(Object.values(compiled.tagMap.channels).map(ld01ChannelIdOf)))
     expect(binding.byPath.size).toBe(graph.variables.length)
-    const missing = Object.values(compiled.tagMap.channels).filter(id => id !== 'LD01.PZR.PT2')
+    const missing = Object.values(compiled.tagMap.channels).map(ld01ChannelIdOf).filter(id => id !== 'LD01.PZR.PT2')
     expect(() => bindLd01TagMap(graph, compiled.tagMap, channelsFor(missing))).toThrow('PZR.PT2 reads channel LD01.PZR.PT2, which the unit does not deliver')
   })
 

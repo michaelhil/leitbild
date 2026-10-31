@@ -47,7 +47,9 @@ const packetSchema = z.object({
     steamGenerators: z.array(z.object({ id: z.string().min(1), volume_m3: finite.positive(), steamDemand_kg_s: finite.positive() }).passthrough()).min(1),
   }).passthrough(),
   rods: z.object({ clusters: z.array(z.object({ id: z.string().min(1) }).passthrough()).min(1) }).passthrough(),
+  feedback_metadata: z.object({ parameters: z.object({ rod_maximum_travel_m: finite.positive() }).passthrough() }).passthrough(),
 }).passthrough()
+const feedTrainSchema = z.object({ nominalFlow_kg_s: finite.positive(), headerPressure_Pa: finite.positive(), suctionPressure_Pa: finite.positive() }).passthrough()
 
 const side = z.union([z.object({ at_or_above: finite }).strict(), z.object({ at_or_below: finite }).strict()])
 const icSchema = z.object({
@@ -59,6 +61,7 @@ const icSchema = z.object({
       z.literal('pzr_roof_pressure'),
       z.object({ pzr_level: z.object({}).passthrough() }).strict(),
       z.object({ sg_collapsed_level: z.object({ sg: z.string().min(1) }).passthrough() }).strict(),
+      z.object({ sg_apparent_level: z.object({ sg: z.string().min(1) }).passthrough() }).strict(),
       z.object({ loop_flow: z.object({ loop_id: z.string().min(1), face: index, face_id: z.string().min(1) }).passthrough() }).strict(),
       z.object({ current_proxy: z.object({}).passthrough() }).strict(),
       z.object({ pump_speed: z.object({ rotor: index, rotor_id: z.string().min(1) }).strict() }).strict(),
@@ -98,6 +101,8 @@ type Reading = {
   readonly measurand?: string
   readonly channel: string
   readonly channelUnit: string
+  /** Read in percent of this declared span (a level over its instrument's range), not by unit conversion. */
+  readonly span?: { readonly min: number; readonly max: number; readonly declaredBy: string }
   readonly tagId?: string
   readonly limits?: Record<string, unknown>
 }
@@ -130,14 +135,20 @@ const familyLimits = (ic: Ic, family: Family, channelUnit: string, unit: Process
   return Object.keys(limits).length === 0 ? undefined : limits
 }
 
+/** The SG an SG level family measures (collapsed or, with the apparent level, apparent), or null. */
+const sgOfLevel = (quantity: Family['quantity']): string | null =>
+  typeof quantity !== 'object' ? null : 'sg_collapsed_level' in quantity ? quantity.sg_collapsed_level.sg : 'sg_apparent_level' in quantity ? quantity.sg_apparent_level.sg : null
+
 /** How each IC quantity reads on its equipment: unit, quantity and label of its channels. */
 const familyReading = (family: Family): Omit<Reading, 'path' | 'channel' | 'tagId' | 'limits' | 'label'> & { readonly label: (suffix: string) => string } => {
   const quantity = family.quantity
   if (quantity === 'pzr_roof_pressure') return { kind: 'derived', discipline: 'thermal', quantity: 'pressure', unit: 'MPa', channelUnit: 'Pa', label: suffix => `Pressurizer pressure channel ${suffix}` }
   if ('pzr_level' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'length', unit: 'm', channelUnit: 'm', label: suffix => `Pressurizer level channel ${suffix}` }
-  if ('sg_collapsed_level' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'length', unit: 'm', channelUnit: 'm', label: suffix => `SG ${quantity.sg_collapsed_level.sg} narrow-range level channel ${suffix}` }
+  const sg = sgOfLevel(quantity)
+  if (sg !== null) return { kind: 'derived', discipline: 'hydraulic', quantity: 'length', unit: 'm', channelUnit: 'm', label: suffix => `SG ${sg} narrow-range level channel ${suffix}` }
   if ('loop_flow' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'ratio', unit: 'fraction', measurand: 'flow', channelUnit: '1', label: () => `Loop ${quantity.loop_flow.loop_id} flow channel (of nominal)` }
   if ('current_proxy' in quantity) return { kind: 'derived', discipline: 'nuclear', quantity: 'power', unit: 'percent', channelUnit: '1', label: suffix => `Power proxy channel ${suffix}` }
+  if (!('pump_speed' in quantity)) throw new Error(`IC family ${family.id} has a quantity this compiler does not read`)
   return { kind: 'derived', discipline: 'hydraulic', quantity: 'ratio', unit: 'fraction', measurand: 'speed', channelUnit: '1', label: () => `RCP ${lastSegment(quantity.pump_speed.rotor_id)} speed channel (of reference)` }
 }
 
@@ -173,6 +184,14 @@ interface Equipment {
 export interface OperatingGraph {
   readonly graph: PlantGraphSpec
   readonly tagMap: Ld01TagMap
+  /**
+   * The kernel protection as the Pack's alarm and trip state: one rule per IC function whose condition reads only the
+   * kernel's own latch count (`.LATCHED`, divisions holding the cause), and one for the holding voltage. No setpoint, vote
+   * or qualification is evaluated here: the kernel decides and acts; these rules only annunciate what it latched.
+   */
+  readonly automation: Record<string, unknown>
+  /** What the graph does not model, stated plainly (the graph file carries it). */
+  readonly scope: ReadonlyArray<string>
 }
 
 export const compileOperatingGraph = (input: { readonly packet: unknown; readonly ic: unknown; readonly elec: unknown; readonly sha8: string }): OperatingGraph => {
@@ -267,10 +286,12 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   for (const family of ic.families) {
     const quantity = family.quantity
     const owner = quantity === 'pzr_roof_pressure' || 'pzr_level' in quantity ? pzr
-      : 'sg_collapsed_level' in quantity ? at(regionId(sgBySecondary.get(quantity.sg_collapsed_level.sg) ?? Number.NaN))
+      : sgOfLevel(quantity) !== null ? at(regionId(sgBySecondary.get(sgOfLevel(quantity)!) ?? Number.NaN))
         : 'loop_flow' in quantity ? at(componentOf(packet.mechanics.faces[quantity.loop_flow.face]!.from))
           : 'current_proxy' in quantity ? at('CORE')
-            : at(quantity.pump_speed.rotor_id)
+            : 'pump_speed' in quantity ? at(quantity.pump_speed.rotor_id)
+              : null
+    if (owner === null) throw new Error(`IC family ${family.id} measures a quantity the graph places on no equipment`)
     owner.readings.push(...familyReadings(ic, family))
   }
   pzr.readings.push(
@@ -279,6 +300,13 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     reading('mixtureLevel', 'Pressurizer mixture level (above the cell bottom)', 'state', 'hydraulic', 'length', 'm', 'LD01.PZR.LEVEL.MIXTURE', 'm'),
     reading('heaterRequest', 'Pressurizer heater request in force', 'derived', 'control', 'power', 'MW', 'LD01.PZR.HEATER.REQUEST', 'W'),
   )
+  // The PZR level over the span its LT family indicates over (the IC section declares it), its level aspect.
+  const lt = ic.families.find(family => typeof family.quantity === 'object' && 'pzr_level' in family.quantity)
+  if (lt !== undefined && lt.channel.min !== null && lt.channel.max !== null) {
+    pzr.readings.push({ ...reading('levelPercent', `Pressurizer collapsed level (% of the ${lt.id} span)`, 'state', 'hydraulic', 'ratio', 'percent', 'LD01.PZR.LEVEL.COLLAPSED', 'm', 'level'), span: { min: lt.channel.min, max: lt.channel.max, declaredBy: `IC family ${lt.id}` } })
+    pzr.parameters.levelReading = 'levelPercent'
+    pzr.keyValues.splice(1, 1, 'levelPercent')
+  }
   pzr.commands.push({ path: 'reliefStuckOpen', label: 'Pressurizer relief valve fails open', actuation: 'faultInjection', command: { kind: 'ReliefStuckOpen' }, momentary: false })
   for (const family of ic.families) {
     const quantity = family.quantity
@@ -286,15 +314,23 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
       at(componentOf(packet.mechanics.faces[quantity.loop_flow.face]!.from)).readings.push(reading('flow', `Loop ${quantity.loop_flow.loop_id} mass flow at its cold return`, 'state', 'hydraulic', 'flowRate', 'kg/s', `LD01.RCS.${quantity.loop_flow.loop_id}.FLOW`, 'kg/s'))
       at(componentOf(packet.mechanics.faces[quantity.loop_flow.face]!.from)).keyValues.push('flow')
     }
-    if (typeof quantity === 'object' && 'sg_collapsed_level' in quantity) {
-      const sg = quantity.sg_collapsed_level.sg
-      // ld01-unit.rs delivers an SG's pressure and collapsed level beside its narrow-range family.
+    const sg = sgOfLevel(quantity)
+    if (sg !== null) {
+      // ld01-unit.rs delivers an SG's pressure and collapsed level beside its narrow-range family, and its apparent level with one.
+      const apparent = typeof quantity === 'object' && 'sg_apparent_level' in quantity
       const generator = at(regionId(sgBySecondary.get(sg)!))
+      const level = apparent ? `LD01.SG.${sg}.LEVEL.APPARENT` : `LD01.SG.${sg}.LEVEL.COLLAPSED`
       generator.readings.push(
         reading('pressure', `SG ${sg} secondary pressure`, 'state', 'thermal', 'pressure', 'MPa', `LD01.SG.${sg}.PRESSURE`, 'Pa'),
         reading('collapsedLevel', `SG ${sg} collapsed level (narrow-range area)`, 'state', 'hydraulic', 'length', 'm', `LD01.SG.${sg}.LEVEL.COLLAPSED`, 'm'),
+        ...(apparent ? [reading('apparentLevel', `SG ${sg} apparent level (narrow-range area)`, 'state', 'hydraulic', 'length', 'm', level, 'm')] : []),
       )
-      generator.keyValues.push('pressure', 'collapsedLevel')
+      // Its level over the narrow-range span the family indicates over, its level aspect.
+      if (family.channel.min !== null && family.channel.max !== null) {
+        generator.readings.push({ ...reading('levelPercent', `SG ${sg} ${apparent ? 'apparent' : 'collapsed'} level (% of the ${family.id} span)`, 'state', 'hydraulic', 'ratio', 'percent', level, 'm', 'level'), span: { min: family.channel.min, max: family.channel.max, declaredBy: `IC family ${family.id}` } })
+        generator.parameters.levelReading = 'levelPercent'
+      }
+      generator.keyValues.push('pressure', family.channel.min !== null && family.channel.max !== null ? 'levelPercent' : apparent ? 'apparentLevel' : 'collapsedLevel')
     }
     if (typeof quantity === 'object' && 'pump_speed' in quantity) {
       const suffix = lastSegment(quantity.pump_speed.rotor_id)
@@ -309,7 +345,31 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   coreEquipment.readings.push(
     reading('releasedPower', 'Reactor released power', 'state', 'nuclear', 'power', 'MW', 'LD01.CORE.RELEASED_POWER', 'W'),
     ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.${cluster.id}.TRAVEL`, 'm')),
+    reading('rodTravelMean', 'Rod cluster mean travel', 'state', 'nuclear', 'length', 'm', 'LD01.ROD.TRAVEL.MEAN', 'm'),
   )
+  // The rods' insertion: each cluster's travel over the packet's maximum travel, inserted at 0, and the mean they average to.
+  const maximumTravel = packet.feedback_metadata.parameters.rod_maximum_travel_m
+  coreEquipment.parameters.insertion = { reading: 'rodTravelMean', groups: [packet.rods.clusters.map(cluster => `rod.${cluster.id}`)] }
+  for (const entry of coreEquipment.readings) {
+    if (entry.path.startsWith('rod.')) (entry as { limits?: Record<string, unknown> }).limits = { hardRange: { min: 0, max: maximumTravel } }
+  }
+  // Leg and plenum temperatures (ld01-unit.rs: mass-weighted over a loop's hot and cold leg regions, the core's inlet
+  // the lower plenum, its outlet the upper), each on the first region it is weighted over.
+  for (const family of ic.families) {
+    const quantity = family.quantity
+    if (typeof quantity !== 'object' || !('loop_flow' in quantity)) continue
+    const loop = quantity.loop_flow.loop_id
+    for (const [leg, prefix, label] of [['THOT', 'HOT', 'hot-leg temperature (Thot)'], ['TCOLD', 'COLD', 'cold-leg temperature (Tcold)']] as const) {
+      const region = regions.find(entry => entry.id === `${prefix}.${loop}` || entry.id.startsWith(`${prefix}.${loop}.`))
+      if (region === undefined) throw new Error(`loop ${loop} has no ${prefix}.${loop} region`)
+      at(componentOf(regions.indexOf(region))).readings.push(reading('temperature', `Loop ${loop} ${label}`, 'state', 'thermal', 'temperature', 'degC', `LD01.RCS.${loop}.${leg}`, 'K'))
+      at(componentOf(regions.indexOf(region))).keyValues.push('temperature')
+    }
+  }
+  for (const [region, channel, label] of [['LOWER', 'LD01.CORE.INLET.T', 'Core inlet temperature (lower plenum)'], ['UPPER', 'LD01.CORE.OUTLET.T', 'Core outlet temperature (upper plenum)']] as const) {
+    at(region).readings.push(reading('temperature', label, 'state', 'thermal', 'temperature', 'degC', channel, 'K'))
+    at(region).keyValues.push('temperature')
+  }
 
   // The turbine-generator of the ELEC slice, fed by every SG's steam.
   const turbine: Equipment = {
@@ -348,8 +408,36 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   }
   equipment.set(protection.id, protection)
 
+  // The feed train the packet declares (plan r4 X4.1): its header and each SG's branch control valve, read from the SG
+  // owner. The secondary closes through it; the turbine's condensate reaches the header through a condenser and pumps
+  // the unit does not model, a link that carries no reading (scope).
+  const feedTrain = packet.secondary.feedTrain === undefined ? null : feedTrainSchema.parse(packet.secondary.feedTrain)
+  const scope: string[] = []
+  if (feedTrain !== null) {
+    equipment.set('FW.HEADER', { id: 'FW.HEADER', kind: 'nativeFeedHeader', label: 'Feedwater header', parameters: { nominalFlowKgPerS: 2 * feedTrain.nominalFlow_kg_s, headerPressurePa: feedTrain.headerPressure_Pa }, readings: [], commands: [], keyValues: [] })
+    for (const [loop] of sgBySecondary) {
+      const valve: Equipment = {
+        id: `FW.FCV.${loop}`, kind: 'nativeFeedValve', label: `Feedwater control valve ${loop}`,
+        parameters: { positionReading: 'position', flowReading: 'flow', nominalFlowKgPerS: feedTrain.nominalFlow_kg_s },
+        readings: [
+          reading('position', `Feedwater control valve ${loop} stem position`, 'state', 'control', 'ratio', 'fraction', `LD01.FW.${loop}.FCV.POSITION`, '1', 'position'),
+          reading('flow', `Feedwater branch ${loop} flow`, 'state', 'hydraulic', 'flowRate', 'kg/s', `LD01.FW.${loop}.FLOW`, 'kg/s'),
+        ],
+        commands: [], keyValues: ['flow'], loopId: loop,
+      }
+      equipment.set(valve.id, valve)
+      at(regionId(sgBySecondary.get(loop)!)).readings.push(
+        reading('feedNr1', `SG ${loop} level control NR1 (apparent, lagged)`, 'derived', 'control', 'length', 'm', `LD01.FW.${loop}.NR1`, 'm'),
+        reading('steamFlow', `SG ${loop} steam flow (level control, lagged)`, 'derived', 'control', 'flowRate', 'kg/s', `LD01.FW.${loop}.STEAM.FLOW`, 'kg/s'),
+      )
+    }
+    scope.push(`The secondary closes through the feed train the packet declares (feedTrain: header ${feedTrain.headerPressure_Pa} Pa, branch nominal ${feedTrain.nominalFlow_kg_s} kg/s). No condenser, condensate or feed-pump flow model joins the turbine to it: the link TG:FW.HEADER (role not-modelled-condensate-return) is structure only and reads nothing; the feed pumps take suction at ${feedTrain.suctionPressure_Pa} Pa as the unit's boundary.`)
+  } else {
+    scope.push('The packet declares no feed train: the secondary ends at the turbine-generator.')
+  }
+
   for (const item of equipment.values()) {
-    for (const entry of item.readings) if (!ld01ConversionExists(entry.channelUnit, entry.unit)) throw new Error(`${item.id}.${entry.path}: the engine converts no ${entry.channelUnit} to ${entry.unit}`)
+    for (const entry of item.readings) if (entry.span === undefined && !ld01ConversionExists(entry.channelUnit, entry.unit)) throw new Error(`${item.id}.${entry.path}: the engine converts no ${entry.channelUnit} to ${entry.unit}`)
   }
 
   const steamLinks = [...sgBySecondary].map(([loop, primary]) => {
@@ -370,7 +458,7 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
       label: item.label,
       parameters: {
         ...item.parameters,
-        readings: item.readings.map(({ channel: _channel, channelUnit: _unit, tagId: _tag, limits: _limits, ...rest }) => rest),
+        readings: item.readings.map(({ channel: _channel, channelUnit: _unit, tagId: _tag, limits: _limits, span: _span, ...rest }) => rest),
         commands: item.commands.map(({ command: _command, momentary: _momentary, ...rest }) => rest),
         keyValues: item.keyValues,
       },
@@ -396,16 +484,57 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
         }
       }),
       ...steamLinks,
+      ...(feedTrain === null ? [] : [
+        { id: 'TG:FW.HEADER', from: 'TG.condensateReturn', to: 'FW.HEADER.inlet', connectionKind: 'fluidFlow' as const, service: 'feedwater', nominalFluid: 'water' as const, designPhase: 'liquid' as const, solverModel: 'nativeUnit' as const, metadata: { role: 'not-modelled-condensate-return' }, variables: [] },
+        ...[...sgBySecondary].flatMap(([loop, primary]) => [
+          { id: `FW.HEADER:FW.FCV.${loop}`, from: 'FW.HEADER.outlet', to: `FW.FCV.${loop}.inlet`, connectionKind: 'fluidFlow' as const, service: 'feedwater', nominalFluid: 'water' as const, designPhase: 'liquid' as const, solverModel: 'nativeUnit' as const, physical: { nominalFlowKgPerS: feedTrain.nominalFlow_kg_s }, metadata: { loopId: loop }, variables: [] },
+          { id: `FW.FCV.${loop}:${regionId(primary)}`, from: `FW.FCV.${loop}.outlet`, to: `${regionId(primary)}.feedwaterInlet`, connectionKind: 'fluidFlow' as const, service: 'feedwater', nominalFluid: 'water' as const, designPhase: 'liquid' as const, solverModel: 'nativeUnit' as const, physical: { nominalFlowKgPerS: feedTrain.nominalFlow_kg_s }, metadata: { loopId: loop }, variables: [] },
+        ]),
+      ]),
     ] as unknown as PlantGraphSpec['connections'],
     publishedVariables: [...equipment.values()].flatMap(item => [...item.readings, ...item.commands].map(entry => `${item.id}.${entry.path}`)) as unknown as PlantGraphSpec['publishedVariables'],
   }
   const tagMap: Ld01TagMap = {
-    channels: Object.fromEntries([...equipment.values()].flatMap(item => item.readings.map(entry => [`${item.id}.${entry.path}`, entry.channel]))),
+    channels: Object.fromEntries([...equipment.values()].flatMap(item => item.readings.map(entry => [`${item.id}.${entry.path}`, entry.span === undefined ? entry.channel : { channel: entry.channel, span: { min: entry.span.min, max: entry.span.max }, declaredBy: entry.span.declaredBy }]))),
     commands: Object.fromEntries([...equipment.values()].flatMap(item => item.commands.map(entry => [`${item.id}.${entry.path}`, entry.command]))),
   }
   // The graph compiles against the registry as a Plant would load it.
   compilePlantGraph(graph, processPlantComponentRegistry)
-  return { graph, tagMap }
+  const effectWords = (effects: Ic['functions'][number]['effects']): string =>
+    [effects.reactor_trip && 'reactor trip', effects.cmt_injection && 'CMT injection', effects.heater_isolation && 'PZR heater isolation', effects.prhr && 'PRHR'].filter(Boolean).join(', ') || 'no actuation'
+  const automation = {
+    annunciatorSystems: [{ id: 'LD01.PROTECTION', label: 'Reactor protection (kernel)', shortLabel: 'RPS' }],
+    rules: [
+      ...ic.functions.map(entry => ({
+        id: entry.id,
+        label: `${entry.id} (kernel protection latch)`,
+        ruleClass: entry.effects.reactor_trip ? 'protection' : 'alarm',
+        condition: { type: 'comparison', signal: { path: `PROTECTION.latched.${entry.id}` }, operator: '>=', value: 1 },
+        latch: false,
+        effects: [{
+          type: entry.effects.reactor_trip ? 'trip.enter' : 'alarm.enter',
+          id: `${entry.id}.ANNUNCIATED`,
+          title: entry.id,
+          message: `The kernel protection latched ${entry.id} in a division (${effectWords(entry.effects)})`,
+          severity: entry.effects.reactor_trip ? 'critical' : 'warning',
+          annunciator: { system: 'LD01.PROTECTION', role: 'cause', priority: entry.effects.reactor_trip ? 'urgent' : 'high' },
+        }],
+      })),
+      {
+        id: `${ic.holding.interface}.LOST`,
+        label: `${ic.holding.interface} holding voltage lost (rods released)`,
+        ruleClass: 'protection',
+        condition: { type: 'comparison', signal: { path: 'PROTECTION.holdingAvailable' }, operator: '==', value: false },
+        latch: false,
+        effects: [{
+          type: 'trip.enter', id: `${ic.holding.interface}.LOST.ANNUNCIATED`, title: 'Reactor trip',
+          message: `The kernel's holding chain ${ic.holding.interface} has no voltage: the rods are released`,
+          severity: 'critical', annunciator: { system: 'LD01.PROTECTION', role: 'automaticAction', priority: 'urgent' },
+        }],
+      },
+    ],
+  }
+  return { graph, tagMap, scope, automation }
 }
 
 const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
@@ -418,7 +547,7 @@ if (import.meta.main) {
   const [packetText, icText, elecText] = [packetPath, icPath, elecPath].map(path => readFileSync(path, 'utf8')) as [string, string, string]
   const sources = { packet: sha256(packetText), ic: sha256(icText), elec: sha256(elecText) }
   const compiled = compileOperatingGraph({ packet: JSON.parse(packetText), ic: JSON.parse(icText), elec: JSON.parse(elecText), sha8: sha256(JSON.stringify(sources)).slice(0, 8) })
-  const text = `${JSON.stringify({ format: 'ld01-plant-graph', sources, graph: compiled.graph, tagMap: compiled.tagMap }, null, 1)}\n`
+  const text = `${JSON.stringify({ format: 'ld01-plant-graph', sources, scope: compiled.scope, graph: compiled.graph, tagMap: compiled.tagMap, automation: compiled.automation }, null, 1)}\n`
   if (existsSync(outputDirectory)) throw new Error(`${outputDirectory} exists: the compiler writes only into a new directory`)
   mkdirSync(outputDirectory, { recursive: true })
   const file = join(outputDirectory, `ld01-graph-${sha256(text).slice(0, 8)}.json`)

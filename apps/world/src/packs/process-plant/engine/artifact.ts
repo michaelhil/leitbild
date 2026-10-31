@@ -3,11 +3,13 @@ import { isAbsolute, join, normalize, relative } from 'node:path'
 import { z } from 'zod'
 import { plantGraphSpecSchema, type PlantGraphSpec } from '../graph/index.ts'
 import { ld01TagMapSchema, type Ld01TagMap } from './tag-map.ts'
+import { processPlantIcConfigSchema, type ProcessPlantProtectionConfig } from '../runtime/ic/control-protection-model.ts'
 
 // The LD-01 native artifact (shell design §2): a directory named by LD01_UNIT_ARTIFACT holding the `ld01-unit`
 // binary, the packets and S3 settled state its LOAD names, the wiki pages it reads, the compiled Plant graph with
-// its tag map, `artifact.json` saying which file is which, and `MANIFEST.sha256` (sha256sum format: `<hex>  <path>`)
-// over every one of them. Absent, unreadable or mismatched, it is refused with the reason; nothing stands in for it.
+// its tag map, the shared libraries the binary loads (macOS: its SUNDIALS and KLU dylibs, their load paths rewritten
+// to @executable_path/../lib), `artifact.json` saying which file is which, and `MANIFEST.sha256` (sha256sum format:
+// `<hex>  <path>`) over every one of them. Absent, unreadable or mismatched, it is refused with the reason; nothing stands in for it.
 // Production sets no LD01_UNIT_ARTIFACT, so an LD-01 Plant is refused there.
 
 export const ld01UnitArtifactEnv = 'LD01_UNIT_ARTIFACT'
@@ -19,6 +21,8 @@ const relativePathSchema = z.string().min(1).refine(path => !isAbsolute(path) &&
 const descriptorSchema = z.object({
   format: z.literal('ld01-unit-artifact'),
   binary: relativePathSchema,
+  /** Every non-system shared library the binary loads, inside the artifact; each must be in the manifest. */
+  libraries: z.array(relativePathSchema),
   load: z.object({
     inputs: z.object({
       packet: relativePathSchema,
@@ -41,8 +45,12 @@ export const ld01PlantGraphFileSchema = z.object({
   format: z.literal('ld01-plant-graph'),
   /** The packets the graph was compiled from, by SHA-256. */
   sources: z.record(z.string().min(1), z.string().regex(/^[a-f0-9]{64}$/u)),
+  /** What the graph does not model, stated plainly (the turbine's condensate return, a missing feed train). */
+  scope: z.array(z.string().min(1)),
   graph: z.unknown(),
   tagMap: ld01TagMapSchema,
+  /** The kernel protection's latches as declared alarm and trip rules (scripts/reference-design-operating-graph.ts). */
+  automation: z.unknown(),
 }).strict()
 
 /** The LOAD request the artifact makes: its inputs as absolute paths, every key the child requires. */
@@ -69,6 +77,7 @@ export interface Ld01UnitArtifact {
   readonly load: Ld01UnitLoadRequest
   readonly graph: PlantGraphSpec
   readonly tagMap: Ld01TagMap
+  readonly automation: ProcessPlantProtectionConfig
 }
 
 export type Ld01UnitArtifactResolution =
@@ -122,6 +131,7 @@ export const loadLd01UnitArtifact = (directory: string): Ld01UnitArtifact => {
   const descriptor = descriptorSchema.parse(JSON.parse(readFileSync(descriptorPath, 'utf8')))
   const binary = listed(descriptor.binary, 'the binary')
   accessSync(binary, constants.X_OK)
+  for (const library of descriptor.libraries) listed(library, 'the library')
   const inputs = descriptor.load.inputs
   const load: Ld01UnitLoadRequest = {
     inputs: {
@@ -145,6 +155,7 @@ export const loadLd01UnitArtifact = (directory: string): Ld01UnitArtifact => {
     load,
     graph: plantGraphSpecSchema.parse(graphFile.graph),
     tagMap: graphFile.tagMap,
+    automation: processPlantIcConfigSchema.parse(graphFile.automation),
   }
   verified.set(directory, { key, artifact })
   return artifact
