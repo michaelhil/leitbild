@@ -76,7 +76,7 @@ use leitbild_operating_water::{
     unit::{
         inputs::Inputs,
         plant::{self, Boundary, Plant},
-        profile::Weights,
+        profile::{Solver, Weights, parse_first_step},
         s3::{self, Unit},
         timeline,
     },
@@ -249,14 +249,21 @@ impl Host {
             .as_f64()
             .ok_or("electrical packet: boundary.lineVoltage_V")?;
         let state = read_json(state_path)?;
-        // N1's error-weight rule, explicit in LOAD (`weights`: stock |
-        // grouped; absent: stock) and in the reply.
+        // N1's error-weight rule and N3's restart first step, explicit in
+        // LOAD (`weights`: stock | grouped, absent: stock; `first_step`:
+        // declared | last/<d> | last-unless-roots/<d>, absent: declared) and
+        // in the reply.
         let weights = match &config["weights"] {
             Value::Null => Weights::Stock,
             Value::String(w) => Weights::parse(w)?,
             other => return Err(format!("LOAD's weights is stock or grouped, not {other}")),
         };
-        let u = s3::compose(&inputs, &state, weights)?;
+        let first_step = match &config["first_step"] {
+            Value::Null => parse_first_step("declared")?,
+            Value::String(f) => parse_first_step(f)?,
+            other => return Err(format!("LOAD's first_step is a policy name, not {other}")),
+        };
+        let u = s3::compose(&inputs, &state, Solver { weights, first_step })?;
         if u.receipt["from_saved_s3_state"] != json!(true) || u.receipt["spray_path"] != json!(true) {
             return Err(format!(
                 "C5 starts from a saved S3 state with the spray path: {}",
@@ -322,7 +329,7 @@ impl Host {
         let (y, n, rtol, frame) = (&plant.y, plant.n, plant.rtol, plant.frame);
         let s = &plant.ida.system().slice;
         let reply = json!({"t": t0, "tolerance_factor": tolerance_factor, "rtol": rtol, "max_step_s": max_step_s, "dimension": y.len(), "operator": n,
-            "weights": weights, "matrix_rebuild": "packet (MR-1)",
+            "weights": weights, "first_step": first_step, "matrix_rebuild": "packet (MR-1)",
             "kernel_source_sha256": KERNEL_SOURCE_SHA256,
             "boundary": {"v_line_V": s.inputs.v_line, "frequency_hz": s.inputs.f_grid_hz,
                 "carrier_rad_s": s.inputs.carrier_rad_s, "carrier_accel_rad_s2": s.inputs.carrier_accel_rad_s2, "joined": s.inputs.joined},

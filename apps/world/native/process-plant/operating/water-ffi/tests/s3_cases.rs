@@ -1299,22 +1299,30 @@ struct Driven {
 
 /// The case run's explicit configuration, read once by `s3_case_run` and
 /// recorded in every drive's receipt: the error-weight rule (N1; stock until
-/// G1-INTEG sets grouped), the driver's matrix management (MR-1's packet
-/// interval or stock's own) and whether RC-1's declared ramp cap applies.
+/// G1-INTEG sets grouped), the first step of every discrete restart (N3),
+/// the driver's matrix management (MR-1's packet interval or stock's own)
+/// and whether RC-1's declared ramp cap applies.
 #[derive(Clone, Copy, Debug)]
 struct CaseConfig {
-    weights: leitbild_operating_water::unit::profile::Weights,
+    solver: leitbild_operating_water::unit::profile::Solver,
     matrix_rebuild: leitbild_operating_water::frame::MatrixRebuild,
     ramp_cap: bool,
 }
 impl CaseConfig {
-    /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_MR1` (packet | stock)
-    /// and `LD01_S3_RC1` (on | off); unset: stock, packet, on. Any other
-    /// value refuses.
+    /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
+    /// | last/<d> | last-unless-roots/<d>), `LD01_S3_MR1` (packet | stock)
+    /// and `LD01_S3_RC1` (on | off); unset: stock, declared, packet, on.
+    /// Any other value refuses.
     fn from_env() -> Result<Self, String> {
-        use leitbild_operating_water::{frame::MatrixRebuild, unit::profile::Weights};
+        use leitbild_operating_water::{
+            frame::MatrixRebuild,
+            unit::profile::{Solver, Weights, parse_first_step},
+        };
         let var = |name: &str, unset: &str| std::env::var(name).unwrap_or_else(|_| unset.into());
-        let weights = Weights::parse(&var("LD01_S3_WEIGHTS", "stock"))?;
+        let solver = Solver {
+            weights: Weights::parse(&var("LD01_S3_WEIGHTS", "stock"))?,
+            first_step: parse_first_step(&var("LD01_S3_FIRST_STEP", "declared"))?,
+        };
         let matrix_rebuild = match var("LD01_S3_MR1", "packet").as_str() {
             "packet" => MatrixRebuild::Packet,
             "stock" => MatrixRebuild::Stock,
@@ -1326,13 +1334,13 @@ impl CaseConfig {
             v => return Err(format!("LD01_S3_RC1={v}: on or off")),
         };
         Ok(Self {
-            weights,
+            solver,
             matrix_rebuild,
             ramp_cap,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.weights, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap})
     }
 }
 
@@ -1389,7 +1397,7 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let unit = s3::compose_with(inputs, state, ask.scaling, ask.config.weights, wrap)
+    let unit = s3::compose_with(inputs, state, ask.scaling, ask.config.solver, wrap)
         .unwrap_or_else(|e| panic!("{e}"));
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));

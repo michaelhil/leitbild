@@ -5,7 +5,7 @@
 //! `ld01-s1-gates`, never written here.
 use crate::{
     ida::{Ida, System},
-    joined::{JoinedSystem, Restart, census_groups},
+    joined::{FirstStep, JoinedSystem, Restart, census_groups},
 };
 use leitbild_operating_plant::{
     initialization::SurfacePolicy,
@@ -103,6 +103,54 @@ pub enum Weights {
     /// ([`census_groups`], [`Ida::group_weights`]).
     Grouped,
 }
+/// A unit's solver configuration beyond the fixed profile: the error-weight
+/// rule (N1) and the first step of every discrete restart (N3,
+/// [`FirstStep`]). An explicit value of every composition; its receipt
+/// records both.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct Solver {
+    pub weights: Weights,
+    pub first_step: FirstStep,
+}
+impl Solver {
+    /// Stock weights and the declared G13 first step: the composition of
+    /// record.
+    pub const STOCK: Self = Self {
+        weights: Weights::Stock,
+        first_step: FirstStep::Declared,
+    };
+}
+
+/// A first-step policy by name: `declared`, `last/<divisor>` or
+/// `last-unless-roots/<divisor>` (divisor finite and >= 1); anything else
+/// refuses.
+pub fn parse_first_step(name: &str) -> Result<FirstStep, String> {
+    let divisor = |d: &str| -> Result<f64, String> {
+        let v: f64 = d
+            .parse()
+            .map_err(|_| format!("first step {name}: divisor {d} is not a number"))?;
+        if v.is_finite() && v >= 1. {
+            Ok(v)
+        } else {
+            Err(format!(
+                "first step {name}: divisor must be finite and >= 1"
+            ))
+        }
+    };
+    match name.split_once('/') {
+        None if name == "declared" => Ok(FirstStep::Declared),
+        Some(("last", d)) => Ok(FirstStep::LastStep {
+            divisor: divisor(d)?,
+        }),
+        Some(("last-unless-roots", d)) => Ok(FirstStep::LastStepUnlessRoots {
+            divisor: divisor(d)?,
+        }),
+        _ => Err(format!(
+            "first step {name}: declared, last/<divisor> or last-unless-roots/<divisor>"
+        )),
+    }
+}
+
 impl Weights {
     /// `stock` or `grouped`; anything else refuses.
     pub fn parse(name: &str) -> Result<Self, String> {

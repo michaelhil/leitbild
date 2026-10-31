@@ -25,7 +25,7 @@
 //! sections, ELEC's packet).
 use super::{
     inputs::Inputs,
-    profile::{MAX_ORDER, RESTART, Weights},
+    profile::{MAX_ORDER, RESTART, Solver},
     pzr_control::{self, PzrClient},
     spine::{Started, credited_outputs, started_full_composition},
 };
@@ -187,8 +187,8 @@ fn electrical(e: &Value, rotors: usize, t0: f64) -> Result<SlicePieces, String> 
 
 /// The S3 composition at `state` (`{t_s, packet, y, yp}` of the packet,
 /// with `appended` and `discrete_state` when it is a saved S3 state).
-pub fn compose(inputs: &Inputs, state: &Value, weights: Weights) -> Result<S3Unit, String> {
-    compose_with(inputs, state, Scaling::NONE, weights, Ok)
+pub fn compose(inputs: &Inputs, state: &Value, solver: Solver) -> Result<S3Unit, String> {
+    compose_with(inputs, state, Scaling::NONE, solver, Ok)
 }
 
 /// [`compose`] with every tolerance scaled by `scaling` (a reference run)
@@ -199,7 +199,7 @@ pub fn compose_with<J: JoinedSystem>(
     inputs: &Inputs,
     state: &Value,
     scaling: Scaling,
-    weights: Weights,
+    solver: Solver,
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
     let packet_path = &inputs.spine.packet_path;
@@ -292,8 +292,9 @@ pub fn compose_with<J: JoinedSystem>(
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
     let presence = VaporPresence::of(&joined.network, &joined.network.declared_presence(&y));
-    let integrated = Integrated::following_presence(joined, t0, &y, &presence)
+    let mut integrated = Integrated::following_presence(joined, t0, &y, &presence)
         .map_err(|e| format!("integrable: {e:?}"))?;
+    integrated.set_first_step(solver.first_step)?;
     let integrated = wrap(integrated)?;
     let e = read_json(&inputs.elec_path)?;
     let rotors = integrated.integrated().joined.network.rotor_count();
@@ -379,7 +380,7 @@ pub fn compose_with<J: JoinedSystem>(
     )
     .map_err(|e| format!("stock IDA: {e:?}"))?;
     ida.set_max_order(MAX_ORDER).map_err(|e| format!("{e:?}"))?;
-    weights.apply(&mut ida)?;
+    solver.weights.apply(&mut ida)?;
     ida.constrain_nonnegative(&nonnegative)
         .map_err(|e| format!("{e:?}"))?;
     restart.configure(&mut ida).map_err(|e| format!("{e:?}"))?;
@@ -400,7 +401,7 @@ pub fn compose_with<J: JoinedSystem>(
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
-        "weights": weights, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
+        "weights": solver.weights, "first_step": solver.first_step, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
