@@ -766,6 +766,19 @@ impl<S: System> Ida<S> {
         }
         Ok(())
     }
+    /// The error-weight rule in force, for receipts: stock IDASVtolerances
+    /// (`"stock"`), or stock IDAWFtolerances carrying the coordinates'
+    /// multiplicities under one group (E-NUC: the unreduced model's stock
+    /// norm, `"stock-equivalent multiplicity rule"`), or N1's groups, with
+    /// or without multiplicities.
+    pub fn weight_rule_kind(&self) -> &'static str {
+        match (&self.context.grouped, &self.context.multiplicity) {
+            (None, _) => "stock",
+            (Some(g), Some(_)) if g.groups.sizes().len() == 1 => "stock-equivalent multiplicity rule",
+            (Some(_), Some(_)) => "N1 groups with multiplicities",
+            (Some(_), None) => "N1 groups",
+        }
+    }
     /// The weight groups in force, if any (N1).
     pub fn weight_groups(&self) -> Option<&WeightGroups> {
         self.context.grouped.as_ref().map(|g| &g.groups)
