@@ -1,7 +1,7 @@
 import { createModal, createButton, createCodeBlock, prettyJson } from './detail-modal.ts'
 import { safeFetchJson } from '../fetch-helpers.ts'
 import { showToast } from '../toast.ts'
-import { buildExecutionJourney, readableEvidence, extractPromptSections, formatElapsed, type ExecutionInspection, type GenerationQueryInspection, type JourneyActor, type JourneyEvent } from './execution-journey.ts'
+import { buildExecutionJourney, readableEvidence, extractPromptSections, formatElapsed, recordedExecutionCosts, type ExecutionInspection, type GenerationQueryInspection, type JourneyActor, type JourneyEvent } from './execution-journey.ts'
 import type { ExecutionCall } from '../../../core/executions/store.ts'
 import type { ExecutionModelCall } from '../../../core/executions/model-evidence.ts'
 import { progressActivityEvents, recordedOperations, recordedOperationView, type ProgressActivity } from './progress-activity.ts'
@@ -45,6 +45,8 @@ const phase = (host: HTMLElement, label: string, description: string): void => {
 }
 const actorLabels: Readonly<Record<JourneyActor, string>> = { context: 'Context', model: 'Model', tools: 'Tools', system: 'Runtime' }
 const stateLabel = (event: JourneyEvent): string => event.state === 'recorded' ? event.source.kind === 'model' ? 'Response recorded' : 'Recorded' : event.state === 'unknown' ? 'Outcome unknown' : event.state[0]!.toUpperCase() + event.state.slice(1)
+// Compact display only. Exact provider-reported numbers remain in each record.
+const costDisplay = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 6 })
 
 /** One evidence inspector, two projections of the same selected event.
  * Runtime records, request snapshots and unknown outcomes stay distinct. */
@@ -80,6 +82,10 @@ export const showGenerationInspector = (options: {
   if (execution) {
     chips.append(text('span', execution.turn.status, 'inspector-chip'), text('span', execution.modelCapture === 'unavailable' ? 'Model history unavailable' : `${execution.models.length} model call${execution.models.length === 1 ? '' : 's'}${activity ? ' in turn' : ''}`, 'inspector-chip'), text('span', `${execution.calls.length} tool attempt${execution.calls.length === 1 ? '' : 's'}${activity ? ' in turn' : ''}`, 'inspector-chip'))
     if (execution.turn.finishedAt !== undefined) chips.appendChild(text('span', formatElapsed(execution.turn.finishedAt - execution.turn.startedAt), 'inspector-chip'))
+    const costs = recordedExecutionCosts(execution.models)
+    const billing = text('span', costs.reportedCostUsd === undefined ? 'Cost unknown' : `${costDisplay.format(costs.reportedCostUsd)} reported · ${costs.costReportedCalls}/${costs.attempts} calls`, 'inspector-chip')
+    billing.title = costs.reportedCostUsd === undefined ? 'No model call has a recorded provider charge.' : `${costs.unknownCalls} attempted call${costs.unknownCalls === 1 ? ' has' : 's have'} unknown charges. This is the known reported sum, not an account invoice or price estimate.`
+    chips.appendChild(billing)
   } else chips.appendChild(text('span', 'Request snapshots', 'inspector-chip'))
   const modes = document.createElement('div')
   modes.className = 'inspector-mode'
@@ -264,6 +270,7 @@ export const showGenerationInspector = (options: {
     if (!sensitive) modelRecords.set(call.id, record)
     if (sensitive) { note(host, 'Sensitive provider protocol included by explicit request.'); renderRaw(host, record, true); return }
     phase(host, 'Input', `${record.messageCount} messages · ${record.toolCount} available tools`)
+    phase(host, 'Reported cost', record.metrics?.costUsd === undefined ? 'Unknown' : `USD ${record.metrics.costUsd}`)
     renderQuery(host, record.request as unknown as GenerationQueryInspection['query'], body => {
       if (record.error) value(body, 'Recorded model error', record.error)
       if (record.response) {
@@ -353,6 +360,9 @@ export const showGenerationInspector = (options: {
       phase(detail, 'Turn', execution.turn.status)
       phase(detail, 'Started', new Date(execution.turn.startedAt).toLocaleString())
       phase(detail, 'Agent', execution.turn.agentId)
+      const costs = recordedExecutionCosts(execution.models)
+      phase(detail, 'Reported charges', costs.reportedCostUsd === undefined ? 'Unknown' : `${costDisplay.format(costs.reportedCostUsd)} from ${costs.costReportedCalls} of ${costs.attempts} attempted calls`)
+      if (costs.unknownCalls) note(detail, `${costs.unknownCalls} attempted call${costs.unknownCalls === 1 ? ' has' : 's have'} no reported charge. Missing billing is unknown, not zero.`)
       if (execution.turn.reason) note(detail, execution.turn.reason)
       if (execution.modelCapture === 'unavailable') note(detail, 'Model-by-model capture is unavailable for this historical turn. The retained final request does not reconstruct earlier model iterations.')
       if (execution.modelCapture === 'recorded' && execution.models.length === 0) note(detail, 'No model call was recorded in this turn. Inspect the runtime stages for preparation or cancellation.')

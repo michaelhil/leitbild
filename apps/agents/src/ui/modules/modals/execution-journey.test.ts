@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { buildExecutionJourney, continuationMetadata, type ExecutionInspection, type GenerationQueryInspection } from './execution-journey.ts'
+import { buildExecutionJourney, continuationMetadata, recordedExecutionCosts, type ExecutionInspection, type GenerationQueryInspection } from './execution-journey.ts'
+import type { ExecutionModelCallSummary } from '../../../core/executions/model-evidence.ts'
 
 const inspection: GenerationQueryInspection = {
   messageId: 'message', traceId: 'turn', generation: { modelCalls: 99 },
@@ -11,6 +12,32 @@ const inspection: GenerationQueryInspection = {
 const execution = (patch: Partial<ExecutionInspection> = {}): ExecutionInspection => ({
   turn: { id: 'turn', roomId: 'room', agentId: 'agent', startedAt: 100, status: 'completed', finishedAt: 300 },
   modelCapture: 'recorded', models: [], calls: [], stages: [], ...patch,
+})
+
+const model = (id: string, patch: Partial<ExecutionModelCallSummary>): ExecutionModelCallSummary => ({
+  id, ordinal: 1, phase: 'initial', status: 'completed', startedAt: 100, requestedModel: 'model',
+  requestBytes: 100, messageCount: 1, toolCount: 1, ...patch,
+})
+
+test('reported costs include actual failed-call charges while unreported attempts remain unknown', () => {
+  const models = [
+    model('completed', { metrics: { costUsd: 0.1, generationId: 'generation-completed', upstreamProvider: 'OpenAI' } }),
+    model('failed-with-charge', { status: 'failed', metrics: { costUsd: 0.2 } }),
+    model('failed-without-charge', { status: 'failed', metrics: { promptTokens: 100 } }),
+    model('running', { status: 'running' }),
+  ]
+  const before = JSON.stringify(models)
+  const result = recordedExecutionCosts(models)
+  expect(result).toMatchObject({ attempts: 4, costReportedCalls: 2, unknownCalls: 2 })
+  expect(result.reportedCostUsd).toBeCloseTo(0.3, 14)
+  expect(JSON.stringify(models)).toBe(before)
+})
+
+test('a reported zero is known and no recorded charges never becomes a zero-cost turn', () => {
+  expect(recordedExecutionCosts([model('known-zero', { metrics: { costUsd: 0 } }), model('missing', {})]))
+    .toEqual({ attempts: 2, costReportedCalls: 1, unknownCalls: 1, reportedCostUsd: 0 })
+  expect(recordedExecutionCosts([model('missing', {})])).toEqual({ attempts: 1, costReportedCalls: 0, unknownCalls: 1 })
+  expect(recordedExecutionCosts([])).toEqual({ attempts: 0, costReportedCalls: 0, unknownCalls: 0 })
 })
 
 describe('execution Journey evidence projection', () => {
