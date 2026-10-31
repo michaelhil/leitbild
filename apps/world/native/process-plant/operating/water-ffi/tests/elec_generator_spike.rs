@@ -252,6 +252,10 @@ impl Machine {
     }
 }
 impl System for Machine {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.n()
     }

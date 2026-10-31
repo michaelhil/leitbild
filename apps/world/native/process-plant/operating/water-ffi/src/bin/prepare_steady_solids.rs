@@ -776,6 +776,10 @@ impl PzrSystem {
 }
 
 impl System for PzrSystem {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.scales.len()
     }
