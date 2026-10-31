@@ -602,6 +602,10 @@ pub trait Rods<P> {
     /// EVT-RODS-BANK: the length of this block's packet-layout slice (P2's:
     /// per cluster, then per sector-share bore group).
     fn packet_coordinates(&self) -> usize;
+    /// The packet layout's bore group of every cluster (equal sector shares,
+    /// a declared single its own, first appearance first): the grouping a
+    /// packet-layout saved slice is in.
+    fn packet_groups(&self) -> Vec<usize>;
     /// EVT-RODS-BANK: [`Rods::reduce_packet_state`] for a saved state's
     /// rates, merged and never refused (NUC review).
     fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, [f64; 2]), String>;

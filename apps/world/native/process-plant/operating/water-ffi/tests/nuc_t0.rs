@@ -22,6 +22,20 @@ mod spine;
 use leitbild_operating_plant::joined::blocks::{Classes, JoinedJacobian, jacobian_blocks};
 use serde_json::{Value, json};
 
+/// The clusters declared single (a stuck cluster), `LD01_NUC_SINGLES`
+/// (comma-separated indices), else none: every composition of this file and
+/// of the state conversion takes the same.
+pub fn singles() -> Vec<usize> {
+    std::env::var("LD01_NUC_SINGLES").map_or_else(
+        |_| Vec::new(),
+        |v| {
+            v.split(',')
+                .map(|c| c.trim().parse().expect("LD01_NUC_SINGLES: cluster indices"))
+                .collect()
+        },
+    )
+}
+
 fn bits(v: &[f64]) -> Vec<String> {
     v.iter().map(|x| format!("{:016x}", x.to_bits())).collect()
 }
@@ -43,7 +57,7 @@ fn nuc_t0_dump() {
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
     let (packet_path, _) = spine::packet_bytes();
     assert_eq!(state["packet"].as_str(), Some(packet_path.as_str()), "packet");
-    let mut s = spine::started_full_composition();
+    let mut s = spine::started_full_composition_with_singles(&singles());
     let joined = &mut s.joined;
     joined.declare_feed_gate().expect("feed gate");
     if !state["discrete_state"].is_null() {
@@ -123,7 +137,7 @@ fn nuc_t0_dump() {
 fn nuc_t0_members() {
     let out = std::env::var("LD01_NUC_T0_MEMBERS").expect("LD01_NUC_T0_MEMBERS");
     assert!(!std::path::Path::new(&out).exists(), "never overwritten");
-    let s = spine::started_full_composition();
+    let s = spine::started_full_composition_with_singles(&singles());
     let joined = &s.joined;
     let raw: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
     let ids = |path: &[&str]| -> Vec<String> {
@@ -171,29 +185,21 @@ fn nuc_t0_members() {
     // layout's sector-share bore groups of its members (bitwise shares,
     // first appearance first): "M_bore{j}[first member]" etc. in the
     // unreduced labels, the region's own label naming its first group.
-    let shares: Vec<String> = raw["rods"]["clusters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c["sector_shares"].to_string())
-        .collect();
+    // The packet layout's bore groups, from the rods block itself (a
+    // declared single is its own), and each group's first member.
+    let group = rods.packet_groups();
     let mut first: Vec<usize> = Vec::new();
-    let group: Vec<usize> = (0..shares.len())
-        .map(|c| match first.iter().position(|f| shares[*f] == shares[c]) {
-            Some(g) => g,
-            None => {
-                first.push(c);
-                first.len() - 1
-            }
-        })
-        .collect();
+    for (c, g) in group.iter().enumerate() {
+        if *g == first.len() {
+            first.push(c);
+        }
+    }
     for (k, members) in rods.class_members().iter().enumerate() {
         let mut groups: Vec<usize> = members.iter().map(|c| group[*c]).collect();
         groups.sort_unstable();
         groups.dedup();
-        if groups.len() < 2 {
-            continue;
-        }
+        // Every class's region is listed, a single's too: its label
+        // numbers its class, the unreduced label its packet group.
         for q in ["M", "U", "B", "p"] {
             let list: Vec<String> = groups
                 .iter()
@@ -203,4 +209,26 @@ fn nuc_t0_members() {
         }
     }
     std::fs::write(&out, serde_json::to_vec(&Value::Object(map)).unwrap()).expect("members");
+}
+
+/// E-NUC: the composition's own consistently started state at zero time
+/// (`{t_s, packet, y, yp, bits, discrete_state}`), for a zero-time T0 at a
+/// composition no saved state matches (a declared stuck cluster:
+/// `LD01_NUC_SINGLES`). Written to `LD01_NUC_T0_STATE_OUT`, never over a file.
+#[test]
+#[ignore = "E-NUC T0 started state: requires the joined packet, the wiki, IF97 and stock IDA/KLU; writes LD01_NUC_T0_STATE_OUT"]
+fn nuc_t0_started_state() {
+    let out = std::env::var("LD01_NUC_T0_STATE_OUT").expect("LD01_NUC_T0_STATE_OUT");
+    assert!(!std::path::Path::new(&out).exists(), "never overwritten");
+    let s = spine::started_full_composition_with_singles(&singles());
+    let (packet_path, _) = spine::packet_bytes();
+    let state = json!({
+        "kind": "E-NUC T0 started state (zero time, the composition's exact start)",
+        "singles": singles(),
+        "t_s": 0.,
+        "packet": packet_path,
+        "y": s.y, "yp": s.yp, "y_bits": bits(&s.y), "yp_bits": bits(&s.yp),
+        "discrete_state": {"operator": s.joined.discrete_state()},
+    });
+    std::fs::write(&out, serde_json::to_vec(&state).unwrap()).expect("state");
 }
