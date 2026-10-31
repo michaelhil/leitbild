@@ -1074,6 +1074,66 @@ fn thermal_point(q: WaterPoint, d: WaterPoint) -> leitbild_operating_plant::ther
         enthalpy: Scalar::new(q.enthalpy_j_kg, d.enthalpy_j_kg),
     }
 }
+type BasisHeld = (WaterPoint, WaterPoint, WaterPoint);
+thread_local! {
+    static BASIS: std::cell::RefCell<std::collections::HashMap<(u8, i32, u64, u64), BasisHeld>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    static BASIS_ON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+/// PERF (plan r4, R4-WATER-PARTIALS): hold the thermal laws' directional
+/// (p, T) water points' basis partials for one block Jacobian assembly
+/// (`on`), starting empty; off, every query is the native call.
+pub fn basis_assembly(on: bool) {
+    BASIS.with(|b| b.borrow_mut().clear());
+    BASIS_ON.with(|b| b.set(on));
+}
+/// PERF (plan r4, R4-WATER-PARTIALS): inside an assembly, a directional
+/// (p, T) point is its value plus `dp D_p + dt D_t` of its two basis
+/// partials (`D_p` at seed (1, 0), `D_t` at (0, 1)), computed once per
+/// exact state of the assembly. Exact in arithmetic: the native direction is
+/// that linear map; the combination rounds once more.
+fn directional_basis(
+    domain: Domain,
+    branch: Branch,
+    p: f64,
+    t: f64,
+    dp: f64,
+    dt: f64,
+) -> Result<(WaterPoint, WaterPoint), Error> {
+    if !BASIS_ON.with(|b| b.get()) {
+        return directional_in(domain, branch, p, t, dp, dt);
+    }
+    let key = (domain as u8, branch as i32, p.to_bits(), t.to_bits());
+    let held = BASIS.with(|b| b.borrow().get(&key).copied());
+    let (q, a, b) = match held {
+        Some(h) => h,
+        None => {
+            let (q, a) = directional_in(domain, branch, p, t, 1., 0.)?;
+            let (_, b) = directional_in(domain, branch, p, t, 0., 1.)?;
+            BASIS.with(|s| s.borrow_mut().insert(key, (q, a, b)));
+            (q, a, b)
+        }
+    };
+    let f = |x: f64, y: f64| dp * x + dt * y;
+    let d = WaterPoint {
+        region: a.region,
+        pressure_pa: f(a.pressure_pa, b.pressure_pa),
+        temperature_k: f(a.temperature_k, b.temperature_k),
+        density_kg_m3: f(a.density_kg_m3, b.density_kg_m3),
+        internal_energy_j_kg: f(a.internal_energy_j_kg, b.internal_energy_j_kg),
+        enthalpy_j_kg: f(a.enthalpy_j_kg, b.enthalpy_j_kg),
+        cp_j_kg_k: f(a.cp_j_kg_k, b.cp_j_kg_k),
+        cv_j_kg_k: f(a.cv_j_kg_k, b.cv_j_kg_k),
+        expansion_per_k: f(a.expansion_per_k, b.expansion_per_k),
+        compressibility_per_pa: f(a.compressibility_per_pa, b.compressibility_per_pa),
+        viscosity_pa_s: f(a.viscosity_pa_s, b.viscosity_pa_s),
+        conductivity_w_m_k: f(a.conductivity_w_m_k, b.conductivity_w_m_k),
+        saturation_slope_k_pa: f(a.saturation_slope_k_pa, b.saturation_slope_k_pa),
+        saturation_departure_k: f(a.saturation_departure_k, b.saturation_departure_k),
+    };
+    Ok((q, d))
+}
+
 /// The thermal water boundary of one declared pressure domain.
 macro_rules! thermal_water_properties {
     ($water:ty, $domain:expr) => {
@@ -1084,7 +1144,7 @@ macro_rules! thermal_water_properties {
                 t: leitbild_operating_plant::thermal::Scalar,
             ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::WaterPoint>
             {
-                let (q, d) = directional_in($domain, Branch::Liquid, p.value, t.value, p.direction, t.direction)
+                let (q, d) = directional_basis($domain, Branch::Liquid, p.value, t.value, p.direction, t.direction)
                     .map_err(|_| "maintained IF97 liquid domain/derivative")?;
                 Ok(thermal_point(q, d))
             }
@@ -1094,7 +1154,7 @@ macro_rules! thermal_water_properties {
                 t: leitbild_operating_plant::thermal::Scalar,
             ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::WaterPoint>
             {
-                let (q, d) = directional_in($domain, Branch::Vapor, p.value, t.value, p.direction, t.direction)
+                let (q, d) = directional_basis($domain, Branch::Vapor, p.value, t.value, p.direction, t.direction)
                     .map_err(|_| "maintained IF97 vapor domain/derivative")?;
                 Ok(thermal_point(q, d))
             }
@@ -1104,9 +1164,9 @@ macro_rules! thermal_water_properties {
             ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::Saturation>
             {
                 use leitbild_operating_plant::thermal::{Saturation, Scalar};
-                let (l, dl) = directional_in($domain, Branch::SaturatedLiquid, p.value, 0., p.direction, 0.)
+                let (l, dl) = directional_basis($domain, Branch::SaturatedLiquid, p.value, 0., p.direction, 0.)
                     .map_err(|_| "maintained IF97 saturation liquid")?;
-                let (g, dg) = directional_in($domain, Branch::SaturatedVapor, p.value, 0., p.direction, 0.)
+                let (g, dg) = directional_basis($domain, Branch::SaturatedVapor, p.value, 0., p.direction, 0.)
                     .map_err(|_| "maintained IF97 saturation vapor")?;
                 let (sigma, dsigma) = surface_tension(l.temperature_k, dl.temperature_k)
                     .map_err(|_| "maintained IF97 surface tension")?;
