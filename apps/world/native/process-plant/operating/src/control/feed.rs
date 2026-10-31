@@ -9,18 +9,19 @@
 //! and channel lags unchanged.
 //!
 //! ```text
-//! eL = lsp − l     r = clamp(s + KpL eL + IL, r_lo, r_hi)       IL' = KiL eL
-//! eF = r − f       u_d = clamp(bias + KpF eF + IF, u_lo, u_hi)  IF' = KiF eF
+//! eL = lsp − l   r* = s + KpL eL + IL       r = clamp(r*)    IL' = KiL eL + (r − r*) KiL/KpL
+//! eF = r − f     u* = bias + KpF eF + IF    u_d = clamp(u*)  IF' = KiF eF + (u_d − u*) KiF/KpF
 //! ```
 //!
 //! `l` is the lagged NR1 channel normalized to its span, `s` and `f` the
 //! lagged steam and feed flow channels normalized by the one-SG nominal feed
-//! flow `m0`. An integral stops while its saturated output and the error
-//! would drive the unsaturated output farther outward (the page's
-//! directional anti-windup). The law owns no state: the SG owner carries the
+//! flow `m0`. Anti-windup is back-calculation, its tracking time each loop's
+//! integral time `Kp/Ki` (owner, 31 October 2026; it replaces the page's
+//! directional rule, whose switched rate chattered at the valve's lower
+//! bound). The law owns no state: the SG owner carries the
 //! lags, both integrals and the stem as differential coordinates and
-//! evaluates these rates in its rows. Every corner (the clamps, the
-//! anti-windup switch) is continuous in value and not located.
+//! evaluates these rates in its rows. The clamps' corners are continuous in
+//! value and not located.
 use crate::{network::Failure, thermal::Scalar};
 use serde::{Deserialize, Serialize};
 
@@ -95,14 +96,20 @@ pub struct Law {
     pub inner_rate: Scalar,
 }
 
-/// Directional anti-windup: the integral's rate, or zero while the
-/// unsaturated output lies beyond a bound and the error drives it farther.
-fn integral_rate(gain: f64, error: Scalar, unsat: f64, range: [f64; 2]) -> Scalar {
-    if (unsat > range[1] && error.value > 0.) || (unsat < range[0] && error.value < 0.) {
-        s(0.)
-    } else {
-        s(gain) * error
-    }
+/// Back-calculation anti-windup (owner, 31 October 2026): the integral's
+/// rate plus the saturation excess `clamp(x) - x` fed back over the loop's
+/// integral time `kp/ki` (no new tuning value), so the rate is continuous
+/// in the state. The directional rule's switched rate chattered at the
+/// valve's lower bound (C2 worst 763 CPU-s/s, 13,403 convergence failures).
+fn integral_rate(
+    gain: f64,
+    proportional: f64,
+    error: Scalar,
+    unsat: Scalar,
+    range: [f64; 2],
+) -> Scalar {
+    let excess = clamp(unsat, range) - unsat;
+    s(gain) * error + excess * s(gain / proportional)
 }
 
 impl Cascade {
@@ -161,14 +168,16 @@ impl Cascade {
             demand: clamp(u_unsat, self.valve_range),
             outer_rate: integral_rate(
                 self.outer_integral_per_s,
+                self.outer_proportional,
                 el,
-                r_unsat.value,
+                r_unsat,
                 self.request_range,
             ),
             inner_rate: integral_rate(
                 self.inner_integral_per_s,
+                self.inner_proportional,
                 ef,
-                u_unsat.value,
+                u_unsat,
                 self.valve_range,
             ),
         }
@@ -237,12 +246,15 @@ mod tests {
     }
 
     #[test]
-    fn saturation_stops_the_outward_integral_and_out_of_span_refuses_auto() {
+    fn back_calculation_pulls_a_saturated_integral_back_and_out_of_span_refuses_auto() {
         let (c, m0) = (law(), 800.);
         let sat = c.auto(m0, s(4.), s(1100.), s(500.), s(0.), s(0.4));
         assert_eq!(sat.request.value, 1.2);
         assert_eq!(sat.demand.value, 1.);
-        assert_eq!((sat.outer_rate.value, sat.inner_rate.value), (0., 0.));
+        // r* = 1.975 above 1.2: KiL eL = 0.015 against (1.2 - 1.975) 0.025.
+        assert!(sat.outer_rate.value < 0. && sat.inner_rate.value < 0.);
+        let inside = c.auto(m0, s(6.9), s(800.), s(800.), s(0.), s(0.));
+        assert!((inside.outer_rate.value - 0.025 * (0.6 - 2.9 / 5.)).abs() < 1e-15);
         assert!(c.tracked(m0, 3.9, 800., 800., 0.7).is_err());
     }
 }
