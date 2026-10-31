@@ -3718,6 +3718,26 @@ fn s3_case_run() {
                 ]
             }
         };
+        // HOOK (PHYS X1, R11-3a): with LD01_PHYS_SERIES=1 the event cases'
+        // references are the tolerance-proportionality series rtol/10, /30
+        // and /100 (every atol scaled with it), each over the whole span;
+        // consecutive levels are compared below (`series`).
+        let series_on = std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
+            && matches!(case, Case::C2 | Case::C3 | Case::C5);
+        let asks = if series_on {
+            [10., 30., 100.]
+                .into_iter()
+                .map(|k: f64| {
+                    let s = s3_unit::Scaling {
+                        relative: 1. / k,
+                        absolute: 1. / k,
+                    };
+                    (format!("rtol/{k}"), s, None, 0., end)
+                })
+                .collect()
+        } else {
+            asks
+        };
         let only = std::env::var("LD01_S3_GATES_REFERENCES").ok();
         let mut comparisons = Vec::new();
         for (name, scaling, max_step, from, to) in asks {
@@ -3794,6 +3814,28 @@ fn s3_case_run() {
             );
             references.push((name, r));
         }
+        // R11-3a's series: each completed level against the next looser
+        // completed one, by the same E0 comparison (looser minus tighter).
+        let series = series_on.then(|| {
+            references
+                .windows(2)
+                .map(|w| {
+                    let ((a, ra), (b, rb)) = (&w[0], &w[1]);
+                    let e0 = match (ra.observer.gates.as_ref(), rb.observer.gates.as_ref()) {
+                        (Some(ga), Some(gb))
+                            if ra.failure.is_none()
+                                && rb.failure.is_none()
+                                && ga.credited_error.is_none()
+                                && gb.credited_error.is_none() =>
+                        {
+                            compare::compare(&ga.credited, &gb.credited, run.zero, 0., end, &g.budgets)
+                        }
+                        _ => json!({"evaluable": false, "looser_failure": ra.failure, "tighter_failure": rb.failure}),
+                    };
+                    json!({"looser": a, "tighter": b, "e0": e0})
+                })
+                .collect::<Vec<_>>()
+        });
         // E3/H2: the cap cycle against R1 over the window; S2's rod timing
         // against R1 and R2; H1a: the continuation's convergence failures.
         let mut checks = serde_json::Map::new();
@@ -3880,7 +3922,7 @@ fn s3_case_run() {
             "electrical_band": "S3-D47 (interim, disclosed): E′ reports raw and 2 Hz-filtered differences; the verdict reads decision 0015 E1's 2 Hz band until the owner decides S4-6",
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
-            "comparisons": comparisons}));
+            "comparisons": comparisons, "series": series}));
         // Rule F (S3-D49) on the run's raw samples over its declared part.
         let f_family = match &run.f_tolerances {
             Some((a, record)) => {
