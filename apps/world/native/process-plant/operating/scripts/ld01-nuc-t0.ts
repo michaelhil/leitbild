@@ -49,10 +49,13 @@ const bl: string[] = base.labels, rl: string[] = red.labels;
 const bIndex = new Map(bl.map((l, i) => [l, i]));
 const repOf: number[] = new Array(rl.length); const redOf: number[] = new Array(bl.length).fill(-1);
 const failures: string[] = [];
-const grouped = /^(C|fissile|fertile|I-135|Xe-135|Pm-149|Sm-149|E|U_fuel|U_clad|T_fuel_surface|T_clad_inner|T_clad_outer|U_helium|U_passive)\[(.+)x(\d+)\](.*)$/;
+const grouped = /^(C|fissile|fertile|I-135|Xe-135|Pm-149|Sm-149|E|U_fuel|U_clad|T_fuel_surface|T_clad_inner|T_clad_outer|U_helium|U_passive|y|v|m_lower|m_upper)\[(.+)x(\d+)\](.*)$/;
 const nuclearKinds = new Set(["C", "fissile", "fertile", "I-135", "Xe-135", "Pm-149", "Sm-149", "E"]);
 const listed: Record<string, string[]> | null = membersPath ? await Bun.file(membersPath).json() : null;
 rl.forEach((l, i) => {
+  // v4: a label the baseline also holds is the same coordinate (a block the baseline already grouped).
+  const same = bIndex.get(l);
+  if (same !== undefined) { repOf[i] = same; redOf[same] = i; return; }
   const m = grouped.exec(l);
   if (m && listed) {
     const list = listed[l];
@@ -76,7 +79,8 @@ if (redOf.some(v => v < 0)) failures.push(`R1 ${redOf.filter(v => v < 0).length}
 const plain = rl.map((l, i) => [l, i] as const).filter(([l]) => !grouped.test(l));
 for (let k = 1; k < plain.length; k++) if (repOf[plain[k][1]] <= repOf[plain[k - 1][1]]) { failures.push(`R1 order at ${plain[k][0]}`); break; }
 
-const owner = (l: string) => { const m = grouped.exec(l); return m ? (nuclearKinds.has(m[1]) ? "nuclear" : "solids") : /^N\[/.test(l) ? "nuclear" : "other"; };
+const rodKinds = new Set(["y", "v", "m_lower", "m_upper"]);
+const owner = (l: string) => { const m = grouped.exec(l); return m ? (nuclearKinds.has(m[1]) ? "nuclear" : rodKinds.has(m[1]) ? "rods" : "solids") : /^N\[/.test(l) ? "nuclear" : "other"; };
 const worst: Record<string, any> = {};
 const book = (rule: string, d: number, scale: number, bound: number, where: string) => {
   const w = worst[rule] ?? (worst[rule] = { max_abs: 0, max_ratio_to_bound: 0, at: null, judged: 0 });
