@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "r4 baseline (BASELINE-r4.md): matrix management stock (MR-1 off) by default in the case drive; with PERF's E-PROF hooks (inert) and PHYS's LT1 fix (C2 bitwise, T1 611614b4c spans pass); STAGE tuple unchanged",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-c44eb5275-20261031T181635Z",
- "app": "c44eb5275",
+ "reason": "R4-NUC-A/B exact reduction (18,708 -> 1,437) and EVT-PROFILE (C1 plena profile at the spider; trajectory changes by design) on the r4 tuple: packet f39d5022, state s3-settled-state-nucAB-f39d5022 (STAGE's S3 settle converted at 6b9d6dee2, bitwise = NUC's nucB), wiki caaf71e",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-0a1467f1b-20261031T185546Z",
+ "app": "0a1467f1b",
  "environment": {
-  "packet_sha256": "4d95fe9c8f1f0ada0238994c4253f1aed4b2046120d139a0bb1a2abd65af55c2",
-  "state_sha256": "47d7c8ff50a05cb1a03f45ebb409f8e4fd351a24852fc478e82b76435c421667",
+  "packet_sha256": "f39d50226bc3cce7431caaa607ba892304ce173980b091103487a1c45cf5a103",
+  "state_sha256": "ca2f6873d16c9fe81e06ca7507e945f3dca715f7b260addc3c4dcdbbc9086144",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "11d09f5",
+  "wiki_commit": "caaf71e",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-kern-666610c22-f5-1",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 45126713490,
+   "instructions": 10994445745,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 102843399393,
-   "digest": "e4f093bccdfbb850982dce41f6430714c4998b2f0523f550aedea2f25f6dc25d"
+   "instructions": 42109856104,
+   "digest": "a0a25aefec7f28d27ebd3ec166b2dfdf90e1318b688af52630641116d529a666"
   }
  }
 }
