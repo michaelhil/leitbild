@@ -63,7 +63,8 @@ use leitbild_operating_plant::{
 use leitbild_operating_water::{
     If97,
     frame::{
-        Action, COUNTER_NAMES, Change, Class, Diagnostic, DriverState, MatrixRebuild, same_instant,
+        Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, MatrixRebuild,
+        same_instant,
     },
     joined::{Discrete, JoinedSystem, discrete_restart},
     unit::{
@@ -328,6 +329,11 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
                 ("1", "protective local-current proxy (S3-D7 ratio form)")
             }
             Quantity::PumpSpeed { .. } => ("1", "RCP shaft speed over the drive's reference speed"),
+            Quantity::CvcsFlow { .. } => ("kg/s", "CVCS branch flow delivered at COLD.A (signed)"),
+            Quantity::BankPosition { .. } => {
+                ("1", "mean rod stem travel over the normal stroke (0 seated)")
+            }
+            Quantity::StopValvePosition { .. } => ("%", "turbine stop valve stroke (100 open)"),
         };
         for c in &f.channels {
             if delivered.get(k).map(|d| d.0.as_str()) != Some(c.id.as_str()) {
@@ -1362,6 +1368,12 @@ impl Unit {
             .system_mut()
             .restore_system_discrete_state(&o["discrete_state"])?;
         p.protection.protection.restore(&clients["protection"])?;
+        // PHYS's frame hook (plan r4 X4.2): the restored owners' discrete
+        // state (CVCS modes, the latched TRIP, the seated chain) into the
+        // protection client's live readings, as the source's last restart
+        // left them; without it the copy reads the composed modes until its
+        // next restart and is not bitwise.
+        Client::restarted(&mut p.protection, t, p.ida.system())?;
         p.control.restore(&clients["pzr_control"])?;
         p.field
             .as_mut()
