@@ -948,22 +948,43 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     assert_eq!(b.modes()[0], Mode::Free);
     assert_eq!(b.modes()[5], Mode::Held);
     let ids = Rods::<Liquid>::differential(&b);
+    // E-EVT lever 4: `v` is differential in every mode (a held or seated
+    // body's row is `v' = 0` at `v = 0`), so the identity is mode-free.
     assert_eq!(ids[ci(0, VELOCITY)], 1.);
-    assert_eq!(ids[ci(5, VELOCITY)], 0.);
+    assert_eq!(ids[ci(5, VELOCITY)], 1.);
     assert_eq!(ids[b.group_index(0, BORE_MASS)], 1.);
     assert_eq!(ids[b.group_index(0, BORE_PRESSURE)], 0.);
     // A free body at the seat: inelastic, its energy into its fitting.
     physical[ci(0, TRAVEL)] = 1e-13;
     physical[ci(0, VELOCITY)] = -2.0;
+    // E-EVT bank seat: a free, descending cluster whose travel is zero
+    // within its error weight seats in the same event; one further off, one
+    // rising and the held one do not.
+    for (c, travel, speed) in [(1, 3e-9, -2.0), (2, 1e-3, -2.0), (3, 3e-9, 0.5), (5, 0., 0.)] {
+        physical[ci(c, TRAVEL)] = travel;
+        physical[ci(c, VELOCITY)] = speed;
+    }
     let mut directions = vec![0; N];
     directions[0] = -1;
+    let weights = vec![1e8; physical.len()];
+    let added = Rods::<Liquid>::coincident(&b, &physical, &weights, &mut directions).unwrap();
+    assert_eq!(added, 1);
+    assert_eq!((directions[1], directions[2], directions[3], directions[5]), (-1, 0, 0, 0));
+    let mut no_seat = vec![0; N];
+    assert_eq!(Rods::<Liquid>::coincident(&b, &physical, &weights, &mut no_seat).unwrap(), 0);
     let seat = Rods::<Liquid>::transact(&mut b, &Liquid, 2.9, &directions, &mut physical).unwrap();
     assert_eq!(b.modes()[0], Mode::Seated);
+    assert_eq!(b.modes()[1], Mode::Seated);
+    assert_eq!(b.modes()[2], Mode::Free);
     assert_eq!(
         (physical[ci(0, TRAVEL)], physical[ci(0, VELOCITY)]),
         (0., 0.)
     );
-    assert_eq!(seat.deposits.len(), 1);
+    assert_eq!(
+        (physical[ci(1, TRAVEL)], physical[ci(1, VELOCITY)]),
+        (0., 0.)
+    );
+    assert_eq!(seat.deposits.len(), 2);
     assert_eq!(seat.deposits[0].0, "FA0/top-fitting");
     assert!((seat.deposits[0].1 - 0.5 * b.moving_mass() * 4.).abs() < 1e-9);
     // A seated body's root is its seat reaction, positive in this field (at
@@ -1078,7 +1099,7 @@ fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
         assert_eq!(b.modes()[c], expected, "cluster {c}");
         assert_eq!(
             Rods::<Liquid>::differential(&b)[ci(c, VELOCITY)],
-            if expected == Mode::Free { 1. } else { 0. }
+            1.
         );
     }
     assert!(Rods::<Liquid>::command(&mut b, open, Command::StuckCluster { cluster: 0 }).is_err());

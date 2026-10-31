@@ -10,7 +10,8 @@
 //! (m/s, upward positive), the lower mouth's upward mass current `m_lo` and
 //! the upper mouth's `m_up` (kg/s). `y' = v` always. A FREE body obeys
 //! `M v' = F_end + F_wall + B_spider + F_drag - M g`; a HELD or SEATED body
-//! has the algebraic row `v = 0`. The two mouth rows are steady, each over
+//! rests: `v` is zero, kept differential with the row `v' = 0` (E-EVT, plan
+//! r4), so the differential identity does not change with the mode. The two mouth rows are steady, each over
 //! its own path to the bores' reference height where its hydrostatics end
 //! (P2-FIX-1, [`RodBlock::mouth_paths`]): LOWER's mouth pressure less the
 //! bores' at the lower mouth less the lower mouth and the clear and annular
@@ -1434,7 +1435,12 @@ impl RodBlock {
                 }
                 x.rate(base + VELOCITY) - f.net / s(self.mass)
             }
-            Mode::Held | Mode::Seated => v,
+            // E-EVT lever 4 (plan r4): a held or seated body keeps `v`
+            // differential with `v' = 0`; every transaction that holds or
+            // seats it sets `v = 0`, so `v` stays exactly zero and the
+            // differential identity, hence the projection's algebraic set
+            // and its symbolic analysis, does not change with the mode.
+            Mode::Held | Mode::Seated => x.rate(base + VELOCITY),
         };
         for (cell, [mass, enthalpy, tracer]) in self.transport(&f, fluid)? {
             receipts.add(cell, 0, mass, enthalpy, tracer)?;
@@ -1570,7 +1576,7 @@ impl<P: Properties> Rods<P> for RodBlock {
             energy += 0.5 * self.mass * v * v + self.mass * self.gravity * y;
             // The rows' own rates: y' = v always; v' = F_net / M for a free
             // body, whose row is v' - F_net/M. A held or seated body's row
-            // is the constraint v = 0 and pays no kinetic rate.
+            // is v' = 0 at v = 0 and pays no kinetic rate.
             let travel = x.rate(base + TRAVEL).value - rows[base + TRAVEL].value;
             let acceleration = match self.modes[c] {
                 Mode::Free => x.rate(base + VELOCITY).value - rows[base + VELOCITY].value,
@@ -1593,7 +1599,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         let mut ids: Vec<f64> = self
             .modes
             .iter()
-            .flat_map(|mode| [1., if *mode == Mode::Free { 1. } else { 0. }, 0., 0.])
+            .flat_map(|_| [1., 1., 0., 0.])
             .collect();
         for _ in &self.groups {
             ids.extend([1., 1., 1., 0.]);
@@ -1969,6 +1975,42 @@ impl<P: Properties> Rods<P> for RodBlock {
             };
         }
         Ok(())
+    }
+    /// The bank seat (E-EVT, plan r4): the free clusters have one law and
+    /// one datum, so a bank released by one holding opening reaches its
+    /// seats as one physical event, and only the integration's error
+    /// separates their located roots. When a free cluster's seat root is
+    /// located, every other free, descending cluster whose travel is zero
+    /// within its own error weight (`0 <= y w <= 1`) seats in the same
+    /// transaction. Its residue is reported as the located one's is.
+    fn coincident(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        directions: &mut [i32],
+    ) -> Result<usize, Failure> {
+        let n = self.clusters.len();
+        if directions.len() != n || y.len() != self.layout.len() || weights.len() != y.len() {
+            return Err(fatal("rods: coincident-root layout"));
+        }
+        if !(0..n).any(|c| directions[c] < 0 && self.modes[c] == Mode::Free) {
+            return Ok(0);
+        }
+        let mut added = 0;
+        for (c, direction) in directions.iter_mut().enumerate() {
+            let base = Self::base(c);
+            let (travel, weight) = (y[base + TRAVEL], weights[base + TRAVEL]);
+            if *direction == 0
+                && self.modes[c] == Mode::Free
+                && y[base + VELOCITY] < 0.
+                && travel >= 0.
+                && travel * weight <= 1.
+            {
+                *direction = -1;
+                added += 1;
+            }
+        }
+        Ok(added)
     }
     fn transact(
         &mut self,
