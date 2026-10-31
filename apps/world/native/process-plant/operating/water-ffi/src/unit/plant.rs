@@ -95,6 +95,9 @@ impl<J: JoinedSystem> Plant<J> {
             derived,
             restart,
             control,
+            // The SG owner's continuous feed control needs no plant client
+            // (its receipt is the composition's).
+            feed_train: _,
             frame,
             receipt,
             reference,

@@ -512,17 +512,56 @@ struct Recorder {
     /// of a gated run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
     /// The observed quantities and their references ride along once.
     operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
+    /// HOOK (FEED, plan r4 X4.1): with the packet's feed train, each loop's
+    /// mass-weighted HOT and COLD leg temperatures at every frame (U3's
+    /// Tavg = (Th + Tc)/2), read at the frame's left limit with the system
+    /// (`sample`); never in `frames`.
+    legs: Option<Legs>,
 }
-impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
+/// HOT.A, HOT.B, COLD.A, COLD.B cells, the left-limit state and the rows.
+struct Legs {
+    cells: [Vec<usize>; 4],
+    y: Vec<f64>,
+    at: f64,
+    rows: Vec<Value>,
+}
+impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water::frame::Client<S>
+    for Recorder
+{
     fn name(&self) -> &str {
         "recorder"
     }
     fn advance(
         &mut self,
-        _: &dyn leitbild_operating_water::frame::Dense,
+        dense: &dyn leitbild_operating_water::frame::Dense,
         _: f64,
-        _: f64,
+        to: f64,
     ) -> Result<(), String> {
+        if let Some(l) = self.legs.as_mut() {
+            dense.derivative(to, 0, &mut l.y)?;
+            l.at = to;
+        }
+        Ok(())
+    }
+    fn sample(&mut self, _k: u64, t: f64, system: &S) -> Result<(), String> {
+        let Some(l) = self.legs.as_mut() else {
+            return Ok(());
+        };
+        if l.at != t {
+            return Ok(());
+        }
+        let net = &system.integrated().joined.network;
+        let mut out = [0.; 4];
+        for (j, cells) in l.cells.iter().enumerate() {
+            let (mut mt, mut m) = (0., 0.);
+            for c in cells {
+                let (temperature, mass) = outputs::cell_temperature(net, &l.y, *c)?;
+                mt += mass * temperature;
+                m += mass;
+            }
+            out[j] = mt / m;
+        }
+        l.rows.push(json!([t, out]));
         Ok(())
     }
     fn frame(
@@ -1538,6 +1577,17 @@ fn drive(
     );
     let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
     let packet_json: Value = inputs.spine.packet_json().expect("packet json");
+    // Plan r4 X4.1 (FEED): the SG owner's continuous feed control, recorded
+    // per frame by an observation client (class O), with a feed train.
+    let mut feed = {
+        let section: leitbild_operating_plant::sg::packet::Section =
+            serde_json::from_value(packet_json["secondary"].clone())
+                .expect("the packet's secondary section");
+        let joined = &unit.ida.system().integrated().joined;
+        common::feed_control::FeedClient::commission(joined, &section, unit.y.len())
+            .unwrap_or_else(|e| panic!("{e}"))
+    };
+    assert_eq!(feed.is_some(), unit.feed_train, "the composition's feed train");
     // The case's kinetics end rule (P1, owner R11): A4's D3 (a) for the S3
     // blocks, the hot-standby admission under P1 (`case_kinetics`).
     let extension = match case_kinetics(d).unwrap_or_else(|e| panic!("{e}"))["ruleI"].as_str() {
@@ -1640,6 +1690,30 @@ fn drive(
         operator: (gate.is_some()
             && std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
         .then(|| (protection.readings(), protection.observed(), Vec::new())),
+        legs: packet_json["secondary"]["feedTrain"].is_object().then(|| {
+            let ids: Vec<String> = packet_json["mechanics"]["regions"]
+                .as_array()
+                .expect("the packet's regions")
+                .iter()
+                .map(|r| r["id"].as_str().expect("a region id").to_string())
+                .collect();
+            let cells = |p: &str| -> Vec<usize> {
+                let c: Vec<usize> = (0..ids.len()).filter(|i| ids[*i].starts_with(p)).collect();
+                assert!(!c.is_empty(), "no {p} cell");
+                c
+            };
+            Legs {
+                cells: [
+                    cells("HOT.A"),
+                    cells("HOT.B"),
+                    cells("COLD.A"),
+                    cells("COLD.B"),
+                ],
+                y: vec![0.; y.len()],
+                at: f64::NAN,
+                rows: Vec::new(),
+            }
+        }),
     };
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
@@ -1901,7 +1975,10 @@ fn drive(
     let mut feed_after: Option<bool> = None;
     let outcome = {
         let mut r = {
-            let mut extra: [&mut dyn Client<CaseUnit>; 1] = [&mut recorder];
+            let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
+            if let Some(f) = feed.as_mut() {
+                extra.push(f);
+            }
             let mut clients = plant::clients(protection, control, field, &mut extra);
             driver.start(&mut clients, t0, y, yp)
         };
@@ -1934,7 +2011,10 @@ fn drive(
                 break;
             }
             r = {
-                let mut extra: [&mut dyn Client<CaseUnit>; 1] = [&mut recorder];
+                let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
+            if let Some(f) = feed.as_mut() {
+                extra.push(f);
+            }
                 let mut clients = plant::clients(protection, control, field, &mut extra);
                 driver
                     .run_observed(ida, t, *b, y, yp, &mut clients, &setup, Some(&mut observer))
@@ -2227,7 +2307,10 @@ fn drive(
                             });
                         driver.cpu.gate_s += process_cpu_s() - gate0;
                         if step.is_ok() {
-                            let mut extra: [&mut dyn Client<CaseUnit>; 1] = [&mut recorder];
+                            let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
+            if let Some(f) = feed.as_mut() {
+                extra.push(f);
+            }
                             let mut clients =
                                 plant::clients(protection, control, field, &mut extra);
                             step = driver.apply_due(ida, y, yp, &mut clients, &setup);
@@ -2698,6 +2781,7 @@ fn drive(
             "note": "refusal_s is the driver's last attempted discrete instant; a failure inside a step is at or after solver_reached_s"})),
         "start_state": {"path": state_path, "sha256": provenance::sha256_file(state_path).ok(), "t_s": t0},
         "composition": composition,
+        "feed_control": feed.as_ref().map(|f| f.receipt()),
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "case_configuration": ask.config.json(),
@@ -2779,6 +2863,7 @@ fn drive(
             "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
             "read_instructions": perf_read_instructions(),
             "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
+        "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
     });
     eprintln!(

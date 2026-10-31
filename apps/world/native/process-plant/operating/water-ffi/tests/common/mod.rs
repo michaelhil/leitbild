@@ -8,6 +8,8 @@
 #[cfg(feature = "ida")]
 pub mod counts;
 pub mod cpu;
+#[cfg(feature = "ida")]
+pub mod feed_control;
 pub mod filter;
 #[cfg(feature = "ida")]
 pub mod observe;
