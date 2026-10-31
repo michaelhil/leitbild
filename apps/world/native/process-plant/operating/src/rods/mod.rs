@@ -1055,16 +1055,16 @@ impl RodBlock {
         let groups = self.packet_groups().into_iter().max().map_or(0, |g| g + 1);
         CLUSTER_COORDINATES * self.clusters.len() + GROUP_COORDINATES * groups
     }
-    pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, [f64; 2]), String> {
         self.reduce_packet(full, true)
     }
     /// [`Self::reduce_packet_state`] for a saved state's rates `y'`: the
     /// groups' water rates are merged (member-weighted) and their spread
     /// recorded, never refused.
-    pub fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    pub fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, [f64; 2]), String> {
         self.reduce_packet(full, false)
     }
-    fn reduce_packet(&self, full: &[f64], state: bool) -> Result<(Vec<f64>, f64), String> {
+    fn reduce_packet(&self, full: &[f64], state: bool) -> Result<(Vec<f64>, [f64; 2]), String> {
         let n = self.clusters.len();
         let old = self.packet_groups();
         let expected = self.packet_coordinates();
@@ -1075,10 +1075,12 @@ impl RodBlock {
             ));
         }
         let mut out = Vec::with_capacity(self.layout.len());
-        let mut spread = 0f64;
-        let mut note = |w: f64, v: f64| {
+        // The largest relative spread of what a class takes from its first
+        // member or merges: [the mouth currents, the bores' water].
+        let mut spread = [0f64; 2];
+        let mut note = |slot: usize, w: f64, v: f64| {
             if w != v {
-                spread = spread.max((w - v).abs() / v.abs().max(w.abs()));
+                spread[slot] = spread[slot].max((w - v).abs() / v.abs().max(w.abs()));
             }
         };
         for grp in &self.groups {
@@ -1095,7 +1097,7 @@ impl RodBlock {
                             ));
                         }
                     } else {
-                        note(w, v);
+                        note(0, w, v);
                     }
                 }
                 out.push(v);
@@ -1133,7 +1135,7 @@ impl RodBlock {
                             self.clusters[grp.members[0]].id
                         ));
                     }
-                    note(w, v);
+                    note(1, w, v);
                 }
                 out.push(if k == BORE_PRESSURE {
                     v
@@ -1863,13 +1865,13 @@ impl<P: Properties> Rods<P> for RodBlock {
     fn cluster_coordinate(&self, c: usize) -> usize {
         self.cluster_index(c, TRAVEL)
     }
-    fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, [f64; 2]), String> {
         RodBlock::reduce_packet_state(self, full)
     }
     fn packet_coordinates(&self) -> usize {
         RodBlock::packet_coordinates(self)
     }
-    fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+    fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, [f64; 2]), String> {
         RodBlock::reduce_packet_rates(self, full)
     }
     fn deposit_stores(&self) -> Vec<String> {

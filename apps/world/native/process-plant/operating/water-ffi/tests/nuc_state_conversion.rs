@@ -78,7 +78,9 @@ fn convert_a_saved_state_to_the_replica_layout() {
         assert_eq!(found.len(), 1, "a saved state of {old} coordinates matches no single layout");
         found[0]
     };
-    let current_spread = std::cell::Cell::new(0f64);
+    // The rods' spreads of what a class took from its first member or
+    // merged, [mouth currents, bores' water], for y and for y'.
+    let spreads = std::cell::Cell::new([[0f64; 2]; 2]);
     let convert = |old: &[f64], rates: bool| -> Vec<f64> {
         let (fnuc, fsol, frod) = sizes(old.len());
         let mut y = old[..o.nuclear].to_vec();
@@ -115,7 +117,10 @@ fn convert_a_saved_state_to_the_replica_layout() {
                 rods.reduce_packet_state(slice)
             }
             .unwrap_or_else(|e| panic!("{e}"));
-            current_spread.set(current_spread.get().max(spread));
+            let mut all = spreads.get();
+            let slot = usize::from(rates);
+            all[slot] = [all[slot][0].max(spread[0]), all[slot][1].max(spread[1])];
+            spreads.set(all);
             y.extend(r);
             at += full_rods;
         } else {
@@ -139,8 +144,11 @@ fn convert_a_saved_state_to_the_replica_layout() {
         "carriers": nuclear.carriers(),
         "solid_halves": solids.halves(),
         "rod_motion_classes": rods_len / 8,
-        "mouth_current_spread_taken_from_first_member": current_spread.get(),
-        "mouth_current_rule": "the mouth currents are algebraic: the composition's exact consistent start solves them from the travels and the bores' water; each class takes its first member's value and the largest relative member spread (y and y') is recorded",
+        "rods_spreads": {
+            "mouth_currents": {"y": spreads.get()[0][0], "yp": spreads.get()[1][0]},
+            "bores_water": {"y": spreads.get()[0][1], "yp": spreads.get()[1][1]},
+        },
+        "rods_rule": "travel and velocity bitwise equal or refused; the mouth currents (algebraic, re-solved by the exact start) take the class's first member's value; the bores' water stocks merge member-weighted within 64 eps in y (else refused) and freely in y' (its pressure, algebraic, the first group's); each largest relative spread is recorded",
         "coordinates": [from_bits(&state_in["y_bits"]).len(), joined.dimension()],
     });
     std::fs::write(&to, serde_json::to_vec(&state).unwrap()).unwrap();

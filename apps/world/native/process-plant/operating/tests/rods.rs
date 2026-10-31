@@ -1463,7 +1463,7 @@ fn a_packet_layout_state_reduces_to_the_bank_exactly_or_is_refused() {
     let (y, spread) = b.reduce_packet_state(&full).unwrap();
     assert_eq!(y.len(), CLUSTER_COORDINATES + 4);
     assert_eq!(&y[..4], &[0.7, 0., 0.31, 0.29]);
-    assert!(spread > 0. && spread < 1e-15);
+    assert!(spread[1] > 0. && spread[1] < 1e-15);
     // The region's stock is its groups' member-weighted sum.
     let members = |g: usize| old.iter().filter(|o| **o == g).count() as f64;
     let m: f64 = (0..8).map(|g| (1. + 1e-16 * g as f64) * members(g)).sum::<f64>() / N as f64;
