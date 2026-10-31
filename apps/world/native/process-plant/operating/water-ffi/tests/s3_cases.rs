@@ -1297,6 +1297,20 @@ struct Driven {
     first_birth_after_zero: Option<f64>,
 }
 
+/// The packet's one SG relief valve (R12-B2, OU-F: `secondary.relief.valves`
+/// by role; the safety valves crack above it). Refuses unless exactly one
+/// valve has the role `relief`.
+fn sg_relief_valve(packet: &Value) -> &Value {
+    let valves = packet["secondary"]["relief"]["valves"]
+        .as_array()
+        .expect("the packet's secondary.relief.valves (R12-B2)");
+    let mut relief = valves.iter().filter(|v| v["role"] == "relief");
+    match (relief.next(), relief.next()) {
+        (Some(v), None) => v,
+        _ => panic!("secondary.relief.valves holds not exactly one valve of role relief"),
+    }
+}
+
 /// The case run's explicit configuration, read once by `s3_case_run` and
 /// recorded in every drive's receipt: the error-weight rule (N1; stock until
 /// G1-INTEG sets grouped), the first step of every discrete restart (N3),
@@ -2454,9 +2468,10 @@ fn drive(
             clusters,
             low_pa: setup.low_pa,
             high_pa: setup.high_pa,
-            sg_crack_pa: packet_json["secondary"]["relief"]["crackPressure_Pa"]
+            // R12-B2 (OU-F): per-valve settings; the relief valve cracks first.
+            sg_crack_pa: sg_relief_valve(&packet_json)["crackPressure_Pa"]
                 .as_f64()
-                .expect("SG crack"),
+                .expect("SG relief crack"),
             full_travel_s: spec["malfunctions"]["pzrRelief"]["fullTravel_s"]
                 .as_f64()
                 .expect("fullTravel_s"),
@@ -3216,16 +3231,19 @@ fn s3_case_run() {
                 .as_f64()
                 .expect("reference travel"),
             corner_law: s3_harness::families::CornerLaw::from_packet(&raw),
+            // R12-B2 (OU-F): the relief valve's law (role relief); a packet
+            // without it refuses.
             sg_relief_law: {
-                let r = &raw["secondary"]["relief"];
-                match (
-                    r["crackPressure_Pa"].as_f64(),
-                    r["fullLiftPressure_Pa"].as_f64(),
-                    r["reseatPressure_Pa"].as_f64(),
-                ) {
-                    (Some(c), Some(f), Some(rs)) => Some([c, f, rs]),
-                    _ => None,
-                }
+                let r = sg_relief_valve(&raw);
+                let law = |k: &str| {
+                    r[k].as_f64()
+                        .unwrap_or_else(|| panic!("the SG relief valve has no {k}"))
+                };
+                Some([
+                    law("crackPressure_Pa"),
+                    law("fullLiftPressure_Pa"),
+                    law("reseatPressure_Pa"),
+                ])
             },
         }
     });
