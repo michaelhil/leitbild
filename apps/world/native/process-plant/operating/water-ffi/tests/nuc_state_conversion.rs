@@ -36,6 +36,7 @@ fn convert_a_saved_state_to_the_replica_layout() {
     let to = std::env::var("LD01_NUC_TO_STATE").expect("LD01_NUC_TO_STATE");
     assert!(!std::path::Path::new(&to).exists(), "never overwritten");
     let mut state: Value = serde_json::from_slice(&std::fs::read(&from).unwrap()).unwrap();
+    let state_in = state.clone();
     let started = spine::started_full_composition();
     let joined = &started.joined;
     let o = joined.offsets();
@@ -54,34 +55,70 @@ fn convert_a_saved_state_to_the_replica_layout() {
     let rods = joined.rods().expect("rod owner");
     let rods_len = o.pzr - o.rods;
     let full_rods = 4 * rods.clusters() + rods_len / 2;
-    let reduced = (o.solids - o.nuclear) + (o.secondary - o.solids) + rods_len;
+    // Each block's saved slice is either its packet layout or already this
+    // layout (a state an earlier conversion reduced); the one combination
+    // whose lengths add up to the saved state's is taken.
+    let (red_n, red_s) = (o.solids - o.nuclear, o.secondary - o.solids);
+    let sizes = |old: usize| -> (bool, bool, bool) {
+        let mut found = Vec::new();
+        for (fnuc, fsol, frod) in [
+            (true, true, true),
+            (false, false, true),
+            (false, false, false),
+            (true, true, false),
+        ] {
+            let n = joined.dimension() - red_n - red_s - rods_len
+                + if fnuc { full } else { red_n }
+                + if fsol { full_solids } else { red_s }
+                + if frod { full_rods } else { rods_len };
+            if n == old {
+                found.push((fnuc, fsol, frod));
+            }
+        }
+        assert_eq!(found.len(), 1, "a saved state of {old} coordinates matches no single layout");
+        found[0]
+    };
     let current_spread = std::cell::Cell::new(0f64);
     let convert = |old: &[f64]| -> Vec<f64> {
-        assert_eq!(
-            old.len() + reduced,
-            joined.dimension() + full + full_solids + full_rods,
-            "layouts"
-        );
+        let (fnuc, fsol, frod) = sizes(old.len());
         let mut y = old[..o.nuclear].to_vec();
-        y.extend(
-            nuclear
-                .reduce_carrier_state(&old[o.nuclear..o.nuclear + full])
-                .unwrap_or_else(|e| panic!("{e}")),
-        );
-        let s0 = o.nuclear + full;
-        y.extend(
-            solids
-                .reduce_packet_state(&old[s0..s0 + full_solids])
-                .unwrap_or_else(|e| panic!("{e}")),
-        );
-        let r0 = s0 + full_solids + (o.rods - o.secondary);
-        y.extend_from_slice(&old[s0 + full_solids..r0]);
-        let (r, spread) = rods
-            .reduce_packet_state(&old[r0..r0 + full_rods])
-            .unwrap_or_else(|e| panic!("{e}"));
-        current_spread.set(current_spread.get().max(spread));
-        y.extend(r);
-        y.extend_from_slice(&old[r0 + full_rods..]);
+        let mut at = o.nuclear;
+        if fnuc {
+            y.extend(
+                nuclear
+                    .reduce_carrier_state(&old[at..at + full])
+                    .unwrap_or_else(|e| panic!("{e}")),
+            );
+            at += full;
+        } else {
+            y.extend_from_slice(&old[at..at + red_n]);
+            at += red_n;
+        }
+        if fsol {
+            y.extend(
+                solids
+                    .reduce_packet_state(&old[at..at + full_solids])
+                    .unwrap_or_else(|e| panic!("{e}")),
+            );
+            at += full_solids;
+        } else {
+            y.extend_from_slice(&old[at..at + red_s]);
+            at += red_s;
+        }
+        y.extend_from_slice(&old[at..at + (o.rods - o.secondary)]);
+        at += o.rods - o.secondary;
+        if frod {
+            let (r, spread) = rods
+                .reduce_packet_state(&old[at..at + full_rods])
+                .unwrap_or_else(|e| panic!("{e}"));
+            current_spread.set(current_spread.get().max(spread));
+            y.extend(r);
+            at += full_rods;
+        } else {
+            y.extend_from_slice(&old[at..at + rods_len]);
+            at += rods_len;
+        }
+        y.extend_from_slice(&old[at..]);
         assert_eq!(y.len(), joined.dimension());
         y
     };
@@ -100,7 +137,7 @@ fn convert_a_saved_state_to_the_replica_layout() {
         "rod_motion_classes": rods_len / 8,
         "mouth_current_spread_taken_from_first_member": current_spread.get(),
         "mouth_current_rule": "the mouth currents are algebraic: the composition's exact consistent start solves them from the travels and the bores' water; each class takes its first member's value and the largest relative member spread (y and y') is recorded",
-        "coordinates": [full + full_solids + full_rods + joined.dimension() - reduced, joined.dimension()],
+        "coordinates": [from_bits(&state_in["y_bits"]).len(), joined.dimension()],
     });
     std::fs::write(&to, serde_json::to_vec(&state).unwrap()).unwrap();
 }
