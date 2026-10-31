@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { assertCheckpointReceiptLossless, createSemanticSchedule, priceReplay, sharedRequestInputTokens, type CapturedCall } from './working-context-capture-replay.ts'
+import { assertCheckpointReceiptLossless, assertLedgerInvocationChronology, createSemanticSchedule, priceReplay, sharedRequestInputTokens, type CapturedCall } from './working-context-capture-replay.ts'
 import { createExecutionStore } from '../../../apps/agents/src/core/executions/store.ts'
 import { createWorkingContextArchive, prepareWorkingContextCheckpoint, projectWorkingContextMessages,
   contextCheckpointReceiptForModel, type WorkingContextGroup, type WorkingMessage, type ContextCheckpointManifest } from '../../../apps/agents/src/core/working-context.ts'
@@ -122,6 +122,20 @@ test('independent receipt inverse preserves noncontiguous ledger ordering and re
   const altered = structuredClone(model); altered.returnedChangeGroups[0]!.effects[0]!.outcome = 'unknown'
   expect(() => assertCheckpointReceiptLossless(manifest, altered)).toThrow()
   expect(() => assertCheckpointReceiptLossless(manifest, { ...model, turnId: 'foreign' })).toThrow()
+})
+
+test('delayed archival order is not invocation chronology even when the receipt inverse is lossless', () => {
+  const effect = [{ kind: 'change' as const, outcome: 'returned' as const }]
+  const entry = (toolCallId: string) => ({ toolCallId, tool: 'write', effects: effect,
+    arguments: { turnId: 'turn', toolCallId, part: 'arguments' as const }, read: { turnId: 'turn', toolCallId, part: 'result' as const } })
+  const manifest: ContextCheckpointManifest = { checkpointId: 'context_2', turnId: 'turn', precedingModelId: 'model_3', reason: 'A retained earlier change is archived later',
+    retainedGroups: [], archivedGroups: [], actionLedger: [entry('first'), entry('later'), entry('retained-earlier')],
+    counts: { retainedGroups: 0, archivedGroups: 0, retainedCalls: 0, archivedCalls: 0 } }
+  expect(() => assertCheckpointReceiptLossless(manifest, contextCheckpointReceiptForModel(manifest))).not.toThrow()
+  expect(() => assertLedgerInvocationChronology(manifest, ['first', 'retained-earlier', 'later'])).toThrow('actual invocation chronology')
+  const chronological = { ...manifest, actionLedger: [entry('first'), entry('retained-earlier'), entry('later')] }
+  expect(() => assertLedgerInvocationChronology(chronological, ['first', 'retained-earlier', 'later'])).not.toThrow()
+  expect(() => assertLedgerInvocationChronology(chronological, ['first', 'later'])).toThrow('unobserved invocation')
 })
 
 test('future nested metadata cannot be relabeled as the actual current source acquisition clock', () => {

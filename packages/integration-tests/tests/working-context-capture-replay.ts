@@ -306,6 +306,20 @@ export const assertCheckpointReceiptLossless = (manifest: ContextCheckpointManif
   assert.equal(Object.keys(expanded).length, actionLedger.length, 'Missing exact action receipt')
   assert.deepEqual(expanded, actionLedger)
 }
+/** Separate from receipt inversion: compare canonical ledger order with the
+ * actual calls observed by this replay executor, not archival insertion order,
+ * lexically sorted IDs or potentially equal wall-clock timestamps. */
+export const assertLedgerInvocationChronology = (manifest: ContextCheckpointManifest, orderedExecutionCallIds: ReadonlyArray<string>): void => {
+  const ordinals = new Map(orderedExecutionCallIds.map((id, index) => [id, index]))
+  assert.equal(ordinals.size, orderedExecutionCallIds.length, 'Duplicate observed invocation identity')
+  let previous = -1
+  for (const entry of manifest.actionLedger) {
+    const ordinal = ordinals.get(entry.toolCallId)
+    assert(ordinal !== undefined, `Ledger contains an unobserved invocation ${entry.toolCallId}`)
+    assert(ordinal > previous, 'Ledger order differs from actual invocation chronology')
+    previous = ordinal
+  }
+}
 export const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: ReadonlyArray<ExecutionModelCall>, billed: ReadonlyArray<BillingRow>, options: { opaqueStress?: boolean } = {}) => {
   const byId = new Map(billed.map(row => [row.executionKey.split('/').at(-1)!, row]))
   const ratios = sourceModels.map(model => byId.get(model.id)!.metrics.promptTokens / estimateRequestSize(model.request).estimatedInputTokens).sort((a, b) => a - b)
@@ -477,7 +491,7 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
     return measured
   })
   const assertions = { originalArgumentAndDataParity: 0, exactRecall: 0, humanRoleEquality: 0, selectedGroupsVisible: 0,
-    failedOrUnknownPinned: 0, durableCheckpointLinks: 0, modelBillingUnknown: 0, immutableSourceHash: 0, losslessModelReceiptChecks: 0 }
+    failedOrUnknownPinned: 0, durableCheckpointLinks: 0, modelBillingUnknown: 0, immutableSourceHash: 0, losslessModelReceiptChecks: 0, invocationChronologyChecks: 0 }
   const originalHuman = firstRequest.messages.filter(message => message.role === 'user' || message.role === 'system')
   const provider: LLMProvider = {
     models: async () => ['offline-scripted-capture'],
@@ -558,6 +572,8 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         if (event.kind === 'context_checkpoint') {
           const record = checkpoints.at(-1)!
           assert.deepEqual(event.manifest.reason, record.input.reason)
+          assertLedgerInvocationChronology(event.manifest, mapping.map(call => call.replayCallId))
+          assertions.invocationChronologyChecks++
           record.manifest = event.manifest; checkpointId = event.manifest.checkpointId; assertions.durableCheckpointLinks++
         } else if (event.kind === 'tool_result' && currentOriginal) {
           const archived = store.getCall(roomId, turnId, event.callId)
