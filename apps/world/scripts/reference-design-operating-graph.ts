@@ -308,7 +308,7 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   const coreEquipment = at('CORE')
   coreEquipment.readings.push(
     reading('releasedPower', 'Reactor released power', 'state', 'nuclear', 'power', 'MW', 'LD01.CORE.RELEASED_POWER', 'W'),
-    ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.y[${cluster.id}]`, 'm')),
+    ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.${cluster.id}.TRAVEL`, 'm')),
   )
 
   // The turbine-generator of the ELEC slice, fed by every SG's steam.

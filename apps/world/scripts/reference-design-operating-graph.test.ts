@@ -37,7 +37,7 @@ describe('the LD-01 graph compiler', () => {
     expect(graph.signalBindingByTagId.get('LD01.RCS.A.FT' as never)!.limits?.alarmLimits).toEqual({ lowLow: 0.87 })
     expect(compiled.tagMap.channels['PZR.PT1' as never]).toBe('LD01.PZR.PT1')
     expect(compiled.tagMap.channels['PUMP.A1.speed' as never]).toBe('LD01.P.A1.OMEGA')
-    expect(compiled.tagMap.channels['CORE.rod.LD01.CR.002' as never]).toBe('LD01.ROD.y[LD01.CR.002]')
+    expect(compiled.tagMap.channels['CORE.rod.LD01.CR.002' as never]).toBe('LD01.ROD.LD01.CR.002.TRAVEL')
     expect(compiled.tagMap.commands['PUMP.B1.supplyLoss' as never]).toEqual({ kind: 'SupplyLoss', rotor: 1 })
     expect(compiled.tagMap.commands['PROTECTION.manualReactorTrip' as never]).toEqual({ kind: 'ManualReactorTrip' })
   })

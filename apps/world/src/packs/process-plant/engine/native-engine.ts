@@ -67,9 +67,16 @@ export interface NativeEngineFailure {
   readonly reason: string
 }
 
+/** What the child reports a request cost it (its reply header): handler wall and thread CPU seconds. */
+export interface NativeUnitCost {
+  readonly wallS: number
+  readonly cpuS: number
+}
+
 export interface NativeAdvanceReceipt {
   readonly simulatedMs: number
   readonly frame: Ld01UnitAdvanceFrame
+  readonly cost: NativeUnitCost
 }
 
 export interface NativeProcessPlantEngine {
@@ -83,6 +90,8 @@ export interface NativeProcessPlantEngine {
   /** The last checkpoint taken (or the unit's start), what a periodic flush persists without disturbing the unit. */
   readonly persisted: () => NativeProcessPlantCheckpoint
   readonly failure: () => NativeEngineFailure | null
+  /** What LOAD (or RESTORE) and the first frame cost the child. */
+  readonly connectCost: NativeUnitCost
   /** Snapshots a live unit (so a later connect resumes where it stood), then sends CLOSE. */
   readonly close: () => Promise<NativeProcessPlantCheckpoint>
 }
@@ -127,8 +136,13 @@ export const connectNativeProcessPlantEngine = async (config: {
 
   let binding: Ld01Binding
   let persisted: NativeProcessPlantCheckpoint
+  let connectCost: NativeUnitCost
   try {
-    const reply = loadReplySchema.parse(restored?.snapshot ? await json(ld01UnitOps.restore, restored.snapshot, 'RESTORE') : await json(ld01UnitOps.load, config.load, 'LOAD'))
+    const composed = restored?.snapshot
+      ? await child.request(ld01UnitOps.restore, encodeLd01UnitJson(restored.snapshot))
+      : await child.request(ld01UnitOps.load, encodeLd01UnitJson(config.load))
+    connectCost = { wallS: composed.wallS, cpuS: composed.cpuS }
+    const reply = loadReplySchema.parse(decodeLd01UnitJson(composed.payload, restored?.snapshot ? 'RESTORE' : 'LOAD'))
     const channels = z.array(ld01ChannelSchema).parse(decodeLd01UnitJson((await child.request(ld01UnitOps.channels, new Uint8Array(0))).payload, 'CHANNELS'))
     if (JSON.stringify(channels) !== JSON.stringify(reply.channels)) throw new Error('CHANNELS differs from the channels LOAD replied')
     binding = bindLd01TagMap(plant.graph, config.tagMap, channels)
@@ -136,7 +150,9 @@ export const connectNativeProcessPlantEngine = async (config: {
     if (restored === undefined || restored.snapshot === null) {
       // The unit's first observation is its first I&C frame: the driver stops there anyway, so this exchange
       // adds no stop the trajectory would not make. A restored start state reproduces it bit for bit.
-      const first = decodeLd01UnitAdvance((await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(reply.t + reply.frame_s))).payload)
+      const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(reply.t + reply.frame_s))
+      connectCost = { wallS: connectCost.wallS + advanced.wallS, cpuS: connectCost.cpuS + advanced.cpuS }
+      const first = decodeLd01UnitAdvance(advanced.payload)
       if (first.values.length !== binding.channelCount) throw new Error(`the first frame carries ${first.values.length} values for ${binding.channelCount} channels`)
       if (restored !== undefined && (timeBits(first.t) !== restored.frame.tBits || valuesToBits(first.values) !== restored.frame.valuesBits)) {
         throw new Error('the restored start state does not reproduce its saved first frame bit for bit')
@@ -259,11 +275,12 @@ export const connectNativeProcessPlantEngine = async (config: {
       try {
         const sending = queued.splice(0)
         for (const command of sending) await json(ld01UnitOps.command, { ...command, t_apply: state.t }, 'COMMAND')
-        const frame = decodeLd01UnitAdvance((await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(state.t + advanceMs / 1_000))).payload)
+        const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(state.t + advanceMs / 1_000))
+        const frame = decodeLd01UnitAdvance(advanced.payload)
         if (frame.values.length !== binding.channelCount) throw new Error(`a frame carries ${frame.values.length} values for ${binding.channelCount} channels`)
         const simulatedMs = (frame.t - state.t) * 1_000
         state = { t: frame.t, values: frame.values }
-        return { simulatedMs, frame }
+        return { simulatedMs, frame, cost: { wallS: advanced.wallS, cpuS: advanced.cpuS } }
       } catch (error) {
         throw failed(error)
       }
@@ -271,6 +288,7 @@ export const connectNativeProcessPlantEngine = async (config: {
     checkpoint: () => exclusive(snapshot),
     persisted: () => persisted,
     failure: () => failure,
+    connectCost,
     close: async (): Promise<NativeProcessPlantCheckpoint> => {
       // A failed unit keeps its last checkpoint; a live one is snapshotted first, and a refusal there fails it visibly.
       await Promise.allSettled([exclusive(snapshot)])
