@@ -948,10 +948,8 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     assert_eq!(b.modes()[0], Mode::Free);
     assert_eq!(b.modes()[5], Mode::Held);
     let ids = Rods::<Liquid>::differential(&b);
-    // E-EVT lever 4: `v` is differential in every mode (a held or seated
-    // body's row is `v' = 0` at `v = 0`), so the identity is mode-free.
     assert_eq!(ids[ci(0, VELOCITY)], 1.);
-    assert_eq!(ids[ci(5, VELOCITY)], 1.);
+    assert_eq!(ids[ci(5, VELOCITY)], 0.);
     assert_eq!(ids[b.group_index(0, BORE_MASS)], 1.);
     assert_eq!(ids[b.group_index(0, BORE_PRESSURE)], 0.);
     // A free body at the seat: inelastic, its energy into its fitting.
@@ -1099,7 +1097,7 @@ fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
         assert_eq!(b.modes()[c], expected, "cluster {c}");
         assert_eq!(
             Rods::<Liquid>::differential(&b)[ci(c, VELOCITY)],
-            1.
+            if expected == Mode::Free { 1. } else { 0. }
         );
     }
     assert!(Rods::<Liquid>::command(&mut b, open, Command::StuckCluster { cluster: 0 }).is_err());
