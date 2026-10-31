@@ -5,6 +5,7 @@ import { assertProcessPlantIcSafetyFunctionsValid } from '../src/packs/process-p
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { evaluateSafetyFunction, evaluateSafetyFunctions, safetyFunctionSignals, worstSafetyFunction, type SafetyFunctionEvaluation, type SafetyFunctionStatus } from '../src/packs/process-plant/safety-functions.ts'
 import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
+import { processPlantSignalReferenceSchema } from '../src/packs/process-plant/signals.ts'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
 
@@ -195,4 +196,76 @@ describe('critical safety function status trees', () => {
     expect((capability.output.parse(answer({ plantId: plant.id, assessmentIds: ['heat-sink'] })) as { assessments: unknown[] }).assessments).toHaveLength(1)
     expect(() => answer({ plantId: plant.id, assessmentIds: ['heat-sinks'] })).toThrow('declares subcriticality, core-cooling, heat-sink')
   })
+
+  test('current summary preserves every declared status and exception and links a newly acquired full inspection', () => {
+    const runtime = after(null, 2)
+    const instance: ProcessPlantRuntimeInstance = { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }
+    const capability = processPlantCapabilities.find(item => item.id === 'world.process-plant.assessments.evaluate')!
+    const answer = (input: Record<string, unknown>) => capability.output.parse(answerProcessPlantQuery({
+      request: { capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
+    })) as { detail: string; assessments: ReadonlyArray<Record<string, unknown>>; inspect?: { capabilityId: string; input: Record<string, unknown> } }
+    const before = runtime.elapsedMs()
+    const full = answer({ plantId: plant.id })
+    const summary = answer({ plantId: plant.id, detail: 'summary' })
+    expect(full.detail).toBe('full')
+    expect(summary.detail).toBe('summary')
+    expect(summary.assessments).toHaveLength(full.assessments.length)
+    summary.assessments.forEach((row, index) => {
+      const { path: _path, checks: _checks, ...facts } = full.assessments[index]!
+      expect(row).toMatchObject(facts)
+      expect(row).not.toHaveProperty('path')
+      expect(row.automaticCsfQualified).toBe(false)
+    })
+    expect(summary.inspect?.capabilityId).toBe(capability.id)
+    expect(answer(summary.inspect!.input)).toEqual(full)
+    expect(JSON.stringify(summary).length).toBeLessThan(JSON.stringify(full).length)
+    expect(runtime.elapsedMs()).toBe(before)
+    const filtered = answer({ plantId: plant.id, assessmentIds: ['heat-sink'], detail: 'summary' })
+    expect(filtered.assessments.map(row => row.id)).toEqual(['heat-sink'])
+    expect(answer(filtered.inspect!.input).assessments).toEqual([full.assessments[2]!])
+    expect(() => answer({ plantId: plant.id, detail: 'brief' })).toThrow()
+    expect(() => answer({ plantId: plant.id, assessmentIds: ['invented'], detail: 'summary' })).toThrow('Unknown assessment')
+  })
+
+  test('summary retains unavailable nondeciding ANY operands and valid empty-function inspection', () => {
+    const runtime = after(null, 2)
+    const failed = { ...runtime, readVariableSnapshot: (path: Parameters<ProcessPlantRuntime['readVariableSnapshot']>[0]) => {
+      if (String(path) === 'core.coreExitTemperatureC') throw new Error('Test acquisition is unavailable')
+      return runtime.readVariableSnapshot(path)
+    } }
+    // Test-only declared tree: a known positive alternative can select green
+    // while another acquired operand is unavailable. That exception must survive.
+    const condition = { type: 'any' as const, conditions: [
+      { type: 'comparison' as const, signal: processPlantSignalReferenceSchema.parse({ tagId: 'CET-AVG' }), operator: '<' as const, value: 371 },
+      { type: 'comparison' as const, signal: processPlantSignalReferenceSchema.parse({ tagId: 'SUB-MARGIN' }), operator: '>' as const, value: 0 },
+    ] }
+    const declared = { ...plant.automation.safetyFunctions[1]!, monitored: undefined,
+      tree: { question: 'An available alternative', basis: 'Test-only ANY', condition,
+        yes: { status: 'green' as const, meaning: 'Known alternative passes' }, no: { status: 'red' as const, meaning: 'No alternative' } },
+      checks: [{ label: 'Supplementary alternative', basis: 'Test-only ANY', condition, notMet: 'Neither alternative' }],
+    }
+    let instance: ProcessPlantRuntimeInstance = { plant: { ...plant, automation: { ...plant.automation, safetyFunctions: [declared] } },
+      runtime: failed, ramps: createProcessPlantRampRunner({ runtime: failed }), performance: createProcessPlantRuntimePerformance() }
+    const capability = processPlantCapabilities.find(item => item.id === 'world.process-plant.assessments.evaluate')!
+    const answer = (input: Record<string, unknown>) => capability.output.parse(answerProcessPlantQuery({
+      request: { capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
+    })) as { assessments: ReadonlyArray<Record<string, any>>; inspect?: { input: Record<string, unknown> } }
+    const row = answer({ plantId: plant.id, detail: 'summary' }).assessments[0]!
+    expect(row.status).toBe('green')
+    expect(row.unresolved[0].comparisons[0]).toMatchObject({ answer: 'unknown', reason: expect.stringContaining('CET-AVG cannot be read: Test acquisition is unavailable') })
+    expect(row.checks[0]).toMatchObject({ met: 'yes', unresolved: [{ answer: 'unknown', reason: expect.stringContaining('CET-AVG cannot be read: Test acquisition is unavailable') }] })
+    instance = { ...instance, plant: { ...instance.plant, automation: { ...instance.plant.automation, safetyFunctions: [{ ...declared,
+      monitored: { when: condition.conditions[0]!, otherwise: 'Not judged' },
+    }] } } }
+    const unknown = answer({ plantId: plant.id, detail: 'summary' }).assessments[0]!
+    expect(unknown.status).toBe('unknown')
+    expect(unknown.meaning).toContain('Test acquisition is unavailable')
+    expect(unknown.unresolved[0].comparisons[0].reason).toContain('Test acquisition is unavailable')
+    instance = { ...instance, plant: { ...instance.plant, automation: { ...instance.plant.automation, safetyFunctions: [] } } }
+    const empty = answer({ plantId: plant.id, detail: 'summary' })
+    expect(empty.assessments).toEqual([])
+    expect(empty.inspect!.input).not.toHaveProperty('assessmentIds')
+    expect(answer(empty.inspect!.input).assessments).toEqual([])
+  })
+
 })

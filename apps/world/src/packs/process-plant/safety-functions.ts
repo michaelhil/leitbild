@@ -178,9 +178,13 @@ export const evaluateSafetyFunction = (config: {
     ({ ...identity, ...fields, path, checks, expected, missingSignals: [...missing] })
 
   if (safetyFunction.monitored !== undefined) {
-    const monitored = holds(safetyFunction.monitored.when)
-    if (monitored === 'unknown') return finish({ status: 'unknown', meaning: 'Whether it is judged now cannot be read.' })
-    if (monitored === 'no') return finish({ status: 'not-monitored', meaning: safetyFunction.monitored.otherwise })
+    const monitored = step('Whether this function is judged now', safetyFunction.basis, safetyFunction.monitored.when)
+    if (monitored.answer === 'unknown') {
+      path.push(monitored)
+      const reasons = [...new Set(monitored.comparisons.flatMap(comparison => comparison.reason === undefined ? [] : [comparison.reason]))]
+      return finish({ status: 'unknown', meaning: `Whether it is judged now cannot be read: ${reasons.join('; ')}.` })
+    }
+    if (monitored.answer === 'no') return finish({ status: 'not-monitored', meaning: safetyFunction.monitored.otherwise })
   }
   let node: ProcessPlantIcStatusTreeNode = safetyFunction.tree
   while ('question' in node) {

@@ -29,6 +29,8 @@ export const assessmentsEvaluateQuerySchema = z.object({
   plantId: idSchema,
   /** The critical safety functions to judge, by id; every one the Plant declares when absent. */
   assessmentIds: z.array(z.string().min(1)).min(1).optional(),
+  /** Current status-board projection, or the complete tree and deciding values. */
+  detail: z.enum(['full', 'summary']).default('full'),
 }).strict()
 
 export const processPlantControlQueryKinds = [
@@ -82,9 +84,15 @@ export const answerProcessPlantControlQuery = (config: {
   if (config.request.capabilityId === 'world.process-plant.assessments.evaluate') {
     const payload = assessmentsEvaluateQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
+    const assessments = evaluateProcessPlantAssessments(system, payload.assessmentIds, payload.detail)
     return {
       plantId: payload.plantId,
-      assessments: evaluateProcessPlantAssessments(system, payload.assessmentIds),
+      detail: payload.detail,
+      assessments,
+      ...(payload.detail === 'summary' ? { inspect: {
+        capabilityId: 'world.process-plant.assessments.evaluate',
+        input: { plantId: payload.plantId, ...(assessments.length === 0 ? {} : { assessmentIds: assessments.map(row => String(row.id)) }), detail: 'full' },
+      } } : {}),
     }
   }
   if (config.request.capabilityId === 'world.process-plant.control.proposals') {
