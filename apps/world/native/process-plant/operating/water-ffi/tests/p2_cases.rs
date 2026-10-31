@@ -1667,6 +1667,10 @@ impl ConsistentSystem for Bench {
     }
 }
 impl System for Bench {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         6
     }

@@ -164,5 +164,43 @@ fn nuc_t0_members() {
     add(sl, sol.half_members(), &halves);
     add(sl, sol.helium_members(), &helium);
     add(sl, sol.store_members(), &stores);
+    let clusters = ids(&["rods", "clusters"]);
+    let rods = joined.rods().expect("rod owner");
+    add(&rods.layout().labels, &rods.class_members(), &clusters);
+    // EVT-RODS-BANK: a class's bores' water region holds the packet
+    // layout's sector-share bore groups of its members (bitwise shares,
+    // first appearance first): "M_bore{j}[first member]" etc. in the
+    // unreduced labels, the region's own label naming its first group.
+    let shares: Vec<String> = raw["rods"]["clusters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["sector_shares"].to_string())
+        .collect();
+    let mut first: Vec<usize> = Vec::new();
+    let group: Vec<usize> = (0..shares.len())
+        .map(|c| match first.iter().position(|f| shares[*f] == shares[c]) {
+            Some(g) => g,
+            None => {
+                first.push(c);
+                first.len() - 1
+            }
+        })
+        .collect();
+    for (k, members) in rods.class_members().iter().enumerate() {
+        let mut groups: Vec<usize> = members.iter().map(|c| group[*c]).collect();
+        groups.sort_unstable();
+        groups.dedup();
+        if groups.len() < 2 {
+            continue;
+        }
+        for q in ["M", "U", "B", "p"] {
+            let list: Vec<String> = groups
+                .iter()
+                .map(|g| format!("{q}_bore{g}[{}]", clusters[first[*g]]))
+                .collect();
+            map.insert(format!("{q}_bore{k}[{}]", clusters[members[0]]), json!(list));
+        }
+    }
     std::fs::write(&out, serde_json::to_vec(&Value::Object(map)).unwrap()).expect("members");
 }

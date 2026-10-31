@@ -504,6 +504,10 @@ impl ConsistentSystem for Case {
 /// constructs a new stock handle, since the root count changes).
 struct Handle(Rc<RefCell<Case>>);
 impl System for Handle {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.0.borrow().net.dimension()
     }

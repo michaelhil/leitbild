@@ -531,6 +531,9 @@ pub struct Recording {
     ordering: KluOrdering,
 }
 impl System for Recording {
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn klu_ordering(&self) -> KluOrdering {
         self.ordering
     }

@@ -36,6 +36,7 @@ fn convert_a_saved_state_to_the_replica_layout() {
     let to = std::env::var("LD01_NUC_TO_STATE").expect("LD01_NUC_TO_STATE");
     assert!(!std::path::Path::new(&to).exists(), "never overwritten");
     let mut state: Value = serde_json::from_slice(&std::fs::read(&from).unwrap()).unwrap();
+    let state_in = state.clone();
     let started = spine::started_full_composition();
     let joined = &started.joined;
     let o = joined.offsets();
@@ -49,31 +50,89 @@ fn convert_a_saved_state_to_the_replica_layout() {
         + count("helium")
         + count("passive_stores")
         + count("sg_segments");
-    let reduced = (o.solids - o.nuclear) + (o.secondary - o.solids);
-    let convert = |old: &[f64]| -> Vec<f64> {
-        assert_eq!(
-            old.len() + reduced,
-            joined.dimension() + full + full_solids,
-            "layouts"
-        );
+    // The rods: 52 x [y, v, m_lo, m_up] then the bore groups' [M, U, B, p]
+    // in the packet layout (EVT-RODS-BANK: one bank class here).
+    let rods = joined.rods().expect("rod owner");
+    let rods_len = o.pzr - o.rods;
+    let full_rods = rods.packet_coordinates();
+    // Each block's saved slice is either its packet layout or already this
+    // layout (a state an earlier conversion reduced); the one combination
+    // whose lengths add up to the saved state's is taken.
+    let (red_n, red_s) = (o.solids - o.nuclear, o.secondary - o.solids);
+    let sizes = |old: usize| -> (bool, bool, bool) {
+        let mut found = Vec::new();
+        for (fnuc, fsol, frod) in [
+            (true, true, true),
+            (false, false, true),
+            (false, false, false),
+            (true, true, false),
+        ] {
+            let n = joined.dimension() - red_n - red_s - rods_len
+                + if fnuc { full } else { red_n }
+                + if fsol { full_solids } else { red_s }
+                + if frod { full_rods } else { rods_len };
+            if n == old {
+                found.push((fnuc, fsol, frod));
+            }
+        }
+        assert_eq!(found.len(), 1, "a saved state of {old} coordinates matches no single layout");
+        found[0]
+    };
+    // The rods' spreads of what a class took from its first member or
+    // merged, [mouth currents, bores' water], for y and for y'.
+    let spreads = std::cell::Cell::new([[0f64; 2]; 2]);
+    let convert = |old: &[f64], rates: bool| -> Vec<f64> {
+        let (fnuc, fsol, frod) = sizes(old.len());
         let mut y = old[..o.nuclear].to_vec();
-        y.extend(
-            nuclear
-                .reduce_carrier_state(&old[o.nuclear..o.nuclear + full])
-                .unwrap_or_else(|e| panic!("{e}")),
-        );
-        let s0 = o.nuclear + full;
-        y.extend(
-            solids
-                .reduce_packet_state(&old[s0..s0 + full_solids])
-                .unwrap_or_else(|e| panic!("{e}")),
-        );
-        y.extend_from_slice(&old[s0 + full_solids..]);
+        let mut at = o.nuclear;
+        if fnuc {
+            y.extend(
+                nuclear
+                    .reduce_carrier_state(&old[at..at + full])
+                    .unwrap_or_else(|e| panic!("{e}")),
+            );
+            at += full;
+        } else {
+            y.extend_from_slice(&old[at..at + red_n]);
+            at += red_n;
+        }
+        if fsol {
+            y.extend(
+                solids
+                    .reduce_packet_state(&old[at..at + full_solids])
+                    .unwrap_or_else(|e| panic!("{e}")),
+            );
+            at += full_solids;
+        } else {
+            y.extend_from_slice(&old[at..at + red_s]);
+            at += red_s;
+        }
+        y.extend_from_slice(&old[at..at + (o.rods - o.secondary)]);
+        at += o.rods - o.secondary;
+        if frod {
+            let slice = &old[at..at + full_rods];
+            let (r, spread) = if rates {
+                rods.reduce_packet_rates(slice)
+            } else {
+                rods.reduce_packet_state(slice)
+            }
+            .unwrap_or_else(|e| panic!("{e}"));
+            let mut all = spreads.get();
+            let slot = usize::from(rates);
+            all[slot] = [all[slot][0].max(spread[0]), all[slot][1].max(spread[1])];
+            spreads.set(all);
+            y.extend(r);
+            at += full_rods;
+        } else {
+            y.extend_from_slice(&old[at..at + rods_len]);
+            at += rods_len;
+        }
+        y.extend_from_slice(&old[at..]);
         assert_eq!(y.len(), joined.dimension());
         y
     };
-    let y = convert(&from_bits(&state["y_bits"]));
-    let yp = convert(&from_bits(&state["yp_bits"]));
+    let y = convert(&from_bits(&state["y_bits"]), false);
+    let yp = convert(&from_bits(&state["yp_bits"]), true);
     state["y"] = json!(y);
     state["yp"] = json!(yp);
     state["y_bits"] = json!(bits(&y));
@@ -84,7 +143,13 @@ fn convert_a_saved_state_to_the_replica_layout() {
         "groups": nuclear.replica_groups(),
         "carriers": nuclear.carriers(),
         "solid_halves": solids.halves(),
-        "coordinates": [full + full_solids + joined.dimension() - reduced, joined.dimension()],
+        "rod_motion_classes": rods_len / 8,
+        "rods_spreads": {
+            "mouth_currents": {"y": spreads.get()[0][0], "yp": spreads.get()[1][0]},
+            "bores_water": {"y": spreads.get()[0][1], "yp": spreads.get()[1][1]},
+        },
+        "rods_rule": "travel and velocity bitwise equal or refused; the mouth currents (algebraic, re-solved by the exact start) take the class's first member's value; the bores' water stocks merge member-weighted within 64 eps in y (else refused) and freely in y' (its pressure, algebraic, the first group's); each largest relative spread is recorded",
+        "coordinates": [from_bits(&state_in["y_bits"]).len(), joined.dimension()],
     });
     std::fs::write(&to, serde_json::to_vec(&state).unwrap()).unwrap();
 }
