@@ -58,12 +58,12 @@ pub trait System {
     }
     /// E-NUC (plan r4): per coordinate, how many identical coordinates of
     /// the unreduced model it stands for, read once at construction. `None`
-    /// (the default) or all ones: the system is unreduced. Otherwise the
-    /// handle weights every coordinate so that stock's WRMS norm of this
-    /// system equals stock's norm of the unreduced one ([`WeightGroups`]).
-    fn multiplicities(&self) -> Option<Vec<f64>> {
-        None
-    }
+    /// or all ones: the system is unreduced. Otherwise the handle weights
+    /// every coordinate so that stock's WRMS norm of this system equals
+    /// stock's norm of the unreduced one ([`WeightGroups`]). Every system
+    /// states it (no default): a wrapper that dropped its inner system's
+    /// multiplicities would silently change the norm.
+    fn multiplicities(&self) -> Option<Vec<f64>>;
     /// Number of quadratures `q' = fQ(t,y,yp)` (stock IDAS, the
     /// `quadratures` feature). A system without them states nothing.
     fn quadrature_count(&self) -> usize {
@@ -765,6 +765,19 @@ impl<S: System> Ida<S> {
             }
         }
         Ok(())
+    }
+    /// The error-weight rule in force, for receipts: stock IDASVtolerances
+    /// (`"stock"`), or stock IDAWFtolerances carrying the coordinates'
+    /// multiplicities under one group (E-NUC: the unreduced model's stock
+    /// norm, `"stock-equivalent multiplicity rule"`), or N1's groups, with
+    /// or without multiplicities.
+    pub fn weight_rule_kind(&self) -> &'static str {
+        match (&self.context.grouped, &self.context.multiplicity) {
+            (None, _) => "stock",
+            (Some(g), Some(_)) if g.groups.sizes().len() == 1 => "stock-equivalent multiplicity rule",
+            (Some(_), Some(_)) => "N1 groups with multiplicities",
+            (Some(_), None) => "N1 groups",
+        }
     }
     /// The weight groups in force, if any (N1).
     pub fn weight_groups(&self) -> Option<&WeightGroups> {

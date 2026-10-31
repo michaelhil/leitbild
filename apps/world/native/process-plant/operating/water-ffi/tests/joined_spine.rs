@@ -977,7 +977,7 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
     assert_eq!(algebraic(&ids_open), held - (clusters - 1));
     let o = ida.system().joined.offsets();
     assert_eq!(
-        ids_open[o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * stuck + 1],
+        ids_open[o.rods + ida.system().joined.rods().unwrap().cluster_coordinate(stuck) + 1],
         0.,
         "the stuck speed row"
     );

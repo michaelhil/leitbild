@@ -346,13 +346,25 @@ pub fn prepare(
     classes: ToleranceClasses,
     singles: &[usize],
 ) -> Result<Prepared, String> {
+    prepare_from(packets(bytes)?, flows, momenta, classes, singles)
+}
+
+/// [`prepare`] on the packet's readings already made (one parse and one
+/// carve per composition).
+pub fn prepare_from(
+    packets: Packets,
+    flows: &[f64],
+    momenta: &[f64],
+    classes: ToleranceClasses,
+    singles: &[usize],
+) -> Result<Prepared, String> {
     let Packets {
         network: network_packet,
         joined: joined_packet,
         raw,
         rods,
         carved,
-    } = packets(bytes)?;
+    } = packets;
     let (network, y_network, network_ids, flowing) =
         composed_network(&network_packet, flows, momenta)?;
     let section: SecondarySection = serde_json::from_value(raw["secondary"].clone())
@@ -500,10 +512,10 @@ pub fn started_full_composition_with_singles(
     let clock = super::clock::process_cpu_s;
     let gates = spine.s1_gates()?;
     let s1 = S1Settling::from_gates(&gates)?;
-    let network_packet = packets(&spine.packet)?.network;
-    let settled = s1_settled_flows(&network_packet, &s1, clock)?;
-    let mut p = prepare(
-        &spine.packet,
+    let readings = packets(&spine.packet)?;
+    let settled = s1_settled_flows(&readings.network, &s1, clock)?;
+    let mut p = prepare_from(
+        readings,
         &settled.flows,
         &settled.momenta,
         s1.classes,

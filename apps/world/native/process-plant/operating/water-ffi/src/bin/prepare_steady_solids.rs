@@ -137,6 +137,38 @@ pub struct SgFlux {
     pub mass_flux_kg_m2_s: f64,
 }
 
+/// E-NUC: refuse when the packet-order records of any replica class's
+/// members (`classes`, packet indices) differ in any bit outside the listed
+/// identity fields.
+fn replica_exact<T: Serialize>(
+    kind: &str,
+    classes: &[Vec<usize>],
+    records: &[T],
+    identities: &[&str],
+) -> Result<(), String> {
+    let strip = |r: &T| -> Result<String, String> {
+        let mut v = serde_json::to_value(r).map_err(|e| e.to_string())?;
+        if let Some(o) = v.as_object_mut() {
+            for k in identities {
+                o.remove(*k);
+            }
+        }
+        Ok(v.to_string())
+    };
+    for members in classes {
+        let first = strip(&records[members[0]])?;
+        for &m in &members[1..] {
+            if strip(&records[m])? != first {
+                return Err(format!(
+                    "{kind} {m} differs from its replica {}: the output is not replica-exact",
+                    members[0]
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Output schema (`lanes/solids/schema.md`).
 
@@ -742,6 +774,10 @@ impl PzrSystem {
 }
 
 impl System for PzrSystem {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.scales.len()
     }
@@ -1700,6 +1736,19 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
             rate_w: o.rates_w[k],
         });
     }
+    // E-NUC: replica-exact by construction. Every output element above is
+    // read from its replica class's one evaluation (the solids' classes, the
+    // nuclear ports), so the members of a class are written bitwise equal
+    // whatever the summation order; a class whose members' records differ
+    // in any bit (their identities aside) is refused.
+    replica_exact(
+        "carrier",
+        solids.half_members(),
+        &carriers,
+        &["id", "fuel_store_ids", "clad_store_id"],
+    )?;
+    replica_exact("helium store", solids.helium_members(), &helium, &["id"])?;
+    replica_exact("passive store", solids.store_members(), &passive, &["id"])?;
     let mut sg_metal = Vec::with_capacity(packet.thermal.sg_segments.len());
     let mut generators: Vec<Generator> = secondaries
         .iter()
