@@ -80,10 +80,11 @@ pub fn nuclear_partials(
 ) -> Result<(), Failure> {
     let (r, a, n) = (
         nuclear.regions(),
-        nuclear.carriers(),
+        nuclear.ports(),
         nuclear.replica_groups(),
     );
     let members = nuclear.members();
+    let (group_ports, port_count) = (nuclear.group_ports(), nuclear.port_count());
     let k = nuclear.coefficients();
     let feedback = nuclear.feedback();
     let kinetics = nuclear.kinetics();
@@ -99,19 +100,20 @@ pub fn nuclear_partials(
     let material = |c: usize, m: usize| m0 + 6 * c + m;
     // The same conditions Nuclear::rows composes, as values.
     let neutrons: Vec<Scalar> = (0..r).map(|i| s(x[i])).collect();
-    // E-NUC: each group's feedback temperature from its members' own, and
-    // d T_group / d T_member for the port chain.
-    let carrier_t: Vec<Scalar> = fuel_t.iter().map(|v| s(*v)).collect();
-    let fuel: Vec<Scalar> = members
+    // E-NUC: each group's feedback temperature from its members' own (at
+    // its ports), and d T_group / d T_port for the port chain.
+    let port_t: Vec<Scalar> = fuel_t.iter().map(|v| s(*v)).collect();
+    let fuel: Vec<Scalar> = group_ports
         .iter()
-        .map(|m| super::nuclear::replica_temperature(m, &carrier_t))
+        .map(|ports| super::nuclear::replica_temperature(ports, port_count, &port_t))
         .collect::<Result<_, _>>()?;
     let mut chain = vec![1.; a];
-    for (g, m) in members.iter().enumerate() {
-        if m.len() > 1 {
+    for (g, ports) in group_ports.iter().enumerate() {
+        if ports.len() > 1 {
             let mean = fuel[g].value.sqrt();
-            for &c in m {
-                chain[c] = mean / (m.len() as f64 * fuel_t[c].sqrt());
+            for &p in ports {
+                chain[p] = mean * port_count[p] as f64
+                    / (members[g].len() as f64 * fuel_t[p].sqrt());
             }
         }
     }
@@ -234,9 +236,9 @@ pub fn nuclear_partials(
         let (i, c) = (sk.region, sk.material);
         let row = offset + i;
         let coef = per_reactivity[i];
-        for &member in &members[c] {
+        for &port in &group_ports[c] {
             out.fuel_t
-                .push((row, member, coef * sp.fuel_temperature * chain[member]));
+                .push((row, port, coef * sp.fuel_temperature * chain[port]));
         }
         out.own.push((
             row,
@@ -419,10 +421,10 @@ pub fn nuclear_partials(
                 offset + material(c, 5),
                 fraction_b * k.samarium_binding_j * pm.samarium_capture_per_samarium * exposure,
             ));
-            // E-NUC: each member's heat is its share of the group's.
+            // E-NUC: each port's heat is one member's share of the group's.
             for (column, v) in entries.drain(..) {
-                for &member in &members[c] {
-                    sink.push((member, column, v * share));
+                for &port in &group_ports[c] {
+                    sink.push((port, column, v * share));
                 }
             }
         }

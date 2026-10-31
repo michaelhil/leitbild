@@ -1710,6 +1710,12 @@ impl<P: Properties> Rods<P> for RodBlock {
             })
             .collect()
     }
+    fn deposit_stores(&self) -> Vec<String> {
+        self.clusters
+            .iter()
+            .map(|c| format!("{}/top-fitting", c.fuel_assembly))
+            .collect()
+    }
     fn clusters(&self) -> usize {
         self.clusters.len()
     }

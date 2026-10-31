@@ -58,6 +58,8 @@ struct Passive {
     area: f64,
     liquid_h: f64,
     log_radius: f64,
+    /// E-NUC: the store class's size: the water receives the heat times it.
+    water_m: f64,
 }
 #[derive(Clone, Copy, Debug)]
 struct Plenum {
@@ -66,6 +68,10 @@ struct Plenum {
     area: f64,
     radius: f64,
     factor: f64,
+    /// E-NUC: the contacts of this class each helium member and each store
+    /// member has: the flow's weight on either side.
+    helium_w: f64,
+    store_w: f64,
 }
 #[derive(Clone, Copy, Debug)]
 struct Segment {
@@ -226,7 +232,20 @@ pub struct Solids {
     wall: Vec<Option<WallWater>>,
     helium_rate: Vec<Scalar>,
     passive_rate: Vec<Scalar>,
+    /// Every packet store's id, packet order, and its class.
     passive_ids: Vec<String>,
+    store_class: Vec<usize>,
+    /// E-NUC phase B: each class's size (the water and the totals receive
+    /// a class's heat times it), a half class's weight into its helium (the
+    /// halves of the class each helium member has), and each class's
+    /// packet members (halves = carriers, helium stores, passive stores).
+    band_m: Vec<f64>,
+    band_helium_w: Vec<f64>,
+    helium_m: Vec<f64>,
+    store_m: Vec<f64>,
+    band_members: Vec<Vec<usize>>,
+    helium_members: Vec<Vec<usize>>,
+    store_members: Vec<Vec<usize>>,
     /// Every element: the full evaluation's scope.
     all: Closed,
     /// The SG tube steel (`ld01-sg-contact`).
@@ -371,7 +390,15 @@ struct Inverse {
 impl Solids {
     /// Compile once from the packet's thermal section; `water_cells` is the
     /// network's regular cell count and `face_endpoints` its faces.
-    pub fn new(packet: &Packet, water_cells: usize) -> Result<Self, Failure> {
+    /// `carrier_group` is each material half's nuclear replica group (its
+    /// fuel heat's), `singles` the passive stores that take a transaction's
+    /// energy deposit (each its own class).
+    pub fn new(
+        packet: &Packet,
+        water_cells: usize,
+        carrier_group: &[usize],
+        singles: &[String],
+    ) -> Result<Self, Failure> {
         let t = &packet.thermal;
         let a = t.fuel_bands.len();
         if a == 0
@@ -451,6 +478,7 @@ impl Solids {
                 area: c.area_m2,
                 liquid_h: c.liquid_h_w_m2_k,
                 log_radius: c.wall_log_radius_m,
+                water_m: 1.,
             };
             if p.water >= water_cells
                 || !(p.area.is_finite() && p.area > 0.)
@@ -469,6 +497,8 @@ impl Solids {
                 area: c.area_m2,
                 radius: c.inner_radius_m,
                 factor: c.conduction_factor,
+                helium_w: 1.,
+                store_w: 1.,
             };
             if p.helium >= t.helium.len()
                 || ![p.area, p.radius, p.factor]
@@ -549,6 +579,222 @@ impl Solids {
         {
             return Err(fatal("helium amount, passive mass or passive material"));
         }
+        // E-NUC phase B (plan r4): exact replica classes of the solid
+        // elements. Two elements are replicas when every value their rows
+        // read is bitwise equal and their neighbours are replicas in equal
+        // numbers: a half's geometry, masses, contacts, prepared state and
+        // nuclear group, and its helium; a helium store's amount, prepared
+        // energy, halves and plenum contacts; a passive store's mass,
+        // prepared energy, contacts and plenum contacts. The classes are
+        // refined to that fixed point (an equitable partition), so replicas
+        // obey the same equations of the same inputs. A store named in
+        // `singles` (a rod seat's arrival-energy target) is its own class.
+        // Each class keeps its first member: its rows are that member's, the
+        // water receives the class's heat (the member's times the class
+        // size), and a flow between classes carries the number of partners
+        // each receiving member has. Nothing is averaged.
+        if carrier_group.len() != a {
+            return Err(fatal("one nuclear group per material half"));
+        }
+        let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<u64>>();
+        let band_key0: Vec<Vec<u64>> = bands
+            .iter()
+            .zip(&t.fuel_bands)
+            .enumerate()
+            .map(|(i, (b, p))| {
+                let g = &b.geometry;
+                let mut k = bits(&[
+                    g.fuel_radius_m,
+                    g.clad_inner_radius_m,
+                    g.clad_outer_radius_m,
+                    g.rod_length_m,
+                    g.rods,
+                    g.helium_volume_m3,
+                    g.helium_nr_j_k,
+                    g.accommodation,
+                    g.fuel_emissivity,
+                    g.clad_emissivity,
+                    b.fuel_mass[0],
+                    b.fuel_mass[1],
+                    b.clad_mass,
+                    b.clad_density,
+                    p.fuel_energies_j[0],
+                    p.fuel_energies_j[1],
+                    p.clad_energy_j,
+                    p.surface_seed_k[0],
+                    p.surface_seed_k[1],
+                    p.surface_seed_k[2],
+                    p.source_w[0],
+                    p.source_w[1],
+                ]);
+                k.push(carrier_group[i] as u64);
+                for c in &b.contacts {
+                    k.push(c.water as u64);
+                    k.extend(bits(&[c.area, c.diameter]));
+                }
+                k
+            })
+            .collect();
+        let helium_key0: Vec<Vec<u64>> = t
+            .helium
+            .iter()
+            .map(|h| bits(&[h.nr_j_k, h.energy_j]))
+            .collect();
+        let store_key0: Vec<Vec<u64>> = t
+            .passive_stores
+            .iter()
+            .enumerate()
+            .map(|(s_, p)| {
+                let mut k = bits(&[p.mass_kg, p.energy_j]);
+                for c in passive.iter().filter(|c| c.solid == s_) {
+                    k.push(c.water as u64);
+                    k.extend(bits(&[c.area, c.liquid_h, c.log_radius]));
+                }
+                if singles.contains(&p.id) {
+                    k.extend([u64::MAX, s_ as u64]);
+                }
+                k
+            })
+            .collect();
+        let plenum_key: Vec<Vec<u64>> = plenum
+            .iter()
+            .map(|c| bits(&[c.area, c.radius, c.factor]))
+            .collect();
+        let color = |keys: &[Vec<u64>]| -> Vec<usize> {
+            let mut index = std::collections::HashMap::<&[u64], usize>::new();
+            keys.iter()
+                .map(|k| {
+                    let n = index.len();
+                    *index.entry(k.as_slice()).or_insert(n)
+                })
+                .collect()
+        };
+        let (mut band_c, mut helium_c, mut store_c) =
+            (color(&band_key0), color(&helium_key0), color(&store_key0));
+        loop {
+            let classes = |c: &[usize]| c.iter().max().map_or(0, |m| m + 1);
+            let before = (classes(&band_c), classes(&helium_c), classes(&store_c));
+            let band_key: Vec<Vec<u64>> = (0..a)
+                .map(|i| vec![band_c[i] as u64, helium_c[bands[i].helium] as u64])
+                .collect();
+            let helium_key: Vec<Vec<u64>> = (0..helium_nr.len())
+                .map(|h| {
+                    let mut on: Vec<u64> = (0..a)
+                        .filter(|i| bands[*i].helium == h)
+                        .map(|i| band_c[i] as u64)
+                        .collect();
+                    on.sort_unstable();
+                    let mut pl: Vec<Vec<u64>> = (0..plenum.len())
+                        .filter(|k| plenum[*k].helium == h)
+                        .map(|k| {
+                            let mut v = plenum_key[k].clone();
+                            v.push(store_c[plenum[k].solid] as u64);
+                            v
+                        })
+                        .collect();
+                    pl.sort_unstable();
+                    let mut key = vec![helium_c[h] as u64, on.len() as u64];
+                    key.extend(on);
+                    key.push(pl.len() as u64);
+                    key.extend(pl.into_iter().flatten());
+                    key
+                })
+                .collect();
+            let store_key: Vec<Vec<u64>> = (0..passive_mass.len())
+                .map(|p| {
+                    let mut pl: Vec<Vec<u64>> = (0..plenum.len())
+                        .filter(|k| plenum[*k].solid == p)
+                        .map(|k| {
+                            let mut v = plenum_key[k].clone();
+                            v.push(helium_c[plenum[k].helium] as u64);
+                            v
+                        })
+                        .collect();
+                    pl.sort_unstable();
+                    let mut key = vec![store_c[p] as u64, pl.len() as u64];
+                    key.extend(pl.into_iter().flatten());
+                    key
+                })
+                .collect();
+            (band_c, helium_c, store_c) =
+                (color(&band_key), color(&helium_key), color(&store_key));
+            if (classes(&band_c), classes(&helium_c), classes(&store_c)) == before {
+                break;
+            }
+        }
+        let members_of = |c: &[usize]| {
+            let mut m: Vec<Vec<usize>> = vec![Vec::new(); c.iter().max().map_or(0, |m| m + 1)];
+            for (i, k) in c.iter().enumerate() {
+                m[*k].push(i);
+            }
+            m
+        };
+        let (band_members, helium_members, store_members) =
+            (members_of(&band_c), members_of(&helium_c), members_of(&store_c));
+        let size = |m: &[Vec<usize>]| m.iter().map(|v| v.len() as f64).collect::<Vec<f64>>();
+        let (band_m, helium_m, store_m) = (
+            size(&band_members),
+            size(&helium_members),
+            size(&store_members),
+        );
+        // A half's flow into its helium: each helium member receives it from
+        // |B| / |H| halves of the class.
+        let band_helium_w: Vec<f64> = band_members
+            .iter()
+            .enumerate()
+            .map(|(k, m)| band_m[k] / helium_m[helium_c[bands[m[0]].helium]])
+            .collect();
+        let reduced_bands: Vec<Band> = band_members
+            .iter()
+            .map(|m| {
+                let mut b = bands[m[0]].clone();
+                b.helium = helium_c[b.helium];
+                b
+            })
+            .collect();
+        let store_m_ref = &store_m;
+        let reduced_passive: Vec<Passive> = store_members
+            .iter()
+            .enumerate()
+            .flat_map(|(k, m)| {
+                passive
+                    .iter()
+                    .filter(move |c| c.solid == m[0])
+                    .map(move |c| Passive {
+                        solid: k,
+                        water_m: store_m_ref[k],
+                        ..*c
+                    })
+            })
+            .collect();
+        let mut reduced_plenum: Vec<Plenum> = Vec::new();
+        let mut plenum_count: Vec<f64> = Vec::new();
+        for (k, c) in plenum.iter().enumerate() {
+            let (h, p) = (helium_c[c.helium], store_c[c.solid]);
+            match reduced_plenum.iter().position(|r| {
+                r.helium == h && r.solid == p && bits(&[r.area, r.radius, r.factor]) == plenum_key[k]
+            }) {
+                Some(j) => plenum_count[j] += 1.,
+                None => {
+                    reduced_plenum.push(Plenum {
+                        helium: h,
+                        solid: p,
+                        ..*c
+                    });
+                    plenum_count.push(1.);
+                }
+            }
+        }
+        for (r, n) in reduced_plenum.iter_mut().zip(&plenum_count) {
+            r.helium_w = n / helium_m[r.helium];
+            r.store_w = n / store_m[r.solid];
+        }
+        let bands = reduced_bands;
+        let half_count = bands.len();
+        let passive = reduced_passive;
+        let plenum = reduced_plenum;
+        let helium_nr: Vec<f64> = helium_members.iter().map(|m| helium_nr[m[0]]).collect();
+        let passive_mass: Vec<f64> = store_members.iter().map(|m| passive_mass[m[0]]).collect();
         // Wall cells: every water owner a core contact or SG segment wets.
         let mut wall_cells: Vec<usize> = bands
             .iter()
@@ -568,29 +814,35 @@ impl Solids {
         }
         // Layout: per half U_inner, U_outer, U_clad; per half the three
         // surfaces; helium; passive; SG metal.
+        // Each class's coordinates are its first member's, standing for the
+        // class (E-NUC phase B).
         let mut layout = Layout::default();
         let mut prepared = Vec::new();
-        for b in &t.fuel_bands {
+        for m in &band_members {
+            let b = &t.fuel_bands[m[0]];
             for (k, u) in b.fuel_energies_j.iter().enumerate() {
-                layout.push(
-                    format!("U_fuel[{}][{k}]", b.id),
+                layout.push_replicated(
+                    format!("U_fuel[{}x{}][{k}]", b.id, m.len()),
                     Class::FuelEnergy,
                     true,
                     *u,
                     *u,
+                    m.len(),
                 );
                 prepared.push(*u);
             }
-            layout.push(
-                format!("U_clad[{}]", b.id),
+            layout.push_replicated(
+                format!("U_clad[{}x{}]", b.id, m.len()),
                 Class::CladEnergy,
                 true,
                 b.clad_energy_j,
                 b.clad_energy_j,
+                m.len(),
             );
             prepared.push(b.clad_energy_j);
         }
-        for (i, b) in t.fuel_bands.iter().enumerate() {
+        for m in &band_members {
+            let (i, b) = (m[0], &t.fuel_bands[m[0]]);
             // A surface row is a heat balance (W); one solver unit is the
             // half's prepared source, so the row reads in source fractions.
             let source = b.source_w[0] + b.source_w[1];
@@ -601,33 +853,38 @@ impl Solids {
                 .iter()
                 .enumerate()
             {
-                layout.push(
-                    format!("T_{name}[{}]", b.id),
+                layout.push_replicated(
+                    format!("T_{name}[{}x{}]", b.id, m.len()),
                     Class::Surface,
                     false,
                     b.surface_seed_k[k],
                     source,
+                    m.len(),
                 );
                 prepared.push(b.surface_seed_k[k]);
             }
         }
-        for h in &t.helium {
-            layout.push(
-                format!("U_helium[{}]", h.id),
+        for m in &helium_members {
+            let h = &t.helium[m[0]];
+            layout.push_replicated(
+                format!("U_helium[{}x{}]", h.id, m.len()),
                 Class::HeliumEnergy,
                 true,
                 h.energy_j,
                 h.energy_j,
+                m.len(),
             );
             prepared.push(h.energy_j);
         }
-        for p in &t.passive_stores {
-            layout.push(
-                format!("U_passive[{}]", p.id),
+        for m in &store_members {
+            let p = &t.passive_stores[m[0]];
+            layout.push_replicated(
+                format!("U_passive[{}x{}]", p.id, m.len()),
                 Class::PassiveEnergy,
                 true,
                 p.energy_j,
                 p.energy_j,
+                m.len(),
             );
             prepared.push(p.energy_j);
         }
@@ -663,6 +920,14 @@ impl Solids {
             helium_rate: vec![s(0.); helium_nr.len()],
             passive_rate: vec![s(0.); passive_mass.len()],
             passive_ids: t.passive_stores.iter().map(|p| p.id.clone()).collect(),
+            store_class: store_c,
+            band_m,
+            band_helium_w,
+            helium_m,
+            store_m,
+            band_members,
+            helium_members,
+            store_members,
             bands,
             helium_nr,
             passive_mass,
@@ -674,7 +939,7 @@ impl Solids {
             wall_cells,
             wall_slot,
             wall,
-            fuel_memo: vec![None; a],
+            fuel_memo: vec![None; half_count],
             wall_memo: Vec::new(),
             wall_version: Vec::new(),
             wall_clock: 0,
@@ -798,12 +1063,79 @@ impl Solids {
     pub fn metal(&self, i: usize) -> usize {
         self.metal0() + i
     }
-    /// Local index of the passive store named `id`, for energy deposits.
+    /// Local index of the passive store named `id`, for energy deposits:
+    /// `None` for an unknown store and for a store of a replica class of
+    /// more than one (a deposit into one member would break the class).
     pub fn passive_store(&self, id: &str) -> Option<usize> {
-        self.passive_ids
-            .iter()
-            .position(|p| p == id)
-            .map(|p| self.passive(p))
+        let k = self.store_class[self.passive_ids.iter().position(|p| p == id)?];
+        (self.store_members[k].len() == 1).then(|| self.passive(k))
+    }
+    /// E-NUC phase B: the class of packet half `a`, helium store `h` and
+    /// passive store `p`: the local element whose state is theirs.
+    pub fn half_class(&self, a: usize) -> usize {
+        self.band_members.iter().position(|m| m.contains(&a)).expect("a packet half")
+    }
+    pub fn helium_class(&self, h: usize) -> usize {
+        self.helium_members.iter().position(|m| m.contains(&h)).expect("a packet helium store")
+    }
+    pub fn store_class(&self, p: usize) -> usize {
+        self.store_class[p]
+    }
+    /// Each helium class's and passive-store class's packet members.
+    pub fn helium_members(&self) -> &[Vec<usize>] {
+        &self.helium_members
+    }
+    pub fn store_members(&self) -> &[Vec<usize>] {
+        &self.store_members
+    }
+    /// E-NUC phase B: each half class's packet halves (carriers), the
+    /// nuclear block's ports ([`super::nuclear::Nuclear::set_ports`]).
+    pub fn half_members(&self) -> &[Vec<usize>] {
+        &self.band_members
+    }
+    /// E-NUC phase B: the packet-layout local coordinates of this block
+    /// (per packet half 3 energies, then per half 3 surfaces, helium, passive
+    /// stores, SG metal) reduced to this layout's: each class coordinate
+    /// takes its members' common solver value. A member that differs in any
+    /// bit is refused: nothing is averaged.
+    pub fn reduce_packet_state(&self, full: &[f64]) -> Result<Vec<f64>, String> {
+        let a: usize = self.band_members.iter().map(Vec::len).sum();
+        let h: usize = self.helium_members.iter().map(Vec::len).sum();
+        let p: usize = self.store_members.iter().map(Vec::len).sum();
+        let g = self.segments.len();
+        if full.len() != 6 * a + h + p + g {
+            return Err(format!(
+                "a packet-layout solid state has {} coordinates, not {}",
+                full.len(),
+                6 * a + h + p + g
+            ));
+        }
+        let mut out = Vec::with_capacity(self.layout.len());
+        let mut take = |members: &[Vec<usize>], base: usize, width: usize| -> Result<(), String> {
+            for m in members {
+                for k in 0..width {
+                    let v = full[base + width * m[0] + k];
+                    if let Some(c) = m
+                        .iter()
+                        .find(|c| full[base + width * **c + k].to_bits() != v.to_bits())
+                    {
+                        return Err(format!(
+                            "solid element {c} differs from its replica {} at {k} of {width}: not a replica state",
+                            m[0]
+                        ));
+                    }
+                    out.push(v);
+                }
+            }
+            Ok(())
+        };
+        take(&self.band_members, 0, 3)?;
+        take(&self.band_members, 3 * a, 3)?;
+        take(&self.helium_members, 6 * a, 1)?;
+        take(&self.store_members, 6 * a + h, 1)?;
+        let segments: Vec<Vec<usize>> = (0..g).map(|i| vec![i]).collect();
+        take(&segments, 6 * a + h + p, 1)?;
+        Ok(out)
     }
     /// Every core half whose clad wets one of `cells`, ascending.
     pub fn halves_wetting(&self, cells: &[usize]) -> Vec<usize> {
@@ -1503,9 +1835,9 @@ impl Solids {
                 }
                 let into_water = q.heat * s(c.area);
                 wall = wall + into_water;
-                receipts.heat(c.water, into_water)?;
+                receipts.heat(c.water, into_water * s(self.band_m[i]))?;
             }
-            heat.clad_to_water_w = heat.clad_to_water_w + wall;
+            heat.clad_to_water_w = heat.clad_to_water_w + wall * s(self.band_m[i]);
             let temperatures_i = thermal::FuelTemperatures {
                 inner_mean: inner,
                 outer_mean: outer,
@@ -1538,12 +1870,13 @@ impl Solids {
             let rates = [q.fuel_inner, q.fuel_outer, q.clad];
             for (k, rate) in rates.into_iter().enumerate() {
                 write(3 * i + k, x.rate(3 * i + k) - rate);
-                heat.stored_rate_w = heat.stored_rate_w + rate;
+                heat.stored_rate_w = heat.stored_rate_w + rate * s(self.band_m[i]);
             }
             for k in 0..3 {
                 write(self.surface(i, k), q.surface_residuals[k]);
             }
-            self.helium_rate[b.helium] = self.helium_rate[b.helium] + q.helium;
+            self.helium_rate[b.helium] =
+                self.helium_rate[b.helium] + q.helium * s(self.band_helium_w[i]);
         }
         for &k in &scope.passive {
             let c = self.passive[k];
@@ -1578,8 +1911,8 @@ impl Solids {
                 }
             };
             self.passive_rate[c.solid] = self.passive_rate[c.solid] - q;
-            heat.passive_to_water_w = heat.passive_to_water_w + q;
-            receipts.heat(c.water, q)?;
+            heat.passive_to_water_w = heat.passive_to_water_w + q * s(c.water_m);
+            receipts.heat(c.water, q * s(c.water_m))?;
         }
         for &k in &scope.plenum {
             let c = self.plenum[k];
@@ -1597,8 +1930,8 @@ impl Solids {
                 c.factor,
             )
             .map_err(trial)?;
-            self.helium_rate[c.helium] = self.helium_rate[c.helium] - q;
-            self.passive_rate[c.solid] = self.passive_rate[c.solid] + q;
+            self.helium_rate[c.helium] = self.helium_rate[c.helium] - q * s(c.helium_w);
+            self.passive_rate[c.solid] = self.passive_rate[c.solid] + q * s(c.store_w);
         }
         let m0 = self.metal0();
         for &i in &scope.segments {
@@ -1677,13 +2010,13 @@ impl Solids {
         for &h in &scope.helium {
             let rate = self.helium_rate[h];
             write(h0 + h, x.rate(h0 + h) - rate);
-            heat.stored_rate_w = heat.stored_rate_w + rate;
+            heat.stored_rate_w = heat.stored_rate_w + rate * s(self.helium_m[h]);
         }
         let p0 = self.passive0();
         for &p in &scope.stores {
             let rate = self.passive_rate[p];
             write(p0 + p, x.rate(p0 + p) - rate);
-            heat.stored_rate_w = heat.stored_rate_w + rate;
+            heat.stored_rate_w = heat.stored_rate_w + rate * s(self.store_m[p]);
         }
         Ok(())
     }

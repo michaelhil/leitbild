@@ -239,11 +239,14 @@ fn difference(row: &str) -> Option<&'static str> {
         | "Delayed-energy reservoirs (386x(23+2))" => {
             "E-NUC (plan r4, owner 31 Oct): one coordinate per exact replica group of carriers (every value a carrier's rows read bitwise equal) holds the members' summed stock; `represented` counts the carrier coordinates it stands for"
         }
+        "Massless fuel/clad surfaces" => {
+            "E-NUC phase B (plan r4): one surface triple per exact replica class of material halves; `represented` counts the halves' surfaces"
+        }
         "Fuel 2 + clad 1 energies per carrier"
         | "Helium, 1 per FA"
         | "Guide/plenum/fitting Zry stores"
         | "SG metal, 4 per SG" => {
-            "caloric temperatures eliminated by exact local inverses (memo §1 [P]; computational-design-review.md §4.1)"
+            "caloric temperatures eliminated by exact local inverses (memo §1 [P]; computational-design-review.md §4.1); E-NUC phase B (plan r4): one coordinate per exact replica class of solid elements holds one member's state, `represented` counts the elements"
         }
         "Network cells 38 x (M_l,U_l,M_v,U_v,B; p)" => {
             "decision 0014 with amendment 6: 28 regular cells x 6 plus one 19-coordinate stratified PZR cell (7 algebraic, 12 differential, zone A's bubble stock included) replace the 10 PZR volumes"

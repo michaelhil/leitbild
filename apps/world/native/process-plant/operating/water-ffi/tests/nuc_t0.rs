@@ -112,3 +112,57 @@ fn nuc_t0_dump() {
     });
     std::fs::write(&out, serde_json::to_vec(&dump).unwrap()).expect("dump");
 }
+
+/// E-NUC: every grouped coordinate's packet members by label, for the T0
+/// judge (`LD01_NUC_T0_MEMBERS`): the reduced label and the unreduced labels
+/// of its members, representative first. The judge checks that the lists
+/// partition the unreduced labels and that every member's rows equal its
+/// representative's in the unreduced dump.
+#[test]
+#[ignore = "E-NUC T0 members: requires the joined packet, the wiki, IF97 and stock IDA/KLU; writes LD01_NUC_T0_MEMBERS"]
+fn nuc_t0_members() {
+    let out = std::env::var("LD01_NUC_T0_MEMBERS").expect("LD01_NUC_T0_MEMBERS");
+    assert!(!std::path::Path::new(&out).exists(), "never overwritten");
+    let s = spine::started_full_composition();
+    let joined = &s.joined;
+    let raw: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let ids = |path: &[&str]| -> Vec<String> {
+        let mut v = &raw;
+        for k in path {
+            v = &v[*k];
+        }
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let carriers = ids(&["hot", "energy", "carriers"]);
+    let halves = ids(&["thermal", "fuel_bands"]);
+    let helium = ids(&["thermal", "helium"]);
+    let stores = ids(&["thermal", "passive_stores"]);
+    let n = joined.nuclear();
+    let sol = joined.solids();
+    let mut map = serde_json::Map::new();
+    let mut add = |labels: &[String], members: &[Vec<usize>], names: &[String]| {
+        for l in labels {
+            for m in members {
+                let tag = format!("[{}x{}]", names[m[0]], m.len());
+                if let Some(at) = l.find(&tag) {
+                    let list: Vec<String> = m
+                        .iter()
+                        .map(|k| format!("{}[{}]{}", &l[..at], names[*k], &l[at + tag.len()..]))
+                        .collect();
+                    map.insert(l.clone(), json!(list));
+                    break;
+                }
+            }
+        }
+    };
+    add(&n.layout().labels, n.members(), &carriers);
+    let sl = &sol.layout().labels;
+    add(sl, sol.half_members(), &halves);
+    add(sl, sol.helium_members(), &helium);
+    add(sl, sol.store_members(), &stores);
+    std::fs::write(&out, serde_json::to_vec(&Value::Object(map)).unwrap()).expect("members");
+}

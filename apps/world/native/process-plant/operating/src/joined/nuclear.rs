@@ -69,23 +69,31 @@ fn trial(reason: impl std::fmt::Display) -> Failure {
 
 /// E-NUC: a replica group's feedback fuel temperature, `[mean over its
 /// members of sqrt(T_a)]^2` with `T_a` each member's own feedback
-/// temperature (itself `[mean sqrt(T_node)]^2`). The Doppler term is linear
-/// in `sqrt(T)`, so the group's term is exactly its members' sum; a single
-/// member's temperature is passed through unchanged.
-pub fn replica_temperature(members: &[usize], fuel_t: &[Scalar]) -> Result<Scalar, Failure> {
-    if let [only] = members {
+/// temperature (itself `[mean sqrt(T_node)]^2`), read at the group's ports
+/// (`ports`, each standing for `counts[p]` members). The Doppler term is
+/// linear in `sqrt(T)`, so the group's term is exactly its members' sum; a
+/// group read at one port takes that port's temperature unchanged.
+pub fn replica_temperature(
+    ports: &[usize],
+    counts: &[usize],
+    fuel_t: &[Scalar],
+) -> Result<Scalar, Failure> {
+    if let [only] = ports {
         return Ok(fuel_t[*only]);
     }
     let mut sum = s(0.);
-    for &c in members {
-        let t = fuel_t[c];
+    let mut members = 0;
+    for &p in ports {
+        let t = fuel_t[p];
         if !(t.value.is_finite() && t.value > 0.) {
-            return Err(trial(format!("carrier {c} fuel temperature {}", t.value)));
+            return Err(trial(format!("port {p} fuel temperature {}", t.value)));
         }
         let root = t.value.sqrt();
-        sum = sum + Scalar::new(root, t.direction / (2. * root));
+        let m = counts[p] as f64;
+        sum = sum + Scalar::new(m * root, m * t.direction / (2. * root));
+        members += counts[p];
     }
-    let mean = sum * s(1. / members.len() as f64);
+    let mean = sum * s(1. / members as f64);
     Ok(mean * mean)
 }
 
@@ -221,8 +229,11 @@ pub struct Nuclear {
     capsule_age0_s: f64,
     /// The compiled groups, fission then capture, for [`Nuclear::histories`].
     groups: Vec<super::packet::Group>,
-    /// Per carrier: (network cell, fraction) of its direct coolant heat.
+    /// Per port: (network cell, fraction) of its direct coolant heat, the
+    /// fraction carrying the port's member count.
     deposition: Vec<Vec<(usize, f64)>>,
+    /// Per carrier: (network cell, fraction) of its direct coolant heat.
+    carrier_deposition: Vec<Vec<(usize, f64)>>,
     regions: usize,
     /// The packet's material carriers (the solids' halves).
     carriers: usize,
@@ -232,6 +243,17 @@ pub struct Nuclear {
     members: Vec<Vec<usize>>,
     /// The packet's (region, carrier) supports, packet order.
     carrier_supports: Vec<kinetics::Support>,
+    /// E-NUC phase B: the heat and fuel temperature ports, one per solids
+    /// half; port `p` stands for `port_count[p]` identical carriers of group
+    /// `port_group[p]`, represented by carrier `port_carrier[p]`. Until
+    /// [`Nuclear::set_ports`], one port per carrier.
+    port_carrier: Vec<usize>,
+    port_count: Vec<usize>,
+    port_group: Vec<usize>,
+    /// Per group: its ports.
+    group_ports: Vec<Vec<usize>>,
+    /// The (region, port) supports of every port's representative.
+    port_supports: Vec<kinetics::Support>,
     /// Compiled (region, group) supports, kinetics and feedback order.
     supports: Vec<kinetics::Support>,
     /// Per material: delayed yields and decay constants (kinetics order).
@@ -710,9 +732,15 @@ impl Nuclear {
                 .chain(&energy.capture_groups)
                 .copied()
                 .collect(),
-            deposition,
+            deposition: deposition.clone(),
+            carrier_deposition: deposition,
             regions: r,
             carriers: a,
+            port_carrier: (0..a).collect(),
+            port_count: vec![1; a],
+            port_group: group_of.clone(),
+            group_ports: members.clone(),
+            port_supports: source.supports.clone(),
             group_of,
             members,
             carrier_supports: source.supports.clone(),
@@ -738,10 +766,97 @@ impl Nuclear {
     pub fn regions(&self) -> usize {
         self.regions
     }
-    /// The packet's material carriers (the solids' halves): the length of
-    /// the fuel temperature port and of [`Heat::fuel_w`] / `coolant_w`.
+    /// The packet's material carriers.
     pub fn carriers(&self) -> usize {
         self.carriers
+    }
+    /// E-NUC: the heat and fuel temperature ports, one per solids half: the
+    /// length of the fuel temperature port and of [`Heat::fuel_w`] /
+    /// `coolant_w`. Each port's heat is one member carrier's.
+    pub fn ports(&self) -> usize {
+        self.port_carrier.len()
+    }
+    /// Each port's replica group.
+    pub fn port_group(&self) -> &[usize] {
+        &self.port_group
+    }
+    /// Each port's member count.
+    pub fn port_count(&self) -> &[usize] {
+        &self.port_count
+    }
+    /// Each group's ports.
+    pub fn group_ports(&self) -> &[Vec<usize>] {
+        &self.group_ports
+    }
+    /// The (region, port) supports of every port's representative carrier:
+    /// which regions' populations a port's fissions read.
+    pub fn port_supports(&self) -> &[kinetics::Support] {
+        &self.port_supports
+    }
+    /// E-NUC phase B: the solids' halves as ports, each listing the
+    /// identical carriers it stands for (`members[p]`, carrier indices).
+    /// Every carrier is in exactly one port, and a port's carriers are of
+    /// one replica group with bitwise-equal coolant deposition; otherwise
+    /// the ports are refused.
+    pub fn set_ports(&mut self, members: &[Vec<usize>]) -> Result<(), Failure> {
+        let mut seen = vec![false; self.carriers];
+        let mut port_group = Vec::with_capacity(members.len());
+        for (p, m) in members.iter().enumerate() {
+            let Some(&first) = m.first() else {
+                return Err(fatal(format!("port {p} stands for no carrier")));
+            };
+            for &c in m {
+                if c >= self.carriers || std::mem::replace(&mut seen[c], true) {
+                    return Err(fatal(format!("carrier {c} outside the ports or in two")));
+                }
+                if self.group_of[c] != self.group_of[first]
+                    || self.carrier_deposition[c] != self.carrier_deposition[first]
+                {
+                    return Err(fatal(format!(
+                        "port {p}: carrier {c} is not a replica of carrier {first}"
+                    )));
+                }
+            }
+            port_group.push(self.group_of[first]);
+        }
+        if seen.contains(&false) {
+            return Err(fatal("a carrier has no port"));
+        }
+        let mut group_ports = vec![Vec::new(); self.members.len()];
+        for (p, g) in port_group.iter().enumerate() {
+            group_ports[*g].push(p);
+        }
+        self.port_carrier = members.iter().map(|m| m[0]).collect();
+        self.port_count = members.iter().map(Vec::len).collect();
+        self.port_group = port_group;
+        self.group_ports = group_ports;
+        self.port_supports = self
+            .carrier_supports
+            .iter()
+            .flat_map(|k| {
+                self.port_carrier
+                    .iter()
+                    .enumerate()
+                    .filter(move |(_, c)| **c == k.material)
+                    .map(move |(p, _)| kinetics::Support {
+                        region: k.region,
+                        material: p,
+                    })
+            })
+            .collect();
+        self.deposition = self
+            .port_carrier
+            .iter()
+            .zip(&self.port_count)
+            .map(|(c, m)| {
+                self.carrier_deposition[*c]
+                    .iter()
+                    .map(|(cell, f)| (*cell, f * *m as f64))
+                    .collect()
+            })
+            .collect();
+        self.work.fuel_t = vec![s(0.); members.len()];
+        Ok(())
     }
     /// E-NUC: the number of replica groups, the kinetics' and feedback's
     /// materials ([`Self::precursor`], [`Self::material`] and
@@ -813,7 +928,8 @@ impl Nuclear {
     pub fn outside_fractions(&self) -> &[f64] {
         &self.outside
     }
-    /// The water cells receiving each carrier's direct coolant heat.
+    /// The water cells receiving each port's direct coolant heat, each
+    /// fraction carrying the port's member count.
     pub fn deposition(&self) -> &[Vec<(usize, f64)>] {
         &self.deposition
     }
@@ -883,12 +999,12 @@ impl Nuclear {
                     decay_per_s: group.decay_per_s,
                     terms: k..k + 1,
                 });
-                // E-NUC: each member's fuel heat is its share of the
+                // E-NUC: each port's fuel heat is one member's share of the
                 // group's released energy.
                 let share = 1. / self.members[m].len() as f64;
-                for &carrier in &self.members[m] {
+                for &port in &self.group_ports[m] {
                     t.consumers.push((
-                        Target::FuelHeat(carrier),
+                        Target::FuelHeat(port),
                         offset + self.history(m, g),
                         group.decay_per_s * share,
                     ));
@@ -962,7 +1078,7 @@ impl Nuclear {
         rows: &mut [Scalar],
         heat: &mut Heat,
     ) -> Result<(), Failure> {
-        let (r, a, n) = (self.regions, self.carriers, self.members.len());
+        let (r, a, n) = (self.regions, self.port_carrier.len(), self.members.len());
         if x.len() != self.layout.len()
             || rows.len() != self.layout.len()
             || fuel_t.len() != a
@@ -980,6 +1096,7 @@ impl Nuclear {
         let seeded = x.seeded();
         let w = &mut self.work;
         let members = &self.members;
+        let (group_ports, port_count) = (&self.group_ports, &self.port_count);
         let mut out = w.feedback.take().ok_or_else(|| fatal("feedback buffer"))?;
         let result = (|| {
             for (i, water) in water.iter().enumerate() {
@@ -991,8 +1108,8 @@ impl Nuclear {
             }
             let m0 = r + DELAYED * n;
             w.fuel_t.copy_from_slice(fuel_t);
-            for (g, m) in members.iter().enumerate() {
-                w.group_t[g] = replica_temperature(m, &w.fuel_t)?;
+            for (g, ports) in group_ports.iter().enumerate() {
+                w.group_t[g] = replica_temperature(ports, port_count, &w.fuel_t)?;
             }
             for c in 0..n {
                 w.fissile[c] = x.value(m0 + 6 * c);
@@ -1215,12 +1332,12 @@ impl Nuclear {
                 let coolant_w = s(self.prompt_coolant_fraction) * prompt
                     + s(self.binding_coolant_fraction) * binding;
                 heat.released_w = heat.released_w + fuel_w + coolant_w;
-                // E-NUC: the group's heats are its members' sum; each
-                // member receives its share.
+                // E-NUC: the group's heats are its members' sum; each port
+                // receives one member's share.
                 let share = s(1. / members[c].len() as f64);
-                for &carrier in &members[c] {
-                    heat.fuel_w[carrier] = fuel_w * share;
-                    heat.coolant_w[carrier] = coolant_w * share;
+                for &port in &group_ports[c] {
+                    heat.fuel_w[port] = fuel_w * share;
+                    heat.coolant_w[port] = coolant_w * share;
                 }
                 heat.event_w = heat.event_w
                     + prompt
