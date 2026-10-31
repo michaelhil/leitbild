@@ -7,7 +7,7 @@
  * blocks the steady references name (from the wiki root), and one gated case
  * receipt run with LD01_PHYS_OPERATOR_FRAMES=1. It judges:
  * - held: the span reached with no failure, labelled end or rule-I exit;
- * - numerical: E0 against every completed reference within the budgets;
+ * - numerical: E0 against R2 (R11-3a's converged reference) within the budgets, R1 reported;
  * - steady: the last 300 s held at the controller's reference or settled;
  * - directions, sequence and must-nots as the cases block lists them.
  * A line it cannot evaluate fails. Cost is ld01-cost's, not judged here.
@@ -18,8 +18,8 @@ import {readFileSync, readdirSync, statSync} from 'node:fs'
 import {join} from 'node:path'
 import {createHash} from 'node:crypto'
 
-export const BUDGETS_PIN = {fence: 'ld01-operator-budgets', pin: 'RP-pin-ogb-r1', sha256: '4df5897c6e552bdf2a02eab9781ace00f8c8a7561ef7624cd0bf9f616e0d1695'}
-export const CASES_PIN = {fence: 'ld01-r4-x1-cases', pin: 'RP-pin-x1-r1', sha256: process.env.LD01_X1_CASES_PIN ?? ''}
+export const BUDGETS_PIN = {fence: 'ld01-operator-budgets', pin: 'RP-pin-ogb-r2', sha256: '9def9c2b5bf7d90ea565a8e8d18c077bdb57acda82aa3a997dfc6f4857c736bf'}
+export const CASES_PIN = {fence: 'ld01-r4-x1-cases', pin: 'RP-pin-x1-r1', sha256: '4b54cea339b9289ad70a59703bb8b67c3e023f9a6cf4211bfd7a464c90d14ee3'}
 
 type J = any
 /** The harness's canonical JSON (s2_harness::guards::canonical): sorted keys, no spaces. */
@@ -59,11 +59,12 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
  // Held.
  const held = run.failure == null && run.labelled_end == null && run.rule_i?.exit == null && tl.end_s >= cases.held_s - 1e-9
  lines.push({id: 'held', verdict: held ? 'pass' : 'fail', evidence: {failure: run.failure, labelled_end: run.labelled_end, rule_i_exit: run.rule_i?.exit ?? null, end_after_zero_s: tl.end_s, held_s: cases.held_s}})
- // Numerical (E0 against each completed reference).
+ // Numerical: E0 against R2, which must complete the span; R1 reported (R4-X1-REF).
  const nb = budgets.numerical, op = run.phys_operator_frames
  const loopNominals: number[] = op ? Object.values(op.observed?.references ?? {}).map((r: J) => r?.nominal_kg_s).filter((x: J) => typeof x === 'number') : []
  const comparisons = (receipt.families?.E_refinement?.comparisons ?? []) as J[]
- const completed = comparisons.filter(c => c.reference_failure == null && c.e0?.evaluable === true && c.e0?.to_s >= cases.held_s - 1e-9)
+ const done = (c: J) => c.reference_failure == null && c.e0?.evaluable === true && c.e0?.to_s >= cases.held_s - 1e-9
+ const completed = comparisons.filter(c => done(c))
  const numeric = completed.map(c => {
   const m = c.e0.metrics, v = (k: string) => m?.[k]?.value
   const loopBudget = loopNominals.length ? nb.loopFlowFractionOfNominal.budget * Math.min(...loopNominals) : NaN
@@ -77,7 +78,8 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
   const rows = checks.map(([k, x, b]) => ({metric: k, value: x ?? null, budget: b, pass: typeof x === 'number' && Number.isFinite(b) && x <= b}))
   return {reference: c.reference, rows, pass: rows.every(r => r.pass)}
  })
- lines.push({id: 'numerical', verdict: completed.length && numeric.every(n => n.pass) ? 'pass' : completed.length ? 'fail' : 'not evaluable',
+ const r2 = numeric.find(n => n.reference === 'R2')
+ lines.push({id: 'numerical', verdict: r2 ? (r2.pass ? 'pass' : 'fail') : 'not evaluable',
   evidence: {references_completed: completed.map(c => c.reference), references_failed: comparisons.filter(c => !completed.includes(c)).map(c => ({reference: c.reference, failure: c.reference_failure, to_s: c.e0?.to_s})), numeric}})
  // Steady over the last window.
  const w = budgets.steady.window_s, f = budgets.steady.fraction, end = zero + tl.end_s
