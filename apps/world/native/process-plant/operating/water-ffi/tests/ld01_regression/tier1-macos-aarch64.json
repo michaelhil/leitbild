@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "R4-NUC-A/B exact reduction (18,708 -> 1,437) and EVT-PROFILE (C1 plena profile at the spider; trajectory changes by design) on the r4 tuple: packet f39d5022, state s3-settled-state-nucAB-f39d5022 (STAGE's S3 settle converted at 6b9d6dee2, bitwise = NUC's nucB), wiki caaf71e",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-0a1467f1b-20261031T185546Z",
- "app": "0a1467f1b",
+ "reason": "EVT-RODS-BANK: exact one-class rods (64 -> 8 coordinates, total 1,205) on the r4b tuple (packet c7c3c304, state s3-settled-state-bank-c7c3c304 = EVT's bank-1 state re-addressed, wiki 7132502); with NUC's multiplicity and weights-receipt fixes, the cost-drive frame hook and PHYS's series harness (inert)",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-0c6a182c8-20261031T201437Z",
+ "app": "0c6a182c8",
  "environment": {
-  "packet_sha256": "f39d50226bc3cce7431caaa607ba892304ce173980b091103487a1c45cf5a103",
-  "state_sha256": "ca2f6873d16c9fe81e06ca7507e945f3dca715f7b260addc3c4dcdbbc9086144",
+  "packet_sha256": "c7c3c3042d50040585a1394c25db0cde0ae7c6ad49fab64212508dfed9a68f03",
+  "state_sha256": "95d97f610c43df2a0d9488c826a3e847851c9775d2054ec083fc7dd634cafdb0",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "caaf71e",
+  "wiki_commit": "7132502",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-kern-666610c22-f5-1",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 10994445745,
+   "instructions": 7019282643,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 42109856104,
-   "digest": "a0a25aefec7f28d27ebd3ec166b2dfdf90e1318b688af52630641116d529a666"
+   "instructions": 21259485967,
+   "digest": "db83cfd15a282ef1adddcb0cc6477810e14b61e9a31720fcd0edaa8814787a1c"
   }
  }
 }
