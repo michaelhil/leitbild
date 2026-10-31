@@ -124,7 +124,12 @@ export const answerProcessPlantControlQuery = (config: {
     const system = requirePlant(config.plants, payload.plantId)
     const items = listedControlsFor(system, payload.items)
     const missing = (payload.items ?? []).filter(id => !items.some(item => item.id === id))
-    if (missing.length > 0) return rejectCapabilityTarget(`Process Plant ${payload.plantId} has no item ${missing.join(', ')}: name items by their element ids (component ids, or "<component>.<device>")`)
+    if (missing.length > 0) {
+      // A rejected guess should lead to canonical discovery, not another guess
+      // or a dump of every control's live options and configuration.
+      const identities = plantControlsFor(system.plant).items.map(item => ({ id: item.id, label: item.label }))
+      return rejectCapabilityTarget(`Process Plant ${payload.plantId} has no item ${missing.join(', ')}. Select exact ids from these declared control-item identities: ${JSON.stringify(identities)}`)
+    }
     return { plantId: payload.plantId, plantElapsedMs: system.runtime.elapsedMs(), items, resets: listedResetsFor(system) }
   }
   const payload = processPlantControlWritePayloadSchema.parse(config.request.input)
