@@ -415,6 +415,9 @@ pub struct Secondaries {
     prepared: Vec<f64>,
     valves: Vec<Vec<Valve>>,
     trip_s: Option<f64>,
+    /// X4.4 preview (lane ROD): the turbine load demand, a fraction of the
+    /// prepared steam demand (1 as prepared; the turbine valve is X4.3's).
+    turbine_load: f64,
     /// Per SG, the side of each bypass kink its last located crossing left
     /// (`true` above), unset from the TRIP until the first crossing. A set
     /// side arms only the reverse crossing, so a restart that puts the
@@ -462,19 +465,22 @@ pub fn bypass_opening(b: &packet::Bypass, trip_s: Option<f64>, t: f64, p: Scalar
     }
 }
 /// One SG's pickup steam (turbine admission plus bypass) and the bypass's
-/// part: the owner's withdrawal law, also the source of `FT.STEAM`.
+/// part: the owner's withdrawal law, also the source of `FT.STEAM`. `load`
+/// (X4.4 preview, the turbine load demand) scales the turbine admission
+/// only; the bypass stays sized on the nominal demand (R12-B1).
 pub fn pickup_steam(
     demand_kg_s: f64,
     travel_s: f64,
     bypass: &packet::Bypass,
     trip_s: Option<f64>,
+    load: f64,
     t: f64,
     p: Scalar,
 ) -> (Scalar, Scalar) {
     let by =
         s(bypass.fraction_of_nominal_steam * demand_kg_s) * bypass_opening(bypass, trip_s, t, p);
     (
-        s(demand_kg_s * steam_fraction(trip_s, travel_s, t)) + by,
+        s(demand_kg_s * steam_fraction(trip_s, travel_s, t) * load) + by,
         by,
     )
 }
@@ -712,6 +718,7 @@ impl Secondaries {
             layout,
             prepared,
             trip_s: None,
+            turbine_load: 1.,
             bypass_side: vec![[None; 2]; n],
             feed_supported: true,
             feed_gate_declared: false,
@@ -744,6 +751,7 @@ impl Secondaries {
             self.stop_travel_s,
             &self.bypass,
             self.trip_s,
+            self.turbine_load,
             t,
             p,
         )
@@ -830,8 +838,13 @@ impl Secondaries {
     }
     /// Steam admission fraction at `t`: 1 at power; after the TRIP the STOP's
     /// linear travel to zero.
+    /// X4.4 preview: times the turbine load demand.
     pub fn steam_fraction(&self, t: f64) -> f64 {
-        steam_fraction(self.trip_s, self.stop_travel_s, t)
+        self.turbine_load * steam_fraction(self.trip_s, self.stop_travel_s, t)
+    }
+    /// X4.4 preview: the turbine load demand in force.
+    pub fn turbine_load(&self) -> f64 {
+        self.turbine_load
     }
     /// The bypass stand-in's opening at `t` and SG pressure `p` (R12-B1):
     /// zero before the TRIP, then linear from the no-load pressure over one
@@ -985,6 +998,21 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn turbine_trip_time(&self) -> Option<f64> {
         self.trip_s
     }
+    fn set_turbine_load(&mut self, t: f64, load: f64) -> Result<Transaction, Failure> {
+        if !(load.is_finite() && load >= 0.) {
+            return Err(fatal(format!("turbine load demand {load}")));
+        }
+        if self.trip_s.is_some() {
+            return Err(fatal("the turbine is tripped: no load demand change"));
+        }
+        let before = self.turbine_load;
+        self.turbine_load = load;
+        Ok(Transaction {
+            deposits: Vec::new(),
+            receipt: json!({"owner": "secondary", "turbine_load": {"t_s": t, "before": before, "after": load,
+                "basis": "X4.4 preview stand-in: the turbine admission scaled at a frame instant (the turbine valve and governor are X4.3's); the bypass stays on the nominal demand"}}),
+        })
+    }
     fn set_feed_supported(&mut self, supported: bool) -> Result<(), Failure> {
         if !supported && !self.feed_gate_declared {
             return Err(fatal(
@@ -1051,6 +1079,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 "seated": v.seated, "closing": v.closing,
             })).collect::<Vec<_>>()).collect::<Vec<_>>(),
         });
+        // X4.4 preview: the turbine load, recorded exactly when it is not the
+        // prepared 1.
+        if self.turbine_load != 1. {
+            state["turbine_load"] = json!(format!("{:016x}", self.turbine_load.to_bits()));
+        }
         // The bypass kinks' sides, only once the TRIP has armed them.
         if self.trip_s.is_some() {
             state["bypass_side"] = json!(self.bypass_side);
@@ -1063,7 +1096,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
     }
     fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
         let tripped = !state["trip_s"].is_null();
+        let loaded = state.get("turbine_load").is_some();
         let mut keys = vec!["trip_s", "feed_supported", "valves"];
+        if loaded {
+            keys.push("turbine_load");
+        }
         if tripped {
             keys.push("bypass_side");
         }
@@ -1133,7 +1170,19 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 };
             }
         }
+        let turbine_load = if loaded {
+            o["turbine_load"]
+                .as_str()
+                .ok_or_else(|| "not a string".to_string())
+                .and_then(crate::joined::block::snapshot_bits::parse)
+                .ok()
+                .filter(|l| l.is_finite() && *l >= 0. && *l != 1.)
+                .ok_or_else(|| fatal("secondary snapshot: turbine_load"))?
+        } else {
+            1.
+        };
         self.trip_s = trip_s;
+        self.turbine_load = turbine_load;
         self.bypass_side = bypass_side;
         self.feed_supported = feed_supported;
         self.valves = valves;

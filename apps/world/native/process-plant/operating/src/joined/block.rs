@@ -563,6 +563,15 @@ pub trait Secondary<P> {
     fn admitted_steam_kg_s(&self, _t: f64) -> Option<f64> {
         None
     }
+    /// X4.4 preview hook (lane ROD; the turbine valve and governor are
+    /// X4.3's): the turbine load demand as a fraction of the prepared steam
+    /// demand, a held input at a frame instant. An owner without the input
+    /// refuses.
+    fn set_turbine_load(&mut self, _t: f64, load: f64) -> Result<Transaction, Failure> {
+        Err(Failure::Fatal(format!(
+            "this secondary owner has no turbine load input (requested {load})"
+        )))
+    }
     /// The latched turbine TRIP time, if any (the trip requests GCB OPEN).
     fn turbine_trip_time(&self) -> Option<f64> {
         None
