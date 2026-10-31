@@ -25,7 +25,7 @@
 //! sections, ELEC's packet).
 use super::{
     inputs::Inputs,
-    profile::{MAX_ORDER, RESTART, Solver},
+    profile::{GUIDE_CURRENT_BASIS_PA, MAX_ORDER, RESTART, Solver},
     pzr_control::{self, PzrClient},
     spine::{Started, credited_outputs, started_full_composition},
 };
@@ -242,7 +242,13 @@ pub fn compose_with<J: JoinedSystem>(
         .map_err(|e| format!("feed gate: {e:?}"))?;
     let structure = JoinedJacobian::compile_for(&mut joined, t0, &y, None)
         .map_err(|e| format!("structure: {e:?}"))?;
-    let credited = credited_outputs(&joined, &inputs.spine)?;
+    // R4-GUIDE-BASIS: the guide-current class from the operator-grade
+    // basis, the core-DP output's budget only (the contract's 50 Pa stays
+    // the S2 record).
+    let mut credited = credited_outputs(&joined, &inputs.spine)?;
+    for c in credited.iter_mut().filter(|c| c.name == "core_dp_pa") {
+        c.budget = GUIDE_CURRENT_BASIS_PA;
+    }
     let derived = derived_tolerances(
         &mut joined,
         &structure,

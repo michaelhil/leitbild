@@ -45,13 +45,19 @@ pub const SURFACES: SurfacePolicy = SurfacePolicy {
     maximum_iterations: 16,
     maximum_backtracks: 12,
 };
-/// The S3 restarts: stock settings, the start's bound and its passes.
+/// The derived rods/GuideCurrent class's core-DP basis under the
+/// operator-grade budgets (lead decision R4-GUIDE-BASIS, plan r4), in
+/// place of the accuracy contract's 50 Pa: no LD-01 instrument reads core
+/// DP; at 5,000 Pa every instrumented output's E0 is unchanged.
+pub const GUIDE_CURRENT_BASIS_PA: f64 = 5000.;
+/// The S3 restarts: stock settings, the start's bound and its passes
+/// (ordinary restarts 3, lead decision R4-START-PASSES).
 pub const RESTART: Restart = Restart {
     newton_coefficient: NEWTON_COEFFICIENT,
     delta_cj_lsetup: DELTA_CJ_LSETUP,
     first_step_s: FIRST_STEP_S,
     start_bound: START_BOUND,
-    start_passes: 2,
+    start_passes: 3,
     transaction_passes: 12,
     bound_placement: 1e-12,
 };
