@@ -73,7 +73,10 @@
 //! `discrete_restart`.
 use crate::{
     ida::{Advance, Ida, System},
-    joined::{DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart},
+    joined::{
+        DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart,
+        discrete_restart_unless_noop,
+    },
     klu::SparseLu,
 };
 use leitbild_operating_plant::cost;
@@ -482,6 +485,10 @@ pub struct Driver<S> {
     /// them): steps, residuals, Jacobians, nonlinear iterations, error and
     /// convergence failures, linear setups, root evaluations.
     pub totals: [i64; 8],
+    /// E-EVT (plan r4): the instant being restarted carries a held client
+    /// change (an H1 window-end restart): it restarts even when the owners
+    /// change nothing.
+    client_change_at_restart: bool,
     /// The segments' counters in order, one per restart and the last.
     pub segments: Vec<Value>,
     /// Class O at every accepted step (C3's cost lines): the network's
@@ -584,6 +591,7 @@ impl<S: JoinedSystem> Driver<S> {
             cpu: Cpu::default(),
             log: Vec::new(),
             totals: [0; 8],
+            client_change_at_restart: false,
             segments: Vec::new(),
             donor_flips: DonorFlips::default(),
             r3_band_states: 0,
@@ -1181,6 +1189,7 @@ impl<S: JoinedSystem> Driver<S> {
             // The restart's left side, before any change of the instant.
             self.gate_point(ida, o, t, y, yp, Side::BeforeRestart)?;
         }
+        self.client_change_at_restart = !held.is_empty();
         for f in held {
             f(ida.system_mut())?;
         }
@@ -1247,7 +1256,14 @@ impl<S: JoinedSystem> Driver<S> {
             (None, Some(c)) => Discrete::Command(c),
             (None, None) => Discrete::TimeEvent,
         };
-        let restarted = discrete_restart(
+        // E-EVT (plan r4): an instant with no client change of its own may
+        // continue stock's history when the owners change nothing.
+        let restart_at = if self.client_change_at_restart {
+            discrete_restart
+        } else {
+            discrete_restart_unless_noop
+        };
+        let restarted = restart_at(
             ida,
             t,
             discrete,

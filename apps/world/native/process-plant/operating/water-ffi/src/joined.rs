@@ -878,7 +878,8 @@ pub fn split_credited_groups(keys: &[String], credited: &[bool], max: usize) -> 
 
 pub use integrated::{
     Assembly, Discrete, FirstStep, Integrated, JoinedSystem, Restart, Restarted, census_groups,
-    credited_coordinates, discrete_restart, root_directions, stock_initial_conditions,
+    credited_coordinates, discrete_restart, discrete_restart_unless_noop, root_directions,
+    stock_initial_conditions,
 };
 
 mod integrated {
@@ -1032,6 +1033,40 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
+        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, false)
+    }
+
+    /// E-EVT (plan r4): [`discrete_restart`], or, when the owners' changes
+    /// leave everything the integrator reads bitwise as it was
+    /// ([`Restarted::noop`]), no consistent start and no IDAReInit. Only a
+    /// driver whose instant carries no client change of its own (such as an
+    /// H1 window-end restart, which must reconfigure the segment) calls it.
+    #[allow(clippy::too_many_arguments)] // As discrete_restart.
+    pub fn discrete_restart_unless_noop<S: JoinedSystem>(
+        ida: &mut Ida<S>,
+        t: f64,
+        discrete: Discrete<'_>,
+        y_all: &mut [f64],
+        network_ids: &[f64],
+        absolute_all: &[f64],
+        relative: f64,
+        restart: &Restart,
+    ) -> Result<Restarted, String> {
+        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, true)
+    }
+
+    #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
+    fn restart_or_continue<S: JoinedSystem>(
+        ida: &mut Ida<S>,
+        t: f64,
+        discrete: Discrete<'_>,
+        y_all: &mut [f64],
+        network_ids: &[f64],
+        absolute_all: &[f64],
+        relative: f64,
+        restart: &Restart,
+        allow_noop: bool,
+    ) -> Result<Restarted, String> {
         if absolute_all.len() != y_all.len() {
             return Err("restart tolerances layout".into());
         }
@@ -1078,10 +1113,13 @@ mod integrated {
         // transactions change.
         let zero_rates = vec![0.; y.len()];
         let mut roots_entry = vec![0.; joined.root_count()];
-        joined
-            .roots(t, y, &zero_rates, &mut roots_entry)
-            .map_err(message)?;
-        let directions_entry = joined.root_directions().map_err(message)?;
+        let mut directions_entry = Vec::new();
+        if allow_noop {
+            joined
+                .roots(t, y, &zero_rates, &mut roots_entry)
+                .map_err(message)?;
+            directions_entry = joined.root_directions().map_err(message)?;
+        }
         let entry_rows: Vec<f64>;
         let entry = {
             let zero = vec![0.; y.len()];
@@ -1125,7 +1163,8 @@ mod integrated {
         // appended change, every residual row at (t, y, 0) and every root
         // function and direction bitwise as at entry. Stock's history then
         // continues; there is no consistent start and no IDAReInit.
-        if !presence_changed
+        if allow_noop
+            && !presence_changed
             && appended_done.is_empty()
             && y.iter().zip(&before).all(|(a, b)| a.to_bits() == b.to_bits())
             && integrated.joined.differential(network_ids) == identity_before
