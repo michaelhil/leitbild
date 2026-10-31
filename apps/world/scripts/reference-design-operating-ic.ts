@@ -63,6 +63,15 @@ export const parseSteamValvePositionChannels = (text: string) => z.object({
   lag_s: positive, span_percent: band, quantum_percent: positive, sample_s: positive, transport_s: positive,
   supply: z.string(), compiled: z.array(z.literal('LD01.TG.STOP.POS')),
 }).strict().parse(configurationBlock(text, 'ld01-steam-valve-position-channels'))
+// Plan r4 tag map: LD01.CORE.NI.SHUTDOWN's SOURCE-pulse path
+// (nuclear-observation-apparatus.md).
+export const parseObservationWindow = (text: string) => z.object({
+  window_s: positive, alpha: positive, theta: positive, minimumExcessCount: positive, backgroundRange_s: z.tuple([nonnegative, nonnegative]),
+  deadtime_s: positive, maximumOccupancy: positive, sample_s: positive, noiseBound_A: positive, commissionOffsetBound_A: positive, saturation_A: positive,
+}).strict().parse(configurationBlock(text, 'reference-nuclear-observation-window'))
+export const parseSourceRangePulse = (text: string) => z.object({
+  rrefEventsPerS: positive.nullable(), darkPerS: nonnegative, supply: z.string(), seed: z.number().int().nonnegative(), maximumAge_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-source-range-pulse'))
 export const parseTurbineStateReport = (text: string) => z.object({
   sample_s: positive, transport_s: positive, maximumAge_s: positive, recovery_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-turbine-state-report'))
@@ -215,6 +224,15 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const underspeed = parseRcpUnderspeed(texts['safety/source-and-primary-protection.md'])
   const cmt = parseCmtActuation(texts['safety/source-and-primary-protection.md'])
   const bank = parseBankChannels(texts['systems/instrumentation/operational-observations.md'])
+  const window = parseObservationWindow(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
+  const pulse = parseSourceRangePulse(texts['systems/instrumentation/nuclear-observation-apparatus.md'])
+  // The window's sample and the path's transport are the canonical 0.1 s frontend.
+  const sourceRange = pulse.rrefEventsPerS === null ? null : {
+    id: 'LD01.CORE.NI.SHUTDOWN', supply: pulse.supply, rref_events_per_s: pulse.rrefEventsPerS, dark_per_s: pulse.darkPerS,
+    deadtime_s: window.deadtime_s, window_s: window.window_s, alpha: window.alpha, theta: window.theta,
+    minimum_excess_count: window.minimumExcessCount, background_per_s: window.backgroundRange_s, maximum_occupancy: window.maximumOccupancy,
+    sample_s: window.sample_s, transport_s: channel.transport_s, maximum_age_s: pulse.maximumAge_s, seed: pulse.seed,
+  }
   const valves = parseSteamValvePositionChannels(texts['systems/instrumentation/operational-observations.md'])
   if (!(cmt.sPressure_Pa < protection.low_pa)) throw Error('The "S" pressure must lie below the low-pressure trip (R12-B3)')
   const pt1 = taps.find(t => t.id === 'PT1')
@@ -426,7 +444,9 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     },
     turbine_trip_on_reactor_trip: { cause: interlock.cause, delay_s: interlock.delay_s,
       basis: 'ld01-reactor-trip-turbine-trip (protection-and-command-precedence.md, R12-A2): LD01.TRIP.HOLD loss requests LD01.TG TRIP after delay_s; AP1000 DCD Rev. 19 Tier 2 15.0.14' },
-    missing: OPEN_ITEMS,
+    ...(sourceRange ? { source_range: sourceRange } : {}),
+    missing: sourceRange ? OPEN_ITEMS : [...OPEN_ITEMS, { item: 'LD01.CORE.NI.SHUTDOWN regional Rref',
+      note: 'ld01-source-range-pulse rrefEventsPerS is open: the regional collected-event intensity at the original reference field (NUC); no SOURCE path is compiled until it is filled' }],
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
       s2_holding_boundary_replaced_s: s2.turbineTripToOpening_s, converter_region_weights: weights,
       fref_check_events_per_s: fref, flow_reset_band_upper: 'the FT span top (the reset needs only FT above 0.80 nominal)',

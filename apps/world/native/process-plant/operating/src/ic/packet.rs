@@ -26,6 +26,10 @@ pub struct Section {
     /// The reactor-trip → turbine-trip interlock (`ld01-reactor-trip-turbine-trip`,
     /// owner R12-A2).
     pub turbine_trip_on_reactor_trip: TurbineTripOnReactorTrip,
+    /// `LD01.CORE.NI.SHUTDOWN`'s SOURCE-pulse path (plan r4 tag map), when
+    /// the regional reference intensity is selected.
+    #[serde(default)]
+    pub source_range: Option<SourceRangeSpec>,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
     pub provenance: Vec<Value>,
@@ -121,6 +125,30 @@ pub struct Family {
     pub channel: AnalogConfig,
     pub maximum_age_s: f64,
     pub recovery_s: f64,
+}
+
+/// The SOURCE-pulse path's selections (reference-nuclear-observation-window,
+/// ld01-source-range-pulse): `Rref` the regional model's collected-event
+/// intensity at the original reference field, so the detected rate is
+/// `Rref · proxy`.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceRangeSpec {
+    pub id: String,
+    pub supply: String,
+    pub rref_events_per_s: f64,
+    pub dark_per_s: f64,
+    pub deadtime_s: f64,
+    pub window_s: f64,
+    pub alpha: f64,
+    pub theta: f64,
+    pub minimum_excess_count: f64,
+    pub background_per_s: [f64; 2],
+    pub maximum_occupancy: f64,
+    pub sample_s: f64,
+    pub transport_s: f64,
+    pub maximum_age_s: f64,
+    pub seed: u64,
 }
 
 /// The source of a discrete state report.

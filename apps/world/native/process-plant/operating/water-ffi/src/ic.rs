@@ -320,6 +320,8 @@ pub struct ProtectionClient {
     nonlinear_read: Vec<usize>,
     /// The section declares the bank inserted report (read after restarts).
     bank_report: bool,
+    /// The current proxy's place in `observed` (the SOURCE path's rate).
+    proxy_index: Option<usize>,
     derivatives: Vec<Vec<f64>>,
 }
 impl ProtectionClient {
@@ -599,6 +601,12 @@ impl ProtectionClient {
                 .1
                 .value(y)
         })?;
+        let proxy_index = observed
+            .iter()
+            .position(|(q, _)| matches!(q, Quantity::CurrentProxy { .. }));
+        if section.source_range.is_some() && proxy_index.is_none() {
+            return Err("the SOURCE-pulse path needs the current proxy family".into());
+        }
         let mut protection = protection;
         let bank_report = section
             .reports
@@ -625,6 +633,7 @@ impl ProtectionClient {
             taylor: Vec::new(),
             nonlinear_read,
             bank_report,
+            proxy_index,
         })
     }
     /// HOOK (GATE, S3 case harness; KERN to reconcile): the dense-output
@@ -735,6 +744,10 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
         }
         for (d, (q, _)) in self.derivatives.iter().zip(&self.observed) {
             self.protection.advance(q, to - from, d)?;
+        }
+        // The SOURCE-pulse path's detected events follow the current proxy.
+        if let (Some(i), Some(source)) = (self.proxy_index, self.protection.source.as_mut()) {
+            source.advance(from, to, &self.derivatives[i])?;
         }
         Ok(())
     }

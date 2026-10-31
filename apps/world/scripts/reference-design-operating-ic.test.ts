@@ -19,6 +19,8 @@ const cmtBlock = '{"sPressure_Pa":12477415,"sQualification_s":0.5,"low2Level_m":
 const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
 const bankChannels = '{"position":{"lag_s":0.1,"span":[0,1],"quantum":null,"supply":"I1"},"inserted":{"supply":"I1"},"sample_s":0.1,"transport_s":0.1}'
 const valveChannels = '{"lag_s":0.1,"span_percent":[0,100],"quantum_percent":1,"sample_s":0.1,"transport_s":0.1,"supply":"I1","compiled":["LD01.TG.STOP.POS"]}'
+const observationWindow = '{"window_s":60,"alpha":0.01,"theta":0.1,"minimumExcessCount":400,"backgroundRange_s":[0,2],"deadtime_s":0.000001,"maximumOccupancy":0.1,"sample_s":0.1,"noiseBound_A":0.000000000001,"commissionOffsetBound_A":0.000000000001,"saturation_A":0.01}'
+const sourcePulse = '{"rrefEventsPerS":null,"darkPerS":1,"supply":"I2","seed":1,"maximumAge_s":60.2}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
   'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
@@ -32,7 +34,8 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
   'safety/steam-generator-protection.md': fence('ld01-sg-level-protection', sgProtection)
     + fence('ld01-sg-level-protective-acquisition', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3}'),
   'systems/steam-generation/instrumentation.md': fence('ld01-sg-level-channels', '{"nrLag_s":0.5,"nrSpan_m":[4,9],"indicatedLevelArea_m2":12}'),
-  'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference),
+  'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference)
+    + fence('reference-nuclear-observation-window', observationWindow) + fence('ld01-source-range-pulse', sourcePulse),
   'safety/engineered-safety-actuation.md': fence('ld01-prhr-actuation', prhrActuation),
   'safety/protection-and-command-precedence.md': fence('ld01-reactor-trip-turbine-trip', interlock),
   ...over,
@@ -98,7 +101,8 @@ test('the section carries only strict-block values and the packet identities', (
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.2 } } })
   expect(s.functions[10]!.rule).toEqual({ armed_unavailable: { family: 'LD01.RCS.A.FT', qualification_s: 0.5,
     arming_family: 'LD01.CORE.POWER.P', arming: { above: 0.2 } } })
-  expect(s.missing).toBe(OPEN_ITEMS)
+  // The open SOURCE Rref follows the static items.
+  expect(s.missing.slice(0, OPEN_ITEMS.length)).toEqual([...OPEN_ITEMS])
   // R12-A2: the interlock's cause and delay come from its block.
   expect(s.turbine_trip_on_reactor_trip).toMatchObject({ cause: 'LD01.TG.REACTOR_TRIP', delay_s: 5 })
 })
@@ -110,7 +114,8 @@ test('refusals: a duration off the frame, a missing face, a wrong Fref, a missin
     .toThrow('not whole')
   expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { faces: [{ id: 'RETURN.A->DOWN' }] } })).toThrow('No face RETURN.B->DOWN')
   expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md':
-    fence('ld01-regional-current-reference', reference.replace('9.36226e19', '9.4e19')) }), packet)).toThrow('Fref')
+    fence('ld01-regional-current-reference', reference.replace('9.36226e19', '9.4e19'))
+    + fence('reference-nuclear-observation-window', observationWindow) + fence('ld01-source-range-pulse', sourcePulse) }), packet)).toThrow('Fref')
   expect(() => compileOperatingIcFrom(pages({ 'systems/steam-generation/instrumentation.md': 'no block' }), packet))
     .toThrow('Expected one ld01-sg-level-channels block')
   expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
@@ -180,4 +185,16 @@ test('with the packet\'s rods and steam admission (plan r4 tag map) the bank pos
   const plain = compileOperatingIcFrom(pages(), packet)
   expect(plain.families.map(f => f.id)).not.toContain('LD01.CORE.BANK.POS')
   expect(plain.reports).toHaveLength(1)
+})
+
+test('LD01.CORE.NI.SHUTDOWN: no SOURCE path while the regional Rref is open, and the window selections once it is filled', () => {
+  const open = compileOperatingIcFrom(pages(), packet)
+  expect('source_range' in open).toBe(false)
+  expect(open.missing.at(-1)!.item).toBe('LD01.CORE.NI.SHUTDOWN regional Rref')
+  const filled = compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference)
+    + fence('reference-nuclear-observation-window', observationWindow)
+    + fence('ld01-source-range-pulse', sourcePulse.replace('"rrefEventsPerS":null', '"rrefEventsPerS":3e10')) }), packet)
+  expect(filled.source_range).toEqual({ id: 'LD01.CORE.NI.SHUTDOWN', supply: 'I2', rref_events_per_s: 3e10, dark_per_s: 1, deadtime_s: 1e-6,
+    window_s: 60, alpha: 0.01, theta: 0.1, minimum_excess_count: 400, background_per_s: [0, 2], maximum_occupancy: 0.1,
+    sample_s: 0.1, transport_s: 0.1, maximum_age_s: 60.2, seed: 1 })
 })
