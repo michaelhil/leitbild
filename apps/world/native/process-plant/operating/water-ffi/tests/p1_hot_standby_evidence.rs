@@ -61,9 +61,7 @@ fn hot_source_laws_near_hot_zero_power() {
     std::fs::write(&path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
 }
 
-#[path = "joined_spine.rs"]
-#[allow(dead_code)]
-mod spine;
+mod common;
 
 /// P1: the source-free shutdown margin (Δk/k; the smallest real mode of the
 /// pencil `(M, diag(1/Λ))`, S2-D13's stock dggev) of the composed hot
@@ -74,7 +72,7 @@ mod spine;
 /// is the stuck-cluster margin); the water term at the reported factors.
 /// Zero-time (NOT a trajectory); the receipt is written once to
 /// `LD01_P1_MARGIN_RECEIPT`.
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "ida", target_os = "macos"))]
 #[test]
 #[ignore = "requires the joined packet, the wiki, maintained IF97, stock IDA/KLU and Accelerate; writes LD01_P1_MARGIN_RECEIPT"]
 fn shutdown_margins_at_the_no_load_point() {
@@ -86,9 +84,10 @@ fn shutdown_margins_at_the_no_load_point() {
     let path = std::env::var("LD01_P1_MARGIN_RECEIPT").expect("LD01_P1_MARGIN_RECEIPT");
     assert!(!std::path::Path::new(&path).exists(), "never overwritten");
     let factors = [1., 1.53, 2.24];
-    let started = spine::started_full_composition();
+    let started = leitbild_operating_water::unit::spine::started_full_composition(&common::spine())
+        .expect("the S2 composition");
     let joined = &started.joined;
-    let (_, bytes) = spine::packet_bytes();
+    let (_, bytes) = common::packet_bytes();
     let raw: Value = serde_json::from_slice(&bytes).unwrap();
     let extension: Extension = serde_json::from_value(raw["post_trip_domain"].clone()).unwrap();
     let nuclear = joined.nuclear();

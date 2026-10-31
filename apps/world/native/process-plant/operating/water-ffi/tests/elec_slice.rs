@@ -22,8 +22,8 @@ use leitbild_operating_water::ida::{Failure, Ida, Initial, System};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-#[path = "common/cpu.rs"]
-mod clock;
+mod common;
+use common::cpu;
 
 struct Sys {
     slice: Slice,
@@ -221,7 +221,7 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
     let mut next_receipt: f64 = 0.02;
     let (mut steps, mut jac, mut errf, mut newton) = (0i64, 0i64, 0i64, 0i64);
     let mut peak_rpm = 0f64;
-    let cpu0 = clock::thread_cpu_s();
+    let cpu0 = cpu::thread_cpu_s();
     let mut idle = 0;
     while t < horizon - 1e-12 {
         // next stop: an action, breaker travel end or a routing due time
@@ -382,7 +382,7 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
     jac += st.linear_setups;
     errf += st.error_failures;
     newton += st.nonlinear_iterations;
-    let cpu = clock::thread_cpu_s() - cpu0;
+    let cpu = cpu::thread_cpu_s() - cpu0;
     ida.quadratures(&mut q).unwrap();
     let sl = &ida.system().slice;
     let defect = sl.ledger_defect(e0, &y, &q, deposits);
@@ -419,7 +419,7 @@ fn run(packet: &Packet, name: &str, actions: &[(f64, Action)], horizon: f64) -> 
 #[test]
 #[ignore = "ELEC S3 slice measurement: run with ELEC_PACKET and ELEC_SLICE_OUT"]
 fn elec_s3_slice_on_stock_idas() {
-    clock::prefer_performance_core();
+    cpu::prefer_performance_core();
     let path = std::env::var("ELEC_PACKET").expect("ELEC_PACKET");
     let out = std::env::var("ELEC_SLICE_OUT").expect("ELEC_SLICE_OUT");
     let packet = Packet(serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap());
@@ -448,7 +448,7 @@ fn elec_s3_slice_on_stock_idas() {
         "kind": "ELEC S3 slice on stock IDAS (measurement, NOT evidence)",
         "packet": path, "packetSha256": packet.0["provenance"]["packetSha256"],
         "solver": {"maxOrder": 2, "newtonCoefficient": 0.33, "dcj": 0.1, "initStep_s": 1e-4, "relative": 1e-5, "classes": "G12"},
-        "load": clock::load_average(),
+        "load": cpu::load_average(),
         "cases": cases,
     });
     // Declared ledger criterion: the stored-energy change against the IDAS

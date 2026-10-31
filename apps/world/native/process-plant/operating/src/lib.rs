@@ -7,6 +7,7 @@
 
 pub mod capture;
 pub mod control;
+pub mod digest;
 pub mod electrical;
 pub mod heat_history;
 pub mod hydraulics;

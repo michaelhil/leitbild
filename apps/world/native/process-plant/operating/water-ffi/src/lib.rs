@@ -1183,3 +1183,5 @@ pub mod klu;
 pub mod network;
 #[cfg(target_os = "macos")]
 pub mod spectrum;
+#[cfg(feature = "ida")]
+pub mod unit;

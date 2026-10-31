@@ -39,14 +39,14 @@
 //! in the receipt), so the settling measure reads step-resolved outputs; the
 //! state handed on is the accepted step that ends at the settled sample.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/pzr_control.rs"]
-mod pzr_control;
-#[path = "common/s3_unit.rs"]
-mod s3_unit;
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use common::filter;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    pzr_control, s3,
+    spine::{Started, credited_outputs, started_full_composition},
+};
 
 use leitbild_operating_plant::{
     control::pzr_pressure::{Law, Section as ControlSection},
@@ -70,10 +70,6 @@ use leitbild_operating_water::{
     },
 };
 use serde_json::{Map, Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, credited_outputs,
-    started_full_composition, z1,
-};
 use std::path::PathBuf;
 
 type Unit = Electrified<Integrated<If97>>;
@@ -322,7 +318,7 @@ fn electrical(
 #[ignore = "S3 settle state (S3-D28, NOT evidence): requires the S3 packets, the S2 settled state, the wiki, IF97 and stock IDA/KLU"]
 #[allow(clippy::too_many_lines)] // One settle: composition, run, criterion, state and receipt.
 fn s3_settle_state_for_c1() {
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("gates source");
     let gates = gates_block(&gates_text);
@@ -343,8 +339,8 @@ fn s3_settle_state_for_c1() {
     assert!(!dir.exists(), "never overwritten: {}", dir.display());
     std::fs::create_dir_all(&dir).unwrap();
     let samples_per_window = (window_s / output_s).round() as usize;
-    let (packet_path, packet_bytes) = spine::packet_bytes();
-    let packet_sha256 = spine::sha256(&packet_bytes);
+    let (packet_path, packet_bytes) = common::packet_bytes();
+    let packet_sha256 = leitbild_operating_plant::digest::sha256(&packet_bytes);
     let network_packet: NetworkPacket =
         serde_json::from_slice(&packet_bytes).expect("network packet");
     let face = |id: &str| {
@@ -389,7 +385,7 @@ fn s3_settle_state_for_c1() {
         mut atol,
         rtol,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     assert_eq!(y.len(), joined.dimension());
     assert!(
         joined.network.spray().is_some(),
@@ -397,7 +393,7 @@ fn s3_settle_state_for_c1() {
     );
     joined.declare_feed_gate().expect("the feed gate");
     let structure = JoinedJacobian::compile_for(&mut joined, t0, &y, None).expect("structure");
-    let credited = credited_outputs(&joined);
+    let credited = credited_outputs(&joined, &common::spine()).expect("the credited outputs");
     let derived = derived_tolerances(
         &mut joined,
         &structure,
@@ -421,9 +417,10 @@ fn s3_settle_state_for_c1() {
         "the control frame is the I&C frame"
     );
     let control_wiki = env("LD01_PZR_CONTROL_WIKI");
-    let channel = pzr_control::channel_block(&control_wiki, &law);
+    let channel = pzr_control::channel_block(&control_wiki, &law).expect("the PT1 channel block");
     let (mut control, prepared_w, start_w) =
-        pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
+        pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)
+            .expect("commissioning");
     // L1 and the phase modes armed at the start state.
     let l1 = joined.activate_unilateral(t0, &y).expect("L1");
     joined.activate_phase_modes().expect("phase modes");
@@ -499,8 +496,8 @@ fn s3_settle_state_for_c1() {
     // S3-D35: the settle's declared maximum step, from the S3 block.
     let declaration_path = env("LD01_S3_DECLARATION");
     let declaration_text = std::fs::read_to_string(&declaration_path).expect("the S3 declaration");
-    let settle_max_step_s = s3_unit::cases_block(&declaration_text)
-        .and_then(|b| s3_unit::settle_max_step(&b))
+    let settle_max_step_s = s3::cases_block(&declaration_text)
+        .and_then(|b| s3::settle_max_step(&b))
         .unwrap_or_else(|e| panic!("S3-D35: {e}"));
     ida.set_max_step(settle_max_step_s).unwrap();
     root_directions(&mut ida).unwrap();
@@ -519,10 +516,10 @@ fn s3_settle_state_for_c1() {
     .expect("the exact consistent start of the S3 composition");
     yp_all.clone_from(&initial.yp);
     control.scratch = vec![0.; y_all.len()];
-    let preparation_cpu_s = z1::cpu_s() - started;
+    let preparation_cpu_s = process_cpu_s() - started;
 
     // S3-D34: the class-S jump diagnostic is the harness's, not this run's.
-    let mut driver = Driver::new(frame, Diagnostic::None, z1::cpu_s, t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, process_cpu_s, t0).unwrap();
     let setup = Setup {
         network_ids: &network_ids,
         absolute: &atol_all,
@@ -546,20 +543,14 @@ fn s3_settle_state_for_c1() {
     let mut last_ranges: Vec<(f64, f64, bool)> = Vec::new();
     let mut history: Vec<Value> = Vec::new();
     let checks_every = (1. / output_s).round() as u64;
-    let heater = |ida: &Ida<Unit>| {
-        ida.system()
-            .integrated()
-            .joined
-            .pzr()
-            .map_or(f64::NAN, |b| b.request_w())
-    };
+    let heater = |ida: &Ida<Unit>| ida.system().integrated().joined.pzr().request_w();
     {
         let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut control];
         if let Err(e) = driver.start(&mut clients, t0, &y_all, &yp_all) {
             failure = Some(format!("driver start: {e}"));
         }
         while failure.is_none() {
-            if z1::cpu_s() - started > cpu_cap_s {
+            if process_cpu_s() - started > cpu_cap_s {
                 failure = Some(format!("CPU cap {cpu_cap_s} s reached at t = {t} s"));
                 break;
             }
@@ -602,13 +593,13 @@ fn s3_settle_state_for_c1() {
                 if k.is_multiple_of(checks_every * 10) {
                     history.push(json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
                         "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
-                        "cpu_s": z1::cpu_s() - started, "heater_w": heater(&ida)}));
+                        "cpu_s": process_cpu_s() - started, "heater_w": heater(&ida)}));
                     eprintln!(
                         "S3 settle t = {t:.1} s: PT1 range {:.1} Pa, P = {:.6e} W, heater {:.0} W, CPU {:.1} s",
                         rs[3].0,
                         c[0][0],
                         heater(&ida),
-                        z1::cpu_s() - started
+                        process_cpu_s() - started
                     );
                 }
                 last_ranges = rs.clone();
@@ -621,7 +612,7 @@ fn s3_settle_state_for_c1() {
         }
     }
     driver.close_segment(&ida, t).ok();
-    let total_cpu_s = z1::cpu_s() - started;
+    let total_cpu_s = process_cpu_s() - started;
     // The state handed on is the solver's own at the settled sample: the
     // driver stops at every output time, so the last accepted step ends
     // there (never an interpolant inside a longer step).
@@ -651,15 +642,15 @@ fn s3_settle_state_for_c1() {
     let receipt = json!({
         "kind": "s3-settle-state",
         "status": "NOT evidence: S3 is not declared; C1's initial condition (lead decision S3-D28 (3))",
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "packet": packet_path, "packet_sha256": packet_sha256,
         "from": {"path": from_path, "t_s": t0},
         "sections": {"ic": ic_path, "pzr_control": control_path, "control_wiki": control_wiki, "electrical": elec_path},
-        "gates": {"source": gates_path, "sha256": spine::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
+        "gates": {"source": gates_path, "sha256": leitbild_operating_plant::digest::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
         "configuration": {"max_order": MAX_ORDER, "newton_coefficient": NEWTON_COEFFICIENT, "delta_cj_lsetup": DELTA_CJ_LSETUP,
             "settle_max_step_s": settle_max_step_s,
             "settle_max_step_rule": "S3-D35: the S3 block's settling.maxStep_s, settling phase only; the state handed on is the solver's at the settled sample",
-            "s3_declaration": {"path": declaration_path, "sha256": spine::sha256(declaration_text.as_bytes())},
+            "s3_declaration": {"path": declaration_path, "sha256": leitbild_operating_plant::digest::sha256(declaration_text.as_bytes())},
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "frame_s": ic.frame_s,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart",
             "derived_tolerances": derived, "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
@@ -670,7 +661,7 @@ fn s3_settle_state_for_c1() {
             "correction_wrms": initial.report.correction_wrms, "appended": initial.appended},
         "verdict": verdict, "failure": failure, "reached_s": t,
         "last_ranges": CREDITED.iter().zip(&last_ranges).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>(),
-        "state": {"file": "s3-settled-state.json", "sha256": spine::sha256(&state_bytes)},
+        "state": {"file": "s3-settled-state.json", "sha256": leitbild_operating_plant::digest::sha256(&state_bytes)},
         "counts_by_class": driver.counts.json(), "stock_totals": totals, "observation": driver.observation_json(),
         "pzr_control_changes": control.schedule.len().saturating_sub(1),
         "cpu": {"process_total_s": total_cpu_s, "preparation_s": preparation_cpu_s, "solver_s": driver.cpu.solver_s,

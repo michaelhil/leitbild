@@ -25,14 +25,13 @@ pub struct Packet {
     pub water_flow_area_m2: Vec<f64>,
     pub water_boron_amount_kg_eq: Vec<f64>,
     pub secondary: SecondarySection,
-    /// The PZR metal and relief owner's section (G6). A packet compiled
-    /// before G6 has none: the PZR owner is then not composed, the cell's
-    /// boundary stays closed and a declared relief port refuses.
+    /// The PZR metal and relief owner's section (G6), required: a packet
+    /// compiled before G6 is refused by its parse.
     #[serde(rename = "pzrMetal")]
-    pub pzr_metal: Option<super::pzr::Section>,
+    pub pzr_metal: super::pzr::Section,
     /// The PZR steel at the steady state of its laws (S3-D36), from the
-    /// stock-IDA steady solids settle: required with `pzrMetal` (the PZR
-    /// owner refuses without it), absent without it.
+    /// stock-IDA steady solids settle: the PZR owner refuses without it;
+    /// absent only from the settle's own input packet.
     #[serde(rename = "pzrSteel")]
     pub pzr_steel: Option<super::pzr::Steel>,
     /// MR-1 (owner, request 7 R7-P): the joined solve's forced

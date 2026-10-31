@@ -124,9 +124,8 @@ struct Blocks<P> {
     secondary: SecondaryPort<P>,
     rods: RodPort<P>,
     /// The PZR metal and relief owner (G6), from the packet's `pzrMetal`
-    /// section; `None` for a packet compiled before G6, whose cell then
-    /// declares no relief and keeps a closed boundary.
-    pzr: Option<Pzr>,
+    /// section.
+    pzr: Pzr,
     offsets: Offsets,
     source_water: Vec<usize>,
     compiled_volumes: Vec<f64>,
@@ -259,8 +258,16 @@ impl ValueState {
             && self.t == t.to_bits()
             && self.y.len() == y.len()
             && self.yp.len() == yp.len()
-            && self.y.iter().zip(y).all(|(a, b)| a.to_bits() == b.to_bits())
-            && self.yp.iter().zip(yp).all(|(a, b)| a.to_bits() == b.to_bits())
+            && self
+                .y
+                .iter()
+                .zip(y)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+            && self
+                .yp
+                .iter()
+                .zip(yp)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
     }
     fn set(&mut self, t: f64, y: &[f64], yp: &[f64]) {
         self.t = t.to_bits();
@@ -355,35 +362,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // prepared cell's Tsat(p_s) and (S3-D36, PZRSOLIDS hook) its steel at
         // the steady state of its laws, the packet's pzrSteel; a relief port
         // needs it.
-        let pzr = match &packet.pzr_metal {
-            Some(section) => Some(Pzr::new(
-                network.stratified(),
-                section,
-                SteelPreparation::Steady(packet.pzr_steel.as_ref().ok_or_else(|| {
-                    fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
-                })?),
-                network.pzr_saturation_temperature_k(),
-            )?),
-            None => {
-                if packet.pzr_steel.is_some() {
-                    return Err(fatal("pzrSteel without the PZR owner's pzrMetal section"));
-                }
-                if let Some(port) = network
-                    .stratified()
-                    .parameters()
-                    .ports
-                    .iter()
-                    .find(|p| p.kind == stratified::PortKind::Relief)
-                {
-                    return Err(fatal(format!(
-                        "relief port {} needs the PZR owner's packet section (pzrMetal)",
-                        port.id
-                    )));
-                }
-                None
-            }
-        };
-        let pzr_len = pzr.as_ref().map_or(0, |b| b.layout().len());
+        let pzr = Pzr::new(
+            network.stratified(),
+            &packet.pzr_metal,
+            SteelPreparation::Steady(packet.pzr_steel.as_ref().ok_or_else(|| {
+                fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
+            })?),
+            network.pzr_saturation_temperature_k(),
+        )?;
+        let pzr_len = pzr.layout().len();
         let n = network.dimension();
         let rods_at = n + nuclear.layout().len() + solids.layout().len() + secondary_len;
         let offsets = Offsets {
@@ -419,8 +406,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 RodPort::Owner(b) => Scales::of(b.layout()),
                 RodPort::Prepared(_) => Scales::default(),
             },
-            pzr.as_ref()
-                .map_or_else(Scales::default, |b| Scales::of(b.layout())),
+            Scales::of(pzr.layout()),
         ];
         let rod_reads = match &rods {
             RodPort::Owner(b) => {
@@ -661,12 +647,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
             RodPort::Prepared(_) => None,
         }
     }
-    /// The PZR metal and relief owner (G6), when composed.
-    pub fn pzr(&self) -> Option<&Pzr> {
-        self.blocks.pzr.as_ref()
+    /// The PZR metal and relief owner (G6).
+    pub fn pzr(&self) -> &Pzr {
+        &self.blocks.pzr
     }
-    pub fn pzr_mut(&mut self) -> Option<&mut Pzr> {
-        self.blocks.pzr.as_mut()
+    pub fn pzr_mut(&mut self) -> &mut Pzr {
+        &mut self.blocks.pzr
     }
     /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
     /// the unit's copyable discrete state — the SG secondary's, the rods',
@@ -706,7 +692,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             "solids": serde_json::Value::Null,
             "secondary": self.secondary().map(|b| b.discrete_state()),
             "rods": self.rods().map(|b| b.discrete_state()),
-            "pzr": self.pzr().map(|b| b.discrete_state()),
+            "pzr": self.pzr().discrete_state(),
             "rotors": rotors,
             "phase_modes": self.phase_modes,
         })
@@ -774,11 +760,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             (None, serde_json::Value::Null) => {}
             _ => return Err(fatal("snapshot: rod owner presence differs")),
         }
-        match (self.pzr_mut(), &o["pzr"]) {
-            (Some(b), v) => b.restore_discrete_state(v)?,
-            (None, serde_json::Value::Null) => {}
-            _ => return Err(fatal("snapshot: PZR block presence differs")),
-        }
+        self.pzr_mut().restore_discrete_state(&o["pzr"])?;
         let rotors = o["rotors"]
             .as_array()
             .filter(|a| a.len() == self.network.rotor_count())
@@ -835,9 +817,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let RodPort::Owner(b) = &self.blocks.rods {
             out.push(("rods", b.layout().clone()));
         }
-        if let Some(b) = &self.blocks.pzr {
-            out.push(("pzr", b.layout().clone()));
-        }
+        out.push(("pzr", self.blocks.pzr.layout().clone()));
         out
     }
 
@@ -867,9 +847,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let RodPort::Owner(b) = &self.blocks.rods {
             push(&b.prepared(), b.layout());
         }
-        if let Some(b) = &self.blocks.pzr {
-            push(b.prepared(), b.layout());
-        }
+        push(self.blocks.pzr.prepared(), self.blocks.pzr.layout());
         Ok(y)
     }
 
@@ -884,9 +862,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let RodPort::Owner(b) = &self.blocks.rods {
             ids.extend(b.differential());
         }
-        if let Some(b) = &self.blocks.pzr {
-            ids.extend(b.differential());
-        }
+        ids.extend(self.blocks.pzr.differential());
         ids
     }
 
@@ -953,7 +929,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
     pub fn root_count(&self) -> usize {
         self.secondary().map_or(0, |b| b.root_count())
             + self.rods().map_or(0, |b| b.root_count())
-            + self.pzr().map_or(0, |b| b.root_count())
+            + self.pzr().root_count()
             + self.unilateral_slots()
             + self.phase_mode_slots()
             + self.spray_slots()
@@ -1129,7 +1105,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let o = self.blocks.offsets;
         let ns = self.secondary().map_or(0, |b| b.root_count());
         let nr = self.rods().map_or(0, |b| b.root_count());
-        let np = self.pzr().map_or(0, |b| b.root_count());
+        let np = self.pzr().root_count();
         let nl = self.unilateral_slots();
         let nm = self.phase_mode_slots();
         let nk = self.spray_slots();
@@ -1201,10 +1177,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 slots[r.path()] = v;
             }
         }
-        if let Some(b) = self.pzr() {
-            let (x, roof) = self.pzr_state(y);
-            b.roots(roof, &x, &mut out[ns + nr..ns + nr + np])?;
-        }
+        let (x, roof) = self.pzr_state(y);
+        self.pzr()
+            .roots(roof, &x, &mut out[ns + nr..ns + nr + np])?;
         if let SecondaryPort::Owner(b) = &mut self.blocks.secondary {
             let x = view(
                 y,
@@ -1299,11 +1274,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 y[i] = v / s;
             }
         }
-        let np = b.pzr.as_ref().map_or(0, |p| p.root_count());
-        if let Some(owner) = &mut b.pzr
-            && directions[ns + nr..ns + nr + np].iter().any(|d| *d != 0)
-        {
-            done.push(owner.transact(t, &directions[ns + nr..ns + nr + np], roof, &mut pzr_x)?);
+        let np = b.pzr.root_count();
+        if directions[ns + nr..ns + nr + np].iter().any(|d| *d != 0) {
+            done.push(
+                b.pzr
+                    .transact(t, &directions[ns + nr..ns + nr + np], roof, &mut pzr_x)?,
+            );
             for ((i, v), s) in (o.pzr..o.end).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
@@ -1572,9 +1548,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             done.push(b.command(t, command)?);
         }
         // HOOK (C4 lane): the PZR owner may change its relief's state.
-        if let Some(b) = self.pzr_mut() {
-            done.push(b.command(t, command)?);
-        }
+        done.push(self.pzr_mut().command(t, command)?);
         self.deposit(&done, y)?;
         done.extend(self.time_events(t, y)?);
         Ok(done)
@@ -1732,12 +1706,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             spray_target: if composed { 0. } else { demand.spray_target },
             ..*demand
         };
-        let applied = self
-            .blocks
-            .pzr
-            .as_mut()
-            .ok_or_else(|| fatal("no PZR block for the control frame"))?
-            .apply_control(t, &heater)?;
+        let applied = self.blocks.pzr.apply_control(t, &heater)?;
         let mut receipts = vec![serde_json::to_value(&applied).map_err(|e| fatal(e.to_string()))?];
         let change = if composed {
             let (change, receipt) = self.network.issue_spray(t, demand.spray_target)?;
@@ -2221,7 +2190,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // cell's coordinates) and the steels its enclosure couples; the lift
         // row its own lift. The cell's rows read every block coordinate
         // through the boundary: heater and wall receipts and the relief.
-        if let Some(b) = &self.blocks.pzr {
+        {
+            let b = &self.blocks.pzr;
             let cell: BTreeSet<usize> = self.network.pzr.coordinates().collect();
             let metal: BTreeSet<usize> = (o.pzr + b.metal_base()..o.end).collect();
             let mut cols = cell.clone();
@@ -2389,8 +2359,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
 
     /// The PZR block's rows (into the joined `rows`, block scaling) and the
     /// stratified cell's boundary on `column`, at the block's coordinates
-    /// with `seed`. With no PZR owner (a packet compiled before G6, whose
-    /// cell declares no relief) the boundary is closed.
+    /// with `seed`.
     #[allow(clippy::too_many_arguments)] // The coupling's stage inputs and the cell's column.
     fn pzr_boundary(
         &mut self,
@@ -2403,9 +2372,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
         rows: &mut [Scalar],
     ) -> Result<stratified::Boundary, Failure> {
         let o = self.offsets;
-        let Some(b) = self.pzr.as_mut() else {
-            return Ok(stratified::Boundary::closed());
-        };
+        let b = &mut self.pzr;
         let x = view(y, yp, seed, cj, o.pzr..o.end, &self.scales[4].coordinates)?;
         let boundary = b.boundary(
             &self.properties,
@@ -2752,9 +2719,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             scales,
             ..
         } = &mut *self.blocks;
-        let Some(b) = pzr.as_mut() else {
-            return Ok(stratified::Boundary::closed());
-        };
+        let b = pzr;
         let x = view(
             self.y,
             self.yp,

@@ -3,7 +3,7 @@
 //! object of a fenced block, file hashes and the water build this binary
 //! links, refused unless it is the one the receipt names.
 //!
-//! Include it with `#[path = "common/provenance.rs"] mod provenance;`.
+//! Declared once in `tests/common/mod.rs` (`mod common;` in a test crate).
 #![allow(dead_code)] // Each test crate uses its own subset.
 use leitbild_operating_plant::network::MetastableBand;
 use serde::Deserialize;

@@ -16,6 +16,7 @@
 //! `LD01_JAC_Z7_MATRIX` selects the matrix: `colored` (the reference
 //! assembly) or `blocks` (the block assembly, all classes).
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::{

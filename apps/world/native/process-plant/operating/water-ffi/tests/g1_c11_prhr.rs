@@ -65,8 +65,8 @@ use leitbild_operating_water::{
 use serde_json::{Value, json};
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::cpu;
 
 /// Standard gravity of the network and of the PRHR owners' checkers.
 const G: f64 = 9.80665;

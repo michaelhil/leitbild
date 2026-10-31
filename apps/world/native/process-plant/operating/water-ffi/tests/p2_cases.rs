@@ -16,6 +16,7 @@
 //! are the case-set packet's `pzr` section, unchanged. Nothing is retuned: a
 //! failure is a result.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod p2_harness;
 
 use leitbild_operating_plant::{
@@ -102,7 +103,7 @@ fn sh(args: &[&str], dir: &str) -> String {
 /// The 1-, 5- and 15-minute load averages, recorded beside every CPU
 /// measurement on the shared machine.
 fn load_average() -> Value {
-    json!(p2_harness::clock::load_averages())
+    json!(common::cpu::load_averages())
 }
 fn sha256(bytes: &[u8]) -> String {
     let mut child = Command::new("shasum")

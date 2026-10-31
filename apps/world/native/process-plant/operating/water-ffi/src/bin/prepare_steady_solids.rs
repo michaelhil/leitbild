@@ -156,10 +156,8 @@ pub struct Steady {
     pub steady: Reached,
     pub checkpoints: Vec<Checkpoint>,
     pub ida: IdaStats,
-    /// The PZR steel (S3-D36), present exactly when the input carries the
-    /// PZR owner's `pzrMetal` section.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pzr: Option<PzrSteady>,
+    /// The PZR steel (S3-D36), from the input's `pzrMetal` section.
+    pub pzr: PzrSteady,
 }
 
 /// The PZR steel at the steady state of its laws (S3-D36): a second stock
@@ -1215,7 +1213,7 @@ pub struct Prepared {
     pub y: Vec<f64>,
     pub yp: Vec<f64>,
     /// The PZR steel's part (S3-D36), with the input's `pzrMetal`.
-    pub pzr: Option<PzrPart>,
+    pub pzr: PzrPart,
 }
 
 /// The frozen basis, the solids system and its initial state (the packet's
@@ -1436,11 +1434,7 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
     if packet.pzr_steel.is_some() {
         return Err("the settle's input already carries pzrSteel".into());
     }
-    let pzr = packet
-        .pzr_metal
-        .as_ref()
-        .map(|section| prepare_pzr(raw, section))
-        .transpose()?;
+    let pzr = prepare_pzr(raw, &packet.pzr_metal)?;
     Ok(Prepared {
         basis: Basis {
             basis_power_w,
@@ -1826,7 +1820,7 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
             last_step_s: stats.last_step,
             jacobian_nonzeros,
         },
-        pzr: pzr.map(settle_pzr).transpose()?,
+        pzr: settle_pzr(pzr)?,
     };
     Ok(out)
 }

@@ -30,33 +30,22 @@
 //! Single-threaded; nothing is written unless `LD01_SMOKE_RECORD` or
 //! `LD01_SETTLED_STATE_OUT` names a new file.
 #![cfg(feature = "ida")]
-#[path = "common/cpu.rs"]
-mod cpu;
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "ld01_regression/wiki.rs"]
-mod wiki;
+mod common;
+use common::{cpu, filter};
 
 use leitbild_operating_plant::{
-    initialization::SurfacePolicy,
+    digest::sha256,
     joined::{
         self,
         block::Command,
         blocks::{Classes, JoinedJacobian, jacobian_blocks},
         census,
         nuclear::Nuclear,
-        operator::{Joined, RodPort, SecondaryPort},
+        operator::Joined,
         packet,
         solids::Solids,
     },
-    network::{
-        Network, PzrPreparation, RotorState, ToleranceClasses, consistent_start as network_start,
-        packet::Packet as NetworkPacket,
-        prepare::{self, OperatingPoint, Settings},
-    },
-    rods::{RodBlock, Section as RodSection},
-    rotor::{Shaft, SpeedRequest, Support},
-    sg::{packet::Section as SecondarySection, secondary::Secondaries},
+    network::{Network, packet::Packet as NetworkPacket},
 };
 use leitbild_operating_water::{
     If97,
@@ -64,80 +53,22 @@ use leitbild_operating_water::{
     joined::{
         Analyses, Discrete, Integrated, Matrices, Restart, consistent_start, discrete_restart,
     },
-    network::Integrated as NetworkIntegrated,
+    unit::{
+        clock,
+        profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, PZR, START_BOUND},
+        provenance::provenance_with,
+        spine::{self, S1Settling},
+    },
 };
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
 // ------------------------------------------------- declared configuration
 
-/// The S1 harness's declared PZR preparation controls (s1_hydraulics.rs).
-const PZR: PzrPreparation = PzrPreparation {
-    pressure_tolerance_pa: 1e-6,
-    max_passes: 50,
-};
-/// The S1 harness's hydrostatic preparation settings (s1_hydraulics.rs).
-const SETTINGS: Settings = Settings {
-    pressure_tolerance_pa: 1e-6,
-    max_passes: 50,
-    level_match_m: 1e-9,
-    eos_row_bound: 1e-12,
-    tree_face_bound_pa: 1e-6,
-    representation_search: 8,
-};
 /// S2's numerical configuration at every start and restart (claude/ld01-wiki
-/// c968921; G13), as the settling probe and the restart check use it.
-const NEWTON_COEFFICIENT: f64 = 0.33;
-const DELTA_CJ_LSETUP: f64 = 0.1;
-const FIRST_STEP_S: f64 = 1e-4;
+/// c968921; G13) is the unit library's profile; the settle's output chunk:
 const ADVANCE_CHUNK_S: f64 = 0.01;
-/// The exact consistent start's bound (Z1 and restarts).
-const START_BOUND: f64 = 1e-12;
-
-fn rotors() -> Vec<RotorState> {
-    vec![
-        RotorState {
-            support: Support::Supported(SpeedRequest::Nominal),
-            shaft: Shaft::Free,
-        };
-        4
-    ]
-}
-
-// ----------------------------------------------------------------- inputs
-
-fn sha256(bytes: &[u8]) -> String {
-    use std::io::Write;
-    use std::process::{Command as Process, Stdio};
-    // `shasum` on macOS, coreutils `sha256sum` on Linux.
-    let run = |program: &str, args: &[&str]| {
-        let mut child = Process::new(program)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .ok()?;
-        child.stdin.take()?.write_all(bytes).ok()?;
-        let out = child.wait_with_output().ok()?;
-        out.status.success().then(|| {
-            String::from_utf8_lossy(&out.stdout)
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string()
-        })
-    };
-    run("shasum", &["-a", "256"])
-        .or_else(|| run("sha256sum", &[]))
-        .expect("shasum or sha256sum")
-}
-
-fn packet_bytes() -> (String, Vec<u8>) {
-    let path = std::env::var("LD01_OPERATING_HOT_SPINE_PACKET")
-        .expect("LD01_OPERATING_HOT_SPINE_PACKET names the compiled spine packet");
-    let bytes = std::fs::read(&path).expect("packet");
-    (path, bytes)
-}
+use common::packet_bytes;
 
 /// The `ld01-s1-gates` block of the wiki named by `LD01_WIKI_ROOT`.
 fn s1_gates() -> Value {
@@ -154,17 +85,6 @@ fn s1_gates_text() -> String {
     let end = start + text[start..].find("\n```").unwrap();
     text[start..end].to_string()
 }
-fn classes(gates: &Value) -> ToleranceClasses {
-    let f = |k: &str| gates[k].as_f64().unwrap_or_else(|| panic!("gate {k}"));
-    ToleranceClasses {
-        relative: f("relativeTolerance"),
-        stock_scaled: f("stockScaledAbsolute"),
-        tracer_scaled: f("tracerScaledAbsolute"),
-        rotor_scaled: f("rotorScaledAbsolute"),
-        volume_flow_m3_s: f("volumeFlowAbsolute_m3_s"),
-    }
-}
-
 /// The deterministic identity of the water and SUNDIALS builds in use.
 fn environment(packet_sha256: &str) -> Value {
     let water =
@@ -199,114 +119,10 @@ fn environment(packet_sha256: &str) -> Value {
 
 // ------------------------------------------------------------- composition
 
-/// S1's declared network-only settling from rest, run only to export the
-/// settled flows (memo §3 (A)); as `joined_spine.rs`.
-fn s1_settled_flows(packet: &NetworkPacket, gates: &Value) -> (Vec<f64>, Vec<f64>, Value) {
-    let point = OperatingPoint::from(&packet.preparation.operating_point);
-    let (network, prepared, _) =
-        prepare::prepare(packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-    let mut y = prepared.y.clone();
-    for i in &network.rotor_index {
-        y[*i] = 0.;
-    }
-    let classes = classes(gates);
-    let atol = network.absolute_tolerances(&y, classes).unwrap();
-    let rtol = classes.relative;
-    let ids = prepared.differential.clone();
-    let weights: Vec<f64> = y
-        .iter()
-        .zip(&atol)
-        .map(|(v, a)| 1. / (rtol * v.abs() + a))
-        .collect();
-    let mut probe = network;
-    let (yp, _) = network_start(&mut probe, 0., &mut y, &ids, &weights, 1e-12, 2)
-        .expect("S1 exact consistent start");
-    let nonnegative = probe.nonnegative_stocks();
-    let mut ida = Ida::new(
-        NetworkIntegrated::colored(probe).unwrap(),
-        Initial {
-            time: 0.,
-            y: &y,
-            yp: &yp,
-            differential: &ids,
-            absolute_tolerance: &atol,
-            relative_tolerance: rtol,
-        },
-    )
-    .unwrap();
-    ida.set_max_order(gates["maxOrder"].as_u64().unwrap() as usize)
-        .unwrap();
-    ida.constrain_nonnegative(&nonnegative).unwrap();
-    let settling = &gates["settling"];
-    let cap = settling["maxSimulated_s"].as_f64().unwrap();
-    let window = settling["window_s"].as_f64().unwrap();
-    let rotor_rel = settling["rotorSpeedRelative"].as_f64().unwrap();
-    let flow_rel = settling["loopFlowRelativeChange"].as_f64().unwrap();
-    ida.stop_at(cap).unwrap();
-    let face = |id: &str| {
-        packet
-            .mechanics
-            .faces
-            .iter()
-            .position(|f| f.id == id)
-            .unwrap()
-    };
-    let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
-    let (mut yv, mut ypv) = (y.clone(), yp.clone());
-    let mut history: Vec<(f64, [f64; 2])> = Vec::new();
-    let mut t = 0.;
-    let settled_at = loop {
-        t += 1.;
-        ida.advance(t, &mut yv, &mut ypv)
-            .unwrap()
-            .reached()
-            .unwrap();
-        let net = &mut ida.system_mut().network;
-        net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-        let flows = loops.map(|f| net.chart(f, 0).unwrap().mass_flow_kg_s.value);
-        let omega: Vec<f64> = net
-            .rotor_index
-            .iter()
-            .map(|i| yv[*i] * net.scales()[*i] / net.rotor_inertia())
-            .collect();
-        let w0 = net.drive().reference_omega_rad_s;
-        history.push((t, flows));
-        let earlier = history.iter().rev().find(|h| h.0 <= t - window);
-        let rested = earlier.is_some_and(|e| {
-            omega.iter().all(|w| ((w - w0) / w0).abs() < rotor_rel)
-                && (0..2).all(|k| ((flows[k] - e.1[k]) / flows[k]).abs() < flow_rel)
-        });
-        if rested {
-            break Some(t);
-        }
-        if t >= cap {
-            break None;
-        }
-    };
-    let stats = ida.stats().unwrap();
-    let net = &mut ida.system_mut().network;
-    net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-    let flows: Vec<f64> = (0..net.face_count())
-        .map(|f| net.chart(f, 0).map_or(0., |c| c.volume_flow_m3_s.value))
-        .collect();
-    let momenta: Vec<f64> = net
-        .rotor_index
-        .iter()
-        .map(|i| yv[*i] * net.scales()[*i])
-        .collect();
-    let counts = json!({
-        "settled": settled_at.is_some(),
-        "steps": stats.steps, "residuals": stats.residuals, "jacobians": stats.jacobians,
-        "error_failures": stats.error_failures, "convergence_failures": stats.convergence_failures,
-    });
-    assert!(settled_at.is_some(), "S1 settling did not rest: {counts}");
-    (flows, momenta, counts)
-}
-
 /// The full composition at the hot reference before its consistent start
-/// (memo §3 (A)-(C)): S1-settled flows transferred by the flowing
-/// preparation, the SG secondary and rod owners, prepared owners and
-/// initialized surfaces.
+/// (memo §3 (A)-(C)), by the unit library's builder: S1-settled flows
+/// transferred by the flowing preparation, the SG secondary and rod owners,
+/// prepared owners and initialized surfaces; with the counts the smoke pins.
 struct Composed {
     joined: Joined<If97>,
     y: Vec<f64>,
@@ -317,100 +133,31 @@ struct Composed {
     counts: Value,
 }
 fn composed(bytes: &[u8], gates: &Value) -> Composed {
-    let mut network_packet: NetworkPacket =
-        serde_json::from_slice(bytes).expect("network packet");
-    let joined_packet: packet::Packet = serde_json::from_slice(bytes).expect("joined packet");
-    let raw: Value = serde_json::from_slice(bytes).expect("packet json");
-    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
-    // inventory before the network is compiled.
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
-    let carved =
-        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve");
-    let (flows, momenta, s1) = s1_settled_flows(&network_packet, gates);
-    let point = OperatingPoint::from(&network_packet.preparation.operating_point);
-    let (mut network, mut prepared, hydrostatic) =
-        prepare::prepare(&network_packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-    prepare::compose_flows(
-        &mut network,
-        &network_packet,
-        &mut prepared.y,
-        hydrostatic.port_pressure_pa,
-        &flows,
-        &momenta,
-        &SETTINGS,
-    )
-    .expect("flowing preparation");
-    let network_ids = prepared.differential.clone();
-    let section: SecondarySection =
-        serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let mut joined = Joined::new(
-        network,
-        &network_packet,
-        &joined_packet,
-        If97,
-        SecondaryPort::Owner(Box::new(
-            Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
-                .expect("SG secondary owner"),
-        )),
-        RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet, &carved, &If97, &[]).expect("rod owner"),
-        )),
-    )
-    .expect("joined operator");
-    let mut y = joined.prepared(&prepared.y).unwrap();
-    let ids = joined.differential(&network_ids);
-    let owners = joined
-        .prepare_owners(0., &mut y)
-        .expect("owner preparation");
-    let surfaces = joined
-        .initialize_surfaces(
-            0.,
-            &mut y,
-            SurfacePolicy {
-                maximum_residual_w: 1e-3,
-                maximum_correction_k: 1e-6,
-                maximum_iterations: 16,
-                maximum_backtracks: 12,
-            },
-        )
-        .expect("surfaces");
-    let classes = classes(gates);
-    let n_net = joined.offsets().nuclear;
-    let mut atol = joined
-        .network
-        .absolute_tolerances(&y[..n_net], classes)
-        .unwrap();
-    // G12: S1's scaled absolute floor for every new coordinate class.
-    atol.resize(y.len(), classes.stock_scaled);
-    // Lead decision DR13-ROD-A (HOOK OU-C P2 -> OU-B builder): stock
-    // IDACalcIC makes the algebraic coordinates consistent (the rod owner's
-    // mouth currents start at zero) before the declared exact start; G13's
-    // first step is its horizon.
-    let joined = leitbild_operating_water::joined::stock_initial_conditions(
-        joined,
-        0.,
-        &mut y,
-        &ids,
-        &atol,
-        classes.relative,
-        1e-4,
-    )
-    .expect("stock IDACalcIC");
+    let s1 = S1Settling::from_gates(gates).expect("ld01-s1-gates");
+    let network_packet = spine::packets(bytes).expect("packet").network;
+    let settled =
+        spine::s1_settled_flows(&network_packet, &s1, clock::process_cpu_s).expect("S1 settling");
+    let p = spine::prepare(bytes, &settled.flows, &settled.momenta, s1.classes, &[])
+        .expect("steps (B)-(C)");
     let counts = json!({
-        "s1_settling": s1,
-        "dimension": y.len(),
-        "algebraic": ids.iter().filter(|v| **v == 0.).count(),
-        "owner_transactions": owners.len(),
-        "surface_sets": surfaces.len(),
-        "surface_max_iterations": surfaces.iter().map(|s| s.iterations).max(),
+        "s1_settling": {
+            "settled": settled.settled_at_s.is_some(),
+            "steps": settled.steps, "residuals": settled.residuals, "jacobians": settled.jacobians,
+            "error_failures": settled.error_failures, "convergence_failures": settled.convergence_failures,
+        },
+        "dimension": p.y.len(),
+        "algebraic": p.ids.iter().filter(|v| **v == 0.).count(),
+        "owner_transactions": p.owners.len(),
+        "surface_sets": p.surfaces.len(),
+        "surface_max_iterations": p.surfaces.iter().map(|s| s.iterations).max(),
     });
     Composed {
-        joined,
-        y,
-        ids,
-        network_ids,
-        atol,
-        rtol: classes.relative,
+        joined: p.joined,
+        y: p.y,
+        ids: p.ids,
+        network_ids: p.network_ids,
+        atol: p.atol,
+        rtol: s1.classes.relative,
         counts,
     }
 }
@@ -581,8 +328,13 @@ fn smoke() {
         );
     }
     let gates = s1_gates();
-    let wiki_root = std::env::var("LD01_WIKI_ROOT").expect("LD01_WIKI_ROOT");
-    let wiki = wiki::provenance(Path::new(&wiki_root)).expect("wiki provenance");
+    let inputs = common::spine();
+    let wiki = provenance_with(
+        Path::new(&inputs.wiki_root),
+        inputs.wiki_commit.as_deref(),
+        inputs.wiki_repository.as_deref(),
+    )
+    .expect("wiki provenance");
 
     // Census against memo Table 1.1.
     let census = {
@@ -1376,7 +1128,7 @@ fn wiki_provenance_verifies_a_named_commit_against_the_tree() {
     git(&repository, &["commit", "-q", "-am", "second"]);
     let second = git(&repository, &["rev-parse", "HEAD"]);
     let repo = repository.to_string_lossy().to_string();
-    let verified = wiki::provenance_with(&archive, Some(&first[..7]), Some(&repo)).unwrap();
+    let verified = provenance_with(&archive, Some(&first[..7]), Some(&repo)).unwrap();
     assert_eq!(verified["commit"], json!(first));
     assert_eq!(
         verified["tree"],
@@ -1385,14 +1137,14 @@ fn wiki_provenance_verifies_a_named_commit_against_the_tree() {
             &["rev-parse", &format!("{first}^{{tree}}")]
         ))
     );
-    let refused = wiki::provenance_with(&archive, Some(&second), Some(&repo)).unwrap_err();
+    let refused = provenance_with(&archive, Some(&second), Some(&repo)).unwrap_err();
     assert!(refused.contains("has tree"), "{refused}");
-    assert!(wiki::provenance_with(&archive, Some(&first), None).is_err());
+    assert!(provenance_with(&archive, Some(&first), None).is_err());
     assert_eq!(
-        wiki::provenance_with(&archive, None, None).unwrap()["commit"],
+        provenance_with(&archive, None, None).unwrap()["commit"],
         Value::Null
     );
-    let head = wiki::provenance_with(&repository, None, None).unwrap();
+    let head = provenance_with(&repository, None, None).unwrap();
     assert_eq!(
         (head["commit"].clone(), head["basis"].clone()),
         (json!(second), json!("checkout HEAD, files match its tree"))

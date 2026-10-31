@@ -5,9 +5,8 @@
 //! - [`declaration`]: the pinned `ld01-s3-cases-c1c3` block read as data, the
 //!   pin, the TBD register and each case's refusals (open values, missing
 //!   model prerequisites);
-//! - [`timeline`]: a frame-driven run's events on the case clock (accepted
-//!   causes, divisions' trips and requests, the holding loss, rod seats, SG
-//!   and PZR relief, the STOP ramp end), from the driver's and the
+//! - the timeline (`leitbild_operating_water::unit::timeline`): a
+//!   frame-driven run's events on the case clock, from the driver's and the
 //!   protection's own logs;
 //! - [`observe`]: rule I on every accepted step and the gate observation
 //!   (identities, ledgers, credited outputs, fingerprint) through the
@@ -25,4 +24,3 @@ pub mod declaration;
 pub mod families;
 pub mod lines;
 pub mod observe;
-pub mod timeline;

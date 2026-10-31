@@ -181,7 +181,6 @@ pub struct Plan {
     rods: std::ops::Range<usize>,
     /// The PZR metal's energies (global), with a composed PZR owner (G6).
     pzr_metal: Vec<usize>,
-    pzr: bool,
     scales: Vec<f64>,
     row_scales: Vec<f64>,
     /// Network coordinates by kind (labels' categories).
@@ -218,7 +217,6 @@ impl Plan {
             network: o.nuclear,
             rods: o.rods..o.pzr,
             pzr_metal: Vec::new(),
-            pzr: joined.pzr().is_some(),
             scales: Vec::with_capacity(o.end),
             row_scales: Vec::with_capacity(o.end),
             net_mass: Vec::new(),
@@ -382,18 +380,16 @@ impl Plan {
             ]
             .map(String::from),
         );
-        if self.pzr {
-            names.extend(
-                [
-                    "pzr_heater_joule_j",
-                    "pzr_exterior_loss_j",
-                    "pzr_relief_j",
-                    "pzr_relief_attribution_kg",
-                    "pzr_relief_attribution_boron_kg_eq",
-                ]
-                .map(String::from),
-            );
-        }
+        names.extend(
+            [
+                "pzr_heater_joule_j",
+                "pzr_exterior_loss_j",
+                "pzr_relief_j",
+                "pzr_relief_attribution_kg",
+                "pzr_relief_attribution_boron_kg_eq",
+            ]
+            .map(String::from),
+        );
         names
     }
 
@@ -477,12 +473,9 @@ impl Plan {
         // G6: the PZR metal's Joule power and exterior loss as the captured
         // evaluation recorded them, and the relief's outflow from the cell's
         // own evaluation (zero with the relief seated or no relief port).
-        let pzr = match joined.pzr() {
-            Some(b) => Some(b.captured().ok_or_else(|| {
-                fatal("the PZR metal's account terms were not captured (read the account through Joined::account)")
-            })?),
-            None => None,
-        };
+        let p = joined.pzr().captured().ok_or_else(|| {
+            fatal("the PZR metal's account terms were not captured (read the account through Joined::account)")
+        })?;
         let relief = joined
             .network
             .pzr_evaluation()
@@ -544,13 +537,11 @@ impl Plan {
         for c in secondary.crossings.iter().chain(&rods.crossings) {
             e.boundary(&c.port, c.energy_w);
         }
-        if let Some(p) = pzr {
-            let (metal, metal_abs) = self.rates(rows, yp, &self.pzr_metal);
-            e.store("PZR metal energies", metal, metal_abs);
-            e.boundary("PZR heater Joule power", p.joule_w);
-            e.boundary("PZR exterior loss", -p.exterior_w);
-            e.boundary("PZR relief outflow", -relief[1]);
-        }
+        let (metal, metal_abs) = self.rates(rows, yp, &self.pzr_metal);
+        e.store("PZR metal energies", metal, metal_abs);
+        e.boundary("PZR heater Joule power", p.joule_w);
+        e.boundary("PZR exterior loss", -p.exterior_w);
+        e.boundary("PZR relief outflow", -relief[1]);
         account.unit_energy = e;
 
         // Primary mass and boron: the network's receipts over every cell.
@@ -564,9 +555,7 @@ impl Plan {
             let (r, r_abs) = self.rates(rows, yp, &self.bore_mass);
             m.store("rod bores' water", r, r_abs);
         }
-        if pzr.is_some() {
-            m.boundary("PZR relief outflow", -relief[0]);
-        }
+        m.boundary("PZR relief outflow", -relief[0]);
         account.primary_mass = m;
         let mut bo = Identity::new("primary_boron");
         bo.store(
@@ -578,9 +567,7 @@ impl Plan {
             let (r, r_abs) = self.rates(rows, yp, &self.bore_boron);
             bo.store("rod bores' boron", r, r_abs);
         }
-        if pzr.is_some() {
-            bo.boundary("PZR relief outflow", -relief[2]);
-        }
+        bo.boundary("PZR relief outflow", -relief[2]);
         account.primary_boron = bo;
 
         // Each SG, and the metal heat handed to it.
@@ -652,9 +639,7 @@ impl Plan {
             }
         }
         q.extend([event, b("motor_work_w")?, -b("bearing_loss_w")?, remainder]);
-        if let Some(p) = pzr {
-            q.extend([p.joule_w, -p.exterior_w, -relief[1], -relief[0], -relief[2]]);
-        }
+        q.extend([p.joule_w, -p.exterior_w, -relief[1], -relief[0], -relief[2]]);
         account.boundary = q;
         Ok(account)
     }
@@ -862,17 +847,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
     ) -> Result<Account, Failure> {
         let rods = self.rods_mut().ok_or_else(|| fatal("no rod owner"))?;
         rods.capture_account(true);
-        if let Some(pzr) = self.pzr_mut() {
-            pzr.capture_account(true);
-        }
+        self.pzr_mut().capture_account(true);
         let evaluated = self.evaluate(t, y, yp, None, 0., None);
         let account = evaluated.and_then(|()| plan.read(self, y, yp));
         if let Some(rods) = self.rods_mut() {
             rods.capture_account(false);
         }
-        if let Some(pzr) = self.pzr_mut() {
-            pzr.capture_account(false);
-        }
+        self.pzr_mut().capture_account(false);
         account
     }
 }

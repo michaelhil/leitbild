@@ -37,14 +37,14 @@
 //! - **CPU.** [`super::meter::Attribution`] per call (see its module).
 use super::{
     compare::Credited,
-    compose::{Composed, START_BOUND, error_weights},
+    compose::Composed,
     conservation::Conservation,
     gates::Declaration,
     meter::{Attribution, Metered, Tally, jacobian_by_kind},
     outputs::{Reader, admit, d3_point},
     run::{CpuBuckets, RunRecord, RunSpec},
 };
-use crate::{
+use crate::common::{
     counts::Counts,
     cpu::{process_cpu_s, thread_cpu_s},
 };
@@ -60,6 +60,7 @@ use leitbild_operating_water::{
         discrete_restart,
     },
     joined_ledger::{self, Ledgered, Segment},
+    unit::profile::{START_BOUND, error_weights},
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -515,6 +516,11 @@ pub fn advance(
     )
     .expect("stock IDAS");
     ida.set_max_order(spec.max_order).unwrap();
+    // N1's rule on the fresh handle, before the first step (the t0 start
+    // above runs on stock weights at the settled state).
+    spec.weights
+        .apply(&mut ida)
+        .unwrap_or_else(|e| panic!("error weights: {e}"));
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
     ida.set_nonlinear_convergence_coefficient(spec.newton_coefficient)

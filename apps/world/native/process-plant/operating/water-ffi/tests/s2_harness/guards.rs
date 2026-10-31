@@ -28,7 +28,7 @@
 //!   against the cap rule's computable floor: at least 2 × the run's budget
 //!   over its span, and for R1 at least `r1CapFloor_cpu_s`. The total guard
 //!   is the cap plus 2 × observed samples × the per-sample observation cost.
-use crate::gates::{Block, wiki_model};
+use super::gates::{Block, wiki_model};
 use serde_json::{Value, json};
 
 /// Canonical JSON: object keys sorted, no whitespace.

@@ -2,8 +2,8 @@
 //! target: the declared clock ids, monotone readings that advance with work,
 //! process CPU covering thread CPU, the scheduling request and the load
 //! average. Runs on macOS and Linux without packets or SUNDIALS.
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::cpu;
 
 /// Spins until this thread has used at least `seconds` of CPU.
 fn busy(seconds: f64) -> f64 {

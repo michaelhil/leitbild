@@ -28,9 +28,9 @@ use std::{cell::RefCell, rc::Rc};
 
 // Thread CPU (CLOCK_THREAD_CPUTIME_ID) and the performance-core request
 // (macOS QOS_CLASS_USER_INTERACTIVE), which change no computation.
-#[path = "common/cpu.rs"]
-mod clock;
-use clock::{prefer_performance_core, thread_cpu_s as cpu};
+mod common;
+use common::cpu;
+use cpu::{prefer_performance_core, thread_cpu_s as cpu};
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Tally {

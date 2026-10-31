@@ -8,8 +8,7 @@
 //! at the state's time does the rest. A state with appended or discrete
 //! parts keeps them unchanged; only `y`, `yp` and their bits are replaced.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
 
 use leitbild_operating_plant::{
     network::{Properties, packet::Packet},
@@ -39,7 +38,8 @@ fn convert_a_saved_state_to_the_p2_layout() {
     let to = std::env::var("LD01_P2_TO_STATE").expect("LD01_P2_TO_STATE");
     assert!(!std::path::Path::new(&to).exists(), "never overwritten");
     let state: Value = serde_json::from_slice(&std::fs::read(&from).unwrap()).unwrap();
-    let started = spine::started_full_composition();
+    let started = leitbild_operating_water::unit::spine::started_full_composition(&common::spine())
+        .expect("the S2 composition");
     let joined = &started.joined;
     let o = joined.offsets();
     let n = joined.dimension();
@@ -49,7 +49,7 @@ fn convert_a_saved_state_to_the_p2_layout() {
     let (old_rods, new_rods) = (3 * clusters, o.pzr - o.rods);
     assert_eq!(old_y.len() + new_rods - old_rods, n, "layouts");
     // The rod block of the same carved packet, for its conversion helper.
-    let (_, bytes) = spine::packet_bytes();
+    let (_, bytes) = common::packet_bytes();
     let mut packet: Packet = serde_json::from_slice(&bytes).unwrap();
     let raw: Value = serde_json::from_slice(&bytes).unwrap();
     let section: RodSection = serde_json::from_value(raw["rods"].clone()).unwrap();

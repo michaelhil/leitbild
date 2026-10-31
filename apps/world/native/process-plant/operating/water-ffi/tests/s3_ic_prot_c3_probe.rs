@@ -21,8 +21,12 @@
 //! plus `LD01_S3_STATE`, `LD01_IC_SECTION`, `LD01_S3_LOSS_AFTER_S`,
 //! `LD01_S3_SPAN_S` (after the loss) and `LD01_S3_IC_RECEIPT` (new path).
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_s3_composition},
+};
 
 use leitbild_operating_plant::{
     ic::{acquisition::Quality, packet::Section},
@@ -35,9 +39,6 @@ use leitbild_operating_water::{
     joined::{Integrated, Restart},
 };
 use serde_json::{Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
-};
 
 const MAX_ORDER: usize = 2;
 const WINDOW_MAX_STEP_S: f64 = 0.02;
@@ -109,7 +110,7 @@ impl<S> Client<S> for Recording {
 #[test]
 #[ignore = "NOT-EVIDENCE S3 IC-PROT C3-like probe: requires the joined packet, the S3 state, the ic section, the wiki, IF97 and stock IDA/KLU"]
 fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
     let receipt_path = std::env::var("LD01_S3_IC_RECEIPT").expect("LD01_S3_IC_RECEIPT");
@@ -123,7 +124,7 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
     let section: Section = serde_json::from_slice(&std::fs::read(&section_path).expect("section"))
         .expect("ic section");
-    let (packet_path, _) = spine::packet_bytes();
+    let (packet_path, _) = common::packet_bytes();
     assert_eq!(
         state["packet"].as_str(),
         Some(packet_path.as_str()),
@@ -142,8 +143,8 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
             ..
         },
         derived,
-    ) = started_s3_composition();
-    let preparation_cpu_s = z1::cpu_s() - started;
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
+    let preparation_cpu_s = process_cpu_s() - started;
     let vector = |k: &str| -> Vec<f64> {
         state[k]
             .as_array()
@@ -155,9 +156,7 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
     let (mut y, mut yp) = (vector("y"), vector("yp"));
     let t0 = state["t_s"].as_f64().unwrap();
     assert_eq!(y.len(), joined.dimension());
-    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
-        .as_u64()
-        .unwrap() as usize;
+    let lost = common::s1_gates()["supplyLoss"]["rotor"].as_u64().unwrap() as usize;
     let inner = ProtectionClient::new(&section, &joined, &y, &reference).expect("protection");
     let observed = inner.observed();
     let at_start = inner.values(&y).expect("values at the start");
@@ -194,7 +193,7 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(WINDOW_MAX_STEP_S).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::Jump, z1::cpu_s, t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, process_cpu_s, t0).unwrap();
     let t_loss = t0 + loss_after;
     driver
         .command(t_loss, Command::SupplyLoss { rotor: lost })
@@ -206,7 +205,7 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
         restart,
         derived: &derived,
     };
-    let run_started = z1::cpu_s();
+    let run_started = process_cpu_s();
     let until = t_loss + span;
     let outcome = {
         let mut clients: Vec<&mut dyn Client<Integrated<leitbild_operating_water::If97>>> =
@@ -215,7 +214,7 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
             .start(&mut clients, t0, &y, &yp)
             .and_then(|()| driver.run(&mut ida, t0, until, &mut y, &mut yp, &mut clients, &setup))
     };
-    let run_cpu_s = z1::cpu_s() - run_started;
+    let run_cpu_s = process_cpu_s() - run_started;
     driver.close_segment(&ida, until).unwrap();
     let failure = outcome.as_ref().err().cloned();
     let p = &protection.inner.protection;
@@ -261,7 +260,7 @@ fn s3_ic_prot_c3_rcp_supply_loss_through_acquired_protection() {
         "kind": "S3 IC-PROT C3-like probe: one RCP supply loss through the whole acquired protection slice",
         "status": "NOT-EVIDENCE probe; C3 is not run as a case and no line is judged",
         "failure": failure,
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "packet": {"path": packet_path, "sha256": sha256(&packet_path)},
         "start_state": {"path": state_path, "sha256": sha256(&state_path), "t_s": t0,
             "composition_here": "started_s3_composition (S2-D24r/S3-D16 classes) with the state's operator y, y'; ELEC slice, L1/phase modes and the PZR AUTO client not composed"},
@@ -330,7 +329,7 @@ fn the_lt_tap_pressures_from_coordinates_equal_the_evaluated_column() {
             mut joined, y, yp, ..
         },
         _,
-    ) = started_s3_composition();
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
     joined
         .evaluate(0., &y, &yp, None, 0., None)
         .expect("evaluation at the start");

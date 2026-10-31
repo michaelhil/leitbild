@@ -4,7 +4,7 @@
 //! and quadratures included, and appends one root function g = t - next
 //! after the wrapped system's own roots; [`Clock`] arms its times.
 //!
-//! Include it with `#[path = "common/observe.rs"] mod observe;`.
+//! Declared once in `tests/common/mod.rs` (`mod common;` in a test crate).
 #![allow(dead_code)] // Each test crate uses its own subset.
 use leitbild_operating_water::ida::{Failure, KluOrdering, System};
 use std::{cell::Cell as Slot, rc::Rc};

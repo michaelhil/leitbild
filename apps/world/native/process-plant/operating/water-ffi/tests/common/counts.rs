@@ -1,7 +1,7 @@
 //! Stock IDA counters of a run and their sums over restarts, shared by the
 //! S1 and S2 gate harnesses (moved unchanged from s1_hydraulics.rs).
 //!
-//! Include it with `#[path = "common/counts.rs"] mod counts;`.
+//! Declared once in `tests/common/mod.rs` (`mod common;` in a test crate).
 #![allow(dead_code)] // Each test crate uses its own subset.
 use leitbild_operating_water::ida::Stats;
 use serde_json::{Value, json};

@@ -49,10 +49,8 @@ use std::time::Instant;
 
 // CLOCK_PROCESS_CPUTIME_ID as the S1 harness measures (`cpu_s`), and
 // CLOCK_THREAD_CPUTIME_ID reported beside it.
-#[path = "../common/cpu.rs"]
-pub mod clock;
 #[allow(unused_imports)] // Each test crate uses its own subset.
-pub use clock::{process_cpu_s as cpu_s, thread_cpu_s};
+pub use crate::common::cpu::{process_cpu_s as cpu_s, thread_cpu_s};
 
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)

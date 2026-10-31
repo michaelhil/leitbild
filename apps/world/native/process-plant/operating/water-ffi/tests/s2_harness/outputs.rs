@@ -343,7 +343,7 @@ pub fn extension(raw: &Value) -> Result<(Extension, Value), String> {
     Ok((
         serde_json::from_slice(&bytes).map_err(|e| format!("{file}: {e}"))?,
         json!({"source": "compiled section file (pre-D3 packet)", "file": file,
-            "sha256": crate::provenance::sha256_file(&file)?}),
+            "sha256": crate::common::provenance::sha256_file(&file)?}),
     ))
 }
 

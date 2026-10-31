@@ -10,7 +10,7 @@
 //! - [`judge`]: lines O1–O5, N1–N2, M1–M2, windows and rules read from the
 //!   block; a part the run cannot show is reported, never passed;
 //! - [`directions`]: rule B's signed checks on the frame-grid samples.
-use super::timeline::{Timeline, relief_sg};
+use leitbild_operating_water::unit::timeline::{Timeline, relief_sg};
 use serde_json::{Value, json};
 
 /// The block's fence.

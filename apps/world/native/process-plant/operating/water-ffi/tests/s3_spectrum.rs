@@ -66,14 +66,12 @@
 //! names the state's sha256 (the bytes of `LD01_S3_SPECTRUM_STATE`), as rule
 //! K reads it.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "common/pzr_control.rs"]
-mod pzr_control;
-#[path = "common/s3_unit.rs"]
-mod s3_unit;
-#[path = "joined_spine.rs"]
-mod spine;
-#[allow(dead_code)] // S2's Z6 (its own tests compile here too, ignored).
-#[path = "s2_spectrum.rs"]
+mod common;
+use leitbild_operating_water::unit::{
+    profile::Weights,
+    s3,
+    spine::{Started, credited_outputs, started_full_composition},
+};
 mod z6;
 
 use leitbild_operating_plant::{
@@ -132,7 +130,7 @@ struct Operator {
 }
 
 fn operator_at(state: &Value) -> Result<Operator, String> {
-    let (packet_path, _) = spine::packet_bytes();
+    let (packet_path, _) = common::packet_bytes();
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
             "the state is of another packet: {}",
@@ -144,13 +142,13 @@ fn operator_at(state: &Value) -> Result<Operator, String> {
     }
     let (y, yp) = (vector(&state["y"]), vector(&state["yp"]));
     let t = state["t_s"].as_f64().ok_or("the state has no t_s")?;
-    let spine::Started {
+    let Started {
         mut joined,
         network_ids,
         mut atol,
         rtol,
         ..
-    } = spine::started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     if y.len() != joined.dimension() {
         return Err(format!(
             "{} coordinates against {}",
@@ -173,7 +171,7 @@ fn operator_at(state: &Value) -> Result<Operator, String> {
         .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
     let structure = JoinedJacobian::compile_for(&mut joined, t, &y, None)
         .map_err(|e| format!("structure: {e:?}"))?;
-    let credited = spine::credited_outputs(&joined);
+    let credited = credited_outputs(&joined, &common::spine()).expect("the credited outputs");
     let derived = derived_tolerances(
         &mut joined,
         &structure,
@@ -300,11 +298,11 @@ fn unit_pencil(
 #[allow(clippy::too_many_lines)] // One receipt: composition, events, four pencils per state.
 fn s3_z6_at_a_saved_s3_state() {
     let wall = Instant::now();
-    let cpu0 = z6::cpu_s();
+    let cpu0 = leitbild_operating_water::unit::clock::process_cpu_s();
     let state_path = env("LD01_S3_SPECTRUM_STATE");
     let bytes = std::fs::read(&state_path).expect("state file");
     let state: Value = serde_json::from_slice(&bytes).expect("state json");
-    let state_sha256 = z6::sha256(&bytes);
+    let state_sha256 = leitbild_operating_plant::digest::sha256(&bytes);
     let kind = env("LD01_S3_SPECTRUM_KIND");
     let from = state["from"].as_str().unwrap_or("");
     // The case harness's post-event states (S3-D52): C2, C3, C5 at the
@@ -326,7 +324,7 @@ fn s3_z6_at_a_saved_s3_state() {
         ),
     };
     let elec_path = env("ELEC_PACKET");
-    let gates = z6::s1_gates();
+    let gates = common::s1_gates();
     let gate = z6::Gate {
         fast_mode_hz: gates["spectrum"]["fastModeHz"].as_f64().unwrap(),
         light_damping: gates["spectrum"]["lightDamping"].as_f64().unwrap(),
@@ -343,7 +341,7 @@ fn s3_z6_at_a_saved_s3_state() {
         derived,
     } = operator_at(&state).unwrap_or_else(|e| panic!("{e}"));
     let elec = electrical_at(&state, &elec_path).unwrap_or_else(|e| panic!("{e}"));
-    let composed_cpu = z6::cpu_s() - cpu0;
+    let composed_cpu = leitbild_operating_water::unit::clock::process_cpu_s() - cpu0;
     let o = joined.offsets();
     let n = joined.dimension();
     let ns = n + slice::N;
@@ -566,7 +564,7 @@ fn s3_z6_at_a_saved_s3_state() {
         "events": events,
         "pencils": pencils,
         "verdict": if go { "GO: every gated Z6 predicate holds at this state" } else { "NO-GO: a gated Z6 predicate failed; see pencils[].predicates" },
-        "cost": {"composition_cpu_s": composed_cpu, "total_cpu_s": z6::cpu_s() - cpu0, "wall_s": wall.elapsed().as_secs_f64(), "load_average_end": z6::load_average()},
+        "cost": {"composition_cpu_s": composed_cpu, "total_cpu_s": leitbild_operating_water::unit::clock::process_cpu_s() - cpu0, "wall_s": wall.elapsed().as_secs_f64(), "load_average_end": common::cpu::load_average()},
     });
     let path = env("LD01_S3_SPECTRUM_RECEIPT");
     assert!(
@@ -601,12 +599,13 @@ fn s3_z6_at_a_saved_s3_state() {
 #[ignore = "zero-time receipt (S3-D53): requires the S3 packet and sections, a saved S3 start state, the wiki, maintained IF97 and stock IDA/KLU"]
 fn s3_unit_coupling_blocks() {
     use leitbild_operating_water::{ida::System, joined::JoinedSystem};
-    let cpu0 = z6::cpu_s();
+    let cpu0 = leitbild_operating_water::unit::clock::process_cpu_s();
     let state_path = env("LD01_S3_SPECTRUM_STATE");
     let bytes = std::fs::read(&state_path).expect("state file");
     let state: Value = serde_json::from_slice(&bytes).expect("state json");
-    let inputs = s3_unit::Inputs::from_env();
-    let mut u = s3_unit::compose(&inputs, &state).unwrap_or_else(|e| panic!("{e}"));
+    let inputs = common::inputs();
+    // Z6 at a saved S3 state on the stock error weights (S2's Z6 rule).
+    let mut u = s3::compose(&inputs, &state, Weights::Stock).unwrap_or_else(|e| panic!("{e}"));
     let (n, t) = (u.n, u.t0);
     let (y, yp) = (u.y.clone(), u.yp.clone());
     let total = y.len();
@@ -667,11 +666,11 @@ fn s3_unit_coupling_blocks() {
     };
     let receipt = json!({
         "kind": "s3-unit-coupling-blocks", "decision": "lead S3-D53 (3)",
-        "state": {"file": state_path, "sha256": z6::sha256(&bytes), "t_s": t},
+        "state": {"file": state_path, "sha256": leitbild_operating_plant::digest::sha256(&bytes), "t_s": t},
         "method": "forward differences of the S3 unit's own residual (s3_unit::compose at the state: consistent start, controller commissioned) in solver units; h = sqrt(eps) max(|y_j|, atol_j/rtol)",
         "plant_to_elec": block(&blocks[0]), "elec_to_plant": block(&blocks[1]), "slice_own_block": block(&blocks[2]),
         "block_triangular": blocks[0].4 == 0 || blocks[1].4 == 0,
-        "failures": failures, "cpu_s": z6::cpu_s() - cpu0,
+        "failures": failures, "cpu_s": leitbild_operating_water::unit::clock::process_cpu_s() - cpu0,
     });
     let path = env("LD01_S3_COUPLING_RECEIPT");
     assert!(

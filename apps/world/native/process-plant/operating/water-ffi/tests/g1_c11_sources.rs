@@ -43,8 +43,8 @@ use leitbild_operating_water::{Branch, directional, point_ph, point_pu, saturati
 use serde_json::{Value, json};
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::cpu;
 
 /// Standard gravity of the network and of the passive owners' checkers.
 const G: f64 = 9.80665;

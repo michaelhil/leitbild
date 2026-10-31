@@ -15,6 +15,7 @@
 //! cell until S3's contacts land): the vapor columns are structure only,
 //! and their values are zero in the assembled matrices.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::joined::{

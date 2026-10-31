@@ -22,16 +22,14 @@ use leitbild_operating_plant::network::Properties;
 use leitbild_operating_water::If97;
 use serde_json::{Value, json};
 
-#[path = "joined_spine.rs"]
-#[allow(dead_code)]
-mod spine;
+mod common;
 
 /// AP1000 T4.3-3 item 4: the N-1 credit less 7 %.
 const DCD_CREDIT: f64 = 0.93;
 /// P1's reported water-term factors (`ld01-hot-standby-kinetics`).
 const FACTORS: [f64; 3] = [1., 1.53, 2.24];
 
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "ida", target_os = "macos"))]
 #[test]
 #[ignore = "diag: requires the joined packet, the wiki, IF97, IDA/KLU and Accelerate; writes LD01_OU_G_RECEIPT"]
 fn rod_position_and_shutdown_margins() {
@@ -42,9 +40,10 @@ fn rod_position_and_shutdown_margins() {
     };
     let path = std::env::var("LD01_OU_G_RECEIPT").expect("LD01_OU_G_RECEIPT");
     assert!(!std::path::Path::new(&path).exists(), "never overwritten");
-    let started = spine::started_full_composition();
+    let started = leitbild_operating_water::unit::spine::started_full_composition(&common::spine())
+        .expect("the S2 composition");
     let joined = &started.joined;
-    let (packet_path, bytes) = spine::packet_bytes();
+    let (packet_path, bytes) = common::packet_bytes();
     let raw: Value = serde_json::from_slice(&bytes).unwrap();
     let base: Extension = serde_json::from_value(raw["post_trip_domain"].clone()).unwrap();
     let nuclear = joined.nuclear();
@@ -225,7 +224,7 @@ fn rod_position_and_shutdown_margins() {
 /// packet's own `reference_rod_overlap` and `held(x)` at listed poses (no
 /// search: the pose holding 2.00 % is chosen outside the crate and confirmed
 /// by a recompile). Zero-time.
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "ida", target_os = "macos"))]
 #[test]
 #[ignore = "diag: requires the joined packet, the wiki, IF97, IDA/KLU and Accelerate; writes LD01_OU_G_RECEIPT"]
 fn held_worth_by_pose() {
@@ -236,9 +235,10 @@ fn held_worth_by_pose() {
     };
     let path = std::env::var("LD01_OU_G_RECEIPT").expect("LD01_OU_G_RECEIPT");
     assert!(!std::path::Path::new(&path).exists(), "never overwritten");
-    let started = spine::started_full_composition();
+    let started = leitbild_operating_water::unit::spine::started_full_composition(&common::spine())
+        .expect("the S2 composition");
     let joined = &started.joined;
-    let (packet_path, bytes) = spine::packet_bytes();
+    let (packet_path, bytes) = common::packet_bytes();
     let raw: Value = serde_json::from_slice(&bytes).unwrap();
     let base: Extension = serde_json::from_value(raw["post_trip_domain"].clone()).unwrap();
     let nuclear = joined.nuclear();

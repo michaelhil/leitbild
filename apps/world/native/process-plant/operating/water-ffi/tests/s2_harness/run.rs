@@ -12,8 +12,9 @@
 //!   fill `identities` and `ledger`;
 //! - CPU attribution fills [`CpuBuckets`].
 use super::receipt::{RUN_SCHEMA, missing};
-use crate::counts::Counts;
+use crate::common::counts::Counts;
 use leitbild_operating_plant::joined::block::Command;
+use leitbild_operating_water::unit::profile::Weights;
 use serde_json::{Value, json};
 
 /// One declared run, from the gates. Every field is set by the caller from
@@ -56,6 +57,8 @@ pub struct RunSpec {
     /// (S2-D23). Only a smoke may report it and continue, labelled
     /// diagnostic (`LD01_S2_SMOKE_DOMAIN_EXIT=report`).
     pub domain_exit_stops: bool,
+    /// The handle's error-weight rule (N1; S2 closed on stock).
+    pub weights: Weights,
 }
 
 impl RunSpec {
@@ -70,7 +73,7 @@ impl RunSpec {
             "commands": self.commands.iter().map(|(t, c)| json!({"t_s": t, "command": c})).collect::<Vec<_>>(),
             "solver_cap_s": self.solver_cap_s, "total_guard_s": self.total_guard_s,
             "report_only_step_cap": self.report_only_step_cap, "caps_report_only": self.caps_report_only, "domain_exit_stops": self.domain_exit_stops,
-            "rods_observed": self.rods_observed})
+            "rods_observed": self.rods_observed, "weights": self.weights})
     }
 }
 

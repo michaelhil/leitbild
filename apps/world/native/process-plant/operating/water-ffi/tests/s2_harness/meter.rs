@@ -28,7 +28,7 @@
 //! The Jacobian is split by kind from the joined counters' wall shares (the
 //! local coupler's tallies and the remaining assembly), scaled to the
 //! measured Jacobian CPU.
-use crate::{cpu::thread_cpu_s, observe::Observed};
+use crate::common::{cpu::thread_cpu_s, observe::Observed};
 use leitbild_operating_plant::joined::operator::CouplerCounters;
 use leitbild_operating_water::{
     ida::{Failure, KluOrdering, System},

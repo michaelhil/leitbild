@@ -34,8 +34,8 @@
 use leitbild_operating_water::{Branch, WaterPoint, directional, point, point_pu};
 use serde_json::{Value, json};
 
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::cpu;
 
 fn get(v: &Value, path: &str) -> f64 {
     v.pointer(path)

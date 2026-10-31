@@ -60,18 +60,6 @@
 //! | 13 REPORT | `f64 zero` (the case's t = 0) | JSON (counts, instants, protection, timeline, rule I) |
 //! | 7 PING, 9 CLOSE, 10 STATUS | as the other hosts | |
 #![allow(dead_code)]
-#[allow(unsafe_code)]
-#[path = "../../../water-ffi/tests/common/cpu.rs"]
-mod clock;
-#[path = "../../../water-ffi/tests/common/pzr_control.rs"]
-mod pzr_control;
-#[path = "../../../water-ffi/tests/common/s3_unit.rs"]
-mod s3_unit;
-#[allow(unsafe_code, unused_imports)]
-#[path = "../../../water-ffi/tests/joined_spine.rs"]
-mod spine;
-#[path = "../../../water-ffi/tests/s3_harness/timeline.rs"]
-mod timeline;
 
 use leitbild_ld01_host_spike::{KERNEL_SOURCE_SHA256, cpu as time};
 use leitbild_operating_plant::{
@@ -83,14 +71,16 @@ use leitbild_operating_plant::{
     rotor::Support,
 };
 use leitbild_operating_water::{
-    electrical::FieldClient,
-    frame::{Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, Driver, Frame, Setup},
-    ic::ProtectionClient,
-    ida::Ida,
-    joined::{DerivedTolerances, JoinedSystem, Restart},
+    frame::{Action, COUNTER_NAMES, Change, Class, Diagnostic, MatrixRebuild},
+    joined::JoinedSystem,
+    unit::{
+        inputs::Inputs,
+        plant::{self, Boundary, Plant},
+        profile::Weights,
+        s3::{self, Unit},
+        timeline,
+    },
 };
-use pzr_control::PzrClient;
-use s3_unit::Unit;
 use serde_json::{Value, json};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::time::Instant;
@@ -177,22 +167,9 @@ impl RuleI {
 }
 
 struct Host {
-    ida: Ida<Unit>,
-    y: Vec<f64>,
-    yp: Vec<f64>,
-    n: usize,
-    network_ids: Vec<f64>,
-    atol: Vec<f64>,
-    rtol: f64,
-    derived: DerivedTolerances,
-    restart: Restart,
-    driver: Driver<Unit>,
-    protection: ProtectionClient,
-    control: PzrClient,
-    /// ICFIELD: the ACT.B field controller.
-    field: FieldClient,
-    frame: Frame,
-    t0: f64,
+    /// The frame-driven S3 unit (the unit library's): IC-PROT + PZR control
+    /// + the ACT.B field controller (ICFIELD) on the frame driver.
+    plant: Plant,
     /// The unit's time: the driver stands exactly here between exchanges.
     t: f64,
     v_nominal: f64,
@@ -257,7 +234,7 @@ impl Host {
         if event_window.is_some() && max_step_s.is_some() {
             return Err("an event window's cap and a reference's max_step_s exclude each other".into());
         }
-        let inputs = s3_unit::Inputs::from_env();
+        let inputs = Inputs::from_env()?;
         let section = inputs.ic.clone();
         let e = read_json(&inputs.elec_path)?;
         // D2: the packet must carry the generator page's carrier selection.
@@ -272,7 +249,14 @@ impl Host {
             .as_f64()
             .ok_or("electrical packet: boundary.lineVoltage_V")?;
         let state = read_json(state_path)?;
-        let u = s3_unit::compose(&inputs, &state)?;
+        // N1's error-weight rule, explicit in LOAD (`weights`: stock |
+        // grouped; absent: stock) and in the reply.
+        let weights = match &config["weights"] {
+            Value::Null => Weights::Stock,
+            Value::String(w) => Weights::parse(w)?,
+            other => return Err(format!("LOAD's weights is stock or grouped, not {other}")),
+        };
+        let u = s3::compose(&inputs, &state, weights)?;
         if u.receipt["from_saved_s3_state"] != json!(true) || u.receipt["spray_path"] != json!(true) {
             return Err(format!(
                 "C5 starts from a saved S3 state with the spray path: {}",
@@ -280,28 +264,20 @@ impl Host {
             ));
         }
         let packet_json: Value =
-            serde_json::from_slice(&spine::packet_bytes().1).map_err(|x| x.to_string())?;
+            serde_json::from_slice(&inputs.spine.packet).map_err(|x| x.to_string())?;
         let extension: Extension = serde_json::from_value(packet_json["post_trip_domain"].clone())
             .map_err(|x| format!("the packet's post_trip_domain section (D3 (a)): {x}"))?;
-        let s3_unit::S3Unit {
-            mut ida,
-            t0,
-            y,
-            yp,
-            n,
-            network_ids,
-            mut atol,
-            mut rtol,
-            mut derived,
-            restart,
-            mut control,
-            frame,
-            receipt: composition,
-            reference,
-        } = u;
-        let joined = &ida.system().integrated().joined;
-        let mut protection = ProtectionClient::new(&section, joined, &y[..n], &reference)
-            .and_then(|p| p.with_system_dimension(y.len()))?;
+        let mut plant = Plant::new(
+            u,
+            &section,
+            plant::Config {
+                field: Some(&field_parameters),
+                diagnostic: Diagnostic::None,
+                matrix_rebuild: MatrixRebuild::Packet,
+                clock: time::thread_s,
+            },
+        )?;
+        let joined = &plant.ida.system().integrated().joined;
         let scales = joined.scales();
         let labels: Vec<String> = joined
             .layouts()
@@ -322,60 +298,45 @@ impl Host {
             .collect();
         if let Some(h) = max_step_s {
             // Before the first step; stock keeps it across every IDAReInit.
-            ida.set_max_step(h)?;
+            plant.ida.set_max_step(h)?;
         }
-        let mut field = FieldClient::new(&field_parameters, frame, ida.system())?;
-        let mut driver = Driver::new(frame, Diagnostic::None, time::thread_s, t0)?;
-        driver.start_quadratures(&mut ida, vec![0.; slice::QUADRATURES.len()])?;
-        {
-            let mut clients: Vec<&mut dyn Client<Unit>> =
-                vec![&mut protection, &mut control, &mut field];
-            driver.start(&mut clients, t0, &y, &yp)?;
-        }
+        let t0 = plant.t0;
+        plant
+            .driver
+            .start_quadratures(&mut plant.ida, vec![0.; slice::QUADRATURES.len()])?;
+        plant.start(&mut [])?;
         if tolerance_factor != 1. {
-            for a in &mut atol {
+            for a in &mut plant.atol {
                 *a *= tolerance_factor;
             }
-            rtol *= tolerance_factor;
-            derived = derived.scaled(tolerance_factor);
+            plant.rtol *= tolerance_factor;
+            plant.derived = plant.derived.scaled(tolerance_factor);
             // The scaled tolerances take effect through one restart at t0.
-            driver.decide(vec![Change {
+            plant.driver.decide(vec![Change {
                 due_s: t0,
                 class: Class::R,
                 kind: format!("reference tolerances x{tolerance_factor} (every absolute tolerance, derived classes included)"),
                 action: Action::Held(Box::new(|_: &mut Unit| Ok(()))),
             }])?;
         }
-        let s = &ida.system().slice;
+        let (y, n, rtol, frame) = (&plant.y, plant.n, plant.rtol, plant.frame);
+        let s = &plant.ida.system().slice;
         let reply = json!({"t": t0, "tolerance_factor": tolerance_factor, "rtol": rtol, "max_step_s": max_step_s, "dimension": y.len(), "operator": n,
+            "weights": weights, "matrix_rebuild": "packet (MR-1)",
             "kernel_source_sha256": KERNEL_SOURCE_SHA256,
             "boundary": {"v_line_V": s.inputs.v_line, "frequency_hz": s.inputs.f_grid_hz,
                 "carrier_rad_s": s.inputs.carrier_rad_s, "carrier_accel_rad_s2": s.inputs.carrier_accel_rad_s2, "joined": s.inputs.joined},
             "carrier_law": format!("{carrier_law:?}"),
             "field_supply_loss_trip": {"implemented": "the generator page's ACT.B field controller (ICFIELD): GCB OPEN + acquired turbine trip at its decision frame",
                 "parameters": e["fieldProtection"]},
-            "export_w": s.export_w(&y[n..]), "composition": composition,
+            "export_w": s.export_w(&y[n..]), "composition": plant.composition,
             "ic_section": inputs.ic_path, "implemented_causes": section.functions.iter().map(|f| f.id.clone()).collect::<Vec<_>>(),
             "quadratures": slice::QUADRATURES, "frame_s": frame.period_s(),
             "integration": "frame driver (IC-PROT): stock IDA_ONE_STEP, IC-PROT + PZR control (S) + field controller (ICFIELD) clients, Diagnostic::None, quadratures carried",
             "cpu_s": time::thread_s() - c0, "wall_s": w0.elapsed().as_secs_f64(),
             "max_rss_bytes": time::max_rss_bytes(), "pid": std::process::id()});
         let host = Self {
-            ida,
-            y,
-            yp,
-            n,
-            network_ids,
-            atol,
-            rtol,
-            derived,
-            restart,
-            driver,
-            protection,
-            control,
-            field,
-            frame,
-            t0,
+            plant,
             t: t0,
             v_nominal,
             carrier_law,
@@ -395,7 +356,10 @@ impl Host {
         Ok((host, reply))
     }
 
-    /// The Grid's boundary for `[t0, t1)`, decided at `t0` (the driver's time).
+    /// The Grid's boundary for `[t0, t1)`, decided at `t0` (the driver's
+    /// time) through the unit library (`plant::boundary`); after the first
+    /// offsite loss, the restart now and the plant's event-window cap on the
+    /// segment it opened (stock keeps it across later IDAReInit).
     fn boundary(
         &mut self,
         t1: f64,
@@ -406,110 +370,41 @@ impl Host {
         frequency_rate_hz_s: f64,
     ) -> Result<&'static str, String> {
         let t0 = self.t;
-        let lost = self.ida.system().offsite_loss_s.is_some();
-        match (energized, lost) {
-            (false, false) => {
-                // S3-D10: the offsite connection is lost at t0 (class R).
-                let change = Change {
-                    due_s: t0,
-                    class: Class::R,
-                    kind: "Grid: bus dead (S3-D10 offsite loss)".into(),
-                    action: Action::Held(Box::new(move |u: &mut Unit| {
-                        u.offsite_loss_s = Some(t0);
-                        Ok(())
-                    })),
-                };
-                self.driver.decide(vec![change])?;
-                // The field converter on AC.B loses its supply with the
-                // sources; the field controller acquires it (ICFIELD).
-                self.offsite_lost_at = Some(t0);
-                if let Some((cap, duration)) = self.event_window {
-                    // The restart now, then the window's cap on the segment
-                    // it opened (stock keeps it across later IDAReInit).
-                    self.apply_due()?;
-                    self.ida.set_max_step(cap)?;
-                    self.window_end = Some(t0 + duration);
-                    return Ok("R: offsite loss; event window cap in force");
-                }
-                Ok("R: offsite loss")
+        let lost = self.plant.ida.system().offsite_loss_s.is_some();
+        let boundary = if energized {
+            Boundary::Energized {
+                voltage_v: self.v_nominal * voltage_pu,
+                frequency_hz,
+                phase_error_rad,
+                frequency_rate_hz_s,
             }
-            (true, true) => Err(
-                "restoration of a lost offsite connection is not in the S3 slice (S3-D10): refused"
-                    .into(),
-            ),
-            (false, true) => Ok("dead (unchanged)"),
-            (true, false) => {
-                let v_line = self.v_nominal * voltage_pu;
-                if !(v_line.is_finite() && v_line > 0.) {
-                    return Err(format!("boundary voltage {voltage_pu} pu"));
-                }
-                // D2: the carrier rate at t0; SW-1: its held slope over [t0, t1).
-                let carrier = slice::carrier_rate(frequency_hz, phase_error_rad, t1 - t0)?;
-                if !frequency_rate_hz_s.is_finite() {
-                    return Err(format!("boundary frequency rate {frequency_rate_hz_s} Hz/s"));
-                }
-                let accel = 2. * std::f64::consts::PI * frequency_rate_hz_s;
-                let i = self.ida.system().slice.inputs;
-                let steady = accel == 0. && i.carrier_accel_rad_s2 == 0.;
-                if i.v_line.to_bits() == v_line.to_bits()
-                    && i.f_grid_hz.to_bits() == frequency_hz.to_bits()
-                    && i.carrier_rad_s.to_bits() == carrier.to_bits()
-                    && steady
-                {
-                    return Ok("none (agrees with the held prediction)");
-                }
-                let change = Change {
-                    due_s: t0,
-                    class: Class::S,
-                    kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
-                    action: Action::Held(Box::new(move |u: &mut Unit| {
-                        u.slice.inputs.v_line = v_line;
-                        u.slice.inputs.f_grid_hz = frequency_hz;
-                        u.slice.inputs.carrier_rad_s = carrier;
-                        u.slice.inputs.carrier_accel_rad_s2 = accel;
-                        u.slice.inputs.carrier_from_s = t0;
-                        Ok(())
-                    })),
-                };
-                self.driver.decide(vec![change])?;
-                Ok("S: held boundary")
+        } else {
+            Boundary::Dead
+        };
+        let decided = self.plant.boundary(t0, t1, boundary)?;
+        if !energized && !lost {
+            // The field converter on AC.B loses its supply with the
+            // sources; the field controller acquires it (ICFIELD).
+            self.offsite_lost_at = Some(t0);
+            if let Some((cap, duration)) = self.event_window {
+                self.apply_due()?;
+                self.plant.ida.set_max_step(cap)?;
+                self.window_end = Some(t0 + duration);
+                return Ok("R: offsite loss; event window cap in force");
             }
         }
+        Ok(decided)
     }
 
     /// Everything due at the unit's time, now (the offsite loss's restart).
     fn apply_due(&mut self) -> Result<(), String> {
-        let Self {
-            ida,
-            y,
-            yp,
-            network_ids,
-            atol,
-            rtol,
-            derived,
-            restart,
-            driver,
-            protection,
-            control,
-            field,
-            ..
-        } = self;
-        let setup = Setup {
-            network_ids: network_ids.as_slice(),
-            absolute: atol.as_slice(),
-            relative: *rtol,
-            restart: *restart,
-            derived: &*derived,
-        };
-        let mut clients: Vec<&mut dyn Client<Unit>> =
-            vec![&mut *protection, &mut *control, &mut *field];
-        driver.apply_due(ida, y, yp, &mut clients, &setup)
+        self.plant.apply_due(&mut [])
     }
 
     /// Advance the driver to `t1`, frame instant by frame instant, judging
     /// rule I at each (the S3 cases' rule).
     fn advance(&mut self, t1: f64) -> Result<(), String> {
-        let period = self.frame.period_s();
+        let period = self.plant.frame.period_s();
         let mut bounds: Vec<f64> = Vec::new();
         let first = (self.t / period).floor() as i64 + 1;
         let last = (t1 / period).ceil() as i64;
@@ -526,43 +421,21 @@ impl Host {
         bounds.push(t1);
         let window_end = self.window_end;
         let Self {
-            ida,
-            y,
-            yp,
-            n,
-            network_ids,
-            atol,
-            rtol,
-            derived,
-            restart,
-            driver,
-            protection,
-            control,
-            field,
+            plant,
             extension,
             rule_i,
             t,
             ..
         } = self;
-        let setup = Setup {
-            network_ids: network_ids.as_slice(),
-            absolute: atol.as_slice(),
-            relative: *rtol,
-            restart: *restart,
-            derived: &*derived,
-        };
         for b in bounds {
-            {
-                let mut clients: Vec<&mut dyn Client<Unit>> =
-                    vec![&mut *protection, &mut *control, &mut *field];
-                driver.run(ida, *t, b, y, yp, &mut clients, &setup)?;
-            }
+            plant.run(*t, b, &mut [], None)?;
             *t = b;
-            let joined = &mut ida.system_mut().integrated_mut().joined;
-            rule_i.judge(joined, &*extension, b, &y[..*n], &yp[..*n])?;
+            let n = plant.n;
+            let joined = &mut plant.ida.system_mut().integrated_mut().joined;
+            rule_i.judge(joined, &*extension, b, &plant.y[..n], &plant.yp[..n])?;
             if window_end == Some(b) {
                 // The window's end lifts the cap on the same history.
-                ida.remove_max_step()?;
+                plant.ida.remove_max_step()?;
             }
         }
         if self.window_end.is_some_and(|w| w <= self.t) {
@@ -574,9 +447,9 @@ impl Host {
     fn observe(&mut self) -> Result<Vec<f64>, String> {
         let c0 = time::thread_s();
         let i0 = time::instructions_cycles().map_or(0, |x| x.0);
-        let (t, n) = (self.t, self.n);
-        let (y, yp) = (&self.y, &self.yp);
-        let joined = &mut self.ida.system_mut().integrated_mut().joined;
+        let (t, n) = (self.t, self.plant.n);
+        let (y, yp) = (&self.plant.y, &self.plant.yp);
+        let joined = &mut self.plant.ida.system_mut().integrated_mut().joined;
         joined
             .evaluate(t, &y[..n], &yp[..n], None, 0., None)
             .map_err(|e| format!("{e:?}"))?;
@@ -620,10 +493,10 @@ impl Host {
         }
         let rule_cpu0 = self.rule_i.cpu_s;
         let obs_cpu0 = self.observe_cpu_s;
-        let q0 = self.driver.quadratures_at(&self.ida, t0)?;
+        let q0 = self.plant.driver.quadratures_at(&self.plant.ida, t0)?;
         let (r0, s0) = (
-            self.driver.counts.total(Class::R),
-            self.driver.counts.total(Class::S),
+            self.plant.driver.counts.total(Class::R),
+            self.plant.driver.counts.total(Class::S),
         );
         let decided = self.boundary(
             t1,
@@ -635,10 +508,10 @@ impl Host {
         )?;
         self.advance(t1)?;
         self.exchanges[usize::from(window)] += 1;
-        let q1 = self.driver.quadratures_at(&self.ida, t1)?;
-        let n = self.n;
-        let u = self.ida.system();
-        let export_w = u.slice.export_w(&self.y[n..]);
+        let q1 = self.plant.driver.quadratures_at(&self.plant.ida, t1)?;
+        let n = self.plant.n;
+        let u = self.plant.ida.system();
+        let export_w = u.slice.export_w(&self.plant.y[n..]);
         let rcp = {
             let net = &u.integrated().joined.network;
             (0..net.rotor_count())
@@ -655,15 +528,15 @@ impl Host {
             .map(|(t, s)| json!({"t": t, "event": s}))
             .collect();
         self.elec_seen = u.log.len();
-        let instants: Vec<Value> = self.driver.log[self.log_seen..].to_vec();
-        self.log_seen = self.driver.log.len();
+        let instants: Vec<Value> = self.plant.driver.log[self.log_seen..].to_vec();
+        self.log_seen = self.plant.driver.log.len();
         let joined_flag = u.slice.inputs.joined;
         let lost = u.offsite_loss_s.is_some();
-        let (id, iq) = (self.y[n + 3], self.y[n + 4]);
+        let (id, iq) = (self.plant.y[n + 3], self.plant.y[n + 4]);
         let ieq = (id * id + iq * iq).sqrt() / 3f64.sqrt();
         let (r1, s1) = (
-            self.driver.counts.total(Class::R),
-            self.driver.counts.total(Class::S),
+            self.plant.driver.counts.total(Class::R),
+            self.plant.driver.counts.total(Class::S),
         );
         for v in [
             t0,
@@ -673,8 +546,8 @@ impl Host {
             q1[RESERVE_DRAW] - q0[RESERVE_DRAW],
             q1[EXPORT],
             export_w,
-            self.y[n + slice::OMEGA],
-            self.y[n + slice::THETA],
+            self.plant.y[n + slice::OMEGA],
+            self.plant.y[n + slice::THETA],
             ieq,
             u.slice.inputs.carrier_rad_s,
             f64::from(u8::from(joined_flag)),
@@ -685,9 +558,9 @@ impl Host {
         ] {
             out.extend_from_slice(&v.to_le_bytes());
         }
-        let stats = self.ida.stats()?;
+        let stats = self.plant.ida.stats()?;
         let totals = {
-            let t = self.driver.totals;
+            let t = self.plant.driver.totals;
             [
                 t[0] + stats.steps,
                 t[2] + stats.jacobians,
@@ -702,7 +575,7 @@ impl Host {
             (s1 - s0) as i64,
             r1 as i64,
             s1 as i64,
-            self.driver.counts.total(Class::O) as i64,
+            self.plant.driver.counts.total(Class::O) as i64,
             i64::from(self.rule_i.exit.is_some()),
             i64::from(stats.last_order),
             i64::from(stats.current_order),
@@ -745,7 +618,7 @@ impl Host {
     }
 
     fn report(&mut self, zero: f64) -> Result<Value, String> {
-        let p = &self.protection.protection;
+        let p = &self.plant.protection.protection;
         let divisions: Vec<Value> = p
             .divisions
             .iter()
@@ -754,17 +627,17 @@ impl Host {
                 "trip": dv.trip.as_ref().map(|c| json!({"function": c.function, "t_s": c.at_s})),
                 "requests": dv.requests, "monitors": dv.monitors}))
             .collect();
-        let electrical = self.ida.system().log.clone();
+        let electrical = self.plant.ida.system().log.clone();
         let tl = timeline::Timeline::from_logs(
-            &self.driver.log,
+            &self.plant.driver.log,
             &divisions,
             p.holding.lost_at,
             zero,
             self.t,
         )?
         .with_electrical(&electrical, zero);
-        let stats = self.ida.stats()?;
-        let mut totals = self.driver.totals;
+        let stats = self.plant.ida.stats()?;
+        let mut totals = self.plant.driver.totals;
         for (a, b) in totals.iter_mut().zip([
             stats.steps,
             stats.residuals,
@@ -783,13 +656,13 @@ impl Host {
             .map(|(k, v)| (k.to_string(), json!(v)))
             .collect();
         Ok(json!({
-            "t_s": self.t, "t0_s": self.t0, "zero_s": zero, "offsite_lost_s": self.offsite_lost_at,
+            "t_s": self.t, "t0_s": self.plant.t0, "zero_s": zero, "offsite_lost_s": self.offsite_lost_at,
             "event_window": self.event_window.map(|(c, d)| json!({"cap_s": c, "duration_s": d})),
-            "routing_records": self.ida.system().routing.records.iter().map(|r| json!([r.time, r.what])).collect::<Vec<_>>(),
+            "routing_records": self.plant.ida.system().routing.records.iter().map(|r| json!([r.time, r.what])).collect::<Vec<_>>(),
             "exchanges": {"quiet": self.exchanges[0], "window": self.exchanges[1]},
-            "counts_by_class": self.driver.counts.json(), "stock_totals": totals,
-            "cpu": {"solver_s": self.driver.cpu.solver_s, "observation_s": self.driver.cpu.observation_s,
-                "restart_s": self.driver.cpu.restart_s, "held_s": self.driver.cpu.held_s,
+            "counts_by_class": self.plant.driver.counts.json(), "stock_totals": totals,
+            "cpu": {"solver_s": self.plant.driver.cpu.solver_s, "observation_s": self.plant.driver.cpu.observation_s,
+                "restart_s": self.plant.driver.cpu.restart_s, "held_s": self.plant.driver.cpu.held_s,
                 "rule_i_s": self.rule_i.cpu_s, "host_observe_s": self.observe_cpu_s, "thread_s": time::thread_s(),
                 "instructions_cycles": time::instructions_cycles(), "rule_i_instructions": self.rule_i.instructions,
                 "host_observe_instructions": self.observe_instructions},
@@ -805,12 +678,12 @@ impl Host {
                 "requests": tl.requests.iter().map(|(d, r)| json!([d, r])).collect::<Vec<_>>(),
                 "electrical": tl.electrical.as_ref().map(|l| l.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>())},
             "divisions": divisions, "protection_log": p.log,
-            "field_controller": {"initiated": self.field.protection.initiated.as_ref().map(|i| json!({"cause": i.cause, "frame": i.frame, "t_s": i.at_s})),
-                "log": self.field.protection.log},
-            "pzr_control": {"changes": self.control.schedule.len().saturating_sub(1), "final_request_w": self.control.in_force_w},
-            "derived_tolerances": self.derived,
-            "segments": self.driver.segments.len(),
-            "instants": self.driver.log,
+            "field_controller": {"initiated": self.plant.field.as_ref().ok_or("no field controller")?.protection.initiated.as_ref().map(|i| json!({"cause": i.cause, "frame": i.frame, "t_s": i.at_s})),
+                "log": self.plant.field.as_ref().ok_or("no field controller")?.protection.log},
+            "pzr_control": {"changes": self.plant.control.schedule.len().saturating_sub(1), "final_request_w": self.plant.control.in_force_w},
+            "derived_tolerances": self.plant.derived,
+            "segments": self.plant.driver.segments.len(),
+            "instants": self.plant.driver.log,
         }))
     }
 }

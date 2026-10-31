@@ -7,6 +7,7 @@
 //! the heats, the colored and the block Jacobian. A measurement and identity
 //! check, not a production path and NOT S2 evidence.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::{joined::operator::Joined, thermal::Scalar};

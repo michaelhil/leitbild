@@ -8,6 +8,7 @@
 //! A measurement only, NOT adopted and NOT evidence; the cap-cycle probes
 //! are DONOR's.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::{recombine::Policy, *};
 use serde_json::json;

@@ -1,3 +1,4 @@
+//! spec: world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md#s3-declaration-a3-pilot
 //! The S3 composition (lead decision S3-D28 (3)) as one builder, the same
 //! steps in the same order as KERN's settle-state probe (`s3_settle.rs`):
 //! - the joined operator of the S3 packet (spray line composed closed,
@@ -20,25 +21,15 @@
 //! heater demand in force is the PZR block's discrete state; the settle
 //! state says so).
 //!
-//! Environment: `LD01_IC_SECTION`, `LD01_PZR_CONTROL_SECTION`,
-//! `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET` and the joined spine's.
-#![allow(dead_code)] // Each test crate uses its own subset.
-use super::pzr_control::{self, PzrClient};
-use super::spine::{
-    self, DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, credited_outputs,
-    started_full_composition,
+//! Inputs: [`super::inputs::Inputs`] (the spine, the I&C and PZR control
+//! sections, ELEC's packet).
+use super::{
+    inputs::Inputs,
+    profile::{MAX_ORDER, RESTART, Weights},
+    pzr_control::{self, PzrClient},
+    spine::{Started, credited_outputs, started_full_composition},
 };
-use leitbild_operating_plant::{
-    control::pzr_pressure::{Law, Section as ControlSection},
-    electrical::{
-        breaker::{self, Breaker, Contact},
-        bus::{self, Distribution, SourceState},
-        slice::{self, Inputs as SliceInputs, Slice},
-    },
-    ic::packet::Section as IcSection,
-    joined::{blocks::JoinedJacobian, presence::VaporPresence},
-};
-use leitbild_operating_water::{
+use crate::{
     If97,
     electrical::{Configuration, CreditedBudget, Electrified, N},
     frame::{Class, Frame},
@@ -47,6 +38,15 @@ use leitbild_operating_water::{
         DerivedTolerances, Discrete, Integrated, JoinedSystem, Restart, derived_tolerances,
         discrete_restart, root_directions,
     },
+};
+use leitbild_operating_plant::{
+    control::pzr_pressure::{Law, Section as ControlSection},
+    electrical::{
+        breaker::{self, Breaker, Contact},
+        bus::{self, Distribution, SourceState},
+        slice::{self, Inputs as SliceInputs, Slice},
+    },
+    joined::{blocks::JoinedJacobian, presence::VaporPresence},
 };
 use serde_json::{Value, json};
 
@@ -67,55 +67,34 @@ impl Scaling {
         absolute: 1.,
     };
 }
-/// S2's configuration (BDF order at most 2).
-pub const MAX_ORDER: usize = 2;
 /// The RCPs in the electrical slice's consumer order (KERN's settle).
 pub const ROTOR_CONSUMERS: [&str; 4] = ["LD01.P.A1", "LD01.P.A2", "LD01.P.B1", "LD01.P.B2"];
 
-fn read_json(path: &str) -> Value {
-    serde_json::from_slice(&std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}")))
-        .unwrap_or_else(|e| panic!("{path}: {e}"))
+fn read_json(path: &str) -> Result<Value, String> {
+    serde_json::from_slice(&std::fs::read(path).map_err(|e| format!("{path}: {e}"))?)
+        .map_err(|e| format!("{path}: {e}"))
 }
-fn env(name: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| panic!("{name}"))
-}
-fn f(v: &Value, path: &[&str]) -> f64 {
+fn f(v: &Value, path: &[&str]) -> Result<f64, String> {
     let mut x = v;
     for k in path {
         x = &x[*k];
     }
     x.as_f64()
-        .unwrap_or_else(|| panic!("{} is not a number", path.join(".")))
+        .ok_or_else(|| format!("the electrical packet's {} is not a number", path.join(".")))
 }
-fn vector(v: &Value) -> Vec<f64> {
+fn vector(v: &Value) -> Result<Vec<f64>, String> {
     v.as_array()
-        .expect("a number array")
+        .ok_or("a state vector is not a number array")?
         .iter()
-        .map(|x| x.as_f64().expect("a number"))
+        .map(|x| {
+            x.as_f64()
+                .ok_or_else(|| "a state entry is not a number".to_string())
+        })
         .collect()
 }
-
-/// The sections the composition reads.
-pub struct Inputs {
-    pub ic_path: String,
-    pub ic: IcSection,
-    pub control_path: String,
-    pub control_wiki: String,
-    pub elec_path: String,
-}
-
-impl Inputs {
-    pub fn from_env() -> Self {
-        let ic_path = env("LD01_IC_SECTION");
-        let ic: IcSection = serde_json::from_value(read_json(&ic_path)).expect("ic section");
-        Self {
-            ic,
-            ic_path,
-            control_path: env("LD01_PZR_CONTROL_SECTION"),
-            control_wiki: env("LD01_PZR_CONTROL_WIKI"),
-            elec_path: env("ELEC_PACKET"),
-        }
-    }
+fn section<T: serde::de::DeserializeOwned>(e: &Value, key: &str) -> Result<T, String> {
+    serde_json::from_value(e[key].clone())
+        .map_err(|x| format!("the electrical packet's {key}: {x}"))
 }
 
 /// A composed S3 unit at its consistent start.
@@ -139,21 +118,20 @@ pub struct S3Unit<J: JoinedSystem = Integrated<If97>> {
     pub reference: Vec<f64>,
 }
 
+/// The pieces of the electrical slice at the packet's prepared state.
+type SlicePieces = (Slice, Breaker, Distribution, Configuration, [f64; N]);
+
 /// The electrical slice at the packet's prepared state, connected.
-fn electrical(
-    e: &Value,
-    rotors: usize,
-    t0: f64,
-) -> (Slice, Breaker, Distribution, Configuration, [f64; N]) {
-    let v_line = f(e, &["boundary", "lineVoltage_V"]);
-    let f0 = f(e, &["boundary", "frequency_Hz"]);
+fn electrical(e: &Value, rotors: usize, t0: f64) -> Result<SlicePieces, String> {
+    let v_line = f(e, &["boundary", "lineVoltage_V"])?;
+    let f0 = f(e, &["boundary", "frequency_Hz"])?;
     let live = SourceState {
         energized: true,
         voltage_pu: 1.,
         frequency_hz: f0,
     };
-    let params: slice::Parameters = serde_json::from_value(e["slice"].clone()).unwrap();
-    let room = f(e, &["prepared", "room_K"]);
+    let params: slice::Parameters = section(e, "slice")?;
+    let room = f(e, &["prepared", "room_K"])?;
     let slice = Slice::new(
         params,
         SliceInputs {
@@ -164,47 +142,53 @@ fn electrical(
             carrier_accel_rad_s2: 0.,
             carrier_from_s: t0,
             admitted_kg_s: 0.,
-            field_v: f(e, &["prepared", "fieldDemand_V"]),
+            field_v: f(e, &["prepared", "fieldDemand_V"])?,
             room_k: room,
             unit_draw_w: 0.,
             reserve_draw_w: 0.,
         },
     )
-    .unwrap();
+    .map_err(|x| format!("the electrical slice: {x:?}"))?;
     let routing = Distribution::prepared(
-        serde_json::from_value::<bus::Parameters>(e["distribution"].clone()).unwrap(),
+        section::<bus::Parameters>(e, "distribution")?,
         [live, live],
         [true, true],
         t0,
     )
-    .unwrap();
+    .map_err(|x| format!("the AC routing: {x:?}"))?;
     let breaker = Breaker::new(
-        serde_json::from_value::<breaker::Parameters>(e["breaker"].clone()).unwrap(),
+        section::<breaker::Parameters>(e, "breaker")?,
         Contact::Closed,
     )
-    .unwrap();
+    .map_err(|x| format!("the generator breaker: {x:?}"))?;
     let configuration = Configuration {
         rotor_consumers: (0..rotors)
             .map(|r| ROTOR_CONSUMERS[r].to_string())
             .collect(),
         feed_pumps: vec!["LD01.FW.P1".into(), "LD01.FW.P2".into()],
-        field_bus: e["fieldConverterBus"].as_str().unwrap().into(),
-        field_demand_v: f(e, &["prepared", "fieldDemand_V"]),
-        fixture_demands_w: serde_json::from_value(e["fixtureConsumerDemand_W"].clone()).unwrap(),
+        field_bus: e["fieldConverterBus"]
+            .as_str()
+            .ok_or("the electrical packet's fieldConverterBus")?
+            .into(),
+        field_demand_v: f(e, &["prepared", "fieldDemand_V"])?,
+        fixture_demands_w: section(e, "fixtureConsumerDemand_W")?,
     };
     let mut tail = [0.; N];
-    let flux: Vec<f64> = serde_json::from_value(e["prepared"]["initialFlux"].clone()).unwrap();
+    let flux: Vec<f64> = section(&e["prepared"], "initialFlux")?;
+    if flux.len() != 3 {
+        return Err(format!("{} initial fluxes, not 3", flux.len()));
+    }
     tail[..3].copy_from_slice(&flux);
-    tail[slice::OMEGA] = f(e, &["prepared", "speed_rad_s"]);
-    tail[slice::THETA] = f(e, &["prepared", "angle_rad"]);
+    tail[slice::OMEGA] = f(e, &["prepared", "speed_rad_s"])?;
+    tail[slice::THETA] = f(e, &["prepared", "angle_rad"])?;
     tail[slice::BODY] = room;
-    (slice, breaker, routing, configuration, tail)
+    Ok((slice, breaker, routing, configuration, tail))
 }
 
 /// The S3 composition at `state` (`{t_s, packet, y, yp}` of the packet,
 /// with `appended` and `discrete_state` when it is a saved S3 state).
-pub fn compose(inputs: &Inputs, state: &Value) -> Result<S3Unit, String> {
-    compose_with(inputs, state, Scaling::NONE, Ok)
+pub fn compose(inputs: &Inputs, state: &Value, weights: Weights) -> Result<S3Unit, String> {
+    compose_with(inputs, state, Scaling::NONE, weights, Ok)
 }
 
 /// [`compose`] with every tolerance scaled by `scaling` (a reference run)
@@ -215,16 +199,17 @@ pub fn compose_with<J: JoinedSystem>(
     inputs: &Inputs,
     state: &Value,
     scaling: Scaling,
+    weights: Weights,
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
-    let (packet_path, _) = spine::packet_bytes();
+    let packet_path = &inputs.spine.packet_path;
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
             "the start state is of another packet: {}",
             state["packet"]
         ));
     }
-    let (y, yp) = (vector(&state["y"]), vector(&state["yp"]));
+    let (y, yp) = (vector(&state["y"])?, vector(&state["yp"])?);
     let t0 = state["t_s"].as_f64().ok_or("the start state has no t_s")?;
     let saved = !state["discrete_state"].is_null();
     let frame = Frame::new(inputs.ic.frame_s)?;
@@ -240,7 +225,7 @@ pub fn compose_with<J: JoinedSystem>(
         rtol,
         y: reference,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&inputs.spine)?;
     if y.len() != joined.dimension() {
         return Err(format!(
             "{} coordinates against {}",
@@ -257,7 +242,7 @@ pub fn compose_with<J: JoinedSystem>(
         .map_err(|e| format!("feed gate: {e:?}"))?;
     let structure = JoinedJacobian::compile_for(&mut joined, t0, &y, None)
         .map_err(|e| format!("structure: {e:?}"))?;
-    let credited = credited_outputs(&joined);
+    let credited = credited_outputs(&joined, &inputs.spine)?;
     let derived = derived_tolerances(
         &mut joined,
         &structure,
@@ -273,12 +258,12 @@ pub fn compose_with<J: JoinedSystem>(
         .declare_credited(credited)
         .map_err(|e| format!("credited: {e:?}"))?;
     let control_section: ControlSection =
-        serde_json::from_value(read_json(&inputs.control_path)).map_err(|e| e.to_string())?;
+        serde_json::from_value(read_json(&inputs.control_path)?).map_err(|e| e.to_string())?;
     let law = Law::new(&control_section).map_err(|e| format!("{e:?}"))?;
     if law.frame_s() != inputs.ic.frame_s {
         return Err("the control frame is not the I&C frame".into());
     }
-    let channel = pzr_control::channel_block(&inputs.control_wiki, &law);
+    let channel = pzr_control::channel_block(&inputs.control_wiki, &law)?;
     // From the S2 state (KERN's settle): commissioned, then L1 and the
     // phase modes armed. From a saved S3 state: the operator's discrete
     // state restored (it declares L1 from its locks and sets the phase
@@ -289,11 +274,11 @@ pub fn compose_with<J: JoinedSystem>(
             .restore_discrete_state(&state["discrete_state"]["operator"])
             .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
         let (c, p, s) =
-            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
+            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)?;
         (c, p, s, None)
     } else {
         let (c, p, s) =
-            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp);
+            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)?;
         let l1 = joined
             .activate_unilateral(t0, &y)
             .map_err(|e| format!("L1: {e:?}"))?;
@@ -310,9 +295,9 @@ pub fn compose_with<J: JoinedSystem>(
     let integrated = Integrated::following_presence(joined, t0, &y, &presence)
         .map_err(|e| format!("integrable: {e:?}"))?;
     let integrated = wrap(integrated)?;
-    let e = read_json(&inputs.elec_path);
+    let e = read_json(&inputs.elec_path)?;
     let rotors = integrated.integrated().joined.network.rotor_count();
-    let (slice, breaker, routing, configuration, mut tail) = electrical(&e, rotors, t0);
+    let (slice, breaker, routing, configuration, mut tail) = electrical(&e, rotors, t0)?;
     let mut unit = Electrified::new(integrated, slice, breaker, routing, configuration)
         .map_err(|e| format!("the electrical slice: {e:?}"))?;
     if saved {
@@ -323,17 +308,17 @@ pub fn compose_with<J: JoinedSystem>(
     let tail_ids = unit
         .appended_start(t0, &mut tail, &mut tail_rates)
         .map_err(|e| format!("the slice's prepared start: {e:?}"))?;
-    let v_line = f(&e, &["boundary", "lineVoltage_V"]);
-    let f0 = f(&e, &["boundary", "frequency_Hz"]);
+    let v_line = f(&e, &["boundary", "lineVoltage_V"])?;
+    let f0 = f(&e, &["boundary", "frequency_Hz"])?;
     let s_flux = v_line / (2. * std::f64::consts::PI * f0);
-    let s_cur = f(&e, &["boundary", "base_VA"]) / v_line;
+    let s_cur = f(&e, &["boundary", "base_VA"])? / v_line;
     let mut slice_atol = vec![
         1e-8 * s_flux,
         1e-8 * s_flux,
         1e-8 * tail[2].abs(),
         1e-8 * s_cur,
         1e-8 * s_cur,
-        1e-8 * f(&e, &["prepared", "fieldCurrent_A"]),
+        1e-8 * f(&e, &["prepared", "fieldCurrent_A"])?,
         1e-8 * tail[slice::OMEGA],
         1e-8,
         1e-8 * tail[slice::BODY],
@@ -350,8 +335,8 @@ pub fn compose_with<J: JoinedSystem>(
     // A saved S3 state carries the slice's own coordinates.
     let (tail, tail_rates) = if saved {
         let (a, b) = (
-            vector(&state["appended"]["y"]),
-            vector(&state["appended"]["yp"]),
+            vector(&state["appended"]["y"])?,
+            vector(&state["appended"]["yp"])?,
         );
         if a.len() != N || b.len() != N {
             return Err(format!(
@@ -380,15 +365,7 @@ pub fn compose_with<J: JoinedSystem>(
         r.applied_scaled *= scaling.absolute;
         r.applied *= scaling.absolute;
     }
-    let restart = Restart {
-        newton_coefficient: NEWTON_COEFFICIENT,
-        delta_cj_lsetup: DELTA_CJ_LSETUP,
-        first_step_s: FIRST_STEP_S,
-        start_bound: 1e-12,
-        start_passes: 2,
-        transaction_passes: 12,
-        bound_placement: 1e-12,
-    };
+    let restart: Restart = RESTART;
     let mut ida = Ida::new(
         unit,
         Initial {
@@ -402,6 +379,7 @@ pub fn compose_with<J: JoinedSystem>(
     )
     .map_err(|e| format!("stock IDA: {e:?}"))?;
     ida.set_max_order(MAX_ORDER).map_err(|e| format!("{e:?}"))?;
+    weights.apply(&mut ida)?;
     ida.constrain_nonnegative(&nonnegative)
         .map_err(|e| format!("{e:?}"))?;
     restart.configure(&mut ida).map_err(|e| format!("{e:?}"))?;
@@ -422,6 +400,7 @@ pub fn compose_with<J: JoinedSystem>(
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
+        "weights": weights, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,

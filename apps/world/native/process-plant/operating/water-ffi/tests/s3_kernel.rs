@@ -9,8 +9,15 @@
 //! The tests share one binary with `joined_spine.rs`'s ignored probes: run
 //! them by name.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{
+        Started, credited_outputs, started_full_composition, started_s3_composition,
+        started_s3_phase_composition,
+    },
+};
 
 use leitbild_operating_plant::{
     joined::{
@@ -29,10 +36,6 @@ use leitbild_operating_water::{
     },
 };
 use serde_json::Value;
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, credited_outputs,
-    started_full_composition, started_s3_phase_composition,
-};
 
 /// L1 on the joined spine: activation adds one root slot per phase path
 /// after the S2 owners' roots (whose values and directions are unchanged),
@@ -53,7 +56,7 @@ fn l1_joins_the_spine_with_one_root_slot_per_phase_path() {
         structure,
         mut analyses,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let n = y.len();
     let s2_roots = joined.root_count();
     let s2_directions = joined.root_directions().unwrap();
@@ -226,7 +229,7 @@ fn a_presence_change_switches_the_block_structure_on_one_handle() {
         yp,
         structure,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let n = y.len();
     let liquid = VaporPresence::liquid(&joined.network);
     let cells = pattern_cells(&joined);
@@ -307,9 +310,9 @@ fn the_derived_guide_current_class_is_s2_d24r() {
         rtol,
         structure,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let before = atol.clone();
-    let credited = credited_outputs(&joined);
+    let credited = credited_outputs(&joined, &common::spine()).expect("the credited outputs");
     assert_eq!(credited.len(), 1);
     assert_eq!(
         credited[0].budget, 50.,
@@ -386,9 +389,9 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
         mut atol,
         rtol,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let n = y.len();
-    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let packet: Value = serde_json::from_slice(&common::packet_bytes().1).unwrap();
     let neck = packet["mechanics"]["regions"]
         .as_array()
         .unwrap()
@@ -502,7 +505,7 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
     // the contract's PT1 sample-noise budget (labelled test-only; the S3
     // declaration owns the real mapping).
     let nn = joined.offsets().nuclear;
-    let contract = credited_outputs(&joined);
+    let contract = credited_outputs(&joined, &common::spine()).expect("the credited outputs");
     let undeclared = joined
         .network
         .equilibrium_credited_tolerances(&y[..nn], &contract, rtol, &mut atol.clone()[..nn])
@@ -672,7 +675,10 @@ fn an_equilibrium_cell_assembles_by_blocks_and_integrates_on_the_joined_spine() 
 #[test]
 #[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn the_s3_phase_composition_starts_and_advances_with_l1_and_the_modes() {
-    let s2_roots = started_full_composition().joined.root_count();
+    let s2_roots = started_full_composition(&common::spine())
+        .expect("the S2 composition")
+        .joined
+        .root_count();
     let (
         Started {
             mut joined,
@@ -684,7 +690,7 @@ fn the_s3_phase_composition_starts_and_advances_with_l1_and_the_modes() {
             ..
         },
         derived,
-    ) = started_s3_phase_composition();
+    ) = started_s3_phase_composition(&common::spine()).expect("the S3 phase composition");
     let paths = joined.network.face_layout.len();
     let cells = joined.network.pzr.cell;
     assert_eq!(joined.root_count(), s2_roots + paths + 2 * cells);
@@ -780,8 +786,8 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
             ..
         },
         _,
-    ) = started_s3_phase_composition();
-    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    ) = started_s3_phase_composition(&common::spine()).expect("the S3 phase composition");
+    let packet: Value = serde_json::from_slice(&common::packet_bytes().1).unwrap();
     let surge = packet["mechanics"]["regions"]
         .as_array()
         .unwrap()
@@ -950,8 +956,8 @@ fn a_birth_at_the_credited_superheat_is_a_finite_flash_the_start_completes() {
 fn the_phase_mode_transactions_move_no_stock() {
     let Started {
         mut joined, mut y, ..
-    } = started_full_composition();
-    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
+    let packet: Value = serde_json::from_slice(&common::packet_bytes().1).unwrap();
     let neck = packet["mechanics"]["regions"]
         .as_array()
         .unwrap()
@@ -1059,7 +1065,7 @@ fn every_owners_discrete_state_survives_a_snapshot() {
             ..
         },
         _,
-    ) = started_s3_phase_composition();
+    ) = started_s3_phase_composition(&common::spine()).expect("the S3 phase composition");
     for (owner, _) in joined.layouts() {
         assert!(
             joined.discrete_state().get(owner).is_some(),
@@ -1091,9 +1097,7 @@ fn every_owners_discrete_state_survives_a_snapshot() {
         .set_feed_supported(false)
         .expect("the feed gate");
     // C3's initiator: the network's rotor state, no coordinate moved.
-    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
-        .as_u64()
-        .unwrap() as usize;
+    let lost = common::s1_gates()["supplyLoss"]["rotor"].as_u64().unwrap() as usize;
     let unmoved = y.clone();
     joined
         .command(0.2, &mut y, Command::SupplyLoss { rotor: lost })
@@ -1103,10 +1107,9 @@ fn every_owners_discrete_state_survives_a_snapshot() {
         y.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
         "a supply loss moves no coordinate"
     );
-    let request = 0.5 * joined.pzr().expect("PZR block").request_w();
+    let request = 0.5 * joined.pzr().request_w();
     joined
         .pzr_mut()
-        .unwrap()
         .apply_control(
             0.2,
             &Demand {
@@ -1123,7 +1126,7 @@ fn every_owners_discrete_state_survives_a_snapshot() {
         .transact(0.2, &directions, &mut y)
         .expect("a relief crack");
     // A phase birth at HOUSING.NECK (its vapor slots are zero).
-    let packet: Value = serde_json::from_slice(&spine::packet_bytes().1).unwrap();
+    let packet: Value = serde_json::from_slice(&common::packet_bytes().1).unwrap();
     let neck = packet["mechanics"]["regions"]
         .as_array()
         .unwrap()
@@ -1133,7 +1136,9 @@ fn every_owners_discrete_state_survives_a_snapshot() {
     joined.network.birth(neck, &mut y).expect("birth");
     let snapshot = joined.discrete_state();
     // A fresh composition of the same packet takes the snapshot.
-    let mut fresh = started_full_composition().joined;
+    let mut fresh = started_full_composition(&common::spine())
+        .expect("the S2 composition")
+        .joined;
     fresh.declare_feed_gate().expect("the feed gate");
     fresh
         .restore_discrete_state(&snapshot)
@@ -1203,10 +1208,8 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
             ..
         },
         derived,
-    ) = spine::started_s3_composition();
-    let lost = spine::z1::s1_gates()["supplyLoss"]["rotor"]
-        .as_u64()
-        .unwrap() as usize;
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
+    let lost = common::s1_gates()["supplyLoss"]["rotor"].as_u64().unwrap() as usize;
     assert!(matches!(
         joined.network.rotor_state(lost).unwrap().support,
         Support::Supported(_)
@@ -1239,7 +1242,7 @@ fn an_rcp_supply_loss_restarts_through_the_frame_driver_with_c3s_cost_lines() {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(0.02).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, process_cpu_s, 0.).unwrap();
     // The driver's event mechanics on stock IDA/KLU (plain IDA builds);
     // MR-1's forced rebuild is guarded in tests/matrix_rebuild.rs.
     driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
@@ -1367,7 +1370,7 @@ fn coincident_event_run(command_frame: u64, event_frame: u64) -> Value {
             ..
         },
         derived,
-    ) = spine::started_s3_composition();
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
     let restart = Restart {
         newton_coefficient: NEWTON_COEFFICIENT,
         delta_cj_lsetup: DELTA_CJ_LSETUP,
@@ -1395,7 +1398,7 @@ fn coincident_event_run(command_frame: u64, event_frame: u64) -> Value {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(0.02).unwrap();
     let frame = Frame::new(0.1).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::None, spine::z1::cpu_s, 0.).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, process_cpu_s, 0.).unwrap();
     // The driver's event mechanics on stock IDA/KLU (plain IDA builds);
     // MR-1's forced rebuild is guarded in tests/matrix_rebuild.rs.
     driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
@@ -1577,7 +1580,7 @@ fn blocks_against_colored(
 fn a_declared_feed_gate_covers_the_closed_gate_at_a_relief_state() {
     let Started {
         mut joined, mut y, ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     assert!(
         joined
             .secondary_mut()

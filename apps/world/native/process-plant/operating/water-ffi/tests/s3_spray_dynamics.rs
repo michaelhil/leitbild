@@ -14,8 +14,12 @@
 //! Environment: the joined spine's, with `LD01_OPERATING_HOT_SPINE_PACKET`
 //! the spray packet; optionally `LD01_SPRAY_DYNAMICS_RECEIPT`.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_s3_composition},
+};
 
 use leitbild_operating_plant::{
     control::{pzr_pressure::Demand, spray_valve::StemChange},
@@ -26,9 +30,6 @@ use leitbild_operating_water::{
     joined::{Discrete, Integrated, Restart, discrete_restart},
 };
 use serde_json::json;
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
-};
 
 #[test]
 #[ignore = "NOT-EVIDENCE check: requires the spray packet, the wiki, IF97 and stock IDA/KLU"]
@@ -63,9 +64,9 @@ fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
             ..
         },
         _derived,
-    ) = started_s3_composition();
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
     let spray = *joined.network.spray().expect("a spray packet");
-    let heater = joined.pzr().unwrap().request_w();
+    let heater = joined.pzr().request_w();
     let nonnegative = joined.network.nonnegative_stocks();
     let mut ida = Ida::new(
         Integrated::from_blocks(joined, structure, analyses).unwrap(),
@@ -82,7 +83,7 @@ fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
     ida.set_max_order(2).unwrap();
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let observe = |ida: &mut Ida<Integrated<leitbild_operating_water::If97>>,
                    t: f64,
                    y: &[f64],
@@ -223,11 +224,11 @@ fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
             next_sample = f64::from(sample_k) / 10.;
         }
     }
-    let cpu = z1::cpu_s() - started;
+    let cpu = process_cpu_s() - started;
     let sp = *ida.system().joined.network.spray().unwrap();
     let closed = sp.closed;
     let receipt = json!({"kind": "s3-spray-path-dynamics", "status": "NOT-EVIDENCE",
-        "provenance": spine::provenance(), "heater_request_w": heater, "cpu_s": cpu,
+        "provenance": common::spine_provenance(), "heater_request_w": heater, "cpu_s": cpu,
         "columns": ["t_s", "stem", "valve_face_kg_s", "port_face_kg_s", "roof_pa", "line_pa", "primary_water_kg"],
         "events": events, "rows": rows, "valve_closed_at_end": closed, "check_closed_at_end": sp.check_closed});
     println!("{}", serde_json::to_string(&receipt).unwrap());
@@ -271,9 +272,9 @@ fn the_settled_hold_changes_only_through_the_closed_spray_line() {
     // SAFETY: single-threaded test setup; the composition reads the packet
     // path from the environment.
     unsafe { std::env::set_var("LD01_OPERATING_HOT_SPINE_PACKET", &original) };
-    let (old, _) = started_s3_composition();
+    let (old, _) = started_s3_composition(&common::spine()).expect("the S3 composition");
     unsafe { std::env::set_var("LD01_OPERATING_HOT_SPINE_PACKET", &spray_packet) };
-    let (new, _) = started_s3_composition();
+    let (new, _) = started_s3_composition(&common::spine()).expect("the S3 composition");
     let (on, nw) = (&old.joined.network, &new.joined.network);
     let (n_old, n_new) = (old.joined.dimension(), new.joined.dimension());
     let no = old.joined.offsets().nuclear;
@@ -410,7 +411,7 @@ fn the_settled_hold_changes_only_through_the_closed_spray_line() {
         ida.set_max_order(2).unwrap();
         ida.constrain_nonnegative(&nonnegative).unwrap();
         restart.configure(&mut ida).unwrap();
-        let started = z1::cpu_s();
+        let started = process_cpu_s();
         let r = discrete_restart(
             &mut ida,
             t0,
@@ -472,7 +473,7 @@ fn the_settled_hold_changes_only_through_the_closed_spray_line() {
         };
         (
             rows,
-            json!({"end_charts": end_charts, "cpu_s": z1::cpu_s() - started, "steps": stats.steps, "jacobians": stats.jacobians,
+            json!({"end_charts": end_charts, "cpu_s": process_cpu_s() - started, "steps": stats.steps, "jacobians": stats.jacobians,
                 "error_test_failures": stats.error_failures, "start": start}),
         )
     };
@@ -500,7 +501,7 @@ fn the_settled_hold_changes_only_through_the_closed_spray_line() {
         .map(|r| r[6].abs().max(r[7].abs()))
         .fold(0., f64::max);
     let receipt = json!({"kind": "s3-spray-closed-settled-hold-comparison", "status": "NOT-EVIDENCE",
-        "provenance": spine::provenance(), "t0_s": t0, "span_s": span,
+        "provenance": common::spine_provenance(), "t0_s": t0, "span_s": span,
         "max_abs_difference": diff, "line_impulse_max_pa_s": line_max,
         "line_impulses_end_pa_s": [b.last().unwrap()[6], b.last().unwrap()[7]],
         "original": ca, "with_spray_path": cb,
@@ -538,7 +539,7 @@ fn the_spray_paths_discrete_state_survives_a_snapshot() {
             ..
         },
         _,
-    ) = started_s3_composition();
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
     assert!(joined.network.spray().is_some(), "a spray packet");
     let t = 0.3;
     let state = |j: &mut Op, y: &[f64]| {
@@ -559,7 +560,10 @@ fn the_spray_paths_discrete_state_survives_a_snapshot() {
     let survives = |joined: &mut Op, y: &[f64]| {
         let snapshot = joined.discrete_state();
         let driven = state(joined, y);
-        let mut fresh = started_s3_composition().0.joined;
+        let mut fresh = started_s3_composition(&common::spine())
+            .expect("the S3 composition")
+            .0
+            .joined;
         let unrestored = state(&mut fresh, y);
         assert_ne!(unrestored, driven, "the unrestored operator must differ");
         fresh
@@ -577,7 +581,7 @@ fn the_spray_paths_discrete_state_survives_a_snapshot() {
             unrestored.0 != driven.0,
         )
     };
-    let heater = joined.pzr().unwrap().request_w();
+    let heater = joined.pzr().request_w();
     let (change, _) = joined
         .apply_pzr_control(
             0.1,

@@ -8,16 +8,8 @@
 //! bounds are the declaration's (`identityRelative`, `ledger`), read as
 //! data, and a receipt is written only to a new file.
 #![cfg(feature = "quadratures")]
-#[path = "common/counts.rs"]
-mod counts;
-#[path = "common/cpu.rs"]
-mod cpu;
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/observe.rs"]
-mod observe;
-#[path = "common/provenance.rs"]
-mod provenance;
+mod common;
+use common::{cpu, provenance};
 mod s2_harness;
 use conservation::Conservation;
 pub use s2_harness::{compose, conservation, gates, receipt, run};
@@ -29,6 +21,7 @@ use leitbild_operating_plant::{
     },
     thermal::Scalar,
 };
+use leitbild_operating_water::unit::profile;
 use leitbild_operating_water::{
     If97,
     ida::{Advance, Ida, Initial},
@@ -124,7 +117,8 @@ fn s2_identities_close_and_a_dropped_term_is_caught() {
     // G6: a dropped PZR exterior loss, the top head's steel row without it
     // (the row is U' - (Joule - fluid - exchange - exterior)/scale): the unit
     // identity misses by that loss.
-    let pzr_exterior = c.joined.pzr().map(|b| {
+    let pzr_exterior = {
+        let b = c.joined.pzr();
         let o = c.joined.offsets();
         let head = o.end - 1;
         let loss = b.walls().exterior(
@@ -140,7 +134,7 @@ fn s2_identities_close_and_a_dropped_term_is_caught() {
             mutated.unit_energy.json()
         );
         json!({"exterior_loss_w": loss.value, "unit_energy": mutated.unit_energy.json()})
-    });
+    };
     let receipt = json!({
         "kind": "s2-conservation-identities-NOT-EVIDENCE",
         "provenance": provenance::git_provenance(),
@@ -199,11 +193,11 @@ fn s2_ledgers_close_over_a_settle_segment_and_carry_across_restarts() {
         newton_coefficient: g.number("/newtonCoefficient"),
         delta_cj_lsetup: g.number("/deltaCjLSetup"),
         first_step_s: g.number("/restartInitialStep_s"),
-        start_bound: compose::START_BOUND,
+        start_bound: profile::START_BOUND,
         start_passes: 2,
         // Lead decision S2-D21: P_tx after an owner transaction.
         transaction_passes: 12,
-        bound_placement: compose::START_BOUND,
+        bound_placement: profile::START_BOUND,
     };
     let max_order = g.count("/maxOrder") as usize;
     // The start: the composed pair, or a saved state restarted exactly.
@@ -214,7 +208,7 @@ fn s2_ledgers_close_over_a_settle_segment_and_carry_across_restarts() {
         };
         let (t_saved, y, _) = compose::saved_state(path, &c.packet, c.y.len());
         let mut y = y;
-        let weights = compose::error_weights(&y, c.rtol, &c.atol);
+        let weights = profile::error_weights(&y, c.rtol, &c.atol);
         let started = cpu::process_cpu_s();
         let (yp, report) = consistent_start(
             &mut c.joined,
@@ -226,7 +220,7 @@ fn s2_ledgers_close_over_a_settle_segment_and_carry_across_restarts() {
             &mut y,
             &c.ids,
             &weights,
-            compose::START_BOUND,
+            profile::START_BOUND,
             3,
         )
         .expect("exact consistent start at the saved state");

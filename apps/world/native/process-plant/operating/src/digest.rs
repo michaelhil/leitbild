@@ -1,8 +1,8 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/numerics-and-realization.md#what-must-survive-copy-pause-and-restore
-//! FIPS 180-4 SHA-256 of the identity inputs a snapshot is bound to (packet,
-//! gates, water build, kernel binary). Small and dependency-free; not a
-//! security boundary.
-
+//! FIPS 180-4 SHA-256 of the identity inputs a receipt or snapshot is bound
+//! to (packet, gates, sections, states, water build, kernel sources): the one
+//! digest of the operating crates and their harnesses. Small and
+//! dependency-free; not a security boundary.
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -15,7 +15,7 @@ const K: [u32; 64] = [
 ];
 
 /// Lower-case hex SHA-256 of `bytes`.
-pub fn hex(bytes: &[u8]) -> String {
+pub fn sha256(bytes: &[u8]) -> String {
     let mut h: [u32; 8] = [
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
         0x5be0cd19,
@@ -73,15 +73,15 @@ mod tests {
     #[test]
     fn known_vectors() {
         assert_eq!(
-            super::hex(b""),
+            super::sha256(b""),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
         assert_eq!(
-            super::hex(b"abc"),
+            super::sha256(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         assert_eq!(
-            super::hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+            super::sha256(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
     }

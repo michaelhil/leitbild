@@ -49,8 +49,8 @@ use leitbild_operating_water::{
 };
 use serde_json::{Value, json};
 
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::cpu;
 
 type S = Scalar;
 /// The nozzle path's `ln p` grid (`network::stratified`), reused for the stage.

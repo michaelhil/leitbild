@@ -21,8 +21,12 @@
 //! `LD01_S3_SPAN_S` (the span after T1) and `LD01_S3_IC_RECEIPT` (a new
 //! receipt path).
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_s3_composition},
+};
 
 use leitbild_operating_plant::{ic::packet::Section, joined::block::Command};
 use leitbild_operating_water::{
@@ -32,9 +36,6 @@ use leitbild_operating_water::{
     joined::{Integrated, Restart},
 };
 use serde_json::{Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
-};
 
 const MAX_ORDER: usize = 2;
 const WINDOW_MAX_STEP_S: f64 = 0.02;
@@ -96,7 +97,7 @@ impl<S> Client<S> for Recorder {
 #[test]
 #[ignore = "NOT-EVIDENCE S3 IC-PROT probe: requires the joined packet, a settled state, the ic section, the wiki, IF97 and stock IDA/KLU"]
 fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let section_path = std::env::var("LD01_IC_SECTION").expect("LD01_IC_SECTION");
     let receipt_path = std::env::var("LD01_S3_IC_RECEIPT").expect("LD01_S3_IC_RECEIPT");
@@ -110,7 +111,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
     let section: Section = serde_json::from_slice(&std::fs::read(&section_path).expect("section"))
         .expect("ic section");
-    let (packet_path, _) = spine::packet_bytes();
+    let (packet_path, _) = common::packet_bytes();
     assert_eq!(
         state["packet"].as_str(),
         Some(packet_path.as_str()),
@@ -129,8 +130,8 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             ..
         },
         derived,
-    ) = started_s3_composition();
-    let preparation_cpu_s = z1::cpu_s() - started;
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
+    let preparation_cpu_s = process_cpu_s() - started;
     let vector = |k: &str| -> Vec<f64> {
         state[k]
             .as_array()
@@ -200,7 +201,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
     restart.configure(&mut ida).unwrap();
     ida.set_max_step(WINDOW_MAX_STEP_S).unwrap();
     let frame = Frame::new(section.frame_s).unwrap();
-    let mut driver = Driver::new(frame, Diagnostic::Jump, z1::cpu_s, t0).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::Jump, process_cpu_s, t0).unwrap();
     let t1 = t0 + t1_after;
     driver.command(t1, Command::TurbineTripAcquired).unwrap();
     let setup = Setup {
@@ -210,7 +211,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         restart,
         derived: &derived,
     };
-    let run_started = z1::cpu_s();
+    let run_started = process_cpu_s();
     let until = t1 + span;
     let outcome = {
         let mut clients: Vec<&mut dyn Client<Integrated<leitbild_operating_water::If97>>> =
@@ -219,7 +220,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             .start(&mut clients, t0, &y, &yp)
             .and_then(|()| driver.run(&mut ida, t0, until, &mut y, &mut yp, &mut clients, &setup))
     };
-    let run_cpu_s = z1::cpu_s() - run_started;
+    let run_cpu_s = process_cpu_s() - run_started;
     driver.close_segment(&ida, until).unwrap();
     let failure = outcome.as_ref().err().cloned();
     // Timing: T1, the divisions' acceptance, the holding loss restart and
@@ -271,7 +272,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
         "kind": "S3 IC-PROT T1 probe: operator turbine trip through acquired protection",
         "status": "NOT-EVIDENCE probe; S3 is not declared and no gate is judged",
         "failure": failure,
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "packet": {"path": packet_path, "sha256": sha256(&packet_path)},
         "settled_state": {"path": state_path, "sha256": sha256(&state_path), "t_s": t0},
         "ic_section": {"path": section_path, "sha256": sha256(&section_path)},

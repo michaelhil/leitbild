@@ -44,12 +44,14 @@
 //! all; REF always runs) and `LD01_C1_RECEIPT` (a new receipt path; the
 //! series go beside it).
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/pzr_control.rs"]
-mod pzr_control;
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use common::filter;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    pzr_control,
+    spine::{Started, started_s3_composition},
+};
 
 use leitbild_operating_plant::control::pzr_pressure::{Law, Section};
 use leitbild_operating_water::{
@@ -58,9 +60,6 @@ use leitbild_operating_water::{
     joined::{Discrete, Integrated, Restart, discrete_restart},
 };
 use serde_json::{Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_s3_composition, z1,
-};
 
 use pzr_control::{ChannelBlock, System};
 
@@ -124,7 +123,7 @@ fn run(
         transaction_passes: 12,
         bound_placement: 1e-12,
     };
-    let composed_at = z1::cpu_s();
+    let composed_at = process_cpu_s();
     // The S3 composition: S2-D24's derived class applied (the default of
     // every S3 run path), scaled with the rest in a reference run.
     let (
@@ -139,8 +138,8 @@ fn run(
             ..
         },
         derived,
-    ) = started_s3_composition();
-    let composition_cpu = z1::cpu_s() - composed_at;
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
+    let composition_cpu = process_cpu_s() - composed_at;
     let (atol, rtol): (Vec<f64>, f64) =
         (atol.iter().map(|a| a / divisor).collect(), rtol / divisor);
     let derived = derived.scaled(1. / divisor);
@@ -152,7 +151,8 @@ fn run(
         "settled state of another packet"
     );
     let (mut client, prepared_w, start_w) =
-        pzr_control::commission(&mut joined, law, channel, class, replay, t0, &y, &yp);
+        pzr_control::commission(&mut joined, law, channel, class, replay, t0, &y, &yp)
+            .expect("commissioning");
     let nonnegative = joined.network.nonnegative_stocks();
     let mut ida = Ida::new(
         Integrated::from_blocks(joined, structure, analyses).unwrap(),
@@ -169,7 +169,7 @@ fn run(
     ida.set_max_order(MAX_ORDER).unwrap();
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let initial = discrete_restart(
         &mut ida,
         t0,
@@ -182,11 +182,11 @@ fn run(
     )
     .unwrap();
     yp.clone_from(&initial.yp);
-    let initial_cpu = z1::cpu_s() - started;
+    let initial_cpu = process_cpu_s() - started;
     let mut driver = Driver::<System>::new(
         Frame::new(law.frame_s()).unwrap(),
         Diagnostic::Jump,
-        z1::cpu_s,
+        process_cpu_s,
         t0,
     )
     .unwrap();
@@ -198,7 +198,7 @@ fn run(
         derived: &derived,
     };
     let counters_before = ida.system().joined.counters;
-    let loop_started = z1::cpu_s();
+    let loop_started = process_cpu_s();
     driver
         .start(&mut [&mut client as &mut dyn Client<System>], t0, &y, &yp)
         .unwrap();
@@ -213,7 +213,7 @@ fn run(
             &setup,
         )
         .unwrap();
-    let loop_cpu = z1::cpu_s() - loop_started;
+    let loop_cpu = process_cpu_s() - loop_started;
     let counters = ida.system().joined.counters;
     let jumps: Vec<f64> = driver
         .log
@@ -362,7 +362,7 @@ fn s3_c1_controller_updates_as_stop_and_continue_against_restart() {
     let receipt = json!({
         "kind": "s3-d1-c1-refinement-pair",
         "status": "NOT-EVIDENCE measurement: S against R for the C1 controller on IC-PROT's frame driver with S3-D4's rule classifier; the PT1 channel is the test's own until IC-PROT's acquisition lands",
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "settled_state": state_path, "settled_state_t_s": state["t_s"], "packet_sha256": state["packet_sha256"],
         "control_section": section_path, "control_section_provenance": section.provenance, "control_wiki": wiki,
         "channel": {"lag_s": channel.lag_s, "quantum_pa": channel.quantum_pa, "sample_s": channel.sample_s,
