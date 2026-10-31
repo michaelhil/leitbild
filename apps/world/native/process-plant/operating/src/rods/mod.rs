@@ -1032,12 +1032,11 @@ impl RodBlock {
     /// exact consistent start solves them from the travels and the bores'
     /// water), take the first member's, and their largest relative spread
     /// over the members is returned with the reduced state.
-    pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
-        let n = self.clusters.len();
-        // The packet layout's bore groups: equal sector shares, a declared
-        // single its own, first appearance first.
+    /// The packet layout's bore group of every cluster: equal sector
+    /// shares, a declared single its own, first appearance first.
+    fn packet_groups(&self) -> Vec<usize> {
         let mut keys: Vec<Option<[u64; 4]>> = Vec::new();
-        let old: Vec<usize> = (0..n)
+        (0..self.clusters.len())
             .map(|c| {
                 let key = (!self.groups[self.clusters[c].group].single)
                     .then_some(self.clusters[c].shares);
@@ -1049,8 +1048,17 @@ impl RodBlock {
                     }
                 }
             })
-            .collect();
-        let expected = CLUSTER_COORDINATES * n + GROUP_COORDINATES * keys.len();
+            .collect()
+    }
+    /// The packet layout's rods coordinate count.
+    pub fn packet_coordinates(&self) -> usize {
+        let groups = self.packet_groups().into_iter().max().map_or(0, |g| g + 1);
+        CLUSTER_COORDINATES * self.clusters.len() + GROUP_COORDINATES * groups
+    }
+    pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+        let n = self.clusters.len();
+        let old = self.packet_groups();
+        let expected = self.packet_coordinates();
         if full.len() != expected {
             return Err(format!(
                 "a packet-layout rod state has {} coordinates, not {expected}",
@@ -1836,6 +1844,9 @@ impl<P: Properties> Rods<P> for RodBlock {
     }
     fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
         RodBlock::reduce_packet_state(self, full)
+    }
+    fn packet_coordinates(&self) -> usize {
+        RodBlock::packet_coordinates(self)
     }
     fn deposit_stores(&self) -> Vec<String> {
         (0..self.clusters.len()).map(|c| self.fitting(c)).collect()

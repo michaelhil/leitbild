@@ -51,10 +51,10 @@ fn convert_a_saved_state_to_the_replica_layout() {
         + count("passive_stores")
         + count("sg_segments");
     // The rods: 52 x [y, v, m_lo, m_up] then the bore groups' [M, U, B, p]
-    // in the packet layout; one motion class per bore group here.
+    // in the packet layout (EVT-RODS-BANK: one bank class here).
     let rods = joined.rods().expect("rod owner");
     let rods_len = o.pzr - o.rods;
-    let full_rods = 4 * rods.clusters() + rods_len / 2;
+    let full_rods = rods.packet_coordinates();
     // Each block's saved slice is either its packet layout or already this
     // layout (a state an earlier conversion reduced); the one combination
     // whose lengths add up to the saved state's is taken.

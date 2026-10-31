@@ -599,6 +599,9 @@ pub trait Rods<P> {
     /// largest relative spread of the algebraic coordinates it took from a
     /// class's first member.
     fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String>;
+    /// EVT-RODS-BANK: the length of this block's packet-layout slice (P2's:
+    /// per cluster, then per sector-share bore group).
+    fn packet_coordinates(&self) -> usize;
     /// Achieved travel per cluster (m) for the source feedback's overlap.
     fn travel(&self, x: Coordinates<'_>, out: &mut [Scalar]) -> Result<(), Failure>;
     /// Current fluid volume and rate of every regular network cell, from the
