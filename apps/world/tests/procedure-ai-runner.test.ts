@@ -287,7 +287,9 @@ describe('the AI procedure runner through the World Module API', () => {
     const current = (await invoke('world.procedure.run.step.read', { runId, includeGuidance: false }, ai)).body.result
     expect(procedureStepReadViewSchema.parse(current)).toEqual(projectProcedureStepGuidance(full, false))
     expect(current.step.state.comment).toBe(comment)
-    expect(current.step.branchAssessments).toEqual(full.step.branchAssessments)
+    expect(current.step.branchAssessments).toEqual(full.step.branchAssessments.map(({ condition: _condition, applicability: _applicability, ...facts }: Record<string, unknown>) => facts))
+    expect(full.step.branchAssessments[0]).toHaveProperty('condition')
+    expect(current.step.branchAssessments[0]).not.toHaveProperty('condition')
     expect(current.step.definition).toEqual(full.step.definition)
     expect(current.tags).toEqual(full.tags.map(({ description: _description, notes: _notes, ...tag }: Record<string, unknown>) => tag))
     expect(current.csfs).toEqual(full.csfs)
