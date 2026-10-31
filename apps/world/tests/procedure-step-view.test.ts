@@ -131,8 +131,8 @@ describe('procedure step view', () => {
     expect(projected).toHaveProperty('guidanceIncluded', false)
     expect(projected.step).not.toHaveProperty('blocks')
     expect(projected.step).not.toHaveProperty('branches')
-    const { blocks: _blocks, branches: _branches, ...facts } = current.step!
-    expect(projected.step).toEqual(facts)
+    const { blocks: _blocks, branches: _branches, branchAssessments, ...facts } = current.step!
+    expect(projected.step).toEqual({ ...facts, branchAssessments: branchAssessments.map(({ condition: _condition, applicability: _applicability, ...currentFacts }) => currentFacts) })
     expect(projected.run).toEqual(current.run)
     expect(projected.csfs).toEqual(current.csfs)
     expect(projected.tags).toEqual(current.tags!.map(({ description: _description, notes: _notes, ...tag }) => tag))
@@ -213,6 +213,46 @@ describe('procedure step view', () => {
       sourceId: source.sourceId, procedureId: doc.procedureId, sourceRevision: source.revision, sourcePath: doc.sourcePath, stepId: doc.steps[0]!.id,
     } })
     expect(declared.steps[0]!.decisions![0]!.observation!.input).toEqual(authored.input)
+  })
+
+  test('known-step reads retain failed applicability, missing observations, manual and held evidence without repeating authored definitions', async () => {
+    const doc = document('csfs-monitored: []')
+    const applicability = { description: 'Only this authored model', source: 'owner.md#scope', model: { ref: 'test.model', digest: 'a'.repeat(64) } }
+    const comparison = { type: 'comparison', tagId: 'TRIP-BKR-A', operator: '==', value: false, unit: 'boolean',
+      evidence: 'engineering-diagnostic', source: 'owner.md#trip', maxAgeSeconds: 2 } as const
+    const observation = { capabilityId: 'world.test.observe', input: { exact: 'pinned-query' }, source: 'owner.md#criteria', maxAgeSeconds: 2 }
+    const mismatchedFacts = { targetObjectId: 'plant:unit-2', status: 'satisfied', simulationTime: plantTime,
+      evidenceKind: 'engineering-diagnostic', provenance: 'runtime-model', modelRef: 'test.model', modelDigest: 'b'.repeat(64),
+      currentValue: { value: 1.2345678901234567, unit: 'kg/s', quality: 'good' } }
+    type Decision = NonNullable<ProcedureDocument['steps'][number]['decisions']>[number]
+    const cases: { decision: Decision; observation?: Readonly<Record<string, unknown>>; reason: string }[] = [
+      { decision: { branchIndex: 0, condition: comparison, applicability }, reason: 'model identity does not match' },
+      { decision: { branchIndex: 0, condition: { type: 'held', durationSeconds: 60, condition: comparison }, applicability }, reason: 'continuous evidence' },
+      { decision: { branchIndex: 0, condition: { type: 'manual', description: 'Confirm local inspection', tagIds: [], source: 'owner.md#local' }, applicability }, reason: 'Human judgment required' },
+      { decision: { branchIndex: 0, observation, applicability }, reason: 'No declared query in this test port' },
+      { decision: { branchIndex: 0, observation, applicability }, observation: mismatchedFacts, reason: 'model identity does not match' },
+    ]
+    for (const scenario of cases) {
+      const declared = { ...doc, steps: doc.steps.map((step, index) => index ? step : { ...step, decisions: [scenario.decision] }) }
+      const current = await composeProcedureStepView({ run: run(), document: declared, ports: ports({
+        ...(scenario.observation === undefined ? {} : { observation: scenario.observation }),
+        reads: { 'TRIP-BKR-A': value('TRIP-BKR-A', 'false boolean', { value: false, unit: 'boolean', scopeId: 'plant:unit-2', signalTagId: 'TRIP-BKR-A', writable: false,
+          evidence: { kind: 'engineering-diagnostic', provenance: 'runtime-model', sampledAt: plantTime, modelRef: 'test.model', modelDigest: 'b'.repeat(64) } }) },
+      }) })
+      const original = structuredClone(current), projected = projectProcedureStepGuidance(current, false)
+      const { condition: _condition, applicability: _applicability, ...facts } = current.step!.branchAssessments[0]!
+      expect(projected.step!.branchAssessments[0]).toEqual(facts)
+      expect(facts.status).toBe('unknown')
+      expect(facts.reasons.join(' ')).toContain(scenario.reason)
+      expect(projected.step!.branchAssessments[0]).not.toHaveProperty('condition')
+      expect(projected.step!.branchAssessments[0]).not.toHaveProperty('applicability')
+      expect(projected.step!.definition).toEqual(current.step!.definition)
+      expect(projected.run).toEqual(current.run)
+      expect(procedureStepReadViewSchema.parse(projected)).toEqual(projected)
+      expect(current).toEqual(original)
+      expect(current.step!.branchAssessments[0]!.applicability).toEqual(applicability)
+      if (scenario.observation) expect(projected.step!.branchAssessments[0]!.observation!.result).toEqual(mismatchedFacts)
+    }
   })
 
   test('a missing or unreadable tag is reported with its reason, never dropped', async () => {

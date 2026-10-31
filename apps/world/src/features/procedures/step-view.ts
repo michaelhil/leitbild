@@ -118,7 +118,9 @@ export type ProcedureStepView = z.infer<typeof procedureStepViewSchema>
 /** Explicit current-only projection for a caller that already has this exact pinned step's guidance. */
 const procedureStepCurrentViewSchema = procedureStepViewSchema.omit({ step: true, tags: true }).extend({
   guidanceIncluded: z.literal(false),
-  step: stepSchema.omit({ blocks: true, branches: true }).optional(),
+  step: stepSchema.omit({ blocks: true, branches: true, branchAssessments: true }).extend({
+    branchAssessments: z.array(procedureStepBranchAssessmentViewSchema.omit({ condition: true, applicability: true })),
+  }).strict().optional(),
   tags: z.array(stepTagSchema.omit({ description: true, notes: true })).optional(),
 }).strict()
 
@@ -143,8 +145,8 @@ export const projectProcedureStepGuidance = (view: ProcedureStepView, includeGui
   if (includeGuidance) return view
   const { step, tags, ...current } = view
   const withoutGuidance = step === undefined ? undefined : (() => {
-    const { blocks: _blocks, branches: _branches, ...facts } = step
-    return facts
+    const { blocks: _blocks, branches: _branches, branchAssessments, ...facts } = step
+    return { ...facts, branchAssessments: branchAssessments.map(({ condition: _condition, applicability: _applicability, ...currentFacts }) => currentFacts) }
   })()
   return procedureStepCurrentViewSchema.parse({
     ...current,
