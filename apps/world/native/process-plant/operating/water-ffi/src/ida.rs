@@ -55,6 +55,14 @@ pub trait System {
     fn klu_ordering(&self) -> KluOrdering {
         KluOrdering::Colamd
     }
+    /// E-NUC (plan r4): per coordinate, how many identical coordinates of
+    /// the unreduced model it stands for, read once at construction. `None`
+    /// (the default) or all ones: the system is unreduced. Otherwise the
+    /// handle weights every coordinate so that stock's WRMS norm of this
+    /// system equals stock's norm of the unreduced one ([`WeightGroups`]).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     /// Number of quadratures `q' = fQ(t,y,yp)` (stock IDAS, the
     /// `quadratures` feature). A system without them states nothing.
     fn quadrature_count(&self) -> usize {
@@ -245,6 +253,8 @@ struct Context<S> {
     last_trial: Option<String>,
     /// N1: the grouped error-weight rule in force, if any.
     grouped: Option<Grouped>,
+    /// E-NUC: the system's multiplicities when any differs from 1.
+    multiplicity: Option<Vec<f64>>,
 }
 /// The grouped rule's per-coordinate factor and the tolerances it divides.
 struct Grouped {
@@ -304,10 +314,32 @@ impl WeightGroups {
     }
     /// `sqrt(N / n_g)` per coordinate.
     pub fn factors(&self) -> Vec<f64> {
+        self.factors_for(None)
+    }
+    /// E-NUC: the factors of a reduced system whose coordinate `i` stands
+    /// for `m_i` identical coordinates of the unreduced one,
+    /// `sqrt(m_i N / M_g)` with `M_g = sum_{j in g} m_j`. A vector whose
+    /// replicas are equal then has the same WRMS norm here as the unreduced
+    /// model's under the unreduced groups (`sqrt(N' / n'_g)`): stock's norm
+    /// when there is one group. With every `m_i = 1` it is [`Self::factors`]
+    /// bit for bit.
+    pub fn factors_for(&self, multiplicity: Option<&[f64]>) -> Vec<f64> {
         let n = self.of.len() as f64;
+        let Some(m) = multiplicity else {
+            return self
+                .of
+                .iter()
+                .map(|g| (n / self.sizes[*g] as f64).sqrt())
+                .collect();
+        };
+        let mut weighted = vec![0.; self.sizes.len()];
+        for (g, mi) in self.of.iter().zip(m) {
+            weighted[*g] += mi;
+        }
         self.of
             .iter()
-            .map(|g| (n / self.sizes[*g] as f64).sqrt())
+            .zip(m)
+            .map(|(g, mi)| (mi * n / weighted[*g]).sqrt())
             .collect()
     }
 }
@@ -610,6 +642,7 @@ impl<S: System> Ida<S> {
             fatal: None,
             last_trial: None,
             grouped: None,
+            multiplicity: None,
         });
         let mut status = 0;
         let handle = unsafe {
@@ -641,7 +674,8 @@ impl<S: System> Ida<S> {
             unsafe { operating_ida_free(handle.as_ptr()) };
             return Err(format!("stock SUNLinSol_KLUSetOrdering failed ({code})"));
         }
-        Ok(Self {
+        let multiplicity = context.system.multiplicities();
+        let mut ida = Self {
             handle,
             context,
             time: initial.time,
@@ -649,7 +683,23 @@ impl<S: System> Ida<S> {
             started: false,
             absolute: initial.absolute_tolerance.to_vec(),
             relative: initial.relative_tolerance,
-        })
+        };
+        // E-NUC: a reduced system keeps the unreduced model's stock norm
+        // through stock IDAWFtolerances: one group, each coordinate weighted
+        // by its multiplicity ([`WeightGroups::factors_for`]).
+        if let Some(m) = multiplicity {
+            if m.len() != n || m.iter().any(|v| !(v.is_finite() && *v >= 1.)) {
+                return Err(format!(
+                    "{} multiplicities for {n} coordinates, or one below 1",
+                    m.len()
+                ));
+            }
+            if m.iter().any(|v| *v != 1.) {
+                ida.context.multiplicity = Some(m);
+                ida.group_weights(WeightGroups::from_keys(&vec!["stock"; n]))?;
+            }
+        }
+        Ok(ida)
     }
     /// N1: group-normalised error weights ([`WeightGroups`]) through stock
     /// IDAWFtolerances on the tolerances in force, from the next step on: one
@@ -670,7 +720,7 @@ impl<S: System> Ida<S> {
         }
         let first = self.context.grouped.is_none();
         self.context.grouped = Some(Grouped {
-            factor: groups.factors(),
+            factor: groups.factors_for(self.context.multiplicity.as_deref()),
             groups,
             relative: self.relative,
             absolute: self.absolute.clone(),
