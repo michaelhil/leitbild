@@ -71,6 +71,27 @@ static int root_values(double t, N_Vector y, N_Vector yp, double *g, void *v) {
     OperatingIDA *o = v;
     return o->roots(o->user,t,N_VGetArrayPointer(y),N_VGetArrayPointer(yp),g);
 }
+/* PERF E-PROF (plan r4): an opt-in cost profile of stock KLU's setup
+   (factor/refactor) and solve. When the caller passes its scope hooks at
+   construction, the stock operations are called unchanged inside them. */
+typedef void (*CostEnter)(int);
+typedef void (*CostExit)(void);
+static CostEnter cost_enter;
+static CostExit cost_exit;
+static int (*stock_setup)(SUNLinearSolver, SUNMatrix);
+static int (*stock_solve)(SUNLinearSolver, SUNMatrix, N_Vector, N_Vector, sunrealtype);
+static int profiled_setup(SUNLinearSolver s, SUNMatrix a) {
+    cost_enter(0);
+    int code=stock_setup(s,a);
+    cost_exit();
+    return code;
+}
+static int profiled_solve(SUNLinearSolver s, SUNMatrix a, N_Vector x, N_Vector b, sunrealtype tol) {
+    cost_enter(1);
+    int code=stock_solve(s,a,x,b,tol);
+    cost_exit();
+    return code;
+}
 void operating_ida_free(OperatingIDA *o) {
     if (!o) return;
     if (o->ida) IDAFree(&o->ida);
@@ -87,7 +108,7 @@ void operating_ida_free(OperatingIDA *o) {
 }
 OperatingIDA *operating_ida_create(int64_t n,int64_t nnz,double t,double rtol,
     const double *atol,const double *ids,const double *y,const double *yp,
-    Residual f,Jacobian j,int nroots,Roots g,void *user,int *status) {
+    Residual f,Jacobian j,int nroots,Roots g,void *user,CostEnter enter,CostExit leave,int *status) {
     OperatingIDA *o = calloc(1,sizeof(*o));
     *status=-1;
     if (!o) return NULL;
@@ -110,6 +131,12 @@ OperatingIDA *operating_ida_create(int64_t n,int64_t nnz,double t,double rtol,
     o->linear=SUNLinSol_KLU(o->y,o->matrix,o->ctx);
     o->ida=IDACreate(o->ctx);
     if (!o->linear || !o->ida) goto fail;
+    if (enter && leave) {
+        if (stock_setup && (stock_setup!=o->linear->ops->setup || stock_solve!=o->linear->ops->solve)) goto fail;
+        stock_setup=o->linear->ops->setup; stock_solve=o->linear->ops->solve;
+        cost_enter=enter; cost_exit=leave;
+        o->linear->ops->setup=profiled_setup; o->linear->ops->solve=profiled_solve;
+    }
 #define CHECK(call) do { *status=(call); if (*status<0) goto fail; } while(0)
     CHECK(IDAInit(o->ida,residual,t,o->y,o->yp));
     CHECK(IDASetUserData(o->ida,o));

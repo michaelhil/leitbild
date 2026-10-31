@@ -1,6 +1,7 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-equations.md#6-solver-properties-and-cost-obligations
 //! Owned, opt-in boundary to the explicitly linked stock IDA/KLU build.
 //! No solver implementation, numerical fallback, or physical model lives here.
+use leitbild_operating_plant::cost;
 use std::{
     ffi::{c_int, c_long, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -144,6 +145,26 @@ type Roots = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut
 #[cfg(feature = "quadratures")]
 type Quadrature = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut f64) -> c_int;
 type Weights = unsafe extern "C" fn(*mut c_void, *const f64, *mut f64) -> c_int;
+type CostEnter = extern "C" fn(c_int);
+type CostExit = extern "C" fn();
+/// PERF E-PROF: stock KLU's setup (0) and solve (1) inside the cost
+/// profile's scopes, when one is installed at construction.
+extern "C" fn klu_enter(kind: c_int) {
+    cost::enter(if kind == 0 { "klu-setup" } else { "klu-solve" });
+}
+extern "C" fn klu_exit() {
+    cost::exit();
+}
+/// The profile scope of a step `k` steps after its segment start.
+fn step_scope(k: u64) -> &'static str {
+    match k {
+        0 => "step[1]",
+        1..=4 => "step[2-5]",
+        5..=19 => "step[6-20]",
+        20..=99 => "step[21-100]",
+        _ => "step[>100]",
+    }
+}
 const IDA_SUCCESS: c_int = 0;
 const IDA_TSTOP_RETURN: c_int = 1;
 const IDA_ROOT_RETURN: c_int = 2;
@@ -162,6 +183,8 @@ unsafe extern "C" {
         nroots: c_int,
         g: Roots,
         user: *mut c_void,
+        enter: Option<CostEnter>,
+        leave: Option<CostExit>,
         status: *mut c_int,
     ) -> *mut c_void;
     fn operating_ida_free(ida: *mut c_void);
@@ -422,6 +445,7 @@ unsafe extern "C" fn residual<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("residual");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.residual(
             t,
@@ -446,6 +470,7 @@ unsafe extern "C" fn jacobian<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("jacobian");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.jacobian(
             t,
@@ -472,6 +497,7 @@ unsafe extern "C" fn roots<S: System>(
         return -1;
     }
     let out = unsafe { std::slice::from_raw_parts_mut(out, c.roots) };
+    let _cost = cost::scope("roots");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.roots(
             t,
@@ -522,6 +548,7 @@ unsafe extern "C" fn quadrature<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("quadrature");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.quadrature(
             t,
@@ -569,6 +596,8 @@ pub struct Ida<S: System> {
     absolute: Vec<f64>,
     /// The relative tolerance last given.
     relative: f64,
+    /// PERF E-PROF: steps since the segment start (the profile's scopes).
+    segment_steps: u64,
 }
 impl<S: System> Ida<S> {
     pub fn new(system: S, initial: Initial<'_>) -> Result<Self> {
@@ -627,6 +656,8 @@ impl<S: System> Ida<S> {
                 nroots,
                 roots::<S>,
                 (&mut *context as *mut Context<S>).cast(),
+                cost::active().then_some(klu_enter as CostEnter),
+                cost::active().then_some(klu_exit as CostExit),
                 &mut status,
             )
         };
@@ -649,6 +680,7 @@ impl<S: System> Ida<S> {
             started: false,
             absolute: initial.absolute_tolerance.to_vec(),
             relative: initial.relative_tolerance,
+            segment_steps: 0,
         })
     }
     /// N1: group-normalised error weights ([`WeightGroups`]) through stock
@@ -734,6 +766,7 @@ impl<S: System> Ida<S> {
         if !horizon.is_finite() || horizon <= self.time {
             return Err("IDA initialization horizon must be in the future".into());
         }
+        let _cost = cost::scope("ic");
         let status = unsafe {
             operating_ida_initialize(
                 self.handle.as_ptr(),
@@ -757,6 +790,7 @@ impl<S: System> Ida<S> {
             return Err("IDA target must be in the future".into());
         }
         self.started = true;
+        let _cost = cost::scope("advance");
         let status = unsafe {
             operating_ida_advance(
                 self.handle.as_ptr(),
@@ -801,6 +835,7 @@ impl<S: System> Ida<S> {
         if !time.is_finite() || y.iter().chain(yp).any(|v| !v.is_finite()) {
             return Err("IDA reinitialization requires a finite time and state".into());
         }
+        let _cost = cost::scope("reinit");
         let status = unsafe {
             operating_ida_reinitialize(self.handle.as_ptr(), time, y.as_ptr(), yp.as_ptr())
         };
@@ -809,6 +844,7 @@ impl<S: System> Ida<S> {
         result?;
         self.time = time;
         self.started = false;
+        self.segment_steps = 0;
         Ok(())
     }
     /// IDASetId on this instance after a structural discrete event, such as a
@@ -1096,6 +1132,8 @@ impl<S: System> Ida<S> {
             return Err("IDA target must be in the future".into());
         }
         self.started = true;
+        let _cost = cost::scope(step_scope(self.segment_steps));
+        self.segment_steps += 1;
         let status = unsafe {
             operating_ida_step(
                 self.handle.as_ptr(),

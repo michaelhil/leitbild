@@ -519,6 +519,9 @@ struct Recorder {
     /// at each frame, when LD01_OU_FRAME_COST=1 (never in `frames`, whose
     /// digest the tiers pin).
     cost: Option<Vec<(f64, u64)>>,
+    /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
+    /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
+    profile: Option<Vec<(f64, u64, Vec<(u64, u64)>)>>,
 }
 impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     fn name(&self) -> &str {
@@ -540,6 +543,11 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     ) -> Result<Vec<leitbild_operating_water::frame::Change<S>>, String> {
         if let Some(c) = self.cost.as_mut() {
             c.push((t, s3_harness::counters::instructions()?));
+        }
+        if let Some(p) = self.profile.as_mut() {
+            let (totals, reads) = leitbild_operating_plant::cost::totals()
+                .ok_or("LD01_PERF_PROFILE=1 without an installed cost profile")?;
+            p.push((t, reads, totals));
         }
         dense.derivative(t, 0, &mut self.scratch)?;
         let y = &self.scratch;
@@ -1390,6 +1398,44 @@ struct Ask<'a> {
     f_tolerances: bool,
 }
 
+/// HOOK (PERF E-PROF): the profile's counter, the process's instructions
+/// retired; an unreadable counter stops the run (a cost is never zero).
+fn perf_counter() -> u64 {
+    s3_harness::counters::instructions().expect("instructions retired")
+}
+/// HOOK (PERF E-PROF): instructions one counter read costs (the median
+/// of 15 batches of 1,000 back-to-back reads), so a judge can state the
+/// profile's own overhead.
+fn perf_read_instructions() -> u64 {
+    let mut batches: Vec<u64> = (0..15)
+        .map(|_| {
+            let a = perf_counter();
+            for _ in 0..1_000 {
+                std::hint::black_box(perf_counter());
+            }
+            (perf_counter() - a) / 1_001
+        })
+        .collect();
+    batches.sort_unstable();
+    batches[7]
+}
+/// HOOK (PERF E-PROF): LD01_PERF_PROFILE=1 installs the cost profile on
+/// this thread (with LD01_OU_FRAME_COST=1 only); unset: nothing.
+fn perf_install() {
+    match std::env::var("LD01_PERF_PROFILE").ok().as_deref() {
+        None => {}
+        Some("1") => {
+            assert_eq!(
+                std::env::var("LD01_OU_FRAME_COST").as_deref(),
+                Ok("1"),
+                "LD01_PERF_PROFILE=1 needs LD01_OU_FRAME_COST=1"
+            );
+            leitbild_operating_plant::cost::install(perf_counter).unwrap_or_else(|e| panic!("{e}"));
+        }
+        Some(v) => panic!("LD01_PERF_PROFILE={v}: only 1 (or unset)"),
+    }
+}
+
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
 fn drive(
     case: Case,
@@ -1499,6 +1545,7 @@ fn drive(
         scratch: vec![0.; y.len()],
         rows: Vec::new(),
         cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
+        profile: leitbild_operating_plant::cost::active().then(Vec::new),
     };
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
@@ -2666,6 +2713,11 @@ fn drive(
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
         "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
+        "perf_profile": recorder.profile.as_ref().map(|p| json!({
+            "rule": "HOOK (PERF E-PROF): per frame [t, counter reads so far, per path [closed calls, exclusive instructions] so far]; paths in key order, pieces>* inclusive outside the tree",
+            "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
+            "read_instructions": perf_read_instructions(),
+            "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
         "repeat_record": repeat_record,
     });
     eprintln!(
@@ -3203,6 +3255,7 @@ fn s3_case_run() {
         !std::path::Path::new(&receipt_path).exists(),
         "receipts are never overwritten"
     );
+    perf_install();
     let process0 = spine::z1::cpu_s();
     let d = declaration::Declaration::load_case(case).unwrap_or_else(|e| panic!("{e}"));
     // The r8 wiki: C1–C3 at r3.8; r3.7 (and C4 r2) refused by name.

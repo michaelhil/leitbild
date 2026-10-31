@@ -885,7 +885,7 @@ mod integrated {
     use leitbild_operating_plant::{
         joined::{
             block::{Command, Transaction},
-            blocks::{Classes, JoinedJacobian, jacobian_blocks},
+            blocks::{Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_profiled},
             operator::Joined,
             presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
         },
@@ -1797,16 +1797,36 @@ mod integrated {
                 Assembly::Blocks(structure) => {
                     // The operator counts its colored assemblies itself.
                     let started = std::time::Instant::now();
-                    let result = jacobian_blocks(
-                        &mut self.joined,
-                        structure,
-                        time,
-                        cj,
-                        y,
-                        yp,
-                        data,
-                        Classes::ALL,
-                    );
+                    // PERF E-PROF: the pieces in instructions, when profiled.
+                    let result = if leitbild_operating_plant::cost::active() {
+                        let mut profile = Profile::new(leitbild_operating_plant::cost::now_f64);
+                        let result = jacobian_blocks_profiled(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                            &mut profile,
+                        );
+                        for (piece, (calls, spent)) in profile.pieces {
+                            leitbild_operating_plant::cost::book(piece, calls, spent as u64);
+                        }
+                        result
+                    } else {
+                        jacobian_blocks(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                        )
+                    };
                     self.joined.counters.jacobians += 1;
                     self.joined.counters.jacobian_wall_s += started.elapsed().as_secs_f64();
                     result

@@ -7,6 +7,7 @@
 
 pub mod capture;
 pub mod control;
+pub mod cost;
 pub mod electrical;
 pub mod heat_history;
 pub mod hydraulics;

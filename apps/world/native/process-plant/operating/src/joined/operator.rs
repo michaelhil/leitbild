@@ -2326,6 +2326,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             *w = region_water(fluid, i, source_water[i])?;
         }
         let xn = view(y, yp, seed, cj, o.nuclear..o.solids, &scales[0].coordinates)?;
+        let cost_scope = crate::cost::scope("nuclear");
         nuclear.rows(
             t,
             xn,
@@ -2343,6 +2344,8 @@ impl<P: Properties + WaterProperties> Blocks<P> {
                 receipts.heat(*cell, q)?;
             }
         }
+        drop(cost_scope);
+        let cost_scope = crate::cost::scope("solids");
         solids.wall_water(properties, fluid)?;
         solids.rows(
             properties,
@@ -2355,7 +2358,9 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             solid_rows,
             &mut heats.solids,
         )?;
+        drop(cost_scope);
         if let RodPort::Owner(b) = rods {
+            let _cost = crate::cost::scope("rods");
             if let Some(done) = self.prepare.as_mut() {
                 done.push(b.prepare(properties, fluid)?);
             }
@@ -2363,6 +2368,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             b.rows(properties, t, x, fluid, receipts, rod_rows)?;
         }
         if let SecondaryPort::Owner(b) = secondary {
+            let _cost = crate::cost::scope("secondary");
             let x = view(y, yp, seed, cj, o.secondary..o.rods, &scales[2].coordinates)?;
             b.rows(properties, t, x, &heats.solids.secondary_w, secondary_rows)?;
         }
