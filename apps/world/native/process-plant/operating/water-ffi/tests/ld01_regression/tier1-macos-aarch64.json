@@ -1,9 +1,9 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "EVT-RODS-BANK: exact one-class rods (64 -> 8 coordinates, total 1,205) on the r4b tuple (packet c7c3c304, state s3-settled-state-bank-c7c3c304 = EVT's bank-1 state re-addressed, wiki 7132502); with NUC's multiplicity and weights-receipt fixes, the cost-drive frame hook and PHYS's series harness (inert)",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-0c6a182c8-20261031T201437Z",
- "app": "0c6a182c8",
+ "reason": "unit library on rt-integ 233638917: trajectory digests bitwise (C2@0, C2@2.5 digest_equal against 3bd4c326e's pins); +0.115 G instructions once per load (the composition receipt's wiki provenance check through git), no change after composition",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-e17968f56-20261031T202934Z",
+ "app": "e17968f56",
  "environment": {
   "packet_sha256": "c7c3c3042d50040585a1394c25db0cde0ae7c6ad49fab64212508dfed9a68f03",
   "state_sha256": "95d97f610c43df2a0d9488c826a3e847851c9775d2054ec083fc7dd634cafdb0",
@@ -15,11 +15,11 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 7019282643,
+   "instructions": 7133830946,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 21259485967,
+   "instructions": 21367124779,
    "digest": "db83cfd15a282ef1adddcb0cc6477810e14b61e9a31720fcd0edaa8814787a1c"
   }
  }
