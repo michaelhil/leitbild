@@ -165,7 +165,7 @@ fn s3_ic_prot_t1_turbine_trip_through_acquired_protection() {
             .collect(),
         rods: (0..clusters)
             .map(|c| {
-                let b = o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c;
+                let b = o.rods + joined.rods().expect("rod owner").cluster_coordinate(c);
                 (b, scales[b])
             })
             .collect(),

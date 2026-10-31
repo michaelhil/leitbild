@@ -8,6 +8,11 @@
 //     v2 (E-NUC phase B): with <members.json> (water-ffi nuc_t0_members), the member lists of every grouped
 //     coordinate, nuclear and solid, partition the baseline labels, and a nuclear list equals the packet's group.
 //  R2b (v2) every member's baseline rows equal its representative's, at both points, within the R2 bound.
+//  v7 (EVT-RODS-BANK T0): when the baseline's heat and fuel-temperature ports already number the reduced ones (both trees
+//     reduced by E-NUC A+B), R3 and R5 compare port by port; v6 mapped them through the members file's unreduced carrier
+//     labels, which such a baseline does not hold (t0-receipt.json, v6: R3/R5 port map only).
+//  v6 (EVT-RODS-BANK): a reduced label the members file lists that is not a grouped label (a merged water region
+//     keeping its first group's label) maps to the listed baseline coordinates before v4's same-label rule.
 //  v3: when the reduced heat and fuel-temperature ports are the solids' half classes (fewer than the carriers),
 //     R3 and R5 compare each port with every member carrier (the members of its U_clad coordinate, in the
 //     baseline's carrier order); the totals compare as before. (v2's first phase-B run compared them index by
@@ -49,10 +54,20 @@ const bl: string[] = base.labels, rl: string[] = red.labels;
 const bIndex = new Map(bl.map((l, i) => [l, i]));
 const repOf: number[] = new Array(rl.length); const redOf: number[] = new Array(bl.length).fill(-1);
 const failures: string[] = [];
-const grouped = /^(C|fissile|fertile|I-135|Xe-135|Pm-149|Sm-149|E|U_fuel|U_clad|T_fuel_surface|T_clad_inner|T_clad_outer|U_helium|U_passive)\[(.+)x(\d+)\](.*)$/;
+const grouped = /^(C|fissile|fertile|I-135|Xe-135|Pm-149|Sm-149|E|U_fuel|U_clad|T_fuel_surface|T_clad_inner|T_clad_outer|U_helium|U_passive|y|v|m_lower|m_upper)\[(.+)x(\d+)\](.*)$/;
 const nuclearKinds = new Set(["C", "fissile", "fertile", "I-135", "Xe-135", "Pm-149", "Sm-149", "E"]);
 const listed: Record<string, string[]> | null = membersPath ? await Bun.file(membersPath).json() : null;
 rl.forEach((l, i) => {
+  // v6 (EVT-RODS-BANK): a merged region whose label the members file lists (the bank's bores' water, which keeps
+  // its first group's label) maps to the listed baseline coordinates, representative first, before v4's rule.
+  if (listed && listed[l] && !grouped.test(l)) {
+    for (const ml of listed[l]) { const j = bIndex.get(ml); if (j === undefined) failures.push(`R1 member ${ml}`); else if (redOf[j] >= 0) failures.push(`R1 member twice ${ml}`); else redOf[j] = i; }
+    repOf[i] = bIndex.get(listed[l][0])!;
+    return;
+  }
+  // v4: a label the baseline also holds is the same coordinate (a block the baseline already grouped).
+  const same = bIndex.get(l);
+  if (same !== undefined) { repOf[i] = same; redOf[same] = i; return; }
   const m = grouped.exec(l);
   if (m && listed) {
     const list = listed[l];
@@ -76,7 +91,8 @@ if (redOf.some(v => v < 0)) failures.push(`R1 ${redOf.filter(v => v < 0).length}
 const plain = rl.map((l, i) => [l, i] as const).filter(([l]) => !grouped.test(l));
 for (let k = 1; k < plain.length; k++) if (repOf[plain[k][1]] <= repOf[plain[k - 1][1]]) { failures.push(`R1 order at ${plain[k][0]}`); break; }
 
-const owner = (l: string) => { const m = grouped.exec(l); return m ? (nuclearKinds.has(m[1]) ? "nuclear" : "solids") : /^N\[/.test(l) ? "nuclear" : "other"; };
+const rodKinds = new Set(["y", "v", "m_lower", "m_upper"]);
+const owner = (l: string) => { const m = grouped.exec(l); return m ? (nuclearKinds.has(m[1]) ? "nuclear" : rodKinds.has(m[1]) ? "rods" : "solids") : /^N\[/.test(l) ? "nuclear" : "other"; };
 const worst: Record<string, any> = {};
 const book = (rule: string, d: number, scale: number, bound: number, where: string) => {
   const w = worst[rule] ?? (worst[rule] = { max_abs: 0, max_ratio_to_bound: 0, at: null, judged: 0 });
@@ -91,8 +107,10 @@ for (const point of ["at_state", "at_zero_rates"]) {
   rb.forEach((v, j) => { const b = rb[repOf[redOf[j]]]; const d = Math.abs(v - b) / (1 + Math.abs(b)); spread[point] = Math.max(spread[point] ?? 0, d);
     if (listed) book(`R2b member rows ${point}`, v - b, b, 1e-9 * (1 + Math.abs(b)), bl[j]); });
   // Port of each baseline carrier: itself, or (phase B) the solids half class holding it.
-  const portOf = (n: number): number[] => {
+  const portOf = (n: number, baseline: number): number[] => {
     if (n === A) return [...Array(A).keys()];
+    // v7: a baseline already reduced to the same ports (E-NUC A+B on both trees) compares port by port.
+    if (n === baseline) return [...Array(n).keys()];
     if (!listed) { failures.push("R3 ports without members"); return []; }
     const halves = rl.filter(l => /^U_clad\[/.test(l));
     const carrierOf = new Map(bl.filter(l => /^U_clad\[/.test(l)).map((l, a) => [l, a]));
@@ -102,10 +120,10 @@ for (const point of ["at_state", "at_zero_rates"]) {
     return out;
   };
   for (const k of ["fuel_w", "coolant_w", "totals_w"]) { const b = F(base[point][k]), r = F(red[point][k]);
-    const map = k === "totals_w" ? b.map((_, i) => i) : portOf(r.length);
+    const map = k === "totals_w" ? b.map((_, i) => i) : portOf(r.length, b.length);
     b.forEach((x, i) => book(`R3 ${k}`, r[map[i]] - x, x, 1e-12 * Math.max(Math.abs(x), 1), `${point}[${i}]`)); }
   { const b = F(base[point].reactivity), r = F(red[point].reactivity); b.forEach((x, i) => book("R4 reactivity", r[i] - x, x, 1e-13, `${point}[${i}]`)); }
-  { const b = F(base[point].fuel_feedback_k), r = F(red[point].fuel_feedback_k); const map = portOf(r.length);
+  { const b = F(base[point].fuel_feedback_k), r = F(red[point].fuel_feedback_k); const map = portOf(r.length, b.length);
     b.forEach((x, i) => book("R5 fuel feedback", r[map[i]] - x, x, 1e-12 * x, `${point}[${i}]`)); }
 }
 // R6: Jacobian lumping.
