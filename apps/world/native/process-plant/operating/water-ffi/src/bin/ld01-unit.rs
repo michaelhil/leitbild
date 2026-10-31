@@ -465,13 +465,31 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
     }
     let rods = joined.rods().ok_or("the unit composes no rod owner")?;
     let base = joined.offsets().rods;
-    for travel in &rods.structure().outputs[..rods.clusters()] {
+    // One channel per cluster, named by its packet id: under EVT-RODS-BANK a
+    // cluster's travel is its motion class's coordinate, which every member
+    // of a bank shares (the coordinate's label names the class, not the
+    // cluster), so the cluster order of the packet's rods names them.
+    let packet = inputs.spine.packet_json()?;
+    let ids: Vec<&str> = packet["rods"]["clusters"]
+        .as_array()
+        .ok_or("the packet's rods.clusters")?
+        .iter()
+        .map(|c| c["id"].as_str().ok_or("a rod cluster without an id"))
+        .collect::<Result<_, _>>()?;
+    if ids.len() != rods.clusters() {
+        return Err(format!(
+            "the packet names {} rod clusters, the rod owner composes {}",
+            ids.len(),
+            rods.clusters()
+        ));
+    }
+    for (id, travel) in ids.iter().zip(&rods.structure().outputs[..rods.clusters()]) {
         let i = base + travel[0];
         out.push(channel(
-            format!("LD01.ROD.{}", labels[i]),
+            format!("LD01.ROD.{id}.TRAVEL"),
             "m",
-            "rod cluster travel coordinate",
-            "rod owner (cluster order)",
+            "rod cluster travel (its motion class's coordinate)",
+            &format!("rod owner coordinate {}", labels[i]),
             Reading::Coordinate(i, scales[i]),
         ));
     }
