@@ -43,6 +43,15 @@ const packet = {
   feedback_metadata: { regions: Array.from({ length: 24 }, (_, i) => ({ z0_m: bands[i % 6]!, z1_m: bands[i % 6 + 1]! })) },
 }
 
+test('with the packet\'s apparent level (C08, S5) the NR channels read it; one indicated-level area', () => {
+  const apparent = { ...packet, secondary: { ...packet.secondary, apparentLevel: { indication: { indicatedLevelArea_m2: 12 } } } }
+  const s = compileOperatingIcFrom(pages(), apparent)
+  expect(s.families[2]!.quantity).toEqual({ sg_apparent_level: { sg: 'A', area_m2: 12 } })
+  expect(s.families[3]!.quantity).toEqual({ sg_apparent_level: { sg: 'B', area_m2: 12 } })
+  const other = { ...packet, secondary: { ...packet.secondary, apparentLevel: { indication: { indicatedLevelArea_m2: 10 } } } }
+  expect(() => compileOperatingIcFrom(pages(), other)).toThrow('one indicated-level area')
+})
+
 test('the section carries only strict-block values and the packet identities', () => {
   const s = compileOperatingIcFrom(pages(), packet)
   expect(s.frame_s).toBe(0.1)

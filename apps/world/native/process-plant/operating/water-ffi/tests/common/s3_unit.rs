@@ -23,6 +23,7 @@
 //! Environment: `LD01_IC_SECTION`, `LD01_PZR_CONTROL_SECTION`,
 //! `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET` and the joined spine's.
 #![allow(dead_code)] // Each test crate uses its own subset.
+use super::feed_control::FeedClient;
 use super::pzr_control::{self, PzrClient};
 use super::spine::{
     self, DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, credited_outputs,
@@ -132,6 +133,9 @@ pub struct S3Unit<J: JoinedSystem = Integrated<If97>> {
     pub derived: DerivedTolerances,
     pub restart: Restart,
     pub control: PzrClient,
+    /// The three-element SG level controllers (plan r4 X4.1), when the
+    /// packet composes the compact feed train: AUTO from the start.
+    pub feed: Option<FeedClient>,
     pub frame: Frame,
     pub receipt: Value,
     /// The operator at the packet's prepared hot reference (the composed
@@ -303,6 +307,15 @@ pub fn compose_with<J: JoinedSystem>(
         (c, p, s, Some(l1.changes.len()))
     };
     let mut control = control;
+    // Plan r4 X4.1: the feed controllers, MANUAL at the stems' positions
+    // (prepared, or the saved state's), then AUTO by the tracking law at
+    // the start (the case's declared command for U1's "SG level" control).
+    let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1)
+        .map_err(|e| format!("packet json: {e}"))?;
+    let sg_section: leitbild_operating_plant::sg::packet::Section =
+        serde_json::from_value(packet_json["secondary"].clone())
+            .map_err(|e| format!("the packet's secondary section: {e}"))?;
+    let mut feed = FeedClient::commission(&joined, &sg_section, frame.period_s(), true, t0, &y)?;
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
@@ -419,12 +432,16 @@ pub fn compose_with<J: JoinedSystem>(
     .map_err(|e| format!("the exact consistent start of the S3 composition: {e}"))?;
     yp_all.clone_from(&initial.yp);
     control.scratch = vec![0.; y_all.len()];
+    if let Some(f) = feed.as_mut() {
+        f.resize(y_all.len());
+    }
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
+        "feed_control": feed.as_ref().map(|f| json!({"class": "S (S3-D4: the stem is continuous at the change)", "start": "MANUAL at each stem's position, AUTO by the tracking law at t0", "controllers": f.controllers})),
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
@@ -443,6 +460,7 @@ pub fn compose_with<J: JoinedSystem>(
         derived,
         restart,
         control,
+        feed,
         frame,
         receipt,
         reference,

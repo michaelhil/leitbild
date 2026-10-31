@@ -66,6 +66,8 @@
 //! names the state's sha256 (the bytes of `LD01_S3_SPECTRUM_STATE`), as rule
 //! K reads it.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+#[path = "common/feed_control.rs"]
+mod feed_control;
 #[path = "common/pzr_control.rs"]
 mod pzr_control;
 #[path = "common/s3_unit.rs"]

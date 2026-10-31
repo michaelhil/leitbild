@@ -29,8 +29,108 @@ pub struct Section {
     /// The two-zone contact coordinate (`ld01-sg-exposure`, S3-D26) of the
     /// tube wetting, for the joined solids' secondary contact.
     pub exposure: Exposure,
+    /// S5 (C08, S4-D12): the compact apparent-level allocation, composed
+    /// into the packet by `reference-design-operating-apparent-level.ts`
+    /// from the `reference-design-operating-sg-level.ts` section. Absent in
+    /// the S1-S3 packets, whose owner then has no distribution coordinates
+    /// (their runs stay bitwise).
+    #[serde(rename = "apparentLevel", default)]
+    pub apparent_level: Option<ApparentLevel>,
+    /// Plan r4 X4.1: the compact feed train (`ld01-feed-compact`), composed
+    /// by `reference-design-operating-feed-compact.ts`. Present only with
+    /// the apparent level; it replaces F3 (a)'s inventory-holding feed.
+    #[serde(rename = "feedTrain", default)]
+    pub feed_train: Option<FeedTrain>,
     /// Consumed pages and source hashes; not read by the block.
     pub provenance: Value,
+}
+
+/// The C08 section (`ld01-sg-distribution`, `reference-balance`,
+/// `ld01-sg-level-channels`): one vapor-distribution state per SG.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ApparentLevel {
+    pub scope: String,
+    pub distribution: Distribution,
+    pub indication: Indication,
+    /// Consumed pages and source hashes; not read by the block.
+    pub provenance: Value,
+}
+
+/// The vapor-distribution law's selected values: the nominal reference the
+/// residence time is derived from once on the runtime law, the equilibrium
+/// bound, the distribution time and the prepared distribution.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Distribution {
+    #[serde(rename = "nominalSubmergedVolume_m3")]
+    pub nominal_submerged_volume_m3: f64,
+    #[serde(rename = "nominalPressure_Pa")]
+    pub nominal_pressure_pa: f64,
+    #[serde(rename = "nominalSteamFlow_kg_s")]
+    pub nominal_steam_flow_kg_s: f64,
+    #[serde(rename = "maximumSubmergedVolume_m3")]
+    pub maximum_submerged_volume_m3: f64,
+    #[serde(rename = "distributionTime_s")]
+    pub distribution_time_s: f64,
+    #[serde(rename = "preparedDistribution")]
+    pub prepared_distribution: f64,
+}
+
+/// The NR channels' indicated-level area and response (read by the IC
+/// acquisition and the feed controller, not by the owner's rows).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Indication {
+    #[serde(rename = "indicatedLevelArea_m2")]
+    pub indicated_level_area_m2: f64,
+    #[serde(rename = "nrSpan_m")]
+    pub nr_span_m: [f64; 2],
+    #[serde(rename = "nrLag_s")]
+    pub nr_lag_s: f64,
+}
+
+/// The compact feed train (plan r4 X4.1; `ld01-feed-compact` with
+/// `reference-service-pump`, `ld01-feed-train` and `reference-cycle`):
+/// FW.P1/P2 in parallel on the forward characteristic at rated speed, the
+/// header-entry loss, and per SG one branch (fixed/ISO path in series with
+/// the FCV on the healthy liquid law), every pressure allocation at the
+/// nominal per-SG flow `m0`.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FeedTrain {
+    /// `m0`: one pump's and one branch's nominal flow, kg/s.
+    #[serde(rename = "nominalFlow_kg_s")]
+    pub nominal_flow_kg_s: f64,
+    #[serde(rename = "suctionPressure_Pa")]
+    pub suction_pressure_pa: f64,
+    #[serde(rename = "dischargePressure_Pa")]
+    pub discharge_pressure_pa: f64,
+    /// Zero-flow head over nominal head, `dp = dp0 (r n² − (r − 1) q²)`.
+    #[serde(rename = "shutoffHeadRatio")]
+    pub shutoff_head_ratio: f64,
+    /// Header pressure at both pumps' nominal flow (`2 m0`).
+    #[serde(rename = "headerPressure_Pa")]
+    pub header_pressure_pa: f64,
+    /// Outlet of the fully open fixed/ISO path at `m0`, the FCV inlet.
+    #[serde(rename = "isoOutletPressure_Pa")]
+    pub iso_outlet_pressure_pa: f64,
+    /// The SG pressure at which the FCV is sized (`m0` at the reference
+    /// opening).
+    #[serde(rename = "receiverPressure_Pa")]
+    pub receiver_pressure_pa: f64,
+    #[serde(rename = "fcvReferenceOpening")]
+    pub fcv_reference_opening: f64,
+    #[serde(rename = "fcvStrokePerSecond")]
+    pub fcv_stroke_per_second: f64,
+    /// The FCV positioner's resolution (`ld01-feed-compact`): a new demand
+    /// reaches the stem when it differs from the one in force by at least
+    /// this fraction of stroke, or reaches a range bound.
+    #[serde(rename = "demandResolution")]
+    pub demand_resolution: f64,
+    /// The three-element cascade (`ld01-feed-cascade`), read by the feed
+    /// controller (`control::feed`), not by the owner's rows.
+    pub cascade: crate::control::feed::Cascade,
 }
 
 /// The two-zone contact coordinate of `ld01-sg-exposure` (S3-D26), as the

@@ -27,7 +27,7 @@ pub struct MemoRow {
 /// choices, 11 October) and the rod bores' water (P2, 17 October), which
 /// the memo predates: their counts are zero. A row counts its owner's
 /// coordinates of its classes only.
-pub const TABLE_1_1: [MemoRow; 19] = [
+pub const TABLE_1_1: [MemoRow; 21] = [
     MemoRow {
         row: "Regional N, 24 regions",
         owner: "nuclear",
@@ -180,6 +180,24 @@ pub const TABLE_1_1: [MemoRow; 19] = [
         memo: [0, 0],
         rows: "lift' = full strokes per second of the motion; stops by transaction",
     },
+    MemoRow {
+        row: "SG apparent-level distribution x2 (C08)",
+        owner: "secondary",
+        classes: &[
+            Class::SecondaryVapor,
+            Class::SecondaryDistribution,
+            Class::SecondarySubmerged,
+        ],
+        memo: [0, 0],
+        rows: "M_v = rho_g (V - V_l); beta' = (beta_eq - beta)/tau_distribution; V_sub = beta (V - V_l)",
+    },
+    MemoRow {
+        row: "Compact feed train (header, 2 branches)",
+        owner: "secondary",
+        classes: &[Class::FeedHeader, Class::FeedBranch],
+        memo: [0, 0],
+        rows: "header on the pumps' forward curve less the entry loss; branch flow by the series ISO path and FCV law",
+    },
 ];
 /// The memo's totals: differential, algebraic, all.
 pub const MEMO_TOTAL: [usize; 3] = [17418, 3962, 21380];
@@ -262,6 +280,12 @@ fn difference(row: &str) -> Option<&'static str> {
         }
         "Rod bores' water, per bore group (M, U, B; p) (P2)" => {
             "P2 (owner R11): one well-mixed water region per bore group (equal sector shares; a declared stuck cluster singly), replacing R3's donor column; the memo predates it"
+        }
+        "SG apparent-level distribution x2 (C08)" => {
+            "C08 (S4-D12; plan r4 X4.1): the compact apparent-level allocation joins after the memo's allocation, only with the packet's apparentLevel section"
+        }
+        "Compact feed train (header, 2 branches)" => {
+            "plan r4 X4.1: the compact feed train replaces F3 (a)'s inventory-holding feed, only with the packet's feedTrain section"
         }
         "PZR heater rod segments, shell bands and heads (G6)" | "PZR relief lift (G6)" => {
             "G6 (S2 design choices, 11 October): the PZR shell, heads, heater metal and relief join S2 after the memo's allocation"

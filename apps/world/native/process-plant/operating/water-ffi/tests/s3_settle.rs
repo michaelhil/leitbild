@@ -39,6 +39,8 @@
 //! in the receipt), so the settling measure reads step-resolved outputs; the
 //! state handed on is the accepted step that ends at the settled sample.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+#[path = "common/feed_control.rs"]
+mod feed_control;
 #[path = "common/filter.rs"]
 mod filter;
 #[path = "common/pzr_control.rs"]

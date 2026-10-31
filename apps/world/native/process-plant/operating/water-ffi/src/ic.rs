@@ -319,6 +319,23 @@ impl ProtectionClient {
                     }
                     Observation::Linear(vec![(i, scales[i] / area_m2)])
                 }
+                Quantity::SgApparentLevel { sg, area_m2 } => {
+                    let at = |name: &str| -> Result<usize, String> {
+                        let label = format!("SG.{sg}.{name}");
+                        labels
+                            .iter()
+                            .position(|l| *l == label)
+                            .ok_or_else(|| format!("no coordinate {label} (the joined packet composes no apparent level)"))
+                    };
+                    let (liquid, submerged) = (at("V_l")?, at("V_sub")?);
+                    if !(area_m2.is_finite() && *area_m2 > 0.) {
+                        return Err(format!("SG.{sg} apparent level: level area {area_m2}"));
+                    }
+                    Observation::Linear(vec![
+                        (liquid, scales[liquid] / area_m2),
+                        (submerged, scales[submerged] / area_m2),
+                    ])
+                }
                 Quantity::LoopFlow { face, face_id, .. } => {
                     let geometry = net
                         .face(*face)

@@ -151,7 +151,8 @@ export function compilePzrLevelFrom(texts: { measurements: string, observations:
 export const packetSchema = z.object({
   mechanics: z.object({ faces: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
   hydraulics: z.object({ sections: z.array(z.object({ id: z.string(), parameters: z.object({ pump: z.unknown() }).passthrough() }).passthrough()) }).passthrough(),
-  secondary: z.object({ steamGenerators: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
+  secondary: z.object({ steamGenerators: z.array(z.object({ id: z.string() }).passthrough()),
+    apparentLevel: z.object({ indication: z.object({ indicatedLevelArea_m2: finite }).passthrough() }).passthrough().optional() }).passthrough(),
   feedback_metadata: z.object({ regions: z.array(z.object({ z0_m: finite, z1_m: finite }).passthrough()) }).passthrough(),
 }).passthrough()
 type Packet = z.infer<typeof packetSchema>
@@ -246,8 +247,17 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const effects = (id: string, e: { reactor_trip: boolean, cmt_injection: boolean, heater_isolation: boolean }) =>
     ({ ...e, prhr: (prhrActuation.onCmtActuation && e.cmt_injection) || prhrActuation.causes.includes(id) })
   const trip = { reactor_trip: true, cmt_injection: false, heater_isolation: false }
+  // S5 (C08, S4-D10 (a)): with the packet's apparent-level allocation the
+  // NR channels read the apparent level (V_l + V_sub)/A; without it, S3's
+  // declared collapsed-level limit (S3-D1.20).
+  const apparent = packet.secondary.apparentLevel
+  if (apparent && apparent.indication.indicatedLevelArea_m2 !== sgChannels.indicatedLevelArea_m2)
+    throw Error('The packet\'s apparent level and the NR channels must use one indicated-level area')
+  const level = (sg: string) => apparent
+    ? { sg_apparent_level: { sg, area_m2: sgChannels.indicatedLevelArea_m2 } }
+    : { sg_collapsed_level: { sg, area_m2: sgChannels.indicatedLevelArea_m2 } }
   const sgFamilies = sgs.map(sg => ({
-    id: `LD01.SG.${sg}.LT.NR`, quantity: { sg_collapsed_level: { sg, area_m2: sgChannels.indicatedLevelArea_m2 } },
+    id: `LD01.SG.${sg}.LT.NR`, quantity: level(sg),
     channels: [1, 2, 3].map(i => ({ id: `LD01.SG.${sg}.LT.NR${i}`, supply: 'unselected' })),
     channel: { lag_s: sgChannels.nrLag_s, min: sgChannels.nrSpan_m[0], max: sgChannels.nrSpan_m[1], quantum: null,
       indeterminate_band: null, sample_s: sgAcquisition.sample_s, transport_s: sgAcquisition.transport_s },
