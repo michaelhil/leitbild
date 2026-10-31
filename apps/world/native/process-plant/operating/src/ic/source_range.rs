@@ -189,32 +189,53 @@ impl SourceRange {
             self.dead_s += until - a;
             cur = until;
         }
-        while cur < b {
-            let e = -next_uniform(&mut self.rng).ln();
-            if hazard(cur, b) < e {
-                // Memoryless: the next interval draws afresh.
+        // Thinning (Lewis-Shedler): candidates of a homogeneous process at
+        // a majorant of the rate over the interval, each kept with probability
+        // rate / majorant. Exact for the polynomial's rate, with no root search.
+        let span = b - origin;
+        let (mut majorant, mut power, mut factorial) = (s.dark_per_s, 1., 1.);
+        for (k, qk) in q.iter().enumerate() {
+            if k > 0 {
+                power *= span;
+                factorial *= k as f64;
+            }
+            majorant += s.rref_events_per_s * qk.abs() * power / factorial;
+        }
+        let rate = |u: f64| {
+            let x = u - origin;
+            let (mut sum, mut term) = (0., 1.);
+            for (k, qk) in q.iter().enumerate() {
+                if k > 0 {
+                    term *= x / k as f64;
+                }
+                sum += qk * term;
+            }
+            s.rref_events_per_s * sum + s.dark_per_s
+        };
+        let mut block_end = f64::NEG_INFINITY;
+        while cur < b && majorant > 0. {
+            cur += -next_uniform(&mut self.rng).ln() / majorant;
+            if cur >= b {
                 break;
             }
-            // The arrival: the hazard reaches `e` (bisection on the
-            // accepted polynomial; the hazard is nondecreasing).
-            let (mut lo, mut hi) = (cur, b);
-            for _ in 0..100 {
-                let mid = 0.5 * (lo + hi);
-                if mid <= lo || mid >= hi {
-                    break;
-                }
-                if hazard(cur, mid) < e {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
+            let r = rate(cur);
+            if r.is_nan() || r < 0. {
+                return Err(format!("{}: event rate {r} at {cur} s", s.id));
+            }
+            if next_uniform(&mut self.rng) * majorant >= r {
+                continue;
             }
             self.count += 1;
-            let block_end = hi + s.deadtime_s;
-            self.dead_s += block_end.min(b) - hi;
+            block_end = cur + s.deadtime_s;
+            self.dead_s += block_end.min(b) - cur;
             cur = block_end;
         }
-        self.dead_until = if cur > b { cur } else { f64::NEG_INFINITY };
+        // Only an accepted event's block reaches into the next interval.
+        self.dead_until = if block_end > b {
+            block_end
+        } else {
+            f64::NEG_INFINITY
+        };
         Ok(())
     }
     /// Close the current window (if any) into a record.
