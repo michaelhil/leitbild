@@ -58,7 +58,7 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
       .map(path => [path, engine.runtime.readVariable(path as VariablePath)]))
   }, 300_000)
 
-  test('a turbine trip written now applies at the unit time of the next exchange: breaker open, rods seated', async () => {
+  test('a turbine trip written now applies at the unit time of the next exchange: acquired by protection, breaker open, rods seated', async () => {
     const { engine } = await connect()
     await run(engine, 1)
     const writtenAtMs = engine.runtime.elapsedMs()
@@ -66,10 +66,12 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     engine.runtime.writeCommand({ type: 'setVariable', path: 'TG.turbineTrip' as VariablePath, value: true })
     const frames = await run(engine, 4)
     const events = frames.map(frame => frame.frame!.events as { readonly instants?: ReadonlyArray<readonly [number, string, ReadonlyArray<string>]>; readonly seats?: ReadonlyArray<readonly [string, number]> } | null)
-    const applied = events[0]?.instants?.find(instant => instant[2].includes('command TurbineTrip'))
+    const applied = events[0]?.instants?.find(instant => instant[2].includes('command TurbineTripAcquired'))
     // The command's instant is the unit time the exchange started at: the time it was written.
     expect(applied?.[0]).toBeCloseTo(frames[0]!.frame!.t - 1, 9)
     expect(engine.runtime.readVariable('TG.breakerClosed' as VariablePath)).toBe(false)
+    // The acquired path: the turbine-state report latches the kernel's TG.TRIP function in its divisions.
+    expect(engine.runtime.readVariable('PROTECTION.latched.LD01.PROT.TG.TRIP' as VariablePath)).toBeGreaterThanOrEqual(2)
     // Every rod cluster the graph reads seats.
     expect(events.flatMap(entry => entry?.seats ?? []).length).toBe(plant().graph.variables.filter(variable => String(variable.path).startsWith('CORE.rod.')).length)
     const after = { terminalPowerMw: engine.runtime.readVariable('TG.terminalPower' as VariablePath), releasedPowerMw: engine.runtime.readVariable('CORE.releasedPower' as VariablePath) }

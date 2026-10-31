@@ -12,6 +12,7 @@ import { processPlantRuntimeStateSchema } from '../src/packs/process-plant/sim/r
 import { ld01UnitArtifactEnv } from '../src/packs/process-plant/engine/artifact.ts'
 import { ld01ChannelIdOf } from '../src/packs/process-plant/engine/tag-map.ts'
 import { scenarios } from './fixtures/scenarios.ts'
+import { topologyGraphSchema } from '../src/core/observation/topology.ts'
 import { compileOperatingGraph } from '../scripts/reference-design-operating-graph'
 import { elec, ic, packet, unitOf } from '../scripts/reference-design-operating-graph.fixture'
 
@@ -227,7 +228,10 @@ describe('an LD-01 Plant in a Run', () => {
       const observables = declarations.declarations[0]!.observables
       expect(observables.find(entry => entry.ref === 'plant:ld01#PZR.PT1')?.tag).toBe('LD01.PZR.PT1')
       const topology = await connection.invokeQuery({ capabilityId: 'world.process-plant.observation.topology', input: { objectId: 'plant:ld01' } }) as { readonly nodes: ReadonlyArray<{ readonly id: string; readonly class: string; readonly group?: string }>; readonly groups: ReadonlyArray<{ readonly id: string }> }
+      // World core's own topology contract holds (node bindings, ports, media within its bounds).
+      topologyGraphSchema.parse(topology)
       expect(topology.groups.map(group => group.id)).toEqual(['A', 'B'])
+      expect(topology.nodes.find(node => node.id === 'FW.FCV.A')).toMatchObject({ class: 'switch', group: 'A' })
       expect(topology.nodes.find(node => node.id === 'CORE')?.class).toBe('source')
       expect(topology.nodes.find(node => node.id === 'SG.A.PRIMARY')).toMatchObject({ class: 'transfer', group: 'A' })
       expect(topology.nodes.find(node => node.id === 'PUMP.B1')).toMatchObject({ class: 'mover', group: 'B' })

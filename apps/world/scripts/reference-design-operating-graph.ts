@@ -347,12 +347,13 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.${cluster.id}.TRAVEL`, 'm')),
     reading('rodTravelMean', 'Rod cluster mean travel', 'state', 'nuclear', 'length', 'm', 'LD01.ROD.TRAVEL.MEAN', 'm'),
   )
-  // The rods' insertion: each cluster's travel over the packet's maximum travel, inserted at 0, and the mean they average to.
+  // Each cluster's travel moves over the packet's maximum travel. The generated displays draw an insertion part by part,
+  // at most 16 to a node; the 52 clusters move as one bank (EVT-RODS-BANK), so the core leads with their mean travel instead.
   const maximumTravel = packet.feedback_metadata.parameters.rod_maximum_travel_m
-  coreEquipment.parameters.insertion = { reading: 'rodTravelMean', groups: [packet.rods.clusters.map(cluster => `rod.${cluster.id}`)] }
   for (const entry of coreEquipment.readings) {
     if (entry.path.startsWith('rod.')) (entry as { limits?: Record<string, unknown> }).limits = { hardRange: { min: 0, max: maximumTravel } }
   }
+  coreEquipment.keyValues.push('rodTravelMean')
   // Leg and plenum temperatures (ld01-unit.rs: mass-weighted over a loop's hot and cold leg regions, the core's inlet
   // the lower plenum, its outlet the upper), each on the first region it is weighted over.
   for (const family of ic.families) {
@@ -382,7 +383,9 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
       reading('fieldProtectionInitiated', 'Field-supply-loss protection initiated', 'discrete', 'control', 'boolean', 'boolean', 'LD01.TG.GEN.FIELD.INITIATED', '1'),
       reading('offsiteLost', 'Offsite connection lost', 'discrete', 'electrical', 'boolean', 'boolean', 'LD01.GRID.OFFSITE_LOST', '1'),
     ],
-    commands: [{ path: 'turbineTrip', label: 'Turbine trip', actuation: 'command', command: { kind: 'TurbineTrip' }, momentary: true }],
+    // The unit composes the acquired protection, so the manual turbine trip's reactor-trip request travels the acquired
+    // path (turbine-state report, division processors, holding contacts): the kernel's TurbineTripAcquired, never S2's.
+    commands: [{ path: 'turbineTrip', label: 'Turbine trip', actuation: 'command', command: { kind: 'TurbineTripAcquired' }, momentary: true }],
     keyValues: ['terminalPower', 'shaftSpeed'],
   }
   equipment.set(turbine.id, turbine)

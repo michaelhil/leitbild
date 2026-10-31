@@ -56,9 +56,6 @@ const levelAspect = (parameters: unknown) => {
   return level === undefined ? [] : [aspect('level', { variable: level, reading: 'value' })]
 }
 
-/** Rod travels read one by one, inserted at travel 0, and the mean travel they average to. */
-const insertionSchema = z.object({ reading: localVariablePathSchema, groups: z.array(z.array(localVariablePathSchema).min(1)).min(1) }).strict()
-
 export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     // A coolant region of the unit's hydraulic network: a plenum, a leg, a downcomer.
@@ -75,14 +72,10 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     kind: 'nativeReactorCore' as ComponentKind,
     label: 'Reactor core',
     ports: { inlet: { ...coolant, direction: 'in' }, outlet: { ...coolant, direction: 'out' } },
-    parametersSchema: observedSchema.extend({ volumeM3: z.number().finite().positive(), powerReading: localVariablePathSchema, insertion: insertionSchema.optional() }).strict(),
+    parametersSchema: observedSchema.extend({ volumeM3: z.number().finite().positive(), powerReading: localVariablePathSchema }).strict(),
     semantics: parameters => {
-      const core = parameters as Observed & { readonly powerReading: string; readonly insertion?: z.infer<typeof insertionSchema> }
-      return fixedSemantics({
-        keyValues: core.keyValues,
-        energy: [{ role: 'source', circuit: 'coolant', rate: core.powerReading }],
-        ...(core.insertion === undefined ? {} : { insertion: { reading: core.insertion.reading, insertedAt: 'min' as const, groups: core.insertion.groups } }),
-      })(parameters)
+      const core = parameters as Observed & { readonly powerReading: string }
+      return fixedSemantics({ keyValues: core.keyValues, energy: [{ role: 'source', circuit: 'coolant', rate: core.powerReading }] })(parameters)
     },
     variables: [],
     resolveAdditionalVariables: observedVariables,
