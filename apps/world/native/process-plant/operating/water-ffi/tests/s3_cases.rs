@@ -517,6 +517,10 @@ struct Recorder {
     /// Tavg = (Th + Tc)/2), read at the frame's left limit with the system
     /// (`sample`); never in `frames`.
     legs: Option<Legs>,
+    /// HOOK (NUC, plan r4 X4.2): with the packet's CVCS, its block's
+    /// physical coordinates at every frame (first index, scales, rows);
+    /// never in `frames`.
+    cvcs: Option<(usize, Vec<f64>, Vec<Value>)>,
 }
 /// HOT.A, HOT.B, COLD.A, COLD.B cells, the left-limit state and the rows.
 struct Legs {
@@ -582,6 +586,10 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
         let y = &self.scratch;
         if let Some((readings, _, rows)) = self.operator.as_mut() {
             rows.push(json!({"t_s": t, "values": readings.values(y)?}));
+        }
+        if let Some((base, scales, rows)) = self.cvcs.as_mut() {
+            let x: Vec<f64> = scales.iter().enumerate().map(|(k, s)| y[*base + k] * s).collect();
+            rows.push(json!([t, x]));
         }
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
         self.rows.push(json!({"t_s": t, "pzr_roof_pa": y[self.roof.0] * self.roof.1,
@@ -1714,7 +1722,13 @@ fn drive(
                 rows: Vec::new(),
             }
         }),
+        cvcs: joined
+            .cvcs()
+            .map(|b| (o.cvcs, b.layout().scales.clone(), Vec::new())),
     };
+    let cvcs_section = joined.cvcs().map(|b| {
+        json!({"labels": b.layout().labels, "program": b.section().program, "controller": b.section().controller})
+    });
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
     let ledger_atol: Vec<f64> = atol.iter().map(|a| a / ask.scaling.absolute).collect();
@@ -2771,7 +2785,7 @@ fn drive(
     // MR-1 (R7-P): the handle's counts and the packet's section, for the receipt.
     let rebuild_counts = ida.rebuild();
     let rebuild_section = ida.system().integrated().joined.matrix_rebuild().map(|m| json!({"rebuildEverySteps": m.rebuild_every_steps, "appliesFrom": m.applies_from, "decision": m.decision}));
-    let record = json!({
+    let mut record = json!({
         "label": ask.label,
         "failure": failure,
         "failure_at": failure.as_ref().map(|_| json!({
@@ -2866,6 +2880,11 @@ fn drive(
         "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
     });
+    // HOOK (NUC, plan r4 X4.2): only a CVCS packet's record has the key.
+    if let (Some(section), Some((_, _, rows))) = (cvcs_section, recorder.cvcs.as_ref()) {
+        record["cvcs_frames"] = json!({"section": section, "frames": rows,
+            "rule": "per frame [t, the CVCS block's physical coordinates in the labels' order] at the frame's state"});
+    }
     eprintln!(
         "{} [{}]: R {} S {}; run CPU {run_cpu_s:.2} s (gate obs {:.2}) over {simulated:.2} s; failure {failure:?}; rule I exit {exit_after_zero:?}",
         case.key(),
