@@ -114,7 +114,9 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
         feed_j_kg: derived.feed_enthalpy_j_kg,
         props: &props,
     };
-    let pressures: Vec<f64> = (0..=12).map(|k| 6.0e6 + 0.05e6 * k as f64).collect();
+    // X4.5: the refit's emergent pressure lies below 6 MPa; the sweep spans
+    // 4.8-6.6 MPa.
+    let pressures: Vec<f64> = (0..=36).map(|k| 4.8e6 + 0.05e6 * k as f64).collect();
     let q = &probe.primary;
     let port_at = |t_k: f64, m: f64| {
         PrimaryPort::held(&props, q.pressure_pa, t_k, m / q.flow_area_m2).unwrap()
@@ -136,10 +138,10 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
                     .as_f64()
                     .unwrap()
             },
-            6.0e6,
+            4.8e6,
             6.6e6,
         );
-        let (station_root, it2) = sweep.root(|p| duty(&port, p) - station[k], 6.0e6, 6.6e6);
+        let (station_root, it2) = sweep.root(|p| duty(&port, p) - station[k], 4.8e6, 6.6e6);
         cases.push(json!({"sg":g.id,"primary":{"pressure_Pa":q.pressure_pa,"temperature_K":q.temperature_k,
                 "massFlow_kg_s":q.mass_flow_kg_s[k],"massFlux_kg_m2_s":q.mass_flow_kg_s[k] / q.flow_area_m2},
             "sweep":rows,
@@ -157,7 +159,7 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
                 .as_f64()
                 .unwrap()
         },
-        5.9e6,
+        4.8e6,
         6.6e6,
     );
     // Formulation comparisons with the wiki's HEOS figures (not checks of IF97).
