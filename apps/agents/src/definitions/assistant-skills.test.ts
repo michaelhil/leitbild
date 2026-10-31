@@ -74,6 +74,9 @@ describe('Leitbild Assistant skills', () => {
     expect(assistance.body).toContain('A target or elapsed time alone proves neither recovery nor sustained stability')
     expect(assistance.body).not.toContain('Tavg falls below its no-load value')
     expect(assistance.body).not.toContain('With every narrow-range level off scale its criterion is total feed')
+    expect(assistance.body).toContain('Respect an explicitly requested monitoring horizon in simulation time')
+    expect(assistance.body).toContain('Leave the procedure active unless its authored end or handover is supported')
+    expect(assistance.body).toContain('Repeated reads at one paused time add no monitoring duration')
     // A rate the display marks "reversing" is turning, not going one way (run-26c rcp-trip).
     expect(assistance.body).toContain('one marked "reversing" is turning')
     expect(assistance.body).toContain('use only a reset the control listing offers')
