@@ -1433,6 +1433,10 @@ struct CaseConfig {
     solver: leitbild_operating_water::unit::profile::Solver,
     matrix_rebuild: leitbild_operating_water::frame::MatrixRebuild,
     ramp_cap: bool,
+    /// X4.4 (lane ROD): automatic rod control composed in AUTO
+    /// (`LD01_ROD_AUTO` on | off, unset off; the block from
+    /// `LD01_ROD_CONTROL_WIKI`).
+    rod_auto: bool,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1461,14 +1465,20 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_S3_RC1={v}: on or off")),
         };
+        let rod_auto = match var("LD01_ROD_AUTO", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_ROD_AUTO={v}: on or off")),
+        };
         Ok(Self {
             solver,
             matrix_rebuild,
             ramp_cap,
+            rod_auto,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto})
     }
 }
 
@@ -1565,9 +1575,36 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let unit = s3::compose_with(inputs, state, ask.scaling, ask.config.solver, wrap)
+    let mut unit = s3::compose_with(inputs, state, ask.scaling, ask.config.solver, wrap)
         .unwrap_or_else(|e| panic!("{e}"));
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
+    // X4.4 (lane ROD): automatic rod control in AUTO when asked.
+    let (mut rods, rod_receipt) = if ask.config.rod_auto {
+        use leitbild_operating_water::unit::rod_control;
+        let wiki = std::env::var("LD01_ROD_CONTROL_WIKI")
+            .expect("LD01_ROD_AUTO=on needs LD01_ROD_CONTROL_WIKI");
+        let section = rod_control::section(&wiki).unwrap_or_else(|e| panic!("{e}"));
+        let ids: Vec<String> = inputs.spine.packet_json().unwrap()["mechanics"]["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_string())
+            .collect();
+        let (y0, reference) = (unit.y.clone(), unit.reference.clone());
+        let (c, r) = rod_control::commission(
+            unit.ida.system_mut(),
+            &section,
+            &ids,
+            leitbild_operating_water::frame::Class::S,
+            t0,
+            &y0,
+            &reference,
+        )
+        .unwrap_or_else(|e| panic!("rod control: {e}"));
+        (Some(c), json!({"wiki": wiki, "commissioning": r}))
+    } else {
+        (None, Value::Null)
+    };
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));
     d.block.text(&d.common("/frameAlignment/rule"));
     assert_eq!(
@@ -1979,6 +2016,9 @@ fn drive(
             if let Some(f) = feed.as_mut() {
                 extra.push(f);
             }
+            if let Some(r) = rods.as_mut() {
+                extra.push(r);
+            }
             let mut clients = plant::clients(protection, control, field, &mut extra);
             driver.start(&mut clients, t0, y, yp)
         };
@@ -2012,9 +2052,12 @@ fn drive(
             }
             r = {
                 let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
-            if let Some(f) = feed.as_mut() {
-                extra.push(f);
-            }
+                if let Some(f) = feed.as_mut() {
+                    extra.push(f);
+                }
+                if let Some(r) = rods.as_mut() {
+                    extra.push(r);
+                }
                 let mut clients = plant::clients(protection, control, field, &mut extra);
                 driver
                     .run_observed(ida, t, *b, y, yp, &mut clients, &setup, Some(&mut observer))
@@ -2308,9 +2351,12 @@ fn drive(
                         driver.cpu.gate_s += process_cpu_s() - gate0;
                         if step.is_ok() {
                             let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
-            if let Some(f) = feed.as_mut() {
-                extra.push(f);
-            }
+                            if let Some(f) = feed.as_mut() {
+                                extra.push(f);
+                            }
+                            if let Some(r) = rods.as_mut() {
+                                extra.push(r);
+                            }
                             let mut clients =
                                 plant::clients(protection, control, field, &mut extra);
                             step = driver.apply_due(ida, y, yp, &mut clients, &setup);
@@ -2785,6 +2831,8 @@ fn drive(
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "case_configuration": ask.config.json(),
+            "rod_control": rod_receipt.clone(),
+            "rod_schedule": rods.as_ref().map(|r| r.schedule.clone()),
             "weights": ida.weight_rule_kind(),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": profile::MAX_ORDER, "max_step_s": max_step,

@@ -6,4 +6,5 @@
 //! a held-input change at a frame instant, class S or R under S3-D1.
 pub mod feed;
 pub mod pzr_pressure;
+pub mod rods;
 pub mod spray_valve;

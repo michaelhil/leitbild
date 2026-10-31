@@ -37,7 +37,20 @@
 //! the sector inventory: [`carve`] removes it from the network packet once,
 //! before the network is compiled. The stem stays with the drive line (H7).
 //! The holding circuit opens at the declared delay after the manual turbine
-//! TRIP (H6); grip release is then immediate (G3). A seated body's arrival
+//! TRIP (H6); grip release is then immediate (G3).
+//!
+//! DRIVEN (plan r4 X4.4, the wiki's quasi-steady rate drive): while the
+//! ordinary drive is engaged, every held class is driven at the one common
+//! requested rate `u` (m/s), a held input between I&C frames: its travel
+//! row is `y' - v - u` and `v` keeps its algebraic rest row, so `u` enters
+//! only a differential row (class S at a frame, S3-D4) and the differential
+//! identity is a held class's. Body inertia, wall and drag forces at the
+//! ordinary <= 8 mm/s are omitted in DRIVEN (declared judgement, X4.4 (d)):
+//! the mouths and the bores' water still see the displacement `y'`. The
+//! holding circuit's opening releases a driven class as a held one; a driven
+//! class whose grip is declared stuck returns to HELD there (protective
+//! initiation withdraws the ordinary drive). The drive's work `M g u` is the
+//! drive line's, outside the bodies' fluid ledger. A seated body's arrival
 //! energy is deposited once into its fuel assembly's top fitting. Every
 //! value comes from the compiled `rods` section and the network packet;
 //! nothing is defaulted, clipped or floored, and nothing is iterated here:
@@ -174,6 +187,8 @@ pub struct RodPacket {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum Mode {
     Held,
+    /// Held by its grip and moved by the ordinary rate drive (X4.4).
+    Driven,
     Free,
     Seated,
 }
@@ -451,6 +466,9 @@ pub struct RodBlock {
     layout: Layout,
     prepared: Vec<f64>,
     modes: Vec<Mode>,
+    /// X4.4: the common requested rate of the driven classes, m/s (zero
+    /// unless a class is driven).
+    drive_m_s: f64,
     failed_release: Vec<bool>,
     holding_open_at: Option<f64>,
     /// Set only for a conservation-account evaluation
@@ -839,6 +857,7 @@ impl RodBlock {
             layout,
             prepared,
             modes: vec![Mode::Held; classes],
+            drive_m_s: 0.,
             failed_release: vec![false; classes],
             holding_open_at: None,
             capture: false,
@@ -952,7 +971,7 @@ impl RodBlock {
             return Err(fatal("rods: stuck-cluster command time"));
         }
         let k = cluster.group;
-        if self.modes[k] != Mode::Held {
+        if !matches!(self.modes[k], Mode::Held | Mode::Driven) {
             return Err(fatal(format!(
                 "rods: {id} is {:?}, not held: a stuck grip is declared before its release",
                 self.modes[k]
@@ -993,6 +1012,60 @@ impl RodBlock {
     }
     pub fn holding_open_at(&self) -> Option<f64> {
         self.holding_open_at
+    }
+    /// X4.4: the engaged drive's common requested rate (m/s), `None` when
+    /// no class is driven.
+    pub fn drive(&self) -> Option<f64> {
+        self.modes.contains(&Mode::Driven).then_some(self.drive_m_s)
+    }
+    /// X4.4: engage the ordinary rate drive at `rate` m/s, change its rate,
+    /// or (`None`) withdraw it to HELD. Engaging needs every class held
+    /// (none released, seated or free) and the holding circuit not open or
+    /// opening; a change needs it engaged. A held input: nothing else moves.
+    pub fn set_drive(&mut self, t: f64, drive: Option<f64>) -> Result<Transaction, Failure> {
+        if !t.is_finite() {
+            return Err(fatal("rods: drive request time"));
+        }
+        let before = self.drive();
+        match drive {
+            Some(rate) => {
+                if !rate.is_finite() {
+                    return Err(fatal(format!("rods: drive rate {rate} m/s")));
+                }
+                if before.is_none() {
+                    if let Some(open) = self.holding_open_at {
+                        return Err(fatal(format!(
+                            "rods: the holding circuit is open or opening (at {open} s): the drive cannot engage"
+                        )));
+                    }
+                    if let Some(k) = self.modes.iter().position(|m| *m != Mode::Held) {
+                        return Err(fatal(format!(
+                            "rods: {} is {:?}: the drive engages only a held bank",
+                            self.class_id(k),
+                            self.modes[k]
+                        )));
+                    }
+                    self.modes.fill(Mode::Driven);
+                }
+                self.drive_m_s = rate;
+            }
+            None => {
+                if before.is_none() {
+                    return Err(fatal("rods: the drive is not engaged"));
+                }
+                for m in &mut self.modes {
+                    if *m == Mode::Driven {
+                        *m = Mode::Held;
+                    }
+                }
+                self.drive_m_s = 0.;
+            }
+        }
+        Ok(Transaction {
+            deposits: Vec::new(),
+            receipt: json!({"owner": "rods", "drive": "X4.4 rate drive", "t_s": t,
+                "before_m_s": before, "after_m_s": self.drive()}),
+        })
     }
     /// Network cell indices of LOWER, UPPER and HOUSING.MAIN.
     pub fn plena(&self) -> [usize; 3] {
@@ -1553,7 +1626,10 @@ impl RodBlock {
         let f = self.forces(self.groups[c].members[0], x, fluid, bore)?;
         let base = Self::base(c);
         let (y, v) = (x.value(base + TRAVEL), x.value(base + VELOCITY));
-        let travel = x.rate(base + TRAVEL) - v;
+        let travel = match self.modes[c] {
+            Mode::Driven => x.rate(base + TRAVEL) - v - s(self.drive_m_s),
+            Mode::Held | Mode::Free | Mode::Seated => x.rate(base + TRAVEL) - v,
+        };
         let motion = match self.modes[c] {
             Mode::Free => {
                 if self.spider_drag == SpiderDrag::Pending {
@@ -1563,7 +1639,7 @@ impl RodBlock {
                 }
                 x.rate(base + VELOCITY) - f.net / s(self.mass)
             }
-            Mode::Held | Mode::Seated => v,
+            Mode::Held | Mode::Driven | Mode::Seated => v,
         };
         for (cell, [mass, enthalpy, tracer]) in self.transport(&f, fluid)? {
             receipts.add(cell, 0, m * mass, m * enthalpy, m * tracer)?;
@@ -1703,7 +1779,7 @@ impl<P: Properties> Rods<P> for RodBlock {
             let travel = x.rate(base + TRAVEL).value - rows[base + TRAVEL].value;
             let acceleration = match self.modes[c] {
                 Mode::Free => x.rate(base + VELOCITY).value - rows[base + VELOCITY].value,
-                Mode::Held | Mode::Seated => 0.,
+                Mode::Held | Mode::Driven | Mode::Seated => 0.,
             };
             rate += m * (self.mass * v * acceleration + self.mass * self.gravity * travel);
         }
@@ -1733,21 +1809,29 @@ impl<P: Properties> Rods<P> for RodBlock {
     // every cluster's mode and declared failed release, and the holding
     // circuit's opening time.
     fn discrete_state(&self) -> serde_json::Value {
-        // E-NUC: per cluster, each its motion class's.
-        json!({
+        // E-NUC: per cluster, each its motion class's. X4.4: the drive's
+        // rate is recorded exactly when a class is driven, and only then.
+        let mut state = json!({
             "modes": self.clusters.iter().map(|c| match self.modes[c.group] {
-                Mode::Held => "held", Mode::Free => "free", Mode::Seated => "seated",
+                Mode::Held => "held", Mode::Driven => "driven", Mode::Free => "free", Mode::Seated => "seated",
             }).collect::<Vec<_>>(),
             "failed_release": self.clusters.iter().map(|c| self.failed_release[c.group]).collect::<Vec<_>>(),
             "holding_open_at": snapshot_time(self.holding_open_at),
-        })
+        });
+        if self.drive().is_some() {
+            state["drive_m_s"] = snapshot_time(Some(self.drive_m_s));
+        }
+        state
     }
     fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
-        let o = snapshot_object(
-            state,
-            "rods",
-            &["modes", "failed_release", "holding_open_at"],
-        )?;
+        // X4.4: `drive_m_s` is present exactly when a mode is driven.
+        let driven = state.get("drive_m_s").is_some();
+        let keys: &[&str] = if driven {
+            &["modes", "failed_release", "holding_open_at", "drive_m_s"]
+        } else {
+            &["modes", "failed_release", "holding_open_at"]
+        };
+        let o = snapshot_object(state, "rods", keys)?;
         let n = self.clusters.len();
         let modes = o["modes"]
             .as_array()
@@ -1756,6 +1840,7 @@ impl<P: Properties> Rods<P> for RodBlock {
             .iter()
             .map(|m| match m.as_str() {
                 Some("held") => Ok(Mode::Held),
+                Some("driven") => Ok(Mode::Driven),
                 Some("free") => Ok(Mode::Free),
                 Some("seated") => Ok(Mode::Seated),
                 other => Err(fatal(format!("rods snapshot: mode {other:?}"))),
@@ -1795,10 +1880,29 @@ impl<P: Properties> Rods<P> for RodBlock {
             class_modes.push(modes[first]);
             class_failed.push(failed[first]);
         }
+        if class_modes.contains(&Mode::Driven) != driven {
+            return Err(fatal(
+                "rods snapshot: the drive's rate is recorded exactly when a mode is driven",
+            ));
+        }
+        let drive = if driven {
+            restored_time(&o["drive_m_s"])?
+                .filter(|r| r.is_finite())
+                .ok_or_else(|| fatal("rods snapshot: the drive's rate"))?
+        } else {
+            0.
+        };
         self.holding_open_at = restored_time(&o["holding_open_at"])?;
         self.modes = class_modes;
         self.failed_release = class_failed;
+        self.drive_m_s = drive;
         Ok(())
+    }
+    fn drive(&self) -> Option<f64> {
+        RodBlock::drive(self)
+    }
+    fn set_drive(&mut self, t: f64, drive: Option<f64>) -> Result<Transaction, Failure> {
+        RodBlock::set_drive(self, t, drive)
     }
     fn next_time_event(&self, t: f64) -> Option<f64> {
         self.holding_open_at.filter(|open| *open > t)
@@ -1808,10 +1912,19 @@ impl<P: Properties> Rods<P> for RodBlock {
         // stuck releases here, since its release root (t - open) is exactly
         // zero at the stop and would never report a crossing. A release the
         // root already transacted left no held cluster: nothing is due.
+        // X4.4: a driven class releases as a held one; a driven stuck one
+        // returns to HELD in the same transaction.
         let directions: Vec<i32> = (0..self.groups.len())
-            .map(|c| i32::from(self.modes[c] == Mode::Held && !self.failed_release[c]))
+            .map(|c| {
+                i32::from(
+                    matches!(self.modes[c], Mode::Held | Mode::Driven) && !self.failed_release[c],
+                )
+            })
             .collect();
-        if self.holding_open_at != Some(t) || directions.iter().all(|d| *d == 0) {
+        let stuck_driven =
+            (0..self.groups.len()).any(|c| self.modes[c] == Mode::Driven && self.failed_release[c]);
+        if self.holding_open_at != Some(t) || (directions.iter().all(|d| *d == 0) && !stuck_driven)
+        {
             return Ok(None);
         }
         Rods::<P>::transact(self, p, t, &directions, y).map(Some)
@@ -2138,7 +2251,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         for (c, root) in out.iter_mut().enumerate() {
             *root = match self.modes[c] {
                 // Release when the holding circuit opens, unless stuck.
-                Mode::Held => match self.holding_open_at {
+                Mode::Held | Mode::Driven => match self.holding_open_at {
                     Some(open) if !self.failed_release[c] => t - open,
                     _ => 1.,
                 },
@@ -2147,7 +2260,10 @@ impl<P: Properties> Rods<P> for RodBlock {
                 // Lift-off when the seat would have to pull.
                 Mode::Seated => {
                     let bore = self.bore(properties, c, &x)?;
-                    -self.forces(self.groups[c].members[0], &x, fluid, &bore)?.net.value
+                    -self
+                        .forces(self.groups[c].members[0], &x, fluid, &bore)?
+                        .net
+                        .value
                 }
             };
         }
@@ -2201,6 +2317,19 @@ impl<P: Properties> Rods<P> for RodBlock {
         }
         let mut deposits = Vec::new();
         let mut events = Vec::new();
+        // X4.4: once the holding circuit is open, a driven class whose grip
+        // is declared stuck stays held with the ordinary drive withdrawn.
+        if self.holding_open_at.is_some_and(|open| open <= t) {
+            for c in 0..self.groups.len() {
+                if self.modes[c] == Mode::Driven && self.failed_release[c] {
+                    self.modes[c] = Mode::Held;
+                    events.push(json!({"class": self.class_id(c), "event": "drive withdrawn (stuck grip, holding open)", "t_s": t, "travel_m": y[Self::base(c) + TRAVEL]}));
+                }
+            }
+            if !self.modes.contains(&Mode::Driven) {
+                self.drive_m_s = 0.;
+            }
+        }
         for (c, &direction) in directions.iter().enumerate() {
             if direction == 0 {
                 continue;
@@ -2214,7 +2343,7 @@ impl<P: Properties> Rods<P> for RodBlock {
                 .collect();
             let base = Self::base(c);
             match self.modes[c] {
-                Mode::Held => {
+                Mode::Held | Mode::Driven => {
                     let open = self.holding_open_at.ok_or_else(|| {
                         fatal(format!(
                             "rods: {id} released with the holding circuit closed"
@@ -2225,9 +2354,13 @@ impl<P: Properties> Rods<P> for RodBlock {
                             "rods: {id} release root without its release"
                         )));
                     }
+                    let driven = self.modes[c] == Mode::Driven;
                     self.modes[c] = Mode::Free;
                     for id in &ids {
-                        events.push(json!({"cluster": id, "event": "grip release", "t_s": t, "travel_m": y[base + TRAVEL]}));
+                        events.push(json!({"cluster": id, "event": "grip release", "t_s": t, "travel_m": y[base + TRAVEL], "from_drive": driven}));
+                    }
+                    if !self.modes.contains(&Mode::Driven) {
+                        self.drive_m_s = 0.;
                     }
                 }
                 Mode::Free => {

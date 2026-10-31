@@ -726,6 +726,12 @@ pub trait Rods<P> {
         y: &mut [f64],
     ) -> Result<Transaction, Failure>;
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure>;
+    /// X4.4 (lane ROD): the ordinary rate drive's common requested rate
+    /// (m/s) while it is engaged, `None` otherwise.
+    fn drive(&self) -> Option<f64>;
+    /// X4.4 (lane ROD): engage the rate drive at a rate, change its rate, or
+    /// (`None`) withdraw it; a held input at a frame instant.
+    fn set_drive(&mut self, t: f64, drive: Option<f64>) -> Result<Transaction, Failure>;
     /// The earliest declared time event strictly after `t` (for example the
     /// holding circuit's opening after its declared delay), or `None`.
     fn next_time_event(&self, t: f64) -> Option<f64>;

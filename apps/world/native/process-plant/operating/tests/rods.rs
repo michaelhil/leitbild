@@ -1053,6 +1053,87 @@ fn the_holding_opening_releases_every_held_cluster_once_as_a_time_event() {
     assert_eq!(Rods::<Liquid>::next_time_event(&b, open), None);
 }
 
+/// X4.4 (lane ROD): the rate drive moves every held class at the common
+/// rate through its travel row only; at rest its rows are a held block's
+/// bitwise; the holding opening releases the driven classes and returns a
+/// driven stuck one to HELD; the snapshot carries the rate exactly when
+/// driven.
+#[test]
+fn the_rate_drive_enters_only_the_travel_rows_and_the_opening_ends_it() {
+    let water = z4_field(0.);
+    let mut b = block_with(SpiderDrag::Omitted, &[5]);
+    let physical = held(&mut b, &water, 2.8, 1.3157);
+    let y = solver(&b, &physical);
+    let yp = vec![0.; y.len()];
+    let (held_rows, held_cells, _) = evaluate(&mut b, &y, &yp, None, 0., &water);
+    let held_state = Rods::<Liquid>::discrete_state(&b);
+    assert!(
+        Rods::<Liquid>::set_drive(&mut b, 1., None).is_err(),
+        "not engaged"
+    );
+    Rods::<Liquid>::set_drive(&mut b, 1., Some(0.)).unwrap();
+    assert_eq!(Rods::<Liquid>::drive(&b), Some(0.));
+    assert!(b.modes().iter().all(|m| *m == Mode::Driven));
+    let (rest_rows, rest_cells, _) = evaluate(&mut b, &y, &yp, None, 0., &water);
+    let bits = |r: &[Scalar]| {
+        r.iter()
+            .map(|v| (v.value.to_bits(), v.direction.to_bits()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        bits(&rest_rows),
+        bits(&held_rows),
+        "at rest a driven block's rows are a held one's"
+    );
+    assert_eq!(format!("{rest_cells:?}"), format!("{held_cells:?}"));
+    assert_eq!(Rods::<Liquid>::differential(&b), {
+        let mut h = block_with(SpiderDrag::Omitted, &[5]);
+        held(&mut h, &water, 2.8, 1.3157);
+        Rods::<Liquid>::differential(&h)
+    });
+    Rods::<Liquid>::set_drive(&mut b, 1.1, Some(-0.004)).unwrap();
+    let (rows, _, _) = evaluate(&mut b, &y, &yp, None, 0., &water);
+    for (i, (a, h)) in rows.iter().zip(&held_rows).enumerate() {
+        let travel =
+            (0..b.bore_groups().len()).any(|c| b.cluster_index(b.bore_groups()[c][0], TRAVEL) == i);
+        if travel {
+            assert_eq!(a.value, h.value + 0.004, "row {i}: y' - v - u");
+        } else {
+            assert_eq!(a.value.to_bits(), h.value.to_bits(), "row {i} unchanged");
+        }
+    }
+    // The snapshot carries the rate exactly while driven.
+    let driven_state = Rods::<Liquid>::discrete_state(&b);
+    assert!(driven_state.get("drive_m_s").is_some() && held_state.get("drive_m_s").is_none());
+    let mut r = block_with(SpiderDrag::Omitted, &[5]);
+    Rods::<Liquid>::restore_discrete_state(&mut r, &driven_state).unwrap();
+    assert_eq!(Rods::<Liquid>::drive(&r), Some(-0.004));
+    let mut forged = driven_state.clone();
+    forged.as_object_mut().unwrap().remove("drive_m_s");
+    assert!(Rods::<Liquid>::restore_discrete_state(&mut r, &forged).is_err());
+    // The opening releases the driven classes; the stuck one is held.
+    b.set_failed_release(5).unwrap();
+    Rods::<Liquid>::command(&mut b, 1.5, Command::TurbineTrip).unwrap();
+    assert!(
+        Rods::<Liquid>::set_drive(&mut b, 1.6, Some(0.002)).is_ok(),
+        "a rate change before the opening"
+    );
+    let open = Rods::<Liquid>::next_time_event(&b, 1.5).unwrap();
+    let mut p = physical.clone();
+    Rods::<Liquid>::time_event(&mut b, &Liquid, open, &mut p)
+        .unwrap()
+        .expect("the opening is due");
+    for c in 0..N {
+        let expected = if c == 5 { Mode::Held } else { Mode::Free };
+        assert_eq!(b.modes()[c], expected, "cluster {c}");
+    }
+    assert_eq!(Rods::<Liquid>::drive(&b), None);
+    assert!(
+        Rods::<Liquid>::set_drive(&mut b, open, Some(0.)).is_err(),
+        "no engagement once open"
+    );
+}
+
 #[test]
 fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
     let water = z4_field(0.);
