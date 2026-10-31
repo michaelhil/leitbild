@@ -316,6 +316,24 @@ impl FeedOwner {
         let back = (d - unsat) / s(scale) * s(c.outer_integral_per_s / c.outer_proportional);
         (d, s(c.outer_integral_per_s) * el + back)
     }
+    /// The channel lags' operator-grade absolute tolerances, as `(own
+    /// index, physical tolerance)`: each a quarter of its channel's
+    /// uncertainty (`ld01-feed-compact`, `ld01-operator-budgets` r2). The
+    /// integrals and valves keep the stock floor (loosening them failed C2
+    /// at the last rod seat, 1 November).
+    pub fn operator_tolerances(&self) -> Vec<(usize, f64)> {
+        let t = self.train.operator_tolerances;
+        let mut out = Vec::new();
+        for k in 0..self.sgs {
+            let c = self.control(k);
+            out.extend([
+                (c + NR_LAG, t.nr_level_m),
+                (c + STEAM_LAG, t.flow_kg_s),
+                (c + FEED_LAG, t.flow_kg_s),
+            ]);
+        }
+        out
+    }
     /// The stem rate toward demand `d` at position `u`.
     pub fn stem_rate(&self, d: Scalar, u: Scalar) -> Scalar {
         let r = (d - u) / s(self.train.stem_time_constant_s);
@@ -982,6 +1000,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
     }
     fn feed_gate_declared(&self) -> bool {
         self.feed_gate_declared
+    }
+    fn operator_tolerances(&self) -> Vec<(usize, f64)> {
+        self.feed
+            .as_ref()
+            .map_or_else(Vec::new, FeedOwner::operator_tolerances)
     }
     fn account(&self) -> OwnerAccount {
         let h_feed = self.derived.feed_enthalpy_j_kg;

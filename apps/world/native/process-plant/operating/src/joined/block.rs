@@ -588,6 +588,12 @@ pub trait Secondary<P> {
     fn feed_gate_declared(&self) -> bool {
         false
     }
+    /// FEED (plan r4): absolute tolerances the owner declares for its
+    /// control coordinates at operator grade, as `(own index, physical
+    /// tolerance)`; the composition applies them. None by default.
+    fn operator_tolerances(&self) -> Vec<(usize, f64)> {
+        Vec::new()
+    }
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),

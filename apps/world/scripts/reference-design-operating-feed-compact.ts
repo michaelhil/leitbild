@@ -48,7 +48,8 @@ const compactSchema = z.object({
   pumpLaw: z.literal('forwardQuadraticAtRatedSpeed'), fluid: z.literal('liquidAtReferenceDensity'),
   branchLaw: z.literal('seriesIsoPathAndFcvLiquid'), feedEnthalpy: z.literal('recordedSgFeedState'),
   supportLoss: z.literal('deliveredFeedZero'), stem: z.literal('firstOrderWithinStrokeRate'), levelInput: z.literal('apparentLevel'),
-  cascade: z.literal('continuous'), stemTimeConstant_s: z.number().finite().positive() }).strict()
+  cascade: z.literal('continuous'), stemTimeConstant_s: z.number().finite().positive(),
+  operatorTolerances: z.object({ budgetFraction: fraction, uncertaintyFractionOfSpan: fraction, nrLevelBudget_m: pos, flowSpanOfNominal: pos }).strict() }).strict()
 const cascadeSchema = z.object({
   levelSetpoint: fraction, outerProportional: pos, outerIntegral_per_s: pos, requestRange: range, valveBias: fraction, valveRange: range,
   innerProportional: pos, innerIntegral_per_s: pos, sample_s: pos, feedFlowLag_s: pos, feedFlowSpan: range, steamFlowLag_s: pos, steamFlowSpan: range,
@@ -88,6 +89,11 @@ export function compileFeedCompact(p: CompactPages) {
     shutoffHeadRatio: train.shutoffHeadRatio, headerPressure_Pa: cycle.feedHeaderPressure_MPaAbs * MPa,
     isoOutletPressure_Pa: train.branchIsoOutletPressure_MPa * MPa, receiverPressure_Pa: pump.receiverPressure_MPa * MPa,
     fcvReferenceOpening: train.fcvReferenceOpening, fcvStrokePerSecond: train.fcvStrokePerSecond, stemTimeConstant_s: compact.stemTimeConstant_s,
+    // Operator-grade absolute tolerances of the channel lags (stated
+    // arithmetic on the block): the NR budget as given; the flow channels'
+    // quarter of the channel rule over their span.
+    operatorTolerances: { nrLevel_m: compact.operatorTolerances.nrLevelBudget_m, flow_kg_s: compact.operatorTolerances.budgetFraction
+      * compact.operatorTolerances.uncertaintyFractionOfSpan * compact.operatorTolerances.flowSpanOfNominal * pump.flow_kg_s },
     startup: { decayHeat_W: startup.decayHeat_MW * MPa, sourceTemperature_K: startup.sourceTemperature_C + 273.15,
       startLevelFraction: startup.startLevelFraction, isolationLevelFraction: startup.isolationLevelFraction },
     cascade: { ...law, narrowSpan_m: level.nrSpan_m, nrLag_s: level.nrLag_s },
