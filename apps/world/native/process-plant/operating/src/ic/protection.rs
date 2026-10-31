@@ -32,6 +32,7 @@ use super::{
     division::Division,
     holding::Holding,
     packet::{Effects, Family, FunctionSpec, Quantity, ReportSource, ReportSpec, Rule, Section},
+    source_range::SourceRange,
     vote::{Side, Vote, predicate, vote},
 };
 use serde_json::{Value, json};
@@ -80,6 +81,8 @@ pub struct Protection {
     /// Every cluster seated (the `BankInserted` report's contact chain), as
     /// the client last read the rods owner.
     bank_seated: bool,
+    /// `LD01.CORE.NI.SHUTDOWN`'s SOURCE-pulse path, when the section has it.
+    pub source: Option<SourceRange>,
     /// The last decided frame.
     decided: Option<u64>,
     /// Events in order: accepted causes, contact changes, holding loss.
@@ -255,6 +258,11 @@ impl Protection {
             holding_lost_frame: None,
             turbine_trip_requested: None,
             bank_seated: false,
+            source: section
+                .source_range
+                .as_ref()
+                .map(|s| SourceRange::new(s, frame))
+                .transpose()?,
             decided: None,
             log: Vec::new(),
         })
@@ -328,6 +336,9 @@ impl Protection {
                 c.set_powered(powered);
             }
         }
+        if let Some(s) = self.source.as_mut().filter(|s| s.spec.supply == supply) {
+            s.set_powered(powered);
+        }
     }
     /// Every analog channel's delivered sample: id, acquisition frame and
     /// what it establishes (receipts).
@@ -373,6 +384,7 @@ impl Protection {
             "holding_lost_frame": self.holding_lost_frame,
             "turbine_trip_requested": self.turbine_trip_requested,
             "bank_seated": self.bank_seated,
+            "source": self.source.as_ref().map(SourceRange::snapshot),
             "decided": self.decided,
         }))
     }
@@ -392,6 +404,7 @@ impl Protection {
                 "holding_lost_frame",
                 "turbine_trip_requested",
                 "bank_seated",
+                "source",
                 "decided",
             ],
         )?;
@@ -433,6 +446,13 @@ impl Protection {
             restored_frame_option(&o["turbine_trip_requested"], "interlock request frame")?;
         self.bank_seated =
             super::acquisition::restored_bool(&o["bank_seated"], "bank seated chain")?;
+        match (self.source.as_mut(), &o["source"]) {
+            (Some(s), v) if !v.is_null() => s.restore(v)?,
+            (None, Value::Null) => {}
+            _ => {
+                return Err("protection snapshot: the SOURCE path differs from the section".into());
+            }
+        }
         self.decided = restored_frame_option(&o["decided"], "last decided frame")?;
         Ok(())
     }
@@ -461,6 +481,9 @@ impl Protection {
                 ReportSource::TurbineRetainedTrip => r.channel.acquire(k, tripped),
                 ReportSource::BankInserted => r.channel.acquire(k, self.bank_seated),
             }
+        }
+        if let Some(s) = self.source.as_mut() {
+            s.frame(k);
         }
         Ok(lost.or(self.decide(k + 1)?))
     }
