@@ -189,12 +189,12 @@ export const createSemanticSchedule = (mode: ReplayCheckpointSchedule = 'source-
       if (currentTime) priorMonitorTime = currentTime
     }
     assert(retain.size > 0)
-    return { input: { reason: `Offline source-faithful ${currentProcedure ?? 'discovery'}/${currentStep ?? 'discovery'} acquisition/record boundary at ${currentTime ?? 'initial time'}`,
+    return { input: { reason: `Offline captured ${currentProcedure ?? 'discovery'}/${currentStep ?? 'discovery'} acquisition/record boundary at ${currentTime ?? 'initial time'}`,
       retain: [...retain].map(([toolCallId, reason]) => ({ toolCallId, reason })) },
       semantic: { procedureId: currentProcedure, stepId: currentStep, simulationTime: currentTime, requiredInitialFrameTimes: requiredTimes,
         currentNoteCallId: phase.findLast(f => f.note)?.replayId, currentPointCallId: phase.findLast(f => f.pointFrame)?.replayId,
         currentControllerCallId: phase.findLast(f => f.controllerFrame)?.replayId, achievedDependencyCallId: facts.findLast(f => f.achievedDependencies)?.replayId,
-        originalHumanMessagesMustRemainVerbatim: true, sourceRequiredRecordsOnly: true, missingOriginalCaptureHealthNotRepaired: true } }
+        originalHumanMessagesMustRemainVerbatim: true, capturedSourceRecordsRetainedWithoutInventingMissingFacts: true, missingOriginalCaptureHealthNotRepaired: true } }
   }
   return { observe, prepare }
 }
@@ -274,12 +274,38 @@ const sharedCharacters = (a: string, b: string): number => {
   return i
 }
 const quantile = (sorted: ReadonlyArray<number>, fraction: number) => sorted[Math.floor((sorted.length - 1) * fraction)]!
+/** Independent test-only inverse. Production presents grouped descriptors;
+ * this checks every actual ordered receipt/selector against its full archive. */
+export const assertCheckpointReceiptLossless = (manifest: ContextCheckpointManifest, value: unknown): void => {
+  const { kind, returnedChangeGroups, ...modelFields } = object(value)
+  const { actionLedger, ...canonicalFields } = manifest
+  assert.equal(kind, 'context-checkpoint')
+  assert.deepEqual(modelFields, canonicalFields)
+  const expanded: ContextCheckpointManifest['actionLedger'] = new Array(actionLedger.length)
+  for (const raw of list(returnedChangeGroups)) {
+    const group = object(raw)
+    assert.equal(typeof group.tool, 'string')
+    const effects = list(group.effects) as ContextCheckpointManifest['actionLedger'][number]['effects']
+    for (const rawCall of list(group.calls)) {
+      const call = object(rawCall), index = Number(call.index)
+      assert(Number.isInteger(index) && index >= 0 && index < actionLedger.length)
+      assert.equal(expanded[index], undefined, 'Duplicate ledger order index')
+      assert.equal(typeof call.toolCallId, 'string')
+      const toolCallId = String(call.toolCallId)
+      expanded[index] = { toolCallId, tool: String(group.tool), effects,
+        arguments: { turnId: manifest.turnId, toolCallId, part: 'arguments' }, read: { turnId: manifest.turnId, toolCallId, part: 'result' } }
+    }
+  }
+  assert.equal(Object.keys(expanded).length, actionLedger.length, 'Missing exact action receipt')
+  assert.deepEqual(expanded, actionLedger)
+}
 const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: ReadonlyArray<ExecutionModelCall>, billed: ReadonlyArray<BillingRow>) => {
   const byId = new Map(billed.map(row => [row.executionKey.split('/').at(-1)!, row]))
   const ratios = sourceModels.map(model => byId.get(model.id)!.metrics.promptTokens / estimateRequestSize(model.request).estimatedInputTokens).sort((a, b) => a - b)
   const lowRates = billed.find(row => row.priceReconciliation.promptThreshold === null)!.priceReconciliation.ratesUsdPerToken
   const high = billed.find(row => row.priceReconciliation.promptThreshold !== null)!
   const highRates = high.priceReconciliation.ratesUsdPerToken, threshold = high.priceReconciliation.promptThreshold!
+  const maxObservedCompletion = Math.max(...billed.map(row => row.metrics.completionTokens))
   const scenarios = []
   for (const multiplier of [quantile(ratios, 0.5), ratios.at(-1)!]) {
     for (const cache of ['cold-every-request', 'shared-prefix-with-cold-rebase', 'adjacent-prefix-without-forced-cold-rebase'] as const) {
@@ -314,10 +340,22 @@ const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: Read
     calibration: { minimum: ratios[0], median: quantile(ratios, 0.5), maximum: ratios.at(-1) },
     exactCapturedRateSnapshot: { promptThreshold: threshold, lowRates, highRates },
     cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix is an explicit adjacent-JSON-prefix sensitivity, with either every post-checkpoint request fully cold or only the actually changed prefix lost. No cache hit is guaranteed.',
-    opaqueAssumptions: 'Exact recovered per-call continuation bytes are counted for every selected original group. The observed public-request calibration already includes hidden protocol overhead; adding selected bytes/4 again is deliberately conservative. No opaque payload is disclosed.', scenarios }
+    opaqueAssumptions: 'Exact recovered per-call continuation bytes are counted for every selected original group. The observed public-request calibration already includes hidden protocol overhead; adding selected bytes/4 again is deliberately conservative. No opaque payload is disclosed.',
+    additionalCheckpointOutputSensitivity: { maximumObservedOriginalCompletionTokens: maxObservedCompletion,
+      extraCheckpointRounds: requests.filter(request => request.kind === 'checkpoint').length,
+      allowanceUsdAtHighestCapturedOutputRate: requests.filter(request => request.kind === 'checkpoint').length * maxObservedCompletion * Number(highRates.completion),
+      meaning: 'Possible additional allowance for unserved checkpoint reasoning/output, above the explicit serialized-arguments estimate already charged. Uses the largest original completion on every new checkpoint; it is not an actual charge or guaranteed upper bound.' }, scenarios }
 }
 
 export const replayCapturedWorkingContext = async (paths: { capture: string; billing: string; protocol: string; output: string; schedule?: ReplayCheckpointSchedule }) => {
+  const repository = fileURLToPath(new URL('../../../', import.meta.url))
+  const sourceFiles = { benchmarkSha256: import.meta.path, evaluatorSha256: join(repository, 'apps/agents/src/agents/evaluation.ts'),
+    archiveHelperSha256: join(repository, 'apps/agents/src/core/working-context.ts'), executorSha256: join(repository, 'apps/agents/src/agents/spawn.ts'),
+    brokerSha256: join(repository, 'apps/agents/src/tools/built-in/workspace-capability-tools.ts') }
+  const implementationHashes: Record<string, string> = {}
+  for (const [name, path] of Object.entries(sourceFiles)) implementationHashes[name] = sha(new Uint8Array(await Bun.file(path).arrayBuffer()))
+  const revision = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository })
+  assert.equal(revision.exitCode, 0)
   await mkdir(paths.output, { recursive: true })
   const captureBytes = new Uint8Array(await Bun.file(paths.capture).arrayBuffer())
   const captureHash = sha(captureBytes)
@@ -428,7 +466,7 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
     return measured
   })
   const assertions = { originalArgumentAndDataParity: 0, exactRecall: 0, humanRoleEquality: 0, selectedGroupsVisible: 0,
-    failedOrUnknownPinned: 0, durableCheckpointLinks: 0, modelBillingUnknown: 0, immutableSourceHash: 0 }
+    failedOrUnknownPinned: 0, durableCheckpointLinks: 0, modelBillingUnknown: 0, immutableSourceHash: 0, losslessModelReceiptChecks: 0 }
   const originalHuman = firstRequest.messages.filter(message => message.role === 'user' || message.role === 'system')
   const provider: LLMProvider = {
     models: async () => ['offline-scripted-capture'],
@@ -456,6 +494,13 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         extraCompletionTokenEstimate = Math.ceil(content.length / 4)
       }
       const requestSize = estimateRequestSize(request), text = requestText(request)
+      for (const message of request.messages.filter(message => message.role === 'tool' && message.name === 'context_checkpoint')) {
+        const projected = object(object(JSON.parse(message.content)).result)
+        const canonical = checkpoints.find(checkpoint => checkpoint.manifest?.checkpointId === projected.checkpointId)?.manifest
+        assert(canonical, 'Every projected receipt must identify an admitted canonical manifest')
+        assertCheckpointReceiptLossless(canonical, projected)
+        assertions.losslessModelReceiptChecks++
+      }
       for (const message of request.messages.filter(message => message.role === 'assistant' && message.toolCalls?.length)) {
         const source = byProvider.get(message.toolCalls![0]!.id ?? '')
         if (source) assert.equal(jsonSha(message.continuation), jsonSha(continuationByProvider.get(source.providerCallId)), 'Retained opaque per-call protocol changed')
@@ -538,13 +583,10 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
     store.finishTurn(turnId, 'completed', 'Offline scripted replay, not a served response or physical qualification')
     assert.equal(sha(new Uint8Array(await Bun.file(paths.capture).arrayBuffer())), captureHash)
     assertions.immutableSourceHash++
-    const repository = fileURLToPath(new URL('../../../', import.meta.url))
-    const revision = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repository })
-    assert.equal(revision.exitCode, 0)
+    for (const [name, path] of Object.entries(sourceFiles)) assert.equal(sha(new Uint8Array(await Bun.file(path).arrayBuffer())), implementationHashes[name],
+      'Implementation changed during replay; do not label the archive with a different source identity')
     const report = { qualification: 'OFFLINE COUNTERFACTUAL; fixed original calls, synthetic semantic checkpoint choices. Not a successful new Agent run and not a served bill.',
-      implementation: { appCommit: revision.stdout.toString().trim(), benchmarkSha256: sha(new Uint8Array(await Bun.file(import.meta.path).arrayBuffer())),
-        evaluatorSha256: sha(new Uint8Array(await Bun.file(join(repository, 'apps/agents/src/agents/evaluation.ts')).arrayBuffer())),
-        archiveHelperSha256: sha(new Uint8Array(await Bun.file(join(repository, 'apps/agents/src/core/working-context.ts')).arrayBuffer())) },
+      implementation: { appCommit: revision.stdout.toString().trim(), ...implementationHashes },
       source: { capturePath: resolve(paths.capture), sha256: captureHash, billingSha256: sha(billingBytes), sourceTurnId: sourceTurn.id,
         sensitiveProtocolCaptureSha256: sha(protocolBytes), sensitiveProtocolNativeGroups: nativeGroups.length,
         nativeGroupsWithContinuation: nativeGroups.filter(message => message.continuation !== undefined).length,

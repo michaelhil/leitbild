@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
-import { createSemanticSchedule, type CapturedCall } from './working-context-capture-replay.ts'
+import { assertCheckpointReceiptLossless, createSemanticSchedule, type CapturedCall } from './working-context-capture-replay.ts'
 import { createExecutionStore } from '../../../apps/agents/src/core/executions/store.ts'
 import { createWorkingContextArchive, prepareWorkingContextCheckpoint, projectWorkingContextMessages,
-  type WorkingContextGroup, type WorkingMessage } from '../../../apps/agents/src/core/working-context.ts'
+  contextCheckpointReceiptForModel, type WorkingContextGroup, type WorkingMessage, type ContextCheckpointManifest } from '../../../apps/agents/src/core/working-context.ts'
 import { createConversationReadTool } from '../../../apps/agents/src/tools/built-in/conversation-read.ts'
 import { createRoom } from '../../../apps/agents/src/core/rooms/room.ts'
 import type { RoomDirectory } from '../../../apps/agents/src/core/rooms/directory.ts'
@@ -102,4 +102,28 @@ test('coarser semantic timing changes checkpoint frequency without changing requ
   }
   expect(frequentCount).toBe(5); expect(phaseOnlyCount).toBe(1)
   expect(phaseOnly.prepare()).toEqual(frequent.prepare())
+})
+
+test('independent receipt inverse preserves noncontiguous ledger ordering and rejects omitted, duplicated or altered action evidence', () => {
+  const effects = [{ kind: 'change' as const, outcome: 'returned' as const, operationId: 'world.fixture.write', target: { kind: 'resource', ref: 'actual-ref' } }]
+  const manifest: ContextCheckpointManifest = { checkpointId: 'context_1', turnId: 'turn', precedingModelId: 'model_1', reason: 'fixture', retainedGroups: [], archivedGroups: [],
+    actionLedger: ['first', 'different', 'last'].map((toolCallId, index) => ({ toolCallId, tool: index === 1 ? 'other' : 'workspace_call', effects,
+      arguments: { turnId: 'turn', toolCallId, part: 'arguments' }, read: { turnId: 'turn', toolCallId, part: 'result' } })),
+    counts: { retainedGroups: 0, archivedGroups: 0, retainedCalls: 0, archivedCalls: 0 } }
+  const model = contextCheckpointReceiptForModel(manifest)
+  expect(() => assertCheckpointReceiptLossless(manifest, model)).not.toThrow()
+  const missing = structuredClone(model); missing.returnedChangeGroups[0]!.calls.pop()
+  expect(() => assertCheckpointReceiptLossless(manifest, missing)).toThrow('Missing exact action receipt')
+  const duplicate = structuredClone(model); duplicate.returnedChangeGroups[0]!.calls[1]!.index = 0
+  expect(() => assertCheckpointReceiptLossless(manifest, duplicate)).toThrow('Duplicate ledger order index')
+  const altered = structuredClone(model); altered.returnedChangeGroups[0]!.effects[0]!.outcome = 'unknown'
+  expect(() => assertCheckpointReceiptLossless(manifest, altered)).toThrow()
+  expect(() => assertCheckpointReceiptLossless(manifest, { ...model, turnId: 'foreign' })).toThrow()
+})
+
+test('future nested metadata cannot be relabeled as the actual current source acquisition clock', () => {
+  const schedule = createSemanticSchedule()
+  const malformed = call('future', 'world.simulation-run.wait', {}, { simulationTime: time(20), next: { simulationTime: time(20),
+    run: { procedureId: 'ES-0.1', currentStepId: 'establish-auxiliary-feed' }, observation: { simulationTime: time(25) } } })
+  expect(() => schedule.observe(malformed, malformed.id)).toThrow('Nested future time cannot become current evidence')
 })
