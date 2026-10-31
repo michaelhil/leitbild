@@ -54,8 +54,20 @@ fn joined_census_against_table_1_1() {
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let (network, prepared) = Network::new(&network_packet, If97, &PZR).expect("network");
     let cells = network.cell_layout.len();
-    let nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
-    let solids = Solids::new(&joined_packet, cells).expect("solids block");
+    let mut nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
+    // E-NUC phase B: each rod seat's fitting stays out of the solids' classes.
+    let raw: serde_json::Value = serde_json::from_slice(&bytes).expect("packet json");
+    let singles: Vec<String> = raw["rods"]["clusters"]
+        .as_array()
+        .map(|c| {
+            c.iter()
+                .map(|c| format!("{}/top-fitting", c["fuel_assembly"].as_str().unwrap()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let solids =
+        Solids::new(&joined_packet, cells, nuclear.group_of(), &singles).expect("solids block");
+    nuclear.set_ports(solids.half_members()).expect("nuclear ports");
     let network_layout = joined::network_layout(&network);
     network_layout.validate("network").unwrap();
     let ids = |l: &joined::block::Layout| l.ids();
@@ -109,14 +121,35 @@ fn joined_census_against_table_1_1() {
             .clone()
     };
     assert_eq!(row("Regional N").composed, Some([24, 0]));
-    assert_eq!(row("Material precursors").composed, Some([2316, 0]));
-    assert_eq!(row("Fissile, fertile").composed, Some([2316, 0]));
-    assert_eq!(row("Delayed-energy").composed, Some([9650, 0]));
-    assert_eq!(row("Fuel 2 + clad 1").composed, Some([1158, 0]));
-    assert_eq!(row("Massless").composed, Some([0, 1158]));
-    assert_eq!(row("Helium").composed, Some([193, 0]));
-    assert_eq!(row("Guide/plenum").composed, Some([1351, 0]));
+    // E-NUC: 18 exact replica groups of the 386 carriers.
+    let groups = nuclear.replica_groups();
+    assert_eq!(groups, 18);
+    assert_eq!(row("Material precursors").composed, Some([6 * groups, 0]));
+    assert_eq!(row("Fissile, fertile").composed, Some([6 * groups, 0]));
+    assert_eq!(row("Delayed-energy").composed, Some([25 * groups, 0]));
+    assert_eq!(row("Material precursors").represented, Some([2316, 0]));
+    assert_eq!(row("Fissile, fertile").represented, Some([2316, 0]));
+    assert_eq!(row("Delayed-energy").represented, Some([9650, 0]));
+    // E-NUC phase B: the solids' replica classes (each rod seat's fitting
+    // single).
+    let (halves, helium, stores) = (
+        solids.halves(),
+        solids.helium_members().len(),
+        solids.store_members().len(),
+    );
+    assert_eq!(halves, 18);
+    assert_eq!(row("Fuel 2 + clad 1").composed, Some([3 * halves, 0]));
+    assert_eq!(row("Massless").composed, Some([0, 3 * halves]));
+    assert_eq!(row("Helium").composed, Some([helium, 0]));
+    assert_eq!(row("Guide/plenum").composed, Some([stores, 0]));
     assert_eq!(row("SG metal").composed, Some([8, 0]));
+    assert_eq!(row("Fuel 2 + clad 1").represented, Some([1158, 0]));
+    assert_eq!(row("Massless").represented, Some([0, 1158]));
+    assert_eq!(row("Helium").represented, Some([193, 0]));
+    assert_eq!(row("Guide/plenum").represented, Some([1351, 0]));
+    // The coordinates the groups and classes replace (differential, algebraic).
+    let reduced = 2316 + 2316 + 9650 - 37 * groups + 1158 - 3 * halves + 193 - helium + 1351 - stores;
+    let reduced_algebraic = 1158 - 3 * halves;
     // Decision 0014 with amendment 6: the stratified cell has 19 coordinates.
     // S3-D28: the regression packet composes the closed spray line (S3-D25):
     // its cell (5 differential, 1 algebraic) and its two paths' 4 impulses.
@@ -131,12 +164,27 @@ fn joined_census_against_table_1_1() {
         assert_eq!(row("PZR relief lift").composed, Some([relief, 0]));
         metal + relief
     };
-    assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(c.represented, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(
+        c.composed,
+        [
+            17251 + g6 - reduced,
+            1194 - reduced_algebraic,
+            18445 + g6 - reduced - reduced_algebraic
+        ]
+    );
     // P2 (OU-P2): the rods add their bore groups' water (8 x (M, U, B)
     // differential, 8 pressures) and each cluster's upper-mouth current.
-    assert_eq!(c.with_pending, [17335 + g6, 1362, 18697 + g6]);
+    assert_eq!(
+        c.with_pending,
+        [
+            17335 + g6 - reduced,
+            1362 - reduced_algebraic,
+            18697 + g6 - reduced - reduced_algebraic
+        ]
+    );
     let histories = nuclear.histories();
-    assert_eq!(histories.len(), 9650);
+    assert_eq!(histories.len(), 25 * groups);
     let receipt = json!({
         "kind": "s2-joined-census",
         "status": "NOT-EVIDENCE zero-time allocation; no residual evaluated, no trajectory",

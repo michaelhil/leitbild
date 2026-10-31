@@ -41,6 +41,7 @@ pub fn network_layout<P: Properties>(network: &Network<P>) -> Layout {
         differential: vec![true; n],
         scales: scales.to_vec(),
         row_scales: scales.to_vec(),
+        multiplicity: vec![1; n],
     };
     let mut set = |i: usize, label: String, class: Class, differential: bool, row: f64| {
         layout.labels[i] = label;

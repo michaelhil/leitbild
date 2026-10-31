@@ -435,6 +435,13 @@ impl<S: JoinedSystem> System for Electrified<S> {
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
     }
+    /// E-NUC: the inner system's multiplicities; the slice is unreduced.
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities().map(|mut m| {
+            m.resize(m.len() + N, 1.);
+            m
+        })
+    }
     fn root_count(&self) -> usize {
         self.inner.root_count()
     }

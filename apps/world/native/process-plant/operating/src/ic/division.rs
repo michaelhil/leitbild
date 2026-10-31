@@ -8,7 +8,13 @@
 //! (initiating function and time) and requests its permissive contact
 //! open. Latches are retained through power loss; an unpowered division
 //! evaluates nothing, accrues no duration and makes no record.
-use super::packet::Effects;
+use super::{
+    acquisition::{
+        restored_bool, restored_frame, restored_frame_option, restored_real, snapshot_fields,
+        snapshot_real,
+    },
+    packet::Effects,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -33,6 +39,11 @@ impl Timer {
     }
     pub fn since(&self) -> Option<u64> {
         self.since
+    }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): a timer
+    /// restored at the frame its condition has held since.
+    pub fn restored(since: Option<u64>) -> Self {
+        Self { since }
     }
 }
 
@@ -67,12 +78,60 @@ impl Standing {
     }
 }
 
+impl Standing {
+    /// S5 snapshot hook: `"never" | "qualified" | "lost" | {"recovering": k}`.
+    pub fn snapshot(&self) -> Value {
+        match self {
+            Standing::Never => json!("never"),
+            Standing::Qualified => json!("qualified"),
+            Standing::Lost => json!("lost"),
+            Standing::Recovering(k) => json!({ "recovering": k }),
+        }
+    }
+    /// The inverse of [`Standing::snapshot`].
+    pub fn restored(v: &Value) -> Result<Self, String> {
+        match v.as_str() {
+            Some("never") => Ok(Standing::Never),
+            Some("qualified") => Ok(Standing::Qualified),
+            Some("lost") => Ok(Standing::Lost),
+            Some(other) => Err(format!("channel standing {other}")),
+            None => {
+                let o = snapshot_fields(v, "channel standing", &["recovering"])?;
+                Ok(Standing::Recovering(restored_frame(
+                    &o["recovering"],
+                    "recovering since",
+                )?))
+            }
+        }
+    }
+}
+
 /// An accepted, latched cause.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cause {
     pub function: String,
     pub frame: u64,
     pub at_s: f64,
+}
+
+impl Cause {
+    /// S5 snapshot hook: `[function, frame, bits of the time]`.
+    pub fn snapshot(&self) -> Value {
+        json!([self.function, self.frame, snapshot_real(self.at_s)])
+    }
+    /// The inverse of [`Cause::snapshot`].
+    pub fn restored(v: &Value) -> Result<Self, String> {
+        match v.as_array().map(Vec::as_slice) {
+            Some([Value::String(function), frame, at]) => Ok(Self {
+                function: function.clone(),
+                frame: restored_frame(frame, "a cause's frame")?,
+                at_s: restored_real(at, "a cause's time")?,
+            }),
+            _ => Err(format!(
+                "a cause snapshot is [function, frame, time], not {v}"
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -171,6 +230,96 @@ impl Division {
                 .push(json!({"request": "heater isolation", "by": function, "t_s": at_s}));
         }
         true
+    }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): supply,
+    /// qualification timers, channel standing, latched causes, the trip
+    /// latch, the recorded requests and monitors, real numbers as bits.
+    pub fn snapshot(&self) -> Result<Value, String> {
+        let requests = self
+            .requests
+            .iter()
+            .map(|r| {
+                let o = snapshot_fields(r, "a division request", &["request", "by", "t_s"])?;
+                let t = o["t_s"]
+                    .as_f64()
+                    .ok_or_else(|| format!("a division request's time: {r}"))?;
+                Ok(json!([o["request"], o["by"], snapshot_real(t)]))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(json!({"supply": self.supply, "powered": self.powered,
+            "timers": self.timers.iter().map(|(k, t)| (k.clone(), json!(t.since))).collect::<serde_json::Map<_, _>>(),
+            "standing": self.standing.iter().map(|(k, s)| (k.clone(), s.snapshot())).collect::<serde_json::Map<_, _>>(),
+            "causes": self.causes.iter().map(Cause::snapshot).collect::<Vec<_>>(),
+            "trip": self.trip.as_ref().map(Cause::snapshot),
+            "requests": requests,
+            "monitors": self.monitors.iter().map(|(k, t)| (k.clone(), snapshot_real(*t))).collect::<serde_json::Map<_, _>>()}))
+    }
+    /// Restore [`Division::snapshot`] of the same division exactly.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = snapshot_fields(
+            v,
+            "division",
+            &[
+                "supply", "powered", "timers", "standing", "causes", "trip", "requests", "monitors",
+            ],
+        )?;
+        if o["supply"].as_str() != Some(self.supply.as_str()) {
+            return Err(format!(
+                "division {} restored from {}",
+                self.supply, o["supply"]
+            ));
+        }
+        let map = |key: &str| {
+            o[key]
+                .as_object()
+                .ok_or_else(|| format!("division {}: {key} is not an object", self.supply))
+        };
+        let timers = map("timers")?
+            .iter()
+            .map(|(k, s)| {
+                Ok((
+                    k.clone(),
+                    Timer::restored(restored_frame_option(s, "a timer")?),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
+        let standing = map("standing")?
+            .iter()
+            .map(|(k, s)| Ok((k.clone(), Standing::restored(s)?)))
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
+        let monitors = map("monitors")?
+            .iter()
+            .map(|(k, t)| Ok((k.clone(), restored_real(t, "a monitor's time")?)))
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
+        let causes = o["causes"]
+            .as_array()
+            .ok_or("division causes are not an array")?
+            .iter()
+            .map(Cause::restored)
+            .collect::<Result<Vec<_>, _>>()?;
+        let trip = match &o["trip"] {
+            Value::Null => None,
+            c => Some(Cause::restored(c)?),
+        };
+        let requests = o["requests"]
+            .as_array()
+            .ok_or("division requests are not an array")?
+            .iter()
+            .map(|r| match r.as_array().map(Vec::as_slice) {
+                Some([request @ Value::String(_), by @ Value::String(_), t]) => Ok(
+                    json!({"request": request, "by": by, "t_s": restored_real(t, "a request's time")?}),
+                ),
+                _ => Err(format!("a request snapshot is [request, by, time], not {r}")),
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.powered = restored_bool(&o["powered"], "division supply")?;
+        self.timers = timers;
+        self.standing = standing;
+        self.causes = causes;
+        self.trip = trip;
+        self.requests = requests;
+        self.monitors = monitors;
+        Ok(())
     }
 }
 

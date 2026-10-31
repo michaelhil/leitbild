@@ -208,6 +208,9 @@ pub struct Entry {
     pub memo: [usize; 2],
     /// Counted from composed layouts, or `None` while the owner is pending.
     pub composed: Option<[usize; 2]>,
+    /// E-NUC: the unreduced coordinates the composed ones stand for (each
+    /// counted by its layout multiplicity).
+    pub represented: Option<[usize; 2]>,
     /// Declared counts of a pending owner.
     pub declared: Option<[usize; 2]>,
     pub pending_by: Option<&'static str>,
@@ -220,6 +223,8 @@ pub struct Census {
     pub entries: Vec<Entry>,
     /// Composed blocks only: differential, algebraic, all.
     pub composed: [usize; 3],
+    /// E-NUC: the unreduced coordinates the composed blocks stand for.
+    pub represented: [usize; 3],
     /// Composed plus the pending owners' declared counts.
     pub with_pending: [usize; 3],
     pub memo: [usize; 3],
@@ -229,11 +234,19 @@ pub struct Census {
 /// Reasons for every expected difference from Table 1.1.
 fn difference(row: &str) -> Option<&'static str> {
     Some(match row {
+        "Material precursors C (386x6)"
+        | "Fissile, fertile, I, Xe, Pm, Sm (386x6)"
+        | "Delayed-energy reservoirs (386x(23+2))" => {
+            "E-NUC (plan r4, owner 31 Oct): one coordinate per exact replica group of carriers (every value a carrier's rows read bitwise equal) holds the members' summed stock; `represented` counts the carrier coordinates it stands for"
+        }
+        "Massless fuel/clad surfaces" => {
+            "E-NUC phase B (plan r4): one surface triple per exact replica class of material halves; `represented` counts the halves' surfaces"
+        }
         "Fuel 2 + clad 1 energies per carrier"
         | "Helium, 1 per FA"
         | "Guide/plenum/fitting Zry stores"
         | "SG metal, 4 per SG" => {
-            "caloric temperatures eliminated by exact local inverses (memo §1 [P]; computational-design-review.md §4.1)"
+            "caloric temperatures eliminated by exact local inverses (memo §1 [P]; computational-design-review.md §4.1); E-NUC phase B (plan r4): one coordinate per exact replica class of solid elements holds one member's state, `represented` counts the elements"
         }
         "Network cells 38 x (M_l,U_l,M_v,U_v,B; p)" => {
             "decision 0014 with amendment 6: 28 regular cells x 6 plus one 19-coordinate stratified PZR cell (7 algebraic, 12 differential, zone A's bubble stock included) replace the 10 PZR volumes"
@@ -261,10 +274,12 @@ fn difference(row: &str) -> Option<&'static str> {
 pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
     let mut entries = Vec::new();
     let mut total = [0usize; 2];
+    let mut represented_total = [0usize; 2];
     let mut with_pending = [0usize; 2];
     for memo in TABLE_1_1 {
         let mut per_class: Vec<(Class, [usize; 2])> = Vec::new();
         let mut counted = [0usize; 2];
+        let mut represented = [0usize; 2];
         let mut found = false;
         for block in composed {
             if block.owner != memo.owner {
@@ -275,6 +290,7 @@ pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
                     found = true;
                     let k = usize::from(block.differential[i] == 0.);
                     counted[k] += 1;
+                    represented[k] += block.layout.multiplicity[i];
                     match per_class.iter_mut().find(|(c, _)| c == class) {
                         Some((_, n)) => n[k] += 1,
                         None => {
@@ -309,6 +325,8 @@ pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
         if found {
             total[0] += counted[0];
             total[1] += counted[1];
+            represented_total[0] += represented[0];
+            represented_total[1] += represented[1];
             with_pending[0] += counted[0];
             with_pending[1] += counted[1];
         } else if let Some(d) = declared {
@@ -322,6 +340,7 @@ pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
             rows: memo.rows,
             memo: memo.memo,
             composed: found.then_some(counted),
+            represented: found.then_some(represented),
             declared,
             pending_by,
             per_class,
@@ -331,6 +350,11 @@ pub fn census(composed: &[Composed<'_>], pending: &[Pending]) -> Census {
     Census {
         entries,
         composed: [total[0], total[1], total[0] + total[1]],
+        represented: [
+            represented_total[0],
+            represented_total[1],
+            represented_total[0] + represented_total[1],
+        ],
         with_pending: [
             with_pending[0],
             with_pending[1],
