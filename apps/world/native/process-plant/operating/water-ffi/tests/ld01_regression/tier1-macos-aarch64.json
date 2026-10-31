@@ -1,9 +1,9 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "r4 WORLD: T1 pins on the STAGE tuple (packet 4d95fe9c, S3 state s3-settle-4d95fe9c-1, ELEC f91fc8e5, wiki 11d09f5, F5 water, IDAS 7.5.0) at rt-integ c11ba8a5e = STAGE ee0157745 + OU-G a9c7a58ee + the smoke re-pin, before origin/main is merged; the merged head is judged against these",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-c11ba8a5e-20261031T162147Z",
- "app": "c11ba8a5e",
+ "reason": "r4 baseline (BASELINE-r4.md): matrix management stock (MR-1 off) by default in the case drive; with PERF's E-PROF hooks (inert) and PHYS's LT1 fix (C2 bitwise, T1 611614b4c spans pass); STAGE tuple unchanged",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-c44eb5275-20261031T181635Z",
+ "app": "c44eb5275",
  "environment": {
   "packet_sha256": "4d95fe9c8f1f0ada0238994c4253f1aed4b2046120d139a0bb1a2abd65af55c2",
   "state_sha256": "47d7c8ff50a05cb1a03f45ebb409f8e4fd351a24852fc478e82b76435c421667",
@@ -15,12 +15,12 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 45387439195,
+   "instructions": 45126713490,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 104990758265,
-   "digest": "69a0cfb91085af916a268d1672bd5b0e9b55edfe9364021ba9eb1e7f9a75cf78"
+   "instructions": 102843399393,
+   "digest": "e4f093bccdfbb850982dce41f6430714c4998b2f0523f550aedea2f25f6dc25d"
   }
  }
 }
