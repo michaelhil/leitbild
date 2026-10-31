@@ -162,7 +162,7 @@ fn step_scope(k: u64) -> &'static str {
         1..=4 => "step[2-5]",
         5..=19 => "step[6-20]",
         20..=99 => "step[21-100]",
-        _ => "step[>100]",
+        _ => "step[101+]",
     }
 }
 const IDA_SUCCESS: c_int = 0;

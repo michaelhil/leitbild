@@ -19,6 +19,7 @@ struct Open {
 
 struct Profile {
     counter: fn() -> u64,
+    pieces: bool,
     reads: u64,
     open: Vec<Open>,
     /// Path of each key, `parent>name`.
@@ -33,8 +34,9 @@ thread_local! {
 }
 
 /// Start profiling this thread with `counter` (monotone instructions
-/// retired). Refuses a second installation.
-pub fn install(counter: fn() -> u64) -> Result<(), String> {
+/// retired); with `pieces`, callers also book their own clocked pieces
+/// (many more counter reads). Refuses a second installation.
+pub fn install(counter: fn() -> u64, pieces: bool) -> Result<(), String> {
     PROFILE.with(|p| {
         let mut p = p.borrow_mut();
         if p.is_some() {
@@ -42,6 +44,7 @@ pub fn install(counter: fn() -> u64) -> Result<(), String> {
         }
         *p = Some(Profile {
             counter,
+            pieces,
             reads: 0,
             open: Vec::new(),
             paths: Vec::new(),
@@ -55,6 +58,11 @@ pub fn install(counter: fn() -> u64) -> Result<(), String> {
 /// Whether a profile is installed on this thread.
 pub fn active() -> bool {
     PROFILE.with(|p| p.borrow().is_some())
+}
+
+/// Whether the installed profile asks for caller-clocked pieces.
+pub fn pieces() -> bool {
+    PROFILE.with(|p| p.borrow().as_ref().is_some_and(|p| p.pieces))
 }
 
 /// Open scope `name` under the innermost open scope.
@@ -197,8 +205,9 @@ mod tests {
     #[test]
     fn nested_scopes_book_exclusive_counts_by_path() {
         assert!(scope("off").is_none());
-        install(tick).unwrap();
-        assert!(install(tick).is_err());
+        install(tick, false).unwrap();
+        assert!(install(tick, false).is_err());
+        assert!(!pieces());
         {
             let _a = scope("step");
             {

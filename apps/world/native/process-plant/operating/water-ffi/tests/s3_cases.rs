@@ -1420,19 +1420,21 @@ fn perf_read_instructions() -> u64 {
     batches[7]
 }
 /// HOOK (PERF E-PROF): LD01_PERF_PROFILE=1 installs the cost profile on
-/// this thread (with LD01_OU_FRAME_COST=1 only); unset: nothing.
+/// this thread, `pieces` with the block Jacobian's pieces (with
+/// LD01_OU_FRAME_COST=1 only); unset: nothing.
 fn perf_install() {
     match std::env::var("LD01_PERF_PROFILE").ok().as_deref() {
         None => {}
-        Some("1") => {
+        Some(v @ ("1" | "pieces")) => {
             assert_eq!(
                 std::env::var("LD01_OU_FRAME_COST").as_deref(),
                 Ok("1"),
                 "LD01_PERF_PROFILE=1 needs LD01_OU_FRAME_COST=1"
             );
-            leitbild_operating_plant::cost::install(perf_counter).unwrap_or_else(|e| panic!("{e}"));
+            leitbild_operating_plant::cost::install(perf_counter, v == "pieces")
+                .unwrap_or_else(|e| panic!("{e}"));
         }
-        Some(v) => panic!("LD01_PERF_PROFILE={v}: only 1 (or unset)"),
+        Some(v) => panic!("LD01_PERF_PROFILE={v}: only 1 or pieces (or unset)"),
     }
 }
 

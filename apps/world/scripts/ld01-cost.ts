@@ -29,7 +29,8 @@
  *   seat window, the first 10 s after the event and the steady span: each profile path's
  *   exclusive instructions grouped by kind (KLU factor, KLU solve, nuclear
  *   rows, owner rows, network residual, Jacobian assembly, roots, IDA
- *   internals, event handling, observers, other = frame instructions not in
+ *   internals, the restart's own consistent start (its Jacobian, residual
+ *   and LU), event handling, observers, other = frame instructions not in
  *   any scope) and by phase (event handling, the step's place in its
  *   segment, observers, other), with the solver counts and the profile's
  *   own overhead (counter reads x instructions per read). A profiled run's
@@ -96,6 +97,11 @@ export function kindOf(path:string):string|null{
  if(leaf==='klu-solve')return 'KLU solve'
  if(leaf==='nuclear')return 'nuclear rows'
  if(leaf==='solids'||leaf==='rods'||leaf==='secondary')return 'owner rows'
+ if(leaf==='lu-analyze')return 'restart start: LU analysis'
+ if(leaf==='lu-factor'||leaf==='lu-refactor')return 'restart start: LU factor'
+ if(leaf==='lu-solve')return 'restart start: LU solve'
+ if(leaf==='start-jacobian')return 'restart start: Jacobian assembly'
+ if(leaf==='start-residual')return 'restart start: network residual'
  if(leaf==='residual')return 'network residual'
  if(leaf==='jacobian')return 'Jacobian assembly'
  if(leaf==='roots')return 'roots'

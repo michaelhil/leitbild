@@ -109,6 +109,7 @@ impl SparseLu {
     /// zero, never decreasing, ending at `rows.len()`; each column's rows
     /// strictly increase within `0..n`. The pattern is copied and fixed.
     pub fn analyze(n: usize, pointers: &[i64], rows: &[i64]) -> Result<Self> {
+        let _cost = leitbild_operating_plant::cost::scope("lu-analyze");
         check_pattern(n, pointers, rows)?;
         let mut pointers = pointers.to_vec();
         let mut rows = rows.to_vec();
@@ -155,6 +156,7 @@ impl SparseLu {
 
     /// Fresh pivoting factorization of CSC `values` on the analyzed pattern.
     pub fn factor(&mut self, values: &[f64]) -> Result<()> {
+        let _cost = leitbild_operating_plant::cost::scope("lu-factor");
         self.check_values(values)?;
         self.factored = false;
         let mut singular = -1;
@@ -175,6 +177,7 @@ impl SparseLu {
     /// New values on the factored pattern with the previous pivot sequence.
     /// Failure (for example an exact zero pivot) discards the factorization.
     pub fn refactor(&mut self, values: &[f64]) -> Result<()> {
+        let _cost = leitbild_operating_plant::cost::scope("lu-refactor");
         self.check_values(values)?;
         if !self.factored {
             return Err(Error::NotFactored);
@@ -196,6 +199,7 @@ impl SparseLu {
 
     /// Overwrite finite `rhs` with the solution x of A x = rhs.
     pub fn solve(&mut self, rhs: &mut [f64]) -> Result<()> {
+        let _cost = leitbild_operating_plant::cost::scope("lu-solve");
         if !self.factored {
             return Err(Error::NotFactored);
         }
