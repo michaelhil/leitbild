@@ -17,7 +17,7 @@ import type { ModelInfo } from '../core/types/model-info.ts'
 import { createHash } from 'node:crypto'
 import type { NativeToolCall } from '../core/types/tool.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
-import { createCloudProviderError, createLLMRequestError } from './errors.ts'
+import { createCloudProviderError, createLLMRequestError, isAbortError } from './errors.ts'
 import { mapHttpError } from './openai-compatible-errors.ts'
 import { type OAIMessage, buildOAIBody } from './openai-compatible-wire.ts'
 import { fetchWithTimeout } from '../core/fetch-utils.ts'
@@ -112,6 +112,7 @@ interface OAIChatResponse {
 }
 
 interface OAIStreamChunk {
+  error?: unknown
   id?: unknown
   model?: string
   provider?: unknown
@@ -388,142 +389,205 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
     const body = buildOAIBody(wireRequest, true, config.name, info)
 
     const controller = new AbortController()
+    const abortStream = () => controller.abort(externalSignal?.reason)
+    let reader: Pick<ReadableStreamDefaultReader<Uint8Array>, 'read' | 'cancel' | 'releaseLock'> | undefined
+    let warnTimer: ReturnType<typeof setTimeout> | undefined
     // Hard-abort timer — fires only if the stream is genuinely dead for
     // streamHardAbortMs. Reset on every chunk arrival. The earlier warn
     // tier (raced against reader.read below) handles user notification.
     let hardAbortTimer = setTimeout(() => controller.abort(), streamHardAbortMs)
-    if (externalSignal) {
-      externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
-    }
-
-    const response = await fetch(`${target.url}/chat/completions`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-
-    if (!response.ok) {
-      clearTimeout(hardAbortTimer)
-      const text = await response.text().catch(() => '')
-      throw mapHttpError(config.name, response.status, text, response.headers.get('retry-after'))
-    }
-
-    const reader = response.body?.getReader()
-    if (!reader) {
-      clearTimeout(hardAbortTimer)
-      throw createCloudProviderError({
-        code: 'provider_down', provider: config.name,
-        message: `${config.name} stream: no response body`,
-      })
-    }
-
-    const decoder = new TextDecoder()
-    let buffer = ''
-    // Accumulators for incremental tool calls (OpenAI streams arguments as fragments).
-    const toolAccum: Array<{ id?: string; name: string; argsBuffer: string }> = []
-    // Accumulator for <think> block spanning chunks.
-    let inThink = false
-    let thinkCarry = ''
-
-    const flushDelta = (delta: string): StreamChunk | null => {
-      if (!delta) return null
-      let thinkingOut = ''
-      let contentOut = ''
-      let cursor = 0
-      while (cursor < delta.length) {
-        if (inThink) {
-          const close = delta.indexOf('</think>', cursor)
-          if (close === -1) {
-            thinkingOut += delta.slice(cursor)
-            break
-          }
-          thinkingOut += delta.slice(cursor, close)
-          inThink = false
-          cursor = close + '</think>'.length
-        } else {
-          const combined = thinkCarry + delta.slice(cursor)
-          const openIdx = combined.indexOf('<think>')
-          if (openIdx === -1) {
-            // Possible partial "<think" at tail — keep up to 6 chars as carry.
-            const safe = combined.length - 6
-            if (safe > 0) {
-              contentOut += combined.slice(0, safe)
-              thinkCarry = combined.slice(safe)
-            } else {
-              thinkCarry = combined
-            }
-            break
-          }
-          contentOut += combined.slice(0, openIdx)
-          thinkCarry = ''
-          inThink = true
-          cursor = delta.length - (combined.length - (openIdx + '<think>'.length))
-        }
-      }
-      if (!thinkingOut && !contentOut) return null
-      const out: StreamChunk = { delta: contentOut, done: false }
-      if (thinkingOut) (out as { thinking?: string }).thinking = thinkingOut
-      return out
-    }
-
-    // Accumulators for final-chunk metadata (finish_reason may arrive before
-    // [DONE]; usage typically arrives AFTER finish_reason but BEFORE [DONE]).
-    let finishReason: string | undefined
-    let actualModel = wireRequest.model
-    const reasoningDetails: Array<Readonly<Record<string, unknown>>> = []
-    let reasoning: string | undefined
-    let usageTokens: { prompt: number; completion: number; cacheCreation?: number; cacheRead?: number; cacheMiss?: number } | undefined
-    let generationId: unknown
-    let upstreamProvider: unknown
-    let billedCost: unknown
-
-    const emitFinal = (): StreamChunk => {
-      const toolCalls: NativeToolCall[] | undefined = finishReason !== 'length' && toolAccum.length
-        ? toolAccum.map((t, index) => ({
-            id: t.id ?? `call_${index}`,
-            function: { name: t.name, arguments: parseArgs(t.argsBuffer, config.name, t.name) },
-          }))
-        : undefined
-      const continuation = finishReason === 'length' ? undefined : continuationFor({ ...wireRequest, model: actualModel }, target.hash, reasoningDetails, reasoning)
-      const billing = config.name === 'openrouter' ? openRouterBilling(generationId, upstreamProvider, billedCost) : undefined
-      const chunk: StreamChunk = {
-        delta: '', done: true,
-        ...(toolCalls ? { toolCalls } : {}),
-        ...(usageTokens ? { tokensUsed: usageTokens } : {}),
-        provider: config.name,
-        model: actualModel,
-        ...(continuation ? { continuation } : {}),
-        ...(finishReason ? { finishReason } : {}),
-        ...(billing ? { billing } : {}),
-      }
-      return chunk
-    }
-
-    // Race read vs warn timer. The Web Streams API forbids overlapping
-    // .read() calls on a locked reader, so we keep ONE pending read across
-    // a race-loss and re-await it on the next iteration. `warnEmitted`
-    // resets after each real chunk so a subsequent gap can warn again
-    // (e.g. provider stalls, recovers, stalls).
-    let pendingRead: Promise<{ done: boolean; value: Uint8Array | undefined }> | null = null
-    let warnEmitted = false
-    let lastChunkAt = Date.now()
+    if (externalSignal?.aborted) abortStream()
+    else externalSignal?.addEventListener('abort', abortStream, { once: true })
 
     try {
+      controller.signal.throwIfAborted()
+      const response = await fetch(`${target.url}/chat/completions`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
+      controller.signal.throwIfAborted()
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        throw mapHttpError(config.name, response.status, text, response.headers.get('retry-after'))
+      }
+
+      const streamFailure = (reason: string) => createCloudProviderError({
+        code: 'provider_down', provider: config.name, status: response.status,
+        message: `${config.name} stream: ${reason}`,
+      })
+      const upstreamFailure = (error: unknown): Error => {
+        if (error === null || typeof error !== 'object' || Array.isArray(error)) return streamFailure('malformed upstream error')
+        const record = error as Record<string, unknown>
+        const code = typeof record.code === 'string' || typeof record.code === 'number' ? ` (${record.code})` : ''
+        return streamFailure(`upstream error${code}: ${typeof record.message === 'string' ? record.message : 'message unavailable'}`)
+      }
+      const contentType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
+      if (contentType !== 'text/event-stream') {
+        if (contentType === 'application/json') {
+          let value: unknown
+          try { value = await response.json() } catch { throw streamFailure('invalid JSON instead of an SSE response') }
+          if (value !== null && typeof value === 'object' && !Array.isArray(value) && 'error' in value) throw upstreamFailure(value.error)
+        }
+        throw streamFailure(`expected text/event-stream, received ${contentType ?? 'no Content-Type'}`)
+      }
+
+      reader = response.body?.getReader()
+      if (!reader) {
+        throw streamFailure('no response body')
+      }
+
+      const decoder = new TextDecoder('utf-8', { fatal: true })
+      let buffer = ''
+      let dataLines: string[] = []
+      let dataLength = 0
+      let skipLeadingLF = false
+      // SSE dispatches one event after a blank line, joining its data fields with
+      // newlines. CR, LF and CRLF are line endings, including across byte chunks.
+      const framesFrom = (text: string): string[] => {
+        if (skipLeadingLF && text.length > 0) {
+          if (text.startsWith('\n')) text = text.slice(1)
+          skipLeadingLF = false
+        }
+        buffer += text
+        const frames: string[] = []
+        let end = buffer.search(/[\r\n]/)
+        while (end !== -1) {
+          const line = buffer.slice(0, end)
+          let consumed = end + 1
+          if (buffer[end] === '\r') {
+            if (buffer[consumed] === '\n') consumed++
+            else if (consumed === buffer.length) skipLeadingLF = true
+          }
+          buffer = buffer.slice(consumed)
+          if (line.length === 0) {
+            if (dataLines.length > 0) frames.push(dataLines.join('\n'))
+            dataLines = []; dataLength = 0
+          } else if (line === 'data' || line.startsWith('data:')) {
+            const raw = line === 'data' ? '' : line.slice(5)
+            const value = raw.startsWith(' ') ? raw.slice(1) : raw
+            dataLines.push(value); dataLength += value.length + 1
+          }
+          // Comments and other SSE fields do not carry Chat Completion data.
+          if (dataLength > MAX_SSE_BUFFER_BYTES) break
+          end = buffer.search(/[\r\n]/)
+        }
+        if (buffer.length + dataLength > MAX_SSE_BUFFER_BYTES) {
+          config.limitMetrics?.inc('sseBufferExceeded')
+          throw streamFailure(`buffer exceeded ${MAX_SSE_BUFFER_BYTES} bytes without an event boundary`)
+        }
+        return frames
+      }
+      // Accumulators for incremental tool calls (OpenAI streams arguments as fragments).
+      const toolAccum: Array<{ id?: string; name: string; argsBuffer: string }> = []
+      // Accumulator for <think> block spanning chunks.
+      let inThink = false
+      let thinkCarry = ''
+
+      const flushDelta = (delta: string): StreamChunk | null => {
+        if (!delta) return null
+        let thinkingOut = ''
+        let contentOut = ''
+        let cursor = 0
+        while (cursor < delta.length) {
+          if (inThink) {
+            const close = delta.indexOf('</think>', cursor)
+            if (close === -1) {
+              thinkingOut += delta.slice(cursor)
+              break
+            }
+            thinkingOut += delta.slice(cursor, close)
+            inThink = false
+            cursor = close + '</think>'.length
+          } else {
+            const combined = thinkCarry + delta.slice(cursor)
+            const openIdx = combined.indexOf('<think>')
+            if (openIdx === -1) {
+              // Possible partial "<think" at tail — keep up to 6 chars as carry.
+              const safe = combined.length - 6
+              if (safe > 0) {
+                contentOut += combined.slice(0, safe)
+                thinkCarry = combined.slice(safe)
+              } else {
+                thinkCarry = combined
+              }
+              break
+            }
+            contentOut += combined.slice(0, openIdx)
+            thinkCarry = ''
+            inThink = true
+            cursor = delta.length - (combined.length - (openIdx + '<think>'.length))
+          }
+        }
+        if (!thinkingOut && !contentOut) return null
+        const out: StreamChunk = { delta: contentOut, done: false }
+        if (thinkingOut) (out as { thinking?: string }).thinking = thinkingOut
+        return out
+      }
+
+      // Accumulators for final-chunk metadata (finish_reason may arrive before
+      // [DONE]; usage typically arrives AFTER finish_reason but BEFORE [DONE]).
+      let finishReason: string | undefined
+      let actualModel = wireRequest.model
+      const reasoningDetails: Array<Readonly<Record<string, unknown>>> = []
+      let reasoning: string | undefined
+      let usageTokens: { prompt: number; completion: number; cacheCreation?: number; cacheRead?: number; cacheMiss?: number } | undefined
+      let generationId: unknown
+      let upstreamProvider: unknown
+      let billedCost: unknown
+
+      const emitFinal = (): StreamChunk => {
+        controller.signal.throwIfAborted()
+        if (finishReason === undefined) throw streamFailure('response ended without a terminal finish reason')
+        const toolCalls: NativeToolCall[] | undefined = finishReason !== 'length' && toolAccum.length
+          ? toolAccum.map((t, index) => ({
+              id: t.id ?? `call_${index}`,
+              function: { name: t.name, arguments: parseArgs(t.argsBuffer, config.name, t.name) },
+            }))
+          : undefined
+        const continuation = finishReason === 'length' ? undefined : continuationFor({ ...wireRequest, model: actualModel }, target.hash, reasoningDetails, reasoning)
+        const billing = config.name === 'openrouter' ? openRouterBilling(generationId, upstreamProvider, billedCost) : undefined
+        const chunk: StreamChunk = {
+          delta: '', done: true,
+          ...(toolCalls ? { toolCalls } : {}),
+          ...(usageTokens ? { tokensUsed: usageTokens } : {}),
+          provider: config.name,
+          model: actualModel,
+          ...(continuation ? { continuation } : {}),
+          ...(finishReason ? { finishReason } : {}),
+          ...(billing ? { billing } : {}),
+        }
+        return chunk
+      }
+
+      // Race read vs warn timer. The Web Streams API forbids overlapping
+      // .read() calls on a locked reader, so we keep ONE pending read across
+      // a race-loss and re-await it on the next iteration. `warnEmitted`
+      // resets after each real chunk so a subsequent gap can warn again
+      // (e.g. provider stalls, recovers, stalls).
+      let pendingRead: Promise<{ done: boolean; value?: Uint8Array }> | null = null
+      let warnEmitted = false
+      let lastChunkAt = Date.now()
+      let doneSeen = false
+
       while (true) {
         clearTimeout(hardAbortTimer)
         hardAbortTimer = setTimeout(() => controller.abort(), streamHardAbortMs)
         if (!pendingRead) pendingRead = reader.read()
 
-        type ReadResult = { done: boolean; value: Uint8Array | undefined }
+        type ReadResult = { done: boolean; value?: Uint8Array }
         let raceResult: ReadResult | 'warn'
         if (!warnEmitted) {
           const sinceLast = Date.now() - lastChunkAt
           const remainingToWarn = Math.max(0, streamSlowWarnMs - sinceLast)
           raceResult = await Promise.race([
             pendingRead,
-            new Promise<'warn'>(r => setTimeout(() => r('warn'), remainingToWarn)),
+            new Promise<'warn'>(r => { warnTimer = setTimeout(() => r('warn'), remainingToWarn) }),
           ])
+          clearTimeout(warnTimer)
+          warnTimer = undefined
         } else {
           raceResult = await pendingRead
         }
@@ -539,150 +603,181 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
 
         // Real read settled.
         pendingRead = null
+        controller.signal.throwIfAborted()
         const { done, value } = raceResult
-        if (done) break
+        if (done) {
+          try { buffer += decoder.decode() } catch { throw streamFailure('invalid UTF-8 at end of response') }
+          break
+        }
         lastChunkAt = Date.now()
         warnEmitted = false
-        buffer += decoder.decode(value, { stream: true })
+        let decoded: string
+        try { decoded = decoder.decode(value, { stream: true }) } catch { throw streamFailure('invalid UTF-8 in response') }
+        for (const payload of framesFrom(decoded)) {
+          if (doneSeen) throw streamFailure('data received after [DONE]')
+          if (payload === '[DONE]') {
+            if (finishReason === undefined) throw streamFailure('[DONE] received without a terminal finish reason')
+            doneSeen = true
+            continue
+          }
+          let decodedPayload: unknown
+          try { decodedPayload = JSON.parse(payload) } catch { throw streamFailure('malformed JSON in SSE data') }
+          if (decodedPayload === null || typeof decodedPayload !== 'object' || Array.isArray(decodedPayload)) throw streamFailure('SSE data is not a Chat Completion object')
+          const parsed = decodedPayload as OAIStreamChunk
+          if (parsed.error !== undefined) throw upstreamFailure(parsed.error)
+          if (parsed.choices !== undefined && !Array.isArray(parsed.choices)) throw streamFailure('malformed choices in SSE data')
+          if (parsed.usage !== undefined && (parsed.usage === null || typeof parsed.usage !== 'object' || Array.isArray(parsed.usage))) throw streamFailure('malformed usage in SSE data')
+          if (typeof parsed.model === 'string' && parsed.model.length > 0) actualModel = parsed.model
+          if (parsed.id !== undefined) generationId = parsed.id
+          if (parsed.provider !== undefined) upstreamProvider = parsed.provider
 
-        // Bound the unframed buffer. Treat as a recoverable provider issue
-        // (fallbackable) so the router can try the next provider.
-        if (buffer.length > MAX_SSE_BUFFER_BYTES) {
-          config.limitMetrics?.inc('sseBufferExceeded')
-          throw createCloudProviderError({
-            code: 'provider_down',
-            provider: config.name,
-            message: `${config.name} stream: buffer exceeded ${MAX_SSE_BUFFER_BYTES} bytes without a frame boundary`,
-          })
-        }
-
-        // SSE: split on double-newline frames.
-        let sep = buffer.indexOf('\n\n')
-        while (sep !== -1) {
-          const frame = buffer.slice(0, sep)
-          buffer = buffer.slice(sep + 2)
-          sep = buffer.indexOf('\n\n')
-
-          // Each frame may have multiple "data:" lines.
-          const dataLines = frame.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim())
-          for (const payload of dataLines) {
-            if (payload === '[DONE]') {
-              if (thinkCarry) { yield { delta: thinkCarry, done: false }; thinkCarry = '' }
-              yield emitFinal()
-              return
-            }
-            let parsed: OAIStreamChunk
-            try { parsed = JSON.parse(payload) } catch { continue }
-            if (typeof parsed.model === 'string' && parsed.model.length > 0) actualModel = parsed.model
-            if (parsed.id !== undefined) generationId = parsed.id
-            if (parsed.provider !== undefined) upstreamProvider = parsed.provider
-
-            // Final usage frame (OpenAI with include_usage: true; Groq,
-            // Cerebras follow the same convention). The frame carries an
-            // empty choices array + a `usage` field.
-            if (parsed.usage && (parsed.usage.prompt_tokens !== undefined || parsed.usage.completion_tokens !== undefined)) {
-              billedCost = parsed.usage.cost
-              const cacheReadCount = parsed.usage.cache_read_input_tokens
-                ?? parsed.usage.prompt_tokens_details?.cached_tokens
-                ?? parsed.usage.prompt_cache_hit_tokens
-                ?? parsed.usage.cached_tokens
-                ?? parsed.usage.total_cached_tokens
-              const cacheCreationCount = parsed.usage.cache_creation_input_tokens
-                ?? parsed.usage.prompt_tokens_details?.cache_write_tokens
-              usageTokens = {
-                prompt: parsed.usage.prompt_tokens ?? 0,
-                completion: parsed.usage.completion_tokens ?? 0,
-                ...(cacheCreationCount !== undefined ? { cacheCreation: cacheCreationCount } : {}),
-                ...(cacheReadCount !== undefined ? { cacheRead: cacheReadCount } : {}),
-                ...(parsed.usage.prompt_cache_miss_tokens !== undefined ? { cacheMiss: parsed.usage.prompt_cache_miss_tokens } : {}),
-              }
-            }
-
-            const choice = parsed.choices?.[0]
-            if (!choice) continue
-
-            // Native reasoning channel (Kimi, DeepSeek, etc.) — surface as
-            // thinking BEFORE content for this frame so the UI sees reasoning
-            // arrive in its natural order. The `<think>` text-embedded parser
-            // is disjoint from this field, so both can coexist (e.g. DeepSeek
-            // historically emitted both). Both routes feed the same channel.
-            const deltaReasoning = choice.delta?.reasoning_content ?? choice.delta?.reasoning ?? ''
-            if (config.name === 'openrouter') {
-              const details = choice.delta?.reasoning_details
-              if (details != null) {
-                if (!Array.isArray(details) || details.some(detail => !detail || typeof detail !== 'object' || Array.isArray(detail))) throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning_details stream')
-                // OpenRouter specifies concatenation in original arrival order,
-                // not grouping or overwriting blocks by index/signature/type.
-                reasoningDetails.push(...details)
-              }
-              const originalReasoning = choice.delta?.reasoning ?? choice.delta?.reasoning_content
-              if (originalReasoning != null) {
-                if (typeof originalReasoning !== 'string') throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning stream')
-                reasoning = (reasoning ?? '') + originalReasoning
-              }
-            }
-            if (deltaReasoning) {
-              yield { delta: '', thinking: deltaReasoning, done: false }
-            }
-
-            const deltaContent = choice.delta?.content ?? ''
-            if (deltaContent) {
-              const chunk = flushDelta(deltaContent)
-              if (chunk) yield chunk
-            }
-
-            if (choice.delta?.tool_calls) {
-              for (const tc of choice.delta.tool_calls) {
-                // Accumulator slot resolution:
-                //   1. Explicit `index` (OpenAI / Groq / Cerebras spec).
-                //   2. Existing slot with matching `id` (some providers).
-                //   3. No index, no id (Gemini via OpenAI-compat): stay on the
-                //      last slot unless its buffer is already a complete JSON
-                //      object AND the incoming fragment starts a fresh one —
-                //      which indicates a distinct parallel tool call. Without
-                //      this split, two `web_search` calls get concatenated into
-                //      `{...}{...}` which fails JSON.parse.
-                let idx: number
-                if (typeof tc.index === 'number') {
-                  idx = tc.index
-                } else if (tc.id) {
-                  const existing = toolAccum.findIndex(s => s?.id === tc.id)
-                  idx = existing >= 0 ? existing : toolAccum.length
-                } else {
-                  idx = Math.max(0, toolAccum.length - 1)
-                  const incomingArgs = tc.function?.arguments?.trim() ?? ''
-                  const current = toolAccum[idx]?.argsBuffer.trim() ?? ''
-                  if (incomingArgs.startsWith('{') && current.length > 0) {
-                    try {
-                      JSON.parse(current)
-                      // Current slot is a complete JSON object; incoming starts
-                      // a new object → it's a new tool call.
-                      idx = toolAccum.length
-                    } catch { /* still mid-object, keep accumulating */ }
-                  }
-                }
-                if (!toolAccum[idx]) toolAccum[idx] = { name: '', argsBuffer: '' }
-                const acc = toolAccum[idx]!
-                if (tc.id) acc.id = tc.id
-                if (tc.function?.name) acc.name = tc.function.name
-                if (tc.function?.arguments) acc.argsBuffer += tc.function.arguments
-              }
-            }
-
-            if (choice.finish_reason) {
-              // Mark finish but don't emit yet — wait one more frame in case
-              // usage arrives (it typically does on a subsequent SSE event).
-              finishReason = choice.finish_reason
+          // Final usage frame (OpenAI with include_usage: true; Groq,
+          // Cerebras follow the same convention). The frame carries an
+          // empty choices array + a `usage` field.
+          if (parsed.usage && (parsed.usage.prompt_tokens !== undefined || parsed.usage.completion_tokens !== undefined)) {
+            billedCost = parsed.usage.cost
+            const cacheReadCount = parsed.usage.cache_read_input_tokens
+              ?? parsed.usage.prompt_tokens_details?.cached_tokens
+              ?? parsed.usage.prompt_cache_hit_tokens
+              ?? parsed.usage.cached_tokens
+              ?? parsed.usage.total_cached_tokens
+            const cacheCreationCount = parsed.usage.cache_creation_input_tokens
+              ?? parsed.usage.prompt_tokens_details?.cache_write_tokens
+            usageTokens = {
+              prompt: parsed.usage.prompt_tokens ?? 0,
+              completion: parsed.usage.completion_tokens ?? 0,
+              ...(cacheCreationCount !== undefined ? { cacheCreation: cacheCreationCount } : {}),
+              ...(cacheReadCount !== undefined ? { cacheRead: cacheReadCount } : {}),
+              ...(parsed.usage.prompt_cache_miss_tokens !== undefined ? { cacheMiss: parsed.usage.prompt_cache_miss_tokens } : {}),
             }
           }
+
+          const choice = parsed.choices?.[0]
+          if (choice === undefined) {
+            if (parsed.usage === undefined) throw streamFailure('SSE data has neither a choice nor usage')
+            continue
+          }
+          if (choice === null || typeof choice !== 'object' || Array.isArray(choice)) throw streamFailure('malformed choice in SSE data')
+          if (choice.delta != null && (typeof choice.delta !== 'object' || Array.isArray(choice.delta))) throw streamFailure('malformed delta in SSE data')
+          if (choice.delta?.content != null && typeof choice.delta.content !== 'string') throw streamFailure('malformed content in SSE data')
+          if (choice.delta?.reasoning != null && typeof choice.delta.reasoning !== 'string') throw streamFailure('malformed reasoning in SSE data')
+          if (choice.delta?.reasoning_content != null && typeof choice.delta.reasoning_content !== 'string') throw streamFailure('malformed reasoning content in SSE data')
+          if (choice.delta?.tool_calls !== undefined && !Array.isArray(choice.delta.tool_calls)) throw streamFailure('malformed tool calls in SSE data')
+          if (choice.finish_reason != null && (typeof choice.finish_reason !== 'string' || choice.finish_reason.length === 0)) throw streamFailure('malformed finish reason')
+          if (choice.finish_reason === 'error' || choice.finish_reason === 'content_filter') throw streamFailure(`generation ended with ${choice.finish_reason}`)
+          if (finishReason !== undefined) {
+            if (choice.finish_reason != null && choice.finish_reason !== finishReason) throw streamFailure('contradictory terminal finish reasons')
+            const hasContent = Boolean(choice.delta?.content || choice.delta?.reasoning || choice.delta?.reasoning_content || choice.delta?.reasoning_details?.length || choice.delta?.tool_calls?.length)
+            if (parsed.usage === undefined || hasContent) throw streamFailure('non-accounting data received after terminal finish reason')
+          }
+
+          // Native reasoning channel (Kimi, DeepSeek, etc.) — surface as
+          // thinking BEFORE content for this frame so the UI sees reasoning
+          // arrive in its natural order. The `<think>` text-embedded parser
+          // is disjoint from this field, so both can coexist (e.g. DeepSeek
+          // historically emitted both). Both routes feed the same channel.
+          const deltaReasoning = choice.delta?.reasoning_content ?? choice.delta?.reasoning ?? ''
+          if (config.name === 'openrouter') {
+            const details = choice.delta?.reasoning_details
+            if (details != null) {
+              if (!Array.isArray(details) || details.some(detail => !detail || typeof detail !== 'object' || Array.isArray(detail))) throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning_details stream')
+              // OpenRouter specifies concatenation in original arrival order,
+              // not grouping or overwriting blocks by index/signature/type.
+              reasoningDetails.push(...details)
+            }
+            const originalReasoning = choice.delta?.reasoning ?? choice.delta?.reasoning_content
+            if (originalReasoning != null) {
+              if (typeof originalReasoning !== 'string') throw createLLMRequestError('invalid_provider_continuation', 'Invalid OpenRouter reasoning stream')
+              reasoning = (reasoning ?? '') + originalReasoning
+            }
+          }
+          if (deltaReasoning) {
+            yield { delta: '', thinking: deltaReasoning, done: false }
+          }
+
+          const deltaContent = choice.delta?.content ?? ''
+          if (deltaContent) {
+            const chunk = flushDelta(deltaContent)
+            if (chunk) yield chunk
+          }
+
+          if (choice.delta?.tool_calls) {
+            for (const tc of choice.delta.tool_calls) {
+              if (tc === null || typeof tc !== 'object' || Array.isArray(tc)) throw streamFailure('malformed tool-call delta')
+              if (tc.function != null && (typeof tc.function !== 'object' || Array.isArray(tc.function))) throw streamFailure('malformed tool-call function')
+              if (tc.function?.name != null && typeof tc.function.name !== 'string') throw streamFailure('malformed tool-call name')
+              if (tc.function?.arguments != null && typeof tc.function.arguments !== 'string') throw streamFailure('malformed tool-call arguments')
+              if (tc.id != null && typeof tc.id !== 'string') throw streamFailure('malformed tool-call identity')
+              if (tc.index !== undefined && (!Number.isSafeInteger(tc.index) || tc.index < 0)) throw streamFailure('malformed tool-call index')
+              // Accumulator slot resolution:
+              //   1. Explicit `index` (OpenAI / Groq / Cerebras spec).
+              //   2. Existing slot with matching `id` (some providers).
+              //   3. No index, no id (Gemini via OpenAI-compat): stay on the
+              //      last slot unless its buffer is already a complete JSON
+              //      object AND the incoming fragment starts a fresh one —
+              //      which indicates a distinct parallel tool call. Without
+              //      this split, two `web_search` calls get concatenated into
+              //      `{...}{...}` which fails JSON.parse.
+              let idx: number
+              if (typeof tc.index === 'number') {
+                idx = tc.index
+              } else if (tc.id) {
+                const existing = toolAccum.findIndex(s => s?.id === tc.id)
+                idx = existing >= 0 ? existing : toolAccum.length
+              } else {
+                idx = Math.max(0, toolAccum.length - 1)
+                const incomingArgs = tc.function?.arguments?.trim() ?? ''
+                const current = toolAccum[idx]?.argsBuffer.trim() ?? ''
+                if (incomingArgs.startsWith('{') && current.length > 0) {
+                  try {
+                    JSON.parse(current)
+                    // Current slot is a complete JSON object; incoming starts
+                    // a new object → it's a new tool call.
+                    idx = toolAccum.length
+                  } catch { /* still mid-object, keep accumulating */ }
+                }
+              }
+              if (!toolAccum[idx]) toolAccum[idx] = { name: '', argsBuffer: '' }
+              const acc = toolAccum[idx]!
+              if (tc.id) acc.id = tc.id
+              if (tc.function?.name) acc.name = tc.function.name
+              if (tc.function?.arguments) acc.argsBuffer += tc.function.arguments
+            }
+          }
+
+          if (choice.finish_reason) {
+            // Mark finish but don't emit yet — wait one more frame in case
+            // usage arrives (it typically does on a subsequent SSE event).
+            finishReason = choice.finish_reason
+          }
+        }
+        if (doneSeen) {
+          if (buffer.length > 0 || dataLines.length > 0) throw streamFailure('incomplete event after [DONE]')
+          if (thinkCarry) { yield { delta: thinkCarry, done: false }; thinkCarry = '' }
+          yield emitFinal()
+          return
         }
       }
-      // Reader closed. Emit final chunk with whatever we've accumulated.
+      // A transport EOF is not a completed generation. A fully dispatched
+      // terminal event may close without [DONE], but no unfinished event can.
+      controller.signal.throwIfAborted()
+      if (buffer.length > 0 || dataLines.length > 0) throw streamFailure('incomplete SSE event at end of response')
       if (thinkCarry) yield { delta: thinkCarry, done: false }
       yield emitFinal()
     } finally {
       clearTimeout(hardAbortTimer)
-      reader.releaseLock()
+      clearTimeout(warnTimer)
+      externalSignal?.removeEventListener('abort', abortStream)
+      controller.abort()
+      try {
+        if (reader) await reader.cancel()
+      } catch (error) {
+        // Aborting a fetch already errors its reader. That expected rejection
+        // must not replace the actual outcome; unexpected cleanup stays visible.
+        if (!isAbortError(error)) console.warn(`[${config.name}] stream reader cleanup failed:`, error)
+      } finally {
+        reader?.releaseLock()
+      }
     }
   }
 
