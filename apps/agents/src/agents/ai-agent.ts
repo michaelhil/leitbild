@@ -280,7 +280,7 @@ export const createAIAgent = (
     getCompressionSummary: options?.getCompressionSummary,
     ...(options?.executionStore === undefined ? {} : { getDiscoveryMemo: (roomId: string) => discoveryMemo(options.executionStore!, roomId, agentId) }),
     getRoomMembers,
-    supportsImages: modelSupportsImages(effectiveModel),
+    supportsImages: modelSupportsImages(effectiveModel, describedModel?.requested === effectiveModel ? describedModel.info : undefined),
     modelForWarn: effectiveModel,
     metricsSink: options?.metricsSink,
     ...(turnInstruction === undefined ? {} : { turnInstruction }),

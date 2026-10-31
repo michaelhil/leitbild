@@ -1,28 +1,11 @@
-// ============================================================================
-// Multimodal model capability detection.
-//
-// Two-tier lookup:
-//   1. Per-model catalog entry in src/llm/models/catalog.ts (preferred).
-//      `supportsImages: true | false` is consulted first. Curated models
-//      shipped with Leitbild declare their capability explicitly.
-//   2. Substring allowlist below (fallback, for uncatalogued models such
-//      as ollama-served local models, openrouter models not in CURATED_MODELS,
-//      or any model launched after a Leitbild release).
-//
-// When a model has NEITHER an explicit catalog `false` NOR a substring
-// match, the conservative default (text-only) applies AND a warn-once log
-// line fires the first time per (model, callerId) so silent loss of image
-// content becomes audible. See imagePlaceholderWithWarn() below — that's
-// the function context-builder calls, not the bare imagePlaceholder().
-//
-// Adding a model:
-//   - Catalogued: edit src/llm/models/catalog.ts, set supportsImages.
-//   - Uncatalogued + vision-capable: add a substring here.
-//
-// Specific enough to avoid false-positives (e.g. 'gpt-4' alone would
-// match 'gpt-4-turbo' which is not multimodal; we use 'gpt-4o' instead).
-// ============================================================================
+// Image admission uses provider-advertised modalities before local model hints.
+// Providers such as OpenRouter publish these through their existing /models
+// inventory. An explicit text-only report must override every catalog/name hint.
+// Providers without modality metadata retain the curated/local-model policy;
+// unknown models get a visible text placeholder and drop metric, never guessed
+// image support. New OpenRouter models do not require a released name allowlist.
 
+import type { ModelInfo } from '../core/types/model-info.ts'
 import { modelSupportsImagesFromCatalog } from './models/catalog.ts'
 
 const MULTIMODAL_MODEL_SUBSTRINGS: ReadonlyArray<string> = [
@@ -61,9 +44,10 @@ const stripProviderPrefix = (model: string): string => {
   return colonIdx >= 0 ? model.slice(colonIdx + 1) : model
 }
 
-export const modelSupportsImages = (modelId: string): boolean => {
+export const modelSupportsImages = (modelId: string, info?: Pick<ModelInfo, 'inputModalities'>): boolean => {
+  if (info?.inputModalities !== undefined) return info.inputModalities.includes('image')
   if (!modelId) return false
-  // Tier 1: explicit catalog verdict (true / false). When the catalog
+  // Without a provider report, consult the explicit local catalog. When the catalog
   // declares the model, trust it — even if a substring would also match.
   const catalogVerdict = modelSupportsImagesFromCatalog(modelId)
   if (catalogVerdict !== undefined) return catalogVerdict
@@ -80,7 +64,7 @@ export const modelSupportsImages = (modelId: string): boolean => {
 // enough information to ask the user for a description.
 export const imagePlaceholder = (att: { width: number; height: number; mimeType: string; source?: string }): string => {
   const src = att.source ? ` (${att.source})` : ''
-  return `[image attached${src}: ${att.mimeType} ${att.width}×${att.height} — your model cannot view images directly; ask the user to describe what's in the screenshot]`
+  return `[image attached${src}: ${att.mimeType} ${att.width}×${att.height} — this request cannot view images directly; ask the user to describe what's in the screenshot]`
 }
 
 // Warn-once tracker. Module-level Set keyed by `${model}::${callerId}` so
@@ -119,5 +103,5 @@ export const warnImageDroppedOnce = (
   const key = `${model}::${callerId}`
   if (warnedKeys.has(key)) return
   warnedKeys.add(key)
-  console.warn(`[multimodal] model=${model} caller=${callerId} dropped ${imageCount} image(s) via text placeholder — model is not in catalog allowlist AND substring allowlist. Attach: ${attDescriptions}`)
+  console.warn(`[multimodal] model=${model} caller=${callerId} dropped ${imageCount} image(s) via text placeholder — image input is not admitted by provider metadata or local model policy. Attach: ${attDescriptions}`)
 }

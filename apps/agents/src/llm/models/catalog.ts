@@ -20,7 +20,8 @@ export interface CuratedModel {
   // shows a warning in the agent inspector's Tools group when this is false.
   readonly supportsTools?: boolean
   // Image-input support. `true` for vision-capable models; `false` for
-  // text-only; `undefined` for unverified (falls back to the substring
+  // text-only. Provider-advertised modalities take precedence; without them,
+  // `undefined` is unverified (falls back to the substring
   // allowlist in src/llm/multimodal.ts). When an agent attaches an image
   // and the model has `supportsImages !== true`, context-builder swaps in
   // a text placeholder and emits a warn-once log line.
@@ -157,7 +158,8 @@ export const modelSupportsTools = (modelRef: string): boolean | undefined => {
 // Return image-input capability for a model reference, or `undefined` when
 // uncatalogued. Same lookup shape as modelSupportsTools — accepts prefixed
 // or bare refs, scans the catalog for an explicit verdict. Multimodal
-// detection consults this FIRST and only falls back to the substring
+// detection consults provider-advertised modalities first, then this catalog
+// and only falls back to the substring
 // allowlist when the catalog has no opinion. See src/llm/multimodal.ts.
 export const modelSupportsImagesFromCatalog = (modelRef: string): boolean | undefined => {
   const colonIdx = modelRef.indexOf(':')
