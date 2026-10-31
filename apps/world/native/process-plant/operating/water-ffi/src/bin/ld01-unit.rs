@@ -57,8 +57,11 @@ use leitbild_operating_plant::{
     electrical::{breaker::Contact, field, slice},
     ic::{acquisition::Quality, packet::Quantity},
     joined::block::Command,
+    network::{CellMode, Network, Properties},
+    thermal::Scalar,
 };
 use leitbild_operating_water::{
+    If97,
     frame::{
         Action, COUNTER_NAMES, Change, Class, Diagnostic, DriverState, MatrixRebuild, same_instant,
     },
@@ -230,6 +233,13 @@ enum Reading {
     FaceFlow(usize),
     /// A coordinate times a factor.
     Coordinate(usize, f64),
+    /// A sum of coordinates, each times its factor (an SG's apparent level:
+    /// liquid and submerged-vapor volume over the indicated-level area).
+    Coordinates(Vec<(usize, f64)>),
+    /// The mass-weighted temperature of regular network cells, each cell's
+    /// temperature by its phase mode (liquid: caloric at its specific
+    /// energy; equilibrium: saturation), as the case harness's leg recorder.
+    CellTemperature(Vec<usize>),
     HeaterRequest,
     TerminalPower,
     ShaftSpeed,
@@ -262,6 +272,39 @@ fn channel(
     }
 }
 
+/// A regular cell's temperature and water mass at `y` (solver scaling) by
+/// the network's phase-mode table: liquid by its caloric state at its
+/// specific energy, equilibrium at saturation at its pressure (as the case
+/// harness's leg recorder reads it).
+fn cell_temperature(net: &Network<If97>, y: &[f64], c: usize) -> Result<(f64, f64), String> {
+    let scales = net.scales();
+    let l = &net.cell_layout[c];
+    let mode = *net
+        .cell_modes()
+        .get(c)
+        .ok_or_else(|| format!("cell {c} has no phase mode"))?;
+    let (p, m, u) = (
+        y[l.base] * scales[l.base],
+        y[l.mass[0]] * scales[l.mass[0]],
+        y[l.energy[0]] * scales[l.energy[0]],
+    );
+    let properties = net.properties();
+    match mode {
+        CellMode::Liquid => {
+            let q = properties
+                .caloric(false, p, u / m, false)
+                .map_err(|e| format!("cell {c}: liquid caloric: {e:?}"))?;
+            Ok((properties.values(&q).temperature_k, m))
+        }
+        CellMode::Equilibrium => {
+            let sat = properties
+                .saturation_caloric(Scalar::constant(p))
+                .map_err(|e| format!("cell {c}: saturation: {e:?}"))?;
+            Ok((sat.temperature.value, m))
+        }
+    }
+}
+
 /// The observation frame's channels, fixed by the composed unit.
 fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
     let mut out = vec![channel(
@@ -279,6 +322,7 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             Quantity::PzrRoofPressure => ("Pa", "PZR roof-tap static pressure"),
             Quantity::PzrLevel { .. } => ("m", "PZR indicated level (fixed saturated calibration)"),
             Quantity::SgCollapsedLevel { .. } => ("m", "SG collapsed level (narrow range)"),
+            Quantity::SgApparentLevel { .. } => ("m", "SG apparent level (narrow range)"),
             Quantity::LoopFlow { .. } => ("1", "loop cold-return mass flow over its nominal"),
             Quantity::CurrentProxy { .. } => {
                 ("1", "protective local-current proxy (S3-D7 ratio form)")
@@ -443,8 +487,31 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             Reading::Coordinate(*i, scales[*i] / net.rotor_inertia()),
         ));
     }
+    // The secondary owner's coordinate of a label, by owner (the feed
+    // train's and the apparent level's live there).
+    let secondary = |label: &str| -> Result<usize, String> {
+        let mut k = 0;
+        let mut found = None;
+        for (owner, layout) in joined.layouts() {
+            for l in &layout.labels {
+                if owner == "secondary" && l == label {
+                    if found.is_some() {
+                        return Err(format!("the secondary owner names {label} twice"));
+                    }
+                    found = Some(k);
+                }
+                k += 1;
+            }
+        }
+        found.ok_or_else(|| format!("no secondary coordinate {label}"))
+    };
     for f in &section.families {
-        if let Quantity::SgCollapsedLevel { sg, area_m2 } = &f.quantity {
+        let (sg, area_m2) = match &f.quantity {
+            Quantity::SgCollapsedLevel { sg, area_m2 }
+            | Quantity::SgApparentLevel { sg, area_m2 } => (sg, area_m2),
+            _ => continue,
+        };
+        {
             let p = index(&format!("SG.{sg}.p_s"))?;
             let v = index(&format!("SG.{sg}.V_l"))?;
             out.push(channel(
@@ -461,7 +528,114 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
                 "SG secondary owner",
                 Reading::Coordinate(v, scales[v] / area_m2),
             ));
+            if matches!(f.quantity, Quantity::SgApparentLevel { .. }) {
+                let sub = secondary(&format!("SG.{sg}.V_sub"))?;
+                out.push(channel(
+                    format!("LD01.SG.{sg}.LEVEL.APPARENT"),
+                    "m",
+                    "SG apparent level ((liquid + submerged vapor volume) over the narrow-range area)",
+                    "SG secondary owner (apparent level)",
+                    Reading::Coordinates(vec![(v, scales[v] / area_m2), (sub, scales[sub] / area_m2)]),
+                ));
+            }
         }
+    }
+    // The feed train (plan r4 X4.1): each SG's branch flow, FCV stem and the
+    // three-element control's NR1 and steam-flow lags, SG-owner coordinates
+    // (as the feed-control recorder reads them). None without a feed train.
+    let packet = inputs.spine.packet_json()?;
+    if packet["secondary"]["feedTrain"].is_object() {
+        let sgs = packet["secondary"]["steamGenerators"]
+            .as_array()
+            .ok_or("the packet's secondary.steamGenerators")?;
+        for g in sgs {
+            let id = g["id"].as_str().ok_or("an SG without an id")?;
+            for (suffix, label, unit, quantity) in [
+                ("FLOW", "m", "kg/s", "feed branch mass flow"),
+                (
+                    "FCV.POSITION",
+                    "FCV.u",
+                    "1",
+                    "feed control valve stem position (0 shut, 1 open)",
+                ),
+                (
+                    "NR1",
+                    "NR1.lag",
+                    "m",
+                    "three-element control's NR1 apparent level (lagged)",
+                ),
+                (
+                    "STEAM.FLOW",
+                    "FT.STEAM.lag",
+                    "kg/s",
+                    "three-element control's steam flow (lagged)",
+                ),
+            ] {
+                let i = secondary(&format!("FW.{id}.{label}"))?;
+                out.push(channel(
+                    format!("LD01.FW.{id}.{suffix}"),
+                    unit,
+                    quantity,
+                    &format!("SG secondary owner coordinate FW.{id}.{label}"),
+                    Reading::Coordinate(i, scales[i]),
+                ));
+            }
+        }
+    }
+    // Mass-weighted leg and plenum temperatures over the packet's regions:
+    // a loop's hot and cold leg cells by region name, the core's inlet the
+    // lower plenum, its outlet the upper.
+    let regions: Vec<&str> = packet["mechanics"]["regions"]
+        .as_array()
+        .ok_or("the packet's mechanics.regions")?
+        .iter()
+        .map(|r| r["id"].as_str().ok_or("a region without an id"))
+        .collect::<Result<_, _>>()?;
+    let cells = |test: &dyn Fn(&str) -> bool, what: &str| -> Result<Vec<usize>, String> {
+        let c: Vec<usize> = (0..regions.len()).filter(|i| test(regions[*i])).collect();
+        if c.is_empty() {
+            return Err(format!("no {what} cell"));
+        }
+        Ok(c)
+    };
+    for f in &section.families {
+        if let Quantity::LoopFlow { loop_id, .. } = &f.quantity {
+            for (leg, prefix) in [("THOT", "HOT"), ("TCOLD", "COLD")] {
+                let p = format!("{prefix}.{loop_id}");
+                let c = cells(&|r| r == p || r.starts_with(&format!("{p}.")), &p)?;
+                out.push(channel(
+                    format!("LD01.RCS.{loop_id}.{leg}"),
+                    "K",
+                    "mass-weighted leg water temperature",
+                    &format!(
+                        "network cells {}",
+                        c.iter().map(|i| regions[*i]).collect::<Vec<_>>().join(", ")
+                    ),
+                    Reading::CellTemperature(c),
+                ));
+            }
+        }
+    }
+    for (id, region, quantity) in [
+        (
+            "LD01.CORE.INLET.T",
+            "LOWER",
+            "core inlet water temperature (lower plenum, mass-weighted)",
+        ),
+        (
+            "LD01.CORE.OUTLET.T",
+            "UPPER",
+            "core outlet water temperature (upper plenum, mass-weighted)",
+        ),
+    ] {
+        let c = cells(&|r| r == region, region)?;
+        out.push(channel(
+            id,
+            "K",
+            quantity,
+            &format!("network cell {region}"),
+            Reading::CellTemperature(c),
+        ));
     }
     let rods = joined.rods().ok_or("the unit composes no rod owner")?;
     let base = joined.offsets().rods;
@@ -469,7 +643,6 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
     // cluster's travel is its motion class's coordinate, which every member
     // of a bank shares (the coordinate's label names the class, not the
     // cluster), so the cluster order of the packet's rods names them.
-    let packet = inputs.spine.packet_json()?;
     let ids: Vec<&str> = packet["rods"]["clusters"]
         .as_array()
         .ok_or("the packet's rods.clusters")?
@@ -493,6 +666,22 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             Reading::Coordinate(i, scales[i]),
         ));
     }
+    let travels: Vec<usize> = rods.structure().outputs[..rods.clusters()]
+        .iter()
+        .map(|travel| base + travel[0])
+        .collect();
+    out.push(channel(
+        "LD01.ROD.TRAVEL.MEAN",
+        "m",
+        "mean rod cluster travel over every cluster",
+        "rod owner (cluster order)",
+        Reading::Coordinates(
+            travels
+                .iter()
+                .map(|i| (*i, scales[*i] / travels.len() as f64))
+                .collect(),
+        ),
+    ));
     for (id, unit, quantity, read) in [
         (
             "LD01.TG.GEN.WT",
@@ -836,6 +1025,16 @@ impl Unit {
                         .map(|c| c.mass_flow_kg_s.value)
                         .sum(),
                     Reading::Coordinate(i, factor) => y[*i] * factor,
+                    Reading::Coordinates(terms) => terms.iter().map(|(i, f)| y[*i] * f).sum(),
+                    Reading::CellTemperature(cells) => {
+                        let (mut weighted, mut mass) = (0., 0.);
+                        for c in cells {
+                            let (temperature, m) = cell_temperature(net, y, *c)?;
+                            weighted += m * temperature;
+                            mass += m;
+                        }
+                        weighted / mass
+                    }
                     Reading::HeaterRequest => control.in_force_w,
                     Reading::TerminalPower => unit.slice.export_w(&y[n..]),
                     Reading::ShaftSpeed => y[n + slice::OMEGA],
