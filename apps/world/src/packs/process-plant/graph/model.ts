@@ -77,7 +77,8 @@ export type FluidKind = z.infer<typeof fluidKindSchema>
 export const designPhaseSchema = z.enum(['liquid', 'steam', 'gas', 'twoPhase'])
 export type DesignPhase = z.infer<typeof designPhaseSchema>
 
-export const fluidSolverModelSchema = z.enum(['incompressibleLiquid', 'compressibleSteam', 'twoPhaseApprox', 'sourceSink'])
+/** `nativeUnit`: the flow a native unit's own network solves (the LD-01 child); the link carries no TS solver variables. */
+export const fluidSolverModelSchema = z.enum(['incompressibleLiquid', 'compressibleSteam', 'twoPhaseApprox', 'sourceSink', 'nativeUnit'])
 export type FluidSolverModel = z.infer<typeof fluidSolverModelSchema>
 
 export const connectionServiceSchema = z.string()
@@ -175,6 +176,8 @@ export const processQuantitySchema = z.enum([
   'flowRateDelta',
   'frequency',
   'head',
+  /** A level or a travel in metres, where the unit measures it so (a native unit's collapsed level, a rod's travel). */
+  'length',
   'mass',
   'massDelta',
   'power',
@@ -210,6 +213,7 @@ export const processUnitSchema = z.enum([
   'kg/s',
   'kV',
   'kW',
+  'm',
   'MJ',
   'MPa',
   'mSv/h',
@@ -238,6 +242,7 @@ const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<Proce
   flowRateDelta: new Set(['kg/s']),
   frequency: new Set(['Hz']),
   head: new Set(['Pa']),
+  length: new Set(['m']),
   mass: new Set(['kg']),
   massDelta: new Set(['kg']),
   // A power-range nuclear instrument reads percent of rated thermal power.
