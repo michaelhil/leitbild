@@ -714,6 +714,8 @@ pub struct Classes {
     pub rods: bool,
     /// The PZR metal and relief block (G6).
     pub pzr: bool,
+    /// The CVCS block (plan r4 X4.2).
+    pub cvcs: bool,
 }
 impl Classes {
     pub const ALL: Self = Self {
@@ -723,6 +725,7 @@ impl Classes {
         secondary: true,
         rods: true,
         pzr: true,
+        cvcs: true,
     };
     pub const NONE: Self = Self {
         network: false,
@@ -731,6 +734,7 @@ impl Classes {
         secondary: false,
         rods: false,
         pzr: false,
+        cvcs: false,
     };
 }
 
@@ -1159,6 +1163,7 @@ fn assemble<P: Properties + WaterProperties>(
     };
     let (network, mut coupler) = joined.local_parts(t, y, yp, cj);
     let regular = network.pzr.cell;
+    let pzr_coordinates = network.pzr.coordinates();
     let held = Held::new(network.properties());
     let mut replay = Replay::new(
         network,
@@ -1209,6 +1214,13 @@ fn assemble<P: Properties + WaterProperties>(
                 }
             }
             let spent = hook.spent;
+            // Plan r4 X4.2: a PZR column's CVCS level row (the LT law reads
+            // the cell's coordinates directly, not through the fluid).
+            if pzr_coordinates.contains(&j)
+                && let Some((row, v)) = coupler.cvcs_level_column(j)?
+            {
+                sink.add(row, j, v)?;
+            }
             clock.book("network columns: replay and chains", started, spent);
         }
         clock.book_spent("network columns: local coupling", locals, local);
@@ -1302,6 +1314,7 @@ fn assemble<P: Properties + WaterProperties>(
         ("solid", o.solids..o.secondary, classes.solids),
         ("secondary", o.secondary..o.rods, classes.secondary),
         ("rod", o.rods..o.pzr, classes.rods),
+        ("cvcs", o.cvcs..o.end, classes.cvcs),
     ] {
         if !named {
             continue;
@@ -1378,6 +1391,12 @@ fn assemble<P: Properties + WaterProperties>(
                 "secondary columns: local coupling",
                 "secondary columns: chains",
             ),
+            "cvcs" => (
+                "cvcs columns: owner_column",
+                "cvcs columns: network replay of receipts",
+                "cvcs columns: local coupling",
+                "cvcs columns: chains",
+            ),
             _ => (
                 "rod columns: owner_column",
                 "rod columns: network replay of receipts and volumes",
@@ -1394,7 +1413,7 @@ fn assemble<P: Properties + WaterProperties>(
     }
     // The PZR block's columns (G6): its own rows at the base column, and the
     // stratified rows through the boundary's directions.
-    if classes.pzr && o.end > o.pzr {
+    if classes.pzr && o.cvcs > o.pzr {
         let started = clock.now();
         let cell = network.stratified();
         let column = *network
@@ -1402,7 +1421,7 @@ fn assemble<P: Properties + WaterProperties>(
             .ok_or_else(|| fatal("the PZR columns need the base evaluation's column"))?;
         seed.receipts.clear();
         seed.volumes.clear();
-        for j in o.pzr..o.end {
+        for j in o.pzr..o.cvcs {
             let boundary = coupler.pzr_column(j, cell, &column)?;
             for (row, v) in coupler.last_pzr() {
                 sink.add(*row, j, v.direction)?;

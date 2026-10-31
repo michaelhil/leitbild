@@ -85,6 +85,11 @@ pub enum Quantity {
     /// hydraulic sections with a pump, in packet order), `rotor_id` its
     /// section. Linear in the rotor's angular-momentum coordinate.
     PumpSpeed { rotor: usize, rotor_id: String },
+    /// Plan r4 X4.2 (for PHYS): a CVCS branch's signed effective total-stream
+    /// flow at its COLD.A boundary (`LD01.INV.CHARGE.FT`,
+    /// `LD01.INV.LETDOWN.FT`), kg/s: the flow the CVCS owner delivers at its
+    /// stem and COLD.A's pressure; the packet must compose the CVCS.
+    CvcsFlow { branch: crate::joined::cvcs::Branch },
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -16,6 +16,7 @@ pub mod account;
 pub mod block;
 pub mod blocks;
 pub mod census;
+pub mod cvcs;
 pub mod nuclear;
 pub mod operator;
 pub mod packet;

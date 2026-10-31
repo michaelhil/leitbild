@@ -27,6 +27,9 @@
 //! - **Handovers.** The metal heat the secondary received against the heat
 //!   the solids delivered, and the nuclear event energy against the heat
 //!   released plus the reservoirs' rate.
+//! - **CVCS (plan r4 X4.2).** Charging and letdown cross the primary's
+//!   envelope at COLD.A (mass, enthalpy, absorber); the CVCS tanks, outside
+//!   it, balance their mass and absorber against those crossings.
 //!
 //! Each identity closes when `|defect| <= bound (1 + sum |terms|)`, the
 //! terms being every store's rate and every boundary term (S1's bound form).
@@ -110,6 +113,8 @@ pub struct Account {
     /// Per SG.
     pub sg_mass: Vec<Identity>,
     pub sg_energy: Vec<Identity>,
+    /// Plan r4 X4.2: the CVCS tanks' mass and absorber, when composed.
+    pub cvcs: Vec<Identity>,
     /// The metal heat per SG as the secondary received it against the
     /// solids' delivery, and the nuclear event energy split.
     pub handovers: Vec<Identity>,
@@ -131,6 +136,7 @@ impl Account {
         .chain(&self.sg_mass)
         .chain(&self.sg_energy)
         .chain(&self.handovers)
+        .chain(&self.cvcs)
     }
     /// The identity with the largest relative defect.
     pub fn worst(&self) -> &Identity {
@@ -209,6 +215,10 @@ pub struct Plan {
     bore_mass: Vec<usize>,
     bore_energy: Vec<usize>,
     bore_boron: Vec<usize>,
+    /// Plan r4 X4.2: the CVCS tank masses (BLEND, WATER, CONCENTRATE,
+    /// RECEIVER) and absorbers (BLEND, RECEIVER), global; empty without it.
+    cvcs_mass: Vec<usize>,
+    cvcs_boron: Vec<usize>,
 }
 
 impl Plan {
@@ -239,7 +249,14 @@ impl Plan {
             bore_mass: Vec::new(),
             bore_energy: Vec::new(),
             bore_boron: Vec::new(),
+            cvcs_mass: Vec::new(),
+            cvcs_boron: Vec::new(),
         };
+        if joined.cvcs().is_some() {
+            let (masses, absorbers) = super::cvcs::Cvcs::stocks();
+            plan.cvcs_mass = masses.iter().map(|i| o.cvcs + i).collect();
+            plan.cvcs_boron = absorbers.iter().map(|i| o.cvcs + i).collect();
+        }
         for (i, (category, _)) in joined.network.labels().iter().enumerate() {
             match *category {
                 "M" => plan.net_mass.push(i),
@@ -320,6 +337,8 @@ impl Plan {
             .chain(&plan.bore_mass)
             .chain(&plan.bore_energy)
             .chain(&plan.bore_boron)
+            .chain(&plan.cvcs_mass)
+            .chain(&plan.cvcs_boron)
         {
             if differential[i] != 1. || plan.scales[i] != plan.row_scales[i] {
                 return Err(fatal(format!(
@@ -399,6 +418,11 @@ impl Plan {
             ]
             .map(String::from),
         );
+        // Plan r4 X4.2: charging and letdown energy across COLD.A (their
+        // mass and absorber are in the primary's net receipts).
+        if !self.cvcs_mass.is_empty() {
+            names.extend(["cvcs_charging_j", "cvcs_letdown_j"].map(String::from));
+        }
         names
     }
 
@@ -479,6 +503,12 @@ impl Plan {
         };
         let heats = joined.heats();
         let (secondary, rods) = self.owners(joined, y, yp, rows)?;
+        let cvcs = joined.cvcs().map(|b| (b.account(), b.transfers()));
+        let cvcs_port = |name: &str| -> Result<super::block::Crossing, Failure> {
+            cvcs.as_ref()
+                .and_then(|(a, _)| a.crossings.iter().find(|c| c.port == name).cloned())
+                .ok_or_else(|| fatal(format!("no crossing {name}")))
+        };
         // G6: the PZR metal's Joule power and exterior loss as the captured
         // evaluation recorded them, and the relief's outflow from the cell's
         // own evaluation (zero with the relief seated or no relief port).
@@ -546,6 +576,11 @@ impl Plan {
         for c in secondary.crossings.iter().chain(&rods.crossings) {
             e.boundary(&c.port, c.energy_w);
         }
+        if let Some((a, _)) = &cvcs {
+            for c in &a.crossings {
+                e.boundary(&c.port, c.energy_w);
+            }
+        }
         let (metal, metal_abs) = self.rates(rows, yp, &self.pzr_metal);
         e.store("PZR metal energies", metal, metal_abs);
         e.boundary("PZR heater Joule power", p.joule_w);
@@ -565,6 +600,11 @@ impl Plan {
             m.store("rod bores' water", r, r_abs);
         }
         m.boundary("PZR relief outflow", -relief[0]);
+        if let Some((a, _)) = &cvcs {
+            for c in &a.crossings {
+                m.boundary(&c.port, c.mass_kg_s);
+            }
+        }
         account.primary_mass = m;
         let mut bo = Identity::new("primary_boron");
         bo.store(
@@ -577,7 +617,29 @@ impl Plan {
             bo.store("rod bores' boron", r, r_abs);
         }
         bo.boundary("PZR relief outflow", -relief[2]);
+        if let Some((a, _)) = &cvcs {
+            for c in &a.crossings {
+                bo.boundary(&c.port, c.tracer_kg_s);
+            }
+        }
         account.primary_boron = bo;
+        // Plan r4 X4.2: the tanks lose what the primary receives; CONCENTRATE
+        // delivers at its constant fraction, WATER none.
+        if let Some((a, (_, _, fraction))) = &cvcs {
+            let into_primary =
+                |f: fn(&super::block::Crossing) -> f64| -> f64 { a.crossings.iter().map(f).sum() };
+            let mut tm = Identity::new("cvcs_mass");
+            let (r, r_abs) = self.rates(rows, yp, &self.cvcs_mass);
+            tm.store("CVCS tank masses", r, r_abs);
+            tm.boundary("charging less letdown", -into_primary(|c| c.mass_kg_s));
+            let mut tb = Identity::new("cvcs_boron");
+            let (r, r_abs) = self.rates(rows, yp, &self.cvcs_boron);
+            tb.store("BLEND and RECEIVER absorber", r, r_abs);
+            let concentrate = self.rate(rows, yp, self.cvcs_mass[2]) * fraction;
+            tb.store("CONCENTRATE absorber", concentrate, concentrate.abs());
+            tb.boundary("charging less letdown", -into_primary(|c| c.tracer_kg_s));
+            account.cvcs = vec![tm, tb];
+        }
 
         // Each SG, and the metal heat handed to it.
         if secondary.received_heat_w.len() != self.sg_names.len()
@@ -649,6 +711,12 @@ impl Plan {
         }
         q.extend([event, b("motor_work_w")?, -b("bearing_loss_w")?, remainder]);
         q.extend([p.joule_w, -p.exterior_w, -relief[1], -relief[0], -relief[2]]);
+        if cvcs.is_some() {
+            q.extend([
+                cvcs_port("CVCS.charging")?.energy_w,
+                cvcs_port("CVCS.letdown")?.energy_w,
+            ]);
+        }
         account.boundary = q;
         Ok(account)
     }

@@ -151,3 +151,14 @@ test('the PZR LT family and C2.N3 vote compile from their blocks, and refuse wit
   expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/phase-dependent-measurements.md': taps }), packet))
     .toThrow('Expected one ld01-pzr-level-channels block')
 })
+
+test('with the packet\'s CVCS (plan r4 X4.2) the two normal-inventory FTs are observed on I2 at the CVCS controller\'s lag and span', () => {
+  const s = compileOperatingIcFrom(pages(), { ...packet, cvcs: { controller: { flowLag_s: 0.25, flowSpan_kg_s: [-7.5, 7.5] } } })
+  const ft = s.families.slice(-2)
+  expect(ft.map(f => f.id)).toEqual(['LD01.INV.CHARGE.FT', 'LD01.INV.LETDOWN.FT'])
+  expect(ft[0]!.quantity).toEqual({ cvcs_flow: { branch: 'Charging' } })
+  expect(ft[1]!.channels).toEqual([{ id: 'LD01.INV.LETDOWN.FT', supply: 'I2' }])
+  expect(ft[1]!.channel).toMatchObject({ lag_s: 0.25, min: -7.5, max: 7.5, quantum: null, sample_s: 0.1 })
+  // Without the CVCS the section is unchanged.
+  expect(compileOperatingIcFrom(pages(), packet).families.map(f => f.id)).not.toContain('LD01.INV.CHARGE.FT')
+})

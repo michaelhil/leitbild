@@ -97,6 +97,9 @@ pub enum Class {
     // PZR metal and relief owner (G6).
     PzrMetal,
     PzrReliefLift,
+    // CVCS owner (plan r4 X4.2).
+    InventoryStock,
+    InventoryControl,
 }
 
 /// One block's coordinate declaration, built once at composition.

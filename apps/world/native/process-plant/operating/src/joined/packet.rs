@@ -40,6 +40,9 @@ pub struct Packet {
     /// none; the S3 frame driver then refuses to run (S1/S2 never read it).
     #[serde(rename = "matrixRebuild")]
     pub matrix_rebuild: Option<MatrixRebuild>,
+    /// Plan r4 X4.2: the CVCS owner's compact allocation (`ld01-cvcs`), when
+    /// the packet composes it (`reference-design-operating-cvcs.ts`).
+    pub cvcs: Option<super::cvcs::Section>,
 }
 
 /// The owner's MR-1 block as compiled (strict): stock IDAS check points

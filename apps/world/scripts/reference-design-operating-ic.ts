@@ -154,6 +154,8 @@ export const packetSchema = z.object({
   secondary: z.object({ steamGenerators: z.array(z.object({ id: z.string() }).passthrough()),
     apparentLevel: z.object({ indication: z.object({ indicatedLevelArea_m2: finite }).passthrough() }).passthrough().optional() }).passthrough(),
   feedback_metadata: z.object({ regions: z.array(z.object({ z0_m: finite, z1_m: finite }).passthrough()) }).passthrough(),
+  // Plan r4 X4.2: a packet composing the CVCS (reference-design-operating-cvcs.ts).
+  cvcs: z.object({ controller: z.object({ flowLag_s: finite, flowSpan_kg_s: z.tuple([finite, finite]) }).passthrough() }).passthrough().optional(),
 }).passthrough()
 type Packet = z.infer<typeof packetSchema>
 
@@ -347,6 +349,19 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     })),
   ]
   const functions = rawFunctions.map(f => ({ ...f, effects: effects(f.id, f.effects) }))
+  // Plan r4 X4.2: with the packet's CVCS, the two normal-inventory FTs, one
+  // I2 channel each ("Each branch has a signed effective total-stream
+  // measured-flow channel, −7.5 to +7.5 kg/s range and 0.25 s lag, on I2",
+  // inventory-and-chemistry.md, as the packet's ld01-cvcs-controller carries
+  // it); observed only, no function reads them.
+  const cvcsFamilies = packet.cvcs ? (['Charging', 'Letdown'] as const).map(branch => {
+    const id = branch === 'Charging' ? 'LD01.INV.CHARGE.FT' : 'LD01.INV.LETDOWN.FT'
+    const c = packet.cvcs!.controller
+    return { id, quantity: { cvcs_flow: { branch } }, channels: [{ id, supply: 'I2' }],
+      channel: { lag_s: c.flowLag_s, min: c.flowSpan_kg_s[0], max: c.flowSpan_kg_s[1], quantum: null, indeterminate_band: null,
+        sample_s: channel.sample_s, transport_s: channel.transport_s },
+      maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s }
+  }) : []
   for (const c of prhrActuation.causes) if (!functions.some(f => f.id === c)) throw Error(`ld01-prhr-actuation names ${c}, which is not compiled`)
   return {
     identity: 'ld01-s3-ic',
@@ -357,7 +372,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       channel: { lag_s: channel.lag_s, min: channel.min_pa, max: channel.max_pa, quantum: channel.quantum_pa,
         indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies],
+    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies, ...cvcsFamilies],
     reports: [{
       id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B',
       sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,
