@@ -565,6 +565,10 @@ pub trait Rods<P> {
     fn differential(&self) -> Vec<f64>;
     /// Number of clusters; travel is indexed as the source feedback's rods.
     fn clusters(&self) -> usize;
+    /// E-NUC: the passive solid stores a transaction may deposit energy
+    /// into (a seat's arrival energy into its fitting), each kept out of
+    /// the solids' replica classes.
+    fn deposit_stores(&self) -> Vec<String>;
     /// Achieved travel per cluster (m) for the source feedback's overlap.
     fn travel(&self, x: Coordinates<'_>, out: &mut [Scalar]) -> Result<(), Failure>;
     /// Current fluid volume and rate of every regular network cell, from the

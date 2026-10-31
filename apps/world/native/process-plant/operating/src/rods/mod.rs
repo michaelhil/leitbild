@@ -875,6 +875,11 @@ impl RodBlock {
         Ok(())
     }
 
+    /// The passive store a seat of cluster `c` deposits its arrival energy
+    /// into: its fuel assembly's top fitting ([`Rods::deposit_stores`]).
+    fn fitting(&self, c: usize) -> String {
+        format!("{}/top-fitting", self.clusters[c].fuel_assembly)
+    }
     /// The bodies' mode, discrete retained state.
     pub fn modes(&self) -> &[Mode] {
         &self.modes
@@ -1687,6 +1692,9 @@ impl<P: Properties> Rods<P> for RodBlock {
             })
             .collect()
     }
+    fn deposit_stores(&self) -> Vec<String> {
+        (0..self.clusters.len()).map(|c| self.fitting(c)).collect()
+    }
     fn clusters(&self) -> usize {
         self.clusters.len()
     }
@@ -2028,7 +2036,7 @@ impl<P: Properties> Rods<P> for RodBlock {
                     y[base + TRAVEL] = 0.;
                     y[base + VELOCITY] = 0.;
                     self.modes[c] = Mode::Seated;
-                    let store = format!("{}/top-fitting", self.clusters[c].fuel_assembly);
+                    let store = self.fitting(c);
                     deposits.push((store.clone(), energy));
                     events.push(json!({"cluster": id, "event": "seat", "t_s": t, "arrival_speed_m_s": speed, "arrival_energy_j": energy, "fitting": store, "located_travel_residue_m": residue, "potential_energy_residue_j": self.mass * self.gravity * residue}));
                 }
