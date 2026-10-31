@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
 import { parseProcedureTagValue, type ProcedureCsfEvaluation, type ProcedureObservationPort, type ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { composeProcedureRunView, composeProcedureStepView, projectProcedureStepGuidance, procedureStepReadViewSchema, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
+import { composeProcedureRunView, composeProcedureRunReadView, composeProcedureStepView, projectProcedureStepGuidance, procedureStepReadViewSchema, procedureRunReadViewSchema, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
 
 const source = {
   sourceId: 'pwr-ops', label: 'PWR operations procedures', repository: 'leitbild-wikis/pwr-ops', ref: 'main',
@@ -99,6 +99,20 @@ const ports = (config: {
 })
 
 describe('procedure step view', () => {
+  test('a canonical current-state read includes the complete stored current step without acquiring Pack observations', () => {
+    const calls: string[] = [], comment = 'Current human note — keep every word. '.repeat(30)
+    const state = { stepId: 'verify-reactor-trip', assessment: 'unknown' as const, favorite: true, comment,
+      updatedAt: plantTime, updatedBy: 'actor:person:operator' as ActorId }
+    const current = composeProcedureRunReadView({ run: run({ stepStates: [state] }), document: document(), ports: ports({ calls }) })
+    expect(procedureRunReadViewSchema.parse(current)).toEqual(current)
+    expect(current).toMatchObject({ sequence: 42, simulationTime: plantTime, paused: false, observationsAcquired: false })
+    expect(current.step!.state).toEqual(state)
+    expect(current.step!.definition.input).toMatchObject({ sourceRevision: source.revision, stepId: state.stepId })
+    for (const field of ['tags', 'csfs']) expect(current).not.toHaveProperty(field)
+    for (const field of ['blocks', 'branches', 'branchAssessments']) expect(current.step).not.toHaveProperty(field)
+    expect(calls).toEqual([])
+  })
+
   test('opted-out guidance omits only authored static fields and preserves all current facts, source and authority', async () => {
     const doc = document()
     const comment = 'Complete current checkpoint: '.repeat(40)

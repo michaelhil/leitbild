@@ -80,11 +80,14 @@ import {
 } from './simulation-run-routes.ts'
 import {
   composeProcedureRunView,
+  composeProcedureRunReadView,
   composeProcedureStepView,
   projectProcedureStepGuidance,
   procedureStepNotFoundCode,
   procedureStepReadViewSchema,
+  procedureRunReadViewSchema,
   type ProcedureStepView,
+  type ProcedureRunReadView,
   type ProcedureStepViewPorts,
 } from '../../features/procedures/step-view.ts'
 
@@ -199,6 +202,7 @@ const procedureStepReadInputSchema = z.object({
   stepId: procedureStepIdSchema.optional().describe('A step of the run\'s procedure; omit for its current step.'),
   includeGuidance: z.boolean().optional().describe('False omits repeated static instructions, branch definitions and tag descriptions. All current facts and the exact pinned step.definition reference remain; default true. Use only after reading that exact step/source guidance.'),
 }).strict()
+const procedureRunReadInputSchema = procedureStepReadInputSchema.pick({ runId: true })
 const procedureEvidenceInputSchema = z.object({
   sourceId: procedureSourceIdSchema.optional(),
   sourceRevision: sourceRevisionSchema,
@@ -709,6 +713,37 @@ const procedureStepViewFor = async (
     if (error instanceof Error && (error as Error & { code?: string }).code === procedureStepNotFoundCode) throw procedureStepViewError(404, procedureStepNotFoundCode, error.message)
     throw error
   }
+}
+
+/** Source lookup may await; read canonical state only after it, with one clock/sequence frame. */
+const procedureRunReadViewFor = async (
+  registry: SimulationRunRegistry, runtime: ApiRunRuntime, invocation: ApiInvocation,
+  input: { readonly runId?: string | undefined },
+): Promise<ProcedureRunReadView> => {
+  const initial = input.runId === undefined ? drivenActiveRun(runtime, invocation)
+    : runtime.snapshot().procedures?.runs.find(candidate => candidate.runId === input.runId)
+  if (!initial) throw procedureStepViewError(404, 'procedure_run_not_found', `No procedure run ${input.runId} in this Simulation Run; world.procedure.runs.list lists them.`)
+  const pin = { runId: initial.runId, sourceId: initial.sourceId, procedureId: initial.procedureId,
+    sourceRevision: initial.sourceRevision, sourcePath: initial.sourcePath }
+  if (deniedInspectionSubjects(runtime, invocation).has(initial.scope.plantId)) {
+    throw procedureStepViewError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${initial.scope.plantId}`)
+  }
+  const { runId: _runId, ...definitionPin } = pin
+  const document = await runtime.procedureDocument(definitionPin)
+  const snapshot = runtime.snapshot()
+  const run = input.runId === undefined ? drivenActiveRun(runtime, invocation)
+    : snapshot.procedures?.runs.find(candidate => candidate.runId === input.runId)
+  if (!run) throw procedureStepViewError(404, 'procedure_run_not_found', `Procedure run ${pin.runId} is no longer retained.`)
+  if (run.runId !== pin.runId || run.sourceId !== pin.sourceId || run.procedureId !== pin.procedureId
+    || run.sourceRevision !== pin.sourceRevision || run.sourcePath !== pin.sourcePath) {
+    throw procedureStepViewError(409, 'procedure_run_changed', 'The selected procedure or pinned source changed during the read. Resolve and read its current state again.')
+  }
+  if (deniedInspectionSubjects(runtime, invocation).has(run.scope.plantId)) {
+    throw procedureStepViewError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${run.scope.plantId}`)
+  }
+  if (!snapshot.clock) throw new Error('Simulation Run clock is not initialized')
+  const clock = { currentTime: snapshot.clock.currentTime, paused: !registry.isAdvancing(runtime.id) }, events = runtime.events()
+  return composeProcedureRunReadView({ run, document, ports: { sequence: () => snapshot.seq, clock: () => clock, events: () => events } })
 }
 
 // A transfer hands the work on with its driver: the destination Run its
@@ -1532,6 +1567,28 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const input = procedureRunsListInputSchema.parse(invocation.input)
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       return json({ result: projectProcedureRuns(visibleProcedureState(runtime, invocation), input.includeEvidence) })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.procedure.run.read', moduleId: WORLD_MODULE_ID, kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' }, title: 'Read current procedure control state',
+      description: 'Reads one coherent canonical procedure Run snapshot: source pin, status, current step, driver, input request, journal sequence and clock, plus the complete current step comment/assessment and existing definition/historical-proof references. Omit runId for the one active Run you drive, or name an exact Run from runs.list. observationsAcquired:false is explicit: no Pack observations, branch comparisons, live tag readings or CSFs are acquired. Recorded notes/decisions do not establish current physical conditions; use step.read or the owning Pack queries for those. This focused read is suitable for current authority/note checks and human-to-AI handback without re-reading other Runs or previous steps. It does not change placekeeping, authority, comments or stored proof.',
+      searchTerms: ['current procedure state', 'procedure driver', 'procedure note', 'procedure handback'],
+      risk: 'read', idempotent: true,
+      inputSchema: capabilityJsonSchema(procedureRunReadInputSchema), outputSchema: capabilityJsonSchema(procedureRunReadViewSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = procedureRunReadInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      try {
+        return json({ result: await procedureRunReadViewFor(registry, runtime, invocation, input) })
+      } catch (error) {
+        const failure = error as Error & { status?: number; code?: string }
+        if (failure.code === procedureStepNotFoundCode) return apiError(404, failure.code, failure.message)
+        if (typeof failure.status === 'number' && typeof failure.code === 'string') return apiError(failure.status, failure.code, failure.message)
+        throw error
+      }
     },
   },
   {

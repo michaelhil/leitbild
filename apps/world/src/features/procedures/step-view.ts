@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   isoTimestampSchema, procedureInputRequestSchema, procedureAssessmentSchema, procedureBranchSchema, procedureRunDriverSchema,
-  procedureRunIdSchema, procedureRunStatusSchema, procedureTextBlockSchema,
+  procedureRunIdSchema, procedureRunStatusSchema, procedureTextBlockSchema, procedureStepRunStateSchema,
   type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep, type SimulationRunEvent,
 } from '../../core/model/index.ts'
 import { procedureBranchAssessmentSchema, type ProcedureBranchAssessment } from '../../core/model/procedure-criteria.ts'
@@ -125,6 +125,16 @@ const procedureStepCurrentViewSchema = procedureStepViewSchema.omit({ step: true
 export const procedureStepReadViewSchema = z.union([procedureStepViewSchema, procedureStepCurrentViewSchema])
 export type ProcedureStepReadView = z.infer<typeof procedureStepReadViewSchema>
 
+/** Canonical procedure control state; no Pack observations are acquired. */
+export const procedureRunReadViewSchema = procedureStepViewSchema.omit({ step: true, tags: true, csfs: true }).extend({
+  paused: z.boolean(),
+  observationsAcquired: z.literal(false),
+  step: stepSchema.pick({ id: true, label: true, title: true, definition: true }).extend({
+    state: procedureStepRunStateSchema.omit({ decision: true }).extend({ decision: procedureStepDecisionViewSchema.optional() }).strict().optional(),
+  }).strict().optional(),
+}).strict()
+export type ProcedureRunReadView = z.infer<typeof procedureRunReadViewSchema>
+
 /**
  * Guidance is static source data, discoverable through step.definition. This
  * projection never removes current Pack facts, tag caveats, current comments or authority.
@@ -176,6 +186,20 @@ const runSummary = (run: ProcedureRunState, document: ProcedureDocument, step?: 
     ...(run.currentStepId === undefined ? {} : { currentStepId: run.currentStepId }),
     ...(stepIndex < 0 ? {} : { stepNumber: stepIndex + 1 }),
     totalSteps: document.steps.length,
+  }
+}
+
+const stepDefinition = (run: ProcedureRunState, step: ProcedureStep) => ({
+  capabilityId: 'world.procedure.document.read', input: { sourceId: run.sourceId, procedureId: run.procedureId,
+    sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, stepId: step.id },
+})
+
+const stepStateView = (run: ProcedureRunState, stepId: string, events: ReadonlyArray<SimulationRunEvent>) => {
+  const state = run.stepStates.find(item => item.stepId === stepId)
+  return state === undefined ? undefined : {
+    assessment: state.assessment,
+    ...(state.comment === undefined ? {} : { comment: state.comment }),
+    ...(state.decision === undefined ? {} : { decision: projectProcedureStepDecision({ run, stepId, decision: state.decision, events }) }),
   }
 }
 
@@ -237,6 +261,35 @@ export const composeProcedureRunView = (config: {
   })
 }
 
+/** A single coherent caller-supplied snapshot, without opening a Pack observation port. */
+export const composeProcedureRunReadView = (config: {
+  readonly run: ProcedureRunState
+  readonly document: ProcedureDocument
+  readonly ports: Pick<ProcedureStepViewPorts, 'sequence' | 'clock' | 'events'>
+}): ProcedureRunReadView => {
+  const { run, document, ports } = config
+  const step = document.steps.find(candidate => candidate.id === run.currentStepId)
+  if (run.currentStepId !== undefined && step === undefined) {
+    throw Object.assign(new Error(`Procedure ${document.procedureId} has no step ${run.currentStepId}.`), { code: procedureStepNotFoundCode })
+  }
+  const clock = ports.clock()
+  const stored = step === undefined ? undefined : run.stepStates.find(candidate => candidate.stepId === step.id)
+  const state = stored === undefined ? undefined : (() => {
+    const { decision, ...canonical } = stored
+    return { ...canonical, ...(decision === undefined ? {} : {
+      decision: projectProcedureStepDecision({ run, stepId: stored.stepId, decision, events: ports.events() }),
+    }) }
+  })()
+  return procedureRunReadViewSchema.parse({
+    sequence: ports.sequence(), simulationTime: clock.currentTime, paused: clock.paused, observationsAcquired: false,
+    run: runSummary(run, document, step),
+    ...(step === undefined ? {} : { step: { id: step.id, label: step.label,
+      ...(step.title === `Step ${step.label}` ? {} : { title: step.title }),
+      definition: stepDefinition(run, step), ...(state === undefined ? {} : { state }),
+    } }),
+  })
+}
+
 /** One step of a run (its current step unless stepId), as step.read returns it and an AI agent's transition answers with. */
 export const composeProcedureStepView = async (config: {
   readonly run: ProcedureRunState
@@ -258,7 +311,7 @@ export const composeProcedureStepView = async (config: {
   const { reads } = acquired
   const observation = run.observations?.find(item => item.stepId === step.id)
   const labels = new Map(document.steps.map(candidate => [candidate.id, candidate.label]))
-  const state = run.stepStates.find(item => item.stepId === step.id)
+  const state = stepStateView(run, step.id, ports.events())
   // Read the clock after the reads, so the view's plant time is not older than its readings.
   const clock = ports.clock()
   return procedureStepViewSchema.parse({
@@ -270,8 +323,7 @@ export const composeProcedureStepView = async (config: {
       id: step.id,
       label: step.label,
       ...(step.title === `Step ${step.label}` ? {} : { title: step.title }),
-      definition: { capabilityId: 'world.procedure.document.read', input: { sourceId: run.sourceId, procedureId: run.procedureId,
-        sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, stepId: step.id } },
+      definition: stepDefinition(run, step),
       blocks: step.blocks.filter(block => !omittedBlockKinds.has(block.kind)).map(block => ({ kind: block.kind, text: withoutLinkTargets(block.text) })),
       branches: step.branches.map((branch, index) => ({
         index,
@@ -290,11 +342,7 @@ export const composeProcedureStepView = async (config: {
         ...(observation.result.reason === undefined ? {} : { reason: observation.result.reason }),
         simulationTime: observation.simulationTime,
       } }),
-      ...(state === undefined ? {} : { state: {
-        assessment: state.assessment,
-        ...(state.comment === undefined ? {} : { comment: state.comment }),
-        ...(state.decision === undefined ? {} : { decision: projectProcedureStepDecision({ run, stepId: step.id, decision: state.decision, events: ports.events() }) }),
-      } }),
+      ...(state === undefined ? {} : { state }),
     },
     ...(reads.length === 0 ? {} : { tags: reads.map(read => tagRow(document, read)) }),
     ...(csfs === undefined ? {} : { csfs }),

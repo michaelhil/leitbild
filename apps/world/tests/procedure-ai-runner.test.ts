@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,7 +10,7 @@ import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
 import { createProcedureSourceService } from '../src/features/procedures/source.ts'
-import { procedureStepReadViewSchema, projectProcedureStepGuidance } from '../src/features/procedures/step-view.ts'
+import { procedureRunReadViewSchema, procedureStepReadViewSchema, projectProcedureStepGuidance } from '../src/features/procedures/step-view.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 
 const registries: WorldWorkspaceRuntimeRegistry[] = []
@@ -114,6 +114,75 @@ const invoker = (registry: WorldWorkspaceRuntimeRegistry, workspaceId: Workspace
   }
 
 describe('the AI procedure runner through the World Module API', () => {
+  test('current procedure state reads notes, authority and exact source/proof references without Pack acquisition', async () => {
+    const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' }), human = access(workspaceId, { kind: 'human' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    const runId = started.body.result.pinned.runId
+    const packReads = spyOn(run, 'procedureObservations')
+    try {
+      const initial = await invoke('world.procedure.run.read', {}, ai)
+      expect(initial.status).toBe(200)
+      expect(procedureRunReadViewSchema.parse(initial.body.result)).toMatchObject({ observationsAcquired: false,
+        run: { runId, driver: { kind: 'ai' } }, step: { id: 'verify-reactor-trip' } })
+      const comment = 'Human annotation without takeover. '.repeat(30)
+      expect((await invoke('world.procedure.step.update', { runId, stepId: 'verify-reactor-trip', comment, favorite: true }, human)).status).toBe(200)
+      const snapshot = structuredClone(run.snapshot()), humanNote = await invoke('world.procedure.run.read', { runId }, ai)
+      expect(humanNote.body.result.step.state).toEqual(snapshot.procedures!.runs.find(row => row.runId === runId)!.stepStates[0])
+      expect(humanNote.body.result.run.driver.actorId).toBe('actor:ai:assistant')
+      expect(humanNote.body.result.sequence).toBe(snapshot.seq)
+      expect(packReads).not.toHaveBeenCalled()
+      expect(run.snapshot().procedures).toEqual(snapshot.procedures)
+      expect((await invoke('world.procedure.run.drive', { runId, action: 'claim' }, human)).status).toBe(200)
+      expect((await invoke('world.procedure.run.read', { runId }, ai)).body.result.run.driver.kind).toBe('person')
+      expect((await invoke('world.procedure.run.read', {}, ai)).status).toBe(404)
+      expect((await invoke('world.procedure.run.drive', { runId, action: 'release' }, human)).status).toBe(200)
+      expect((await invoke('world.procedure.run.read', { runId }, ai)).body.result.run.driver).toBeUndefined()
+      expect((await invoke('world.procedure.run.drive', { runId, action: 'claim' }, ai)).status).toBe(200)
+      await invoke('world.procedure.run.transition', { runId, stepId: 'verify-reactor-trip', branchIndex: 0, basis: 'Current positive framework pressure.' }, ai)
+      packReads.mockClear()
+      const moved = (await invoke('world.procedure.run.read', { runId }, ai)).body.result
+      expect(moved.step.definition.input.stepId).toBe('verify-turbine-trip')
+      const transferred = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Current positive framework pressure.' }, ai)).body.result
+      packReads.mockClear()
+      const destination = (await invoke('world.procedure.run.read', {}, ai)).body.result
+      expect(destination.run.runId).toBe(transferred.next.run.runId)
+      expect(destination.step.definition.input).toMatchObject({ sourcePath: 'procedures/ES-0.1.md', stepId: 'monitor' })
+      const retained = (await invoke('world.procedure.run.read', { runId }, ai)).body.result
+      expect(retained.run.status).toBe('transferred')
+      expect(retained.step.state.decision.proof.input).toEqual(JSON.parse(transferred.view.state))
+      expect(packReads).not.toHaveBeenCalled()
+      expect((await invoke('world.procedure.run.read', { runId: 'procedure-run:missing' }, ai)).status).toBe(404)
+    } finally { packReads.mockRestore() }
+  })
+
+  test('current-state snapshot is acquired after source lookup, so concurrent human notes and removals cannot be mislabeled', async () => {
+    const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
+    const ai = access(workspaceId, { kind: 'ai', id: 'assistant' }), human = access(workspaceId, { kind: 'human' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, ai)
+    const runId = started.body.result.pinned.runId, original = run.procedureDocument.bind(run)
+    for (const remove of [false, true]) {
+      const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+      const sourceRead = spyOn(run, 'procedureDocument').mockImplementationOnce(async input => {
+        const document = await original(input); entered.resolve(); await release.promise; return document
+      })
+      try {
+        const pending = invoke('world.procedure.run.read', { runId }, ai)
+        await entered.promise
+        if (remove) await invoke('world.procedure.run.reset', { sourceId: 'runner-test', procedureId: 'E-0', scope: { plantId } }, human)
+        else await invoke('world.procedure.step.update', { runId, stepId: 'verify-reactor-trip', comment: 'Human changed this while the retained source loaded.' }, human)
+        release.resolve()
+        const result = await pending
+        if (remove) expect(result.body.error.code).toBe('procedure_run_not_found')
+        else {
+          expect(result.body.result.step.state.comment).toBe('Human changed this while the retained source loaded.')
+          expect(result.body.result.sequence).toBe(run.snapshot().seq)
+          expect(result.body.result.simulationTime).toBe(run.snapshot().clock!.currentTime)
+        }
+      } finally { release.resolve(); sourceRead.mockRestore() }
+    }
+  })
+
   test('step reads and scoped waits opt out of static guidance while current evidence, ownership and pinned identity stay complete', async () => {
     const { registry, workspaceId, run, plantId } = await setup()
     const invoke = invoker(registry, workspaceId, run.id)
