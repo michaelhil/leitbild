@@ -968,6 +968,11 @@ mod integrated {
         pub births: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
+        /// E-EVT (plan r4): nothing the integrator reads changed (the state,
+        /// the identity, every residual row and root function bitwise), so
+        /// no consistent start and no IDAReInit were made: stock's history
+        /// continues. `yp` is then empty.
+        pub noop: bool,
     }
     impl Restart {
         /// Configure a segment start (after construction or a restart).
@@ -1071,11 +1076,19 @@ mod integrated {
         // the identity before it. A root-located or dense-output state off
         // the algebraic manifold shows here, separately from what the
         // transactions change.
+        let zero_rates = vec![0.; y.len()];
+        let mut roots_entry = vec![0.; joined.root_count()];
+        joined
+            .roots(t, y, &zero_rates, &mut roots_entry)
+            .map_err(message)?;
+        let directions_entry = joined.root_directions().map_err(message)?;
+        let entry_rows: Vec<f64>;
         let entry = {
             let zero = vec![0.; y.len()];
             joined
                 .evaluate(t, y, &zero, None, 0., None)
                 .map_err(message)?;
+            entry_rows = joined.rows().iter().map(|r| r.value).collect();
             super::largest(
                 joined
                     .rows()
@@ -1107,6 +1120,55 @@ mod integrated {
         // presence key switches the block structure (S3-D-P3).
         let declared = VaporPresence::of(&joined.network, &joined.network.declared_presence(y));
         let presence_changed = integrated.follow_presence(t, y, &declared)?;
+        // E-EVT (plan r4): a no-op instant. Nothing the integrator reads
+        // changed: the state and identity bitwise, no presence change, no
+        // appended change, every residual row at (t, y, 0) and every root
+        // function and direction bitwise as at entry. Stock's history then
+        // continues; there is no consistent start and no IDAReInit.
+        if !presence_changed
+            && appended_done.is_empty()
+            && y.iter().zip(&before).all(|(a, b)| a.to_bits() == b.to_bits())
+            && integrated.joined.differential(network_ids) == identity_before
+            && integrated.joined.network.cell_modes() == modes_before.as_slice()
+        {
+            let joined = &mut integrated.joined;
+            joined
+                .evaluate(t, y, &zero_rates, None, 0., None)
+                .map_err(message)?;
+            let rows_same = joined
+                .rows()
+                .iter()
+                .zip(&entry_rows)
+                .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            let mut roots_now = vec![0.; roots_entry.len()];
+            joined
+                .roots(t, y, &zero_rates, &mut roots_now)
+                .map_err(message)?;
+            let roots_same = roots_now
+                .iter()
+                .zip(&roots_entry)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+                && joined.root_directions().map_err(message)? == directions_entry;
+            if rows_same && roots_same {
+                return Ok(Restarted {
+                    transactions: done,
+                    placements: Vec::new(),
+                    transacted: Vec::new(),
+                    passes_allowed: 0,
+                    presence_changed,
+                    modes_changed: false,
+                    equilibrium_classes: Vec::new(),
+                    appended: appended_done,
+                    constraint_at_entry: entry,
+                    first_step_s: 0.,
+                    last_step_s: last_step,
+                    births: Vec::new(),
+                    yp: Vec::new(),
+                    report: Report::default(),
+                    noop: true,
+                });
+            }
+        }
         let Integrated {
             joined,
             assembly,
@@ -1275,6 +1337,7 @@ mod integrated {
             births,
             yp,
             report,
+            noop: false,
         })
     }
 
