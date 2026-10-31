@@ -68,8 +68,12 @@ describe('Leitbild Assistant skills', () => {
     expect(assistance.body).toContain('challenge any premise the current evidence contradicts')
     expect(assistance.body).toContain('when review is requested or an explicitly restricted Plant requires it')
     expect(assistance.body).not.toContain('ask their reason before proposing anything')
-    expect(assistance.body).toContain('total feed against the heat-sink tree\'s minimum')
-    expect(assistance.body).toContain('Tavg falls below its no-load value')
+    // Archived reference recovery rules must not override the current scoped task.
+    expect(assistance.body).toContain('For ES-0.1, use the pinned current task and its Basis')
+    expect(assistance.body).toContain('archived no-load targets, off-scale rules and reset guidance do not override its criteria')
+    expect(assistance.body).toContain('A target or elapsed time alone proves neither recovery nor sustained stability')
+    expect(assistance.body).not.toContain('Tavg falls below its no-load value')
+    expect(assistance.body).not.toContain('With every narrow-range level off scale its criterion is total feed')
     // A rate the display marks "reversing" is turning, not going one way (run-26c rcp-trip).
     expect(assistance.body).toContain('one marked "reversing" is turning')
     expect(assistance.body).toContain('use only a reset the control listing offers')
