@@ -232,13 +232,32 @@ impl RuleI {
         yp: &[f64],
     ) -> Result<(), String> {
         // R4-P1-FRAMES (lead 1 Nov: P1 is a judge, not plant physics): the
-        // whole judgment at the first accepted state of each 0.1 s frame
-        // interval, never between.
+        // domain exits (B1's phase absence, the source domains' pressure
+        // floor and P1 bounds) at every accepted state; the admission's
+        // margins at the first accepted state of each 0.1 s frame interval,
+        // and at an exit.
         let frame = (t / MARGIN_FRAME_S + 1e-9).floor() as i64;
-        if self.hot_standby.as_ref().is_some_and(|r| r.margin_frame == Some(frame)) {
-            return Ok(());
-        }
         let phase = self.evaluated(joined, t, y, yp)?;
+        if self
+            .hot_standby
+            .as_ref()
+            .is_some_and(|r| r.margin_frame == Some(frame))
+        {
+            let _cost = leitbild_operating_plant::cost::scope("p1-domain");
+            let exit = post_trip_domain::hot_standby_domain_exit(
+                joined.nuclear(),
+                &phase,
+                record,
+                joined.travel(),
+                t,
+                0.,
+            )
+            .map_err(|e| format!("P1 at {t} s: {e}"))?;
+            if !exit {
+                return Ok(());
+            }
+        }
+        let _cost = leitbild_operating_plant::cost::scope("p1-admission");
         let admitted = post_trip_domain::admit_hot_standby_accepted(
             joined.nuclear(),
             &phase,
@@ -259,7 +278,7 @@ impl RuleI {
             not_subcritical: vec![0; k],
             below_reference: vec![0; k],
             smallest_margin_dk_k: vec![None; k],
-            margin_rule: "R4-P1-FRAMES (lead 1 Nov: P1 is a judge, off in the unit): the whole P1 judgment (hot-standby admission, subcritical and reference-margin counts, domain exit, B1's phase absence, the margin value) at the first accepted state of each 0.1 s frame interval",
+            margin_rule: "R4-P1-FRAMES (lead 1 Nov: P1 is a judge, off in the unit): the domain exits (B1's phase absence, the pressure floor and P1's domain bounds) at every accepted state; the hot-standby admission's margins (subcritical and reference-margin counts, the margin value) at the first accepted state of each 0.1 s frame interval and at an exit",
             margin_evaluations: 0,
             margin_frame: None,
         });
