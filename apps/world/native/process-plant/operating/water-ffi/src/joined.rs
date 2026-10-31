@@ -1100,6 +1100,17 @@ mod integrated {
         } else {
             Vec::new()
         };
+        // E-EVT no-op (PERF tightening): stock's own rates at `t`, the
+        // last accepted step's dense derivative; a no-op also needs every
+        // row unchanged there, so a change in a term linear in y' restarts.
+        // Without them (no accepted step yet) the instant restarts.
+        let rates_hist: Option<Vec<f64>> = if allow_noop {
+            let mut r = vec![0.; y_all.len()];
+            ida.dense(t, 1, &mut r).ok().map(|()| r)
+        } else {
+            None
+        };
+        let allow_noop = allow_noop && rates_hist.is_some();
         let (y, y_tail) = y_all.split_at_mut(m);
         let absolute = &absolute_all[..m];
         let integrated = ida.system_mut().integrated_mut();
@@ -1124,6 +1135,13 @@ mod integrated {
                 .roots(t, y, &zero_rates, &mut roots_entry)
                 .map_err(message)?;
             directions_entry = joined.root_directions().map_err(message)?;
+        }
+        let mut entry_rows_hist: Vec<f64> = Vec::new();
+        if let Some(r) = rates_hist.as_ref() {
+            joined
+                .evaluate(t, y, &r[..m], None, 0., None)
+                .map_err(message)?;
+            entry_rows_hist = joined.rows().iter().map(|r| r.value).collect();
         }
         let entry_rows: Vec<f64>;
         let entry = {
@@ -1179,11 +1197,22 @@ mod integrated {
             joined
                 .evaluate(t, y, &zero_rates, None, 0., None)
                 .map_err(message)?;
-            let rows_same = joined
+            let mut rows_same = joined
                 .rows()
                 .iter()
                 .zip(&entry_rows)
                 .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            if let Some(r) = rates_hist.as_ref() {
+                joined
+                    .evaluate(t, y, &r[..m], None, 0., None)
+                    .map_err(message)?;
+                rows_same = rows_same
+                    && joined
+                        .rows()
+                        .iter()
+                        .zip(&entry_rows_hist)
+                        .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            }
             let mut roots_now = vec![0.; roots_entry.len()];
             joined
                 .roots(t, y, &zero_rates, &mut roots_now)
