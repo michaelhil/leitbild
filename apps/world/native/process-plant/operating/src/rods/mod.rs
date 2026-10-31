@@ -56,7 +56,7 @@ use crate::{
     network::{Failure, Properties, Water, packet::Packet},
     thermal::Scalar,
 };
-use geometry::{Branch, overlap};
+use geometry::{Branch, Profile};
 use guide::{Annulus, Passage, s};
 use serde::Deserialize;
 use serde_json::json;
@@ -423,6 +423,9 @@ pub struct RodBlock {
     spider_height: f64,
     spider_volume: f64,
     spider_area: f64,
+    /// The assembly's C1 displaced-area profile above the guide top
+    /// (E-EVT lever (b), [`Profile`]).
+    profile: Profile,
     mass: f64,
     guide_bottom: f64,
     guide_top: f64,
@@ -590,9 +593,11 @@ impl RodBlock {
             || b.seated_bottom_m + b.length_m < g.upper_mouth_m
             || section.reference_travel_m > section.normal_travel_m
             || sp.seated_bottom_m < g.upper_mouth_m
+            // The C1 profile joins the bodies' tops to the spider's bottom.
+            || (b.seated_bottom_m + b.length_m - sp.seated_bottom_m).abs() > 1e-12
         {
             return Err(fatal(
-                "rods: the bodies must be seated at the guides' lower mouths and span them, the spider above the bores",
+                "rods: the bodies must be seated at the guides' lower mouths and span them, the spider above the bores on the bodies' tops",
             ));
         }
         if let SpiderDrag::EnvelopeDisk { coefficient } = section.spider_drag {
@@ -792,6 +797,8 @@ impl RodBlock {
             spider_height: sp.height_m,
             spider_volume: sp.volume_m3,
             spider_area: PI * sp.radius_m * sp.radius_m,
+            profile: Profile::new(body_area, sp.seated_bottom_m, sp.height_m, sp.volume_m3)
+                .map_err(fatal)?,
             mass: b.mass_kg + sp.mass_kg,
             guide_bottom: g.lower_mouth_m,
             guide_top: g.upper_mouth_m,
@@ -829,7 +836,7 @@ impl RodBlock {
             (0..n)
                 .map(|_| {
                     block
-                        .displacement(k, section.reference_travel_m, Branch::Insertion)
+                        .displacement(k, section.reference_travel_m)
                         .0
                 })
                 .collect()
@@ -845,29 +852,12 @@ impl RodBlock {
     }
 
     /// Displaced volume of one cluster in plenum `k` at travel `y`: its
-    /// bodies above the bores and its spider, with the one-sided slope in
-    /// `y`.
-    fn displacement(&self, k: usize, y: f64, branch: Branch) -> (f64, f64) {
+    /// bodies above the bores and its spider on the assembly's C1 profile,
+    /// with its slope and curvature in `y`.
+    fn displacement(&self, k: usize, y: f64) -> (f64, f64, f64) {
         let cell = &self.plena[k];
-        let (body, body_slope) = overlap(
-            cell.bottom.max(self.guide_top),
-            cell.top,
-            (self.body_bottom + y, 1.),
-            (self.body_top + y, 1.),
-            branch,
-        );
-        let density = self.spider_volume / self.spider_height;
-        let (spider, spider_slope) = overlap(
-            cell.bottom,
-            cell.top,
-            (self.spider_bottom + y, 1.),
-            (self.spider_bottom + self.spider_height + y, 1.),
-            branch,
-        );
-        (
-            self.body_area * body + density * spider,
-            self.body_area * body_slope + density * spider_slope,
-        )
+        self.profile
+            .displaced(cell.bottom.max(self.guide_top), cell.top, y)
     }
 
     fn admit_travel(&self, c: usize, y: f64) -> Result<(), Failure> {
@@ -885,6 +875,11 @@ impl RodBlock {
         Ok(())
     }
 
+    /// The passive store a seat of cluster `c` deposits its arrival energy
+    /// into: its fuel assembly's top fitting ([`Rods::deposit_stores`]).
+    fn fitting(&self, c: usize) -> String {
+        format!("{}/top-fitting", self.clusters[c].fuel_assembly)
+    }
     /// The bodies' mode, discrete retained state.
     pub fn modes(&self) -> &[Mode] {
         &self.modes
@@ -1219,24 +1214,13 @@ impl RodBlock {
         }
     }
 
-    /// Mixture-density weighted overlap of the spider with the plena, and
-    /// each plenum's share of the spider height.
-    fn spider_cells(
-        &self,
-        fluid: &Fluid<'_>,
-        y: Scalar,
-        branch: Branch,
-    ) -> [(usize, Scalar, Scalar); 2] {
+    /// Each plenum's mixture density and share of the spider's volume on
+    /// the assembly's profile.
+    fn spider_cells(&self, fluid: &Fluid<'_>, y: Scalar) -> [(usize, Scalar, Scalar); 2] {
         [0, 1].map(|k| {
             let cell = &self.plena[k];
-            let (value, slope) = overlap(
-                cell.bottom,
-                cell.top,
-                (self.spider_bottom + y.value, 1.),
-                (self.spider_bottom + self.spider_height + y.value, 1.),
-                branch,
-            );
-            let fraction = Scalar::new(value, slope * y.direction) / s(self.spider_height);
+            let (value, slope) = self.profile.spider_in(cell.bottom, cell.top, y.value);
+            let fraction = Scalar::new(value, slope * y.direction) / s(self.spider_volume);
             (cell.index, fluid.mixture_density(cell.index), fraction)
         })
     }
@@ -1319,7 +1303,7 @@ impl RodBlock {
         let end_face = s(self.body_area) * (tip_pressure - top_pressure);
         // Mixture density over the spider's height, cell by cell.
         let mut spider_density = s(0.);
-        for (_, density, fraction) in self.spider_cells(fluid, y, branch) {
+        for (_, density, fraction) in self.spider_cells(fluid, y) {
             spider_density = spider_density + density * fraction;
         }
         let spider_buoyancy = spider_density * g * s(self.spider_volume);
@@ -1400,11 +1384,10 @@ impl RodBlock {
         let fluid_force = f.net.value + self.mass * self.gravity;
         let heat = -(f.wall.value + f.spider_drag.value) * v;
         let rate = x.rate(base + TRAVEL).value;
-        let branch = Branch::of_rate(rate);
         // -p V' of the bores (V' = A_b y') and of the plena (V' = -dD/dy y').
         let mut boundary = -bore.pressure.value * self.body_area * rate;
         for (k, cell) in self.plena.iter().enumerate() {
-            let (_, slope) = self.displacement(k, x.value(base + TRAVEL).value, branch);
+            let (_, slope, _) = self.displacement(k, x.value(base + TRAVEL).value);
             boundary += fluid.cells[cell.index].pressure.value * slope * rate;
         }
         Ok([fluid_force * v, heat, boundary])
@@ -1439,9 +1422,8 @@ impl RodBlock {
         for (cell, [mass, enthalpy, tracer]) in self.transport(&f, fluid)? {
             receipts.add(cell, 0, mass, enthalpy, tracer)?;
         }
-        let branch = Branch::of_rate(x.rate(base + TRAVEL).value);
         let drag_work = -f.spider_drag * v;
-        for (cell, _, fraction) in self.spider_cells(fluid, y, branch) {
+        for (cell, _, fraction) in self.spider_cells(fluid, y) {
             if fraction.value != 0. || fraction.direction != 0. {
                 receipts.heat(cell, fraction * drag_work)?;
             }
@@ -1710,6 +1692,9 @@ impl<P: Properties> Rods<P> for RodBlock {
             })
             .collect()
     }
+    fn deposit_stores(&self) -> Vec<String> {
+        (0..self.clusters.len()).map(|c| self.fitting(c)).collect()
+    }
     fn clusters(&self) -> usize {
         self.clusters.len()
     }
@@ -1749,11 +1734,11 @@ impl<P: Properties> Rods<P> for RodBlock {
             for c in 0..self.clusters.len() {
                 let y = x.value(Self::base(c) + TRAVEL);
                 let r = x.rate(Self::base(c) + TRAVEL);
-                let (d, slope) = self.displacement(k, y.value, Branch::of_rate(r.value));
+                let (d, slope, curvature) = self.displacement(k, y.value);
                 // V = V_compiled + D(y_ref) - D(y); V' = -dD/dy y'.
                 volume = volume
                     + Scalar::new(self.reference_displacement[k][c] - d, -slope * y.direction);
-                rate = rate - s(slope) * r;
+                rate = rate - Scalar::new(slope, curvature * y.direction) * r;
             }
             out[cell.index] = CellVolume {
                 volume_m3: volume,
@@ -2051,7 +2036,7 @@ impl<P: Properties> Rods<P> for RodBlock {
                     y[base + TRAVEL] = 0.;
                     y[base + VELOCITY] = 0.;
                     self.modes[c] = Mode::Seated;
-                    let store = format!("{}/top-fitting", self.clusters[c].fuel_assembly);
+                    let store = self.fitting(c);
                     deposits.push((store.clone(), energy));
                     events.push(json!({"cluster": id, "event": "seat", "t_s": t, "arrival_speed_m_s": speed, "arrival_energy_j": energy, "fitting": store, "located_travel_residue_m": residue, "potential_energy_residue_j": self.mass * self.gravity * residue}));
                 }
