@@ -156,7 +156,9 @@ describe('guarded procedure workflow through real Host, Agents and World Modules
     const resultOf = (request: ChatRequest): CallResult => {
       const message = request.messages.findLast(message => message.role === 'tool')
       if (!message) throw new Error('Expected the actual previous tool result')
-      const result = (JSON.parse(message.content) as { results: CallResult[] }).results[0]!
+      const evidence = JSON.parse(message.content) as { execution: { turnId: string; toolCallId: string; part: string }; result: { results: CallResult[] } }
+      expect(evidence.execution).toMatchObject({ turnId: expect.any(String), toolCallId: expect.any(String), part: 'result' })
+      const result = evidence.result.results[0]!
       if (!result) throw new Error(`Missing result: ${message.content}`)
       return result
     }
