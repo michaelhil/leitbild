@@ -163,3 +163,26 @@ test('cancellation during checkpoint admission preserves the full archive and pr
     expect(result.execution.stages.some(stage => stage.event.kind === 'context_checkpoint')).toBe(false)
   } finally { release.resolve(); await state.close() }
 })
+
+
+test('comparison recall refuses its own in-flight outcome without inventing a recorded result', async () => {
+  let round = 0
+  const state = await setup(async request => {
+    if (++round === 1) return invoke('product_read', { path: 'source' })
+    if (round === 2) return invoke('conversation_read', { turnId: resultIn(request, 'product_read').execution.turnId, toolCallId: 'call_1_0', part: 'result' })
+    expect(resultIn(request, 'conversation_read').result.success).toBe(false)
+    expect(resultIn(request, 'conversation_read').result.error).toContain('conversation_outcome_unknown')
+    return response('The current recall call did not yet have a durable outcome.')
+  })
+  try {
+    const started = await state.service.start(state.room.profile.id, state.message.id, 'fixture:model')
+    const result = await untilFinished(state.service, state.room.profile.id, state.message.id, started.id)
+    expect(result.status).toBe('completed')
+    const recalled = result.calls[1]!.result!
+    expect(recalled.success).toBe(false)
+    expect(recalled.error).toContain('conversation_outcome_unknown')
+    expect(recalled.data).toEqual({ evidenceKind: 'execution', turn: { id: started.id, status: 'running' }, toolCallId: 'call_1_0' })
+    expect(JSON.stringify(recalled)).not.toContain('Outcome not yet available')
+    expect(state.executions.listTurns(state.room.profile.id)).toEqual([])
+  } finally { await state.close() }
+})

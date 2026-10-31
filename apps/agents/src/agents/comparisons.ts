@@ -298,9 +298,15 @@ export const createComparisons = (deps: Dependencies) => {
               result={success:false,error:'Invalid or unavailable conversation_read request'}
             } else if(ownRead) {
               const own=alternative.calls.find(c=>c.id===call.arguments.toolCallId)
-              result=call.arguments.toolCallId
-                ? own ? {success:true,data:{evidenceKind:'execution',turnId:alternative.id,toolCallId:own.id,...(call.arguments.part==='result'?{result:own.result ?? {success:false,error:'Outcome not yet available'}}:{arguments:own.arguments})}} : {success:false,error:'Comparison call not found'}
-                : {success:true,data:{evidenceKind:'execution',turn:{id:alternative.id,status:alternative.status},calls:alternative.calls.map(c=>({toolCallId:c.id,tool:c.tool,startedAt:c.startedAt,completedAt:c.completedAt}))}}
+              if (!call.arguments.toolCallId) {
+                result={success:true,data:{evidenceKind:'execution',turn:{id:alternative.id,status:alternative.status},calls:alternative.calls.map(c=>({toolCallId:c.id,tool:c.tool,startedAt:c.startedAt,completedAt:c.completedAt}))}}
+              } else if (!own) {
+                result={success:false,error:'Comparison call not found'}
+              } else if (call.arguments.part==='result' && own.result===undefined) {
+                result={success:false,error:'conversation_outcome_unknown: no durable outcome; inspect current state before retrying',data:{evidenceKind:'execution',turn:{id:alternative.id,status:alternative.status},toolCallId:own.id}}
+              } else {
+                result={success:true,data:{evidenceKind:'execution',turnId:alternative.id,toolCallId:own.id,...(call.arguments.part==='result'?{result:own.result}:{arguments:own.arguments})}}
+              }
             } else {
               result=(await executor([call],trigger,signal,turn,controls))[0]!
               if(call.tool==='conversation_read' && result.success && result.data && typeof result.data==='object') result={...result,data:{...result.data,ownExecutionTurnId:alternative.id}}
