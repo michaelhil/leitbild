@@ -23,7 +23,7 @@ import type { RoomDirectory } from '../../../apps/agents/src/core/rooms/director
 import type { ChatRequest, LLMProvider } from '../../../apps/agents/src/core/types/llm.ts'
 import type { NativeToolCall, Tool, ToolResult } from '../../../apps/agents/src/core/types/tool.ts'
 import type { ExecutionModelCall } from '../../../apps/agents/src/core/executions/model-evidence.ts'
-import { executionStageEvent } from '../../../apps/agents/src/core/executions/model-evidence.ts'
+import { createModelEvidenceStore, executionStageEvent } from '../../../apps/agents/src/core/executions/model-evidence.ts'
 import { createWorkingContextArchive, type ContextCheckpointInput, type ContextCheckpointManifest } from '../../../apps/agents/src/core/working-context.ts'
 import { createWorkspaceCapabilityTools } from '../../../apps/agents/src/tools/built-in/workspace-capability-tools.ts'
 import { createConversationReadTool } from '../../../apps/agents/src/tools/built-in/conversation-read.ts'
@@ -264,14 +264,21 @@ const createOfflineBroker = (capture: Capture, capabilities: ReadonlyArray<Modul
   return { tools: wrapped, select: (call: CapturedCall) => { current = call; consumed.clear() }, transportCount: () => transportCalls }
 }
 
-const requestText = (request: ChatRequest): string => [
-  JSON.stringify(request.tools), JSON.stringify(request.systemBlocks),
-  ...request.messages.map(message => JSON.stringify(message)),
-].join('\n')
-const sharedCharacters = (a: string, b: string): number => {
-  let i = 0
-  while (i < a.length && i < b.length && a.charCodeAt(i) === b.charCodeAt(i)) i++
-  return i
+/** Same units as production request sizing. JSON escaping and opaque bytes
+ * cannot become cacheable plaintext tokens. Only complete identical leading
+ * messages count; changed static instructions/schema invalidate this model. */
+export const sharedRequestInputTokens = (previous: ChatRequest | undefined, current: ChatRequest): number => {
+  if (!previous || JSON.stringify(previous.tools) !== JSON.stringify(current.tools)
+    || JSON.stringify(previous.systemBlocks) !== JSON.stringify(current.systemBlocks)) return 0
+  const messages: ChatRequest['messages'][number][] = []
+  for (let i = 0; i < Math.min(previous.messages.length, current.messages.length); i++) {
+    if (JSON.stringify(previous.messages[i]) !== JSON.stringify(current.messages[i])) break
+    messages.push(current.messages[i]!)
+  }
+  const shared = estimateRequestSize({ model: current.model, tools: current.tools, systemBlocks: current.systemBlocks, messages }).estimatedInputTokens
+  assert(shared <= Math.min(estimateRequestSize(previous).estimatedInputTokens, estimateRequestSize(current).estimatedInputTokens),
+    'Shared plaintext prefix cannot exceed either complete plaintext request')
+  return shared
 }
 const quantile = (sorted: ReadonlyArray<number>, fraction: number) => sorted[Math.floor((sorted.length - 1) * fraction)]!
 /** Independent test-only inverse. Production presents grouped descriptors;
@@ -299,7 +306,7 @@ export const assertCheckpointReceiptLossless = (manifest: ContextCheckpointManif
   assert.equal(Object.keys(expanded).length, actionLedger.length, 'Missing exact action receipt')
   assert.deepEqual(expanded, actionLedger)
 }
-const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: ReadonlyArray<ExecutionModelCall>, billed: ReadonlyArray<BillingRow>) => {
+export const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: ReadonlyArray<ExecutionModelCall>, billed: ReadonlyArray<BillingRow>) => {
   const byId = new Map(billed.map(row => [row.executionKey.split('/').at(-1)!, row]))
   const ratios = sourceModels.map(model => byId.get(model.id)!.metrics.promptTokens / estimateRequestSize(model.request).estimatedInputTokens).sort((a, b) => a - b)
   const lowRates = billed.find(row => row.priceReconciliation.promptThreshold === null)!.priceReconciliation.ratesUsdPerToken
@@ -316,11 +323,14 @@ const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: Read
         // The observed calibration already includes transport/tokenizer/opaque
         // overhead. The explicit byte allowance is added again conservatively,
         // rather than assuming redacted reasoning costs nothing after rebasing.
-        const tokens = Math.ceil(request.estimatedInputTokens * multiplier + request.opaqueProtocolBytes / 4)
+        const plaintextTokens = Math.ceil(request.estimatedInputTokens * multiplier)
+        // Opaque bytes are not in the plaintext estimator/prefix. Charge all
+        // selected protocol bytes as writes, including unchanged older state.
+        const tokens = plaintextTokens + Math.ceil(request.opaqueProtocolBytes / 4)
         const long = tokens >= threshold
         const rates = long ? highRates : lowRates
         const afterRebase = i > 0 && request.checkpointId !== requests[i - 1]!.checkpointId
-        const read = cache === 'cold-every-request' || (cache === 'shared-prefix-with-cold-rebase' && afterRebase) ? 0 : Math.min(tokens, Math.floor(request.sharedPrefixEstimatedTokens * multiplier))
+        const read = cache === 'cold-every-request' || (cache === 'shared-prefix-with-cold-rebase' && afterRebase) ? 0 : Math.min(plaintextTokens, Math.floor(request.sharedPrefixEstimatedTokens * multiplier))
         const write = tokens - read
         const completion = request.exactOriginalCompletionTokens ?? Math.ceil((request.extraCompletionTokenEstimate ?? 0) * multiplier)
         const value = read * Number(rates.input_cache_read) + write * Number(rates.input_cache_write) + completion * Number(rates.completion)
@@ -339,7 +349,7 @@ const priceReplay = (requests: ReadonlyArray<RequestMeasure>, sourceModels: Read
   return { tokenEstimation: 'Production estimateRequestSize counts complete textual request, approximately characters/4. Calibrated ratios are observed on the original 205 requests; these are not GPT tokenization or served bills.',
     calibration: { minimum: ratios[0], median: quantile(ratios, 0.5), maximum: ratios.at(-1) },
     exactCapturedRateSnapshot: { promptThreshold: threshold, lowRates, highRates },
-    cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix is an explicit adjacent-JSON-prefix sensitivity, with either every post-checkpoint request fully cold or only the actually changed prefix lost. No cache hit is guaranteed.',
+    cacheAssumptions: 'Cold-every-request charges cache writes for every estimated input token (more expensive than ordinary uncached prompt). Shared-prefix compares exact static schemas/instructions and complete consecutive identical messages, counted by the same production plaintext estimator. Selected opaque bytes are always write-charged. Either every post-checkpoint request is fully cold or only the changed message suffix is. No cache hit is guaranteed.',
     opaqueAssumptions: 'Exact recovered per-call continuation bytes are counted for every selected original group. The observed public-request calibration already includes hidden protocol overhead; adding selected bytes/4 again is deliberately conservative. No opaque payload is disclosed.',
     additionalCheckpointOutputSensitivity: { maximumObservedOriginalCompletionTokens: maxObservedCompletion,
       extraCheckpointRounds: requests.filter(request => request.kind === 'checkpoint').length,
@@ -438,31 +448,32 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
   let sourceIndex = 0, currentOriginal: CapturedCall | undefined
   let pending: ReturnType<typeof schedule.prepare> | undefined
   let currentKind: RequestMeasure['kind'] = 'source-call', originalModel: ExecutionModelCall | undefined
-  let previousText = '', checkpointId: string | undefined, endingReturned = false
+  let previousRequest: ChatRequest | undefined, checkpointId: string | undefined, endingReturned = false
   const knownProtocolBytes = new Map(sourceModels.map(model => {
     const callId = model.requestedTools?.[0]?.executionCallId
     assert(callId)
     const continuation = continuationByProvider.get(byCall.get(callId)!.providerCallId)
     return [callId, continuation === undefined ? 0 : bytes(continuation)]
   }))
-  let previousOriginalText = ''
+  let previousOriginalRequest: ChatRequest | undefined
   const originalRequestMeasures: RequestMeasure[] = sourceModels.map(model => {
     const restored: ChatRequest = { ...model.request, messages: model.request.messages.map(message => {
       if (message.role !== 'assistant' || !message.toolCalls?.length) return message
       const protocol = continuationByProvider.get(message.toolCalls[0]!.id!)
       return protocol ? { ...message, continuation: protocol } : message
     }) }
-    const size = estimateRequestSize(restored), text = requestText(restored)
+    const size = estimateRequestSize(restored)
+    assert.equal(bytes(restored), model.requestBytes, 'Recovered original request must match its complete recorded byte boundary')
     const activeOriginalCallIds = restored.messages.filter(message => message.role === 'tool').flatMap(message => {
       const source = byProvider.get(message.toolCallId ?? '')
       return source ? [source.id] : []
     })
     const measured: RequestMeasure = { ordinal: model.ordinal, sourceModelOrdinal: model.ordinal, kind: 'source-call',
       estimatedInputTokens: size.estimatedInputTokens, requestBytes: bytes(restored), messageBytes: bytes(restored.messages),
-      sharedPrefixEstimatedTokens: Math.floor(sharedCharacters(previousOriginalText, text) / 4), opaqueContinuationBytes: size.continuationBytes,
+      sharedPrefixEstimatedTokens: sharedRequestInputTokens(previousOriginalRequest, restored), opaqueContinuationBytes: size.continuationBytes,
       activeOriginalCallIds, opaqueProtocolBytes: activeOriginalCallIds.reduce((n, id) => n + knownProtocolBytes.get(id)!, 0),
       exactOriginalCompletionTokens: byBilled.get(model.id)!.metrics.completionTokens }
-    previousOriginalText = text
+    previousOriginalRequest = restored
     return measured
   })
   const assertions = { originalArgumentAndDataParity: 0, exactRecall: 0, humanRoleEquality: 0, selectedGroupsVisible: 0,
@@ -493,7 +504,7 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         content = 'Offline replay reached the original captured stopping boundary. The original provider ran out of credits; the delegated ten-minute monitoring task remains incomplete. No new physical execution or Agent judgment occurred.'
         extraCompletionTokenEstimate = Math.ceil(content.length / 4)
       }
-      const requestSize = estimateRequestSize(request), text = requestText(request)
+      const requestSize = estimateRequestSize(request)
       for (const message of request.messages.filter(message => message.role === 'tool' && message.name === 'context_checkpoint')) {
         const projected = object(object(JSON.parse(message.content)).result)
         const canonical = checkpoints.find(checkpoint => checkpoint.manifest?.checkpointId === projected.checkpointId)?.manifest
@@ -524,10 +535,10 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
         exactOriginalCompletionTokens: byBilled.get(originalModel.id)!.metrics.completionTokens } : {}),
         ...(extraCompletionTokenEstimate === undefined ? {} : { extraCompletionTokenEstimate }), kind: currentKind,
         estimatedInputTokens: requestSize.estimatedInputTokens, requestBytes: bytes(request), messageBytes: bytes(request.messages),
-        sharedPrefixEstimatedTokens: Math.floor(sharedCharacters(previousText, text) / 4), opaqueContinuationBytes: requestSize.continuationBytes,
+        sharedPrefixEstimatedTokens: sharedRequestInputTokens(previousRequest, request), opaqueContinuationBytes: requestSize.continuationBytes,
         ...(checkpointId ? { checkpointId } : {}), activeOriginalCallIds,
         opaqueProtocolBytes: activeOriginalCallIds.reduce((n, id) => n + knownProtocolBytes.get(id)!, 0) })
-      previousText = text
+      previousRequest = structuredClone(request)
       // No historical served usage or billing is attached to this synthetic
       // result. The estimator and old real bills live only in the report.
       const continuation = currentOriginal ? continuationByProvider.get(currentOriginal.providerCallId) : undefined
@@ -625,7 +636,82 @@ export const replayCapturedWorkingContext = async (paths: { capture: string; bil
   } finally { store.close() }
 }
 
-if (import.meta.main) {
+/** Reprice exact finished production-path request snapshots. This performs no
+ * evaluation, transport fixture or writes to the immutable execution archive. */
+export const repriceArchivedWorkingContext = async (paths: { report: string; billing: string; protocol: string; output: string }) => {
+  const reportBytes = new Uint8Array(await Bun.file(paths.report).arrayBuffer())
+  const report = JSON.parse(Buffer.from(reportBytes).toString('utf8')) as Awaited<ReturnType<typeof replayCapturedWorkingContext>>
+  const captureBytes = new Uint8Array(await Bun.file(report.source.capturePath).arrayBuffer())
+  assert.equal(sha(captureBytes), report.source.sha256)
+  const capture = JSON.parse(Buffer.from(captureBytes).toString('utf8')) as Capture
+  const models = Object.values(capture.capture.models).filter(model => model.status === 'completed').sort((a, b) => a.ordinal - b.ordinal)
+  const billingBytes = new Uint8Array(await Bun.file(paths.billing).arrayBuffer())
+  assert.equal(sha(billingBytes), report.source.billingSha256)
+  const billed = (JSON.parse(Buffer.from(billingBytes).toString('utf8')) as BillingRow[]).filter(row => row.executionKey.startsWith(`${report.source.sourceTurnId}/`))
+  const protocolBytes = new Uint8Array(await Bun.file(paths.protocol).arrayBuffer())
+  assert.equal(sha(protocolBytes), report.source.sensitiveProtocolCaptureSha256)
+  const protocol = JSON.parse(Buffer.from(protocolBytes).toString('utf8')) as ExecutionModelCall
+  const continuations = new Map(protocol.request.messages.filter(message => message.role === 'assistant' && message.toolCalls?.length)
+    .map(message => [message.toolCalls![0]!.id!, message.continuation]))
+  const observer = createModelEvidenceStore(`${report.archive.databasePath}.models`)
+  const index = observer.summary(report.archive.roomId, report.archive.turnId)
+  assert.equal(index.models.length, report.requests.length)
+  const repriced: RequestMeasure[] = []
+  let previous: ChatRequest | undefined
+  for (const measure of report.requests) {
+    const actual = observer.get(report.archive.roomId, report.archive.turnId, `model_${measure.ordinal}`, true)
+    assert(actual)
+    assert.equal(bytes(actual.request), measure.requestBytes)
+    assert.equal(estimateRequestSize(actual.request).estimatedInputTokens, measure.estimatedInputTokens)
+    assert.equal(estimateRequestSize(actual.request).continuationBytes, measure.opaqueContinuationBytes)
+    repriced.push({ ...measure, sharedPrefixEstimatedTokens: sharedRequestInputTokens(previous, actual.request) })
+    previous = actual.request
+  }
+  const original: RequestMeasure[] = []
+  previous = undefined
+  for (const model of models) {
+    const request: ChatRequest = { ...model.request, messages: model.request.messages.map(message => {
+      const continuation = message.role === 'assistant' && message.toolCalls?.length ? continuations.get(message.toolCalls[0]!.id!) : undefined
+      return continuation ? { ...message, continuation } : message
+    }) }
+    const size = estimateRequestSize(request)
+    assert.equal(bytes(request), model.requestBytes, 'Recovered original request must match its complete recorded byte boundary')
+    original.push({ ordinal: model.ordinal, sourceModelOrdinal: model.ordinal, kind: 'source-call', estimatedInputTokens: size.estimatedInputTokens,
+      requestBytes: bytes(request), messageBytes: bytes(request.messages), sharedPrefixEstimatedTokens: sharedRequestInputTokens(previous, request),
+      opaqueContinuationBytes: size.continuationBytes, opaqueProtocolBytes: size.continuationBytes, activeOriginalCallIds: [],
+      exactOriginalCompletionTokens: billed.find(row => row.executionKey.endsWith(`/${model.id}`))!.metrics.completionTokens })
+    previous = request
+  }
+  const originalPricing = priceReplay(original, models, billed)
+  const actualWrites = billed.reduce((sum, row) => sum + row.metrics.cacheCreation, 0)
+  assert(originalPricing.scenarios.every(scenario => scenario.estimatedCacheWriteTokens >= actualWrites),
+    'The conservative original-prefix model must not contradict the observed original cache writes')
+  const result = { qualification: 'PURE REPRICING of finished real-runtime request snapshots; no new evaluation or changed archive/retention proof.',
+    supersedesAllPricingInReport: { path: resolve(paths.report), sha256: sha(reportBytes) },
+    runtimeQualificationUnchanged: report.assertions, runtimeImplementation: report.implementation,
+    repricingCodeSha256: sha(new Uint8Array(await Bun.file(import.meta.path).arrayBuffer())),
+    source: report.source, checkpointSchedule: report.checkpointSchedule,
+    exactRequestByteComparison: { boundary: 'Exact provider-independent serialized ChatRequest bytes, including available opaque protocol; completed original205 requests versus all repaired rounds including checkpoint inferences and fixture ending.',
+      originalCompletedRequests: models.length, originalTotalBytes: models.reduce((sum, model) => sum + model.requestBytes, 0), originalPeakBytes: Math.max(...models.map(model => model.requestBytes)),
+      repairedRequests: report.requests.length, repairedTotalBytes: report.requests.reduce((sum, request) => sum + request.requestBytes, 0), repairedPeakBytes: Math.max(...report.requests.map(request => request.requestBytes)),
+      reductionFraction: 1 - report.requests.reduce((sum, request) => sum + request.requestBytes, 0) / models.reduce((sum, model) => sum + model.requestBytes, 0) },
+    correctedPrefixRule: 'Exact same schemas/instructions plus whole consecutive identical messages, sized through production estimateRequestSize. No JSON serialization inflation and no opaque cache reads. All selected opaque bytes are conservatively writes.',
+    sourceObservedWriteSanity: { actualOriginalCacheWriteTokens: actualWrites, allOriginalScenariosAtLeastObservedWrites: true,
+      originalPredictedCacheWriteTokens: originalPricing.scenarios.map(scenario => ({ calibration: scenario.calibration, cache: scenario.cache, tokens: scenario.estimatedCacheWriteTokens })) },
+    pricing: { counterfactualReplay: priceReplay(repriced, models, billed), likeForLikeOriginalRequests: originalPricing },
+    archive: { databasePath: report.archive.databasePath, roomId: report.archive.roomId, turnId: report.archive.turnId },
+    requestCount: repriced.length, requests: repriced }
+  assert(!await Bun.file(paths.output).exists(), 'Pure repricing must write a new artifact, never replace original evidence')
+  await Bun.write(paths.output, JSON.stringify(result, null, 2) + '\n')
+  return result
+}
+
+if (import.meta.main && Bun.argv[2] === '--reprice') {
+  const [, report, billing, protocol, output] = Bun.argv.slice(2)
+  assert(report && billing && protocol && output, 'Supply --reprice report.json billing.json private-final-model.json NEW-output.json')
+  const result = await repriceArchivedWorkingContext({ report, billing, protocol, output })
+  console.log(JSON.stringify({ qualification: result.qualification, sourceObservedWriteSanity: result.sourceObservedWriteSanity, pricing: result.pricing }, null, 2))
+} else if (import.meta.main) {
   const [capture, billing, protocol, output, rawSchedule] = Bun.argv.slice(2)
   assert(capture && billing && protocol && output, 'Supply immutable capture.json, actual-billing.json, private final-model.json and a NEW output directory')
   assert(rawSchedule === undefined || rawSchedule === 'source-record-boundaries' || rawSchedule === 'completed-phases-and-monitor-reviews', 'Choose an explicit supported semantic schedule')

@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
-import { assertCheckpointReceiptLossless, createSemanticSchedule, type CapturedCall } from './working-context-capture-replay.ts'
+import { assertCheckpointReceiptLossless, createSemanticSchedule, priceReplay, sharedRequestInputTokens, type CapturedCall } from './working-context-capture-replay.ts'
 import { createExecutionStore } from '../../../apps/agents/src/core/executions/store.ts'
 import { createWorkingContextArchive, prepareWorkingContextCheckpoint, projectWorkingContextMessages,
   contextCheckpointReceiptForModel, type WorkingContextGroup, type WorkingMessage, type ContextCheckpointManifest } from '../../../apps/agents/src/core/working-context.ts'
 import { createConversationReadTool } from '../../../apps/agents/src/tools/built-in/conversation-read.ts'
 import { createRoom } from '../../../apps/agents/src/core/rooms/room.ts'
 import type { RoomDirectory } from '../../../apps/agents/src/core/rooms/directory.ts'
+import type { ChatRequest } from '../../../apps/agents/src/core/types/llm.ts'
+import { estimateRequestSize } from '../../../apps/agents/src/llm/request-size.ts'
+import type { ExecutionModelCall } from '../../../apps/agents/src/core/executions/model-evidence.ts'
 
 const time = (seconds: number) => `2026-07-12T04:00:${String(seconds).padStart(2, '0')}.178Z`
 const call = (id: string, operationId: string, input: Record<string, unknown>, data: unknown): CapturedCall => ({
@@ -126,4 +129,42 @@ test('future nested metadata cannot be relabeled as the actual current source ac
   const malformed = call('future', 'world.simulation-run.wait', {}, { simulationTime: time(20), next: { simulationTime: time(20),
     run: { procedureId: 'ES-0.1', currentStepId: 'establish-auxiliary-feed' }, observation: { simulationTime: time(25) } } })
   expect(() => schedule.observe(malformed, malformed.id)).toThrow('Nested future time cannot become current evidence')
+})
+
+test('cache-prefix sizing uses complete plaintext messages and cannot turn JSON escaping or opaque state into free input', () => {
+  const previous: ChatRequest = { model: 'fixture', systemBlocks: [{ text: 'Policy', cacheable: true }], tools: [], messages: [
+    { role: 'user', content: 'Objective' },
+    { role: 'assistant', content: '', continuation: { provider: 'openrouter', model: 'fixture', endpointHash: 'fixture', reasoning: '\\"opaque'.repeat(2000) } },
+    { role: 'tool', toolCallId: 'wire', name: 'read', content: JSON.stringify({ escaped: '\\"\n'.repeat(2000) }) },
+  ] }
+  const current: ChatRequest = { ...previous, messages: [...previous.messages, { role: 'assistant', content: 'New work' },
+    { role: 'tool', name: 'read', toolCallId: 'new', content: JSON.stringify({ new: '\\"\n'.repeat(200) }) }] }
+  const before = estimateRequestSize(previous), after = estimateRequestSize(current)
+  const shared = sharedRequestInputTokens(previous, current)
+  expect(shared).toBe(before.estimatedInputTokens)
+  expect(shared).toBeLessThan(after.estimatedInputTokens)
+  expect(after.estimatedInputTokens - shared).toBeGreaterThan(0)
+  expect(JSON.stringify(previous).length / 4).toBeGreaterThan(shared)
+  expect(before.continuationBytes).toBeGreaterThan(0)
+  const withoutOpaque: ChatRequest = { ...previous, messages: previous.messages.map(({ continuation: _opaque, ...message }) => message) }
+  expect(estimateRequestSize(withoutOpaque).estimatedInputTokens).toBe(shared)
+  expect(sharedRequestInputTokens(previous, { ...current, systemBlocks: [{ text: 'Changed source authority' }] })).toBe(0)
+  const changedMessage: ChatRequest = { ...current, messages: current.messages.map((message, index) => index === 2 ? { ...message, content: `${message.content}changed` } : message) }
+  expect(sharedRequestInputTokens(previous, changedMessage)).toBe(estimateRequestSize({ ...previous, messages: previous.messages.slice(0, 2) }).estimatedInputTokens)
+})
+
+test('pricing charges opaque allowance as writes even when the complete plaintext request is cached', () => {
+  const request: ChatRequest = { model: 'fixture', messages: [{ role: 'user', content: 'x'.repeat(784) }] }
+  expect(estimateRequestSize(request).estimatedInputTokens).toBe(200)
+  const models: ExecutionModelCall[] = [1, 2].map(ordinal => ({ id: `model_${ordinal}`, ordinal, phase: 'initial', startedAt: ordinal, status: 'completed',
+    requestedModel: 'fixture', requestBytes: 1, messageCount: 1, toolCount: 0, request, protocolWithheld: false }))
+  const billing: Parameters<typeof priceReplay>[2] = [null, 272000].map((threshold, i) => ({ trial: 'fixture', executionKey: `turn/model_${i + 1}`, costUsd: '0',
+    metrics: { promptTokens: 200, completionTokens: 0, cacheRead: 0, cacheCreation: 200 }, priceReconciliation: { promptThreshold: threshold,
+      ratesUsdPerToken: { prompt: '0.000002', completion: '0.00001', input_cache_read: '0.0000002', input_cache_write: '0.0000025' } } }))
+  const measures: Parameters<typeof priceReplay>[0] = [{ ordinal: 1, kind: 'source-call', estimatedInputTokens: 200, sharedPrefixEstimatedTokens: 200,
+    requestBytes: 1, messageBytes: 1, opaqueContinuationBytes: 400, opaqueProtocolBytes: 400, activeOriginalCallIds: [], exactOriginalCompletionTokens: 0 }]
+  const scenario = priceReplay(measures, models, billing).scenarios.find(s => s.cache === 'adjacent-prefix-without-forced-cold-rebase')!
+  expect(scenario.estimatedPromptTokens).toBe(300)
+  expect(scenario.estimatedCacheReadTokens).toBe(200)
+  expect(scenario.estimatedCacheWriteTokens).toBe(100)
 })
