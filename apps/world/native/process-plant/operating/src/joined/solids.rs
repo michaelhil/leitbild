@@ -84,10 +84,9 @@ struct Segment {
     /// Tube inside diameter: the primary film's thermal diameter.
     diameter: f64,
     capacity: f64,
-    /// X4.5 R2.6, R2.9: the primary (inner) area `area ID/OD`, the tube
-    /// outside diameter of the secondary contact, and the wall plus fouling
-    /// resistance per primary area in series with the primary film.
-    primary_area: f64,
+    /// X4.5 R2.6, R2.9: the tube outside diameter of the secondary contact,
+    /// and the wall plus fouling resistance per primary area in series with
+    /// the primary film.
     outside_diameter: f64,
     series_m2k_w: f64,
     /// X4.5 (lead ruling d): the fold's whole primary area and this
@@ -564,7 +563,6 @@ impl Solids {
                 area: g.area_m2,
                 diameter: g.thermal_diameter_m,
                 capacity: g.capacity_j_k,
-                primary_area: g.area_m2 * c.inner_fraction(),
                 outside_diameter: c.tube_outside_diameter_m,
                 series_m2k_w: c.primary_series_m2k_w(),
                 fold_primary_area: c.exchange_area_m2 * c.inner_fraction(),

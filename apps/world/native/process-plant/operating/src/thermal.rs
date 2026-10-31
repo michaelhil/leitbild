@@ -1370,68 +1370,11 @@ pub fn liquid_wall<P: WaterProperties, N: Number>(
     liquid_wall_current(props, pressure, bulk_t, wall_t, mass_flux, law, sat, bulk)
 }
 
-/// X4.5 R2.9 (plan r4): the SG tube primary face in series with the tube
-/// wall and fouling (`ld01-sg-contact`). The metal node is the tube's outer
-/// surface; `series_m2k_w` is the wall-plus-fouling resistance per primary
-/// (inner) area. The film coefficient is this law's own, its properties
-/// referred to the metal temperature (judgement), so the heat into the fluid
-/// per primary area is `h (T_metal - T_bulk) / (1 + h R)`. Closed form in
-/// the sensible regime only: a primary face whose wall reaches its onset is
-/// outside the refit's domain and refused, never given the unresisted law.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn tube_series_current<P: WaterProperties, N: Number>(
-    props: &P,
-    pressure: N,
-    bulk_t: N,
-    metal_t: N,
-    mass_flux: N,
-    law: WallLawOf<N>,
-    sat: SaturationOf<N>,
-    bulk: WaterPointOf<N>,
-    series_m2k_w: f64,
-) -> Result<WallFluxOf<N>> {
-    if !matches!(law.film, Film::Tube) || !(series_m2k_w.is_finite() && series_m2k_w >= 0.) {
-        return Err("tube series law needs the tube film and a nonnegative resistance");
-    }
-    if metal_t.value() > bulk_t.value() {
-        // Reverse heat: the wall may reach the primary onset. Only the
-        // sensible branch has the series form.
-        let direct =
-            liquid_wall_current(props, pressure, bulk_t, metal_t, mass_flux, law, sat, bulk)?;
-        if direct.mode != "sensible" {
-            return Err(
-                "SG primary face beyond its sensible law: outside the X4.5 tube-wall series domain",
-            );
-        }
-    }
-    liquid_wall_inputs(pressure, bulk_t, metal_t, mass_flux, law)?;
-    let bulk = if bulk_t.value() == sat.temperature.value()
-        && bulk_t.direction() == sat.temperature.direction()
-    {
-        sat.liquid
-    } else {
-        bulk
-    };
-    check_water(bulk)?;
-    if bulk_t.value() > sat.temperature.value() {
-        return Err("stable liquid wall recipient required");
-    }
-    let h = liquid_film(props, pressure, bulk_t, metal_t, mass_flux, law, sat, bulk)?;
-    let heat = (h * (metal_t - bulk_t) / (N::from(1.) + h * N::from(series_m2k_w))).finite()?;
-    Ok(WallFluxOf {
-        heat,
-        vapor_mass: N::from(0.),
-        liquid_energy: heat,
-        vapor_energy: N::from(0.),
-        mode: "sensible",
-    })
-}
-
 /// X4.5 (lead ruling d): the tube film in series with the tube wall and
 /// fouling, as a conductance per primary (inner) area, `h / (1 + h R)`. The
 /// film coefficient is the tube law's own at the cell's bulk state and the
-/// metal temperature; [`tube_series_current`]'s domain applies (refused once
-/// the wall reaches the primary onset).
+/// metal temperature. A primary face whose wall reaches its onset is outside
+/// the refit's domain and refused, never given the unresisted law.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn tube_series_conductance<P: WaterProperties, N: Number>(
     props: &P,
