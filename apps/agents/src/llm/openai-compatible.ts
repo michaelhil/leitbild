@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto'
 import type { NativeToolCall } from '../core/types/tool.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
 import { createCloudProviderError, createLLMRequestError, isAbortError } from './errors.ts'
-import { mapHttpError } from './openai-compatible-errors.ts'
+import { isExplicitCreditExhaustion, mapHttpError } from './openai-compatible-errors.ts'
 import { type OAIMessage, buildOAIBody } from './openai-compatible-wire.ts'
 import { fetchWithTimeout } from '../core/fetch-utils.ts'
 import {
@@ -422,7 +422,11 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
         if (error === null || typeof error !== 'object' || Array.isArray(error)) return streamFailure('malformed upstream error')
         const record = error as Record<string, unknown>
         const code = typeof record.code === 'string' || typeof record.code === 'number' ? ` (${record.code})` : ''
-        return streamFailure(`upstream error${code}: ${typeof record.message === 'string' ? record.message : 'message unavailable'}`)
+        const reason = `upstream error${code}: ${typeof record.message === 'string' ? record.message : 'message unavailable'}`
+        return isExplicitCreditExhaustion(record) ? createCloudProviderError({
+          code: 'credits', provider: config.name, status: response.status,
+          message: `${config.name} stream: ${reason}`,
+        }) : streamFailure(reason)
       }
       const contentType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
       if (contentType !== 'text/event-stream') {

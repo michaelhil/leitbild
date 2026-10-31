@@ -22,6 +22,7 @@ const terminalTool = () => event({}, 'tool_calls')
 const finalAnswer = () => event({ content: 'The accepted operation completed once.' }, 'stop')
 const usage = JSON.stringify({ model, choices: [], usage: { prompt_tokens: 11, completion_tokens: 7 } })
 const upstreamError = JSON.stringify({ error: { message: 'Fixture upstream failed after emitting tool arguments', code: 'upstream_error' } })
+const creditMessage = 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.'
 
 const sse = (payloads: string[], newline = '\n'): Response => {
   const bytes = new TextEncoder().encode(payloads.map(payload => `data: ${payload}${newline}${newline}`).join(''))
@@ -81,14 +82,18 @@ for (const newline of ['\n', '\r\n']) test(`valid ${newline === '\n' ? 'LF' : 'C
 })
 
 const failedStreams = [
-  { name: 'in-band upstream error after complete-looking terminal tool arguments', response: () => sse([mutation('failed002'), terminalTool(), upstreamError, '[DONE]']) },
-  { name: 'premature EOF after complete-looking tool arguments without terminal completion', response: () => sse([mutation('failed002')]) },
+  { name: 'in-band upstream error after complete-looking terminal tool arguments', code: 'provider_down', response: () => sse([mutation('failed002'), terminalTool(), upstreamError, '[DONE]']) },
+  { name: 'premature EOF after complete-looking tool arguments without terminal completion', code: 'provider_down', response: () => sse([mutation('failed002')]) },
+  { name: 'actual upstream 502 credit exhaustion after complete-looking tool arguments', code: 'model_unavailable',
+    response: () => sse([mutation('failed002'), terminalTool(), JSON.stringify({ error: { code: 502, message: creditMessage } }), '[DONE]']) },
+  { name: 'actual direct OpenAI 429 credit exhaustion', code: 'model_unavailable',
+    response: () => Response.json({ error: { message: creditMessage, type: 'insufficient_quota', param: null, code: 'credit_balance_exhausted' } }, { status: 429 }) },
 ]
 for (const failure of failedStreams) {
   test(`${failure.name} cannot mutate through the real adapter and evaluate`, async () => {
     const { result, requests, executed, accepted } = await run([failure.response, () => sse([finalAnswer(), '[DONE]'])])
     expect(executed).toEqual([]); expect(accepted).toEqual([])
-    expect(result.decision.response.action).toBe('error')
+    expect(result.decision.response).toMatchObject({ action: 'error', code: failure.code })
     expect(requests).toHaveLength(1)
   })
   test(`an accepted receipt survives a later ${failure.name} without replaying or executing another mutation`, async () => {
@@ -97,7 +102,7 @@ for (const failure of failedStreams) {
       () => sse([finalAnswer(), '[DONE]']),
     ])
     expect(executed.map(call => call.providerCallId)).toEqual(['accepted001'])
-    expect(result.decision.response.action).toBe('error')
+    expect(result.decision.response).toMatchObject({ action: 'error', code: failure.code })
     expect(accepted).toHaveLength(1); expect(requests).toHaveLength(2)
     const retained = requests[1]!.messages.filter(message => message.role === 'tool')
     expect(retained).toHaveLength(1); expect(retained[0]!.tool_call_id).toBe('accepted001')

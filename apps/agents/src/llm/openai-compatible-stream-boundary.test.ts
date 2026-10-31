@@ -127,6 +127,25 @@ describe('OpenAI-compatible stream completion boundary', () => {
     expect(result.fetches).toBe(1)
   })
 
+  test('actual in-band credit refusal preserves transport 200 and upstream 502 without releasing buffered tools', async () => {
+    const message = 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.'
+    const result = await acquire({ text: event(action) + terminal() + event({ error: { code: 502, message } }) + 'data: [DONE]\n\n' })
+    expect(result.error).toMatchObject({ kind: 'cloud_error', code: 'credits', provider: 'openrouter', status: 200 })
+    expect((result.error as Error).message).toBe(`openrouter stream: upstream error (502): ${message}`)
+    expect(result.chunks.flatMap(chunk => chunk.toolCalls ?? [])).toHaveLength(0)
+    expect(result.chunks.some(chunk => chunk.done)).toBe(false)
+    expect(result.fetches).toBe(1)
+    expect(result.requestAborted).toBe(true)
+    expect(result.bodyLocked).toBe(false)
+  })
+
+  test('a structured billing error in a 200 JSON body uses the same credit classification', async () => {
+    const result = await acquire({ text: JSON.stringify({ error: { code: 'credit_balance_exhausted', type: 'insufficient_quota', message: 'No remaining credit balance' } }), contentType: 'application/json' })
+    expect(result.error).toMatchObject({ code: 'credits', status: 200 })
+    expect(result.chunks).toHaveLength(0)
+    expect(result.fetches).toBe(1)
+  })
+
   test('a non-SSE success body is not silently interpreted as another transport', async () => {
     const result = await acquire({ text: JSON.stringify({ choices: [{ message: { content: 'unexpected nonstream' }, finish_reason: 'stop' }] }), contentType: 'application/json' })
     expect(result.error).toMatchObject({ kind: 'cloud_error', code: 'provider_down', status: 200 })

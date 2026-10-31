@@ -19,7 +19,8 @@
 // Classification rules:
 //   401/403 with quota-ish body  → quota
 //   401/403 otherwise            → auth
-//   429                          → rate_limit
+//   explicit credit exhaustion   → credits (including upstream 429/5xx)
+//   429 otherwise                → rate_limit
 //   402 with OpenRouter reason   → in_flight_limit (the balance cannot
 //   in_flight_budget_exhausted      cover this request beside the credits
 //                                   in-flight requests hold; clears once
@@ -43,25 +44,44 @@ import { z } from 'zod'
 import { createCloudProviderError, parseRetryAfterMs } from './errors.ts'
 
 // The OpenAI-compatible error body; OpenRouter adds error.metadata.reason.
-const upstreamErrorSchema = z.object({
-  error: z.object({
-    message: z.string(),
-    metadata: z.object({ reason: z.string().optional() }).optional(),
-  }),
+const upstreamErrorDetailSchema = z.object({
+  message: z.string(),
+  // Providers may leave these null. Recognize their known values without
+  // making formerly ignored extras invalidate the message/metadata body.
+  code: z.unknown().optional(),
+  type: z.unknown().optional(),
+  metadata: z.object({ reason: z.string().optional() }).optional(),
 })
+const upstreamErrorSchema = z.object({ error: upstreamErrorDetailSchema })
 
 const IN_FLIGHT_BUDGET_REASON = 'in_flight_budget_exhausted'
+const isCreditCode = (code: string): boolean => code === 'credit_balance_exhausted' || code === 'insufficient_quota'
+
+/** HTTP status alone cannot distinguish billing exhaustion from a rate limit.
+ * Named codes take precedence over prose; an in-flight hold is not permanent
+ * exhaustion. The message-only case is the actual explicit upstream refusal,
+ * not a search for generic quota/limit/credit words. */
+export const isExplicitCreditExhaustion = (error: unknown): boolean => {
+  const parsed = upstreamErrorDetailSchema.safeParse(error)
+  if (!parsed.success) return false
+  const { code, type, metadata, message } = parsed.data
+  if (metadata?.reason === IN_FLIGHT_BUDGET_REASON) return false
+  if (typeof code === 'string') return isCreditCode(code)
+  if (typeof type === 'string') return isCreditCode(type)
+  if (type != null || code != null && typeof code !== 'number') return false
+  if (metadata?.reason !== undefined) return isCreditCode(metadata.reason)
+  return message === 'You have no credits remaining.' || message.startsWith('You have no credits remaining. ')
+}
 
 // A body that is not JSON of that shape (a proxy's HTML page, another
 // provider's format) yields undefined and the caller shows its raw snippet:
 // the operator still reads exactly what came back.
-const parseUpstreamError = (body: string): { readonly message: string; readonly reason?: string } | undefined => {
+const parseUpstreamError = (body: string): z.infer<typeof upstreamErrorDetailSchema> | undefined => {
   let json: unknown
   try { json = JSON.parse(body) } catch { return undefined }
   const parsed = upstreamErrorSchema.safeParse(json)
   if (!parsed.success) return undefined
-  const reason = parsed.data.error.metadata?.reason
-  return { message: parsed.data.error.message, ...(reason !== undefined ? { reason } : {}) }
+  return parsed.data.error
 }
 
 export const mapHttpError = (
@@ -87,6 +107,14 @@ export const mapHttpError = (
       status,
     })
   }
+  const upstream = parseUpstreamError(body)
+  if (upstream !== undefined && isExplicitCreditExhaustion(upstream)) {
+    const reason = upstream.metadata?.reason
+    return createCloudProviderError({
+      code: 'credits', provider: providerName, status,
+      message: `${providerName} insufficient credits (HTTP ${status}${reason !== undefined ? `, ${reason}` : ''}): ${upstream.message}`,
+    })
+  }
   if (status === 429) {
     return createCloudProviderError({
       code: 'rate_limit', provider: providerName, message: `${providerName} rate-limited: ${snippet}`,
@@ -96,8 +124,7 @@ export const mapHttpError = (
   if (status === 402) {
     // Only the structured reason marks the transient case; any other 402,
     // including one whose body cannot be read, is the account's balance.
-    const upstream = parseUpstreamError(body)
-    const reason = upstream?.reason
+    const reason = upstream?.metadata?.reason
     const inFlight = reason === IN_FLIGHT_BUDGET_REASON
     return createCloudProviderError({
       code: inFlight ? 'in_flight_limit' : 'credits', provider: providerName, status,
