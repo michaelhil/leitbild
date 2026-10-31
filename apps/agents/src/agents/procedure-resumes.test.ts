@@ -177,6 +177,43 @@ describe('delegated procedure continuation', () => {
     s.resumes.dispose(); s.store.close()
   })
 
+  test('routine Agent-owned monitoring cycles never start a second runner, and a later human handback resumes once', async () => {
+    const s = setup(false); s.turn('monitoring'); await flush()
+    for (const sequence of [11, 12, 13]) {
+      const monitoring = baseView(); monitoring.sequence = sequence; monitoring.run.procedureId = 'ES-0.1'; monitoring.run.currentStepId = 'monitor-secondary-response'
+      await s.change(monitoring, { type: 'procedure.branch.selected', seq: sequence, runId: monitoring.run.runId, selectedBy: ownerId })
+      expect(s.requested).toHaveLength(0)
+      expect(s.pending).toHaveLength(1)
+      expect(s.pending[0]!.sequence).toBe(sequence)
+    }
+    const human = baseView(); human.sequence = 14; human.run.procedureId = 'ES-0.1'; human.run.currentStepId = 'monitor-secondary-response'
+    human.run.driver = { kind: 'person', actorId: 'actor:operator' }
+    await s.change(human, { type: 'procedure.run.driver.changed', seq: 14, runId: human.run.runId, changedBy: 'actor:operator', driver: human.run.driver })
+    expect(s.requested).toHaveLength(0)
+    const released = structuredClone(human); released.sequence = 15; delete released.run.driver
+    await s.change(released, { type: 'procedure.run.driver.changed', seq: 15, runId: released.run.runId, changedBy: 'actor:operator' })
+    expect(s.requested).toHaveLength(1)
+    expect(s.requested[0]!.instruction).toContain('Continue delegated procedure ES-0.1')
+    expect(s.requested[0]!.instruction).toContain('claim this driverless run')
+    expect(s.resumes.watching()).toEqual([])
+    s.resumes.dispose(); s.store.close()
+  })
+
+  test('an Agent-authored monitoring update is never a human answer to retained input', async () => {
+    const s = setup(); s.turn('held-monitoring'); await flush()
+    const selfUpdated = baseView(); selfUpdated.sequence = 11; selfUpdated.run.procedureId = 'ES-0.1'
+    selfUpdated.run.currentStepId = 'monitor-secondary-response'
+    await s.change(selfUpdated, { type: 'procedure.branch.selected', seq: 11, runId: selfUpdated.run.runId, selectedBy: ownerId })
+    expect(s.requested).toHaveLength(0)
+    expect(s.pending).toHaveLength(1)
+    const answered = structuredClone(selfUpdated); answered.sequence = 12; answered.run.currentStepId = 'recover-secondary-delivery'
+    await s.change(answered, { type: 'procedure.branch.selected', seq: 12, runId: answered.run.runId, selectedBy: 'actor:operator' })
+    expect(s.requested).toHaveLength(1)
+    expect(s.requested[0]!.instruction).toContain('Continue delegated procedure ES-0.1')
+    expect(s.requested[0]!.instruction).toContain('answered the step you held for')
+    s.resumes.dispose(); s.store.close()
+  })
+
   test('another AI, close and Room scope changes terminate the watch without a turn', async () => {
     for (const kind of ['other-driver', 'closed', 'scope'] as const) {
       const s = setup(); s.turn(kind); await flush()
