@@ -691,6 +691,7 @@ const procedureStepViewFor = async (
   const actor = buildSimulationRunActorForAccess(invocation.access)
   const ports: ProcedureStepViewPorts = {
     sequence: () => runtime.snapshot().seq,
+    events: () => runtime.events(),
     clock: () => {
       const clock = runtime.snapshot().clock
       if (!clock) throw new Error('Simulation Run clock is not initialized')
@@ -1558,7 +1559,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Read procedure run step',
-      description: 'Run, continue or step through a live procedure: reads one step of a procedure Run to work through it. Input {runId?, stepId?}: omit runId for the one active Run you drive (refused, with the active runs named, unless there is exactly one), and stepId for its current step. Returns the run (driver, current step, step n of total); the step\'s checks, actions and cautions; its branches with index, outcome, target and the target step\'s label (targetLabel); each tag the step cites with its binding and its reading (formatted, quality) at the view\'s simulationTime, or why it is unavailable; World\'s observation and the step\'s decision so far; the CSF colours the procedure monitors; and sequence, to pass to world.simulation-run.wait. Select with world.procedure.run.transition; an AI agent\'s accepted transition returns this view of the next step. Readings are model values, not instrument validation.',
+      description: 'Reads one operational procedure step with its pinned Run, driver, instructions, indexed branches, complete current branch facts and verdicts, tag values/quality, current CSFs and sequence. Omit runId for the one active Run you drive; omit stepId for its current step. The current comment is complete. Historical decision metadata includes proof: an exact immutable decision.read selector where its event/source start remain, otherwise an explicitly current run-state detail reference. Full historical criterion/cited proof is retrieved through that reference; it is not repeated on every operational read. step.definition reads the exact pinned authored step and query definitions through world.procedure.document.read. Current Pack-owned observation facts remain complete; their static authored input is discovered through that definition reference. Select with world.procedure.run.transition; its next and a procedure-scoped wait return this same operational view. Readings are model values, not instrument validation.',
       searchTerms: ['continue procedure', 'run procedure', 'step through procedure', 'work through procedure', 'next procedure step', 'procedure placekeeping'],
       risk: 'read',
       idempotent: true,

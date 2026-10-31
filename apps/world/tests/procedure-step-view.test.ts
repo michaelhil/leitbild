@@ -68,14 +68,16 @@ const ports = (config: {
   readonly reads?: Readonly<Record<string, ProcedureTagValue | Error | 'missing'>>
   readonly csfs?: ReadonlyMap<string, ProcedureCsfEvaluation> | Error
   readonly calls?: string[]
+  readonly observation?: Readonly<Record<string, unknown>>
 } = {}): ProcedureStepViewPorts => ({
   sequence: () => 42,
+  events: () => [],
   clock: () => ({ currentTime: plantTime, paused: false }),
   observations: (): ProcedureObservationPort => ({
     validateTags: async tags => new Map(tags.map(tag => [tag.id, {
       id: tag.id, status: config.reads?.[tag.id] === 'missing' ? 'missing' as const : 'resolved' as const, warnings: tag.id === 'NIS-PR-AVG' ? ['requested percent unavailable'] : [],
     }])),
-    readObservation: async () => { throw new Error('No declared query in this test port') },
+    readObservation: async () => { if (config.observation) return config.observation; throw new Error('No declared query in this test port') },
   readTags: async tags => new Map(tags.map(tag => {
       config.calls?.push(tag.id)
       const value = config.reads?.[tag.id]
@@ -147,6 +149,23 @@ describe('procedure step view', () => {
     expect(view.tags![0]!.reading).toMatchObject({ note: 'Writable command or demand; use response feedback to confirm equipment state.' })
   })
 
+  test('current Pack facts remain complete while the static query definition is focused and discoverable', async () => {
+    const doc = document('csfs-monitored: []')
+    const authored = { capabilityId: 'world.test.observe', input: { condition: { exact: 'authored-query-tree' } }, source: 'owner.md#criteria', maxAgeSeconds: 2 }
+    const nativeFacts = { status: 'challenged', targetObjectId: 'plant:unit-2', simulationTime: plantTime,
+      evidenceKind: 'engineering-diagnostic', provenance: 'runtime-model',
+      ownerSpecificFacts: { path: 'observed.pressure', value: 8, unit: 'MPa', quality: { status: 'good' }, rangeValidity: 'valid', threshold: 7.5, reason: 'Pressure above the current objective.' },
+    }
+    const declared = { ...doc, steps: doc.steps.map((step, index) => index ? step : { ...step, decisions: [{ branchIndex: 0, observation: authored }] }) }
+    const result = await composeProcedureStepView({ run: run(), document: declared, ports: ports({ observation: nativeFacts }) })
+    expect(result.step!.branchAssessments[0]).toMatchObject({ status: 'contradicted', observation: { capabilityId: authored.capabilityId, source: authored.source, maxAgeSeconds: 2, result: nativeFacts } })
+    expect(result.step!.branchAssessments[0]!.observation).not.toHaveProperty('input')
+    expect(result.step!.definition).toEqual({ capabilityId: 'world.procedure.document.read', input: {
+      sourceId: source.sourceId, procedureId: doc.procedureId, sourceRevision: source.revision, sourcePath: doc.sourcePath, stepId: doc.steps[0]!.id,
+    } })
+    expect(declared.steps[0]!.decisions![0]!.observation!.input).toEqual(authored.input)
+  })
+
   test('a missing or unreadable tag is reported with its reason, never dropped', async () => {
     const calls: string[] = []
     const view = await composeProcedureStepView({ run: run(), document: document('csfs-monitored: []'), ports: ports({ calls,
@@ -179,8 +198,10 @@ describe('procedure step view', () => {
     })
     const earlier = await composeProcedureStepView({ run: decided, document: document('csfs-monitored: []'), stepId: 'verify-reactor-trip', ports: ports() })
     expect(earlier.run.stepNumber).toBe(1)
-    expect(earlier.step!.state!.decision).toMatchObject({ basis: 'Breakers open.', evidence: [{ tagId: 'TRIP-BKR-A', reading: 'false' }], selectedByLabel: 'Assistant' })
-    expect(earlier.step!.state!.comment).toHaveLength(500)
+    expect(earlier.step!.state!.decision).toMatchObject({ basis: 'Breakers open.', selectedByLabel: 'Assistant', proof: { kind: 'run-state',
+      capabilityId: 'world.procedure.runs.list', input: { includeEvidence: true }, runId: decided.runId, stepId: 'verify-reactor-trip' } })
+    expect(earlier.step!.state!.decision).not.toHaveProperty('evidence')
+    expect(earlier.step!.state!.comment).toHaveLength(600)
 
     const current = await composeProcedureStepView({ run: decided, document: document('csfs-monitored: []'), ports: ports() })
     expect(current.step).toMatchObject({ id: 'verify-turbine-trip', observation: { status: 'unknown', reason: 'no binding', simulationTime: '2026-10-13T08:00:50.000Z' } })

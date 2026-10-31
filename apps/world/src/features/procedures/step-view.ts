@@ -1,19 +1,18 @@
 import { z } from 'zod'
 import {
   isoTimestampSchema, procedureInputRequestSchema, procedureAssessmentSchema, procedureBranchSchema, procedureRunDriverSchema,
-  procedureRunIdSchema, procedureRunStatusSchema, procedureStepDecisionSchema, procedureTextBlockSchema,
-  type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
+  procedureRunIdSchema, procedureRunStatusSchema, procedureTextBlockSchema,
+  type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep, type SimulationRunEvent,
 } from '../../core/model/index.ts'
-import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
+import { procedureBranchAssessmentSchema, type ProcedureBranchAssessment } from '../../core/model/procedure-criteria.ts'
 import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
 import { type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
+import { procedureStepDecisionViewSchema, projectProcedureStepDecision } from './step-decision-view.ts'
 
 // One step of a live procedure Run, compact enough to work through step by
 // step: what it says, its branches, the step's tags as World reads them on
 // the run's plant now, and the safety function colours the document
 // monitors. Empty fields are left out.
-
-const stepCommentLength = 500
 
 const runSummarySchema = z.object({
   runId: procedureRunIdSchema,
@@ -66,6 +65,18 @@ const stepBranchSchema = z.object({
   because: z.string().optional(),
 }).strict()
 
+/** Current facts stay complete; the exact authored query is discovered through step.definition. */
+export const procedureStepBranchAssessmentViewSchema = procedureBranchAssessmentSchema.omit({ observation: true }).extend({
+  observation: procedureBranchAssessmentSchema.shape.observation.unwrap().omit({ input: true }).optional(),
+}).strict()
+
+export const projectProcedureBranchAssessment = (assessment: ProcedureBranchAssessment) => {
+  const { observation, ...facts } = assessment
+  if (observation === undefined) return facts
+  const { input: _input, ...current } = observation
+  return { ...facts, observation: current }
+}
+
 const stepSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -73,12 +84,15 @@ const stepSchema = z.object({
   title: z.string().optional(),
   blocks: z.array(z.object({ kind: procedureTextBlockSchema.shape.kind, text: z.string() }).strict()),
   branches: z.array(stepBranchSchema),
-  branchAssessments: z.array(procedureBranchAssessmentSchema),
+  branchAssessments: z.array(procedureStepBranchAssessmentViewSchema),
+  definition: z.object({ capabilityId: z.literal('world.procedure.document.read'), input: z.object({
+    sourceId: z.string(), procedureId: z.string(), sourceRevision: z.string(), sourcePath: z.string(), stepId: z.string(),
+  }).strict() }).strict(),
   observation: z.object({ status: z.enum(['satisfied', 'challenged', 'unknown']), reason: z.string().optional(), simulationTime: isoTimestampSchema }).strict().optional(),
   state: z.object({
     assessment: procedureAssessmentSchema,
     comment: z.string().optional(),
-    decision: procedureStepDecisionSchema.optional(),
+    decision: procedureStepDecisionViewSchema.optional(),
   }).strict().optional(),
 }).strict()
 
@@ -104,6 +118,8 @@ export type ProcedureStepView = z.infer<typeof procedureStepViewSchema>
 export interface ProcedureStepViewPorts {
   readonly sequence: () => number
   readonly clock: () => { readonly currentTime: IsoTimestamp; readonly paused: boolean }
+  /** Retained Run journal, for an exact historical decision selector without new persisted identity. */
+  readonly events: () => ReadonlyArray<SimulationRunEvent>
   /** The run scope's observations, read as the caller. */
   readonly observations: () => ProcedureObservationPort
 }
@@ -225,6 +241,8 @@ export const composeProcedureStepView = async (config: {
       id: step.id,
       label: step.label,
       ...(step.title === `Step ${step.label}` ? {} : { title: step.title }),
+      definition: { capabilityId: 'world.procedure.document.read', input: { sourceId: run.sourceId, procedureId: run.procedureId,
+        sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, stepId: step.id } },
       blocks: step.blocks.filter(block => !omittedBlockKinds.has(block.kind)).map(block => ({ kind: block.kind, text: withoutLinkTargets(block.text) })),
       branches: step.branches.map((branch, index) => ({
         index,
@@ -237,7 +255,7 @@ export const composeProcedureStepView = async (config: {
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
         ...(branch.because === undefined ? {} : { because: withoutLinkTargets(branch.because) }),
       })),
-      branchAssessments: assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: clock.currentTime }),
+      branchAssessments: assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: clock.currentTime }).map(projectProcedureBranchAssessment),
       ...(observation === undefined ? {} : { observation: {
         status: observation.result.status,
         ...(observation.result.reason === undefined ? {} : { reason: observation.result.reason }),
@@ -245,10 +263,8 @@ export const composeProcedureStepView = async (config: {
       } }),
       ...(state === undefined ? {} : { state: {
         assessment: state.assessment,
-        ...(state.comment === undefined ? {} : {
-          comment: state.comment.length <= stepCommentLength ? state.comment : `${state.comment.slice(0, stepCommentLength - 1)}…`,
-        }),
-        ...(state.decision === undefined ? {} : { decision: state.decision }),
+        ...(state.comment === undefined ? {} : { comment: state.comment }),
+        ...(state.decision === undefined ? {} : { decision: projectProcedureStepDecision({ run, stepId: step.id, decision: state.decision, events: ports.events() }) }),
       } }),
     },
     ...(reads.length === 0 ? {} : { tags: reads.map(read => tagRow(document, read)) }),
