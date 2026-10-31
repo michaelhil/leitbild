@@ -32,6 +32,7 @@ use super::{
     division::Division,
     holding::Holding,
     packet::{Effects, Family, FunctionSpec, Quantity, ReportSource, ReportSpec, Rule, Section},
+    source_range::SourceRange,
     vote::{Side, Vote, predicate, vote},
 };
 use serde_json::{Value, json};
@@ -77,6 +78,11 @@ pub struct Protection {
     holding_lost_frame: Option<u64>,
     /// The frame the interlock requested the turbine trip at.
     turbine_trip_requested: Option<u64>,
+    /// Every cluster seated (the `BankInserted` report's contact chain), as
+    /// the client last read the rods owner.
+    bank_seated: bool,
+    /// `LD01.CORE.NI.SHUTDOWN`'s SOURCE-pulse path, when the section has it.
+    pub source: Option<SourceRange>,
     /// The last decided frame.
     decided: Option<u64>,
     /// Events in order: accepted causes, contact changes, holding loss.
@@ -251,6 +257,12 @@ impl Protection {
             turbine_on_trip,
             holding_lost_frame: None,
             turbine_trip_requested: None,
+            bank_seated: false,
+            source: section
+                .source_range
+                .as_ref()
+                .map(|s| SourceRange::new(s, frame))
+                .transpose()?,
             decided: None,
             log: Vec::new(),
         })
@@ -288,6 +300,10 @@ impl Protection {
         Ok(())
     }
     /// The declared `LD01.TG` TRIP at `t`: the turbine controls retain it.
+    /// The rods owner's all-seated state, for the `BankInserted` report.
+    pub fn set_bank_seated(&mut self, seated: bool) {
+        self.bank_seated = seated;
+    }
     pub fn turbine_trip(&mut self, t: f64) {
         self.turbine_trip_s.get_or_insert(t);
     }
@@ -319,6 +335,9 @@ impl Protection {
             for c in f.channels.iter_mut().filter(|c| c.supply == supply) {
                 c.set_powered(powered);
             }
+        }
+        if let Some(s) = self.source.as_mut().filter(|s| s.spec.supply == supply) {
+            s.set_powered(powered);
         }
     }
     /// Every analog channel's delivered sample: id, acquisition frame and
@@ -364,6 +383,8 @@ impl Protection {
             "turbine_trip_s": crate::joined::block::snapshot_time(self.turbine_trip_s),
             "holding_lost_frame": self.holding_lost_frame,
             "turbine_trip_requested": self.turbine_trip_requested,
+            "bank_seated": self.bank_seated,
+            "source": self.source.as_ref().map(SourceRange::snapshot),
             "decided": self.decided,
         }))
     }
@@ -382,6 +403,8 @@ impl Protection {
                 "turbine_trip_s",
                 "holding_lost_frame",
                 "turbine_trip_requested",
+                "bank_seated",
+                "source",
                 "decided",
             ],
         )?;
@@ -421,6 +444,15 @@ impl Protection {
             restored_frame_option(&o["holding_lost_frame"], "holding loss frame")?;
         self.turbine_trip_requested =
             restored_frame_option(&o["turbine_trip_requested"], "interlock request frame")?;
+        self.bank_seated =
+            super::acquisition::restored_bool(&o["bank_seated"], "bank seated chain")?;
+        match (self.source.as_mut(), &o["source"]) {
+            (Some(s), v) if !v.is_null() => s.restore(v)?,
+            (None, Value::Null) => {}
+            _ => {
+                return Err("protection snapshot: the SOURCE path differs from the section".into());
+            }
+        }
         self.decided = restored_frame_option(&o["decided"], "last decided frame")?;
         Ok(())
     }
@@ -447,7 +479,11 @@ impl Protection {
         for r in &mut self.reports {
             match r.spec.source {
                 ReportSource::TurbineRetainedTrip => r.channel.acquire(k, tripped),
+                ReportSource::BankInserted => r.channel.acquire(k, self.bank_seated),
             }
+        }
+        if let Some(s) = self.source.as_mut() {
+            s.frame(k);
         }
         Ok(lost.or(self.decide(k + 1)?))
     }

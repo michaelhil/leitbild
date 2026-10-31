@@ -97,6 +97,9 @@ pub enum Class {
     // PZR metal and relief owner (G6).
     PzrMetal,
     PzrReliefLift,
+    // CVCS owner (plan r4 X4.2).
+    InventoryStock,
+    InventoryControl,
 }
 
 /// One block's coordinate declaration, built once at composition.
@@ -726,6 +729,15 @@ pub trait Rods<P> {
         y: &mut [f64],
     ) -> Result<Transaction, Failure>;
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure>;
+    /// B1 (lane ROD): a class whose grip is declared stuck is held while
+    /// every other class is seated (the stuck cluster stays out).
+    fn stuck_out(&self) -> bool;
+    /// X4.4 (lane ROD): the ordinary rate drive's common requested rate
+    /// (m/s) while it is engaged, `None` otherwise.
+    fn drive(&self) -> Option<f64>;
+    /// X4.4 (lane ROD): engage the rate drive at a rate, change its rate, or
+    /// (`None`) withdraw it; a held input at a frame instant.
+    fn set_drive(&mut self, t: f64, drive: Option<f64>) -> Result<Transaction, Failure>;
     /// The earliest declared time event strictly after `t` (for example the
     /// holding circuit's opening after its declared delay), or `None`.
     fn next_time_event(&self, t: f64) -> Option<f64>;

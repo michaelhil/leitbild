@@ -142,6 +142,7 @@ fn shutdown_margins_at_the_no_load_point() {
             &neutrons,
             conditions,
             &e,
+            0.,
         )
         .expect("margin");
         let r = m.reactivity_gain.len();

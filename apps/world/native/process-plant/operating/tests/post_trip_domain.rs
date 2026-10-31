@@ -422,6 +422,7 @@ impl State {
             self.conditions(),
             0.,
             &extension(),
+            0.,
         )
     }
 }
@@ -495,6 +496,7 @@ fn the_margin_is_judged_on_the_doubled_water_term() {
                     st.conditions(),
                     0.,
                     e,
+                    0.,
                 )
             };
             at(&once).is_ok_and(|a| a.margin.holds)
@@ -582,6 +584,7 @@ fn admit_p1(
         st.conditions(),
         0.,
         record,
+        0.,
     )
 }
 
@@ -613,6 +616,7 @@ fn p1_reports_the_margin_at_every_factor_and_never_gates_the_domain() {
             &[s(1e6), s(1e6)],
             State::new(0., 1.12, 13e6).conditions(),
             &e,
+            0.,
         )
         .unwrap();
         assert_eq!(d3, m.margin);

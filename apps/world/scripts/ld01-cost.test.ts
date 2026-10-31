@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test'
-import {judge,kindOf,phaseOf} from './ld01-cost'
+import {gate,judge,kindOf,phaseOf} from './ld01-cost'
 
 const G=14.32e9
 /** 0.1 s frames from 0 to 20 s; 0.05 quiet, 2.0 over [5, 6) s; event at 5 s. */
@@ -21,7 +21,7 @@ test('the judge reads the worst window, steady, restarts and the breakdown',()=>
  const j=judge(receipt())
  expect(j.worst_0_5_s.rate).toBeCloseTo(2.0,9)
  expect(j.worst_0_5_s.from_after_event_s).toBeGreaterThanOrEqual(0)
- expect(j.steady_last_10_s).toBeCloseTo(0.05,9)
+ expect(j.steady).toBeCloseTo(0.05,9)
  expect(j.pre_event).toBeCloseTo(0.05,9)
  expect(j.restarts_per_s_after_10_s).toBeCloseTo(1/5,9)
  expect(j.seat_window.to_after_event_s).toBeCloseTo(1,9)
@@ -39,4 +39,13 @@ test('paths map to kinds and phases',()=>{
  expect(kindOf('pieces>base: nuclear partials')).toBeNull()
  expect(phaseOf('apply>reinit')).toBe('event handling (incl. reinit, IC)')
  expect(phaseOf('step[6-20]>klu-solve')).toBe('steps [6-20] after segment start')
+})
+
+test('the gate takes medians and decides within 2 % only on 3 runs a side',()=>{
+ const one=receipt()
+ const g=gate([one],[one])
+ expect(g.worst_0_5_s.verdict).toBe('undecided: 3 runs each needed within 2 %')
+ const g3=gate([one,one,one],[one,one,one])
+ expect(g3.worst_0_5_s.verdict).toBe('keeps')
+ expect(g3.resolution).toBe(0.01)
 })

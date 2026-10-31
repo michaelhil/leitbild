@@ -15,8 +15,12 @@
  *   else the first frame). Times are reported after it.
  * - worst_0_5_s: the highest mean rate over 5 consecutive frame intervals
  *   anywhere in the trace (also worst frame and worst 2.5 s).
- * - steady: the mean rate over the last 10 s of the trace; pre_event: the
- *   mean before the event when at least 2 s precede it.
+ * - steady (R4-STEADY, lead 1 Nov): on a trace reaching +600 s after the
+ *   event, the mean rate over its last 300 s; on a shorter trace, the mean
+ *   over its last 10 s with every frame interval within 5 s after an R
+ *   instant left out (an event's recovery is not steady state: C3's located
+ *   root at +58.4 s sat in the old last-10 s window), null when none is
+ *   left. pre_event: the mean before the event when at least 2 s precede it.
  * - restarts_per_s_after_10_s: R instants at or after event + 10 s per
  *   second of trace after event + 10 s.
  * - seat_window: from the event to the first frame at or after the last
@@ -46,7 +50,18 @@
  *   (core_power_relative). Metrics the block does not judge are left out.
  *   Pass: every judged ratio <= 1 in every comparison.
  *
+ * - gate (with --gate base.json[,base.json...] change.json[,change.json...];
+ *   rule R4-COST-RESOLUTION, PERF 1 Nov): the median over each side's
+ *   repeated runs of the worst 0.5 s window, the worst 2.5 s window and
+ *   steady; a measure "rises" when the change's median exceeds the base's
+ *   by more than RESOLUTION (1 %), "falls" when it is below by more than
+ *   it, and "keeps" otherwise. Identical-trajectory repeats of one binary
+ *   spread up to 0.66 % in the worst window (r4c, load 10-32: C2 0.66 %,
+ *   C3 0.27 %, C5 0.40 %), so one run per side decides only outside 2 %;
+ *   within it, each side takes 3 runs.
+ *
  * Usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--budgets page.md] [--table] <receipt.json>...
+ *        bun scripts/ld01-cost.ts [--quiet-ratio r] --gate <base.json,...> <change.json,...>
  * Prints one JSON object per receipt (with --table, a short text table). */
 import {readFileSync} from 'node:fs'
 import {basename} from 'node:path'
@@ -71,7 +86,9 @@ const iOf=(f:Frames,k:number)=>get(f,k)[1]
 /** The frame trace, event time, R instants and profile of a receipt. */
 export function traceOf(receipt:any){
  const run=receipt.run??receipt
- const frames:Frames|undefined=receipt.families?.G_cost?.ou_cost_drive_frames??run.ou_frame_instructions
+ const costDrive:Frames|undefined=receipt.families?.G_cost?.ou_cost_drive_frames
+ const frames:Frames|undefined=costDrive??run.ou_frame_instructions
+ const source=costDrive?'gated cost drive':'run drive'
  if(!frames||frames.length<2)throw new Error('the receipt has no frame instructions (LD01_OU_FRAME_COST=1)')
  const restarts:number[]=(run.instants??[]).filter((e:any)=>e.class==='R').map((e:any)=>e.t_s)
  const zero=receipt.timeline?.zero_s??run.timeline?.zero_s
@@ -81,7 +98,7 @@ export function traceOf(receipt:any){
  const profile:Profile|undefined=run.perf_profile??undefined
  // The profile is the run drive's: its totals are read on the run's frames.
  const runFrames:Frames|undefined=run.ou_frame_instructions??undefined
- return {frames,runFrames,event,restarts,lastSeat,profile,case:receipt.case??run.case??null}
+ return {frames,source,runFrames,event,restarts,lastSeat,profile,case:receipt.case??run.case??null}
 }
 
 function rates(frames:Frames,ratio:number){
@@ -210,15 +227,49 @@ export function accuracy(receipt:any,block:any){
  return {revision:block.revision,pass,comparisons:out}
 }
 
+/** R4-COST-RESOLUTION: the gate's relative resolution. */
+export const RESOLUTION=0.01
+const median=(xs:number[])=>{
+ const s=[...xs].sort((a,b)=>a-b),n=s.length
+ if(!n)throw new Error('a gate side needs at least one run')
+ return n%2?get(s,(n-1)/2):(get(s,n/2-1)+get(s,n/2))/2
+}
+/** The gate between two sets of repeated runs (R4-COST-RESOLUTION). */
+export function gate(base:any[],change:any[],ratio=QUIET_RATIO){
+ const measures=(rs:any[])=>rs.map(r=>{const j=judge(r,ratio);return {worst_0_5_s:j.worst_0_5_s.rate,worst_2_5_s:j.worst_2_5_s.rate,steady:j.steady}})
+ const b=measures(base),c=measures(change)
+ const out:any={resolution:RESOLUTION,base_runs:b.length,change_runs:c.length}
+ for(const k of ['worst_0_5_s','worst_2_5_s','steady'] as const){
+  const val=(x:{[m:string]:number|null})=>{const v=x[k];if(v===null||v===undefined)throw new Error(`${k} is unmeasured on a gate run`);return v}
+  const mb=median(b.map(val)),mc=median(c.map(val)),rel=mc/mb-1
+  const decided=Math.abs(rel)>2*RESOLUTION||(b.length>=3&&c.length>=3)
+  out[k]={base:mb,change:mc,relative:rel,verdict:!decided?'undecided: 3 runs each needed within 2 %':rel>RESOLUTION?'rises':rel< -RESOLUTION?'falls':'keeps'}
+ }
+ return out
+}
+
+/** R4-STEADY: the steady-state rate of a trace (see the header). */
+export function steadyRate(frames:Frames,r:number[],event:number,restarts:number[],ratio:number):number|null{
+ const tEnd=tOf(frames,frames.length-1)
+ if(tEnd-event>=600-1e-6)return meanRate(frames,firstAtOrAfter(frames,tEnd-300),frames.length-1,ratio)
+ let sum=0,span=0
+ for(let k=firstAtOrAfter(frames,tEnd-10)+1;k<frames.length;k++){
+  const a=tOf(frames,k-1),b=tOf(frames,k)
+  if(restarts.some(t=>a<t+5&&b>t-1e-9))continue
+  sum+=get(r,k-1)*(b-a);span+=b-a
+ }
+ return span>0?sum/span:null
+}
+
 /** The judge's result for one receipt. */
 export function judge(receipt:any,ratio=QUIET_RATIO){
- const {frames,runFrames,event,restarts,lastSeat,profile,case:c}=traceOf(receipt)
+ const {frames,source,runFrames,event,restarts,lastSeat,profile,case:c}=traceOf(receipt)
  const r=rates(frames,ratio)
  const t0=tOf(frames,0),tEnd=tOf(frames,frames.length-1)
  const win=(n:number):Window=>{const [rate,k]=worst(frames,n,ratio);return {rate,from_after_event_s:tOf(frames,k)-event}}
  const w5=win(5)
  const kSteady=firstAtOrAfter(frames,tEnd-10)
- const steady=meanRate(frames,kSteady,frames.length-1,ratio)
+ const steady=steadyRate(frames,r,event,restarts,ratio)
  const kEvent=firstAtOrAfter(frames,event)
  const preEvent=event-t0>=2?meanRate(frames,0,kEvent,ratio):null
  const after10=event+10
@@ -227,12 +278,13 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
  let lag=0,peak=0,peakAt:number|null=null
  for(let k=1;k<frames.length;k++){lag=Math.max(0,lag+(get(r,k-1)-1)*(tOf(frames,k)-tOf(frames,k-1)));if(lag>peak){peak=lag;peakAt=tOf(frames,k)-event}}
  const out:any={case:c,quiet_ratio:ratio,event_s:event,span_after_event_s:tEnd-event,
-  worst_0_5_s:w5,worst_frame:win(1),worst_2_5_s:win(5*5),steady_last_10_s:steady,pre_event:preEvent,
+  drive:{frames:source,from_after_event_s:t0-event,to_after_event_s:tEnd-event},
+  worst_0_5_s:w5,worst_frame:win(1),worst_2_5_s:win(5*5),steady,pre_event:preEvent,
   seat_window:lastSeat===null?null:(()=>{const a=firstAtOrAfter(frames,event),b=Math.max(a+1,firstAtOrAfter(frames,event+lastSeat));return {last_seat_after_event_s:lastSeat,to_after_event_s:tOf(frames,b)-event,rate:meanRate(frames,a,b,ratio)}})(),
   average:meanRate(frames,0,frames.length-1,ratio),restarts:restarts.length,
   restarts_per_s_after_10_s:restartsPerS,peak_lag_s:peak,peak_lag_after_event_s:peakAt,
-  budget:{dedicated:w5.rate<=BUDGET.dedicated.worst&&steady<=BUDGET.dedicated.steady,
-   prod:w5.rate<=BUDGET.prod.worst&&steady<=BUDGET.prod.steady},
+  budget:{dedicated:w5.rate<=BUDGET.dedicated.worst&&steady!==null&&steady<=BUDGET.dedicated.steady,
+   prod:w5.rate<=BUDGET.prod.worst&&steady!==null&&steady<=BUDGET.prod.steady},
   profiled:!!profile}
  if(profile){
   if(!runFrames)throw new Error('a profile without the run drive frames')
@@ -250,7 +302,7 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
 
 function table(name:string,j:any){
  const f=(x:number|null)=>x===null?'-':x.toFixed(3)
- const lines=[`${name} ${j.case??''}: worst 0.5 s ${f(j.worst_0_5_s.rate)} at +${f(j.worst_0_5_s.from_after_event_s)} s; frame ${f(j.worst_frame.rate)}; 2.5 s ${f(j.worst_2_5_s.rate)}; steady ${f(j.steady_last_10_s)}; seats to +${f(j.seat_window?.to_after_event_s??null)} s ${f(j.seat_window?.rate??null)}; pre ${f(j.pre_event)}; restarts ${j.restarts} (${f(j.restarts_per_s_after_10_s)}/s after +10 s); peak lag ${f(j.peak_lag_s)} s; B-ded ${j.budget.dedicated?'pass':'FAIL'}, B-prod ${j.budget.prod?'pass':'FAIL'}`]
+ const lines=[`${name} ${j.case??''} [${j.drive.frames}, ${f(j.drive.from_after_event_s)} to +${f(j.drive.to_after_event_s)} s]: worst 0.5 s ${f(j.worst_0_5_s.rate)} at +${f(j.worst_0_5_s.from_after_event_s)} s; frame ${f(j.worst_frame.rate)}; 2.5 s ${f(j.worst_2_5_s.rate)}; steady ${f(j.steady)}; seats to +${f(j.seat_window?.to_after_event_s??null)} s ${f(j.seat_window?.rate??null)}; pre ${f(j.pre_event)}; restarts ${j.restarts} (${f(j.restarts_per_s_after_10_s)}/s after +10 s); peak lag ${f(j.peak_lag_s)} s; B-ded ${j.budget.dedicated?'pass':'FAIL'}, B-prod ${j.budget.prod?'pass':'FAIL'}`]
  if(j.breakdown)for(const [w,b] of Object.entries<any>(j.breakdown)){
   if(!b)continue
   const top=(o:Record<string,number>)=>Object.entries(o).filter(([,v])=>Math.abs(v)>=0.01).map(([k,v])=>`${k} ${(100*v).toFixed(0)}%`).join(', ')
@@ -265,6 +317,12 @@ if(import.meta.main){
  let ratio=QUIET_RATIO,asTable=false,block:any=null
  const i=args.indexOf('--quiet-ratio')
  if(i>=0){ratio=Number(args[i+1]);args.splice(i,2)}
+ const gi=args.indexOf('--gate')
+ if(gi>=0){
+  const load=(list:string)=>list.split(',').map(f=>JSON.parse(readFileSync(f,'utf8')))
+  console.log(JSON.stringify(gate(load(get(args,gi+1)),load(get(args,gi+2)),ratio)))
+  process.exit(0)
+ }
  const bi=args.indexOf('--budgets')
  if(bi>=0){block=operatorBudgets(readFileSync(get(args,bi+1),'utf8'));args.splice(bi,2)}
  const t=args.indexOf('--table')

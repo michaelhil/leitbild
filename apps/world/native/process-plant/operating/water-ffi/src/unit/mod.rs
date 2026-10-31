@@ -16,6 +16,7 @@
 //! - [`spine`]: the S2 composition at the hot reference (steps (A)-(D));
 //! - [`s3`]: the S3 composition (S3-D28 (3)) on stock IDA with ELEC's slice;
 //! - [`pzr_control`]: IC-CTRL's PZR pressure controller as a frame client;
+//! - [`rod_control`]: automatic rod control (X4.4) as a frame client;
 //! - [`plant`]: the frame-driven unit (protection, PZR control and field
 //!   clients; the Grid stand-in's boundary) the S3 cases and the host drive;
 //! - [`timeline`]: a frame-driven run's events on the case clock;
@@ -27,6 +28,7 @@ pub mod plant;
 pub mod profile;
 pub mod provenance;
 pub mod pzr_control;
+pub mod rod_control;
 pub mod s3;
 pub mod spine;
 pub mod timeline;

@@ -36,7 +36,7 @@ use leitbild_operating_water::{
     frame::{COUNTER_NAMES, Change, Class, Client, Dense, Diagnostic, Driver, Frame, Setup},
     ic::{HOLDING_LOSS, ProtectionClient},
     ida::{Ida, Initial, KluOrdering, System},
-    joined::{Integrated, Restart},
+    joined::{Integrated, JoinedSystem, Restart},
 };
 use serde_json::{Value, json};
 
@@ -75,7 +75,7 @@ struct Recording {
     scratch: Vec<f64>,
     rows: Vec<Value>,
 }
-impl<S> Client<S> for Recording {
+impl<S: JoinedSystem> Client<S> for Recording {
     fn name(&self) -> &str {
         "acquired protection (recorded)"
     }
@@ -104,6 +104,9 @@ impl<S> Client<S> for Recording {
     }
     fn command(&mut self, t: f64, command: Command) -> Result<Vec<Change<S>>, String> {
         <ProtectionClient as Client<S>>::command(&mut self.inner, t, command)
+    }
+    fn restarted(&mut self, t: f64, system: &S) -> Result<(), String> {
+        <ProtectionClient as Client<S>>::restarted(&mut self.inner, t, system)
     }
 }
 

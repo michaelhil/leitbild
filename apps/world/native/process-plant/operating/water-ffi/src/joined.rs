@@ -621,16 +621,17 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     Ok((yp, report))
 }
 
-/// Each transacting owner's own coordinate range: the SG secondary, the rods
-/// and the PZR block (G6), which follows the rods and is empty while its
-/// owner is not composed.
+/// Each transacting owner's own coordinate range: the SG secondary, the rods,
+/// the PZR block (G6), which follows the rods and is empty while its owner is
+/// not composed, and the CVCS (plan r4 X4.2), empty unless composed.
 fn owner_ranges(
     o: leitbild_operating_plant::joined::operator::Offsets,
-) -> [(&'static str, std::ops::Range<usize>); 3] {
+) -> [(&'static str, std::ops::Range<usize>); 4] {
     [
         ("secondary", o.secondary..o.rods),
         ("rods", o.rods..o.pzr),
-        ("pzr", o.pzr..o.end),
+        ("pzr", o.pzr..o.cvcs),
+        ("cvcs", o.cvcs..o.end),
     ]
 }
 
@@ -1099,6 +1100,17 @@ mod integrated {
         } else {
             Vec::new()
         };
+        // E-EVT no-op (PERF tightening): stock's own rates at `t`, the
+        // last accepted step's dense derivative; a no-op also needs every
+        // row unchanged there, so a change in a term linear in y' restarts.
+        // Without them (no accepted step yet) the instant restarts.
+        let rates_hist: Option<Vec<f64>> = if allow_noop {
+            let mut r = vec![0.; y_all.len()];
+            ida.dense(t, 1, &mut r).ok().map(|()| r)
+        } else {
+            None
+        };
+        let allow_noop = allow_noop && rates_hist.is_some();
         let (y, y_tail) = y_all.split_at_mut(m);
         let absolute = &absolute_all[..m];
         let integrated = ida.system_mut().integrated_mut();
@@ -1123,6 +1135,13 @@ mod integrated {
                 .roots(t, y, &zero_rates, &mut roots_entry)
                 .map_err(message)?;
             directions_entry = joined.root_directions().map_err(message)?;
+        }
+        let mut entry_rows_hist: Vec<f64> = Vec::new();
+        if let Some(r) = rates_hist.as_ref() {
+            joined
+                .evaluate(t, y, &r[..m], None, 0., None)
+                .map_err(message)?;
+            entry_rows_hist = joined.rows().iter().map(|r| r.value).collect();
         }
         let entry_rows: Vec<f64>;
         let entry = {
@@ -1178,11 +1197,22 @@ mod integrated {
             joined
                 .evaluate(t, y, &zero_rates, None, 0., None)
                 .map_err(message)?;
-            let rows_same = joined
+            let mut rows_same = joined
                 .rows()
                 .iter()
                 .zip(&entry_rows)
                 .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            if let Some(r) = rates_hist.as_ref() {
+                joined
+                    .evaluate(t, y, &r[..m], None, 0., None)
+                    .map_err(message)?;
+                rows_same = rows_same
+                    && joined
+                        .rows()
+                        .iter()
+                        .zip(&entry_rows_hist)
+                        .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            }
             let mut roots_now = vec![0.; roots_entry.len()];
             joined
                 .roots(t, y, &zero_rates, &mut roots_now)
@@ -2161,9 +2191,10 @@ mod tests {
             secondary: 6,
             rods: 9,
             pzr: 12,
-            end: 15,
+            cvcs: 15,
+            end: 18,
         };
-        let [secondary, rods, pzr] = owner_ranges(composed);
+        let [secondary, rods, pzr, cvcs] = owner_ranges(composed);
         assert_eq!(secondary, ("secondary", 6..9));
         assert_eq!(
             rods,
@@ -2171,12 +2202,15 @@ mod tests {
             "the rods end where the PZR block starts"
         );
         assert_eq!(pzr, ("pzr", 12..15));
+        assert_eq!(cvcs, ("cvcs", 15..18));
         let without = Offsets {
             pzr: 12,
+            cvcs: 12,
             end: 12,
             ..composed
         };
         assert!(owner_ranges(without)[2].1.is_empty());
+        assert!(owner_ranges(without)[3].1.is_empty());
     }
 
     #[test]

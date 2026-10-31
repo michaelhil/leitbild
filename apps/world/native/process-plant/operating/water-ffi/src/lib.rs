@@ -1074,7 +1074,13 @@ fn thermal_point(q: WaterPoint, d: WaterPoint) -> leitbild_operating_plant::ther
         enthalpy: Scalar::new(q.enthalpy_j_kg, d.enthalpy_j_kg),
     }
 }
-type BasisHeld = (WaterPoint, WaterPoint, WaterPoint);
+/// A state's first answer `(seed bits, value, direction)` until a second
+/// seed asks; then its value and two basis partials.
+#[derive(Clone, Copy)]
+enum BasisHeld {
+    Once((u64, u64), WaterPoint, WaterPoint),
+    Basis(WaterPoint, WaterPoint, WaterPoint),
+}
 thread_local! {
     static BASIS: std::cell::RefCell<std::collections::HashMap<(u8, i32, u64, u64), BasisHeld>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1088,9 +1094,10 @@ pub fn basis_assembly(on: bool) {
     BASIS_ON.with(|b| b.set(on));
 }
 /// PERF (plan r4, R4-WATER-PARTIALS): inside an assembly, a directional
-/// (p, T) point is its value plus `dp D_p + dt D_t` of its two basis
-/// partials (`D_p` at seed (1, 0), `D_t` at (0, 1)), computed once per
-/// exact state of the assembly. Exact in arithmetic: the native direction is
+/// (p, T) point asked at a second distinct seed is its value plus
+/// `dp D_p + dt D_t` of its two basis partials (`D_p` at seed (1, 0), `D_t`
+/// at (0, 1)), computed once per exact state of the assembly; a state asked
+/// once keeps the native answer. Exact in arithmetic: the native direction is
 /// that linear map; the combination rounds once more.
 fn directional_basis(
     domain: Domain,
@@ -1104,15 +1111,24 @@ fn directional_basis(
         return directional_in(domain, branch, p, t, dp, dt);
     }
     let key = (domain as u8, branch as i32, p.to_bits(), t.to_bits());
+    let seed = (dp.to_bits(), dt.to_bits());
     let held = BASIS.with(|b| b.borrow().get(&key).copied());
+    // A state asked once is the native answer itself; the basis is made at
+    // its second distinct seed.
     let (q, a, b) = match held {
-        Some(h) => h,
         None => {
+            let (q, d) = directional_in(domain, branch, p, t, dp, dt)?;
+            BASIS.with(|s| s.borrow_mut().insert(key, BasisHeld::Once(seed, q, d)));
+            return Ok((q, d));
+        }
+        Some(BasisHeld::Once(s0, q, d)) if s0 == seed => return Ok((q, d)),
+        Some(BasisHeld::Once(..)) => {
             let (q, a) = directional_in(domain, branch, p, t, 1., 0.)?;
             let (_, b) = directional_in(domain, branch, p, t, 0., 1.)?;
-            BASIS.with(|s| s.borrow_mut().insert(key, (q, a, b)));
+            BASIS.with(|s| s.borrow_mut().insert(key, BasisHeld::Basis(q, a, b)));
             (q, a, b)
         }
+        Some(BasisHeld::Basis(q, a, b)) => (q, a, b),
     };
     let f = |x: f64, y: f64| dp * x + dt * y;
     let d = WaterPoint {

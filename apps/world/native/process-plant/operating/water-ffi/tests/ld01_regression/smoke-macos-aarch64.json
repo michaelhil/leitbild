@@ -15,7 +15,7 @@
     },
     "composition": {
       "algebraic": 109,
-      "dimension": 1230,
+      "dimension": 1246,
       "owner_transactions": 1,
       "s1_settling": {
         "convergence_failures": 4,
@@ -29,7 +29,7 @@
       "surface_sets": 18
     },
     "oracle": {
-      "columns": 182,
+      "columns": 179,
       "outside_pattern": 0,
       "within_1e-9": true
     },
@@ -48,18 +48,18 @@
     },
     "settle": {
       "convergence_failures": 9,
-      "error_failures": 57,
+      "error_failures": 66,
       "failure": null,
-      "jacobians": 314,
+      "jacobians": 333,
       "last_order": 2,
-      "linear_setups": 314,
-      "nonlinear_iterations": 2935,
+      "linear_setups": 333,
+      "nonlinear_iterations": 2937,
       "reached": true,
-      "residuals": 2936,
+      "residuals": 2938,
       "root_restarts": 1,
-      "steps": 2394,
-      "system_jacobians": 314,
-      "system_residuals": 5760
+      "steps": 2372,
+      "system_jacobians": 333,
+      "system_residuals": 5762
     },
     "z1": {
       "constraint_rate_within_bound": true,
@@ -71,10 +71,10 @@
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
     "metastable_page_sha256": "f30533c1d9281904abb844180699614638585d69647c2dc5bc9847ec6fec6595",
-    "packet_sha256": "727557c24e39f5be7c565f497b316cef0d3efd9f77be6859f81b7291de07b0a6",
+    "packet_sha256": "82a571a94fd74092b2d68b12214476cd0c56f998d505abf7876890f222cdb220",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
-    "water_adapter_sha256": "4bc25801537eab9fa8b1835106165c3304deff8d62dc7e3fc547f147333671c9"
+    "water_adapter_sha256": "a98cdb8a5f73d2588a2757778f1e0d54ab4df2c723e1d6c4295040632c1597ab"
   },
   "kind": "ld01-smoke",
   "oracle_columns": 200,
