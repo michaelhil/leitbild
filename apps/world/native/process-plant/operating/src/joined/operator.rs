@@ -2,12 +2,13 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-hot-spine.md#joined-block-interface
 //! The composed joined residual and its colored stage Jacobian.
 //!
-//! `y` is `[network | nuclear | solids | secondary | rods | pzr]`. One evaluation
+//! `y` is `[network | nuclear | solids | secondary | rods | pzr | cvcs]`. One evaluation
 //! takes the rods' travel and cell volumes, then evaluates the network with
 //! this operator as its coupling: inside the coupling the SG views, the
 //! solids' temperatures, the nuclear rows, the solids' rows and heats, the
-//! rod rows and receipts and the secondary rows are evaluated on the
-//! network's fluid state of the same call; the PZR block (G6) is evaluated
+//! rod rows and receipts, the secondary rows and the CVCS rows and COLD.A
+//! receipt (plan r4 X4.2, when composed) are evaluated on the network's
+//! fluid state of the same call; the PZR block (G6) is evaluated
 //! inside the network's stratified rows, on the cell's column of the same
 //! call, as the cell's boundary (`Coupling::pzr_boundary`). Rows are the
 //! network's own scaled rows, then every block's physical rows divided by
@@ -25,6 +26,7 @@
 //! adapter refuses it, so no integrator can advance it.
 use super::{
     block::{CellVolume, Coordinates, Layout, Rods, Secondary, SecondaryView},
+    cvcs::{self, Cvcs},
     nuclear::{self, Nuclear, RegionWater},
     packet::Packet,
     pzr::{Pzr, SteelPreparation},
@@ -84,6 +86,8 @@ pub struct Offsets {
     /// The PZR metal and relief block (G6); empty while its owner is not
     /// composed.
     pub pzr: usize,
+    /// The CVCS block (plan r4 X4.2); empty unless the packet composes it.
+    pub cvcs: usize,
     pub end: usize,
 }
 
@@ -126,6 +130,10 @@ struct Blocks<P> {
     /// The PZR metal and relief owner (G6), from the packet's `pzrMetal`
     /// section.
     pzr: Pzr,
+    /// The CVCS owner (plan r4 X4.2), from the packet's `cvcs` section.
+    cvcs: Option<Cvcs>,
+    /// Per regular cell: whether a CVCS row reads it (COLD.A, the legs).
+    cvcs_reads: Vec<bool>,
     offsets: Offsets,
     source_water: Vec<usize>,
     compiled_volumes: Vec<f64>,
@@ -134,6 +142,7 @@ struct Blocks<P> {
     secondary_rows: Vec<Scalar>,
     rod_rows: Vec<Scalar>,
     pzr_rows: Vec<Scalar>,
+    cvcs_rows: Vec<Scalar>,
     temperatures: solids::Temperatures,
     fuel_t: Vec<Scalar>,
     water: Vec<RegionWater>,
@@ -142,8 +151,9 @@ struct Blocks<P> {
     cell_volumes: Vec<CellVolume>,
     heats: Heats,
     coupled_wall_s: f64,
-    /// Nuclear, solids, secondary, rods and the PZR block, in that order.
-    scales: [Scales; 5],
+    /// Nuclear, solids, secondary, rods, the PZR block and the CVCS, in
+    /// that order.
+    scales: [Scales; 6],
     /// One startup evaluation lets the rod owner prepare its algebraic
     /// coordinates on that evaluation's fluid state ([`Joined::prepare_owners`]).
     prepare: Option<Vec<super::block::Transaction>>,
@@ -379,6 +389,26 @@ impl<P: Properties + WaterProperties> Joined<P> {
             network.pzr_saturation_temperature_k(),
         )?;
         let pzr_len = pzr.layout().len();
+        // Plan r4 X4.2: the CVCS owner, when the packet composes it.
+        let cvcs = packet
+            .cvcs
+            .as_ref()
+            .map(|section| {
+                Cvcs::new(
+                    section,
+                    network.stratified(),
+                    network.pzr.base,
+                    network.scales(),
+                    cells,
+                    &properties,
+                )
+            })
+            .transpose()?;
+        let cvcs_len = cvcs.as_ref().map_or(0, |b| b.layout().len());
+        let mut cvcs_reads = vec![false; cells];
+        for c in cvcs.iter().flat_map(|b| b.read_cells()) {
+            cvcs_reads[c] = true;
+        }
         let n = network.dimension();
         let rods_at = n + nuclear.layout().len() + solids.layout().len() + secondary_len;
         let offsets = Offsets {
@@ -387,7 +417,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
             secondary: n + nuclear.layout().len() + solids.layout().len(),
             rods: rods_at,
             pzr: rods_at + rods_len,
-            end: rods_at + rods_len + pzr_len,
+            cvcs: rods_at + rods_len + pzr_len,
+            end: rods_at + rods_len + pzr_len + cvcs_len,
         };
         let faces: Vec<Face> = network_packet
             .mechanics
@@ -415,6 +446,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 RodPort::Prepared(_) => Scales::default(),
             },
             Scales::of(pzr.layout()),
+            cvcs.as_ref()
+                .map_or_else(Scales::default, |b| Scales::of(b.layout())),
         ];
         let rod_reads = match &rods {
             RodPort::Owner(b) => {
@@ -466,6 +499,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             secondary_rows: vec![s(0.); secondary_len],
             rod_rows: vec![s(0.); rods_len],
             pzr_rows: vec![s(0.); pzr_len],
+            cvcs_rows: vec![s(0.); cvcs_len],
             temperatures: solids::Temperatures::default(),
             fuel_t: vec![s(0.); nuclear.ports()],
             water: vec![
@@ -503,6 +537,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
             secondary,
             rods,
             pzr,
+            cvcs,
+            cvcs_reads,
             offsets,
             source_water: packet.source_water.clone(),
             compiled_volumes,
@@ -662,6 +698,41 @@ impl<P: Properties + WaterProperties> Joined<P> {
     pub fn pzr_mut(&mut self) -> &mut Pzr {
         &mut self.blocks.pzr
     }
+    /// The CVCS owner (plan r4 X4.2), when the packet composes it.
+    pub fn cvcs(&self) -> Option<&Cvcs> {
+        self.blocks.cvcs.as_ref()
+    }
+    /// AC.B's supply of CHARGE.P1 (the S3-D12 gate's form for the CVCS):
+    /// a held input of the CVCS rows; the caller restarts.
+    pub fn set_charging_supported(
+        &mut self,
+        supported: bool,
+    ) -> Result<super::block::Transaction, Failure> {
+        self.blocks
+            .cvcs
+            .as_mut()
+            .map(|b| b.set_charging_supported(supported))
+            .ok_or_else(|| fatal("the charging supply needs the CVCS owner"))
+    }
+    /// A CVCS command (plan r4 X4.2) at `t` on the state `y` (solver
+    /// scaling); no coordinate moves, the caller restarts.
+    pub fn cvcs_command(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        command: cvcs::Command,
+    ) -> Result<super::block::Transaction, Failure> {
+        let o = self.blocks.offsets;
+        let x: Vec<f64> = (o.cvcs..o.end)
+            .zip(&self.blocks.scales[5].coordinates)
+            .map(|(i, s)| y[i] * s)
+            .collect();
+        self.blocks
+            .cvcs
+            .as_mut()
+            .ok_or_else(|| fatal("a CVCS command needs the CVCS owner"))?
+            .command(t, command, &x)
+    }
     /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
     /// the unit's copyable discrete state — the SG secondary's, the rods',
     /// the PZR block's and the network's rotor states — as plain data. With
@@ -689,7 +760,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 })
             })
             .collect();
-        serde_json::json!({
+        let mut state = serde_json::json!({
             "network": {
                 "unilateral": self.network.unilateral().map(|l| serde_json::to_value(l).expect("L1 locks serialize")),
                 "modes": serde_json::to_value(self.network.cell_modes()).expect("cell modes serialize"),
@@ -703,7 +774,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
             "pzr": self.pzr().discrete_state(),
             "rotors": rotors,
             "phase_modes": self.phase_modes,
-        })
+        });
+        // Plan r4 X4.2: a composed CVCS owner's modes; an operator without
+        // it has no such key.
+        if let Some(b) = self.cvcs() {
+            state["cvcs"] = b.discrete_state();
+        }
+        state
     }
     /// S5 snapshot hook: restore [`Joined::discrete_state`] exactly into a
     /// composed operator of the same packet (freshly, or from another saved
@@ -713,20 +790,20 @@ impl<P: Properties + WaterProperties> Joined<P> {
             network::RotorState,
             rotor::{Shaft, SpeedRequest, Support},
         };
-        let o = super::block::snapshot_object(
-            state,
-            "joined",
-            &[
-                "network",
-                "nuclear",
-                "solids",
-                "secondary",
-                "rods",
-                "pzr",
-                "rotors",
-                "phase_modes",
-            ],
-        )?;
+        let mut keys = vec![
+            "network",
+            "nuclear",
+            "solids",
+            "secondary",
+            "rods",
+            "pzr",
+            "rotors",
+            "phase_modes",
+        ];
+        if self.blocks.cvcs.is_some() {
+            keys.push("cvcs");
+        }
+        let o = super::block::snapshot_object(state, "joined", &keys)?;
         if !(o["nuclear"].is_null() && o["solids"].is_null()) {
             return Err(fatal(
                 "snapshot: the nuclear and solid blocks hold no discrete state",
@@ -774,6 +851,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
             _ => return Err(fatal("snapshot: rod owner presence differs")),
         }
         self.pzr_mut().restore_discrete_state(&o["pzr"])?;
+        if let Some(b) = self.blocks.cvcs.as_mut() {
+            b.restore_discrete_state(&o["cvcs"])?;
+        }
         let rotors = o["rotors"]
             .as_array()
             .filter(|a| a.len() == self.network.rotor_count())
@@ -831,6 +911,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
             out.push(("rods", b.layout().clone()));
         }
         out.push(("pzr", self.blocks.pzr.layout().clone()));
+        if let Some(b) = &self.blocks.cvcs {
+            out.push(("cvcs", b.layout().clone()));
+        }
         out
     }
 
@@ -861,6 +944,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
             push(&b.prepared(), b.layout());
         }
         push(self.blocks.pzr.prepared(), self.blocks.pzr.layout());
+        if let Some(b) = &self.blocks.cvcs {
+            push(b.prepared(), b.layout());
+        }
         Ok(y)
     }
 
@@ -876,6 +962,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
             ids.extend(b.differential());
         }
         ids.extend(self.blocks.pzr.differential());
+        if let Some(b) = &self.blocks.cvcs {
+            ids.extend(b.differential());
+        }
         ids
     }
 
@@ -943,6 +1032,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         self.secondary().map_or(0, |b| b.root_count())
             + self.rods().map_or(0, |b| b.root_count())
             + self.pzr().root_count()
+            + self.cvcs_slots()
             + self.unilateral_slots()
             + self.phase_mode_slots()
             + self.spray_slots()
@@ -953,6 +1043,19 @@ impl<P: Properties + WaterProperties> Joined<P> {
     /// disarmed constants once the network-wide L1 governs them).
     fn spray_slots(&self) -> usize {
         if self.network.spray().is_some() { 3 } else { 0 }
+    }
+    /// Plan r4 X4.2: the CVCS owner's slots, after the PZR relief's and
+    /// before L1's (own coordinates only).
+    fn cvcs_slots(&self) -> usize {
+        self.cvcs().map_or(0, |b| b.root_count())
+    }
+    /// The CVCS block's physical coordinates of `y`.
+    fn cvcs_state(&self, y: &[f64]) -> Vec<f64> {
+        let o = self.blocks.offsets;
+        (o.cvcs..o.end)
+            .zip(&self.blocks.scales[5].coordinates)
+            .map(|(i, s)| y[i] * s)
+            .collect()
     }
     /// The phase modes' root slots: two per regular cell once declared,
     /// after L1's ([`Self::activate_phase_modes`]).
@@ -1041,9 +1144,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
     /// the rods' and the PZR relief's.
     pub fn root_directions(&self) -> Result<Vec<i32>, Failure> {
         let mut out = vec![0; self.root_count()];
+        let ns = self.secondary().map_or(0, |b| b.root_count());
         if let Some(b) = self.secondary() {
-            let ns = b.root_count();
             b.root_directions(&mut out[..ns])?;
+        }
+        if let Some(b) = self.cvcs() {
+            let first = ns + self.rods().map_or(0, |b| b.root_count()) + self.pzr().root_count();
+            b.root_directions(&mut out[first..first + b.root_count()])?;
         }
         // L1: release rising, contact falling (`Root::direction`); a slot
         // with no root reports none. L1's slots follow the PZR relief's and
@@ -1085,7 +1192,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let o = self.blocks.offsets;
         let roof = self.network.pzr.base + PZR_PRESSURE;
         (
-            (o.pzr..o.end)
+            (o.pzr..o.cvcs)
                 .zip(&self.blocks.scales[4].coordinates)
                 .map(|(i, s)| y[i] * s)
                 .collect(),
@@ -1118,7 +1225,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let o = self.blocks.offsets;
         let ns = self.secondary().map_or(0, |b| b.root_count());
         let nr = self.rods().map_or(0, |b| b.root_count());
-        let np = self.pzr().root_count();
+        let np = self.pzr().root_count() + self.cvcs_slots();
         let nl = self.unilateral_slots();
         let nm = self.phase_mode_slots();
         let nk = self.spray_slots();
@@ -1191,8 +1298,12 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         let (x, roof) = self.pzr_state(y);
+        let npzr = self.pzr().root_count();
         self.pzr()
-            .roots(roof, &x, &mut out[ns + nr..ns + nr + np])?;
+            .roots(roof, &x, &mut out[ns + nr..ns + nr + npzr])?;
+        if let Some(b) = self.cvcs() {
+            b.roots(&self.cvcs_state(y), &mut out[ns + nr + npzr..ns + nr + np])?;
+        }
         if let SecondaryPort::Owner(b) = &mut self.blocks.secondary {
             let x = view(
                 y,
@@ -1317,15 +1428,30 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 y[i] = v / s;
             }
         }
-        let np = b.pzr.root_count();
-        if directions[ns + nr..ns + nr + np].iter().any(|d| *d != 0) {
+        let npzr = b.pzr.root_count();
+        if directions[ns + nr..ns + nr + npzr].iter().any(|d| *d != 0) {
             done.push(
                 b.pzr
-                    .transact(t, &directions[ns + nr..ns + nr + np], roof, &mut pzr_x)?,
+                    .transact(t, &directions[ns + nr..ns + nr + npzr], roof, &mut pzr_x)?,
             );
-            for ((i, v), s) in (o.pzr..o.end).zip(&pzr_x).zip(&b.scales[4].coordinates) {
+            for ((i, v), s) in (o.pzr..o.cvcs).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
+        }
+        // Plan r4 X4.2: the CVCS stops and AUTO withdrawals (no coordinate
+        // moves).
+        let nc = b.cvcs.as_ref().map_or(0, |c| c.root_count());
+        let np = npzr + nc;
+        if let Some(c) = b.cvcs.as_mut()
+            && directions[ns + nr + npzr..ns + nr + np]
+                .iter()
+                .any(|d| *d != 0)
+        {
+            let x: Vec<f64> = (o.cvcs..o.end)
+                .zip(&b.scales[5].coordinates)
+                .map(|(i, s)| y[i] * s)
+                .collect();
+            done.push(c.transact(t, &directions[ns + nr + npzr..ns + nr + np], &x)?);
         }
         self.deposit(&done, y)?;
         // The phase modes' transactions, then L1's on the post-mode state.
@@ -1805,9 +1931,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
     ) -> Result<Vec<super::block::Transaction>, Failure> {
         let zero = vec![0.; y.len()];
         self.blocks.prepare = Some(Vec::new());
+        if let Some(b) = self.blocks.cvcs.as_mut() {
+            b.request_preparation();
+        }
         let evaluated = self.evaluate(t, y, &zero, None, 0., None);
         let done = self.blocks.prepare.take().unwrap_or_default();
         evaluated?;
+        self.write_cvcs_preparation(y);
         let o = self.blocks.offsets;
         if let RodPort::Owner(b) = &self.blocks.rods {
             let ids = b.differential();
@@ -1828,6 +1958,41 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         Ok(done)
+    }
+
+    /// Plan r4 X4.2: the CVCS controller at its tracked AUTO point of the
+    /// state `(t, y, 0)` (lags at their inputs, each branch at its AUTO
+    /// request with the stem passing it, integrals at zero error), written
+    /// into `y`; the tank stocks and every other block are not moved. For a
+    /// state carried onto a packet that adds the CVCS.
+    pub fn prepare_cvcs(&mut self, t: f64, y: &mut [f64]) -> Result<(), Failure> {
+        self.blocks
+            .cvcs
+            .as_mut()
+            .ok_or_else(|| fatal("no CVCS owner to prepare"))?
+            .request_preparation();
+        let zero = vec![0.; y.len()];
+        self.evaluate(t, y, &zero, None, 0., None)?;
+        self.write_cvcs_preparation(y);
+        Ok(())
+    }
+    /// The CVCS controller's prepared coordinates into `y` (its tank stocks
+    /// keep their values).
+    fn write_cvcs_preparation(&self, y: &mut [f64]) {
+        let o = self.blocks.offsets;
+        if let Some(b) = &self.blocks.cvcs {
+            let (masses, absorbers) = Cvcs::stocks();
+            for (i, (v, scale)) in b
+                .prepared()
+                .iter()
+                .zip(&self.blocks.scales[5].coordinates)
+                .enumerate()
+            {
+                if !masses.contains(&i) && !absorbers.contains(&i) {
+                    y[o.cvcs + i] = v / scale;
+                }
+            }
+        }
     }
 
     /// Memo §3 (C): the fixed-stock surface initializer at the state's own
@@ -2244,12 +2409,37 @@ impl<P: Properties + WaterProperties> Joined<P> {
         {
             let b = &self.blocks.pzr;
             let cell: BTreeSet<usize> = self.network.pzr.coordinates().collect();
-            let metal: BTreeSet<usize> = (o.pzr + b.metal_base()..o.end).collect();
+            let metal: BTreeSet<usize> = (o.pzr + b.metal_base()..o.cvcs).collect();
             let mut cols = cell.clone();
             cols.extend(metal.iter().copied());
             add(&mut columns, &metal, &cols);
-            let own: BTreeSet<usize> = (o.pzr..o.end).collect();
+            let own: BTreeSet<usize> = (o.pzr..o.cvcs).collect();
             add(&mut columns, &cell, &own);
+        }
+        // 6. The CVCS (plan r4 X4.2): every row reads its own coordinates and
+        // the cells it reads (COLD.A, the legs), the level row the PZR cell;
+        // the COLD.A receipt reaches that cell's rows, and the impulses of
+        // the faces it supports, from its own coordinates and the cell's.
+        if let Some(b) = &self.blocks.cvcs {
+            let own: BTreeSet<usize> = (o.cvcs..o.end).collect();
+            let mut cols = own.clone();
+            for c in b.read_cells() {
+                cols.extend(self.cell(c));
+            }
+            add(&mut columns, &own, &cols);
+            let level = BTreeSet::from([o.cvcs + cvcs::LEVEL_ROW]);
+            let pzr: BTreeSet<usize> = b.pzr_coordinates().collect();
+            add(&mut columns, &level, &pzr);
+            let cell = b.port_cell();
+            let mut rows: BTreeSet<usize> = self.cell(cell).collect();
+            for (f, face) in self.faces.iter().enumerate() {
+                if face.supports.contains(&cell) {
+                    rows.extend(self.impulses(f));
+                }
+            }
+            let mut cols = own;
+            cols.extend(self.cell(cell));
+            add(&mut columns, &rows, &cols);
         }
         for (c, rows) in columns.iter_mut().enumerate() {
             rows.insert(c);
@@ -2306,11 +2496,13 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             solids,
             secondary,
             rods,
+            cvcs,
             source_water,
             nuclear_rows,
             solid_rows,
             secondary_rows,
             rod_rows,
+            cvcs_rows,
             temperatures,
             fuel_t,
             water,
@@ -2393,6 +2585,18 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             let x = view(y, yp, seed, cj, o.secondary..o.rods, &scales[2].coordinates)?;
             b.rows(properties, t, x, &heats.solids.secondary_w, secondary_rows)?;
         }
+        // Plan r4 X4.2: the CVCS rows and its COLD.A receipt, with the PZR
+        // level indication of this evaluation's PZR coordinates.
+        if let Some(b) = cvcs.as_mut() {
+            let _cost = crate::cost::scope("cvcs");
+            let level = b.level(y, seed)?;
+            let x = view(y, yp, seed, cj, o.cvcs..o.end, &scales[5].coordinates)?;
+            b.rows(x, fluid, level, receipts, cvcs_rows)?;
+            let first = o.cvcs - o.nuclear;
+            for (k, (r, row_scale)) in cvcs_rows.iter().zip(&scales[5].rows).enumerate() {
+                rows[first + k] = *r / s(*row_scale);
+            }
+        }
         // Scale every block's physical rows into the joined rows.
         let mut k = 0;
         for (physical, block) in [nuclear_rows, solid_rows, secondary_rows, rod_rows]
@@ -2430,7 +2634,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
     ) -> Result<stratified::Boundary, Failure> {
         let o = self.offsets;
         let b = &mut self.pzr;
-        let x = view(y, yp, seed, cj, o.pzr..o.end, &self.scales[4].coordinates)?;
+        let x = view(y, yp, seed, cj, o.pzr..o.cvcs, &self.scales[4].coordinates)?;
         let boundary = b.boundary(
             &self.properties,
             cell,
@@ -2716,7 +2920,43 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
                     .map(|(i, r)| (o.rods + i, *r / s(scales[3].rows[*i]))),
             );
         }
+        // Plan r4 X4.2: the CVCS rows and COLD.A receipt read COLD.A and
+        // the leg cells; the owner's coordinates and the PZR cell unseeded.
+        if self.cvcs_reached(cells) {
+            let Blocks {
+                cvcs,
+                cvcs_rows,
+                scales,
+                ..
+            } = &mut *self.blocks;
+            let b = cvcs
+                .as_mut()
+                .ok_or_else(|| fatal("CVCS reads without a CVCS owner"))?;
+            let level = b.level(self.y, None)?;
+            let x = view(
+                self.y,
+                self.yp,
+                None,
+                self.cj,
+                o.cvcs..o.end,
+                &scales[5].coordinates,
+            )?;
+            b.rows(x, fluid, level, receipts, cvcs_rows)?;
+            self.last.rows.extend(
+                cvcs_rows
+                    .iter()
+                    .zip(&scales[5].rows)
+                    .enumerate()
+                    .map(|(k, (r, rs))| (o.cvcs + k, *r / s(*rs))),
+            );
+        }
         Ok(())
+    }
+    /// Whether a CVCS row reads any of `cells` (plan r4 X4.2).
+    fn cvcs_reached(&self, cells: &[usize]) -> bool {
+        cells
+            .iter()
+            .any(|c| self.blocks.cvcs_reads.get(*c).copied().unwrap_or(false))
     }
     pub fn last(&self) -> &LocalRows {
         &self.last
@@ -2751,7 +2991,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
         column: &stratified::Column,
     ) -> Result<stratified::Boundary, Failure> {
         let o = self.blocks.offsets;
-        if !(o.pzr..o.end).contains(&global) {
+        if !(o.pzr..o.cvcs).contains(&global) {
             return Err(fatal(format!("PZR column {global} outside the PZR block")));
         }
         let started = Instant::now();
@@ -2782,7 +3022,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             self.yp,
             seeded.map(|_| &self.scratch.seed[..]),
             self.cj,
-            o.pzr..o.end,
+            o.pzr..o.cvcs,
             &scales[4].coordinates,
         )?;
         let boundary = b.boundary(properties, cell, column, x, pzr_rows, false)?;
@@ -2805,12 +3045,20 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
         let o = self.blocks.offsets;
         let incidence = sol.incidence();
         let rods = self.rods_reached(cells, faces);
+        let cvcs = self.cvcs_reached(cells);
         let rod_receipts = self
             .blocks
             .rod_reads
             .iter()
             .filter(|_| rods)
-            .flat_map(|r| r.receipt_cells.iter().copied());
+            .flat_map(|r| r.receipt_cells.iter().copied())
+            .chain(
+                self.blocks
+                    .cvcs
+                    .iter()
+                    .filter(|_| cvcs)
+                    .map(|b| b.port_cell()),
+            );
         let mut receipt_cells: Vec<usize> = scope
             .bands
             .iter()
@@ -2831,6 +3079,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             .chain(scope.segments.iter().map(|g| sol.metal(*g)))
             .map(|i| o.solids + i)
             .chain(rod_rows)
+            .chain(if cvcs { o.cvcs..o.end } else { 0..0 })
             .collect();
         rows.sort_unstable();
         (receipt_cells, rows)
@@ -2858,9 +3107,15 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
     ) -> Result<(), Failure> {
         let o = self.blocks.offsets;
         out.clear();
+        if (o.cvcs..o.end).contains(&column) {
+            self.scratch.seed[column] = 1.;
+            let result = self.cvcs_column(fluid, receipts, out);
+            self.scratch.seed[column] = 0.;
+            return result;
+        }
         if !(o.solids..o.pzr).contains(&column) {
             return Err(fatal(format!(
-                "owner column {column} outside the solid, secondary and rod coordinates"
+                "owner column {column} outside the solid, secondary, rod and CVCS coordinates"
             )));
         }
         let started = Instant::now();
@@ -2882,6 +3137,61 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             c.rod_columns.add(started);
         }
         result
+    }
+
+    /// One CVCS column (plan r4 X4.2): every CVCS row and its COLD.A
+    /// receipt with the unit seed on it, the fluid and the PZR cell unseeded.
+    fn cvcs_column(
+        &mut self,
+        fluid: &Fluid<'_>,
+        receipts: &mut Receipts<'_>,
+        out: &mut OwnerRows,
+    ) -> Result<(), Failure> {
+        let o = self.blocks.offsets;
+        let Blocks {
+            cvcs,
+            cvcs_rows,
+            scales,
+            ..
+        } = &mut *self.blocks;
+        let b = cvcs
+            .as_mut()
+            .ok_or_else(|| fatal("a CVCS column without a CVCS owner"))?;
+        let level = b.level(self.y, None)?;
+        let x = view(
+            self.y,
+            self.yp,
+            Some(&self.scratch.seed),
+            self.cj,
+            o.cvcs..o.end,
+            &scales[5].coordinates,
+        )?;
+        b.rows(x, fluid, level, receipts, cvcs_rows)?;
+        out.rows.extend(
+            cvcs_rows
+                .iter()
+                .zip(&scales[5].rows)
+                .enumerate()
+                .map(|(k, (r, rs))| (o.cvcs + k, *r / s(*rs))),
+        );
+        Ok(())
+    }
+    /// The CVCS level row's direction (solver scaling) for a unit seed on
+    /// network PZR coordinate `j` (plan r4 X4.2), with its global row; `None`
+    /// without a CVCS owner.
+    pub fn cvcs_level_column(&self, j: usize) -> Result<Option<(usize, f64)>, Failure> {
+        let o = self.blocks.offsets;
+        let Some(b) = &self.blocks.cvcs else {
+            return Ok(None);
+        };
+        let d = b.level_column(self.y, j)?;
+        let row = cvcs::LEVEL_ROW;
+        // The row is `L' - (L_ind - L)/lag`: its L_ind part.
+        let lag = b.section().pzr_level.lag_s;
+        Ok(Some((
+            o.cvcs + row,
+            -d.direction / lag / self.blocks.scales[5].rows[row],
+        )))
     }
 
     /// The solids' rows reading local solid coordinate `i`. Its closed
