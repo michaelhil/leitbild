@@ -13,6 +13,10 @@ export interface ExecutionModelMetrics {
   readonly cacheCreation?: number
   readonly cacheRead?: number
   readonly cacheMiss?: number
+  /** Exact provider-reported billing, absent when the provider did not report it. */
+  readonly costUsd?: number
+  readonly generationId?: string
+  readonly upstreamProvider?: string
   readonly modelCalls?: number
   readonly contextMax?: number
   readonly provider?: string

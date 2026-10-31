@@ -409,6 +409,8 @@ export const spawnAIAgent = async (
       ...(m.cacheCreation !== undefined ? { cacheCreation: m.cacheCreation } : {}),
       ...(m.cacheRead !== undefined ? { cacheRead: m.cacheRead } : {}),
       ...(m.cacheMiss !== undefined ? { cacheMiss: m.cacheMiss } : {}),
+      ...(m.reportedCostUsd !== undefined ? { reportedCostUsd: m.reportedCostUsd } : {}),
+      ...(m.costReportedCalls !== undefined ? { costReportedCalls: m.costReportedCalls } : {}),
       ...(m.modelCalls !== undefined ? { modelCalls: m.modelCalls } : {}),
       ...(m.contextMax !== undefined && m.contextMax > 0 ? { contextMax: m.contextMax } : {}),
       ...(m.provider ? { provider: m.provider } : {}),

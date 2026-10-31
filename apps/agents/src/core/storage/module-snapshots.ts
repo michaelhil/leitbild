@@ -163,6 +163,8 @@ const messageSchema = z.object({
   cacheCreation: z.number().finite().optional(),
   cacheRead: z.number().finite().optional(),
   cacheMiss: z.number().finite().optional(),
+  reportedCostUsd: z.number().finite().nonnegative().optional(),
+  costReportedCalls: z.number().int().nonnegative().optional(),
   modelCalls: z.number().int().nonnegative().optional(),
   contextMax: z.number().finite().optional(),
   provider: z.string().optional(),

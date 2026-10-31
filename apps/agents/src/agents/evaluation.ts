@@ -189,6 +189,13 @@ export interface LLMCallMetrics {
   readonly cacheCreation?: number
   readonly cacheRead?: number
   readonly cacheMiss?: number
+  /** Provider-reported facts for one model call, never a price estimate. */
+  readonly costUsd?: number
+  readonly generationId?: string
+  readonly upstreamProvider?: string
+  /** Known billed amounts only; unreported calls remain unknown. */
+  readonly reportedCostUsd?: number
+  readonly costReportedCalls?: number
   readonly modelCalls?: number
   readonly contextMax?: number
   readonly provider?: string
@@ -205,6 +212,8 @@ const mergeMetrics = (current: LLMCallMetrics, next: LLMCallMetrics): LLMCallMet
   ...(sumMetric(current.cacheCreation, next.cacheCreation) === undefined ? {} : { cacheCreation: sumMetric(current.cacheCreation, next.cacheCreation) }),
   ...(sumMetric(current.cacheRead, next.cacheRead) === undefined ? {} : { cacheRead: sumMetric(current.cacheRead, next.cacheRead) }),
   ...(sumMetric(current.cacheMiss, next.cacheMiss) === undefined ? {} : { cacheMiss: sumMetric(current.cacheMiss, next.cacheMiss) }),
+  ...(sumMetric(current.reportedCostUsd, next.costUsd) === undefined ? {} : { reportedCostUsd: sumMetric(current.reportedCostUsd, next.costUsd) }),
+  ...(next.costUsd === undefined && current.costReportedCalls === undefined ? {} : { costReportedCalls: (current.costReportedCalls ?? 0) + (next.costUsd === undefined ? 0 : 1) }),
   modelCalls: (current.modelCalls ?? 0) + 1,
   ...(next.contextMax ?? current.contextMax ? { contextMax: next.contextMax ?? current.contextMax } : {}),
   ...(next.provider ?? current.provider ? { provider: next.provider ?? current.provider } : {}),
@@ -250,6 +259,7 @@ const callLLMOnce = async (
           ...(chunk.tokensUsed?.cacheCreation !== undefined ? { cacheCreation: chunk.tokensUsed.cacheCreation } : {}),
           ...(chunk.tokensUsed?.cacheRead !== undefined ? { cacheRead: chunk.tokensUsed.cacheRead } : {}),
           ...(chunk.tokensUsed?.cacheMiss !== undefined ? { cacheMiss: chunk.tokensUsed.cacheMiss } : {}),
+          ...(chunk.billing ?? {}),
           contextMax: chunk.contextMax,
           provider: chunk.provider,
           model: chunk.model ?? request.model,
@@ -277,6 +287,7 @@ const callLLMOnce = async (
       ...(response.tokensUsed.cacheCreation !== undefined ? { cacheCreation: response.tokensUsed.cacheCreation } : {}),
       ...(response.tokensUsed.cacheRead !== undefined ? { cacheRead: response.tokensUsed.cacheRead } : {}),
       ...(response.tokensUsed.cacheMiss !== undefined ? { cacheMiss: response.tokensUsed.cacheMiss } : {}),
+      ...(response.billing ?? {}),
       contextMax: response.contextMax,
       provider: response.provider,
       model: response.model ?? request.model,
