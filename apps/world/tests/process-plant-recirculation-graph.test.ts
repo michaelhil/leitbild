@@ -111,7 +111,7 @@ test('authored transfer readings retain full descriptions and compact operator n
   const plant = plantOf(), recording = { seriesIds: new Set(recordedPlantVariables(plant, 'operations').map(variable => recordingSeriesIdFor(plant.id, variable.path))), intervalMs: 1_000 }
   const declaration = plantDeclaration(plant.id as never, plant, recording)
   expect(plant.modelDigest).toBe('b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5')
-  expect(processPlantAutomationDigest(plant.automation)).toBe('51ba771b09e0ebad4282fd98b4f06968fde83b19f2907bfadc96835ad9b0c0fa')
+  expect(processPlantAutomationDigest(plant.automation)).toBe('9ba96655f5695563e85a12c6e81aa357012fb363b63fa5f81cdf811a6e519a8d')
   const short = (path: string) => declaration.observables.find(observable => observable.ref === `${plant.id}#${path}`)!
   for (const train of ['A', 'B']) {
     expect(short(`rhrInjectionValve${train}.effectivePositionFraction`).shortLabel).toBe(`RHR ${train} injection pos`)
