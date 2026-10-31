@@ -28,9 +28,34 @@ describe('read-only procedure condition evidence', () => {
     expect(runtime.checkpoint()).toEqual(before)
   })
 
+  test('factual evidence preserves every comparison decision and the independently acquired native facts', () => {
+    const signal = processPlantSignalReferenceSchema.parse({ path: 'core.powerMw' })
+    const binding = compiled.graph.signalBindingByPath.get(signal.path!)!
+    const snapshot = runtime.readVariableSnapshot(binding.path)
+    const actual = Number(snapshot.value)
+    const operators = ['<', '<=', '==', '!=', '>=', '>'] as const
+    const expected = (operator: typeof operators[number], threshold: number) => operator === '<' ? actual < threshold : operator === '<=' ? actual <= threshold
+      : operator === '==' ? actual === threshold : operator === '!=' ? actual !== threshold : operator === '>=' ? actual >= threshold : actual > threshold
+    for (const operator of operators) for (const value of [actual - 1, actual, actual + 1]) {
+      const result = evaluate({ type: 'comparison', signal, operator, value, unit: 'MW' })
+      expect(result.status).toBe(expected(operator, value) ? 'satisfied' : 'challenged')
+      expect(result.evidence[0]).toMatchObject({ reference: signal, comparison: { operator, value, unit: 'MW' }, quality: { status: 'good' },
+        signal: { path: binding.path, label: binding.label, unit: binding.unit, writable: binding.writable, published: binding.published },
+        variable: { path: snapshot.path, value: snapshot.value, canonicalValue: snapshot.canonicalValue, unit: snapshot.unit, writable: snapshot.writable, published: snapshot.published } })
+    }
+    // Graph and acquired snapshot are independent evidence. A read must not hide
+    // a unit or writability disagreement by merging one over the other.
+    const changed = { ...plant, runtime: { ...runtime, readVariableSnapshot: (path: Parameters<typeof runtime.readVariableSnapshot>[0]) => ({ ...runtime.readVariableSnapshot(path),
+      canonicalValue: 17, unit: 'kW' as const, writable: true, limits: { hardRange: { min: 0, max: 1e9 } } }) } }
+    const result = evaluate(power(1), changed)
+    expect(result).toMatchObject({ status: 'unknown', evidence: [{ signal: { unit: 'MW', writable: false },
+      variable: { value: actual, canonicalValue: 17, unit: 'kW', writable: true, limits: { hardRange: { min: 0, max: 1e9 } } },
+      reason: expect.stringContaining('Writable commands/demands') }] })
+  })
+
   test('unknown units, absent bindings and value types cannot become successful comparisons', () => {
     expect(evaluate({ ...power(1), unit: 'percent' } as ProcessPlantProcedureCondition).evidence[0]?.reason).toContain('native signal unit MW')
-    expect(evaluate(missing)).toMatchObject({ status: 'unknown', evidence: [{ status: 'unknown', rangeValidity: 'unavailable' }] })
+    expect(evaluate(missing)).toMatchObject({ status: 'unknown', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', quality: { status: 'unavailable', reason: 'Signal is absent from the current Plant graph.' } }] })
     expect(evaluate({ ...power(1), value: true } as ProcessPlantProcedureCondition)).toMatchObject({ status: 'unknown' })
     expect(evaluate({ type: 'not', condition: missing }).status).toBe('unknown')
   })
@@ -56,7 +81,8 @@ describe('read-only procedure condition evidence', () => {
   test('an out-of-range reading is unknown rather than a qualified overrange bound', () => {
     // Test-only failed reading; production variable tables reject invalid writes.
     const failed = { ...plant, runtime: { ...runtime, readVariableSnapshot: (path: Parameters<typeof runtime.readVariableSnapshot>[0]) => ({ ...runtime.readVariableSnapshot(path), value: 5000, limits: { hardRange: { min: 0, max: 4000 } } }) } }
-    expect(evaluate(power(1), failed)).toMatchObject({ status: 'unknown', evidence: [{ rangeValidity: 'outside-declared-range', instrumentationValidity: 'not-established' }] })
+    expect(evaluate(power(1), failed)).toMatchObject({ status: 'unknown', evidence: [{ rangeValidity: 'outside-declared-range', instrumentationValidity: 'not-established',
+      variable: { value: 5000, limits: { hardRange: { min: 0, max: 4000 } } }, quality: { status: 'outside-hard-range' } }] })
   })
 
   test('capability binds the canonical target and validates typed input and full output', () => {
@@ -112,7 +138,7 @@ describe('read-only procedure condition evidence', () => {
     expect(evaluateProcessPlantAssessments(failed, ['core-cooling'])[0]).toMatchObject({ status: 'green' })
     const reactivity: ProcessPlantProcedureCondition = { type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ path: 'core.effectiveReactivityPcm' }), operator: '<', value: 0, unit: 'pcm' }
     const frame = evaluate({ type: 'all', conditions: [reactivity, power(1e9)] }, failed)
-    expect(frame).toMatchObject({ status: 'challenged', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', reason: 'Acquisition failed' }, { status: 'challenged', variable: { unit: 'MW' } }] })
+    expect(frame).toMatchObject({ status: 'challenged', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', reason: 'Acquisition failed', quality: { status: 'unavailable', reason: 'Acquisition failed' } }, { status: 'challenged', variable: { unit: 'MW' } }] })
   })
 
   test('recording preserves a declared range failure instead of marking every sample good', () => {

@@ -2,8 +2,9 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../core/model/index.ts'
 import { processPlantEvidenceFrame } from './evidence-frame.ts'
 import { processUnitSchema, type ProcessUnit, type VariablePath } from './graph/index.ts'
-import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalView, processPlantSignalQuality } from './signals.ts'
-import type { ProcessPlantSignalReference, ProcessPlantSignalView } from './signals.ts'
+import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalQuality } from './signals.ts'
+import type { ProcessPlantSignalReference, ProcessPlantSignalQuality } from './signals.ts'
+import { processPlantEvidenceSignal, processPlantEvidenceVariable, type ProcessPlantEvidenceSignal, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
 import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator, type ProcessPlantIcSnapshot } from './runtime/ic/control-protection-model.ts'
@@ -58,8 +59,9 @@ export type ProcessPlantProcedureBasis = z.infer<typeof processPlantProcedureBas
 
 export interface ProcessPlantProcedureEvidence {
   readonly reference: ProcessPlantSignalReference
-  readonly signal?: ProcessPlantSignalView
-  readonly variable?: ProcessPlantVariableSnapshot
+  readonly signal?: ProcessPlantEvidenceSignal
+  readonly variable?: ProcessPlantEvidenceVariable
+  readonly quality: ProcessPlantSignalQuality
   readonly provenance: 'runtime-model'
   readonly instrumentationValidity: 'not-established'
   readonly rangeValidity: 'within-declared-range' | 'outside-declared-range' | 'no-declared-range' | 'unavailable'
@@ -120,7 +122,7 @@ export const evaluateProcessPlantProcedureCondition = (config: {
       const comparison = { operator: condition.operator, value: condition.value, unit: condition.unit }
       const base = { reference: condition.signal, comparison, provenance: 'runtime-model' as const, instrumentationValidity: 'not-established' as const }
       if (binding === undefined) {
-        evidence.push({ ...base, status: 'unknown', rangeValidity: 'unavailable', reason: 'Signal is absent from the current Plant graph.' })
+        evidence.push({ ...base, quality: { status: 'unavailable', reason: 'Signal is absent from the current Plant graph.' }, status: 'unknown', rangeValidity: 'unavailable', reason: 'Signal is absent from the current Plant graph.' })
         return 'unknown'
       }
       let variable = snapshots.get(binding.path)
@@ -134,7 +136,8 @@ export const evaluateProcessPlantProcedureCondition = (config: {
           }
         }
         if (variable === undefined) {
-          evidence.push({ ...base, signal: processPlantSignalView(binding), status: 'unknown', rangeValidity: 'unavailable', reason: unavailableSnapshots.get(binding.path) ?? 'Signal acquisition is unavailable.' })
+          const reason = unavailableSnapshots.get(binding.path) ?? 'Signal acquisition is unavailable.'
+          evidence.push({ ...base, signal: processPlantEvidenceSignal(binding), quality: { status: 'unavailable', reason }, status: 'unknown', rangeValidity: 'unavailable', reason })
           return 'unknown'
         }
       }
@@ -151,7 +154,7 @@ export const evaluateProcessPlantProcedureCondition = (config: {
             : rangeValidity === 'outside-declared-range' ? 'Signal value is outside its declared hard range; no qualified range-bound interpretation is available.'
               : typeof variable.value === 'boolean' && condition.operator !== '==' && condition.operator !== '!=' ? 'Ordered comparisons require numeric values.' : undefined
       const status = reason === undefined ? compare(variable.value, condition.operator, condition.value) ? 'satisfied' : 'challenged' : 'unknown'
-      evidence.push({ ...base, signal: processPlantSignalView(binding), variable, rangeValidity, status, ...(reason === undefined ? {} : { reason }) })
+      evidence.push({ ...base, signal: processPlantEvidenceSignal(binding), variable: processPlantEvidenceVariable(variable), quality, rangeValidity, status, ...(reason === undefined ? {} : { reason }) })
       return status
     }
     if (condition.type === 'not') {

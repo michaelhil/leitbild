@@ -6,8 +6,9 @@ import { processUnitSchema } from './graph/index.ts'
 import { processPlantEvidenceFrame } from './evidence-frame.ts'
 import { evaluateProcessPlantProcedureCondition, processPlantProcedureBasisSchema, processPlantProcedureConditionSchema } from './condition-evidence.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
-import { processPlantSignalQuality, processPlantSignalReferenceSchema, readableProcessPlantSignalBinding, processPlantSignalView } from './signals.ts'
+import { processPlantSignalQuality, processPlantSignalReferenceSchema, readableProcessPlantSignalBinding, type ProcessPlantSignalQuality } from './signals.ts'
 import { processPlantSimRuntimeId } from './sim/constants.ts'
+import { processPlantEvidenceSignal, processPlantEvidenceVariable, encodeProcessPlantSampleTimeRuns, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
 
 const numericOperator = z.enum(['<', '<=', '==', '!=', '>=', '>'])
 export const processPlantResponseQuerySchema = z.object({
@@ -50,22 +51,8 @@ export const evaluateProcessPlantResponse = (config: {
     basis: { ...input.basis, qualification: 'sampled-model-response' as const }, automaticCsfQualified: false as const,
     interpretation: 'Stored-sample envelope and endpoint change only; no uninterrupted hold, instrument qualification, future capacity or recovery claim.' }
   const acquired = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }) })
-  // A response retains the complete deciding facts, not a second copy of the
-  // graph's descriptive schemas on every leaf. Exact model/source identity,
-  // all operands, native values/units/ranges, availability and reasons remain.
-  const current = { ...acquired, evidence: acquired.evidence.map(row => {
-    if (!('reference' in row)) return row
-    const { signal: fullSignal, variable: fullVariable, ...assessment } = row
-    const signal = fullSignal === undefined ? undefined : (() => {
-      const { capabilities: _capabilities, limits: _limits, owner: _owner, kind: _kind, discipline: _discipline, quantity: _quantity, externalRefs: _externalRefs, description: _description, ...identity } = fullSignal
-      return identity
-    })()
-    const variable = fullVariable === undefined ? undefined : (() => {
-      const { capabilities: _capabilities, description: _description, externalRefs: _externalRefs, equipmentId: _equipmentId, tagId: _tagId, discipline: _discipline, kind: _kind, quantity: _quantity, ...reading } = fullVariable
-      return reading
-    })()
-    return { ...assessment, ...(signal === undefined ? {} : { signal }), ...(variable === undefined ? {} : { variable }) }
-  }) }
+  // Point and temporal queries share the same explicit deciding-facts DTO.
+  const current = acquired
   const evidence: Array<Record<string, unknown>> = []
   const recordings: Array<Record<string, unknown>> = []
   const anchors: Array<Record<string, unknown>> = []
@@ -97,7 +84,7 @@ export const evaluateProcessPlantResponse = (config: {
       return failure('The latest retained accepted control operation does not establish every required command anchor; do not recreate missing history from current demands.')
     }
     notBeforeElapsedMs = Math.max(notBeforeElapsedMs, latest.elapsedMs)
-    anchors.push({ signal: processPlantSignalView(binding), receipt: latest })
+    anchors.push({ signal: processPlantEvidenceSignal(binding), receipt: latest })
   }
   if (input.afterOperations !== undefined && plant.runtime.elapsedMs() - notBeforeElapsedMs < durationMs) return failure('The requested response duration has not elapsed after all required accepted control operations.')
   const clockOrigin = now - plant.runtime.advancedMs()
@@ -114,14 +101,17 @@ export const evaluateProcessPlantResponse = (config: {
     let cached = summaries.get(key)
     if (cached === undefined) {
       const seriesId = recordingSeriesIdFor(plant.plant.id, binding.path)
-      const base = { signal: processPlantSignalView(binding), seriesId, requestedFrom: new Date(start).toISOString(), requestedTo: to,
+      const base = { signal: processPlantEvidenceSignal(binding), seriesId, expectedRuntimeId: processPlantSimRuntimeId, requestedFrom: new Date(start).toISOString(), requestedTo: to,
         recordingIntervalMs: interval, maximumRecognizedGapMs: recordedHoldMs + interval, recordingRelativeDeadband: relativeDeadband }
       let reason: string | undefined
       let samples: ReadonlyArray<RecordedSample> = []
       let value: number | undefined
+      let acquiredVariable: ProcessPlantEvidenceVariable | undefined
+      let quality: ProcessPlantSignalQuality = { status: 'unavailable', reason: 'Signal acquisition is unavailable.' }
       try {
         const variable = plant.runtime.readVariableSnapshot(binding.path)
-        const quality = processPlantSignalQuality(variable, { system: plant.plant, runtime: plant.runtime })
+        acquiredVariable = processPlantEvidenceVariable(variable)
+        quality = processPlantSignalQuality(variable, { system: plant.plant, runtime: plant.runtime })
         reason = binding.writable || variable.writable ? 'Writable commands/demands cannot establish a physical response.'
           : typeof variable.value !== 'number' || !Number.isFinite(variable.value) ? 'A finite numeric response reading is required.'
             : quality.status !== 'good' ? quality.reason
@@ -145,7 +135,7 @@ export const evaluateProcessPlantResponse = (config: {
             else if (previous !== undefined && (at < Date.parse(previous.simulationTime!) || sample.elapsedMs < previous.elapsedMs!)) reason = 'Retained response time reverses; the window is not one advancing simulation trajectory.'
           }
         }
-      } catch (error) { reason = error instanceof Error ? error.message : String(error) }
+      } catch (error) { reason = error instanceof Error ? error.message : String(error); quality = { status: 'unavailable', reason } }
       let left = -1
       samples.forEach((sample, index) => {
         const at = Date.parse(sample.simulationTime ?? '')
@@ -169,9 +159,11 @@ export const evaluateProcessPlantResponse = (config: {
       const summary = { ...base, ...(input.afterOperations === undefined ? {} : { notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
         status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
         storedSampleCount: selected.length, sampleTimestampOrigin: first?.simulationTime ?? to,
-        sampleOffsetsMs: times.map(at => at - (times[0] ?? now)), maximumGapMs,
+        sampleTimeRuns: encodeProcessPlantSampleTimeRuns(times.map(at => at - (times[0] ?? now))), maximumGapMs, quality,
+        retainedRuntimeIds: [...new Set(selected.map(sample => sample.runtimeId))],
+        ...(selected.length === 0 ? {} : { firstSequence: selected[0]!.sequence, lastSequence: selected.at(-1)!.sequence }),
         ...(first === undefined ? {} : { first: { ...(first.simulationTime === undefined ? {} : { simulationTime: first.simulationTime }), ...(first.elapsedMs === undefined ? {} : { elapsedMs: first.elapsedMs }), value: first.value } }),
-        ...(value === undefined ? {} : { current: { simulationTime: to, elapsedMs: plant.runtime.elapsedMs(), value } }),
+        ...(acquiredVariable === undefined ? {} : { current: { simulationTime: to, elapsedMs: plant.runtime.elapsedMs(), ...acquiredVariable } }),
         ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(change === undefined ? {} : { change }),
         ...(integratedSpanSeconds === undefined ? {} : { integratedSpanSeconds }),
         ...(elapsedSeconds === undefined ? {} : { elapsedSeconds, ...(elapsedSeconds > 0 && change !== undefined ? { endpointRatePerSecond: change / elapsedSeconds } : {}) }) }

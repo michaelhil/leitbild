@@ -13,6 +13,7 @@ import { createPlantOperations, OPERATIONS_KEPT, type OperationRecord } from '..
 import { processSignalTagIdSchema } from '../src/packs/process-plant/graph/index.ts'
 import { variablePathSchema } from '../src/packs/process-plant/graph/index.ts'
 import { evaluateProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
+import { decodeProcessPlantSampleTimeRuns, type ProcessPlantSampleTimeRun } from '../src/packs/process-plant/procedure-evidence-facts.ts'
 
 guardPlantTests()
 const compiled = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:sampled-response', loopCount: 2 }))
@@ -50,12 +51,15 @@ describe('explicitly sampled Plant response', () => {
     const response = evaluateProcessPlantResponse(config())
     expect(response.status).toBe('satisfied')
     expect(response.interpretation).toContain('no uninterrupted hold')
-    expect(response.recordings[0]).toMatchObject({ storedSampleCount: 3, sampleTimestampOrigin: at(0), sampleOffsetsMs: [0, 60_000, 120_000], maximumGapMs: 60_000,
+    expect(response.recordings[0]).toMatchObject({ storedSampleCount: 3, sampleTimestampOrigin: at(0), sampleTimeRuns: [{ firstOffsetMs: 0, stepMs: 60_000, count: 3 }], maximumGapMs: 60_000,
       minimum: value, maximum: value, change: 0, elapsedSeconds: 120, endpointRatePerSecond: 0, recordingRelativeDeadband: 1e-5,
       first: { simulationTime: at(0), elapsedMs: 0, value }, current: { simulationTime: at(120), elapsedMs: 120_000, value } })
     expect(response.current.status).toBe('satisfied')
+    expect(response.recordings[0]).toMatchObject({ signal: { path, tagId: 'SG-A-PRESS', unit: 'MPa', writable: false }, expectedRuntimeId: processPlantSimRuntimeId,
+      quality: { status: 'good' }, retainedRuntimeIds: [processPlantSimRuntimeId], firstSequence: 1, lastSequence: 121,
+      current: { path, value, canonicalValue: plant.runtime.readVariableSnapshot(path).canonicalValue, unit: 'MPa', writable: false, published: true } })
     const recorded = response.recordings[0]!
-    expect((recorded.sampleOffsetsMs as number[]).map(offset => new Date(Date.parse(String(recorded.sampleTimestampOrigin)) + offset).toISOString())).toEqual([at(0), at(60), at(120)])
+    expect(decodeProcessPlantSampleTimeRuns(recorded.sampleTimeRuns as ProcessPlantSampleTimeRun[]).map(offset => new Date(Date.parse(String(recorded.sampleTimestampOrigin)) + offset).toISOString())).toEqual([at(0), at(60), at(120)])
     const raw = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, simulationTime: at(120) })
     const original = raw.evidence[0]!
     if (!('variable' in original) || original.variable === undefined) throw new Error('Expected the actual acquired physical leaf')
@@ -107,6 +111,17 @@ describe('explicitly sampled Plant response', () => {
     expect(response.recordings[0]).toMatchObject({ integratedSpanSeconds: 120, first: { simulationTime: at(0.011) }, current: { simulationTime: at(120.043), elapsedMs: 120_000 } })
     const bad = rows.map(row => ({ ...row, simulationTime: at((row.elapsedMs! + compiled.graph.timestep.fixedStepMs + 1000) / 1000) }))
     expect(evaluateProcessPlantResponse({ ...config(bad), plant: partial, simulationTime: at(120.043) }).status).toBe('unknown')
+  })
+
+  test('timestamp representation preserves every retained duplicate and actual gap with the same physical comparisons', () => {
+    const rows = [sample(0, value, 1), sample(30, value - 0.25, 2), sample(30, value + 0.5, 3), sample(60, value, 4), sample(120, value, 5)]
+    const response = evaluateProcessPlantResponse(config(rows))
+    expect(response.status).toBe('satisfied')
+    const recording = response.recordings[0]!
+    expect(decodeProcessPlantSampleTimeRuns(recording.sampleTimeRuns as ProcessPlantSampleTimeRun[])).toEqual([0, 30_000, 30_000, 60_000, 120_000])
+    expect(recording).toMatchObject({ storedSampleCount: 5, maximumGapMs: 60_000, firstSequence: 1, lastSequence: 5,
+      minimum: value - 0.25, maximum: value + 0.5, change: 0, current: { canonicalValue: plant.runtime.readVariableSnapshot(path).canonicalValue, unit: 'MPa' } })
+    expect(response.evidence[0]).toMatchObject({ comparison: input.comparisons[0], actual: value - 0.25, status: 'satisfied' })
   })
 
   test('missing left boundary and long silence stay unknown even with a fresh green endpoint', () => {
@@ -178,7 +193,7 @@ describe('explicitly sampled Plant response', () => {
     const anchored = { ...input, windowSeconds: 60, afterOperations: [{ signal: { tagId: control.tagId! }, value: demand, unit: control.unit }] }
     const proof = evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations: restored }, input: anchored })
     expect(proof.status).toBe('satisfied')
-    expect(proof.afterOperations).toMatchObject([{ receipt: { commandId: receipt.commandId, actorId: 'person:operator', origin: 'person' } }])
+    expect(proof.afterOperations).toMatchObject([{ receipt }])
     restored.record({ ...receipt, commandId: 'command:newer-contrary-target', value: demand + 1, elapsedMs: 1000 }, { elapsedMs: 1000, wallMs: epoch + 1000 })
     expect(evaluateProcessPlantResponse({ ...config(), plant: { ...plant, operations: restored }, input: anchored })).toMatchObject({ status: 'unknown', reason: expect.stringContaining('latest retained accepted') })
   })
@@ -205,6 +220,8 @@ describe('explicitly sampled Plant response', () => {
     const response = evaluateProcessPlantResponse({ ...config(), plant: failed, input: selected, recordedSeriesIds: new Set([recordingSeriesIdFor(compiled.id, channel)]) })
     expect(response.status).toBe('unknown')
     expect(response.evidence[0]).toMatchObject({ status: 'unknown', reason: expect.stringContaining('supply') })
+    expect(response.recordings[0]).toMatchObject({ quality: { status: 'unavailable', reason: expect.stringContaining('supply') },
+      current: { path: channel, value: reading, canonicalValue: reading, unit: 'degC', writable: false } })
     expect(Number(failed.runtime.readVariable(channel))).toBe(reading)
   })
 
