@@ -146,4 +146,32 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).not.toContain('E-0 step 1')
     expect(runner.body).not.toContain('allow 10 plant s')
   })
+
+  test('monitoring discovers authored phases and keeps current checks distinct from historical qualification', async () => {
+    const store = createSkillStore()
+    await loadSkills(join(import.meta.dir, '..', '..', 'skills'), store, createToolRegistry())
+    const assistance = store.get('leitbild-assistance')!.body
+    const runner = store.get('procedure-runner')!.body
+
+    // A fresh operational view already accompanies start/transition. Re-reading it at
+    // every checkpoint repeats the sampled window instead of following source cadence.
+    expect(runner).toContain('Reuse fresh `next`; otherwise read current step/driver')
+    expect(runner).toContain("For monitoring checkpoints use leitbild-assistance's focused checks")
+    expect(assistance).toContain('Read `step.definition` once')
+    expect(assistance).toContain('When the source separates current checkpoints from a timed sampled review')
+    expect(assistance).toContain('exact authored current condition/basis through the published current-check query')
+    expect(assistance).toContain('request only missing function/controller facts')
+    expect(assistance).toContain('Retain driver/sequence checks; omit `procedureRunId` on clock-only waits')
+    expect(assistance).toContain('Read the full step when the window is due or any deviation/unknown appears')
+    expect(assistance).toContain('Current checks never satisfy a historical branch')
+
+    // Capture status must still be checked between full response windows. One filtered
+    // catalogue entry is not an assertion that every required historical series exists.
+    expect(assistance).toContain('recorder `captureState`/`lastError`')
+    expect(assistance).toContain('filtered `world.simulation-run.history-series.list`')
+    expect(assistance).toContain('required signal path and `limit:1`')
+    expect(assistance).toContain('global capture health and selected-series metadata, not proof of all required series')
+    expect(assistance).toContain('Missing/failed capture needs resolution')
+    expect(runner).not.toMatch(/300\s*s|30\s*s|ES-0\.1/)
+  })
 })
