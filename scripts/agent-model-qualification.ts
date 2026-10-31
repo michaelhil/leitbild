@@ -20,7 +20,7 @@ export const qualificationCases = {
   'procedure-takeover': 'I started E-0 on Unit 2 and have handed it back. Take over the existing procedure and continue through its first supported step only, reporting the result in chat, then release it back to me. Preserve the existing procedure run and source; do not reset, restart or close it.',
   'checkpoint-recall': 'Read Unit 2 generator electrical output from live evidence. Separately obtain its signal definition so you can explain what it measures. At that boundary create a working-context checkpoint retaining the definition and archiving the earlier reading. Retrieve the exact archived result with conversation_read using its turnId, toolCallId and part: result, and report the original value, unit and meaning. Do not take a replacement reading or change the simulation. This is an archive-recall qualification test.',
   'image-read': 'Look only at the attached Inspector screenshot. What model-call count does it show, and what does its offline/provider connection label say? Do not infer these from the current simulation or use tools to obtain substitute data.',
-  cancellation: 'Read the current simulation clock, then use the simulation wait capability to wait until one minute after that reading. Keep the Run paused; do not resume or advance it yourself. I will cancel your wait externally. Do not substitute a wall-clock sleep or claim the time passed.',
+  cancellation: 'Read the current simulation clock, then use the simulation wait capability to wait until one minute after that reading. Leave playback and pace as they are; do not advance or change them yourself. I will cancel your wait externally. Do not substitute a wall-clock sleep or claim the time passed.',
 } as const
 export type QualificationCase = keyof typeof qualificationCases
 export interface QualificationOptions {
@@ -77,6 +77,7 @@ export const runQualification = async (options: QualificationOptions): Promise<a
   let agentPath: string | undefined
   let paidStarted = false
   let captureCurrent: (() => Promise<any[]>) | undefined
+  let pauseOwnedRun: (() => Promise<any>) | undefined
   const cancelAndSettle = async (reason: string) => {
     if (!agentPath || !captureCurrent) throw Error('Cannot settle cancellation without owned Agent and capture')
     record.cancellationRequestedAt = Date.now()
@@ -123,6 +124,7 @@ export const runQualification = async (options: QualificationOptions): Promise<a
     if (!record.resource) throw Error('No Simulation Run returned')
     await save()
     await invoke('world.simulation-run.execution.set', { playback: 'paused' })
+    pauseOwnedRun = () => invoke('world.simulation-run.execution.set', { playback: 'paused' })
     if (caseId === 'procedure-takeover') {
       record.humanProcedureStart = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId: 'plant:halden-2' } })
       const before = (await invoke('world.procedure.runs.list', { includeEvidence: true })).result
@@ -207,6 +209,10 @@ export const runQualification = async (options: QualificationOptions): Promise<a
         dataUrl: `data:image/png;base64,${bytes.toString('base64')}`, source: 'user-upload', capturedAt: (await Bun.file(options.image).stat()).mtime.getTime() }]
     }
     record.sendStartedAt = new Date().toISOString(); await save()
+    // A paused clock legitimately refuses a future-time wait immediately.
+    // Start only this test-owned clock so the wait actually remains pending;
+    // the observer pauses it again after cancellation, including on failure.
+    if (caseId === 'cancellation') record.observerClockStart = await invoke('world.simulation-run.execution.set', { playback: 'playing' })
     paidStarted = true
     record.receipt = await request(wp + '/agents/messages', { senderId: record.human.id, senderName: record.human.name, content: record.prompt, target: { rooms: [record.roomId] }, ...(attachments ? { attachments } : {}) })
     await save()
@@ -241,6 +247,7 @@ export const runQualification = async (options: QualificationOptions): Promise<a
       await Bun.sleep(2_000)
     }
     paidStarted = false
+    if (record.observerClockStart) record.observerClockPause = await pauseOwnedRun!()
     record.observedAfter = await observe()
     record.effectiveModels = [...new Set(Object.values(record.capture.models).map((call: any) => call.model ?? call.metrics?.model))]
     record.finishedAt = new Date().toISOString()
@@ -255,6 +262,12 @@ export const runQualification = async (options: QualificationOptions): Promise<a
     }
     await save()
     throw error
+  } finally {
+    if (record.observerClockStart && !record.observerClockPause && pauseOwnedRun) {
+      try { record.observerClockPause = await pauseOwnedRun() }
+      catch (error) { record.observerClockPauseError = String(error) }
+      await save()
+    }
   }
 }
 
