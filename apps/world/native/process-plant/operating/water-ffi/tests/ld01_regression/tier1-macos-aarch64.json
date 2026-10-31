@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "R4-WATER-PARTIALS (PERF perf-c a4c801755, gated on r4c): the block Jacobian's directional water points from per-state basis partials; trajectory rounding moves, C2@2.5 instructions -8.4 %",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-8dbb758e6-20261031T223624Z",
- "app": "8dbb758e6",
+ "reason": "X4.1 startup feed (FEED 812d5cb21): 4 startup-feed coordinates, FW.FT branch flow, operator-grade lag tolerances; trajectory rounding moves",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-af278ee4e-20261031T224749Z",
+ "app": "af278ee4e",
  "environment": {
-  "packet_sha256": "11c9a7e532bdd9a89f69f250081befa0e83202cfc5a06d47da5f669c683e57fd",
-  "state_sha256": "1f1773309b5fd6037c1b52bfabdedb8e848e70c12ef8c5ea006a8faef4ffd0c2",
+  "packet_sha256": "727557c24e39f5be7c565f497b316cef0d3efd9f77be6859f81b7291de07b0a6",
+  "state_sha256": "35756a523f584c91528a959dbe27f0c9cb2c5ffb903e8bed6dd0a5a84545821b",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "d8dd616",
+  "wiki_commit": "9e56c7c",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-kern-666610c22-f5-1",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 7195007751,
+   "instructions": 7176785883,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 19212233330,
-   "digest": "d0ec396b4d17c0158ae3eefb1e11e411a7342663ac55697c8ef162a001857225"
+   "instructions": 19292460016,
+   "digest": "0d5cc730644e98aa08c71dcc88436aece88c32622f59ea879987bc262e8a323b"
   }
  }
 }
