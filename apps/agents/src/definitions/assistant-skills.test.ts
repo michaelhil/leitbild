@@ -160,7 +160,9 @@ describe('Leitbild Assistant skills', () => {
     expect(runner).toContain('Reuse fresh full `next`; acquire missing current evidence/driver')
     expect(runner).toContain('`step.branchAssessments` or its exact declared query')
     expect(runner).toContain("For monitoring checkpoints use leitbild-assistance's focused checks")
-    expect(assistance).toContain('Reuse fresh full `next` instructions/current facts at the unchanged paused frame, including recovery-step entry; do not read them twice')
+    expect(assistance).toContain('Reuse fresh full `next` at the unchanged paused frame, including recovery-step entry; do not reread')
+    // Source-linked Basis already owns duties omitted from a branch comparison.
+    expect(assistance).toContain('Read linked Basis before new phases; reuse same-pin sections')
     expect(assistance).toContain('`stepId` only for missing exact queries or basis')
     expect(assistance).toContain('When the source separates checkpoints from sampled reviews')
     expect(assistance).toContain('exact current condition/basis via the published current-check query')
