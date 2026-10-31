@@ -27,9 +27,9 @@ export const runWaitInputSchema = z.object({
   }).strict()).min(1).max(8).optional()
     .describe('Return at the first durable event after afterSequence matching any of these.'),
   procedureRunId: procedureRunIdSchema.optional()
-    .describe('A procedure Run whose current step the result carries as next, as world.procedure.run.step.read returns it.'),
+    .describe('Optional: reacquire all branch observations, including current checks and historical sample windows, into next (potentially expensive). Omit for clock-only checkpoint waits; takeover/close/reset detection for Runs you drive remains active.'),
   includeGuidance: z.boolean().optional()
-    .describe('With procedureRunId, false omits repeated static instructions/branch definitions/tag descriptions; all current facts and the exact pinned definition reference remain. Default true.'),
+    .describe('With procedureRunId, false omits static instructions/branch definitions/tag descriptions only; it still reacquires all branch observations, including historical sample windows. Default true.'),
 }).strict().superRefine((input, context) => {
   if (input.includeGuidance === false && input.procedureRunId === undefined) {
     context.addIssue({ code: 'custom', path: ['includeGuidance'], message: 'includeGuidance:false requires procedureRunId; a clock-only wait carries no procedure view.' })

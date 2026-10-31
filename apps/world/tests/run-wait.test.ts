@@ -152,6 +152,21 @@ describe('waiting for a Run change', () => {
     expect(runWaitInputSchema.safeParse({ simulationSeconds: 5, maxWaitMs: 25_000 }).success).toBe(false)
   })
 
+  test('a clock-only checkpoint wait still detects a reset of a driven Run without procedureRunId', async () => {
+    const run = fakeRun()
+    const waiting = waitForRunChange({ input: runWaitInputSchema.parse({ untilSimulationTime: new Date(startTime + 30_000).toISOString() }),
+      caller: assistant, driven, ports: run.ports })
+    const reset = { type: 'procedure.run.reset', sourceId: 'leitbild', procedureId: 'E-0', scope: { plantId: 'plant:unit-2' }, resetAt: new Date(startTime).toISOString(), resetBy: operator }
+    // A reset outside the caller's driven scope must not terminate its wait.
+    run.commit({ ...reset, scope: { plantId: 'plant:other-unit' } })
+    run.advance(500)
+    const accepted = run.commit(reset)
+    expect(await waiting).toMatchObject({ reason: 'driver-changed', waitedMs: 500, events: [accepted],
+      driverChanged: { runId, procedureId: 'E-0', change: 'procedure.run.reset', by: operator } })
+    expect(run.wakes.size).toBe(0)
+    expect(run.pendingTimers()).toBe(0)
+  })
+
   test('an absolute target stays fixed across request latency and succeeds when completion pauses at that target', async () => {
     const run = fakeRun()
     const untilSimulationTime = new Date(startTime + 90_000).toISOString()
