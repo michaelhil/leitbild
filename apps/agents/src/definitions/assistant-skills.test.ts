@@ -200,10 +200,13 @@ describe('Leitbild Assistant skills', () => {
     expect(assistance).toContain('recorder `captureState`/`lastError`')
     expect(assistance).toContain('filtered `world.simulation-run.history-series.list`')
     expect(assistance).toContain('required signal path and `limit:1`')
-    expect(assistance).toContain('global capture health and selected-series metadata, not proof of all required series')
+    expect(assistance).toContain('global capture health/selected-series metadata, not all-series proof')
     expect(assistance).toContain('Resolve failed/missing capture')
-    expect(assistance).toContain('For current controller facts use `signals.read` with `evidence:true`; omit `observed` unless alarm-threshold context is needed')
-    expect(assistance).toContain('batch `result.evidence` supplies `simulationTime`, model/automation identities and provenance')
+    // Routine feedback uses the owning Pack's explicit values projection, with
+    // the same frame/qualities and focused discovery for additional metadata.
+    expect(assistance).toContain('Read controller facts with `signals.read` `detail:"values",evidence:true`')
+    expect(assistance).toContain('resolve metadata if needed; add `observed:true` only for alarm limits')
+    expect(assistance).toContain('Batch `result.evidence` supplies `simulationTime`, model/automation identities and provenance')
     expect(assistance).toContain("retain each row's value, unit and quality")
     expect(assistance).toContain("Match the current guard's time/identity; good quality is not calibrated instrumentation")
     expect(assistance).not.toContain('observed:false')
