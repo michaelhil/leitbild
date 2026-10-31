@@ -164,8 +164,16 @@ describe('Leitbild Assistant skills', () => {
     // every checkpoint repeats the sampled window instead of following source cadence.
     expect(runner).toContain('Reuse fresh full `next`; acquire missing current evidence/driver')
     expect(runner).toContain('`step.branchAssessments` or its exact declared query')
-    expect(runner).toContain("For monitoring checkpoints use leitbild-assistance's clock/current/episode recipe")
+    expect(runner).toContain("Use leitbild-assistance for monitoring and context checkpoints")
     expect(assistance).toContain('Reuse fresh full `next` at the unchanged paused frame, including recovery-step entry; do not reread')
+    // Working-context changes are explicit semantic decisions, not another timed
+    // procedure loop. Source-required data must remain in the declared working set;
+    // moving older groups to exact recall never means a command physically worked.
+    expect(assistance).toContain('use `context_checkpoint` alone at completed phases/coherent recorded reviews, not every timer/read/write')
+    expect(assistance).toContain('Retain exact `execution.toolCallId`s for source/Basis, required frames, current complete notes/facts and unresolved work')
+    expect(assistance).toContain('Source duties govern retention')
+    expect(assistance).toContain('Recall archived arguments/results with `conversation_read`; returned receipts are not attainment')
+    expect(assistance).not.toContain('trip/injection and E-0 toward E-3 may be needed')
     // Source-linked Basis already owns duties omitted from a branch comparison.
     expect(assistance).toContain('Read linked Basis before new phases; reuse same-pin sections')
     expect(assistance).toContain('`stepId` for missing exact queries/basis')
