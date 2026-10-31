@@ -1415,32 +1415,36 @@ pub(crate) fn tube_series_conductance<P: WaterProperties, N: Number>(
     (h / (N::from(1.) + h * N::from(series_m2k_w))).finite()
 }
 
-/// X4.5 (lead ruling d): the exact single-pass heat of a plug-flow stream
-/// over a wall at one temperature, the standard effectiveness-NTU relation
-/// for a constant-temperature side: `Q = C (T_in - T_wall) (1 - exp(-UA/C))`
-/// into the wall, with `C` the stream's capacity rate (W/K) and `UA` the
-/// conductance (W/K). As `C` falls the effectiveness tends to 1 and
-/// `Q -> C (T_in - T_wall)`, so no flow carries no heat. Where `exp(-UA/C)`
-/// is zero in f64 (`UA/C` above about 745, and `C = 0`) the relation's value
-/// is `C (T_in - T_wall)` exactly; that form is evaluated there, so the
+/// X4.6 item 1 (lead, after ruling d): the heat from a mixed cell into its
+/// wall, `Q = UA (T_cell - T_wall) + C [1 - (1 + x) exp(-x)] (T_in - T_wall)`
+/// with `x = UA/C`, `C` the inflow's capacity rate (W/K) and `UA` the
+/// conductance (W/K). Basis: at steady plug flow the cell's temperature is
+/// its outlet's, `T_cell - T_wall = exp(-x) (T_in - T_wall)`, so any
+/// `a (T_in - T_wall) + b (T_cell - T_wall)` with `a + b exp(-x) =
+/// C (1 - exp(-x))` is the exact single-pass (effectiveness-NTU) heat; the
+/// cell's own conductance-limited exchange `b = UA` fixes `a`. With no inflow
+/// `Q = UA (T_cell - T_wall)`; as the flow rises `a` grows from 0 to `C`
+/// (`0 <= a <= C` since `exp(x) >= 1 + x`). Where `exp(-x)` is zero in f64
+/// (`x` above about 745, and `C = 0`) `a = C` exactly is evaluated, so the
 /// seeded direction stays finite.
-pub fn single_pass_heat<N: Number>(
+pub fn cell_pass_heat<N: Number>(
     conductance_w_k: N,
     capacity_w_k: N,
     inflow_t: N,
+    cell_t: N,
     wall_t: N,
 ) -> Result<N> {
     if !(conductance_w_k.value() > 0. && capacity_w_k.value() >= 0.) {
-        return Err(
-            "single-pass heat needs a positive conductance and a nonnegative capacity rate",
-        );
+        return Err("cell-pass heat needs a positive conductance and a nonnegative capacity rate");
     }
-    let drive = inflow_t - wall_t;
-    if (-conductance_w_k.value() / capacity_w_k.value()).exp() == 0. {
-        return (capacity_w_k * drive).finite();
-    }
-    let e = (-(conductance_w_k / capacity_w_k)).exp();
-    (capacity_w_k * (N::from(1.) - e) * drive).finite()
+    let cell = conductance_w_k * (cell_t - wall_t);
+    let a = if (-conductance_w_k.value() / capacity_w_k.value()).exp() == 0. {
+        capacity_w_k
+    } else {
+        let x = conductance_w_k / capacity_w_k;
+        capacity_w_k * (N::from(1.) - (N::from(1.) + x) * (-x).exp())
+    };
+    (cell + a * (inflow_t - wall_t)).finite()
 }
 
 /// Sibling composition may supply the SAME current saturation and bulk tuple
@@ -2012,36 +2016,63 @@ pub fn secondary_wall<P: WaterProperties>(
 }
 
 #[cfg(test)]
-mod single_pass {
+mod cell_pass {
     use super::*;
 
-    /// X4.5 (lead ruling d): the single-pass law is finite in value and
-    /// direction from full flow to no flow, with effectiveness rising to 1.
+    const UA: f64 = 2.6e8;
+    const T_IN: f64 = 593.15;
+    const T_WALL: f64 = 557.5;
+
+    /// At the steady outlet `T_cell = T_wall + exp(-x) (T_in - T_wall)` the
+    /// law is the exact single-pass heat `C (1 - exp(-x)) (T_in - T_wall)`.
     #[test]
-    fn single_pass_heat_is_finite_down_to_no_inflow() {
-        let (ua, tin, tw) = (2.6e8, 593.15, 557.5);
+    fn steady_outlet_gives_the_single_pass_heat() {
+        for c in [5.0e9, 5.0e8, 1.5e8, 5.0e7, 5.0e6, 5.0e5] {
+            let x = UA / c;
+            let cell = T_WALL + (-x).exp() * (T_IN - T_WALL);
+            let q = cell_pass_heat(s(UA), s(c), s(T_IN), s(cell), s(T_WALL))
+                .unwrap()
+                .value;
+            let exact = c * (1. - (-x).exp()) * (T_IN - T_WALL);
+            assert!((q - exact).abs() <= 1e-9 * exact, "C = {c}: {q} vs {exact}");
+        }
+    }
+
+    /// With no inflow the cell exchanges at its own conductance; the value and
+    /// every seeded direction stay finite from full flow down to none, and
+    /// the inflow coefficient rises monotonically from 0 to C.
+    #[test]
+    fn stagnant_limit_and_finite_directions() {
+        let cell = 570.;
         let mut last = 0.;
-        for c in [5.0e7, 5.0e6, 5.0e5, 5.0e4, 1.0e3, 1.0, 1e-200, 0.] {
-            let q = single_pass_heat(s(ua), Scalar::new(c, 1.), s(tin), s(tw)).unwrap();
+        for c in [5.0e9, 5.0e7, 5.0e6, 5.0e5, 5.0e4, 1.0e3, 1.0, 1e-200, 0.] {
+            let q = cell_pass_heat(s(UA), Scalar::new(c, 1.), s(T_IN), s(cell), s(T_WALL)).unwrap();
             assert!(q.value.is_finite() && q.direction.is_finite(), "C = {c}");
-            let eps = if c > 0. {
-                q.value / (c * (tin - tw))
-            } else {
-                1.
-            };
-            assert!(eps >= last - 1e-15 && eps <= 1. + 1e-15, "C = {c}: {eps}");
-            last = eps;
-            // dQ/dC tends to the inlet drive as C falls (effectiveness 1).
-            if c <= 1e3 {
-                assert!(
-                    (q.direction - (tin - tw)).abs() <= 1e-9 * (tin - tw),
-                    "C = {c}"
-                );
+            let a = (q.value - UA * (cell - T_WALL)) / (T_IN - T_WALL);
+            assert!(
+                a >= -1e-6 && a <= c * (1. + 1e-12) + 1e-6,
+                "C = {c}: a = {a}"
+            );
+            // a/C is resolved against the cell term's rounding down to C = 1e3.
+            if c >= 1e3 {
+                let share = a / c;
+                assert!(share >= last - 1e-9, "C = {c}: a/C = {share}");
+                last = share;
             }
         }
-        let wall =
-            single_pass_heat(Scalar::new(ua, 0.), s(5e7), s(tin), Scalar::new(tw, 1.)).unwrap();
-        assert!(wall.direction < 0. && wall.direction.is_finite());
+        let stagnant = cell_pass_heat(s(UA), s(0.), s(T_IN), s(cell), s(T_WALL)).unwrap();
+        assert_eq!(stagnant.value, UA * (cell - T_WALL));
+        for (seed, expect) in [(0, UA), (1, -UA)] {
+            let (tc, tw) = if seed == 0 {
+                (Scalar::new(cell, 1.), s(T_WALL))
+            } else {
+                (s(cell), Scalar::new(T_WALL, 1.))
+            };
+            let d = cell_pass_heat(s(UA), s(0.), s(T_IN), tc, tw)
+                .unwrap()
+                .direction;
+            assert!((d - expect).abs() <= 1e-9 * UA, "seed {seed}: {d}");
+        }
     }
 }
 
