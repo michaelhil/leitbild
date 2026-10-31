@@ -76,6 +76,7 @@ use crate::{
     joined::{DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart},
     klu::SparseLu,
 };
+use leitbild_operating_plant::cost;
 use leitbild_operating_plant::joined::block::{Command, Transaction};
 use leitbild_operating_plant::network::phase_events::DonorFlips;
 use serde_json::{Value, json};
@@ -663,6 +664,7 @@ impl<S: JoinedSystem> Driver<S> {
         system: &S,
         to: f64,
     ) -> Result<f64, String> {
+        let _cost = cost::scope("observe");
         let started = (self.clock)();
         let mut limit = self.limit(to);
         loop {
@@ -945,6 +947,7 @@ impl<S: JoinedSystem> Driver<S> {
             }
             if roots.is_none() {
                 // An accepted step's state: C3's donor flips and R3 band.
+                let _cost = cost::scope("step-state");
                 let started = (self.clock)();
                 let joined = &mut ida.system_mut().integrated_mut().joined;
                 let flips = self.donor_flips.total();
@@ -976,6 +979,7 @@ impl<S: JoinedSystem> Driver<S> {
             if let Some(o) = observer.as_deref_mut() {
                 self.gate_samples(ida, o, observed)?;
                 if roots.is_none() && observed == reached {
+                    let _cost = cost::scope("gate");
                     let started = (self.clock)();
                     let q = match &self.quadratures {
                         Some(_) => self.quadratures_at(ida, reached)?,
@@ -1035,6 +1039,7 @@ impl<S: JoinedSystem> Driver<S> {
         observer: &mut (dyn Observer<S> + '_),
         to: f64,
     ) -> Result<(), String> {
+        let _cost = cost::scope("gate");
         let started = (self.clock)();
         let n = ida.system().dimension();
         let (mut y, mut yp) = (vec![0.; n], vec![0.; n]);
@@ -1068,6 +1073,7 @@ impl<S: JoinedSystem> Driver<S> {
         yp: &[f64],
         side: Side,
     ) -> Result<(), String> {
+        let _cost = cost::scope("gate");
         let started = (self.clock)();
         let q = match &self.quadratures {
             Some(_) => self.quadratures_at(ida, t)?,
@@ -1098,6 +1104,7 @@ impl<S: JoinedSystem> Driver<S> {
         rolled_back_from: Option<f64>,
         mut observer: Option<&mut (dyn Observer<S> + 'o)>,
     ) -> Result<(), String> {
+        let _cost = cost::scope("apply");
         self.attempt_s = Some(t);
         let mut commands: Vec<Command> = Vec::new();
         while self.commands.first().is_some_and(|c| Self::due_at(c.0, t)) {

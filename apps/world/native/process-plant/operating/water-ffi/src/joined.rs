@@ -258,6 +258,7 @@ fn assemble<P: Properties + WaterProperties>(
     values: &mut [f64],
     report: &mut Report,
 ) -> Result<(), Failure> {
+    let _cost = leitbild_operating_plant::cost::scope("start-jacobian");
     let zero = vec![0.; y.len()];
     let started = Instant::now();
     match matrices {
@@ -358,6 +359,7 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     let algebraic: Vec<bool> = differential.iter().map(|d| *d == 0.).collect();
     let zero = vec![0.; n];
     let rows_at = |joined: &mut Joined<P>, y: &[f64], yp: &[f64]| -> Result<Vec<f64>, Failure> {
+        let _cost = leitbild_operating_plant::cost::scope("start-residual");
         joined.evaluate(t, y, yp, None, 0., None)?;
         Ok(joined.rows().iter().map(|r| r.value).collect())
     };
@@ -885,7 +887,7 @@ mod integrated {
     use leitbild_operating_plant::{
         joined::{
             block::{Command, Transaction},
-            blocks::{Classes, JoinedJacobian, jacobian_blocks},
+            blocks::{Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_profiled},
             operator::Joined,
             presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
         },
@@ -1797,16 +1799,36 @@ mod integrated {
                 Assembly::Blocks(structure) => {
                     // The operator counts its colored assemblies itself.
                     let started = std::time::Instant::now();
-                    let result = jacobian_blocks(
-                        &mut self.joined,
-                        structure,
-                        time,
-                        cj,
-                        y,
-                        yp,
-                        data,
-                        Classes::ALL,
-                    );
+                    // PERF E-PROF: the pieces in instructions, when profiled.
+                    let result = if leitbild_operating_plant::cost::pieces() {
+                        let mut profile = Profile::new(leitbild_operating_plant::cost::now_f64);
+                        let result = jacobian_blocks_profiled(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                            &mut profile,
+                        );
+                        for (piece, (calls, spent)) in profile.pieces {
+                            leitbild_operating_plant::cost::book(piece, calls, spent as u64);
+                        }
+                        result
+                    } else {
+                        jacobian_blocks(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                        )
+                    };
                     self.joined.counters.jacobians += 1;
                     self.joined.counters.jacobian_wall_s += started.elapsed().as_secs_f64();
                     result

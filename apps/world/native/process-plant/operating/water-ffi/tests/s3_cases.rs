@@ -515,6 +515,13 @@ struct Recorder {
     rods: Vec<(usize, f64)>,
     scratch: Vec<f64>,
     rows: Vec<Value>,
+    /// HOOK (OU-A U5 lag projection): the process's instructions retired
+    /// at each frame, when LD01_OU_FRAME_COST=1 (never in `frames`, whose
+    /// digest the tiers pin).
+    cost: Option<Vec<(f64, u64)>>,
+    /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
+    /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
+    profile: Option<Vec<(f64, u64, Vec<(u64, u64)>)>>,
 }
 impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     fn name(&self) -> &str {
@@ -534,6 +541,14 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
         t: f64,
         dense: &dyn leitbild_operating_water::frame::Dense,
     ) -> Result<Vec<leitbild_operating_water::frame::Change<S>>, String> {
+        if let Some(c) = self.cost.as_mut() {
+            c.push((t, s3_harness::counters::instructions()?));
+        }
+        if let Some(p) = self.profile.as_mut() {
+            let (totals, reads) = leitbild_operating_plant::cost::totals()
+                .ok_or("LD01_PERF_PROFILE=1 without an installed cost profile")?;
+            p.push((t, reads, totals));
+        }
         dense.derivative(t, 0, &mut self.scratch)?;
         let y = &self.scratch;
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
@@ -1383,6 +1398,46 @@ struct Ask<'a> {
     f_tolerances: bool,
 }
 
+/// HOOK (PERF E-PROF): the profile's counter, the process's instructions
+/// retired; an unreadable counter stops the run (a cost is never zero).
+fn perf_counter() -> u64 {
+    s3_harness::counters::instructions().expect("instructions retired")
+}
+/// HOOK (PERF E-PROF): instructions one counter read costs (the median
+/// of 15 batches of 1,000 back-to-back reads), so a judge can state the
+/// profile's own overhead.
+fn perf_read_instructions() -> u64 {
+    let mut batches: Vec<u64> = (0..15)
+        .map(|_| {
+            let a = perf_counter();
+            for _ in 0..1_000 {
+                std::hint::black_box(perf_counter());
+            }
+            (perf_counter() - a) / 1_001
+        })
+        .collect();
+    batches.sort_unstable();
+    batches[7]
+}
+/// HOOK (PERF E-PROF): LD01_PERF_PROFILE=1 installs the cost profile on
+/// this thread, `pieces` with the block Jacobian's pieces (with
+/// LD01_OU_FRAME_COST=1 only); unset: nothing.
+fn perf_install() {
+    match std::env::var("LD01_PERF_PROFILE").ok().as_deref() {
+        None => {}
+        Some(v @ ("1" | "pieces")) => {
+            assert_eq!(
+                std::env::var("LD01_OU_FRAME_COST").as_deref(),
+                Ok("1"),
+                "LD01_PERF_PROFILE=1 needs LD01_OU_FRAME_COST=1"
+            );
+            leitbild_operating_plant::cost::install(perf_counter, v == "pieces")
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        Some(v) => panic!("LD01_PERF_PROFILE={v}: only 1 or pieces (or unset)"),
+    }
+}
+
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
 fn drive(
     case: Case,
@@ -1491,6 +1546,8 @@ fn drive(
             .collect(),
         scratch: vec![0.; y.len()],
         rows: Vec::new(),
+        cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
+        profile: leitbild_operating_plant::cost::active().then(Vec::new),
     };
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
@@ -1594,6 +1651,17 @@ fn drive(
         ida.set_max_step(h).unwrap();
     }
     let mut driver = Driver::new(frame, Diagnostic::Jump, spine::z1::cpu_s, t0).unwrap();
+    // Explicit matrix management (plan r4 baseline, lead 31 Oct: MR-1 retired
+    // under R11-2a's N2 terms; it fails C2 at the last seat and costs more):
+    // LD01_S3_MATRIX_REBUILD=stock runs stock IDAS matrix management,
+    // =packet the packet's MR-1 section; unset keeps the packet's.
+    match std::env::var("LD01_S3_MATRIX_REBUILD").ok().as_deref() {
+        None | Some("packet") => {}
+        Some("stock") => {
+            driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock
+        }
+        Some(v) => panic!("LD01_S3_MATRIX_REBUILD={v}: stock or packet"),
+    }
     // Decision 0015 E2: the 20 ms cap only inside the case's declared event
     // window, set by the driver at the restart that starts it (C4's hook)
     // and removed at the first chunk bound at or after its end.
@@ -2657,6 +2725,12 @@ fn drive(
             "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
+        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
+        "perf_profile": recorder.profile.as_ref().map(|p| json!({
+            "rule": "HOOK (PERF E-PROF): per frame [t, counter reads so far, per path [closed calls, exclusive instructions] so far]; paths in key order, pieces>* inclusive outside the tree",
+            "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
+            "read_instructions": perf_read_instructions(),
+            "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
         "repeat_record": repeat_record,
     });
     eprintln!(
@@ -3194,6 +3268,7 @@ fn s3_case_run() {
         !std::path::Path::new(&receipt_path).exists(),
         "receipts are never overwritten"
     );
+    perf_install();
     let process0 = spine::z1::cpu_s();
     let d = declaration::Declaration::load_case(case).unwrap_or_else(|e| panic!("{e}"));
     // The r8 wiki: C1–C3 at r3.8; r3.7 (and C4 r2) refused by name.
