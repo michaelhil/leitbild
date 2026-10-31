@@ -171,11 +171,13 @@ describe('Leitbild Assistant skills', () => {
     // Actual initial-settling evidence existed only in raw tool history in the
     // failed provider rehearsal. Future source-required records need an explicit
     // transferable home, without adding a plant criterion or a note language.
-    expect(assistance).toContain('Write source-required acquisition/checkpoint records to durable `world.procedure.step.update` comments')
-    expect(assistance).toContain('raw tool history alone is not that record')
+    expect(assistance).toContain('Write required fields in `world.procedure.step.update` comments, not tool history')
+    // Source-required initial rows and cumulative checkpoints remain intact,
+    // while one unchanged lineup's acquisition is not recopied into every row.
+    expect(assistance).toContain('Keep unchanged lineup/dependencies once per note with acquisition refs')
     expect(assistance).toContain('cached notes/plain receipts do not suffice')
     expect(assistance).toContain('Source controls current frame counts/older history refs')
-    expect(assistance).toContain('Share identical Plant/model/episode/duty/column headers across full-precision rows')
+    expect(assistance).toContain('Share Plant/model/episode/duty/column headers across full-precision rows')
     expect(assistance).toContain('keep required timestamps/counts/proofs/duties and Human text verbatim')
     expect(assistance).not.toContain('preserve every prior timestamp/count/proof/duty')
     expect(assistance).toContain('Never truncate or round')
