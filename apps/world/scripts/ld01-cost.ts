@@ -46,7 +46,18 @@
  *   (core_power_relative). Metrics the block does not judge are left out.
  *   Pass: every judged ratio <= 1 in every comparison.
  *
+ * - gate (with --gate base.json[,base.json...] change.json[,change.json...];
+ *   rule R4-COST-RESOLUTION, PERF 1 Nov): the median over each side's
+ *   repeated runs of the worst 0.5 s window, the worst 2.5 s window and
+ *   steady; a measure "rises" when the change's median exceeds the base's
+ *   by more than RESOLUTION (1 %), "falls" when it is below by more than
+ *   it, and "keeps" otherwise. Identical-trajectory repeats of one binary
+ *   spread up to 0.66 % in the worst window (r4c, load 10-32: C2 0.66 %,
+ *   C3 0.27 %, C5 0.40 %), so one run per side decides only outside 2 %;
+ *   within it, each side takes 3 runs.
+ *
  * Usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--budgets page.md] [--table] <receipt.json>...
+ *        bun scripts/ld01-cost.ts [--quiet-ratio r] --gate <base.json,...> <change.json,...>
  * Prints one JSON object per receipt (with --table, a short text table). */
 import {readFileSync} from 'node:fs'
 import {basename} from 'node:path'
@@ -210,6 +221,26 @@ export function accuracy(receipt:any,block:any){
  return {revision:block.revision,pass,comparisons:out}
 }
 
+/** R4-COST-RESOLUTION: the gate's relative resolution. */
+export const RESOLUTION=0.01
+const median=(xs:number[])=>{
+ const s=[...xs].sort((a,b)=>a-b),n=s.length
+ if(!n)throw new Error('a gate side needs at least one run')
+ return n%2?get(s,(n-1)/2):(get(s,n/2-1)+get(s,n/2))/2
+}
+/** The gate between two sets of repeated runs (R4-COST-RESOLUTION). */
+export function gate(base:any[],change:any[],ratio=QUIET_RATIO){
+ const measures=(rs:any[])=>rs.map(r=>{const j=judge(r,ratio);return {worst_0_5_s:j.worst_0_5_s.rate,worst_2_5_s:j.worst_2_5_s.rate,steady:j.steady_last_10_s}})
+ const b=measures(base),c=measures(change)
+ const out:any={resolution:RESOLUTION,base_runs:b.length,change_runs:c.length}
+ for(const k of ['worst_0_5_s','worst_2_5_s','steady'] as const){
+  const mb=median(b.map(x=>x[k])),mc=median(c.map(x=>x[k])),rel=mc/mb-1
+  const decided=Math.abs(rel)>2*RESOLUTION||(b.length>=3&&c.length>=3)
+  out[k]={base:mb,change:mc,relative:rel,verdict:!decided?'undecided: 3 runs each needed within 2 %':rel>RESOLUTION?'rises':rel< -RESOLUTION?'falls':'keeps'}
+ }
+ return out
+}
+
 /** The judge's result for one receipt. */
 export function judge(receipt:any,ratio=QUIET_RATIO){
  const {frames,runFrames,event,restarts,lastSeat,profile,case:c}=traceOf(receipt)
@@ -265,6 +296,12 @@ if(import.meta.main){
  let ratio=QUIET_RATIO,asTable=false,block:any=null
  const i=args.indexOf('--quiet-ratio')
  if(i>=0){ratio=Number(args[i+1]);args.splice(i,2)}
+ const gi=args.indexOf('--gate')
+ if(gi>=0){
+  const load=(list:string)=>list.split(',').map(f=>JSON.parse(readFileSync(f,'utf8')))
+  console.log(JSON.stringify(gate(load(get(args,gi+1)),load(get(args,gi+2)),ratio)))
+  process.exit(0)
+ }
  const bi=args.indexOf('--budgets')
  if(bi>=0){block=operatorBudgets(readFileSync(get(args,bi+1),'utf8'));args.splice(bi,2)}
  const t=args.indexOf('--table')

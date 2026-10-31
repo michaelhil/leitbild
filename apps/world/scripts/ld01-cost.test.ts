@@ -1,5 +1,5 @@
 import {expect,test} from 'bun:test'
-import {judge,kindOf,phaseOf} from './ld01-cost'
+import {gate,judge,kindOf,phaseOf} from './ld01-cost'
 
 const G=14.32e9
 /** 0.1 s frames from 0 to 20 s; 0.05 quiet, 2.0 over [5, 6) s; event at 5 s. */
@@ -39,4 +39,13 @@ test('paths map to kinds and phases',()=>{
  expect(kindOf('pieces>base: nuclear partials')).toBeNull()
  expect(phaseOf('apply>reinit')).toBe('event handling (incl. reinit, IC)')
  expect(phaseOf('step[6-20]>klu-solve')).toBe('steps [6-20] after segment start')
+})
+
+test('the gate takes medians and decides within 2 % only on 3 runs a side',()=>{
+ const one=receipt()
+ const g=gate([one],[one])
+ expect(g.worst_0_5_s.verdict).toBe('undecided: 3 runs each needed within 2 %')
+ const g3=gate([one,one,one],[one,one,one])
+ expect(g3.worst_0_5_s.verdict).toBe('keeps')
+ expect(g3.resolution).toBe(0.01)
 })
