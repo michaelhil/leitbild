@@ -54,7 +54,7 @@ import { createWSManager } from './api/ws-handler.ts'
 // Deployment-scoped tools register into deployment.sharedToolRegistry once at boot, not per
 // Workspace — see registerSharedTools below.
 import {
-  createPassTool, createGetTimeTool, createTestToolTool, createListSkillsTool,
+  createPassTool, createGetTimeTool, createSampleChangesTool, createTestToolTool, createListSkillsTool,
   createWebTools, createWriteSkillTool, createWriteToolTool, createPackTools,
   createPlaceResolveTool, createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
   createProductKnowledgeTools,
@@ -194,6 +194,7 @@ export const bootstrap = async (): Promise<void> => {
 
   deployment.sharedToolRegistry.register(createPassTool())
   deployment.sharedToolRegistry.register(createGetTimeTool())
+  deployment.sharedToolRegistry.register(createSampleChangesTool())
   deployment.sharedToolRegistry.registerAll(createProductKnowledgeTools())
   deployment.sharedToolRegistry.register(createTestToolTool(deployment.sharedToolRegistry))
   deployment.sharedToolRegistry.register(createListSkillsTool(deployment.sharedSkillStore))

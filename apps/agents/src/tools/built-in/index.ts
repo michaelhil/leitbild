@@ -3,7 +3,7 @@ export { createConversationReadTool } from './conversation-read.ts'
 
 export { createListRoomsTool, createCreateRoomTool, createDeleteRoomTool, createSetRoomPromptTool, createPauseRoomTool, createSetDeliveryModeTool, createAddToRoomTool, createRemoveFromRoomTool } from './room-tools.ts'
 export { createPassTool, createListAgentsTool, createMuteAgentTool, createGetMyContextTool } from './agent-tools.ts'
-export { createGetTimeTool, createPostToRoomTool, createGetRoomHistoryTool } from './utility-tools.ts'
+export { createGetTimeTool, createPostToRoomTool, createGetRoomHistoryTool, createSampleChangesTool } from './utility-tools.ts'
 export { createWebTools } from './web-tools.ts'
 export { createWriteSkillTool, createWriteToolTool, createTestToolTool, createListSkillsTool } from './codegen-tools.ts'
 export { createPackTools } from './pack-tools.ts'

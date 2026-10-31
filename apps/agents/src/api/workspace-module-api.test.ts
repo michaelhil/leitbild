@@ -23,6 +23,7 @@ import { agentsModuleManifest, handleAgentsModuleApi } from './workspace-module-
 import { messageFocus } from '../core/message-focus.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import { DEFAULT_MODEL_ID, DEFAULT_REASONING_EFFORT } from '../llm/models/catalog.ts'
+import { createSampleChangesTool } from '../tools/built-in/utility-tools.ts'
 
 let home = ''
 let originalHome: string | undefined
@@ -45,6 +46,7 @@ beforeEach(async () => {
 
 // The Leitbild Assistant definition selects these Skills and tools.
 const withAssistantCatalog = (deployment: DeploymentRuntime): DeploymentRuntime => {
+  deployment.sharedToolRegistry.register(createSampleChangesTool())
   deployment.sharedSkillStore.register({
     name: 'leitbild-assistance', description: 'Test assistance Skill', body: 'Use Workspace evidence.',
     tools: [], allowedToolNames: ['workspace_explore', 'workspace_call'], dirPath: home,
