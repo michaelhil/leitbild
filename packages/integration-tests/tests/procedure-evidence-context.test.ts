@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,7 +15,7 @@ import { handleWorldModuleApi } from '../../../apps/world/src/core/api/workspace
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
 import { createProcedureSourceService } from '../../../apps/world/src/features/procedures/source.ts'
-import { projectProcedureStepGuidance, type ProcedureStepView } from '../../../apps/world/src/features/procedures/step-view.ts'
+import { procedureRunReadViewSchema, projectProcedureStepGuidance, type ProcedureStepView } from '../../../apps/world/src/features/procedures/step-view.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../../../apps/world/src/packs/process-plant/index.ts'
 import { decodeProcessPlantSampleTimeRuns, expandProcessPlantProcedureEvidence, readProcessPlantProcedureEvidence,
   type ProcessPlantProcedureEvidenceFrame, type ProcessPlantSampleTimeRun } from '../../../apps/world/src/packs/process-plant/procedure-evidence-facts.ts'
@@ -532,5 +532,27 @@ describe('procedure evidence across World and the Agent protected turn', () => {
     expect(badWait.error.code).toBe('invalid_request')
     const delivered = JSON.parse(f.transcript.findLast(message => message.role === 'tool' && message.content.includes('"guidanceIncluded":false'))!.content)
     expect(delivered.results[0].data.guidanceIncluded ?? delivered.results[0].data.next.guidanceIncluded).toBe(false)
+    const observations = spyOn(f.run, 'procedureObservations')
+    try {
+      const before = structuredClone(f.run.snapshot())
+      const control = await f.invoke('world.procedure.run.read', { runId })
+      expect(control).toEqual(procedureRunReadViewSchema.parse(control))
+      expect(control).toMatchObject({ observationsAcquired: false, sequence: before.seq, simulationTime: before.clock!.currentTime, paused: true })
+      expect(control.run).toEqual(full.run)
+      const canonical = before.procedures!.runs.find(run => run.runId === runId)!.stepStates.find(step => step.stepId === 'acquire')!
+      expect(control.step.state).toEqual(canonical)
+      expect(control.step.definition).toEqual(full.step.definition)
+      expect(control).not.toHaveProperty('tags')
+      expect(control).not.toHaveProperty('csfs')
+      expect(control.step).not.toHaveProperty('branchAssessments')
+      expect(control.step).not.toHaveProperty('blocks')
+      expect(observations).not.toHaveBeenCalled()
+      expect(f.run.snapshot().procedures).toEqual(before.procedures)
+      expect(f.run.snapshot().objects).toEqual(before.objects)
+      expect(f.run.snapshot().seq).toBe(before.seq)
+      const modelRead = JSON.parse(f.transcript.at(-1)!.content)
+      expect(modelRead.results[0].data).toEqual(control)
+      expect(modelRead.results[0].data.step.state.comment).toBe(canonical.comment)
+    } finally { observations.mockRestore() }
   }, 30_000)
 })
