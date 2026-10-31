@@ -162,7 +162,11 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
    return {id: l.id, verdict: a?.pass && hold != null && Math.abs(hold - Math.min(...(a.accepted as number[]))) < 1e-6 ? 'pass' : 'fail', evidence: {request_s: t ?? null, ...a, holding_lost_s: hold}} },
   'X5.S4': l => { const o2 = (receipt.lines ?? []).find((x: J) => x.id === 'C5.O2'); const r = o2?.evidence?.routing_record_s as [string, number][] | undefined
    return {id: l.id, verdict: r ? (r.length === 6 && r.every(x => within(x[1], l.window_s)) ? 'pass' : 'fail') : 'not evaluable', evidence: r ?? null} },
-  'X5.N2': l => { const n2 = (receipt.lines ?? []).find((x: J) => x.id === 'C5.N2'); return {id: l.id, verdict: n2 ? (n2.verdict === 'pass' ? 'pass' : 'fail') : 'not evaluable', evidence: n2?.evidence ?? null} },
+  'X5.N2': l => { const n2 = (receipt.lines ?? []).find((x: J) => x.id === 'C5.N2'), q = keys('PzrLevel')[0]
+   // S3's C5.N2 covers its declared part only; the whole span from the operator frames (the LT quantity at each frame).
+   const after = q ? (op.frames as J[]).filter(r => r.t_s >= zero).map(r => [r.t_s - zero, r.values[q]] as [number, number]) : []
+   const low = after.length ? after.reduce((a, b) => b[1] < a[1] ? b : a) : null
+   return {id: l.id, verdict: n2 && low ? (n2.verdict === 'pass' && low[1] > 3.0 ? 'pass' : 'fail') : 'not evaluable', evidence: {s3_line: n2?.evidence ?? null, lowest_over_span: low, setpoint_m: 3.0}} },
   'X5.N3': l => { const s = (tl.sg_relief as J[]).filter(r => /RELIEF\.2$/.test(r[0]) && r[1] === 'Crack' && r[2] === 1); return {id: l.id, verdict: s.length ? 'fail' : 'pass', evidence: s} },
  }
  const same: Record<string, string> = {'X3.S2': 'seat', 'X2.S4': 'seat', 'X5.S5': 'seat', 'X3.N3': 'X2.N3', 'X3.N4': 'X2.N2', 'X3.N5': 'pzrRelief', 'X3.N6': 'X2.N1', 'X5.N1': 'X2.N3',
