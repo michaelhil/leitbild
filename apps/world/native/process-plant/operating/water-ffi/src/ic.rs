@@ -80,6 +80,16 @@ enum Observation {
         regions: Vec<ProxyRegion>,
         factor: f64,
     },
+    /// Plan r4 X4.2: a CVCS branch's delivered flow at its stem and COLD.A's
+    /// pressure (coordinate, scale each), by the owner's own law in the
+    /// owner's modes of the composition (a located stop after it is not
+    /// seen here: PHYS's decision, see the diff's note).
+    CvcsFlow {
+        cvcs: Box<leitbild_operating_plant::joined::cvcs::Cvcs>,
+        branch: leitbild_operating_plant::joined::cvcs::Branch,
+        stem: (usize, f64),
+        pressure: (usize, f64),
+    },
 }
 impl Observation {
     fn value(&self, y: &[f64]) -> Result<f64, String> {
@@ -93,6 +103,14 @@ impl Observation {
                 nominal,
             } => Ok(mass_flow(y, *impulse, *from, *to, supports)? / nominal),
             Observation::Proxy { regions, factor } => Ok(factor * events(y, regions)),
+            Observation::CvcsFlow {
+                cvcs,
+                branch,
+                stem,
+                pressure,
+            } => cvcs
+                .delivered_flow(*branch, y[stem.0] * stem.1, y[pressure.0] * pressure.1)
+                .map_err(|f| format!("{f:?}")),
             Observation::PzrLevel { a, b, span, .. } => {
                 let (low, high) = self.tap_pressures(y)?;
                 // Each interface reads at most its span limit (status below).
@@ -158,6 +176,9 @@ impl Observation {
                 })
                 .collect(),
             Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
+            Observation::CvcsFlow {
+                stem, pressure, ..
+            } => vec![stem.0, pressure.0],
         }
     }
 }
@@ -480,6 +501,31 @@ impl ProtectionClient {
                         "basis": "the RCP drive's reference speed (R12-D2)"}),
                     );
                     Observation::Linear(vec![(i, scales[i] / reference)])
+                }
+                Quantity::CvcsFlow { branch } => {
+                    let cvcs = joined
+                        .cvcs()
+                        .ok_or("a CVCS flow channel needs the packet's CVCS")?;
+                    let cell = cvcs.port_cell();
+                    // The branches meet COLD.A at its own reference elevation,
+                    // where the port pressure is the cell's pressure.
+                    if net.elevations()[cell] != cvcs.section().port.elevation_m {
+                        return Err(format!(
+                            "{}: the CVCS port lies off the cell's reference elevation",
+                            f.id
+                        ));
+                    }
+                    let p = net.cell_layout[cell].base;
+                    let x = joined.offsets().cvcs
+                        + leitbild_operating_plant::joined::cvcs::Cvcs::stem_coordinate(*branch);
+                    references.insert(f.id.clone(), json!({"branch": branch, "port": cvcs.section().port.id,
+                        "basis": "the CVCS owner's delivered flow at the stem and COLD.A's pressure (plan r4 X4.2)"}));
+                    Observation::CvcsFlow {
+                        cvcs: Box::new(cvcs.clone()),
+                        branch: *branch,
+                        stem: (x, scales[x]),
+                        pressure: (p, scales[p]),
+                    }
                 }
             };
             if !observed.iter().any(|(q, _)| *q == f.quantity) {
