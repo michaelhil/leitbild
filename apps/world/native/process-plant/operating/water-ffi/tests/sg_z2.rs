@@ -156,6 +156,25 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
             "emergentAtDemand":{"bisections":it1,"state":sweep.at(&port, emergent, g.steam_demand_kg_s)},
             "atStationDuty":{"stationDuty_W":station[k],"bisections":it2,"state":sweep.at(&port, station_root, g.steam_demand_kg_s)}}));
     }
+    // X4.5 (lead ruling d): the single-pass law at the low-flow end, SG.A at
+    // its emergent pressure, the primary flow scaled down to zero: duty,
+    // stationary wall and effectiveness Q / (C (T_in - T_wall)).
+    let emergent_a = cases[0]["emergentAtDemand"]["state"]["secondaryPressure_Pa"]
+        .as_f64()
+        .unwrap();
+    let low_flow: Vec<Value> = [1., 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 1e-4, 0.]
+        .iter()
+        .map(|f| {
+            let port = port_at(q.temperature_k, f * q.mass_flow_kg_s[0]);
+            let state = sweep.at(&port, emergent_a, 0.);
+            let duty = state["dutyPerSG_W"].as_f64().unwrap();
+            let wall = state["wall_K"].as_f64().unwrap();
+            let c = port.inflow_capacity_w_k.value;
+            let drive = c * (port.inflow_temperature.value - wall);
+            json!({"flowFraction":f,"capacity_W_K":c,"dutyPerSG_W":duty,"wall_K":wall,
+                "effectiveness":if drive > 0. { Value::from(duty / drive) } else { Value::Null }})
+        })
+        .collect();
     // Sensitivity: the primary at the cycle-sizing outlet (thermodynamics.md,
     // distributed primary heat-transfer sizing), SG.A flow and demand.
     let sizing_outlet = 289.764953 + 273.15;
@@ -200,6 +219,7 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
         "probe":"Z2 SG duty versus secondary pressure at 100% power on the native laws (zero time, stationary local wall balance per segment)",
         "laws":"sg::tube::Tube::segment_heat (X4.5 ruling d: thermal::tube_series_conductance and thermal::single_pass_heat from the inflow, Film::Tube; thermal::secondary_wall) with maintained IF97 (water-ffi If97); demand duty with the block's IF97 feed enthalpy",
         "derived":derived,"heldInventory_kg":sweep.mass_kg,"cases":cases,
+        "lowFlow":{"sg":"A","secondaryPressure_Pa":emergent_a,"rows":low_flow},
         "temperatureSensitivity":{"primaryTemperature_K":sizing_outlet,"sg":"A",
             "emergentAtDemand":sweep.at(&port, sens, g.steam_demand_kg_s)},
         "formulation":{"if97Saturation6MPa_C":sat6.temperature.value - 273.15,"wikiHeosSaturation6MPa_C":275.584989992,

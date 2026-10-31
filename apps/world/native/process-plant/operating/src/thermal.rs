@@ -2069,6 +2069,40 @@ pub fn secondary_wall<P: WaterProperties>(
 }
 
 #[cfg(test)]
+mod single_pass {
+    use super::*;
+
+    /// X4.5 (lead ruling d): the single-pass law is finite in value and
+    /// direction from full flow to no flow, with effectiveness rising to 1.
+    #[test]
+    fn single_pass_heat_is_finite_down_to_no_inflow() {
+        let (ua, tin, tw) = (2.6e8, 593.15, 557.5);
+        let mut last = 0.;
+        for c in [5.0e7, 5.0e6, 5.0e5, 5.0e4, 1.0e3, 1.0, 1e-200, 0.] {
+            let q = single_pass_heat(s(ua), Scalar::new(c, 1.), s(tin), s(tw)).unwrap();
+            assert!(q.value.is_finite() && q.direction.is_finite(), "C = {c}");
+            let eps = if c > 0. {
+                q.value / (c * (tin - tw))
+            } else {
+                1.
+            };
+            assert!(eps >= last - 1e-15 && eps <= 1. + 1e-15, "C = {c}: {eps}");
+            last = eps;
+            // dQ/dC tends to the inlet drive as C falls (effectiveness 1).
+            if c <= 1e3 {
+                assert!(
+                    (q.direction - (tin - tw)).abs() <= 1e-9 * (tin - tw),
+                    "C = {c}"
+                );
+            }
+        }
+        let wall =
+            single_pass_heat(Scalar::new(ua, 0.), s(5e7), s(tin), Scalar::new(tw, 1.)).unwrap();
+        assert!(wall.direction < 0. && wall.direction.is_finite());
+    }
+}
+
+#[cfg(test)]
 mod zero_direction_power {
     use super::*;
 
