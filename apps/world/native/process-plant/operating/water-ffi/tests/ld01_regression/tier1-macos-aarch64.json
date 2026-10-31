@@ -1,9 +1,9 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "X4.1 feed and SG level join (FEED 964ee3683 on the unit library, r4c tuple: packet 11c9a7e5, IC bb53a9db, FEED's carried state, wiki d8dd616); with PERF R4-GUIDE-BASIS and EVT's no-op rule",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-61c8520ed-20261031T211023Z",
- "app": "61c8520ed",
+ "reason": "R4-WATER-PARTIALS (PERF perf-c a4c801755, gated on r4c): the block Jacobian's directional water points from per-state basis partials; trajectory rounding moves, C2@2.5 instructions -8.4 %",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-8dbb758e6-20261031T223624Z",
+ "app": "8dbb758e6",
  "environment": {
   "packet_sha256": "11c9a7e532bdd9a89f69f250081befa0e83202cfc5a06d47da5f669c683e57fd",
   "state_sha256": "1f1773309b5fd6037c1b52bfabdedb8e848e70c12ef8c5ea006a8faef4ffd0c2",
@@ -15,12 +15,12 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 7317462708,
+   "instructions": 7195007751,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 20959119485,
-   "digest": "fd9a93acc26b7cc32f19da0fd2d061f9cdaaa56a70fa6d5c82ed71c4369648b0"
+   "instructions": 19212233330,
+   "digest": "d0ec396b4d17c0158ae3eefb1e11e411a7342663ac55697c8ef162a001857225"
   }
  }
 }
