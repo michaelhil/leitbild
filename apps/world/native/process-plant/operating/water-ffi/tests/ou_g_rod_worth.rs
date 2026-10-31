@@ -222,9 +222,9 @@ fn rod_position_and_shutdown_margins() {
 /// o_ref,i(x1))` per region, carried here through each region's boron (the
 /// boron term `aB (C d - B_ref)` is linear in `C`): `C_i = B + R (o_ref,i(x) -
 /// o_ref,i(x1)) / (aB d_i)`. Reports the emulation's check against the
-/// packet's own `reference_rod_overlap`, `held(x)` at listed poses, and the
-/// bisection root of `held(x) = 2.00 %` between the packet's pose and full
-/// out. Zero-time; a pose found here is confirmed by a recompile.
+/// packet's own `reference_rod_overlap` and `held(x)` at listed poses (no
+/// search: the pose holding 2.00 % is chosen outside the crate and confirmed
+/// by a recompile). Zero-time.
 #[cfg(target_os = "macos")]
 #[test]
 #[ignore = "diag: requires the joined packet, the wiki, IF97, IDA/KLU and Accelerate; writes LD01_OU_G_RECEIPT"]
@@ -356,19 +356,13 @@ fn held_worth_by_pose() {
             .collect();
         margin(&boron, x) - margin(&boron, full_out)
     };
-    let poses: Vec<Value> = [2.8, 3.2675, 3.4, 3.5, 3.6435, x1]
+    let poses: Vec<Value> = [2.8, 3.2675, 3.4, 3.483927, 3.4839, 3.5, 3.6435, x1]
         .iter()
         .map(|x| json!({"travel_m": x, "held_dk_k": held(*x)}))
         .collect();
-    let (mut lo, mut hi) = (2.8_f64, full_out - 1e-9);
-    for _ in 0..60 {
-        let mid = 0.5 * (lo + hi);
-        if held(mid) > 0.02 { lo = mid } else { hi = mid }
-    }
-    let root = 0.5 * (lo + hi);
     let receipt = json!({"kind": "DIAG OU-G held worth by pose on this calibration (R14-A1-C; zero-time, NOT a trajectory)",
         "driver": "water-ffi/tests/ou_g_rod_worth.rs::held_worth_by_pose", "packet": packet_path,
         "packet_reference_travel_m": x1, "emulated_reference_overlap_check": check,
-        "poses": poses, "root_for_2pct_m": root, "held_at_root": held(root)});
+        "poses": poses});
     std::fs::write(&path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
 }
