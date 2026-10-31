@@ -155,6 +155,7 @@ describe('the AI procedure runner through the World Module API', () => {
       const descriptor = listed.capabilities.find(row => row.id === 'world.procedure.run.transition')!
       expect(descriptor.inputSchema).toHaveProperty('properties.nextDetail')
       expect(JSON.stringify(descriptor.outputSchema)).toContain('observationsAcquired')
+      expect(descriptor.description).toContain('exact pinned declared query')
     } finally { commit.mockRestore(); observations.mockRestore() }
     const full = (await invoke('world.procedure.run.transition', { runId, stepId: 'verify-turbine-trip', branchIndex: 0, basis: 'Default next remains full.' }, ai)).body.result
     expect(full.next.step.blocks.length).toBeGreaterThan(0)
