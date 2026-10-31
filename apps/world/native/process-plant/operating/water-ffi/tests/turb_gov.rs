@@ -165,7 +165,8 @@ fn turb_gov_run() {
             turbine.main_steam_loss_pa,
         ],
         setpoint_w: request0,
-        mode: String::new(),
+        // The start frame precedes any sample: the composed mode.
+        mode: plant.ida.system().governor.as_ref().unwrap().held.mode.to_string(),
         scratch: vec![0.; y.len()],
         cost: Vec::new(),
         series: Vec::new(),
