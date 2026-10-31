@@ -7,7 +7,7 @@ import type { ContextCheckpointManifest } from '../apps/agents/src/core/working-
 const expectedModel = 'deepseek/deepseek-v4.1-flash-1017'
 const model = (overrides: Partial<ExecutionModelCallSummary> = {}): ExecutionModelCallSummary => ({
   id: 'model_1', ordinal: 1, phase: 'initial', startedAt: 1, completedAt: 2, status: 'completed', requestedModel: expectedModel,
-  model: expectedModel, requestBytes: 100, messageCount: 2, toolCount: 1, metrics: { costUsd: 0.0005, upstreamProvider: 'DeepSeek' }, ...overrides,
+  model: expectedModel, provider: 'openrouter', requestBytes: 100, messageCount: 2, toolCount: 1, metrics: { costUsd: 0.0005, upstreamProvider: 'DeepSeek' }, ...overrides,
 })
 const call = (overrides: Partial<ExecutionCall> = {}): ExecutionCall => ({
   id: 'call_0_0', tool: 'workspace_call', startedAt: 2, completedAt: 3, argumentBytes: 2, arguments: {},
@@ -51,13 +51,26 @@ test('empty, interrupted and duplicate capture identities never establish comple
   expect(duplicate.billing.costUsd).toBeNull()
 })
 
-test('another requested model is rejected; upstream names are reported without invented alias equivalence', () => {
+test('requested transport prefix is consumed but effective model aliases never qualify', () => {
   const wrong = review(turn({ models: [model({ requestedModel: 'openai/gpt-6-sol' })] }))
   expect(wrong.structurallyComplete).toBe(false)
   expect(wrong.errors[0]).toContain('Unexpected requested model')
-  const routed = review(turn({ models: [model({ requestedModel: `openrouter:${expectedModel}`, model: 'provider-reported-exact-name' })] }))
+  const routed = review(turn({ models: [model({ requestedModel: `openrouter:${expectedModel}` })] }))
   expect(routed.structurallyComplete).toBe(true)
-  expect(routed.reportedModels).toEqual(['provider-reported-exact-name'])
+  expect(routed.reportedModels).toEqual([expectedModel])
+  expect(review(turn({ models: [model({ model: 'provider-reported-alias' })] })).structurallyComplete).toBe(false)
+})
+
+test('actual model and OpenRouter route must be established without fallback', () => {
+  for (const candidate of [model({ model: undefined }), model({ provider: undefined }), model({ provider: 'openai' }),
+    model({ metrics: { model: 'other/model' } }), model({ metrics: { provider: 'other-adapter' } })]) {
+    expect(review(turn({ models: [candidate] })).structurallyComplete).toBe(false)
+  }
+  const metricsOnly = model({ model: undefined, provider: undefined, metrics: { model: expectedModel, provider: 'openrouter', costUsd: 0 } })
+  expect(review(turn({ models: [metricsOnly] })).structurallyComplete).toBe(true)
+  const fallback = review(turn({ stages: [{ at: 1, event: { kind: 'model_fallback', preferred: 'old', effective: expectedModel, reason: 'test' } }] }))
+  expect(fallback.structurallyComplete).toBe(false)
+  expect(fallback.errors).toContain('Model fallback occurred in turn')
 })
 
 test('read-only proof rejects uncertain dispatch/effects and even a refused write attempt', () => {
@@ -71,6 +84,24 @@ test('read-only proof rejects uncertain dispatch/effects and even a refused writ
   expect(missing.incompleteCalls).toEqual([{ turnId: 'turn', toolCallId: 'call_0_0' }])
   const returnedWrite = review(turn({ calls: [call({ result: { success: false, effects: [{ kind: 'change', outcome: 'returned', operationId: 'world.plant.write' }] } })] }))
   expect(returnedWrite.changes).toHaveLength(1) // A refused receipt is not proof of no effect.
+})
+
+test('successful workspace batches still report nested failures and missing or duplicate keyed outcomes', () => {
+  const batch = call({ arguments: { calls: [
+    { key: 'good', operationId: 'read.good' }, { key: 'bad', operationId: 'read.bad' },
+    { key: 'missing', operationId: 'read.missing' }, { key: 'duplicate', operationId: 'read.duplicate' },
+  ] }, result: { success: true, effects: [{ kind: 'read', outcome: 'returned' }], data: { results: [
+    { key: 'good', success: true }, { key: 'bad', success: false, error: 'Unknown tag' },
+    { key: 'duplicate', success: true }, { key: 'duplicate', success: false },
+  ] } } })
+  const result = review(turn({ calls: [batch] }))
+  expect(result.failures).toHaveLength(0)
+  expect(result.operationFailures).toEqual([{ turnId: 'turn', toolCallId: 'call_0_0', key: 'bad', operationId: 'read.bad', status: 'failed', error: 'Unknown tag' }])
+  expect(result.unknownOperationOutcomes.map(outcome => [outcome.key, outcome.reason])).toEqual([
+    ['missing', 'No exact operation outcome captured'], ['duplicate', 'Ambiguous duplicate operation results'],
+  ])
+  const noOuterOutcome = review(turn({ calls: [{ ...batch, result: undefined }] }))
+  expect(noOuterOutcome.unknownOperationOutcomes).toHaveLength(4)
 })
 
 const checkpoint = (): ContextCheckpointManifest => ({

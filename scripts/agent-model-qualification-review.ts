@@ -47,10 +47,14 @@ export const reviewQualificationExecution = (input: {
     if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0) { knownCostUsd += cost; knownCalls++ }
     else if (cost !== undefined) warnings.push(`Invalid reported cost ${turn.id}/${model.id}`)
     // openrouter: is a routing prefix consumed before wire dispatch, not a
-    // model alias. Report upstream names separately; do not guess equivalence.
+    // model alias. Require the exact wire model and serving adapter as well.
     const requested = model.requestedModel.replace(/^openrouter:/, '')
     const expected = input.expectedModel.replace(/^openrouter:/, '')
     if (requested !== expected) errors.push(`Unexpected requested model ${turn.id}/${model.id}: ${model.requestedModel}`)
+    const effectiveModels = [model.model, model.metrics?.model].filter((value): value is string => value !== undefined)
+    if (!effectiveModels.length || effectiveModels.some(value => value !== expected)) errors.push(`Effective model not established as ${expected}: ${turn.id}/${model.id}`)
+    const providers = [model.provider, model.metrics?.provider].filter((value): value is string => value !== undefined)
+    if (!providers.length || providers.some(value => value !== 'openrouter')) errors.push(`OpenRouter serving adapter not established: ${turn.id}/${model.id}`)
   }
   const incompleteCalls = calls.filter(({ call }) => call.completedAt === undefined || call.result === undefined)
   const uncertainEffects = calls.filter(({ call }) => !call.result?.effects?.length
@@ -61,8 +65,27 @@ export const reviewQualificationExecution = (input: {
     effect.kind === 'change' ? [{ turnId: turn.id, toolCallId: call.id, ...effect }] : []))
   const failures = calls.filter(({ call }) => call.result?.success === false)
     .map(({ turn, call }) => ({ turnId: turn.id, toolCallId: call.id, tool: call.tool, error: call.result!.error }))
+  // workspace_call can return a successful outer tool receipt containing failed
+  // or missing per-operation outcomes. Never label that a first-pass success.
+  const operations = calls.flatMap(({ turn, call }) => {
+    if (call.tool !== 'workspace_call') return []
+    const args = record(call.arguments), data = record(call.result?.data)
+    if (!Array.isArray(args?.calls)) return []
+    const results = Array.isArray(data?.results) ? data.results : []
+    return args.calls.map((input: unknown) => {
+      const operation = record(input)
+      const matches = typeof operation?.key === 'string' && operation.key.length > 0
+        ? results.map(record).filter(row => row !== undefined && row.key === operation.key) : []
+      const result = matches.length === 1 ? matches[0] : undefined
+      const status = result?.success === true ? 'succeeded' : result?.success === false ? 'failed' : 'unknown'
+      return { turnId: turn.id, toolCallId: call.id, key: operation?.key, operationId: operation?.operationId, status,
+        ...(status === 'failed' ? { error: result?.error } : {}),
+        ...(status === 'unknown' ? { reason: matches.length > 1 ? 'Ambiguous duplicate operation results' : 'No exact operation outcome captured' } : {}) }
+    })
+  })
   const checkpoints = input.turns.flatMap(turn => turn.stages.flatMap(stage => {
     const event = record(stage.event)
+    if (event?.kind === 'model_fallback') errors.push(`Model fallback occurred in ${turn.id}`)
     if (event?.kind !== 'context_checkpoint') return []
     const parsed = contextCheckpointManifestSchema.safeParse(event.manifest)
     if (!parsed.success) { errors.push(`Malformed checkpoint in ${turn.id}`); return [] }
@@ -101,6 +124,8 @@ export const reviewQualificationExecution = (input: {
       costUsd: models.length > 0 && unknownCalls === 0 && uniqueModelEvidence ? knownCostUsd : null },
     readOnlyEstablished: calls.length > 0 && incompleteCalls.length === 0 && uncertainEffects.length === 0 && attemptedChanges.length === 0,
     changes, attemptedChanges, failures,
+    operationFailures: operations.filter(operation => operation.status === 'failed'),
+    unknownOperationOutcomes: operations.filter(operation => operation.status === 'unknown'),
     incompleteCalls: incompleteCalls.map(({ turn, call }) => ({ turnId: turn.id, toolCallId: call.id })),
     uncertainEffects: uncertainEffects.map(({ turn, call }) => ({ turnId: turn.id, toolCallId: call.id })),
     checkpoints: checkpoints.map(checkpoint => ({ turnId: checkpoint.turnId, checkpointId: checkpoint.manifest.checkpointId,
