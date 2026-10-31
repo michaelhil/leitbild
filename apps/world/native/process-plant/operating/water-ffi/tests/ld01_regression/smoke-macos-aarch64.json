@@ -2,20 +2,20 @@
   "counts": {
     "census": {
       "composed": [
-        17251,
+        3635,
         1194,
-        18445
+        4829
       ],
-      "histories": 9650,
+      "histories": 450,
       "with_pending": [
-        17335,
+        3719,
         1362,
-        18697
+        5081
       ]
     },
     "composition": {
       "algebraic": 1366,
-      "dimension": 18708,
+      "dimension": 5092,
       "owner_transactions": 1,
       "s1_settling": {
         "convergence_failures": 4,
@@ -29,7 +29,7 @@
       "surface_sets": 386
     },
     "oracle": {
-      "columns": 198,
+      "columns": 199,
       "outside_pattern": 0,
       "within_1e-9": true
     },
@@ -48,18 +48,18 @@
     },
     "settle": {
       "convergence_failures": 9,
-      "error_failures": 62,
+      "error_failures": 58,
       "failure": null,
-      "jacobians": 317,
+      "jacobians": 321,
       "last_order": 2,
-      "linear_setups": 317,
-      "nonlinear_iterations": 2866,
+      "linear_setups": 321,
+      "nonlinear_iterations": 2850,
       "reached": true,
-      "residuals": 2867,
+      "residuals": 2851,
       "root_restarts": 1,
-      "steps": 2333,
-      "system_jacobians": 317,
-      "system_residuals": 5635
+      "steps": 2307,
+      "system_jacobians": 321,
+      "system_residuals": 5599
     },
     "z1": {
       "constraint_rate_within_bound": true,
