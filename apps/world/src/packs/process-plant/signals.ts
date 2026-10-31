@@ -26,7 +26,7 @@ export const processPlantSignalReferenceSchema = z.object({
       message: 'process signal reference must define exactly one of path or tagId',
     })
   }
-})
+}).meta({ oneOf: [{ required: ['path'] }, { required: ['tagId'] }] })
 export type ProcessPlantSignalReference = z.infer<typeof processPlantSignalReferenceSchema>
 
 export const resolveProcessPlantSignalBinding = (

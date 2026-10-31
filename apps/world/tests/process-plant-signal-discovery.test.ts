@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import Ajv2020 from 'ajv/dist/2020.js'
 import { answerProcessPlantQuery, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, createProcessPlantRampRunner } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance } from '../src/packs/process-plant/runtime-instance.ts'
 import { processPlantCapabilities } from '../src/packs/process-plant/capabilities.ts'
@@ -64,4 +65,35 @@ test('discovered signal reference contracts explain exclusive Plant-local identi
       expect(capability.input.safeParse({ plantId: 'plant:one', signals: [signal] }).success).toBe(false)
     }
   }
+})
+
+
+test('advertised signal-reference XOR matches Zod through extension and every shared capability use', () => {
+  const ajv = new Ajv2020({ allErrors: true })
+  for (const id of ['world.process-plant.signals.read', 'world.process-plant.signals.resolve']) {
+    const capability = processPlantCapabilities.find(entry => entry.id === id)!
+    const schema = capabilityJsonSchema(capability.input)
+    const validate = ajv.compile(schema)
+    const item = (schema.properties as { signals: { items: { oneOf?: unknown; properties: Record<string, unknown> } } }).signals.items
+    expect(item.oneOf).toEqual([{ required: ['path'] }, { required: ['tagId'] }])
+    expect(item.properties.path).toHaveProperty('description')
+    expect(item.properties.tagId).toHaveProperty('description')
+    const examples = [
+      [{ tagId: 'GEN-MW' }, true], [{ path: 'turbine.electricMw' }, true], [{ tagId: 'TAG.WITH.DOTS' }, true],
+      [{}, false], [{ path: 'turbine.electricMw', tagId: 'GEN-MW' }, false],
+      [{ path: 'plant:one#turbine.electricMw' }, false], [{ tagId: 'plant:one#turbine.electricMw' }, false],
+      [{ path: null }, false], [{ tagId: 7 }, false], [{ tagId: 'GEN-MW', unexpected: true }, false],
+      [{ path: 'turbine.electricMw', requestedUnit: 'MW' }, id.endsWith('.read')],
+    ] as const
+    for (const [signal, accepted] of examples) {
+      const input = { plantId: 'plant:one', signals: [signal] }
+      expect(capability.input.safeParse(input).success).toBe(accepted)
+      expect(validate(input)).toBe(accepted)
+    }
+  }
+  // These capabilities reuse the base object directly; read above uses its
+  // safeExtend requestedUnit form. None may lose the shared standard rule.
+  const refs = processPlantCapabilities.filter(capability => ['world.process-plant.conditions.evaluate', 'world.process-plant.controls.list', 'world.process-plant.response.evaluate'].includes(capability.id))
+  expect(refs).toHaveLength(3)
+  for (const capability of refs) expect(JSON.stringify(capabilityJsonSchema(capability.input))).toContain('"oneOf":[{"required":["path"]},{"required":["tagId"]}]')
 })
