@@ -165,7 +165,12 @@ describe('Leitbild Assistant skills', () => {
     expect(assistance).toContain('When the source separates checkpoints from sampled reviews')
     expect(assistance).toContain('exact current condition/basis via the published current-check query')
     expect(assistance).toContain('request missing current function/controller facts')
-    expect(assistance).toContain('Before each checkpoint update obtain fresh driver/source/step and complete prior note from canonical `next` or `world.procedure.run.read`')
+    expect(assistance).toContain('Before each record update obtain fresh driver/source/step and complete prior note from canonical `next` or `world.procedure.run.read`')
+    // Actual initial-settling evidence existed only in raw tool history in the
+    // failed provider rehearsal. Future source-required records need an explicit
+    // transferable home, without adding a plant criterion or a note language.
+    expect(assistance).toContain('Write source-required acquisition/checkpoint records to durable `world.procedure.step.update` comments')
+    expect(assistance).toContain('raw tool history alone is not that record')
     expect(assistance).toContain('cached notes/plain receipts do not suffice')
     expect(assistance).toContain('Source controls current frame counts/older history refs')
     expect(assistance).toContain('Share identical Plant/model/episode/duty/column headers across full-precision rows')
