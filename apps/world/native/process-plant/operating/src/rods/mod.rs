@@ -1056,6 +1056,15 @@ impl RodBlock {
         CLUSTER_COORDINATES * self.clusters.len() + GROUP_COORDINATES * groups
     }
     pub fn reduce_packet_state(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+        self.reduce_packet(full, true)
+    }
+    /// [`Self::reduce_packet_state`] for a saved state's rates `y'`: the
+    /// groups' water rates are merged (member-weighted) and their spread
+    /// recorded, never refused.
+    pub fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+        self.reduce_packet(full, false)
+    }
+    fn reduce_packet(&self, full: &[f64], state: bool) -> Result<(Vec<f64>, f64), String> {
         let n = self.clusters.len();
         let old = self.packet_groups();
         let expected = self.packet_coordinates();
@@ -1112,7 +1121,19 @@ impl RodBlock {
                 let at = |o: usize| full[water + GROUP_COORDINATES * o + k];
                 let v = at(groups[0].0);
                 for (o, _) in &groups {
-                    note(at(*o), v);
+                    // NUC review: a state's stocks (M, U, B) merge only
+                    // within round-off (64 eps relative); never averaged.
+                    let w = at(*o);
+                    if state
+                        && k != BORE_PRESSURE
+                        && (w - v).abs() > 64. * f64::EPSILON * v.abs().max(w.abs())
+                    {
+                        return Err(format!(
+                            "the bore groups of {}'s class differ beyond round-off at water coordinate {k}: {v} and {w}",
+                            self.clusters[grp.members[0]].id
+                        ));
+                    }
+                    note(w, v);
                 }
                 out.push(if k == BORE_PRESSURE {
                     v
@@ -1847,6 +1868,9 @@ impl<P: Properties> Rods<P> for RodBlock {
     }
     fn packet_coordinates(&self) -> usize {
         RodBlock::packet_coordinates(self)
+    }
+    fn reduce_packet_rates(&self, full: &[f64]) -> Result<(Vec<f64>, f64), String> {
+        RodBlock::reduce_packet_rates(self, full)
     }
     fn deposit_stores(&self) -> Vec<String> {
         (0..self.clusters.len()).map(|c| self.fitting(c)).collect()

@@ -8,6 +8,8 @@
 //     v2 (E-NUC phase B): with <members.json> (water-ffi nuc_t0_members), the member lists of every grouped
 //     coordinate, nuclear and solid, partition the baseline labels, and a nuclear list equals the packet's group.
 //  R2b (v2) every member's baseline rows equal its representative's, at both points, within the R2 bound.
+//  v6 (EVT-RODS-BANK): a reduced label the members file lists that is not a grouped label (a merged water region
+//     keeping its first group's label) maps to the listed baseline coordinates before v4's same-label rule.
 //  v3: when the reduced heat and fuel-temperature ports are the solids' half classes (fewer than the carriers),
 //     R3 and R5 compare each port with every member carrier (the members of its U_clad coordinate, in the
 //     baseline's carrier order); the totals compare as before. (v2's first phase-B run compared them index by
@@ -53,6 +55,13 @@ const grouped = /^(C|fissile|fertile|I-135|Xe-135|Pm-149|Sm-149|E|U_fuel|U_clad|
 const nuclearKinds = new Set(["C", "fissile", "fertile", "I-135", "Xe-135", "Pm-149", "Sm-149", "E"]);
 const listed: Record<string, string[]> | null = membersPath ? await Bun.file(membersPath).json() : null;
 rl.forEach((l, i) => {
+  // v6 (EVT-RODS-BANK): a merged region whose label the members file lists (the bank's bores' water, which keeps
+  // its first group's label) maps to the listed baseline coordinates, representative first, before v4's rule.
+  if (listed && listed[l] && !grouped.test(l)) {
+    for (const ml of listed[l]) { const j = bIndex.get(ml); if (j === undefined) failures.push(`R1 member ${ml}`); else if (redOf[j] >= 0) failures.push(`R1 member twice ${ml}`); else redOf[j] = i; }
+    repOf[i] = bIndex.get(listed[l][0])!;
+    return;
+  }
   // v4: a label the baseline also holds is the same coordinate (a block the baseline already grouped).
   const same = bIndex.get(l);
   if (same !== undefined) { repOf[i] = same; redOf[same] = i; return; }

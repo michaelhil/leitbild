@@ -79,7 +79,7 @@ fn convert_a_saved_state_to_the_replica_layout() {
         found[0]
     };
     let current_spread = std::cell::Cell::new(0f64);
-    let convert = |old: &[f64]| -> Vec<f64> {
+    let convert = |old: &[f64], rates: bool| -> Vec<f64> {
         let (fnuc, fsol, frod) = sizes(old.len());
         let mut y = old[..o.nuclear].to_vec();
         let mut at = o.nuclear;
@@ -108,9 +108,13 @@ fn convert_a_saved_state_to_the_replica_layout() {
         y.extend_from_slice(&old[at..at + (o.rods - o.secondary)]);
         at += o.rods - o.secondary;
         if frod {
-            let (r, spread) = rods
-                .reduce_packet_state(&old[at..at + full_rods])
-                .unwrap_or_else(|e| panic!("{e}"));
+            let slice = &old[at..at + full_rods];
+            let (r, spread) = if rates {
+                rods.reduce_packet_rates(slice)
+            } else {
+                rods.reduce_packet_state(slice)
+            }
+            .unwrap_or_else(|e| panic!("{e}"));
             current_spread.set(current_spread.get().max(spread));
             y.extend(r);
             at += full_rods;
@@ -122,8 +126,8 @@ fn convert_a_saved_state_to_the_replica_layout() {
         assert_eq!(y.len(), joined.dimension());
         y
     };
-    let y = convert(&from_bits(&state["y_bits"]));
-    let yp = convert(&from_bits(&state["yp_bits"]));
+    let y = convert(&from_bits(&state["y_bits"]), false);
+    let yp = convert(&from_bits(&state["yp_bits"]), true);
     state["y"] = json!(y);
     state["yp"] = json!(yp);
     state["y_bits"] = json!(bits(&y));

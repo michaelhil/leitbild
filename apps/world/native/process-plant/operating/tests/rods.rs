@@ -1469,6 +1469,13 @@ fn a_packet_layout_state_reduces_to_the_bank_exactly_or_is_refused() {
     let m: f64 = (0..8).map(|g| (1. + 1e-16 * g as f64) * members(g)).sum::<f64>() / N as f64;
     assert_eq!(y[CLUSTER_COORDINATES + BORE_MASS], m);
     assert_eq!(y[CLUSTER_COORDINATES + BORE_PRESSURE], 0.99);
+    // NUC review: groups whose stocks differ beyond round-off are refused in
+    // a state and merged in its rates.
+    let water = CLUSTER_COORDINATES * N;
+    let mut far = full.clone();
+    far[water + 4 * 3 + BORE_ENERGY] = 0.9 * (1. + 1e-12);
+    assert!(b.reduce_packet_state(&far).is_err());
+    assert!(b.reduce_packet_rates(&far).is_ok());
     // A member whose travel differs is not a replica: refused.
     full[CLUSTER_COORDINATES * 7 + TRAVEL] = 0.7000000000000001;
     assert!(b.reduce_packet_state(&full).is_err());
