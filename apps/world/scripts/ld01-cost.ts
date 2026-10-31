@@ -82,7 +82,9 @@ const iOf=(f:Frames,k:number)=>get(f,k)[1]
 /** The frame trace, event time, R instants and profile of a receipt. */
 export function traceOf(receipt:any){
  const run=receipt.run??receipt
- const frames:Frames|undefined=receipt.families?.G_cost?.ou_cost_drive_frames??run.ou_frame_instructions
+ const costDrive:Frames|undefined=receipt.families?.G_cost?.ou_cost_drive_frames
+ const frames:Frames|undefined=costDrive??run.ou_frame_instructions
+ const source=costDrive?'gated cost drive':'run drive'
  if(!frames||frames.length<2)throw new Error('the receipt has no frame instructions (LD01_OU_FRAME_COST=1)')
  const restarts:number[]=(run.instants??[]).filter((e:any)=>e.class==='R').map((e:any)=>e.t_s)
  const zero=receipt.timeline?.zero_s??run.timeline?.zero_s
@@ -92,7 +94,7 @@ export function traceOf(receipt:any){
  const profile:Profile|undefined=run.perf_profile??undefined
  // The profile is the run drive's: its totals are read on the run's frames.
  const runFrames:Frames|undefined=run.ou_frame_instructions??undefined
- return {frames,runFrames,event,restarts,lastSeat,profile,case:receipt.case??run.case??null}
+ return {frames,source,runFrames,event,restarts,lastSeat,profile,case:receipt.case??run.case??null}
 }
 
 function rates(frames:Frames,ratio:number){
@@ -243,7 +245,7 @@ export function gate(base:any[],change:any[],ratio=QUIET_RATIO){
 
 /** The judge's result for one receipt. */
 export function judge(receipt:any,ratio=QUIET_RATIO){
- const {frames,runFrames,event,restarts,lastSeat,profile,case:c}=traceOf(receipt)
+ const {frames,source,runFrames,event,restarts,lastSeat,profile,case:c}=traceOf(receipt)
  const r=rates(frames,ratio)
  const t0=tOf(frames,0),tEnd=tOf(frames,frames.length-1)
  const win=(n:number):Window=>{const [rate,k]=worst(frames,n,ratio);return {rate,from_after_event_s:tOf(frames,k)-event}}
@@ -258,6 +260,7 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
  let lag=0,peak=0,peakAt:number|null=null
  for(let k=1;k<frames.length;k++){lag=Math.max(0,lag+(get(r,k-1)-1)*(tOf(frames,k)-tOf(frames,k-1)));if(lag>peak){peak=lag;peakAt=tOf(frames,k)-event}}
  const out:any={case:c,quiet_ratio:ratio,event_s:event,span_after_event_s:tEnd-event,
+  drive:{frames:source,from_after_event_s:t0-event,to_after_event_s:tEnd-event},
   worst_0_5_s:w5,worst_frame:win(1),worst_2_5_s:win(5*5),steady_last_10_s:steady,pre_event:preEvent,
   seat_window:lastSeat===null?null:(()=>{const a=firstAtOrAfter(frames,event),b=Math.max(a+1,firstAtOrAfter(frames,event+lastSeat));return {last_seat_after_event_s:lastSeat,to_after_event_s:tOf(frames,b)-event,rate:meanRate(frames,a,b,ratio)}})(),
   average:meanRate(frames,0,frames.length-1,ratio),restarts:restarts.length,
@@ -281,7 +284,7 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
 
 function table(name:string,j:any){
  const f=(x:number|null)=>x===null?'-':x.toFixed(3)
- const lines=[`${name} ${j.case??''}: worst 0.5 s ${f(j.worst_0_5_s.rate)} at +${f(j.worst_0_5_s.from_after_event_s)} s; frame ${f(j.worst_frame.rate)}; 2.5 s ${f(j.worst_2_5_s.rate)}; steady ${f(j.steady_last_10_s)}; seats to +${f(j.seat_window?.to_after_event_s??null)} s ${f(j.seat_window?.rate??null)}; pre ${f(j.pre_event)}; restarts ${j.restarts} (${f(j.restarts_per_s_after_10_s)}/s after +10 s); peak lag ${f(j.peak_lag_s)} s; B-ded ${j.budget.dedicated?'pass':'FAIL'}, B-prod ${j.budget.prod?'pass':'FAIL'}`]
+ const lines=[`${name} ${j.case??''} [${j.drive.frames}, ${f(j.drive.from_after_event_s)} to +${f(j.drive.to_after_event_s)} s]: worst 0.5 s ${f(j.worst_0_5_s.rate)} at +${f(j.worst_0_5_s.from_after_event_s)} s; frame ${f(j.worst_frame.rate)}; 2.5 s ${f(j.worst_2_5_s.rate)}; steady ${f(j.steady_last_10_s)}; seats to +${f(j.seat_window?.to_after_event_s??null)} s ${f(j.seat_window?.rate??null)}; pre ${f(j.pre_event)}; restarts ${j.restarts} (${f(j.restarts_per_s_after_10_s)}/s after +10 s); peak lag ${f(j.peak_lag_s)} s; B-ded ${j.budget.dedicated?'pass':'FAIL'}, B-prod ${j.budget.prod?'pass':'FAIL'}`]
  if(j.breakdown)for(const [w,b] of Object.entries<any>(j.breakdown)){
   if(!b)continue
   const top=(o:Record<string,number>)=>Object.entries(o).filter(([,v])=>Math.abs(v)>=0.01).map(([k,v])=>`${k} ${(100*v).toFixed(0)}%`).join(', ')
