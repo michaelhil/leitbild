@@ -136,9 +136,17 @@ fn joined_census_against_table_1_1() {
             .clone()
     };
     assert_eq!(row("Regional N").composed, Some([24, 0]));
-    assert_eq!(row("Material precursors").composed, Some([2316, 0]));
-    assert_eq!(row("Fissile, fertile").composed, Some([2316, 0]));
-    assert_eq!(row("Delayed-energy").composed, Some([9650, 0]));
+    // E-NUC: 18 exact replica groups of the 386 carriers.
+    let groups = nuclear.replica_groups();
+    assert_eq!(groups, 18);
+    assert_eq!(row("Material precursors").composed, Some([6 * groups, 0]));
+    assert_eq!(row("Fissile, fertile").composed, Some([6 * groups, 0]));
+    assert_eq!(row("Delayed-energy").composed, Some([25 * groups, 0]));
+    assert_eq!(row("Material precursors").represented, Some([2316, 0]));
+    assert_eq!(row("Fissile, fertile").represented, Some([2316, 0]));
+    assert_eq!(row("Delayed-energy").represented, Some([9650, 0]));
+    // The carrier coordinates the groups replace.
+    let reduced = 2316 + 2316 + 9650 - 37 * groups;
     assert_eq!(row("Fuel 2 + clad 1").composed, Some([1158, 0]));
     assert_eq!(row("Massless").composed, Some([0, 1158]));
     assert_eq!(row("Helium").composed, Some([193, 0]));
@@ -161,12 +169,19 @@ fn joined_census_against_table_1_1() {
         }
         None => 0,
     };
-    assert_eq!(c.composed, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(c.represented, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(
+        c.composed,
+        [17251 + g6 - reduced, 1194, 18445 + g6 - reduced]
+    );
     // P2 (OU-P2): the rods add their bore groups' water (8 x (M, U, B)
     // differential, 8 pressures) and each cluster's upper-mouth current.
-    assert_eq!(c.with_pending, [17335 + g6, 1362, 18697 + g6]);
+    assert_eq!(
+        c.with_pending,
+        [17335 + g6 - reduced, 1362, 18697 + g6 - reduced]
+    );
     let histories = nuclear.histories();
-    assert_eq!(histories.len(), 9650);
+    assert_eq!(histories.len(), 25 * groups);
     let receipt = json!({
         "kind": "s2-joined-census",
         "status": "NOT-EVIDENCE zero-time allocation; no residual evaluated, no trajectory",

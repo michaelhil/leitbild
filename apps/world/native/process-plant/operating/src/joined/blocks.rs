@@ -78,7 +78,12 @@ pub fn nuclear_partials(
     travel: &[f64],
     out: &mut NuclearPartials,
 ) -> Result<(), Failure> {
-    let (r, a) = (nuclear.regions(), nuclear.carriers());
+    let (r, a, n) = (
+        nuclear.regions(),
+        nuclear.carriers(),
+        nuclear.replica_groups(),
+    );
+    let members = nuclear.members();
     let k = nuclear.coefficients();
     let feedback = nuclear.feedback();
     let kinetics = nuclear.kinetics();
@@ -90,19 +95,34 @@ pub fn nuclear_partials(
     {
         return Err(fatal("nuclear partials stage length"));
     }
-    let m0 = r + kinetics::DELAYED_GROUPS * a;
+    let m0 = r + kinetics::DELAYED_GROUPS * n;
     let material = |c: usize, m: usize| m0 + 6 * c + m;
     // The same conditions Nuclear::rows composes, as values.
     let neutrons: Vec<Scalar> = (0..r).map(|i| s(x[i])).collect();
-    let fuel: Vec<Scalar> = fuel_t.iter().map(|v| s(*v)).collect();
+    // E-NUC: each group's feedback temperature from its members' own, and
+    // d T_group / d T_member for the port chain.
+    let carrier_t: Vec<Scalar> = fuel_t.iter().map(|v| s(*v)).collect();
+    let fuel: Vec<Scalar> = members
+        .iter()
+        .map(|m| super::nuclear::replica_temperature(m, &carrier_t))
+        .collect::<Result<_, _>>()?;
+    let mut chain = vec![1.; a];
+    for (g, m) in members.iter().enumerate() {
+        if m.len() > 1 {
+            let mean = fuel[g].value.sqrt();
+            for &c in m {
+                chain[c] = mean / (m.len() as f64 * fuel_t[c].sqrt());
+            }
+        }
+    }
     let density: Vec<Scalar> = water.iter().map(|w| s(w.density_kg_m3.value)).collect();
     let boron: Vec<Scalar> = water.iter().map(|w| s(w.boron_ppm_eq.value)).collect();
     let pressure: Vec<Scalar> = water.iter().map(|w| s(w.pressure_pa.value)).collect();
     let moderator: Vec<Scalar> = water.iter().map(|w| s(w.temperature_k.value)).collect();
-    let fissile: Vec<Scalar> = (0..a).map(|c| s(x[material(c, 0)])).collect();
-    let xenon: Vec<Scalar> = (0..a).map(|c| s(x[material(c, 3)])).collect();
-    let samarium: Vec<Scalar> = (0..a).map(|c| s(x[material(c, 5)])).collect();
-    let opacity: Vec<Scalar> = (0..a)
+    let fissile: Vec<Scalar> = (0..n).map(|c| s(x[material(c, 0)])).collect();
+    let xenon: Vec<Scalar> = (0..n).map(|c| s(x[material(c, 3)])).collect();
+    let samarium: Vec<Scalar> = (0..n).map(|c| s(x[material(c, 5)])).collect();
+    let opacity: Vec<Scalar> = (0..n)
         .map(|c| s(k.capture.cross_section_m2) * (s(x[material(c, 1)]) - s(k.reference_fertile[c])))
         .collect();
     let rods: Vec<Scalar> = travel.iter().map(|v| s(*v)).collect();
@@ -119,7 +139,7 @@ pub fn nuclear_partials(
         achieved_rod_travel_m: &rods,
         capsule_age_s: s(k.capsule_age0_s + t),
     };
-    let mut values = sf::Output::new(r, a, supports.len());
+    let mut values = sf::Output::new(r, n, supports.len());
     feedback
         .evaluate(&neutrons, conditions, &mut values)
         .map_err(trial)?;
@@ -147,7 +167,7 @@ pub fn nuclear_partials(
         outside_fractions: k.outside_fractions,
     };
     out.feeds.clear();
-    out.feeds.resize(2 * a, Vec::new());
+    out.feeds.resize(2 * n, Vec::new());
     out.own.clear();
     out.fuel_t.clear();
     out.water.clear();
@@ -181,7 +201,7 @@ pub fn nuclear_partials(
     let zero_emission = vec![0.; k.emission_fractions.len()];
     let zero_outside = vec![0.; k.outside_fractions.len()];
     let mut rates = vec![0.; m0];
-    let mut fissions = vec![0.; a];
+    let mut fissions = vec![0.; n];
     kinetics
         .directional_derivative(
             state,
@@ -205,7 +225,7 @@ pub fn nuclear_partials(
         .map(|y| y.iter().sum())
         .collect();
     // Per carrier: d F / d fissile = sum_k dG_k/dfissile N_i(k).
-    let mut fission_fissile = vec![0.; a];
+    let mut fission_fissile = vec![0.; n];
     for (sk, sp) in supports.iter().zip(&fp.supports) {
         fission_fissile[sk.material] += sp.production_fissile * x[sk.region];
     }
@@ -214,7 +234,10 @@ pub fn nuclear_partials(
         let (i, c) = (sk.region, sk.material);
         let row = offset + i;
         let coef = per_reactivity[i];
-        out.fuel_t.push((row, c, coef * sp.fuel_temperature));
+        for &member in &members[c] {
+            out.fuel_t
+                .push((row, member, coef * sp.fuel_temperature * chain[member]));
+        }
         out.own.push((
             row,
             offset + material(c, 0),
@@ -248,11 +271,12 @@ pub fn nuclear_partials(
         .tangent(&vec![0.; fission_model.dimension()], 1., &mut prompt)
         .map_err(trial)?
         .prompt_w;
-    let mut by_carrier: Vec<Vec<usize>> = vec![Vec::new(); a];
+    let mut by_carrier: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (index, sk) in supports.iter().enumerate() {
         by_carrier[sk.material].push(index);
     }
-    for c in 0..a {
+    for c in 0..n {
+        let share = 1. / members[c].len() as f64;
         let fertile = x[material(c, 1)];
         let exposure = values.exposure_per_m2_s[c].value;
         let fissions_c = values.carrier_fissions_per_s[c].value;
@@ -395,8 +419,11 @@ pub fn nuclear_partials(
                 offset + material(c, 5),
                 fraction_b * k.samarium_binding_j * pm.samarium_capture_per_samarium * exposure,
             ));
+            // E-NUC: each member's heat is its share of the group's.
             for (column, v) in entries.drain(..) {
-                sink.push((c, column, v));
+                for &member in &members[c] {
+                    sink.push((member, column, v * share));
+                }
             }
         }
     }

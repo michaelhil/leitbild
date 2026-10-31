@@ -1981,12 +1981,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let (regions, carriers) = (nuc.regions(), nuc.carriers());
         let mut regions_of = vec![BTreeSet::new(); carriers];
         let mut carriers_of = vec![BTreeSet::new(); regions];
-        for support in nuc.supports() {
+        for support in nuc.carrier_supports() {
             regions_of[support.material].insert(support.region);
             carriers_of[support.region].insert(support.material);
         }
         let n_of = |i: usize| o.nuclear + i;
-        let carrier_vars = |a: usize, out: &mut BTreeSet<usize>| {
+        // E-NUC: a carrier's nuclear state is its replica group's.
+        let group = nuc.group_of();
+        let carrier_vars = |carrier: usize, out: &mut BTreeSet<usize>| {
+            let a = group[carrier];
             for g in 0..6 {
                 out.insert(o.nuclear + nuc.precursor(a, g));
                 out.insert(o.nuclear + nuc.material(a, g));
@@ -2010,7 +2013,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // which read the support populations, fissile, fertile, Xe and Sm.
         let events = |a: usize, out: &mut BTreeSet<usize>| {
             for k in [0, 1, 3, 5] {
-                out.insert(o.nuclear + nuc.material(a, k));
+                out.insert(o.nuclear + nuc.material(group[a], k));
             }
             out.extend(regions_of[a].iter().map(|i| n_of(*i)));
         };
@@ -2018,7 +2021,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let fuel_heat = |a: usize, out: &mut BTreeSet<usize>| {
             events(a, out);
             for g in 0..nuclear::HISTORIES {
-                out.insert(o.nuclear + nuc.history(a, g));
+                out.insert(o.nuclear + nuc.history(group[a], g));
             }
         };
         let half_vars = |a: usize, out: &mut BTreeSet<usize>| {
@@ -2053,10 +2056,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
             let mut cols: BTreeSet<usize> = (0..regions).map(n_of).collect();
             for a in carriers_i {
                 for g in 0..6 {
-                    cols.insert(o.nuclear + nuc.precursor(*a, g));
+                    cols.insert(o.nuclear + nuc.precursor(group[*a], g));
                 }
                 for k in [0, 1, 3, 5] {
-                    cols.insert(o.nuclear + nuc.material(*a, k));
+                    cols.insert(o.nuclear + nuc.material(group[*a], k));
                 }
                 cols.insert(o.solids + sol.energy(*a, 0));
                 cols.insert(o.solids + sol.energy(*a, 1));
