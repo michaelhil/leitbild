@@ -109,15 +109,19 @@ pub const APPARENT_COORDINATES: usize = 3;
 /// follows at `HEADER + 1 + k`.
 pub const HEADER: usize = 0;
 /// Per SG after the branches: the continuous control's coordinates.
-pub const CONTROL: usize = 6;
+pub const CONTROL: usize = 8;
 pub const NR_LAG: usize = 0;
 pub const STEAM_LAG: usize = 1;
 pub const FEED_LAG: usize = 2;
 pub const OUTER: usize = 3;
 pub const INNER: usize = 4;
 pub const STEM: usize = 5;
-/// Feed roots per SG (AUTO only): NR1 lag at the span's low and high edge.
-pub const FEED_ROOTS: usize = 2;
+/// The startup-feed stand-in's integral and valve.
+pub const SF_INTEGRAL: usize = 6;
+pub const SF_STEM: usize = 7;
+/// Feed roots per SG: NR1 lag at the span's low and high edge (AUTO), the
+/// startup stand-in's start (stopped) and isolation (running) levels.
+pub const FEED_ROOTS: usize = 4;
 /// Thresholds of every valve, in root order.
 pub const THRESHOLDS: [Threshold; 4] = [
     Threshold::Crack,
@@ -230,6 +234,15 @@ pub struct FeedMode {
     pub mode: Mode,
     #[serde(with = "snapshot_bits")]
     pub held: f64,
+    pub startup: Startup,
+}
+
+/// The startup-feed stand-in's state per SG.
+#[derive(Clone, Copy, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub enum Startup {
+    Stopped,
+    Running,
+    Isolated,
 }
 
 /// The compact feed train, compiled once (pressures in Pa, flows in kg/s).
@@ -248,6 +261,10 @@ pub struct FeedOwner {
     /// The prepared MANUAL opening per SG: the opening that delivers its
     /// steam demand at its prepared pressure (the S4-D6 rule).
     pub prepared_opening: Vec<f64>,
+    /// The startup stand-in's capacity per SG (kg/s) and the tank
+    /// water's enthalpy (J/kg), derived once.
+    pub startup_capacity_kg_s: f64,
+    pub startup_enthalpy_j_kg: f64,
     pub modes: Vec<FeedMode>,
     /// The SG count (control coordinates follow the branches).
     pub sgs: usize,
@@ -274,6 +291,30 @@ impl FeedOwner {
                 inner_rate: s(0.),
             },
         }
+    }
+    /// SG `k`'s startup stand-in: its valve demand and integral rate at the
+    /// NR1 lag and its integral. Running: the outer loop's law on level
+    /// alone (request `KpL eL + IS` in units of `m0`, the valve demand that
+    /// request over the capacity, clamped), back-calculation over `KpL/KiL`;
+    /// stopped or isolated: demand zero, integral held.
+    pub fn startup_law(&self, k: usize, level: Scalar, integral: Scalar) -> (Scalar, Scalar) {
+        if self.modes[k].startup != Startup::Running {
+            return (s(0.), s(0.));
+        }
+        let c = &self.train.cascade;
+        let [lo, hi] = c.narrow_span_m;
+        let el = s(c.level_setpoint) - (level - s(lo)) / s(hi - lo);
+        let scale = self.train.nominal_flow_kg_s / self.startup_capacity_kg_s;
+        let unsat = (s(c.outer_proportional) * el + integral) * s(scale);
+        let d = if unsat.value < 0. {
+            s(0.)
+        } else if unsat.value > 1. {
+            s(1.)
+        } else {
+            unsat
+        };
+        let back = (d - unsat) / s(scale) * s(c.outer_integral_per_s / c.outer_proportional);
+        (d, s(c.outer_integral_per_s) * el + back)
     }
     /// The stem rate toward demand `d` at position `u`.
     pub fn stem_rate(&self, d: Scalar, u: Scalar) -> Scalar {
@@ -544,7 +585,31 @@ impl Secondaries {
         let feed = match section.feed_train {
             None => None,
             Some(train) => {
-                let f = feed_owner(train, &sgs, stocks, prepared.len())?;
+                let mut f = feed_owner(train, &sgs, stocks, prepared.len())?;
+                // The startup stand-in's capacity: the decay heat shared by
+                // the SGs over the rise from the tank water to saturated
+                // vapour at the no-load pressure, on the runtime law.
+                let sf = train.startup;
+                let p0 = section.bypass.no_load_pressure_pa;
+                let tank = network::Properties::forward(props, false, p0, sf.source_temperature_k)
+                    .map_err(|e| fatal(format!("startup feed tank state: {e}")))?;
+                let hg = WaterProperties::saturation(props, s(p0))
+                    .map_err(|e| fatal(format!("startup feed no-load saturation: {e}")))?
+                    .vapor
+                    .enthalpy
+                    .value;
+                let rise = hg - tank.enthalpy_j_kg;
+                if !(positive(sf.decay_heat_w)
+                    && positive(rise)
+                    && sf.start_level_fraction > 0.
+                    && sf.start_level_fraction < train.cascade.level_setpoint
+                    && sf.isolation_level_fraction > train.cascade.level_setpoint
+                    && sf.isolation_level_fraction < 1.)
+                {
+                    return Err(fatal("startup feed stand-in values"));
+                }
+                f.startup_capacity_kg_s = sf.decay_heat_w / sgs.len() as f64 / rise;
+                f.startup_enthalpy_j_kg = tank.enthalpy_j_kg;
                 let m0 = train.nominal_flow_kg_s;
                 layout.push(
                     "FW.HEADER.p".into(),
@@ -578,6 +643,8 @@ impl Secondaries {
                         ("IL", il, 1.),
                         ("IF", i_f, 1.),
                         ("FCV.u", u, 1.),
+                        ("SF.I", 0., 1.),
+                        ("SF.u", 0., 1.),
                     ] {
                         layout.push(
                             format!("FW.{id}.{label}"),
@@ -1179,8 +1246,19 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 (None, true) => withdrawn,
                 (Some(f), true) => x.value(f.base + HEADER + 1 + k),
             };
-            let mass_receipt = feed - withdrawn;
-            let energy_receipt = *heat + feed * s(self.derived.feed_enthalpy_j_kg) - withdrawn * hg;
+            // The startup stand-in (onsite power): capacity x valve at the
+            // tank's enthalpy, whatever the main pumps' supply.
+            let startup = match &self.feed {
+                Some(f) => s(f.startup_capacity_kg_s) * x.value(f.control(k) + SF_STEM),
+                None => s(0.),
+            };
+            let startup_energy = match &self.feed {
+                Some(f) => startup * s(f.startup_enthalpy_j_kg),
+                None => s(0.),
+            };
+            let mass_receipt = feed + startup - withdrawn;
+            let energy_receipt =
+                *heat + feed * s(self.derived.feed_enthalpy_j_kg) + startup_energy - withdrawn * hg;
             rows[b + MASS] = x.rate(b + MASS) - mass_receipt;
             rows[b + ENERGY] = x.rate(b + ENERGY) - energy_receipt;
             if let Some(a) = self.apparent {
@@ -1242,10 +1320,17 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 rows[c + NR_LAG] = x.rate(c + NR_LAG) - (level - lags[0]) / s(law.nr_lag_s);
                 rows[c + STEAM_LAG] =
                     x.rate(c + STEAM_LAG) - (steam - lags[1]) / s(law.steam_flow_lag_s);
-                rows[c + FEED_LAG] = x.rate(c + FEED_LAG) - (*m - lags[2]) / s(law.feed_flow_lag_s);
+                // FW.FT reads the delivered main feed (zero while the pumps
+                // are unsupplied).
+                let delivered = if self.feed_supported { *m } else { s(0.) };
+                rows[c + FEED_LAG] =
+                    x.rate(c + FEED_LAG) - (delivered - lags[2]) / s(law.feed_flow_lag_s);
                 rows[c + OUTER] = x.rate(c + OUTER) - l.outer_rate;
                 rows[c + INNER] = x.rate(c + INNER) - l.inner_rate;
                 rows[c + STEM] = x.rate(c + STEM) - f.stem_rate(l.demand, u);
+                let (sd, srate) = f.startup_law(k, lags[0], x.value(c + SF_INTEGRAL));
+                rows[c + SF_INTEGRAL] = x.rate(c + SF_INTEGRAL) - srate;
+                rows[c + SF_STEM] = x.rate(c + SF_STEM) - f.stem_rate(sd, x.value(c + SF_STEM));
             }
         }
         if rows
@@ -1271,7 +1356,12 @@ impl<P: Properties> Secondary<P> for Secondaries {
             // while the gate is open).
             own[b + MASS] = if let Some(f) = &self.feed {
                 // The real balance: the branch flow against the withdrawal.
-                let mut mass = vec![b + MASS, b + PRESSURE, f.base + HEADER + 1 + k];
+                let mut mass = vec![
+                    b + MASS,
+                    b + PRESSURE,
+                    f.base + HEADER + 1 + k,
+                    f.control(k) + SF_STEM,
+                ];
                 mass.extend(&lifts);
                 mass
             } else if self.feed_gate_declared {
@@ -1285,6 +1375,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
             energy.extend(&lifts);
             if let Some(f) = &self.feed {
                 energy.push(f.base + HEADER + 1 + k);
+                energy.push(f.control(k) + SF_STEM);
             }
             own[b + ENERGY] = energy;
             heat[b + ENERGY] = vec![k];
@@ -1330,6 +1421,8 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 let mut stem = law;
                 stem.push(c + STEM);
                 own[c + STEM] = stem;
+                own[c + SF_INTEGRAL] = vec![c + NR_LAG, c + SF_INTEGRAL];
+                own[c + SF_STEM] = vec![c + NR_LAG, c + SF_INTEGRAL, c + SF_STEM];
             }
         }
         for o in &mut own {
@@ -1402,6 +1495,18 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 let auto = f.modes[k].mode == Mode::Auto;
                 out[i] = if auto { l - lo } else { DISARMED };
                 out[i + 1] = if auto { hi - l } else { DISARMED };
+                // The startup stand-in: start below its level (stopped),
+                // isolate above its level (running).
+                let sf = f.train.startup;
+                let at = |fraction: f64| lo + fraction * (hi - lo);
+                out[i + 2] = match f.modes[k].startup {
+                    Startup::Stopped => l - at(sf.start_level_fraction),
+                    _ => DISARMED,
+                };
+                out[i + 3] = match f.modes[k].startup {
+                    Startup::Running => at(sf.isolation_level_fraction) - l,
+                    _ => DISARMED,
+                };
                 i += FEED_ROOTS;
             }
         }
@@ -1440,8 +1545,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
         // The NR1 span edges report only the leaving (falling) crossing.
         if self.feed.is_some() {
             for _ in 0..self.sgs.len() {
-                out[i] = -1;
-                out[i + 1] = -1;
+                out[i..i + FEED_ROOTS].fill(-1);
                 i += FEED_ROOTS;
             }
         }
@@ -1533,7 +1637,18 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 .sum();
             for k in 0..self.sgs.len() {
                 let d = &directions[first + FEED_ROOTS * k..first + FEED_ROOTS * (k + 1)];
-                if d.iter().all(|v| *v == 0) {
+                let c = f.control(k);
+                if d[2] != 0 {
+                    f.modes[k].startup = Startup::Running;
+                    withdrawn.push(json!({"sg": self.sgs[k].id, "startup": "started",
+                        "nr1_lag_m": y[c + NR_LAG], "reason": "low SG level demand (judgement)"}));
+                }
+                if d[3] != 0 {
+                    f.modes[k].startup = Startup::Isolated;
+                    withdrawn.push(json!({"sg": self.sgs[k].id, "startup": "isolated",
+                        "nr1_lag_m": y[c + NR_LAG], "reason": "high-2 level (AP1000 T15.0-4a)"}));
+                }
+                if d[0] == 0 && d[1] == 0 {
                     continue;
                 }
                 if f.modes[k].mode != Mode::Auto {
@@ -1542,12 +1657,12 @@ impl<P: Properties> Secondary<P> for Secondaries {
                         self.sgs[k].id
                     )));
                 }
-                let c = f.control(k);
                 let lags = [NR_LAG, STEAM_LAG, FEED_LAG, OUTER, INNER].map(|o| s(y[c + o]));
                 let held = f.law(k, lags).demand.value;
                 f.modes[k] = FeedMode {
                     mode: Mode::Hold,
                     held,
+                    startup: f.modes[k].startup,
                 };
                 withdrawn.push(json!({"sg": self.sgs[k].id, "to": "HOLD", "held_demand": held,
                     "nr1_lag_m": y[c + NR_LAG], "reason": "the selected NR1 channel left its span"}));
@@ -1882,6 +1997,8 @@ fn feed_owner(
         iso_drop_pa: t.header_pressure_pa - t.iso_outlet_pressure_pa,
         fcv_drop_pa: t.iso_outlet_pressure_pa - t.receiver_pressure_pa,
         prepared_opening: Vec::new(),
+        startup_capacity_kg_s: 0.,
+        startup_enthalpy_j_kg: 0.,
         modes: Vec::new(),
         sgs: sgs.len(),
     };
@@ -1901,6 +2018,7 @@ fn feed_owner(
         f.modes.push(FeedMode {
             mode: Mode::Auto,
             held: u,
+            startup: Startup::Stopped,
         });
     }
     Ok(f)
