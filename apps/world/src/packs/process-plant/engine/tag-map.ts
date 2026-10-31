@@ -59,6 +59,7 @@ const conversions: Readonly<Record<string, Conversion>> = {
   's->s': scale(1),
   '1->fraction': scale(1),
   '1->percent': scale(100),
+  '%->percent': scale(1),
   '1->count': scale(1),
   '1->boolean': { kind: 'flag' },
 }

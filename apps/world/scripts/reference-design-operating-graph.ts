@@ -48,6 +48,8 @@ const packetSchema = z.object({
   }).passthrough(),
   rods: z.object({ clusters: z.array(z.object({ id: z.string().min(1) }).passthrough()).min(1) }).passthrough(),
   feedback_metadata: z.object({ parameters: z.object({ rod_maximum_travel_m: finite.positive() }).passthrough() }).passthrough(),
+  // Plan r4 X4.2: the CVCS section, when the packet composes it (its charging and letdown meet the port region).
+  cvcs: z.object({ port: z.object({ region: index, id: z.string().min(1) }).passthrough() }).passthrough().optional(),
 }).passthrough()
 const feedTrainSchema = z.object({ nominalFlow_kg_s: finite.positive(), headerPressure_Pa: finite.positive(), suctionPressure_Pa: finite.positive() }).passthrough()
 
@@ -65,6 +67,9 @@ const icSchema = z.object({
       z.object({ loop_flow: z.object({ loop_id: z.string().min(1), face: index, face_id: z.string().min(1) }).passthrough() }).strict(),
       z.object({ current_proxy: z.object({}).passthrough() }).strict(),
       z.object({ pump_speed: z.object({ rotor: index, rotor_id: z.string().min(1) }).strict() }).strict(),
+      z.object({ cvcs_flow: z.object({ branch: z.string().min(1) }).strict() }).strict(),
+      z.object({ bank_position: z.object({ normal_travel_m: finite.positive() }).strict() }).strict(),
+      z.object({ stop_valve_position: z.object({ stop_travel_s: finite.positive() }).strict() }).strict(),
     ]),
     channels: z.array(z.object({ id: z.string().min(1), supply: z.string().min(1) }).strict()).min(1),
     channel: z.object({ min: finite.nullable(), max: finite.nullable() }).passthrough(),
@@ -148,6 +153,9 @@ const familyReading = (family: Family): Omit<Reading, 'path' | 'channel' | 'tagI
   if (sg !== null) return { kind: 'derived', discipline: 'hydraulic', quantity: 'length', unit: 'm', channelUnit: 'm', label: suffix => `SG ${sg} narrow-range level channel ${suffix}` }
   if ('loop_flow' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'ratio', unit: 'fraction', measurand: 'flow', channelUnit: '1', label: () => `Loop ${quantity.loop_flow.loop_id} flow channel (of nominal)` }
   if ('current_proxy' in quantity) return { kind: 'derived', discipline: 'nuclear', quantity: 'power', unit: 'percent', channelUnit: '1', label: suffix => `Power proxy channel ${suffix}` }
+  if ('cvcs_flow' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'flowRate', unit: 'kg/s', channelUnit: 'kg/s', label: () => `CVCS ${quantity.cvcs_flow.branch.toLowerCase()} flow channel` }
+  if ('bank_position' in quantity) return { kind: 'derived', discipline: 'nuclear', quantity: 'ratio', unit: 'fraction', measurand: 'position', channelUnit: '1', label: () => 'Control bank position channel (of the normal stroke)' }
+  if ('stop_valve_position' in quantity) return { kind: 'derived', discipline: 'control', quantity: 'ratio', unit: 'percent', measurand: 'position', channelUnit: '%', label: () => 'Turbine stop valve position channel' }
   if (!('pump_speed' in quantity)) throw new Error(`IC family ${family.id} has a quantity this compiler does not read`)
   return { kind: 'derived', discipline: 'hydraulic', quantity: 'ratio', unit: 'fraction', measurand: 'speed', channelUnit: '1', label: () => `RCP ${lastSegment(quantity.pump_speed.rotor_id)} speed channel (of reference)` }
 }
@@ -157,7 +165,8 @@ const familyReadings = (ic: Ic, family: Family): ReadonlyArray<Reading> => {
   const shape = familyReading(family)
   const limits = familyLimits(ic, family, shape.channelUnit, shape.unit)
   return family.channels.flatMap(channel => {
-    const suffix = lastSegment(channel.id)
+    // The two CVCS FTs (LD01.INV.CHARGE.FT, LD01.INV.LETDOWN.FT) share their last segment: each reads by its branch.
+    const suffix = typeof family.quantity === 'object' && 'cvcs_flow' in family.quantity ? channel.id.split('.').at(-2)! : lastSegment(channel.id)
     const { label, ...rest } = shape
     return [
       { ...rest, path: suffix, label: label(suffix), channel: channel.id, tagId: channel.id, ...(limits === undefined ? {} : { limits }) },
@@ -285,12 +294,16 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   const pzr = at(regionId(cell.index))
   for (const family of ic.families) {
     const quantity = family.quantity
+    // The STOP's position reads on the turbine-generator, placed with it below.
+    if (typeof quantity === 'object' && 'stop_valve_position' in quantity) continue
     const owner = quantity === 'pzr_roof_pressure' || 'pzr_level' in quantity ? pzr
       : sgOfLevel(quantity) !== null ? at(regionId(sgBySecondary.get(sgOfLevel(quantity)!) ?? Number.NaN))
         : 'loop_flow' in quantity ? at(componentOf(packet.mechanics.faces[quantity.loop_flow.face]!.from))
           : 'current_proxy' in quantity ? at('CORE')
             : 'pump_speed' in quantity ? at(quantity.pump_speed.rotor_id)
-              : null
+              : 'bank_position' in quantity ? at('CORE')
+                : 'cvcs_flow' in quantity ? (packet.cvcs === undefined ? null : at(componentOf(packet.cvcs.port.region)))
+                  : null
     if (owner === null) throw new Error(`IC family ${family.id} measures a quantity the graph places on no equipment`)
     owner.readings.push(...familyReadings(ic, family))
   }
@@ -387,6 +400,9 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     // path (turbine-state report, division processors, holding contacts): the kernel's TurbineTripAcquired, never S2's.
     commands: [{ path: 'turbineTrip', label: 'Turbine trip', actuation: 'command', command: { kind: 'TurbineTripAcquired' }, momentary: true }],
     keyValues: ['terminalPower', 'shaftSpeed'],
+  }
+  for (const family of ic.families) {
+    if (typeof family.quantity === 'object' && 'stop_valve_position' in family.quantity) turbine.readings.push(...familyReadings(ic, family))
   }
   equipment.set(turbine.id, turbine)
 
